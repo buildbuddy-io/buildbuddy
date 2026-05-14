@@ -50,7 +50,7 @@ bazel build --config=remote --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_AP
 
 ## Managing keys
 
-You can create multiple API keys on your [organization settings page](https://app.buildbuddy.dev/settings/org/api-keys). These keys can be used in different contexts (i.e. one for CI, one for developers) and cycled independently. Here you can also edit and delete existing API keys.
+You can create multiple API keys on your [organization settings page](https://app.buildbuddy.io/settings/org/api-keys). These keys can be used in different contexts (i.e. one for CI, one for developers) and cycled independently. Here you can also edit and delete existing API keys.
 
 When creating multiple keys, we recommending labeling your API keys with descriptive names to describe how they will be used.
 

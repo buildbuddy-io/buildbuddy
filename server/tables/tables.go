@@ -1,10 +1,13 @@
+// Package tables defines schema and utility functions for the transactional SQL
+// database.
 package tables
 
 import (
-	"flag"
 	"fmt"
+	"slices"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
@@ -12,7 +15,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"gorm.io/gorm"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -58,7 +63,7 @@ func PrimaryKeyForTable(tableName string) (string, error) {
 			return fmt.Sprintf("%s%d", d.prefix, random.RandUint64()), nil
 		}
 	}
-	return "", fmt.Errorf("Unknown table: %s", tableName)
+	return "", fmt.Errorf("unknown table: %s", tableName)
 }
 
 func registerTable(prefix string, t Table) {
@@ -157,7 +162,12 @@ type Invocation struct {
 	InvocationUUID                   []byte `gorm:"size:16;default:NULL;uniqueIndex:invocation_invocation_uuid;unique"`
 	Success                          bool
 	Attempt                          uint64 `gorm:"not null;default:0"`
+	RunID                            string
 	BazelExitCode                    string
+
+	// For invocations with run logs, the status of the executable running.
+	// Type is `invocation_status.OverallStatus`.
+	RunStatus int64
 
 	// The user-specified setting of how to download outputs from remote cache.
 	// The value maps to invocation.DownloadOutputsOption
@@ -171,6 +181,8 @@ type Invocation struct {
 	RemoteExecutionEnabled bool
 
 	Tags string
+
+	ParentRunID string `gorm:"index:parent_run_id_index"`
 }
 
 func (i *Invocation) TableName() string {
@@ -216,14 +228,15 @@ type Group struct {
 	// group.
 	WriteToken string `gorm:"index:write_token_index"`
 
-	// The group's Github API token.
+	// The group's Github API token. This is deprecated in favor of a user-level
+	// token that can be used with our GitHub app.
 	GithubToken *string
 	Model
 
-	SharingEnabled                    bool `gorm:"default:1"`
+	SharingEnabled                    bool `gorm:"default:0"`
 	UserOwnedKeysEnabled              bool `gorm:"not null;default:0"`
 	BotSuggestionsEnabled             bool `gorm:"not null;default:1"`
-	CodeSearchEnabled                 bool `gorm:"not null;default:1"`
+	CodeSearchEnabled                 bool `gorm:"not null;default:0"`
 	DeveloperOrgCreationEnabled       bool `gorm:"not null;default:1"`
 	RestrictCleanWorkflowRunsToAdmins bool `gorm:"not null;default:0"`
 	ExternalUserManagement            bool `gorm:"not null;default:0"`
@@ -236,7 +249,7 @@ type Group struct {
 	EnforceIPRules         bool `gorm:"not null;default:0"`
 
 	// The SAML IDP Metadata URL for this group.
-	SamlIdpMetadataUrl string
+	SamlIdpMetadataUrl string `gorm:"index:group_saml_idp_metadata_url_idx"`
 
 	InvocationWebhookURL string `gorm:"not null;default:''"`
 
@@ -245,6 +258,13 @@ type Group struct {
 	// The public key and encrypted private key. Used to upload secrets.
 	PublicKey           string
 	EncryptedPrivateKey string
+
+	// When a Group is designated as a "parent" then any Admin keys from that
+	// org also work for managing groups with the same SAML IDP Metadata URL.
+	IsParent bool `gorm:"not null;default:0"`
+
+	// The status of the group: free tier, enterprise, etc.
+	Status grpb.Group_GroupStatus `gorm:"not null;default:0"`
 }
 
 func (g *Group) TableName() string {
@@ -270,7 +290,13 @@ func (ug *UserGroup) TableName() string {
 
 type GroupRole struct {
 	Group
-	Role uint32
+	// Deprecated. Don't reference this in any new code!
+	Role         *uint32
+	Capabilities []cappb.Capability
+}
+
+func (gr *GroupRole) HasCapability(cap cappb.Capability) bool {
+	return slices.Contains(gr.Capabilities, cap)
 }
 
 type User struct {
@@ -284,10 +310,14 @@ type User struct {
 	// Profile information etc.
 	FirstName string
 	LastName  string
-	Email     string
-	ImageURL  string
+	// Email provided by the login provider.
+	// SSO integrations can send arbitrary e-mails so this should be
+	// used with care in the context of auth.
+	Email    string
+	ImageURL string
 
-	// User-specific Github token (if linked).
+	// GitHub token used for all non-login related GitHub features.
+	// Can be for the read-only or read-write BuildBuddy GitHub app.
 	GithubToken string
 
 	// Group roles are used to determine read/write permissions
@@ -301,18 +331,25 @@ func (u *User) TableName() string {
 }
 
 func (u *User) ToProto() *uspb.DisplayUser {
+	name := strings.TrimSpace(u.FirstName + " " + u.LastName)
+	// Parse username from subscriber ID (for known providers).
+	username := ""
+	if after, ok := strings.CutPrefix(u.SubID, "https://github.com/"); ok {
+		username = after
+	}
 	return &uspb.DisplayUser{
 		UserId: &uspb.UserId{
 			Id: u.UserID,
 		},
 		Name: &uspb.Name{
-			Full:  strings.TrimSpace(u.FirstName + " " + u.LastName),
+			Full:  name,
 			First: u.FirstName,
 			Last:  u.LastName,
 		},
 		ProfileImageUrl: u.ImageURL,
 		Email:           u.Email,
 		AccountType:     subIDToAccountType(u.SubID),
+		Username:        username,
 	}
 }
 
@@ -327,6 +364,41 @@ func subIDToAccountType(s string) uspb.AccountType {
 		return uspb.AccountType_GITHUB
 	}
 	return uspb.AccountType_OIDC
+}
+
+// UserList is a named collection of users.
+type UserList struct {
+	UserListID string `gorm:"primaryKey"`
+	GroupID    string `gorm:"index:user_list_group_id_index"`
+	Name       string
+}
+
+func (ul *UserList) TableName() string {
+	return "UserLists"
+}
+
+// UserUserList maps users to users lists.
+type UserUserList struct {
+	UserUserID         string `gorm:"primaryKey"`
+	UserListUserListID string `gorm:"primaryKey"`
+}
+
+func (uul *UserUserList) TableName() string {
+	return "UserUserLists"
+}
+
+// UserListGroup maps user lists to groups with an associated role.
+type UserListGroup struct {
+	UserListUserListID string `gorm:"primaryKey"`
+	GroupGroupID       string `gorm:"primaryKey"`
+
+	// The list's role within the group.
+	// Constants are defined in the perms package.
+	Role uint32
+}
+
+func (ug *UserListGroup) TableName() string {
+	return "UserListGroups"
 }
 
 type Token struct {
@@ -364,7 +436,13 @@ type APIKey struct {
 	APIKeyID string `gorm:"primaryKey"`
 	// The user-specified description of the API key that helps them
 	// remember what it's for.
-	Label   string
+	Label string
+	// UserID is set when an API key is associated with a user
+	// (i.e. it's a user API key)
+	// The API key must be treated as invalid if this field is set but this
+	// user does not exist or is not a member of the group.
+	// All read paths should utilize authdb.fetchAPIKeys to take this into
+	// account.
 	UserID  string
 	GroupID string `gorm:"index:api_key_group_id_index"`
 	// The API key token used for authentication.
@@ -376,6 +454,12 @@ type APIKey struct {
 	//
 	// NOTE: If the default is changed, a DB migration may be required to
 	// migrate old DB rows to reflect the new default.
+	//
+	// For user API keys this represents "requested capabilities". This value
+	// must be masked by user membership capabilities to derive the effective
+	// capabilities.
+	// All read paths should utilize authdb.fetchAPIKeys to obtain the
+	// effective capabilities.
 	Capabilities        int32 `gorm:"default:1"`
 	VisibleToDevelopers bool  `gorm:"not null;default:0"`
 	// Indicates whether this key is used for impersonation.
@@ -457,6 +541,10 @@ func (t *Execution) TableName() string {
 	return "Executions"
 }
 
+// InvocationExecution means that the invocation sent this execution, and the
+// type indicates if this resulted in actually running the execution or merging
+// into another one. This corresponds to the proto
+// stored_invocation.StoredInvocationLink.
 type InvocationExecution struct {
 	Model
 
@@ -530,6 +618,7 @@ type TargetStatus struct {
 	InvocationUUID []byte `gorm:"primaryKey;autoIncrement:false;size:16;index:target_status_invocation_uuid_idx"`
 	TargetType     int32
 	TestSize       int32
+	Cached         bool `gorm:"not null;default:0"`
 	Status         int32
 	StartTimeUsec  int64
 	DurationUsec   int64
@@ -541,6 +630,9 @@ func (ts *TargetStatus) TableName() string {
 
 // GitHubAppInstallation represents a BuildBuddy GitHub App installation linked
 // to an organization.
+//
+// For now, a BB group can only have one app installed at a time (either read-write
+// or read-only).
 //
 // We'll listen to app uninstallation webhook events to proactively remove these
 // from the DB, but this is not 100% reliable, so GitHub is ultimately the
@@ -558,7 +650,8 @@ type GitHubAppInstallation struct {
 	GroupID string `gorm:"primaryKey"`
 	Perms   int32  `gorm:"not null"`
 
-	// InstallationID is the GitHub app installation ID.
+	// InstallationID is the GitHub app installation ID. This a unique value
+	// for every user that has installed a GitHub app.
 	InstallationID int64 `gorm:"not null"`
 
 	// Owner is the GitHub login of the installation (either a user or
@@ -566,6 +659,17 @@ type GitHubAppInstallation struct {
 	// store it here so that we can run queries to associate repos with
 	// installations.
 	Owner string `gorm:"primaryKey"`
+
+	// AppID is the ID for the GitHub app that this installation corresponds to.
+	// There are only 2 possible app IDs - corresponding to either the read-write
+	// or read-only BB GitHub app.
+	AppID int64
+
+	// ReportCommitStatusesForCIBuilds determines whether we should automatically
+	// report commit statuses to GitHub for all builds where role is CI or CI_RUNNER.
+	// Even if enabled, this setting can be overridden by setting
+	// `--build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true` on a build.
+	ReportCommitStatusesForCIBuilds bool `gorm:"not null;default:1"`
 }
 
 func (gh *GitHubAppInstallation) TableName() string {
@@ -591,6 +695,22 @@ type GitRepository struct {
 	// within this repository should run as a non-root user by default.
 	// TODO(http://go/b/3286): Remove this field after completing migration.
 	DefaultNonRootRunner bool `gorm:"not null;default:0"`
+
+	// UseDefaultWorkflowConfig determines whether workflows should use the
+	// default workflow config if there isn't a workflow config file (buildbuddy.yaml)
+	// in the workspace root. If enabled, workflows will automatically start
+	// running for a git repo when it is linked.
+	UseDefaultWorkflowConfig bool `gorm:"not null;default:0"`
+
+	// UseCLIInRemoteRunners determines whether the BuildBuddy CLI (`bb`) should be
+	// used as the bazel command on remote runners for this repo.
+	// Otherwise they will use `bazelisk` by default.
+	// This can be overridden per-workflow via the bazel_use_cli field in buildbuddy.yaml.
+	UseCLIInRemoteRunners bool `gorm:"not null;default:1"`
+
+	// The ID of the BuildBuddy Github app this repository was authorized for.
+	// (i.e. either the read-only or the read-write app)
+	AppID int64
 }
 
 func (g *GitRepository) TableName() string {
@@ -631,6 +751,47 @@ func (wf *Workflow) TableName() string {
 	return "Workflows"
 }
 
+// A ScheduledRun represents a Workflow that should be run at a specific time according to a cron expression.
+//
+// These are specified in the Workflow config (buildbuddy.yaml), but are stored in the database so that we don't have
+// to keep fetching that file. The database entries are updated when there is a push to the default branch of the repo.
+type ScheduledRun struct {
+	Model
+
+	ScheduleID string `gorm:"primaryKey;"`
+
+	GroupID    string `gorm:"index:scheduled_run_idx"`
+	RepoURL    string `gorm:"index:scheduled_run_idx"`
+	ActionName string `gorm:"index:scheduled_run_idx"`
+	CronExpr   string
+
+	// Based on the cron expression, this is the next time the run should be scheduled.
+	NextRunUsec int64 `gorm:"index:scheduled_run_next_run_idx"`
+
+	// Only one server should try to schedule a run at a time. When it acquires the lease, it should
+	// set this timestamp. If this timestamp is exceeded, the lease is considered expired and
+	// another server can acquire the lease and schedule the run. In this case, it's assumed that the
+	// original lease holder has failed (e.g. if it was restarted in a rollout).
+	//
+	// TODO: This is not guaranteed to be idempotent. If the first server to acquire the lease is slow to dispatch the execution,
+	// a second server could acquire the lease and dispatch the execution, causing a duplicate.
+	// However if the lease duration is long enough, duplicates are unlikely
+	// to happen because the servers only need to dispatch the execution, which should be quick.
+	LeaseExpiresUsec int64
+
+	// Number of consecutive failed dispatch attempts within the current scheduled window.
+	// Reset to 0 when the window is successfully dispatched or the schedule advances.
+	FailedAttemptCount int64 `gorm:"not null;default:0"`
+
+	// Number of consecutive scheduled windows that have exhausted all retries.
+	// If too high, the workflow will be paused and requires manual re-enabling.
+	ConsecutiveScheduleFailureCount int64 `gorm:"not null;default:0"`
+}
+
+func (sr *ScheduledRun) TableName() string {
+	return "ScheduledRuns"
+}
+
 type UsageCounts struct {
 	Invocations            int64
 	CASCacheHits           int64
@@ -640,11 +801,14 @@ type UsageCounts struct {
 	// NOTE: New fields added here should be annotated with
 	// `gorm:"not null;default:0"`
 
-	LinuxExecutionDurationUsec int64 `gorm:"not null;default:0"`
-	MacExecutionDurationUsec   int64 `gorm:"not null;default:0"`
-	TotalUploadSizeBytes       int64 `gorm:"not null;default:0"`
-	TotalCachedActionExecUsec  int64 `gorm:"not null;default:0"`
-	CPUNanos                   int64 `gorm:"not null;default:0"`
+	LinuxExecutionDurationUsec           int64 `gorm:"not null;default:0"`
+	MacExecutionDurationUsec             int64 `gorm:"not null;default:0"`
+	SelfHostedLinuxExecutionDurationUsec int64 `gorm:"not null;default:0"`
+	SelfHostedMacExecutionDurationUsec   int64 `gorm:"not null;default:0"`
+	TotalUploadSizeBytes                 int64 `gorm:"not null;default:0"`
+	TotalCachedActionExecUsec            int64 `gorm:"not null;default:0"`
+	CPUNanos                             int64 `gorm:"not null;default:0"`
+	MemoryGBUsec                         int64 `gorm:"not null;default:0"`
 }
 
 type UsageLabels struct {
@@ -654,6 +818,10 @@ type UsageLabels struct {
 	// Client describes the type of client responsible for the usage, such as
 	// "bazel" or "executor".
 	Client string `gorm:"not null;default:''"`
+
+	// Server describes the type of server that ultimately handled generating
+	// the response, for example "cache-proxy" or "app".
+	Server string `gorm:"not null;default:''"`
 }
 
 // Usage holds usage counter values for a group during a particular time period.
@@ -677,6 +845,28 @@ type Usage struct {
 	// the FinalBeforeUsec logic to work independently in each region.
 	Region string `gorm:"not null;index:group_period_region_index_v2,priority:3"`
 
+	// FinalBeforeUsec is the time before which all collection period data in
+	// this usage period is finalized. This is used to guarantee that collection
+	// period data is added to this row in strictly increasing order of
+	// collection period start time.
+	//
+	// Consider the following diagram:
+	//
+	// [xxxxxxxxxxxxxxxxxxx)------------------)
+	// ^ PeriodStart       ^ FinalBefore      ^ PeriodEnd = PeriodStart + 1hr
+	//
+	// Usage data collected during the x-marked region cannot be added to this
+	// usage row any longer, since the usage period is "finalized" in this
+	// region.
+	//
+	// When writing the next collection period's data, the FinalBefore timestamp
+	// is updated as follows:
+	//
+	// [xxxxxxxxxxxxxxxxxxx[xxxxxx)-----------)
+	//                     ^ FinalBefore (before update) = CollectionPeriodStart
+	//                            ^ FinalBefore (after update) = CollectionPeriodEnd
+	FinalBeforeUsec int64 `gorm:"default:0"`
+
 	UsageCounts
 
 	UsageLabels
@@ -686,6 +876,42 @@ func (*Usage) TableName() string {
 	return "Usages"
 }
 
+// UsageAlertingRule stores usage alert configuration and evaluator status for a group.
+type UsageAlertingRule struct {
+	Model
+
+	// UsageAlertingRuleID is the primary key for the usage alerting rule.
+	UsageAlertingRuleID string `gorm:"primaryKey"`
+
+	// GroupID is the group that owns this alerting rule.
+	GroupID string `gorm:"not null;index:usage_alerting_rule_group_id_idx;uniqueIndex:usage_alerting_rule_group_config_idx,priority:1"`
+
+	// UserID is the user that created this alerting rule.
+	UserID string `gorm:"not null;default:''"`
+
+	// UsageAlertingMetric is the user-facing usage metric to alert on.
+	UsageAlertingMetric usagepb.UsageAlertingMetric_Value `gorm:"not null;default:0;uniqueIndex:usage_alerting_rule_group_config_idx,priority:2"`
+
+	// AbsoluteThreshold is the usage value above which this alert fires.
+	AbsoluteThreshold int64 `gorm:"not null;default:0;uniqueIndex:usage_alerting_rule_group_config_idx,priority:3"`
+
+	// Window is the usage alerting window enum value.
+	Window usagepb.UsageAlertingWindow_Value `gorm:"not null;default:0;uniqueIndex:usage_alerting_rule_group_config_idx,priority:4"`
+
+	// LastEvaluationUsec is the last time this rule was evaluated.
+	LastEvaluationUsec int64 `gorm:"not null;default:0"`
+
+	// LastFiredUsec is the last time this rule fired.
+	LastFiredUsec int64 `gorm:"not null;default:0"`
+}
+
+func (*UsageAlertingRule) TableName() string {
+	return "UsageAlertingRules"
+}
+
+// DEPRECATED: QuotaBucket is no longer used by the quota manager, which now loads
+// quota configuration exclusively from flagd. This table can be safely removed once
+// any existing quota data has been migrated to flagd configuration.
 type QuotaBucket struct {
 	Model
 	// The namespace indicates a single resource to be protected from abusive
@@ -708,6 +934,9 @@ func (*QuotaBucket) TableName() string {
 	return "QuotaBuckets"
 }
 
+// DEPRECATED: QuotaGroup is no longer used by the quota manager, which now loads
+// quota configuration exclusively from flagd. This table can be safely removed once
+// any existing quota data has been migrated to flagd configuration.
 // QuotaGroup defines the relationship between a QuotaBucket to a QuotaKey. For,
 // example, user:X is in bucket:restricted.
 type QuotaGroup struct {
@@ -1069,12 +1298,16 @@ func PostAutoMigrate(db *gorm.DB) error {
 		"invocations_stats_branch_index":      `("group_id", "branch_name", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
 		"invocations_stats_commit_index":      `("group_id", "commit_sha", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
 		"invocations_stats_role_index":        `("group_id", "role", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
+		"invocations_search_repo_role_index":  `("group_id", "repo_url", "role", "updated_at_usec")`,
 	}
 	prefixIndicesByDialect := map[string]map[string]string{
 		mysqlDialect: {
 			"invocations_test_grid_query_command_index": `("group_id" (25), "role" (10), "repo_url", "command" (10), "created_at_usec" DESC)`,
 		},
 		sqliteDialect: {
+			"invocations_test_grid_query_command_index": `("group_id", "role", "repo_url", "command" , "created_at_usec" DESC)`,
+		},
+		postgresDialect: {
 			"invocations_test_grid_query_command_index": `("group_id", "role", "repo_url", "command" , "created_at_usec" DESC)`,
 		},
 	}
@@ -1101,9 +1334,11 @@ func PostAutoMigrate(db *gorm.DB) error {
 				if m.HasIndex(tableName, indexName) {
 					continue
 				}
-				query := fmt.Sprintf(`CREATE INDEX "%s" ON "%s" %s`, indexName, tableName, cols)
+				var query string
 				if db.Dialector.Name() == mysqlDialect {
-					query = query + ", ALGORITHM=INPLACE, LOCK=NONE"
+					query = fmt.Sprintf(`ALTER TABLE "%s" ADD INDEX "%s" %s, ALGORITHM=INPLACE, LOCK=NONE`, tableName, indexName, cols)
+				} else {
+					query = fmt.Sprintf(`CREATE INDEX "%s" ON "%s" %s`, indexName, tableName, cols)
 				}
 				err := db.Exec(query).Error
 				if err != nil {
@@ -1264,6 +1499,7 @@ func RegisterTables() {
 	registerTable("RE", &GitRepository{})
 	registerTable("SE", &Session{})
 	registerTable("SK", &Secret{})
+	registerTable("SR", &ScheduledRun{})
 	registerTable("TA", &Target{})
 	registerTable("TL", &TelemetryLog{})
 	registerTable("TO", &Token{})
@@ -1271,5 +1507,9 @@ func RegisterTables() {
 	registerTable("UA", &Usage{})
 	registerTable("UG", &UserGroup{})
 	registerTable("US", &User{})
+	registerTable("UL", &UserList{})
+	registerTable("UU", &UserUserList{})
+	registerTable("UM", &UserListGroup{})
+	registerTable("UR", &UsageAlertingRule{})
 	registerTable("WF", &Workflow{})
 }

@@ -7,16 +7,17 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang-jwt/jwt"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc/metadata"
 )
 
 const (
-	IdentityHeaderName = "x-buildbuddy-client-identity"
-	DefaultExpiration  = 5 * time.Minute
+	DefaultExpiration = 5 * time.Minute
 
 	cachedHeaderExpiration      = 1 * time.Minute
 	validatedIdentityContextKey = "validatedClientIdentity"
@@ -26,6 +27,8 @@ var (
 	signingKey = flag.String("app.client_identity.key", "", "The key used to sign and verify identity JWTs.", flag.Secret)
 	client     = flag.String("app.client_identity.client", "", "The client identifier to place in the identity header.")
 	origin     = flag.String("app.client_identity.origin", "", "The origin identifier to place in the identity header.")
+	expiration = flag.Duration("app.client_identity.expiration", DefaultExpiration, "The expiration time for the identity header.")
+	required   = flag.Bool("app.client_identity.required", false, "If set, a client identity is required.")
 )
 
 type Service struct {
@@ -33,12 +36,15 @@ type Service struct {
 
 	clock clockwork.Clock
 
-	mu               sync.Mutex
+	mu               sync.RWMutex
 	cachedHeader     string
 	cachedHeaderTime time.Time
 }
 
 func New(clock clockwork.Clock) (*Service, error) {
+	if *signingKey == "" {
+		return nil, status.InvalidArgumentError("ClientIdentityService requires a signing key")
+	}
 	return &Service{
 		signingKey: []byte(*signingKey),
 		clock:      clock,
@@ -62,6 +68,18 @@ type claims struct {
 	interfaces.ClientIdentity
 }
 
+// Clears the client-identity from the outgoing gRPC context.
+func ClearIdentity(ctx context.Context) context.Context {
+	ctx = context.WithValue(ctx, validatedIdentityContextKey, nil)
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if ok {
+		md = md.Copy()
+		delete(md, authutil.ClientIdentityHeaderName)
+		ctx = metadata.NewOutgoingContext(ctx, md)
+	}
+	return ctx
+}
+
 func (s *Service) IdentityHeader(si *interfaces.ClientIdentity, expiration time.Duration) (string, error) {
 	expirationTime := s.clock.Now().Add(expiration)
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, &claims{
@@ -71,28 +89,56 @@ func (s *Service) IdentityHeader(si *interfaces.ClientIdentity, expiration time.
 	return t.SignedString(s.signingKey)
 }
 
-func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, error) {
+func (s *Service) getCachedHeader() (string, error) {
+	s.mu.RLock()
+	headerTime := s.cachedHeaderTime
+	header := s.cachedHeader
+	s.mu.RUnlock()
+	if s.clock.Since(headerTime) < cachedHeaderExpiration {
+		return header, nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Check again in case it was updated while we were waiting for the lock.
 	if s.clock.Since(s.cachedHeaderTime) < cachedHeaderExpiration {
-		return metadata.AppendToOutgoingContext(ctx, IdentityHeaderName, s.cachedHeader), nil
+		return s.cachedHeader, nil
 	}
 	header, err := s.IdentityHeader(&interfaces.ClientIdentity{
 		Origin: *origin,
 		Client: *client,
-	}, DefaultExpiration)
+	}, *expiration)
 	if err != nil {
-		return ctx, err
+		return "", err
 	}
 	s.cachedHeader = header
 	s.cachedHeaderTime = s.clock.Now()
-	return metadata.AppendToOutgoingContext(ctx, IdentityHeaderName, header), nil
+	return header, nil
+}
+
+func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, error) {
+	if md, ok := metadata.FromOutgoingContext(ctx); ok {
+		if vals := md.Get(authutil.ClientIdentityHeaderName); len(vals) > 0 {
+			return ctx, nil
+		}
+	}
+	header, err := s.getCachedHeader()
+	if err != nil {
+		return ctx, err
+	}
+	return metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, header), nil
 }
 
 func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context, error) {
-	vals := metadata.ValueFromIncomingContext(ctx, IdentityHeaderName)
+	// Don't save the trace context so that this isn't a parent of the calls
+	// that use the returned context.
+	_, span := tracing.StartSpan(ctx)
+	defer span.End()
+	vals := metadata.ValueFromIncomingContext(ctx, authutil.ClientIdentityHeaderName)
 	if len(vals) == 0 {
-		return ctx, nil
+		if !*required {
+			return ctx, nil
+		}
+		return nil, status.NotFoundError("identity not presented")
 	}
 	if len(vals) > 1 {
 		// When --experimental_remote_downloader is enabled in Bazel, it seems

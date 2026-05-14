@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
@@ -15,6 +16,10 @@ const (
 	// DefaultUser is the default user set in a repo URL when the username is not
 	// known.
 	DefaultUser = "buildbuddy"
+)
+
+var (
+	githubHost = flag.String("github.host", "github.com", "github host. Currently only github.com is supported.", flag.Internal)
 )
 
 var (
@@ -69,11 +74,15 @@ func OwnerRepoFromRepoURL(repoURL string) (string, error) {
 }
 
 type RepoURL struct {
-	Host, Owner, Repo string
+	Host, Owner, Repo, Scheme string
 }
 
 // String returns the normalized repo URL.
 func (r *RepoURL) String() string {
+	if r.Scheme == "file" {
+		return r.Repo
+	}
+
 	return fmt.Sprintf("https://%s/%s/%s", r.Host, r.Owner, r.Repo)
 }
 
@@ -82,14 +91,18 @@ func ParseGitHubRepoURL(repoURL string) (*RepoURL, error) {
 	if err != nil {
 		return nil, status.WrapError(err, "failed to parse GitHub repo URL")
 	}
-	if u.Host != "github.com" {
+	// Remote github repos based on files are used for tests. Don't try to parse them.
+	if u.Scheme == "file" {
+		return &RepoURL{Repo: repoURL, Scheme: u.Scheme}, nil
+	}
+	if u.Host != *githubHost {
 		return nil, status.InvalidArgumentError("unexpected non-GitHub URL")
 	}
 	pathParts := strings.Split(strings.TrimPrefix(u.Path, "/"), "/")
 	if len(pathParts) < 2 {
 		return nil, status.InvalidArgumentErrorf("invalid repo URL")
 	}
-	return &RepoURL{Host: u.Host, Owner: pathParts[0], Repo: pathParts[1]}, nil
+	return &RepoURL{Host: u.Host, Owner: pathParts[0], Repo: pathParts[1], Scheme: u.Scheme}, nil
 }
 
 func ParseRepoURL(repo string) (*url.URL, error) {

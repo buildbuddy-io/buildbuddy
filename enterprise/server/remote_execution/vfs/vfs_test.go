@@ -1,0 +1,1051 @@
+//go:build linux && !android && (amd64 || arm64)
+
+package vfs_test
+
+import (
+	"context"
+	"crypto/rand"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
+)
+
+func setupEnv(t *testing.T) environment.Env {
+	tmp := testfs.MakeTempDir(t)
+	env := testenv.GetTestEnv(t)
+	fileCachePath := filepath.Join(tmp, "filecache")
+	fc, err := filecache.NewFileCache(fileCachePath, 1_000_000, false /*=deleteContent*/)
+	require.NoError(t, err)
+	env.SetFileCache(fc)
+
+	bsServer, err := byte_stream_server.NewByteStreamServer(env)
+	require.NoError(t, err)
+
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	bspb.RegisterByteStreamServer(grpcServer, bsServer)
+
+	go runFunc()
+
+	clientConn, err := testenv.LocalGRPCConn(context.Background(), lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { clientConn.Close() })
+
+	env.SetByteStreamClient(bspb.NewByteStreamClient(clientConn))
+
+	return env
+}
+
+func setupVFSWithInputTree(t *testing.T, env environment.Env, tree *repb.Tree) (*vfs_server.Server, *vfs.VFS, string) {
+	tmp := testfs.MakeTempDir(t)
+	mnt := filepath.Join(tmp, "vfs")
+	err := os.MkdirAll(mnt, 0755)
+	require.NoError(t, err)
+	back := filepath.Join(tmp, "back")
+	err = os.MkdirAll(back, 0755)
+	require.NoError(t, err)
+
+	tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{})
+	require.NoError(t, err)
+	_, err = tf.Start()
+	require.NoError(t, err)
+
+	server, err := vfs_server.New(env, back)
+	require.NoError(t, err)
+	_, err = server.Prepare(context.Background(), &container.FileSystemLayout{Inputs: tree}, tf)
+	require.NoError(t, err)
+
+	client := vfs_server.NewDirectClient(server)
+	fs := vfs.New(client, mnt, &vfs.Options{
+		Verbose: true,
+		//LogFUSEOps: true,
+	})
+	err = fs.Mount()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = fs.Unmount()
+		if err != nil {
+			log.Warningf("unmount failed: %s", err)
+		}
+	})
+	return server, fs, mnt
+}
+
+func setupVFS(t *testing.T) string {
+	env := setupEnv(t)
+	_, _, path := setupVFSWithInputTree(t, env, &repb.Tree{Root: &repb.Directory{}})
+	return path
+}
+
+type dirEntry struct {
+	name string
+	size int
+	mode os.FileMode
+}
+
+func checkDirectoryContents(t *testing.T, path string, expected []dirEntry) {
+	dirEntries, err := os.ReadDir(path)
+	require.NoError(t, err)
+
+	var parsedEntries []dirEntry
+	for _, e := range dirEntries {
+		info, err := e.Info()
+		require.NoError(t, err)
+		entry := dirEntry{
+			name: info.Name(),
+			mode: info.Mode() & fs.ModeType,
+		}
+		if !info.IsDir() {
+			entry.size = int(info.Size())
+		}
+		parsedEntries = append(parsedEntries, entry)
+	}
+
+	require.Equal(t, expected, parsedEntries)
+}
+
+func TestReaddir(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	// Write some test files at top level and subdirectory.
+	testData1 := "hello world"
+	testFile1 := "hello.txt"
+	testFile1Path := filepath.Join(fsPath, testFile1)
+	err := os.WriteFile(testFile1Path, []byte(testData1), 0600)
+	require.NoError(t, err)
+
+	testData2 := "hello world 2"
+	testFile2 := "hello2.txt"
+	testFile2Path := filepath.Join(fsPath, testFile2)
+	err = os.WriteFile(testFile2Path, []byte(testData2), 0700)
+	require.NoError(t, err)
+
+	subDir := "dir1"
+	subDirPath := filepath.Join(fsPath, subDir)
+	err = os.MkdirAll(subDirPath, 0700)
+	require.NoError(t, err)
+
+	subDirFileData := "hello hello"
+	subDirFile := "world.txt"
+	subDirFilePath := filepath.Join(subDirPath, subDirFile)
+	err = os.WriteFile(subDirFilePath, []byte(subDirFileData), 0666)
+	require.NoError(t, err)
+
+	checkDirectoryContents(t, fsPath, []dirEntry{
+		{
+			name: subDir,
+			mode: fs.ModeDir,
+		},
+		{
+			name: testFile1,
+			size: len(testData1),
+		},
+		{
+			name: testFile2,
+			size: len(testData2),
+		},
+	})
+	checkDirectoryContents(t, subDirPath, []dirEntry{
+		{
+			name: subDirFile,
+			size: len(subDirFileData),
+		},
+	})
+
+	// Now write a new file and make sure it's reflected in the directory contents.
+	newTestData := "new data"
+	newTestFile := "new.txt"
+	newTestFilePath := filepath.Join(fsPath, newTestFile)
+	err = os.WriteFile(newTestFilePath, []byte(newTestData), 0600)
+	require.NoError(t, err)
+	checkDirectoryContents(t, fsPath, []dirEntry{
+		{
+			name: subDir,
+			mode: fs.ModeDir,
+		},
+		{
+			name: testFile1,
+			size: len(testData1),
+		},
+		{
+			name: testFile2,
+			size: len(testData2),
+		},
+		{
+			name: newTestFile,
+			size: len(newTestData),
+		},
+	})
+
+	// Now delete one of the files.
+	err = os.Remove(testFile2Path)
+	require.NoError(t, err)
+	checkDirectoryContents(t, fsPath, []dirEntry{
+		{
+			name: subDir,
+			mode: fs.ModeDir,
+		},
+		{
+			name: testFile1,
+			size: len(testData1),
+		},
+		{
+			name: newTestFile,
+			size: len(newTestData),
+		},
+	})
+
+	// Now overwrite the contents of a file.
+	newData := "goodbye old data"
+	err = os.WriteFile(testFile1Path, []byte(newData), 0700)
+	require.NoError(t, err)
+	checkDirectoryContents(t, fsPath, []dirEntry{
+		{
+			name: subDir,
+			mode: fs.ModeDir,
+		},
+		{
+			name: testFile1,
+			size: len(newData),
+		},
+		{
+			name: newTestFile,
+			size: len(newTestData),
+		},
+	})
+}
+
+func stat(t *testing.T, path string) os.FileInfo {
+	fi, err := os.Stat(path)
+	require.NoError(t, err)
+	return fi
+}
+
+func TestFileOps(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := "hello.txt"
+	testFilePath := filepath.Join(fsPath, testFile)
+
+	f, err := os.Create(testFilePath)
+	require.NoError(t, err)
+	defer f.Close()
+	require.EqualValues(t, 0, stat(t, testFilePath).Size())
+
+	testContents := "hello"
+	_, err = f.Write([]byte(testContents))
+	require.NoError(t, err)
+	require.EqualValues(t, len(testContents), stat(t, testFilePath).Size())
+
+	err = syscall.Fallocate(int(f.Fd()), 0, 0, 1000)
+	require.NoError(t, err)
+	require.EqualValues(t, 1000, stat(t, testFilePath).Size())
+
+	err = syscall.Fallocate(int(f.Fd()), 0, 500, 1000)
+	require.NoError(t, err)
+	require.EqualValues(t, 1500, stat(t, testFilePath).Size())
+
+	err = syscall.Fallocate(int(f.Fd()), 0, 0, 10)
+	require.NoError(t, err)
+	require.EqualValues(t, 1500, stat(t, testFilePath).Size())
+
+	err = f.Close()
+	require.NoError(t, err)
+
+	f, err = os.Open(testFilePath)
+	require.NoError(t, err)
+	buf := make([]byte, 2000)
+	n, err := f.Read(buf)
+	require.NoError(t, err)
+	require.Equal(t, 1500, n)
+	expectedData := make([]byte, n)
+	copy(expectedData, testContents)
+	require.Equal(t, expectedData, buf[:n])
+
+	err = f.Close()
+	require.NoError(t, err)
+
+	err = os.Remove(testFilePath)
+	require.NoError(t, err)
+	_, err = os.Stat(testFilePath)
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+}
+
+func TestNestedDirs(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testContents := "hello"
+	subDir := filepath.Join(fsPath, "subdir1")
+	nestedFile := filepath.Join(subDir, "nested.txt")
+	nestedSubDir := filepath.Join(subDir, "subdir2")
+	deeplyNestedSubdir := filepath.Join(nestedSubDir, "subdir3")
+	deeplyNestedFile := filepath.Join(deeplyNestedSubdir, "deeplynested.txt")
+	err := os.MkdirAll(deeplyNestedSubdir, 0644)
+	require.NoError(t, err)
+	err = os.WriteFile(deeplyNestedFile, []byte(testContents), 0755)
+	require.NoError(t, err)
+	err = os.WriteFile(nestedFile, []byte(testContents), 0755)
+	require.NoError(t, err)
+
+	// Read back the file.
+	bs, err := os.ReadFile(deeplyNestedFile)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(bs))
+
+	// Delete the files and verify we can delete the empty nested directories.
+	err = os.Remove(deeplyNestedFile)
+	require.NoError(t, err)
+	err = os.Remove(nestedFile)
+	require.NoError(t, err)
+
+	err = os.Remove(deeplyNestedSubdir)
+	require.NoError(t, err)
+	err = os.Remove(nestedSubDir)
+	require.NoError(t, err)
+	err = os.Remove(subDir)
+	require.NoError(t, err)
+}
+
+func TestSymlinks(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := "hello.txt"
+	testContents := "hello"
+	testFilePath := filepath.Join(fsPath, testFile)
+
+	err := os.WriteFile(testFilePath, []byte(testContents), 0644)
+	require.NoError(t, err)
+
+	symlinkName := "sym"
+	symlinkPath := filepath.Join(fsPath, symlinkName)
+	err = os.Symlink(testFilePath, symlinkPath)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(testFilePath)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(data))
+
+	rl, err := os.Readlink(symlinkPath)
+	require.NoError(t, err)
+	require.Equal(t, testFilePath, rl)
+
+	_, err = os.Lstat(symlinkPath)
+	require.NoError(t, err)
+
+	subDir := "subdir"
+	subDirPath := filepath.Join(fsPath, subDir)
+	err = os.Mkdir(subDirPath, 0755)
+	require.NoError(t, err)
+
+	subDirSymlinkName := "sym2"
+	subDirSymlinkPath := filepath.Join(fsPath, subDirSymlinkName)
+	err = os.Symlink(subDirPath, subDirSymlinkPath)
+	require.NoError(t, err)
+
+	subDirFile := "subfile.txt"
+	subDirFilePath := filepath.Join(subDirSymlinkPath, subDirFile)
+	err = os.WriteFile(subDirFilePath, []byte(subDirFile), 0644)
+	require.NoError(t, err)
+
+	des, err := os.ReadDir(subDirSymlinkPath)
+	require.NoError(t, err)
+	require.Len(t, des, 1)
+	require.Equal(t, subDirFile, des[0].Name())
+
+	rl, err = os.Readlink(subDirSymlinkPath)
+	require.NoError(t, err)
+	require.Equal(t, subDirPath, rl)
+
+	_, err = os.Lstat(subDirSymlinkPath)
+	require.NoError(t, err)
+}
+
+type rawStats struct {
+	Ino       uint64
+	Mode      uint32
+	Rdev      uint64
+	Nlink     uint64
+	Atime     time.Time
+	Mtime     time.Time
+	Blocks    int64
+	BlockSize int64
+	Size      int64
+}
+
+func toRawStats(fi fs.FileInfo) *rawStats {
+	rs := fi.Sys().(*syscall.Stat_t)
+	return &rawStats{
+		Ino:       rs.Ino,
+		Mode:      rs.Mode,
+		Rdev:      rs.Rdev,
+		Nlink:     uint64(rs.Nlink),
+		Mtime:     time.Unix(rs.Mtim.Sec, rs.Mtim.Nsec),
+		Atime:     time.Unix(rs.Atim.Sec, rs.Atim.Nsec),
+		Blocks:    rs.Blocks,
+		BlockSize: int64(rs.Blksize),
+		Size:      rs.Size,
+	}
+}
+
+func rawStat(t *testing.T, path string) *rawStats {
+	fi, err := os.Stat(path)
+	require.NoError(t, err)
+	return toRawStats(fi)
+}
+
+func TestHardlinks(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := "hello.txt"
+	testContents := "hello"
+	testFilePath := filepath.Join(fsPath, testFile)
+
+	err := os.WriteFile(testFilePath, []byte(testContents), 0644)
+	require.NoError(t, err)
+
+	// Newly created file should have a single link.
+	fi := rawStat(t, testFilePath)
+	require.EqualValues(t, 1, fi.Nlink)
+
+	hardlinkName := "bye"
+	hardlinkPath := filepath.Join(fsPath, hardlinkName)
+	err = os.Link(testFilePath, hardlinkPath)
+	require.NoError(t, err)
+
+	// The original and new files should both have a link count of 2 and the
+	// same inode number.
+	origFI := rawStat(t, testFilePath)
+	require.EqualValues(t, 2, origFI.Nlink)
+	newFI := rawStat(t, hardlinkPath)
+	require.EqualValues(t, 2, newFI.Nlink)
+	require.Equal(t, origFI.Ino, newFI.Ino)
+
+	// Reading from the hardlink should return the same contents as the
+	// original file.
+	bs, err := os.ReadFile(hardlinkPath)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(bs))
+
+	// Changes to one file should be reflected across all links.
+	testContents = "bonjour"
+	err = os.WriteFile(hardlinkPath, []byte(testContents), 0644)
+	require.NoError(t, err)
+	bs, err = os.ReadFile(hardlinkPath)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(bs))
+	bs, err = os.ReadFile(testFilePath)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(bs))
+
+	// Removing one of the links.
+	err = os.Remove(hardlinkPath)
+	require.NoError(t, err)
+
+	// Link count should go back to 1 on the original file after the hardlink
+	// is removed.
+	origFI = rawStat(t, testFilePath)
+	require.EqualValues(t, 1, origFI.Nlink)
+
+	// Should still be able to read the original file when hardlink is removed.
+	bs, err = os.ReadFile(testFilePath)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(bs))
+
+	// Create the hardlink again, and this time delete the original file.
+	err = os.Link(testFilePath, hardlinkPath)
+	require.NoError(t, err)
+	err = os.Remove(testFilePath)
+	require.NoError(t, err)
+
+	// Verify that we're still able to read the file through the hardlinked
+	// file.
+	bs, err = os.ReadFile(hardlinkPath)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(bs))
+
+	// Replace the original file at the same path with different contents.
+	// Any existing hardlinks should still reference the original data.
+	replacedContents := "bananas"
+	err = os.WriteFile(testFilePath, []byte(replacedContents), 0644)
+	require.NoError(t, err)
+	bs, err = os.ReadFile(hardlinkPath)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(bs))
+}
+
+func TestSparseFile(t *testing.T) {
+	fsPath := setupVFS(t)
+	sparseFile := filepath.Join(fsPath, "sparse")
+
+	f, err := os.Create(sparseFile)
+	require.NoError(t, err)
+	err = f.Close()
+	require.NoError(t, err)
+
+	// Extend the file length, should be all holes at this point.
+	err = syscall.Truncate(sparseFile, 65535)
+	require.NoError(t, err)
+
+	f, err = os.OpenFile(sparseFile, os.O_RDWR, 0644)
+	require.NoError(t, err)
+	defer f.Close()
+
+	// No data yet, so we should get back an ENXIO error.
+	_, err = f.Seek(0, unix.SEEK_DATA)
+	require.ErrorIs(t, err, syscall.ENXIO)
+
+	// Verify file is not using any data on disk.
+	rs := rawStat(t, sparseFile)
+	require.EqualValues(t, 0, rs.Blocks)
+
+	// Write some data at an offset and verify that we can find it using seek.
+	dataOff := rs.BlockSize
+	_, err = f.WriteAt([]byte("z"), dataOff)
+	require.NoError(t, err)
+	off, err := f.Seek(0, unix.SEEK_DATA)
+	require.NoError(t, err)
+	require.EqualValues(t, dataOff, off)
+
+	// Verify that only one block is reported as being used.
+	// N.B. Stat always reports in 512 byte blocks so we need to convert to
+	// BlockSize blocks.
+	rs = rawStat(t, sparseFile)
+	require.EqualValues(t, 1, (rs.Blocks*512)/rs.BlockSize)
+}
+
+func TestTimestamps(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := "hello.txt"
+	testContents := "hello"
+	testFilePath := filepath.Join(fsPath, testFile)
+
+	// Create a new file and verify the timestamps are current.
+	err := os.WriteFile(testFilePath, []byte(testContents), 0644)
+	require.NoError(t, err)
+	rs := rawStat(t, testFilePath)
+	require.NoError(t, err)
+	require.Less(t, time.Since(rs.Mtime).Seconds(), float64(5))
+	require.InDelta(t, rs.Mtime.UnixMilli(), rs.Atime.UnixMilli(), 10)
+
+	// Manually reset the mtime and check that it has been updated.
+	nextYear := time.Now().Add(365 * 24 * time.Hour)
+	err = os.Chtimes(testFilePath, time.Time{}, nextYear)
+	require.NoError(t, err)
+
+	rs = rawStat(t, testFilePath)
+	require.NoError(t, err)
+	require.True(t, rs.Mtime.Equal(nextYear), "mtime is %q", rs.Mtime)
+	// atime should not have been affected.
+	require.Less(t, time.Since(rs.Atime).Seconds(), float64(5))
+
+	es, err := os.ReadDir(fsPath)
+	require.NoError(t, err)
+	require.Len(t, es, 1)
+	fi, err := es[0].Info()
+	require.NoError(t, err)
+	rs = toRawStats(fi)
+	require.True(t, rs.Mtime.Equal(nextYear), "file mod time is %s", fi.ModTime())
+	require.Less(t, time.Since(rs.Atime).Seconds(), float64(5))
+
+	// Read the file and verify mtime does not change.
+	_, err = os.ReadFile(testFilePath)
+	require.NoError(t, err)
+	rs = rawStat(t, testFilePath)
+	require.True(t, rs.Mtime.Equal(nextYear), "file mod time is %s", fi.ModTime())
+
+	// Write to the file and check that mtime has been reset.
+	oldAtime := rs.Atime
+	err = os.WriteFile(testFilePath, []byte(testContents), 0644)
+	require.NoError(t, err)
+	rs = rawStat(t, testFilePath)
+	require.NoError(t, err)
+	require.Less(t, time.Since(rs.Mtime).Seconds(), float64(5))
+	require.Equal(t, oldAtime, rs.Atime)
+
+	// Manually reset the atime and check that it has been updated.
+	err = os.Chtimes(testFilePath, nextYear, time.Time{})
+	require.NoError(t, err)
+	rs = rawStat(t, testFilePath)
+	require.NoError(t, err)
+	require.True(t, rs.Atime.Equal(nextYear))
+	// mtime should not have been affected.
+	require.Less(t, time.Since(rs.Mtime).Seconds(), float64(5))
+
+	// Read the file and verify that only atime has changed.
+	time.Sleep(10 * time.Millisecond)
+	oldMTime := rs.Mtime
+	_, err = os.ReadFile(testFilePath)
+	require.NoError(t, err)
+	rs = rawStat(t, testFilePath)
+	require.Equal(t, oldMTime, rs.Mtime)
+	require.Greater(t, rs.Atime, rs.Mtime)
+}
+
+func TestSetAttr(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := "hello.txt"
+	testFilePath := filepath.Join(fsPath, testFile)
+	err := os.WriteFile(testFilePath, []byte("a"), 0644)
+	require.NoError(t, err)
+
+	// Create a hard link to test link count.
+	err = os.Link(testFilePath, testFilePath+".clone")
+	require.NoError(t, err)
+
+	err = os.Chmod(testFilePath, 0755)
+	require.NoError(t, err)
+
+	err = syscall.Truncate(testFilePath, 1000)
+	require.NoError(t, err)
+
+	// Try linking again to verify nlink was correctly  returned in the
+	// SetAttr call. Stat below calls GetAttr which does not exercise the attrs
+	// returned by SetAttr.
+	// This is a regression test for a previous issue where we were not setting
+	// nlink in the attrs returned by SetAttr.
+	err = os.Link(testFilePath, testFilePath+".clone2")
+	require.NoError(t, err)
+
+	rs := rawStat(t, testFilePath)
+	require.EqualValues(t, 3, rs.Nlink)
+	require.EqualValues(t, rs.BlockSize/512, rs.Blocks)
+	require.EqualValues(t, 1000, rs.Size)
+}
+
+func TestMkdir(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testDir := "dir"
+	testDirPath := filepath.Join(fsPath, testDir)
+	err := os.Mkdir(testDirPath, 0700)
+	require.NoError(t, err)
+
+	rs := rawStat(t, testDirPath)
+	require.Greater(t, rs.Size, int64(0))
+}
+
+func nullTerminated(bs []byte) []byte {
+	return append(bs, 0)
+}
+
+func TestExtendedAttrs(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := "hello.txt"
+	testFilePath := filepath.Join(fsPath, testFile)
+	err := os.WriteFile(testFilePath, []byte("a"), 0644)
+	require.NoError(t, err)
+
+	// Simple set/get check.
+	key1 := "key1"
+	data1 := []byte("val1")
+	err = unix.Setxattr(testFilePath, key1, data1, 0)
+	require.NoError(t, err)
+	sz, err := unix.Getxattr(testFilePath, key1, nil)
+	require.NoError(t, err)
+	require.EqualValues(t, len(data1)+1, sz)
+	buf := make([]byte, 1024)
+	sz, err = unix.Getxattr(testFilePath, key1, buf)
+	require.NoError(t, err)
+	require.Equal(t, len(data1)+1, sz)
+	require.Equal(t, nullTerminated(data1), buf[:sz])
+
+	// Replace an existing attribute.
+	newData := []byte("newVal")
+	err = unix.Setxattr(testFilePath, key1, newData, 0)
+	require.NoError(t, err)
+	sz, err = unix.Getxattr(testFilePath, key1, nil)
+	require.NoError(t, err)
+	require.EqualValues(t, len(newData)+1, sz)
+	buf = make([]byte, 1024)
+	sz, err = unix.Getxattr(testFilePath, key1, buf)
+	require.NoError(t, err)
+	require.Equal(t, len(newData)+1, sz)
+	require.Equal(t, nullTerminated(newData), buf[:sz])
+
+	// XATTR_CREATE on an existing attribute should fail.
+	err = unix.Setxattr(testFilePath, key1, newData, unix.XATTR_CREATE)
+	require.ErrorIs(t, err, syscall.EEXIST)
+
+	// XATTR_REPLACE on a non-existent attribute should fail.
+	err = unix.Setxattr(testFilePath, "no-such-key", newData, unix.XATTR_REPLACE)
+	require.ErrorIs(t, err, syscall.ENODATA)
+
+	// Remove the attribute.
+	err = unix.Removexattr(testFilePath, key1)
+	require.NoError(t, err)
+
+	// Removing non-existent attribute should fail.
+	err = unix.Removexattr(testFilePath, key1)
+	require.ErrorIs(t, err, syscall.ENODATA)
+
+	// Test buffer sizes for "get".
+	{
+		err = unix.Setxattr(testFilePath, key1, data1, 0)
+		require.NoError(t, err)
+
+		// Not enough space for terminating null.
+		buf = make([]byte, len(data1))
+		_, err = unix.Getxattr(testFilePath, key1, buf)
+		require.ErrorIs(t, err, syscall.ERANGE)
+
+		// Exactly the right amount of space.
+		buf = make([]byte, len(data1)+1)
+		_, err = unix.Getxattr(testFilePath, key1, buf)
+		require.NoError(t, err)
+	}
+
+	// Set multiple attributes.
+	err = unix.Setxattr(testFilePath, key1, data1, 0)
+	require.NoError(t, err)
+	key2 := "key2"
+	data2 := []byte("some-other-val")
+	err = unix.Setxattr(testFilePath, key2, data2, 0)
+	require.NoError(t, err)
+	sz, err = unix.Listxattr(testFilePath, nil)
+	require.NoError(t, err)
+	require.Equal(t, len(key1)+len(key2)+2, sz)
+	buf = make([]byte, 1024)
+	sz, err = unix.Listxattr(testFilePath, buf)
+	require.NoError(t, err)
+	require.Equal(t, len(key1)+len(key2)+2, sz)
+	require.Equal(t, nullTerminated([]byte(key1)), buf[:len(key1)+1])
+	require.Equal(t, nullTerminated([]byte(key2)), buf[len(key1)+1:sz])
+}
+
+func TestStatfs(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	stats := &unix.Statfs_t{}
+	err := unix.Statfs(fsPath, stats)
+	require.NoError(t, err)
+	require.Greater(t, stats.Bsize, int64(0))
+	require.Greater(t, stats.Blocks, uint64(0))
+	require.Greater(t, stats.Bfree, uint64(0))
+	require.Greater(t, stats.Bavail, uint64(0))
+	require.Equal(t, stats.Bfree, stats.Blocks)
+	require.Equal(t, stats.Bavail, stats.Blocks)
+	log.Infof("stats %+v", stats)
+
+	data := make([]byte, stats.Bsize*2)
+	rand.Read(data)
+	testFile := "hello.txt"
+	testFilePath := filepath.Join(fsPath, testFile)
+	err = os.WriteFile(testFilePath, data, 0644)
+	require.NoError(t, err)
+
+	err = unix.Statfs(fsPath, stats)
+	require.NoError(t, err)
+	log.Infof("stats %+v", stats)
+	require.Equal(t, stats.Bfree, stats.Blocks-2)
+	require.Equal(t, stats.Bavail, stats.Blocks-2)
+
+	err = os.Remove(testFilePath)
+	require.NoError(t, err)
+	err = unix.Statfs(fsPath, stats)
+	require.NoError(t, err)
+	log.Infof("stats %+v", stats)
+	require.Equal(t, stats.Bfree, stats.Blocks)
+	require.Equal(t, stats.Bavail, stats.Blocks)
+}
+
+func TestAttrCaching(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := filepath.Join(fsPath, "hello.txt")
+	f, err := os.Create(testFile)
+	require.NoError(t, err)
+	defer f.Close()
+
+	// File should be empty.
+	s := rawStat(t, testFile)
+	require.EqualValues(t, 0, s.Size)
+
+	// While a file is opened there shouldn't be any caching happening.
+	// This should be reflected in stat always returning the latest data.
+	_, err = f.Write([]byte("hello"))
+	require.NoError(t, err)
+	s = rawStat(t, testFile)
+	require.EqualValues(t, 5, s.Size)
+	f.Close()
+
+	// Create a bunch of hardlinks and verify the link count is correctly
+	// visible on all links.
+	linkFiles := []string{testFile + ".link1", testFile + ".link2", testFile + ".link3"}
+	for _, lf := range linkFiles {
+		err = os.Link(testFile, lf)
+		require.NoError(t, err)
+	}
+	for _, lf := range linkFiles {
+		s := rawStat(t, lf)
+		require.EqualValues(t, 4, s.Nlink)
+	}
+
+	err = os.Remove(testFile)
+	require.NoError(t, err)
+	for _, lf := range linkFiles {
+		s := rawStat(t, lf)
+		require.EqualValues(t, 3, s.Nlink)
+	}
+}
+
+func createInputTree(t *testing.T, ctx context.Context, env environment.Env, contents map[string]string) *repb.Tree {
+	tmpDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, tmpDir, contents)
+	var dirs []*repb.Directory
+	var walkDir func(path string) (*repb.Directory, error)
+	walkDir = func(path string) (*repb.Directory, error) {
+		dir := &repb.Directory{}
+		de, err := os.ReadDir(path)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range de {
+			if e.IsDir() {
+				childDir, err := walkDir(filepath.Join(path, e.Name()))
+				if err != nil {
+					return nil, err
+				}
+				dn, err := cachetools.UploadProtoToCAS(ctx, env.GetCache(), "", repb.DigestFunction_SHA256, childDir)
+				if err != nil {
+					return nil, err
+				}
+				dirNode := &repb.DirectoryNode{Name: e.Name(), Digest: dn}
+				dir.Directories = append(dir.Directories, dirNode)
+			} else {
+				d, err := digest.ComputeForFile(filepath.Join(path, e.Name()), repb.DigestFunction_SHA256)
+				if err != nil {
+					return nil, err
+				}
+				rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+				data, err := os.ReadFile(filepath.Join(path, e.Name()))
+				if err != nil {
+					return nil, err
+				}
+				err = env.GetCache().Set(ctx, rn.ToProto(), data)
+				if err != nil {
+					return nil, err
+				}
+				dir.Files = append(dir.Files, &repb.FileNode{Name: e.Name(), Digest: d})
+			}
+		}
+		dirs = append(dirs, dir)
+		return dir, nil
+	}
+	rootDir, err := walkDir(tmpDir)
+	require.NoError(t, err)
+	return &repb.Tree{
+		Root:     rootDir,
+		Children: dirs,
+	}
+}
+
+func getDirChildren(t *testing.T, path string) []string {
+	de, err := os.ReadDir(path)
+	require.NoError(t, err)
+	var names []string
+	for _, e := range de {
+		names = append(names, e.Name())
+	}
+	return names
+}
+
+func TestLayoutUpdate(t *testing.T) {
+	env := setupEnv(t)
+
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
+	require.NoError(t, err)
+
+	tree := createInputTree(t, ctx, env, map[string]string{
+		"foo/bar/baz": "hello",
+		"foo/bar/boo": "bye",
+	})
+	server, client, fsPath := setupVFSWithInputTree(t, env, tree)
+
+	children := getDirChildren(t, filepath.Join(fsPath, "foo/bar"))
+	require.Equal(t, []string{"baz", "boo"}, children)
+
+	_, err = os.ReadFile(filepath.Join(fsPath, "foo/bar/baz"))
+	require.NoError(t, err)
+
+	// Add a new input to an existing directory.
+	// Verify that the new file is visible in directory contents and that
+	// the file can be read.
+	{
+		newTree := createInputTree(t, ctx, env, map[string]string{
+			"foo/bar/newfile": "new",
+		})
+
+		tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, newTree, &dirtools.DownloadTreeOpts{})
+		require.NoError(t, err)
+		_, err = tf.Start()
+		require.NoError(t, err)
+		invalidated, err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: newTree}, tf)
+		require.NoError(t, err)
+		err = client.PrepareForTask(ctx, "foo", invalidated)
+		require.NoError(t, err)
+
+		children = getDirChildren(t, filepath.Join(fsPath, "foo/bar"))
+		require.Equal(t, []string{"baz", "boo", "newfile"}, children)
+
+		data, err := os.ReadFile(filepath.Join(fsPath, "foo/bar/newfile"))
+		require.NoError(t, err)
+		require.Equal(t, "new", string(data))
+	}
+
+	// Replace an existing file input with different content.
+	// Verify that the new contents can be read.
+	{
+		newContent := "changedcontent"
+		newTree := createInputTree(t, ctx, env, map[string]string{
+			"foo/bar/newfile": newContent,
+		})
+
+		tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, newTree, &dirtools.DownloadTreeOpts{})
+		require.NoError(t, err)
+		_, err = tf.Start()
+		require.NoError(t, err)
+		invalidated, err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: newTree}, tf)
+		require.NoError(t, err)
+		err = client.PrepareForTask(ctx, "foo", invalidated)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(filepath.Join(fsPath, "foo/bar/newfile"))
+		require.NoError(t, err)
+		require.Equal(t, newContent, string(data))
+		rs := rawStat(t, filepath.Join(fsPath, "foo/bar/newfile"))
+		require.EqualValues(t, len(newContent), rs.Size)
+	}
+
+	// Replace an existing file with a directory of the same name.
+	{
+		content := "world"
+		newTree := createInputTree(t, ctx, env, map[string]string{
+			"foo/bar/newfile/hello.txt": content,
+		})
+
+		tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, newTree, &dirtools.DownloadTreeOpts{})
+		require.NoError(t, err)
+		_, err = tf.Start()
+		require.NoError(t, err)
+		invalidated, err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: newTree}, tf)
+		require.NoError(t, err)
+		err = client.PrepareForTask(ctx, "foo", invalidated)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(filepath.Join(fsPath, "foo/bar/newfile/hello.txt"))
+		require.NoError(t, err)
+		require.Equal(t, content, string(data))
+		rs := rawStat(t, filepath.Join(fsPath, "foo/bar/newfile/hello.txt"))
+		require.EqualValues(t, len(content), rs.Size)
+
+		children := getDirChildren(t, filepath.Join(fsPath, "foo/bar/newfile"))
+		require.Equal(t, []string{"hello.txt"}, children)
+	}
+}
+
+func TestComputeStats(t *testing.T) {
+	env := setupEnv(t)
+
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
+	require.NoError(t, err)
+
+	rn1, buf := testdigest.RandomCASResourceBuf(t, 100)
+	err = env.GetCache().Set(ctx, rn1, buf)
+	require.NoError(t, err)
+
+	rn2, buf := testdigest.RandomCASResourceBuf(t, 200)
+	err = env.GetCache().Set(ctx, rn2, buf)
+	require.NoError(t, err)
+
+	rn3, buf := testdigest.RandomCASResourceBuf(t, 350)
+	err = env.GetCache().Set(ctx, rn3, buf)
+	require.NoError(t, err)
+
+	server, _, fsPath := setupVFSWithInputTree(t, env, &repb.Tree{Root: &repb.Directory{
+		Files: []*repb.FileNode{
+			{Name: "test1", Digest: rn1.GetDigest()},
+			{Name: "test2", Digest: rn2.GetDigest()},
+			{Name: "test3", Digest: rn3.GetDigest()},
+		},
+	}})
+	vfsStats := server.ComputeStats()
+	require.NoError(t, err)
+
+	// Check stats before we do anything. Only CAS input size/count should be
+	// populated.
+	require.EqualValues(t, 3, vfsStats.CasFilesCount)
+	require.EqualValues(t, 0, vfsStats.CasFilesAccessedCount)
+	require.EqualValues(t, 650, vfsStats.CasFilesSizeBytes)
+	require.EqualValues(t, 0, vfsStats.CasFilesAccessedBytes)
+
+	_, err = os.ReadFile(filepath.Join(fsPath, "test1"))
+	require.NoError(t, err)
+
+	vfsStats = server.ComputeStats()
+	require.EqualValues(t, 3, vfsStats.CasFilesCount)
+	require.EqualValues(t, 1, vfsStats.CasFilesAccessedCount)
+	require.EqualValues(t, 650, vfsStats.CasFilesSizeBytes)
+	require.EqualValues(t, 100, vfsStats.CasFilesAccessedBytes)
+}
+
+func TestRenameWhiteout(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := filepath.Join(fsPath, "hello.txt")
+	f, err := os.Create(testFile)
+	require.NoError(t, err)
+	defer f.Close()
+
+	newPath := filepath.Join(fsPath, "bye.txt")
+	err = unix.Renameat2(0, testFile, 0, newPath, unix.RENAME_WHITEOUT)
+	require.NoError(t, err)
+
+	rs := rawStat(t, testFile)
+	require.EqualValues(t, unix.S_IFCHR, rs.Mode&unix.S_IFMT)
+	require.EqualValues(t, 0, rs.Rdev)
+
+	rs = rawStat(t, newPath)
+	require.EqualValues(t, unix.S_IFREG, rs.Mode&unix.S_IFMT)
+}
+
+func TestMknod(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := filepath.Join(fsPath, "hello.txt")
+	err := unix.Mknod(testFile, unix.S_IFREG, 0)
+	require.NoError(t, err)
+	rs := rawStat(t, testFile)
+	require.EqualValues(t, unix.S_IFREG, rs.Mode&unix.S_IFMT)
+
+	testCharDevice := filepath.Join(fsPath, "char")
+	err = unix.Mknod(testCharDevice, unix.S_IFCHR, 0)
+	require.NoError(t, err)
+	rs = rawStat(t, testCharDevice)
+	require.EqualValues(t, unix.S_IFCHR, rs.Mode&unix.S_IFMT)
+}

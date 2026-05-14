@@ -1,277 +1,60 @@
-common --noenable_bzlmod
-common --lockfile_mode=update
+###################################
+# BUILDBUDDY SHARED BAZEL CONFIGS #
+###################################
+#
+# Prefer adding flags to the shared file over the current file
+# so that we can have a consistent set of flags across all repos.
+#
+# Only add to this file if the flags are intended for our public
+# repo _exclusively_.
+#
+import %workspace%/shared.bazelrc
 
-common --enable_platform_specific_config=true
-# TODO(http://go/b/3325): re-enable after bazel 7.2.0
-common --experimental_worker_for_repo_fetching=off
 
-# Skymeld merges the analysis phase and execution phase.
-# This allows build and test executions to start before the analysis phase finishes,
-# thus speeding up the build overall .
-common:skymeld --experimental_merged_skyframe_analysis_execution
-
-# Build with --config=local to send build logs to your local server
-common:local --bes_results_url=http://localhost:8080/invocation/
-common:local --bes_backend=grpc://localhost:1985
-common:local --remote_cache=grpc://localhost:1985
-common:local --remote_upload_local_results
-
-# Build with --config=dev to send build logs to the dev server
-common:dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
-common:dev --bes_backend=grpcs://buildbuddy.buildbuddy.dev
-
-# Build with --config=cache-dev to send build logs to the dev server with cache
-common:cache-dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
-common:cache-dev --bes_backend=grpcs://buildbuddy.buildbuddy.dev
-common:cache-dev --remote_cache=grpcs://buildbuddy.buildbuddy.dev
-common:cache-dev --remote_upload_local_results
-common:cache-dev --experimental_remote_cache_compression
-
-# Build with --config=cache to send build logs to the production server with cache
-common:cache --bes_results_url=https://buildbuddy.buildbuddy.io/invocation/
-common:cache --bes_backend=grpcs://buildbuddy.buildbuddy.io
-common:cache --remote_cache=grpcs://buildbuddy.buildbuddy.io
-common:cache --remote_upload_local_results
-common:cache --experimental_remote_cache_compression
-
-# Flags shared across remote configs
-common:remote-shared --remote_upload_local_results
-common:remote-shared --remote_timeout=600
-common:remote-shared --remote_download_minimal
-common:remote-shared --jobs=100
-common:remote-shared --verbose_failures
-common:remote-shared --platforms=//platforms:linux_x86_64
-common:remote-shared --extra_execution_platforms=//platforms:linux_x86_64
-
-common --incompatible_enable_cc_toolchain_resolution
-
-# Build with --config=remote to use BuildBuddy RBE.
-common:remote --config=remote-shared
-common:remote --config=cache
-common:remote --remote_executor=grpcs://buildbuddy.buildbuddy.io
-
-# Build with --config=remote-dev to use BuildBuddy RBE.
-common:remote-dev --config=remote-shared
-common:remote-dev --config=cache-dev
-common:remote-dev --remote_executor=grpcs://buildbuddy.buildbuddy.dev
-
-# Write build outputs in a platform-specific directory,
-# avoid outputs being wiped and rewritten when switching between platforms.
-common --experimental_platform_in_output_dir
-
-# Configuration used for GitHub actions-based CI
-common:ci --config=remote
-common:ci --build_metadata=ROLE=CI
-common:ci --build_metadata=VISIBILITY=PUBLIC
-common:ci --remote_instance_name=buildbuddy-io/buildbuddy/ci
-common:ci --repository_cache=/home/runner/repo-cache/
-common:ci --flaky_test_attempts=2
-common:ci --color=yes
-common:ci --disk_cache=
-# common:ci --@io_bazel_rules_go//go/config:race
-
-# Configuration used for untrusted GitHub actions-based CI
-common:untrusted-ci --config=remote
-common:untrusted-ci --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci
-common:untrusted-ci --repository_cache=/home/runner/repo-cache/untrusted/
-common:untrusted-ci --disk_cache=
-common:untrusted-ci --flaky_test_attempts=2
-common:untrusted-ci --remote_executor=grpcs://remote.buildbuddy.io
-common:untrusted-ci --bes_results_url=https://app.buildbuddy.io/invocation/
-common:untrusted-ci --bes_backend=grpcs://remote.buildbuddy.io
-common:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
-
-# Disabled RBE for Windows
-common:untrusted-ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-windows
-common:untrusted-ci-windows --repository_cache=D:/repo-cache/untrusted
-common:untrusted-ci-windows --disk_cache=
-common:untrusted-ci-windows --flaky_test_attempts=2
-common:untrusted-ci-windows --bes_results_url=https://app.buildbuddy.io/invocation/
-common:untrusted-ci-windows --bes_backend=grpcs://remote.buildbuddy.io
-common:untrusted-ci-windows --remote_cache=grpcs://remote.buildbuddy.io
-common:untrusted-ci-windows --experimental_remote_cache_compression
-common:untrusted-ci-windows --remote_upload_local_results
-
-# Configuration used for all BuildBuddy workflows
-common:workflows --experimental_remote_cache_compression
-common:workflows --build_metadata=ROLE=CI
-common:workflows --build_metadata=VISIBILITY=PUBLIC
-common:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
-common:workflows --color=yes
-common:workflows --disk_cache=
-common:workflows --flaky_test_attempts=2
-# Use BuildBuddy endpoints from the ci_runner-generated bazelrc.
-# These will point to local, dev, or prod, depending on which app created the workflow action.
-common:workflows --config=buildbuddy_bes_backend
-common:workflows --config=buildbuddy_bes_results_url
-common:workflows --config=buildbuddy_remote_cache
-# Temporarily disabled while testing blake3.
-#common:workflows --config=buildbuddy_experimental_remote_downloader
-
-common:race --@io_bazel_rules_go//go/config:race
-
-common:performance --compilation_mode=opt
-
-# Configuration used to deflake tests
-common:deflake --config=remote
-common:deflake --runs_per_test=100
-common:deflake --test_output=errors
-common:deflake --notest_keep_going
-
-# Configuration used to deflake Go tests
-common:deflake-go --config=race
-common:deflake-go --config=deflake
-common:deflake-go --test_arg=-test.failfast
-
-# Configuration used for Linux workflows
-common:linux-workflows --config=remote-shared
-common:linux-workflows --config=workflows
-common:linux-workflows --config=buildbuddy_remote_executor
-common:linux-workflows --build_metadata=TAGS=linux-workflow
-
-# Configuration used for Mac workflows
-# TODO(bduffany): Enable RBE for Mac workflows, and reconcile this with other configs
-common:mac-workflows --config=cache
-common:mac-workflows --config=workflows
-common:mac-workflows --build_metadata=TAGS=mac-workflow
-
-# Configuration used for all builds of artifacts released to GitHub
-common:release-shared -c opt
-common:release-shared --stamp
-common:release-shared --define release=true
-common:release-shared --strip=always
-
-# Configuration used for Linux releases
-common:release --config=release-shared
-common:release --config=remote
-common:release --remote_instance_name=buildbuddy-io/buildbuddy/release
-common:release --remote_download_toplevel
-
-# Configuration used for release-mac workflow
-common:release-mac --config=release-shared
-
-# Configuration used for release-m1 workflow
-common:release-m1 --config=release-shared
-
-# Configuration used for release-windows workflow
-common:release-windows --config=release-shared
-common:release-windows --config=cache
-common:release-windows --remote_instance_name=buildbuddy-io/buildbuddy/release-windows
-
-# Configuration used for Buildbuddy auto-release
-common:auto-release --config=remote
-common:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
-common:auto-release -c opt
-common:auto-release --@io_bazel_rules_go//go/config:pgoprofile=enterprise/tools/pgo:prod.pprof
-
-# Static build configuration. MacOS is currently unsupported.
-# On multi-user machines, specify HERMETIC_CC_TOOLCHAIN_CACHE_PREFIX in your
-# repo_env in user.bazelrc to avoid permissions errors.
-common:static --repo_env BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
-# Workaround for Bazel 7.
-# See https://github.com/uber/hermetic_cc_toolchain/releases/tag/v3.0.1 for more details
-common:static --sandbox_add_mount_pair=/tmp
-common:static --extra_toolchains=@zig_sdk//toolchain:linux_amd64_musl
-# arm64 is not yet tested, so we leave this toolchain commented out for now.
-# common:static --extra_toolchains=@zig_sdk//toolchain:linux_arm64_musl
-common:static --@io_bazel_rules_go//go/config:static=true
-common:static --copt=-fPIC
+#################################
+# PUBLIC REPO EXCLUSIVE CONFIGS #
+#################################
 
 # By default, build logs get sent to the production server
-common --bes_results_url=https://app.buildbuddy.io/invocation/
-common --bes_backend=grpcs://remote.buildbuddy.io
-
-# Recommended if connecting to a remote (upload speed constrained) BuildBuddy instance
-common --noremote_upload_local_results # Uploads logs & artifacts without writing to cache
-
-# Populate workspace info like commit sha and repo name to your invocation.
-common:linux --workspace_status_command=$(pwd)/workspace_status.sh
-common:macos --workspace_status_command=$(pwd)/workspace_status.sh
-common:windows --workspace_status_command="bash workspace_status.sh"
-
-# Misc remote cache/BES optimizations
-common --experimental_remote_cache_async
-common --remote_build_event_upload=minimal
-common --nolegacy_important_outputs
-
-# Use a static PATH variable to prevent unnecessary rebuilds of dependencies like protobuf.
-common --incompatible_strict_action_env
-common:macos --action_env=DEVELOPER_DIR
-common:macos --host_action_env=DEVELOPER_DIR
-
-# rules_nodejs needs runfiles to be explicitly enabled.
-common:linux --enable_runfiles
-common:macos --enable_runfiles
-
-# Use syscall to create symlink in-process.
-# Need to work around M1 Mac browser test issue https://github.com/bazelbuild/rules_webtesting/issues/438
-common --experimental_inprocess_symlink_creation
-
-# Add `-test.v` to all Go tests so that each test func is reported as a separate test case
-# in the XML output.  This allows our webUI to display the run time of each test case
-# separately and let us know which tests is slow.
-common --test_env=GO_TEST_WRAP_TESTV=1
-
-# Workaround for Bazel 7:
-# rules_docker (archived) defines a transition that helps ensure building containers with binary would use the same platform for both.
-# Reference: https://github.com/bazelbuild/rules_docker/pull/1963
 #
-# However, the platform and transition made use of `label_setting` instead of `constraint_value`.
-# This used to work in Bazel 6, but Bazel 7 introduced a new mandatory provider `ConstraintValueInfo` for all constraints_value targets.
-# Since `label_setting` does not return this provider, it is no longer possible to use `label_setting` in Bazel 7.
-#
-# Disabling this is safe because today, we are building these constainers on Linux host, executing Linux actions and targeting Linux machines.
-# This assumption might not hold in the future, but we can revisit this when that happens.
-common --@io_bazel_rules_docker//transitions:enable=false
+# Note: Use remote.buildbuddy.io and NOT buildbuddy.buildbuddy.io
+# so OSS / anonymous users can still send events to our server.
+common --config=anon-bes
 
 # Don't run Docker and Firecracker tests by default, because they cannot be run on all environments
 # Firecracker tests can only be run on Linux machines with bare execution, and we want to avoid a hard dependency
 # on Docker for development
-test --test_tag_filters=-docker,-bare
+#
+# Exclude tests which require BuildBuddy Secrets from the default unauthenticated builds
+# These often require "include-secrets: true" exec property in their BUILD file.
+#
+# Don't run benchmarks by default; benchmarks should only run if we are
+# explicitly doing performance testing.
+common --test_tag_filters=-docker,-bare,-secrets,-performance
 
-# Use C++17 standard for all C++ compilation
-common:linux --host_cxxopt=-std=c++17
-common:linux --cxxopt=-std=c++17
-common:macos --host_cxxopt=-std=c++17
-common:macos --cxxopt=-std=c++17
-common:windows --host_cxxopt=/std:c++17
-common:windows --cxxopt=/std:c++17
+# CI invocations from public repo should be publicly accessible.
+common:ci-shared --build_metadata=VISIBILITY=PUBLIC
 
-# Ensure that we don't use the apple_support cc_toolchain
-common:macos --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
+# Configuration used for GitHub actions-based CI
+common:ci --config=ci-shared
+common:ci --config=remote-minimal
+common:ci --remote_instance_name=buildbuddy-io/buildbuddy/ci
 
-# Ensure that our executors can run on macOS 11.0+
-common:macos --macos_minimum_os=12.0
-common:macos --host_macos_minimum_os=12.0
+# Configuration used for GitHub actions-based CI for anonymous users (e.g. external contributors)
+common:ci-anon --config=ci
+common:ci-anon --bes_backend=remote.buildbuddy.io
+common:ci-anon --remote_downloader=remote.buildbuddy.io
+common:ci-anon --remote_cache=remote.buildbuddy.io
+common:ci-anon --remote_executor=remote.buildbuddy.io
 
-# Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
-# See server/testutil/webtester/webtester.go for more details.
-common:webdriver-debug --test_arg=-webdriver_debug
-# Forward X server display for local webdriver tests.
-common:webdriver-debug --test_env=DISPLAY
-# When debugging, only run one webdriver test at a time (it's overwhelming
-# otherwise), and display verbose webdriver output in the terminal.
-common:webdriver-debug --test_output=streamed
+# Configuration used for all BuildBuddy workflows
+common:workflows --config=ci-shared
+common:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
 
-# Currently only works for go tests
-# Coverage outputs could be viewed with `genhtml`:
-#   $ genhtml -o cover bazel-out/_coverage/_coverage_report.dat
-#   $ open cover/index.html
-common --combined_report=lcov
 
-# Use BLAKE3 digest function.
-startup --digest_function=BLAKE3
-
-# Include target names in timing profile so it's clickable.
-common --experimental_profile_include_target_label
-# Include primary output name in timing profile.
-common --experimental_profile_include_primary_output
-# Don't merge timing profile actions.
-common --noslim_profile
-# Include compact execution log
-# TODO(sluongng): make Bazel writes this to output_base automatically
-common:linux --experimental_execution_log_compact_file=bazel_compact_exec_log.binpb.zstd
-common:macos --experimental_execution_log_compact_file=bazel_compact_exec_log.binpb.zstd
+########################
+# USER DEFINED CONFIGS #
+########################
 
 # Try importing a user specific .bazelrc
 # You can create your own by copying and editing the template-user.bazelrc template:

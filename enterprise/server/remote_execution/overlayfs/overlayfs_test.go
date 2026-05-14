@@ -62,7 +62,7 @@ func TestOverlayWorkspace(t *testing.T) {
 	// removed in t.Cleanup() above, otherwise we get 'device or resource busy'
 	// when attempting to clean up the workspace.
 	t.Cleanup(func() { fileAOverlay.Close() })
-	// Remove dir1/b.txt and dir1/child1/.
+	// Remove dir1's children (b.txt and child1/), but keep dir1 itself.
 	err = os.RemoveAll(filepath.Join(ws, "dir1/b.txt"))
 	require.NoError(t, err)
 	err = os.RemoveAll(filepath.Join(ws, "dir1/child1/"))
@@ -101,6 +101,7 @@ func TestOverlayWorkspace(t *testing.T) {
 	lowerdir := ws + ".lower"
 	testfs.AssertExactFileContents(t, lowerdir, map[string]string{
 		"a.txt":                "A-MODIFIED",
+		"dir1":                 testfs.EmptyDir,
 		"dir2/d.txt":           "D",
 		"dir3/e.txt/child.txt": "child-contents",
 	})

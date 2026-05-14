@@ -1,0 +1,118 @@
+.timing-profile-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.timing-profile-page-content {
+  box-sizing: border-box;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 100%;
+  padding-top: 32px;
+  padding-bottom: 32px;
+}
+
+.timing-profile-page-empty-state,
+.timing-profile-page-viewer {
+  position: relative;
+}
+
+.timing-profile-page-empty-state {
+  flex: 1 0 420px;
+  min-height: 420px;
+  border: 2px dashed var(--color-border-primary);
+  border-radius: 16px;
+  background: var(--color-bg-secondary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 32px;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.timing-profile-page-empty-state .icon {
+  width: 40px;
+  height: 40px;
+  color: var(--color-text-secondary);
+}
+
+.timing-profile-page-empty-state .title {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.timing-profile-page-empty-state .details {
+  max-width: 600px;
+  color: var(--color-text-secondary);
+}
+
+.timing-profile-page-empty-state .outlined-button {
+  margin-top: 8px;
+}
+
+.timing-profile-page-empty-state.drag-active,
+.timing-profile-page-viewer.drag-active {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 4px;
+}
+
+.timing-profile-page-empty-state.profile-loading,
+.timing-profile-page-viewer.profile-loading .trace-viewer,
+.timing-profile-page-viewer.drag-active .trace-viewer {
+  opacity: 0.55;
+}
+
+.timing-profile-page-drop-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  background: var(--color-bg-primary);
+  opacity: 0.9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.timing-profile-page-drop-overlay-text {
+  padding: 12px 16px;
+  border-radius: 999px;
+  background: var(--color-bg-secondary);
+  box-shadow: 0 1px 3px var(--color-shadow-lg);
+  font-weight: 600;
+}
+
+.timing-profile-page-toolbar {
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.timing-profile-page .error-message {
+  color: var(--color-status-error);
+  max-width: 600px;
+}
+
+@media (max-width: 800px) {
+  .timing-profile-page-content {
+    padding-top: 16px;
+  }
+
+  .timing-profile-page-empty-state {
+    flex-basis: 320px;
+    min-height: 320px;
+    padding: 24px;
+  }
+
+  .timing-profile-page-empty-state .title {
+    font-size: 24px;
+  }
+}

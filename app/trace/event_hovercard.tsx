@@ -1,6 +1,6 @@
 import React from "react";
-import { TraceEvent } from "./trace_events";
 import { truncateDecimals } from "../util/math";
+import { TraceEvent } from "./trace_events";
 
 export interface EventHovercardProps {
   buildDuration: number;
@@ -80,7 +80,7 @@ export default class EventHovercard extends React.Component<EventHovercardProps,
 
           <div className="duration">
             <span className="data">{displayedDuration}</span> seconds total (<span className="data">{percentage}</span>{" "}
-            of total build duration)
+            of total duration)
           </div>
           <div>
             @ {truncateDecimals(event.ts / 1e6, 3)}s &ndash; {truncateDecimals((event.ts + event.dur) / 1e6, 3)}s

@@ -3,31 +3,42 @@ package tasksize_test
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
+	openfeatureTesting "github.com/open-feature/go-sdk/openfeature/testing"
 )
 
-func TestEstimate_EmptyTask_DefaultEstimate(t *testing.T) {
-	ts := tasksize.Estimate(&repb.ExecutionTask{})
+func TestDefault_EmptyTask_DefaultEstimate(t *testing.T) {
+	ts := tasksize.Default(&repb.ExecutionTask{})
 
 	assert.Equal(t, tasksize.DefaultMemEstimate, ts.EstimatedMemoryBytes)
 	assert.Equal(t, tasksize.DefaultCPUEstimate, ts.EstimatedMilliCpu)
 	assert.Equal(t, tasksize.DefaultFreeDiskEstimate, ts.EstimatedFreeDiskBytes)
 }
 
-func TestEstimate_TestTask_RespectsTestSize(t *testing.T) {
+func TestDefault_TestTask_RespectsTestSize(t *testing.T) {
 	for _, testCase := range []struct {
 		size                                  string
 		expectedMemoryBytes, expectedMilliCPU int64
@@ -35,7 +46,7 @@ func TestEstimate_TestTask_RespectsTestSize(t *testing.T) {
 		{"small", 20 * 1e6, 1000},
 		{"enormous", 800 * 1e6, 1000},
 	} {
-		ts := tasksize.Estimate(&repb.ExecutionTask{
+		ts := tasksize.Default(&repb.ExecutionTask{
 			Command: &repb.Command{
 				EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 					{Name: "TEST_SIZE", Value: testCase.size},
@@ -49,7 +60,7 @@ func TestEstimate_TestTask_RespectsTestSize(t *testing.T) {
 	}
 }
 
-func TestEstimate_TestTask_Firecracker_AddsAdditionalResources(t *testing.T) {
+func TestDefault_TestTask_Firecracker_AddsAdditionalResources(t *testing.T) {
 	for _, testCase := range []struct {
 		size                string
 		isolationType       platform.ContainerType
@@ -63,7 +74,7 @@ func TestEstimate_TestTask_Firecracker_AddsAdditionalResources(t *testing.T) {
 		{"small", platform.FirecrackerContainerType, false /*=initDockerd*/, 20*1e6 + tasksize.FirecrackerAdditionalMemEstimateBytes, 1000, tasksize.DefaultFreeDiskEstimate},
 		{"enormous", platform.FirecrackerContainerType, true /*=initDockerd*/, 800*1e6 + tasksize.FirecrackerAdditionalMemEstimateBytes + tasksize.DockerInFirecrackerAdditionalMemEstimateBytes, 1000, tasksize.DefaultFreeDiskEstimate + tasksize.DockerInFirecrackerAdditionalDiskEstimateBytes},
 	} {
-		ts := tasksize.Estimate(&repb.ExecutionTask{
+		ts := tasksize.Default(&repb.ExecutionTask{
 			Command: &repb.Command{
 				Platform: &repb.Platform{
 					Properties: []*repb.Platform_Property{
@@ -84,8 +95,27 @@ func TestEstimate_TestTask_Firecracker_AddsAdditionalResources(t *testing.T) {
 
 }
 
-func TestEstimate_BCUPlatformProps_ConvertsBCUToTaskSize(t *testing.T) {
-	ts := tasksize.Estimate(&repb.ExecutionTask{
+func TestRequested_ViolatingLimits(t *testing.T) {
+	const disk = tasksize.MaxEstimatedFreeDisk * 10
+	ts := tasksize.Requested(&repb.ExecutionTask{
+		Command: &repb.Command{
+			Platform: &repb.Platform{
+				Properties: []*repb.Platform_Property{
+					{Name: "EstimatedCPU", Value: " 100m "},
+					{Name: "EstimatedMemory", Value: " 100 "},
+					{Name: "EstimatedFreeDiskBytes", Value: fmt.Sprintf("%d", disk)},
+				},
+			},
+		},
+	})
+
+	assert.Equal(t, int64(100), ts.EstimatedMemoryBytes)
+	assert.Equal(t, int64(100), ts.EstimatedMilliCpu)
+	assert.Equal(t, disk, ts.EstimatedFreeDiskBytes)
+}
+
+func TestRequested_BCUPlatformProps_ConvertsBCUToTaskSize(t *testing.T) {
+	ts := tasksize.Requested(&repb.ExecutionTask{
 		Command: &repb.Command{
 			Platform: &repb.Platform{
 				Properties: []*repb.Platform_Property{
@@ -97,24 +127,164 @@ func TestEstimate_BCUPlatformProps_ConvertsBCUToTaskSize(t *testing.T) {
 
 	assert.Equal(t, int64(2*2.5*1e9), ts.EstimatedMemoryBytes)
 	assert.Equal(t, int64(2*1000), ts.EstimatedMilliCpu)
-	assert.Equal(t, tasksize.DefaultFreeDiskEstimate, ts.EstimatedFreeDiskBytes)
+	assert.Equal(t, int64(0), ts.EstimatedFreeDiskBytes)
 }
 
-func TestEstimate_DiskSizePlatformProp_UsesPropValueForDiskSize(t *testing.T) {
-	const disk = tasksize.DefaultFreeDiskEstimate * 10
-	ts := tasksize.Estimate(&repb.ExecutionTask{
+func TestRequested_BCUPlatformProps_Overriden(t *testing.T) {
+	// only override ram
+	ts := tasksize.Requested(&repb.ExecutionTask{
 		Command: &repb.Command{
 			Platform: &repb.Platform{
 				Properties: []*repb.Platform_Property{
-					{Name: "EstimatedFreeDiskBytes", Value: fmt.Sprintf("%d", disk)},
+					{Name: "EstimatedMemory", Value: "60000000"},
+					{Name: "estimatedcomputeunits", Value: "2"},
 				},
 			},
 		},
 	})
 
-	assert.Equal(t, tasksize.DefaultMemEstimate, ts.EstimatedMemoryBytes)
-	assert.Equal(t, tasksize.DefaultCPUEstimate, ts.EstimatedMilliCpu)
-	assert.Equal(t, disk, ts.EstimatedFreeDiskBytes)
+	assert.Equal(t, int64(60000000), ts.EstimatedMemoryBytes)
+	assert.Equal(t, int64(2*1000), ts.EstimatedMilliCpu)
+	assert.Equal(t, int64(0), ts.EstimatedFreeDiskBytes)
+
+	// only override cpu
+	ts = tasksize.Requested(&repb.ExecutionTask{
+		Command: &repb.Command{
+			Platform: &repb.Platform{
+				Properties: []*repb.Platform_Property{
+					{Name: "EstimatedCPU", Value: "1"},
+					{Name: "estimatedcomputeunits", Value: "2"},
+				},
+			},
+		},
+	})
+
+	assert.Equal(t, int64(2*2.5*1e9), ts.EstimatedMemoryBytes)
+	assert.Equal(t, int64(1000), ts.EstimatedMilliCpu)
+	assert.Equal(t, int64(0), ts.EstimatedFreeDiskBytes)
+}
+
+func TestOverride(t *testing.T) {
+	sz := tasksize.Override(
+		&scpb.TaskSize{
+			EstimatedMemoryBytes:   10_000_000_000,
+			EstimatedMilliCpu:      300,
+			EstimatedFreeDiskBytes: 30_000_000_000,
+			CustomResources:        []*scpb.CustomResource{{Name: "foo", Value: 0.5}},
+		},
+		&scpb.TaskSize{
+			EstimatedMemoryBytes:   20_000_000_000,
+			EstimatedMilliCpu:      100,
+			EstimatedFreeDiskBytes: 15_000_000_000,
+			CustomResources:        []*scpb.CustomResource{{Name: "bar", Value: 1}},
+		})
+	assert.Equal(t, int64(20_000_000_000), sz.EstimatedMemoryBytes)
+	assert.Equal(t, int64(100), sz.EstimatedMilliCpu)
+	assert.Equal(t, int64(15_000_000_000), sz.EstimatedFreeDiskBytes)
+	assert.Equal(t, []*scpb.CustomResource{{Name: "bar", Value: 1}}, sz.GetCustomResources())
+}
+
+func TestOverride_EmptyOver(t *testing.T) {
+	sz := tasksize.Override(
+		&scpb.TaskSize{
+			EstimatedMemoryBytes:   1,
+			EstimatedMilliCpu:      2,
+			EstimatedFreeDiskBytes: 3,
+		},
+		&scpb.TaskSize{})
+	assert.Equal(t, int64(1), sz.EstimatedMemoryBytes)
+	assert.Equal(t, int64(2), sz.EstimatedMilliCpu)
+	assert.Equal(t, int64(3), sz.EstimatedFreeDiskBytes)
+}
+
+func TestApplyLimits(t *testing.T) {
+	sz := tasksize.ApplyLimits(
+		context.Background(),
+		nil,
+		&repb.Command{},
+		&platform.Properties{},
+		&scpb.TaskSize{
+			EstimatedMemoryBytes:   10,
+			EstimatedMilliCpu:      10,
+			EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDisk * 10,
+		})
+	assert.Equal(t, tasksize.MinimumMemoryBytes, sz.EstimatedMemoryBytes)
+	assert.Equal(t, tasksize.MinimumMilliCPU, sz.EstimatedMilliCpu)
+	assert.Equal(t, tasksize.MaxEstimatedFreeDiskRecycleFalse, sz.EstimatedFreeDiskBytes)
+}
+
+func TestApplyLimitsNonRecyleableLargeDisk(t *testing.T) {
+	sz := tasksize.ApplyLimits(
+		context.Background(),
+		nil,
+		&repb.Command{},
+		&platform.Properties{
+			RecycleRunner: false,
+		},
+		&scpb.TaskSize{
+			EstimatedMemoryBytes:   10,
+			EstimatedMilliCpu:      10,
+			EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDiskRecycleFalse * 10,
+		},
+	)
+	assert.Equal(t, tasksize.MinimumMemoryBytes, sz.EstimatedMemoryBytes)
+	assert.Equal(t, tasksize.MinimumMilliCPU, sz.EstimatedMilliCpu)
+	assert.Equal(t, tasksize.MaxEstimatedFreeDiskRecycleFalse, sz.EstimatedFreeDiskBytes)
+}
+
+func TestApplyLimits_LargeTest(t *testing.T) {
+	sz := tasksize.ApplyLimits(
+		context.Background(),
+		nil,
+		&repb.Command{
+			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+				{Name: "TEST_SIZE", Value: "large"},
+			},
+		},
+		&platform.Properties{
+			RecycleRunner: true,
+		},
+		&scpb.TaskSize{
+			EstimatedMemoryBytes:   10,
+			EstimatedMilliCpu:      10,
+			EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDisk * 10,
+		},
+	)
+	assert.Equal(t, int64(300_000_000), sz.EstimatedMemoryBytes)
+	assert.Equal(t, int64(1000), sz.EstimatedMilliCpu)
+	assert.Equal(t, tasksize.MaxEstimatedFreeDisk, sz.EstimatedFreeDiskBytes)
+}
+
+func TestApplyLimits_MaxDiskLimitDisabled(t *testing.T) {
+	testProvider := openfeatureTesting.NewTestProvider()
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		"disable-task-sizing-disk-limit": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	defer testProvider.Cleanup()
+
+	fp, err := experiments.NewFlagProvider("")
+	require.NoError(t, err)
+
+	sz := tasksize.ApplyLimits(
+		context.Background(),
+		fp,
+		&repb.Command{},
+		&platform.Properties{
+			RecycleRunner: true,
+		},
+		&scpb.TaskSize{
+			EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDisk * 10,
+		},
+	)
+	assert.Equal(t, tasksize.MaxEstimatedFreeDisk*10, sz.EstimatedFreeDiskBytes)
 }
 
 func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
@@ -123,18 +293,17 @@ func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	rdb := testredis.Start(t).Client()
 	env.SetRemoteExecutionRedisClient(rdb)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers())
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers())
 	env.SetAuthenticator(auth)
 	sizer, err := tasksize.NewSizer(env)
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	task := &repb.ExecutionTask{
-		Command: &repb.Command{
-			Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"},
-		},
+	cmd := &repb.Command{
+		Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"},
 	}
-	ts := sizer.Get(ctx, task)
+	props := &platform.Properties{}
+	ts := sizer.Get(ctx, cmd, props)
 
 	require.Nil(t, ts, "should not return a task size initially")
 
@@ -145,45 +314,74 @@ func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
 			// just returning the default estimates.
 			CpuNanos:        7.13 * 1e9,
 			PeakMemoryBytes: 917 * 1e6,
+			// The *sum* of all of the full-stall total durations, multiplied by
+			// the PSI correction factor flag, should be subtracted from the
+			// execution duration for the purposes of the milliCPU calculation.
+			CpuPressure: &repb.PSI{
+				Full: &repb.PSI_Metrics{Total: 0.33 * 1e6 /*usec*/},
+			},
+			IoPressure: &repb.PSI{
+				Full: &repb.PSI_Metrics{Total: 0.21 * 1e6 /*usec*/},
+			},
+			MemoryPressure: &repb.PSI{
+				Full: &repb.PSI_Metrics{Total: 0.07 * 1e6 /*usec*/},
+			},
 		},
 		ExecutionStartTimestamp: timestamppb.New(execStart),
 		// Set the completed timestamp so that the exec duration is 2 seconds.
 		ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(2 * time.Second)),
 	}
-	err = sizer.Update(ctx, task.GetCommand(), md)
+	err = sizer.Update(ctx, cmd, props, md)
 
 	require.NoError(t, err)
 
-	ts = sizer.Get(ctx, task)
+	ts = sizer.Get(ctx, cmd, props)
 
 	assert.Equal(
 		t, int64(917*1e6), ts.GetEstimatedMemoryBytes(),
 		"subsequent mem estimate should equal recorded peak mem usage")
 	assert.Equal(
-		t, int64(7.13/2*1000), ts.GetEstimatedMilliCpu(),
+		t, int64(math.Ceil(7.13/(2.0-1.0*(0.33+0.21+0.07))*1000.0)), ts.GetEstimatedMilliCpu(),
 		"subsequent milliCPU estimate should equal recorded milliCPU")
 }
 
-func TestEstimate_RespectsMinimumCpuSize(t *testing.T) {
-	sz := tasksize.Estimate(&repb.ExecutionTask{
-		Command: &repb.Command{Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{{
-				Name: "EstimatedCPU", Value: "1m",
-			}},
-		}},
-	})
-	require.Equal(t, tasksize.MinimumMilliCPU, sz.EstimatedMilliCpu)
-}
+func TestSizer_RespectsMilliCPULimit(t *testing.T) {
+	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
 
-func TestEstimate_RespectsMinimumMemorySize(t *testing.T) {
-	sz := tasksize.Estimate(&repb.ExecutionTask{
-		Command: &repb.Command{Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{{
-				Name: "EstimatedMemory", Value: "1e3",
-			}},
-		}},
-	})
-	require.Equal(t, tasksize.MinimumMemoryBytes, sz.EstimatedMemoryBytes)
+	env := testenv.GetTestEnv(t)
+	rdb := testredis.Start(t).Client()
+	env.SetRemoteExecutionRedisClient(rdb)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers())
+	env.SetAuthenticator(auth)
+	sizer, err := tasksize.NewSizer(env)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	cmd := &repb.Command{
+		Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"},
+	}
+	props := &platform.Properties{}
+
+	execStart := time.Now()
+	md := &repb.ExecutedActionMetadata{
+		UsageStats: &repb.UsageStats{
+			CpuNanos:        8000 * 1e9, // 8000 seconds
+			PeakMemoryBytes: 1e9,
+		},
+		// Set a 1s execution duration
+		ExecutionStartTimestamp:     timestamppb.New(execStart),
+		ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(1 * time.Second)),
+	}
+	err = sizer.Update(ctx, cmd, props, md)
+	require.NoError(t, err)
+
+	ts := sizer.Get(ctx, cmd, props)
+	assert.Equal(
+		t, int64(1e9), ts.GetEstimatedMemoryBytes(),
+		"mem estimate should equal recorded peak mem usage")
+	assert.Equal(
+		t, int64(7500), ts.GetEstimatedMilliCpu(),
+		"subsequent milliCPU estimate should equal recorded milliCPU")
 }
 
 func TestSizer_RespectsMinimumSize(t *testing.T) {
@@ -192,17 +390,16 @@ func TestSizer_RespectsMinimumSize(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	rdb := testredis.Start(t).Client()
 	env.SetRemoteExecutionRedisClient(rdb)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers())
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers())
 	env.SetAuthenticator(auth)
 	sizer, err := tasksize.NewSizer(env)
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	task := &repb.ExecutionTask{
-		Command: &repb.Command{
-			Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"},
-		},
+	cmd := &repb.Command{
+		Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"},
 	}
+	props := &platform.Properties{}
 
 	execStart := time.Now()
 	md := &repb.ExecutedActionMetadata{
@@ -215,26 +412,147 @@ func TestSizer_RespectsMinimumSize(t *testing.T) {
 		ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(1 * time.Second)),
 	}
 
-	err = sizer.Update(ctx, task.GetCommand(), md)
+	err = sizer.Update(ctx, cmd, props, md)
 	require.NoError(t, err)
 
-	ts := sizer.Get(ctx, task)
+	ts := sizer.Get(ctx, cmd, props)
 	assert.Equal(t, tasksize.MinimumMilliCPU, ts.GetEstimatedMilliCpu())
 	assert.Equal(t, tasksize.MinimumMemoryBytes, ts.GetEstimatedMemoryBytes())
 
 	// Test actions have different minimums.
-	task = &repb.ExecutionTask{
-		Command: &repb.Command{
-			Arguments: []string{"test.sh"},
-			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-				{Name: "TEST_SIZE", Value: "enormous"},
-			},
+	cmd = &repb.Command{
+		Arguments: []string{"test.sh"},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "TEST_SIZE", Value: "enormous"},
 		},
 	}
-	err = sizer.Update(ctx, task.GetCommand(), md)
+	props = &platform.Properties{}
+	err = sizer.Update(ctx, cmd, props, md)
 	require.NoError(t, err)
 
-	ts = sizer.Get(ctx, task)
+	ts = sizer.Get(ctx, cmd, props)
 	assert.Equal(t, int64(1000), ts.GetEstimatedMilliCpu())
 	assert.Equal(t, int64(800*1e6), ts.GetEstimatedMemoryBytes())
+}
+
+func TestSizer_P90CPUExperiment(t *testing.T) {
+	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
+	env := testenv.GetTestEnv(t)
+	rdb := testredis.Start(t).Client()
+	env.SetRemoteExecutionRedisClient(rdb)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers())
+	env.SetAuthenticator(auth)
+
+	tmp := testfs.MakeTempDir(t)
+	// Enable p90 experiment
+	offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "remote_execution.task_size_use_p90_cpu": {
+      "state": "ENABLED",
+      "variants": { "default": true },
+      "defaultVariant": "default"
+    }
+  }
+}
+`)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
+	openfeature.SetProviderAndWait(provider)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	// Simulate a task with a burst of 4000m CPU (4 cores) for 1 second, then
+	// 1000m CPU (1 core) for 9 seconds.
+	execStartTimestamp := time.Now()
+	usageStats := &repb.UsageStats{
+		CpuNanos:        0,   // Updated in loop below
+		PeakMemoryBytes: 1e9, // Arbitrary
+		Timeline: &repb.UsageTimeline{
+			// Set initial samples for delta-encoding - these are arbitrary;
+			// we only care about the deltas.
+			Timestamps: []int64{777},
+			CpuSamples: []int64{999},
+		},
+	}
+	md := &repb.ExecutedActionMetadata{
+		ExecutionStartTimestamp:     timestamppb.New(execStartTimestamp),
+		ExecutionCompletedTimestamp: timestamppb.New(execStartTimestamp), // Updated in loop below
+		UsageStats:                  usageStats,
+	}
+	// Simulate CPU usage as described above
+	timeline := usageStats.Timeline
+	for i := 0; i < 10; i++ {
+		elapsedDuration := 1 * time.Second
+		timeline.Timestamps = append(timeline.Timestamps, elapsedDuration.Milliseconds())
+		md.ExecutionCompletedTimestamp = timestamppb.New(md.ExecutionCompletedTimestamp.AsTime().Add(elapsedDuration))
+		if i == 0 {
+			timeline.CpuSamples = append(timeline.CpuSamples, 4000)
+		} else {
+			timeline.CpuSamples = append(timeline.CpuSamples, 1000)
+		}
+		usageStats.CpuNanos += timeline.CpuSamples[len(timeline.CpuSamples)-1] * 1e6 // ms to nanos
+	}
+
+	// Update task sizer
+	sizer, err := tasksize.NewSizer(env)
+	require.NoError(t, err)
+	ctx := context.Background()
+	cmd := &repb.Command{
+		Arguments: []string{"big_linker_action", "<blah>"},
+	}
+	props := &platform.Properties{}
+	err = sizer.Update(ctx, cmd, props, md)
+	require.NoError(t, err)
+
+	// Get task size and make sure it reports the p90 CPU usage
+	ts := sizer.Get(ctx, cmd, props)
+	assert.Equal(t, int64(4000), ts.GetEstimatedMilliCpu())
+}
+
+func TestCgroupSettings(t *testing.T) {
+	ctx := t.Context()
+	env := testenv.GetTestEnv(t)
+
+	// Basic settings should be applied
+	{
+		size := &scpb.TaskSize{
+			EstimatedMilliCpu:    1000,
+			EstimatedMemoryBytes: 800e6,
+		}
+		actual := tasksize.GetCgroupSettings(ctx, env.GetExperimentFlagProvider(), size, &scpb.SchedulingMetadata{})
+		expected := &scpb.CgroupSettings{
+			CpuWeight:          proto.Int64(39),
+			CpuQuotaLimitUsec:  proto.Int64(30 * 100 * 1e3),
+			CpuQuotaPeriodUsec: proto.Int64(1 * 100 * 1e3),
+			PidsMax:            proto.Int64(4096 + 4096), // 4096 base limit + (1*4096) CPU-based limit
+			MemoryOomGroup:     proto.Bool(true),
+		}
+		assert.Empty(t, cmp.Diff(expected, actual, protocmp.Transform()))
+	}
+
+	// CPU weight should be roughly proportional to task size
+	for mcpu, weight := range map[int64]int64{
+		1000:    39,
+		10_000:  391,
+		100_000: 3906,
+	} {
+		size := &scpb.TaskSize{EstimatedMilliCpu: mcpu}
+		settings := tasksize.GetCgroupSettings(ctx, env.GetExperimentFlagProvider(), size, &scpb.SchedulingMetadata{})
+		assert.Equal(t, int64(weight), settings.GetCpuWeight())
+	}
+}
+
+func TestCgroupSettings_AdditionalPIDsLimit(t *testing.T) {
+	ctx := t.Context()
+	env := testenv.GetTestEnv(t)
+
+	flags.Set(t, "remote_execution.pids_limit", 10_000)
+	flags.Set(t, "remote_execution.additional_pids_limit_per_cpu", 200)
+	size := &scpb.TaskSize{EstimatedMilliCpu: 1500}
+	settings := tasksize.GetCgroupSettings(ctx, env.GetExperimentFlagProvider(), size, &scpb.SchedulingMetadata{})
+	const wantPidsMax = 10_300 // 10K base limit + (1.5*200 = 300) CPU-based limit
+	assert.Equal(t, int64(10_300), settings.GetPidsMax())
 }

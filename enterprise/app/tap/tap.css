@@ -4,6 +4,10 @@
   height: 100%;
 }
 
+.tap .popup-wrapper {
+  position: relative;
+}
+
 .tap button {
   flex-shrink: 0;
 }
@@ -23,16 +27,18 @@
 }
 
 .tap .tap-top-bar {
-  padding: 32px 0;
-  border-bottom: 1px solid #eee;
+  padding: 32px 0 0;
+  border-bottom: 1px solid var(--color-border-primary);
   flex-shrink: 0;
-  position: sticky;
   top: 0;
+}
+
+.tap .tap-top-bar.stick {
+  position: sticky;
 }
 
 .tap.v2 .tap-top-bar {
   border-bottom: none;
-  padding-bottom: 8px;
 }
 
 .tap .inner-top-bar-underlay {
@@ -51,8 +57,8 @@
   height: 72px;
   width: calc(100% + 64px);
   margin-left: -32px;
-  background: white;
-  border-bottom: 1px solid #eee;
+  background: var(--color-bg-primary);
+  border-bottom: 1px solid var(--color-border-primary);
   z-index: 1;
   opacity: 0.95;
 }
@@ -71,10 +77,19 @@
   display: flex;
   gap: 16px;
   align-items: center;
+  padding-bottom: 32px;
+}
+
+.tap.v2 .target-controls {
+  padding-bottom: 8px;
 }
 
 .tap .repo-picker {
   max-width: 300px;
+}
+
+.tap .tap-header-group {
+  margin-bottom: 16px;
 }
 
 .tap .tap-header {
@@ -83,13 +98,16 @@
   gap: 16px;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
 }
 
 .tap-title {
   font-size: 32px;
   font-weight: 700;
   flex-shrink: 0;
+}
+
+.tap .tabs {
+  margin-top: 8px;
 }
 
 .tap .inner-top-bar {
@@ -120,7 +138,7 @@
 }
 
 .tap .commit-timeline-label {
-  color: #757575;
+  color: var(--color-text-label);
   position: sticky;
   top: 0;
   left: 0;
@@ -143,7 +161,8 @@
   align-items: center;
   white-space: nowrap;
   height: 24px;
-  background: #eceff1;
+  background: var(--color-bg-info-subtle);
+  color: var(--color-hovercard-text);
   border-radius: 12px;
   height: inherit;
   padding: 2px 8px;
@@ -158,7 +177,7 @@
 .tap-hovered-commit-pointer::before {
   content: "";
   display: block;
-  background: #eceff1;
+  background: var(--color-bg-info-subtle);
   width: 12px;
   height: 12px;
   transform-origin: center;
@@ -196,7 +215,7 @@
   height: 3px;
   left: 0;
   right: 0;
-  background: #cfd8dc;
+  background: var(--color-blue-gray-100);
   margin-left: 17px; /* = half of effective .commit-link size */
 }
 
@@ -217,19 +236,19 @@
   height: 8px;
   position: absolute;
   z-index: 1;
-  background: white;
-  border: 2px solid #212121;
+  background: var(--color-bg-primary);
+  border: 2px solid var(--color-bg-inverted);
 }
 
 .tap .commit-link:hover::after {
-  background: #9e9e9e;
-  border-color: #9e9e9e;
+  background: var(--color-gray-500);
+  border-color: var(--color-gray-500);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 .tap-target-label {
   font-size: 0.8em;
-  color: #444;
+  color: var(--color-text-emphasis);
   margin-top: 8px;
   margin-bottom: 2px;
   position: sticky;
@@ -237,7 +256,7 @@
 }
 
 .tap-target-path {
-  color: #888;
+  color: var(--color-text-secondary);
 }
 
 .tap-target-name {
@@ -245,12 +264,12 @@
 }
 
 .tap-target-type {
-  color: #aaa;
+  color: var(--color-text-tertiary);
 }
 
 .tap-target-stats {
   margin-left: 8px;
-  color: #aaa;
+  color: var(--color-text-tertiary);
 }
 
 .tap .tap-block {
@@ -272,7 +291,7 @@
 }
 
 .tap-block svg {
-  color: #fff;
+  color: var(--color-text-inverted);
   width: 50%;
   height: 50%;
 }
@@ -295,11 +314,11 @@
 }
 
 .tap .tap-block.no-status {
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-gray-300);
 }
 
 .tap .tap-block.timing {
-  background-color: #0d47a1;
+  background-color: var(--color-blue-900);
 }
 
 /* 
@@ -334,73 +353,76 @@ SKIPPED = 13;
   position: absolute;
   bottom: 1px;
   right: 2px;
-  color: #fff;
+  color: var(--color-text-inverted);
 }
 
 .tap .tap-block-header {
-  border: 1px solid #ccc;
-  color: #888;
+  border: 1px solid var(--color-gray-400-alt);
+  color: var(--color-text-secondary);
 }
 
 .tap .tap-block-header:first-of-type {
-  border: 1px solid #888;
-  color: #444;
+  border: 1px solid var(--color-border-neutral);
+  color: var(--color-text-emphasis);
 }
 
+.tap .tap-block.cached {
+  opacity: 0.5;
+}
 .tap .tap-block.status-0 {
-  background-color: #888;
+  background-color: var(--color-bg-neutral);
 }
 
 .tap .tap-block.status-1 {
-  background-color: #2196f3;
+  background-color: var(--color-blue-500);
 }
 
 .tap .tap-block.status-2 {
-  background-color: #0d47a1;
+  background-color: var(--color-blue-900);
 }
 
 .tap .tap-block.status-3 {
-  background-color: #212121;
+  background-color: var(--color-tap-inactive-bg);
 }
 
 .tap .tap-block.status-4 {
-  background-color: #1976d2;
+  background-color: var(--color-blue-700);
 }
 
 .tap .tap-block.status-5 {
-  background-color: #4caf50;
+  background-color: var(--color-green-500);
 }
 
 .tap .tap-block.status-6 {
-  background-color: #f44336;
+  background-color: var(--color-status-error);
 }
 
 .tap .tap-block.status-7 {
-  background-color: #616161;
+  background-color: var(--color-gray-700);
 }
 
 .tap .tap-block.status-8 {
-  background-color: #757575;
+  background-color: var(--color-gray-600);
 }
 
 .tap .tap-block.status-9 {
-  background-color: #212121;
+  background-color: var(--color-tap-inactive-bg);
 }
 
 .tap .tap-block.status-10 {
-  background-color: #888;
+  background-color: var(--color-bg-neutral);
 }
 
 .tap .tap-block.status-11 {
-  background-color: #ff9800;
+  background-color: var(--color-status-warning);
 }
 
 .tap .tap-block.status-12 {
-  background-color: #888;
+  background-color: var(--color-bg-neutral);
 }
 
 .tap .tap-block.status-13 {
-  background-color: #888;
+  background-color: var(--color-bg-neutral);
 }
 
 .tap .filter-input {
@@ -424,8 +446,8 @@ SKIPPED = 13;
 }
 
 .tap .group-container {
-  background-color: #fafafa;
-  border: 1px solid #eee;
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
   padding: 4px 16px 4px 0;
   min-height: 40px;
   box-sizing: border-box;
@@ -466,4 +488,100 @@ SKIPPED = 13;
   display: flex;
   align-items: center;
   margin-left: 8px;
+}
+
+.tap .chart-card {
+  margin-top: 0;
+  display: block;
+}
+
+.tap .flakes-chart-header {
+  margin: 0 0 16px;
+}
+
+.tap .flakes-list-header {
+  margin: 16px 0;
+}
+
+.tap .flake-table {
+  margin-top: 16px;
+}
+
+.tap .flake-table-row {
+  display: flex;
+  border-top: 1px solid var(--color-border-primary);
+  padding: 16px 0;
+}
+
+.tap .flake-table-row:last-child {
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+.tap .flake-table-row:hover {
+  background: var(--color-bg-secondary);
+}
+
+.tap .flake-table-row.flake-table-summary-row {
+  border: none;
+  background: transparent;
+  padding-top: 0;
+}
+
+.tap .flake-table-row-image {
+  margin-left: 4px;
+  margin-right: 16px;
+}
+
+.tap .flake-table-row-header {
+  font-weight: 600;
+}
+
+.tap .flake-table-row-content {
+  flex-grow: 1;
+}
+
+.tap .flake-table-row-stats {
+  display: flex;
+  justify-content: space-between;
+}
+
+.tap .flake-stat {
+  width: 160px;
+  margin: 8px 0;
+  font-size: 16px;
+}
+
+.tap .flake-stat-value {
+  font-size: 20px;
+}
+
+.tap .flake-table-header {
+  display: flex;
+  justify-content: space-between;
+  grid-gap: 8px;
+}
+
+.tap .flake-table-sort-controls {
+  display: flex;
+  align-items: center;
+  min-width: 300px;
+}
+
+/* Some weird padding and margin to make the click target bigger. */
+.tap .target-copy-button .copy-icon-wrapper {
+  display: inline-block;
+  padding: 16px 16px 16px 8px;
+  margin: -16px -16px -16px -4px;
+}
+
+.tap .target-copy-button .copy-button-text {
+  margin-left: 4px;
+  font-weight: normal;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.tap .flakes-list .test-case-info {
+  padding-left: 0;
+  border-left: none;
 }

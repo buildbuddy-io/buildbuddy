@@ -1,13 +1,14 @@
-import React, { useState } from "react";
+import useBrokenLinks from "@docusaurus/useBrokenLinks";
 import Layout from "@theme/Layout";
-import Hero from "../components/hero/hero";
+import { ArrowUpCircle, Bell, Brush, Globe, Highlighter, Network, Package, Palette } from "lucide-react";
+import React, { useState } from "react";
 import CTA from "../components/cta/cta";
-import contact from "./contact.module.css";
+import Hero from "../components/hero/hero";
 import common from "../css/common.module.css";
-import styles from "./plugins.module.css";
-import message from "../util/message";
-import { Package, ArrowUpCircle, Palette, Highlighter, Globe, Bell, Network, Brush } from "lucide-react";
 import { copyToClipboard } from "../util/clipboard";
+import { sendFormsMessage } from "../util/message";
+import contact from "./contact.module.css";
+import styles from "./plugins.module.css";
 
 let plugins = [
   {
@@ -93,6 +94,7 @@ let form = {
 };
 
 function Component() {
+  useBrokenLinks().collectAnchor("share");
   let [count, setCount] = useState(0);
   return (
     <Layout title="BuildBuddy Plugin Library">
@@ -190,7 +192,7 @@ function handlePluginClicked(plugin, count, setCount) {
 }
 
 function sendMessage() {
-  message(
+  sendFormsMessage(
     `New Plugin Submitted!\nName: ${form.name.current.value}\nEmail: ${form.email.current.value}\nPlugin name: ${form.pluginName.current.value}\nPlugin des: ${form.pluginDesc.current.value}\nPlugin link: ${form.pluginLink.current.value}`
   );
 

@@ -210,6 +210,14 @@ export function getUniformBrightnessColor(id: string) {
   return UNIFORM_BRIGHTNESS_COLORS[Math.abs(hash(id) % UNIFORM_BRIGHTNESS_COLORS.length)];
 }
 
+export function computeTraceEventColor(id: string): string {
+  const hue = Math.abs(hash(id) % 360);
+  const style = getComputedStyle(document.documentElement);
+  const lightness = style.getPropertyValue("--trace-event-lightness").trim() || "65%";
+  const chroma = style.getPropertyValue("--trace-event-chroma").trim() || "80";
+  return `lch(${lightness} ${chroma} ${hue})`;
+}
+
 function hash(value: string) {
   let hash = 0;
   for (let i = 0; i < value?.length; i++) {
@@ -219,12 +227,90 @@ function hash(value: string) {
 }
 
 /**
- * Returns a color between red and green based on a percentage value between 0 and 1.
+ * Returns a color between red and green based on a percentage value between 0
+ * and 1. The color returned comes from a discrete list of material colors that
+ * have high contrast against a white background. Each color corresponds to a
+ * small range of values.
  *
  * @param value the percentage value between 0 and 1
  * @returns a color between red and green
  */
 export function percentageColor(value: number) {
-  var hue = (value * 120).toString(10);
-  return ["hsl(", hue, ",75%,50%)"].join("");
+  return RED_TO_GREEN_SCALE[Math.floor(value * (RED_TO_GREEN_SCALE.length - 1))];
+}
+
+export const RED_TO_GREEN_SCALE = [
+  "#D32F2F", // red 700
+  "#E53935", // red 600
+  "#F4511E", // deep orange 600
+  "#FF5722", // deep orange 500
+  "#F57C00", // orange 700
+  "#FB8C00", // orange 600
+  "#FF9800", // orange 500
+  "#AFB42B", // lime 700
+  "#9E9D24", // lime 800
+  "#7CB342", // light green 600
+  "#689F38", // light green 700
+  "#43A047", // green 600
+  "#388E3C", // green 700
+];
+
+/**
+ * Parses a color like #fff or rgb(0, 0, 0) and returns the rgb values.
+ */
+export function parseColor(color: string): { r: number; g: number; b: number } | null {
+  const normalized = color.trim().toLowerCase();
+  if (!normalized) return null;
+
+  if (normalized.startsWith("#")) {
+    const hex = normalized.slice(1);
+    if (hex.length === 3) {
+      const r = parseInt(hex[0] + hex[0], 16);
+      const g = parseInt(hex[1] + hex[1], 16);
+      const b = parseInt(hex[2] + hex[2], 16);
+      if ([r, g, b].some((c) => Number.isNaN(c))) return null;
+      return { r, g, b };
+    }
+    if (hex.length === 6) {
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      if ([r, g, b].some((c) => Number.isNaN(c))) return null;
+      return { r, g, b };
+    }
+    return null;
+  }
+
+  const rgbMatch = normalized.match(/^rgba?\(([^)]+)\)$/);
+  if (!rgbMatch) return null;
+  const channels = rgbMatch[1].split(",").map((part) => part.trim());
+  if (channels.length < 3) return null;
+  const parsed = channels.slice(0, 3).map((channel) => Number(channel));
+  if (parsed.some((c) => Number.isNaN(c))) return null;
+  return {
+    r: Math.max(0, Math.min(255, parsed[0])),
+    g: Math.max(0, Math.min(255, parsed[1])),
+    b: Math.max(0, Math.min(255, parsed[2])),
+  };
+}
+
+/**
+ * Parses a color like #FFF or rgb(0, 0, 0) and linearly interpolates between
+ * them (from 0-1)
+ */
+export function interpolateColor(from: string, to: string, progress: number): string {
+  const clampedProgress = Math.max(0, Math.min(1, progress));
+  const fromRgb = parseColor(from);
+  const toRgb = parseColor(to);
+  if (!fromRgb || !toRgb) {
+    return clampedProgress < 1 ? from : to;
+  }
+  const r = Math.round(lerp(fromRgb.r, toRgb.r, clampedProgress));
+  const g = Math.round(lerp(fromRgb.g, toRgb.g, clampedProgress));
+  const b = Math.round(lerp(fromRgb.b, toRgb.b, clampedProgress));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function lerp(from: number, to: number, t: number): number {
+  return from + (to - from) * t;
 }

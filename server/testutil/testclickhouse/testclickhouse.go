@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	clickhouseVersion   = "22.3.18"
+	clickhouseVersion   = "25.3"
 	containerNamePrefix = "buildbuddy-test-clickhouse-"
 )
 
@@ -61,6 +61,9 @@ func Start(t testing.TB, reuseServer bool) string {
 			"--env", "CLICKHOUSE_DB="+dbName,
 			"--publish", fmt.Sprintf("%d:9000", port),
 			"--name", containerName,
+			// allow using the default user without a password. This was the
+			// default until 23.8.
+			"--env", "CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1",
 			fmt.Sprintf("clickhouse/clickhouse-server:%s", clickhouseVersion))
 
 		cmd.Stderr = &logWriter{"docker run clickhouse"}
@@ -110,8 +113,8 @@ type logWriter struct {
 }
 
 func (w *logWriter) Write(b []byte) (int, error) {
-	lines := strings.Split(string(b), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(b), "\n")
+	for line := range lines {
 		if line == "" {
 			continue
 		}

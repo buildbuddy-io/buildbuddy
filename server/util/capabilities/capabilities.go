@@ -3,18 +3,18 @@ package capabilities
 import (
 	"context"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 )
 
 var (
 	// DefaultAuthenticatedUserCapabilities are granted to users that are authenticated and
 	// whose capabilities aren't explicitly provided (e.g. when creating a new API key
 	// programmatically).
-	DefaultAuthenticatedUserCapabilities = []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}
+	DefaultAuthenticatedUserCapabilities = []cappb.Capability{cappb.Capability_CACHE_WRITE}
 	// DefaultAuthenticatedUserCapabilitiesMask is the mask form of DefaultAuthenticatedUserCapabilities.
 	DefaultAuthenticatedUserCapabilitiesMask = ToInt(DefaultAuthenticatedUserCapabilities)
 
@@ -26,23 +26,23 @@ var (
 
 	// UserAPIKeyCapabilitiesMask defines the capabilities that are allowed to
 	// be assigned to user-owned API keys.
-	UserAPIKeyCapabilitiesMask = ToInt([]akpb.ApiKey_Capability{
-		akpb.ApiKey_CACHE_WRITE_CAPABILITY,
-		akpb.ApiKey_CAS_WRITE_CAPABILITY,
+	UserAPIKeyCapabilitiesMask = ToInt([]cappb.Capability{
+		cappb.Capability_CACHE_WRITE,
+		cappb.Capability_CAS_WRITE,
 	})
 )
 
-func FromInt(m int32) []akpb.ApiKey_Capability {
-	caps := []akpb.ApiKey_Capability{}
-	for _, c := range akpb.ApiKey_Capability_value {
+func FromInt(m int32) []cappb.Capability {
+	caps := []cappb.Capability{}
+	for _, c := range cappb.Capability_value {
 		if m&c > 0 {
-			caps = append(caps, akpb.ApiKey_Capability(c))
+			caps = append(caps, cappb.Capability(c))
 		}
 	}
 	return caps
 }
 
-func ToInt(caps []akpb.ApiKey_Capability) int32 {
+func ToInt(caps []cappb.Capability) int32 {
 	m := int32(0)
 	for _, c := range caps {
 		m |= int32(c)
@@ -50,14 +50,13 @@ func ToInt(caps []akpb.ApiKey_Capability) int32 {
 	return m
 }
 
-func ApplyMask(caps []akpb.ApiKey_Capability, mask int32) []akpb.ApiKey_Capability {
+func ApplyMask(caps []cappb.Capability, mask int32) []cappb.Capability {
 	return FromInt(ToInt(caps) & mask)
 }
 
-func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capability) (bool, error) {
-	a := env.GetAuthenticator()
-	authIsRequired := !a.AnonymousUsageEnabled(ctx)
-	user, err := a.AuthenticatedUser(ctx)
+func IsGranted(ctx context.Context, authenticator interfaces.Authenticator, cap cappb.Capability) (bool, error) {
+	authIsRequired := !authenticator.AnonymousUsageEnabled(ctx)
+	user, err := authenticator.AuthenticatedUser(ctx)
 	if err != nil {
 		if authutil.IsAnonymousUserError(err) {
 			if authIsRequired {
@@ -70,11 +69,10 @@ func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capabil
 	return user.HasCapability(cap), nil
 }
 
-func ForAuthenticatedUser(ctx context.Context, env environment.Env) ([]akpb.ApiKey_Capability, error) {
-	auth := env.GetAuthenticator()
-	u, err := auth.AuthenticatedUser(ctx)
+func ForAuthenticatedUser(ctx context.Context, authenticator interfaces.Authenticator) ([]cappb.Capability, error) {
+	u, err := authenticator.AuthenticatedUser(ctx)
 	if err != nil {
-		if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled(ctx) {
+		if authutil.IsAnonymousUserError(err) && authenticator.AnonymousUsageEnabled(ctx) {
 			return DefaultAuthenticatedUserCapabilities, nil
 		}
 		return nil, err
@@ -84,8 +82,8 @@ func ForAuthenticatedUser(ctx context.Context, env environment.Env) ([]akpb.ApiK
 
 // ForAuthenticatedUserGroup returns the authenticated user's capabilities
 // within the given group ID.
-func ForAuthenticatedUserGroup(ctx context.Context, env environment.Env, groupID string) ([]akpb.ApiKey_Capability, error) {
-	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
+func ForAuthenticatedUserGroup(ctx context.Context, authenticator interfaces.Authenticator, groupID string) ([]cappb.Capability, error) {
+	u, err := authenticator.AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}

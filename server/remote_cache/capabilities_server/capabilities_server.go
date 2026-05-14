@@ -2,17 +2,22 @@ package capabilities_server
 
 import (
 	"context"
-	"math"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	smpb "github.com/buildbuddy-io/buildbuddy/proto/semver"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
+)
+
+const (
+	MinExecutionPriority = -1000
+	MaxExecutionPriority = 1000
 )
 
 var (
@@ -28,6 +33,9 @@ type CapabilitiesServer struct {
 }
 
 func Register(env *real_environment.RealEnv) error {
+	if err := chunking.ValidateConfig(); err != nil {
+		return err
+	}
 	// Register to handle GetCapabilities messages, which tell the client
 	// that this server supports CAS functionality.
 	env.SetCapabilitiesServer(NewCapabilitiesServer(
@@ -50,15 +58,16 @@ func NewCapabilitiesServer(env environment.Env, supportCAS, supportRemoteExec, s
 
 func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
 	c := repb.ServerCapabilities{
-		// Support bazel 2.0 -> 2.3
+		// Support bazel 2.0 -> 2.11
 		LowApiVersion:  &smpb.SemVer{Major: int32(2)},
-		HighApiVersion: &smpb.SemVer{Major: int32(2), Minor: int32(3)},
+		HighApiVersion: &smpb.SemVer{Major: int32(2), Minor: int32(11)},
 	}
 	var compressors []repb.Compressor_Value
 	if s.supportZstd {
 		compressors = []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD}
 	}
 	if s.supportCAS {
+		chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
 		c.CacheCapabilities = &repb.CacheCapabilities{
 			DigestFunctions: digest.SupportedDigestFunctions(),
 			ActionCacheUpdateCapabilities: &repb.ActionCacheUpdateCapabilities{
@@ -76,6 +85,12 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 			SymlinkAbsolutePathStrategy:     repb.SymlinkAbsolutePathStrategy_ALLOWED,
 			SupportedCompressors:            compressors,
 			SupportedBatchUpdateCompressors: compressors,
+			SplitBlobSupport:                chunkingEnabled,
+			SpliceBlobSupport:               chunkingEnabled,
+		}
+
+		if chunkingEnabled {
+			c.CacheCapabilities.FastCdc_2020Params = chunking.FastCDCParams()
 		}
 	}
 	if s.supportRemoteExec {
@@ -84,7 +99,10 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 			ExecEnabled:    true,
 			ExecutionPriorityCapabilities: &repb.PriorityCapabilities{
 				Priorities: []*repb.PriorityCapabilities_PriorityRange{
-					{MinPriority: math.MinInt32, MaxPriority: math.MaxInt32},
+					{
+						MinPriority: MinExecutionPriority,
+						MaxPriority: MaxExecutionPriority,
+					},
 				},
 			},
 			DigestFunctions: digest.SupportedDigestFunctions(),
@@ -112,5 +130,5 @@ func (s *CapabilitiesServer) actionCacheUpdateEnabled(ctx context.Context) bool 
 	if err != nil {
 		return true
 	}
-	return u.HasCapability(akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	return u.HasCapability(cappb.Capability_CACHE_WRITE)
 }

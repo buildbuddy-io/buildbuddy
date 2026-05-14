@@ -2,6 +2,14 @@ export function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+export function lerp(from: number, to: number, progress: number) {
+  return from + (to - from) * progress;
+}
+
+export function randomBetween(min: number, max: number) {
+  return min + Math.random() * (max - min);
+}
+
 /**
  * Truncates the given value to a maximum number of decimal places past
  * the decimal point.

@@ -216,7 +216,6 @@ func TestGetCacheScoreCard_GroupByActionOrderByDurationDesc(t *testing.T) {
 }
 
 func TestGetCacheScoreCard_GroupByTargetOrderByDuration(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
 	expectedResults := []*capb.ScoreCard_Result{}
 	// Set up results so that expected action IDs alternate within each target
 	// group, and so that durations across groups have some overlap.

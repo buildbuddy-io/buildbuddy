@@ -8,37 +8,65 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
 	_ "embed"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/overlayfs"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/gobwas/glob"
-	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 
 	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
-	gh_actions_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/github_actions_runner/bundle"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	cli_bundle "github.com/buildbuddy-io/buildbuddy/server/util/bb"
 )
 
 var (
 	// WorkspaceMarkedForRemovalError is returned from workspace operations
 	// whenever Remove was previously called on the workspace.
 	WorkspaceMarkedForRemovalError = status.UnavailableError("workspace is marked for removal")
+
+	deleteParallelism = flag.Int("executor.delete_parallelism", 0, "Number of goroutines to use when deleting files.")
+	deleteWaitGroup   = errgroup.Group{}
+	deleteLimitSet    = sync.Once{}
+
+	recordInputFetchMetadata = flag.Bool("executor.record_input_fetch_metadata", true, "If true, and enabled by app experiments, record and report metadata describing which action inputs were fetched from remote CAS.")
+
+	vfsVerbose             = flag.Bool("executor.vfs.verbose", false, "Enables verbose logs for VFS operations.")
+	vfsVerboseFUSEOps      = flag.Bool("executor.vfs.verbose_fuse", false, "Enables low-level verbose logs in the go-fuse library.")
+	vfsLogFUSELatencyStats = flag.Bool("executor.vfs.log_fuse_latency_stats", false, "Enables logging of per-operation latency stats when VFS is unmounted. Implicitly enabled by --executor.vfs.verbose.")
+	vfsLogFUSEPerFileStats = flag.Bool("executor.vfs.log_fuse_per_file_stats", false, "Enables tracking and logging of per-file per-operation stats. Logged when VFS is unmounted.")
 )
+
+func setDeleteLimit() {
+	deleteLimitSet.Do(func() {
+		limit := *deleteParallelism
+		if limit == 0 {
+			limit = runtime.GOMAXPROCS(0)
+		}
+		deleteWaitGroup.SetLimit(limit)
+	})
+}
 
 // Workspace holds the working tree for an action and keeps track of
 // inputs and outputs.
@@ -53,62 +81,122 @@ type Workspace struct {
 	task      *repb.ExecutionTask
 	dirHelper *dirtools.DirHelper
 	Opts      *Opts
-	vfs       *vfs.VFS
+
+	// VFS fields are only set if VFS is enabled.
+	// vfs is the FUSE implementation that delegates work to the VFS server.
+	vfs *vfs.VFS
+	// vfsServer contains most of the smarts of the VFS implementation.
+	vfsServer *vfs_server.Server
+
 	// Action input files known to exist in the workspace, as a map of
 	// workspace-relative paths to file nodes.
 	// TODO: Make sure these files are written read-only
 	// to make sure this map accurately reflects the filesystem.
-	Inputs map[string]*repb.FileNode
+	Inputs map[fspath.Key]*repb.FileNode
 
-	mu       sync.Mutex // protects(removing)
-	removing bool
+	mu          sync.Mutex // protects(removing, treeFetcher)
+	removing    bool
+	treeFetcher *dirtools.TreeFetcher
 }
 
 type Opts struct {
-	// NonrootWritable specifies whether the workspace dir, as well as directories
-	// created under it, should be writable by nonroot users.
-	NonrootWritable bool
 	// Preserve specifies whether to preserve all files in the workspace except
-	// for output dirs.
+	// for output paths.
 	Preserve    bool
 	CleanInputs string
+	// CaseInsensitive specifies whether the root directory (under which the
+	// workspace directory is created) is case-insensitive.
+	CaseInsensitive bool
 	// UseOverlayfs specifies whether the workspace should use overlayfs to
 	// allow copy-on-write for workspace inputs.
 	UseOverlayfs bool
+	// UseVFS specifies whether the workspace should use a FUSE virtual file
+	// system to serve CAS artifacts and scratch files.
+	UseVFS bool
 }
 
 // New creates a new workspace directly under the given parent directory.
 func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) {
-	id, err := uuid.NewRandom()
+	dirPerms := fs.FileMode(0777)
+	var rootDir string
+	maxAttempts := 10
+	for i := 0; i < maxAttempts; i++ {
+		rootDir = filepath.Join(parentDir, newRandomBuildDirCandidate())
+		if err := os.Mkdir(rootDir, dirPerms); err == nil {
+			break
+		} else if !os.IsExist(err) {
+			return nil, status.UnavailableErrorf("failed to create workspace at %q: %s", rootDir, err)
+		}
+		// Got unlucky and the random directory name already exists. This should
+		// never happen on Unix and rarely on Windows, so just try again.
+		if i == maxAttempts-1 {
+			return nil, status.UnavailableErrorf("failed to find random dir below %q in %d attempts", rootDir, maxAttempts)
+		}
+	}
+	rootDir, err := maybeCreatePlatformSpecificSubDir(rootDir)
 	if err != nil {
-		return nil, status.UnavailableErrorf("failed to generate workspace ID")
+		return nil, err
 	}
-	rootDir := filepath.Join(parentDir, id.String())
-	dirPerms := fs.FileMode(0755)
-	if opts.NonrootWritable {
-		dirPerms = 0777
-	}
-	if err := os.MkdirAll(rootDir, dirPerms); err != nil {
-		return nil, status.UnavailableErrorf("failed to create workspace at %q: %s", rootDir, err)
+
+	if opts.UseOverlayfs && opts.UseVFS {
+		return nil, status.InvalidArgumentErrorf("Overlayfs and VFS cannot be enabled at the same time")
 	}
 
 	var overlay *overlayfs.Overlay
 	if opts.UseOverlayfs {
 		overlayOpts := overlayfs.Opts{DirPerms: dirPerms}
+		var err error
 		overlay, err = overlayfs.Convert(context.TODO(), rootDir, overlayOpts)
 		if err != nil {
 			return nil, status.UnavailableErrorf("failed to create workspace overlayfs at %q: %s", rootDir, err)
 		}
 	}
 
+	var vfs *vfs.VFS
+	var vfsServer *vfs_server.Server
+	if opts.UseVFS {
+		v, s, err := startVFS(env, rootDir)
+		if err != nil {
+			return nil, err
+		}
+		vfs = v
+		vfsServer = s
+	}
+
+	setDeleteLimit()
 	return &Workspace{
-		env:      env,
-		rootDir:  rootDir,
-		overlay:  overlay,
-		dirPerms: dirPerms,
-		Opts:     opts,
-		Inputs:   map[string]*repb.FileNode{},
+		env:       env,
+		rootDir:   rootDir,
+		overlay:   overlay,
+		dirPerms:  dirPerms,
+		vfs:       vfs,
+		vfsServer: vfsServer,
+		Opts:      opts,
+		Inputs:    map[fspath.Key]*repb.FileNode{},
 	}, nil
+}
+
+func startVFS(env environment.Env, path string) (*vfs.VFS, *vfs_server.Server, error) {
+	var vfsServer *vfs_server.Server
+	scratchDir := path + ".scratch"
+	if err := os.Mkdir(scratchDir, 0755); err != nil {
+		return nil, nil, status.UnavailableErrorf("could not create FUSE scratch dir: %s", err)
+	}
+
+	vfsServer, err := vfs_server.New(env, scratchDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	fs := vfs.New(vfs_server.NewDirectClient(vfsServer), path, &vfs.Options{
+		Verbose:             *vfsVerbose,
+		LogFUSEOps:          *vfsVerboseFUSEOps,
+		LogFUSELatencyStats: *vfsLogFUSELatencyStats,
+		LogFUSEPerFileStats: *vfsLogFUSEPerFileStats,
+	})
+	if err := fs.Mount(); err != nil {
+		return nil, nil, status.UnavailableErrorf("unable to mount VFS at %q: %s", path, err)
+	}
+	return fs, vfsServer, nil
 }
 
 // Path returns the absolute path to the workspace root directory, which should
@@ -133,13 +221,7 @@ func (ws *Workspace) SetTask(ctx context.Context, task *repb.ExecutionTask) {
 	log.CtxDebugf(ctx, "Assigned task %s to workspace at %q", task.GetExecutionId(), ws.rootDir)
 	ws.task = task
 	cmd := task.GetCommand()
-	outputDirs := make([]string, 0)
-	outputPaths := cmd.GetOutputPaths()
-	if len(outputPaths) == 0 {
-		outputDirs = cmd.GetOutputDirectories()
-		outputPaths = append(cmd.GetOutputFiles(), cmd.GetOutputDirectories()...)
-	}
-	ws.dirHelper = dirtools.NewDirHelper(ws.inputRoot(), outputDirs, outputPaths, ws.dirPerms)
+	ws.dirHelper = dirtools.NewDirHelper(filepath.Join(ws.inputRoot(), cmd.GetWorkingDirectory()), cmd, ws.dirPerms)
 }
 
 // CommandWorkingDirectory returns the absolute path to the working directory
@@ -168,46 +250,172 @@ func (ws *Workspace) CreateOutputDirs() error {
 	return ws.dirHelper.CreateOutputDirs()
 }
 
+func (ws *Workspace) prepareVFS(ctx context.Context, layout *container.FileSystemLayout) error {
+	if ws.vfs == nil {
+		return status.FailedPreconditionError("vfs cannot be null if vfsServer is set")
+	}
+
+	invalidatedInodes, err := ws.vfsServer.Prepare(ctx, layout, ws.treeFetcher)
+	if err != nil {
+		return err
+	}
+	if err := ws.vfs.PrepareForTask(ctx, ws.task.GetExecutionId(), invalidatedInodes); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateWorkingDirectoryInTree checks that the given working directory path
+// exists as a directory in the input tree. This enforces the REAPI spec
+// requirement that working_directory "must be a directory which exists in the
+// input tree."
+func validateWorkingDirectoryInTree(tree *repb.Tree, digestFunction repb.DigestFunction_Value, workingDir string) error {
+	_, dirMap, err := dirtools.DirMapFromTree(tree, digestFunction)
+	if err != nil {
+		return status.WrapError(err, "failed to build directory map from input tree")
+	}
+
+	// Walk the tree path segment by segment starting from root.
+	current := tree.GetRoot()
+	segments := strings.SplitSeq(workingDir, "/")
+	for seg := range segments {
+		found := false
+		for _, dirNode := range current.GetDirectories() {
+			if dirNode.GetName() == seg {
+				next, ok := dirMap[digest.NewKey(dirNode.GetDigest())]
+				if !ok {
+					return status.FailedPreconditionErrorf("working_directory %q not found in input tree", workingDir)
+				}
+				current = next
+				found = true
+				break
+			}
+		}
+		if !found {
+			return status.FailedPreconditionErrorf("working_directory %q does not exist in the input tree", workingDir)
+		}
+	}
+	return nil
+}
+
 // DownloadInputs downloads any missing inputs for the current action.
-func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirtools.TransferInfo, error) {
+func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileSystemLayout) error {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {
-		return nil, WorkspaceMarkedForRemovalError
+		return WorkspaceMarkedForRemovalError
 	}
 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	opts := &dirtools.DownloadTreeOpts{
-		NonrootWritable: ws.Opts.NonrootWritable,
+	execReq := ws.task.GetExecuteRequest()
+
+	// The REAPI spec requires working_directory to be a directory that
+	// already exists in the input tree. Validate this against the tree.
+	if wd := ws.task.GetCommand().GetWorkingDirectory(); wd != "" {
+		if err := validateWorkingDirectoryInTree(layout.Inputs, execReq.GetDigestFunction(), wd); err != nil {
+			return err
+		}
 	}
+
+	opts := &dirtools.DownloadTreeOpts{CaseInsensitive: ws.Opts.CaseInsensitive}
+	if ws.vfs == nil {
+		opts.RootDir = ws.inputRoot()
+	}
+	opts.ChunkedInputFiles = slices.Contains(ws.task.GetExperiments(), "executor.download_inputs_chunked")
+	opts.RecordInputFetchMetadata = *recordInputFetchMetadata && slices.Contains(ws.task.GetExperiments(), "remote_execution.record_input_fetch_metadata")
 	if ws.Opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
-	execReq := ws.task.GetExecuteRequest()
-	txInfo, err := dirtools.DownloadTree(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), tree, ws.inputRoot(), opts)
-	if err == nil {
-		if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
-			return txInfo, err
-		}
+	tf, err := dirtools.NewTreeFetcher(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), layout.Inputs, opts)
+	if err != nil {
+		return status.WrapErrorf(err, "could not create tree fetcher")
+	}
+	ws.treeFetcher = tf
 
-		for path, node := range txInfo.Transfers {
-			ws.Inputs[path] = node
+	// Start fetching inputs.
+	inputsState, err := tf.Start()
+	if err != nil {
+		return status.WrapErrorf(err, "could not start tree fetcher")
+	}
+
+	// Inform VFS about the layout of the input tree and give it access to the
+	// running tree fetcher.
+	if ws.vfs != nil {
+		if err := ws.prepareVFS(ctx, layout); err != nil {
+			return err
+		}
+	} else {
+		// If we're not using FUSE, wait for the input tree to be fully downloaded.
+		txInfo, err := ws.treeFetcher.Wait()
+		if err != nil {
+			return status.WrapError(err, "could not fetch inputs")
 		}
 		mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
 		span.SetAttributes(attribute.Int64("file_count", txInfo.FileCount))
 		span.SetAttributes(attribute.Int64("bytes_transferred", txInfo.BytesTransferred))
-		log.CtxDebugf(ctx, "GetTree downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
+		log.CtxInfof(ctx, "DownloadTree linked %d files in %s, downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.LinkCount, txInfo.LinkDuration, txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
 	}
-	return txInfo, err
+
+	// Now that the input tree is setup, remove any unwanted inputs.
+	// Don't touch any inputs specified by the current action as represented
+	// by inputsState.Exist
+	if err := ws.CleanInputsIfNecessary(inputsState.Exist); err != nil {
+		return err
+	}
+
+	// Update the input tracking map to include inputs specified by the action
+	// that were not in the workspace yet.
+	for relPath, node := range inputsState.NeedFetching {
+		ws.Inputs[fspath.NewKey(relPath, ws.Opts.CaseInsensitive)] = node
+	}
+
+	return nil
+}
+
+func (ws *Workspace) AddRemoteRunnerBinaries(ctx context.Context) error {
+	if err := ws.AddCIRunner(ctx); err != nil {
+		return err
+	}
+	if err := ws.AddCLI(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+// AddCLI adds the bb CLI to the workspace root if it doesn't already exist.
+func (ws *Workspace) AddCLI(ctx context.Context) error {
+	// The CLI binary is not embedded on Windows due to a CGo dependency that isn't supported.
+	if len(cli_bundle.CLIBytes) == 0 {
+		return status.UnimplementedErrorf("CLI binary not embedded")
+	}
+	// Don't add CLI if the workspace is backed by FUSE.
+	if ws.vfs != nil {
+		return status.UnimplementedErrorf("AddCLI not supported on VFS")
+	}
+	destPath := path.Join(ws.Path(), ci_runner_util.CLIBinaryName)
+	exists, err := disk.FileExists(ctx, destPath)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+
+	return os.WriteFile(destPath, cli_bundle.CLIBytes, 0o555)
 }
 
 // AddCIRunner adds the BuildBuddy CI runner to the workspace root if it doesn't
 // already exist.
 func (ws *Workspace) AddCIRunner(ctx context.Context) error {
-	destPath := path.Join(ws.Path(), ci_runner_bundle.RunnerName)
+	// Don't add CI runner if the workspace is backed by FUSE.
+	if ws.vfs != nil {
+		return status.UnimplementedErrorf("AddCIRunner not supported on VFS")
+	}
+	destPath := path.Join(ws.Path(), ci_runner_util.ExecutableName)
 	exists, err := disk.FileExists(ctx, destPath)
 	if err != nil {
 		return err
@@ -218,22 +426,21 @@ func (ws *Workspace) AddCIRunner(ctx context.Context) error {
 	return os.WriteFile(destPath, ci_runner_bundle.CiRunnerBytes, 0o555)
 }
 
-func (ws *Workspace) AddActionsRunner(ctx context.Context) error {
-	return os.WriteFile(filepath.Join(ws.Path(), "buildbuddy_github_actions_runner"), gh_actions_runner_bundle.RunnerBytes, 0555)
-}
-
-func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) error {
+func (ws *Workspace) CleanInputsIfNecessary(keep map[fspath.Key]*repb.FileNode) error {
 	if ws.Opts.CleanInputs == "" {
 		return nil
 	}
-	inputFilesToCleanUp := make(map[string]*repb.FileNode)
+	inputFilesToCleanUp := make(map[fspath.Key]*repb.FileNode)
 	// Curly braces indicate a comma separated list of patterns: https://pkg.go.dev/github.com/gobwas/glob#Compile
 	glob, err := glob.Compile(fmt.Sprintf("{%s}", ws.Opts.CleanInputs), os.PathSeparator)
 	if err != nil {
 		return status.FailedPreconditionErrorf("Invalid glob {%s} used for input cleaning: %s", ws.Opts.CleanInputs, err.Error())
 	}
 	for path, node := range ws.Inputs {
-		if ws.Opts.CleanInputs == "*" || glob.Match(path) {
+		// NOTE: the glob is matching against the normalized path key here
+		// (which is always lowercase on case-insensitive filesystems), not the
+		// path string.
+		if ws.Opts.CleanInputs == "*" || glob.Match(path.NormalizedString()) {
 			inputFilesToCleanUp[path] = node
 		}
 	}
@@ -242,7 +449,7 @@ func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) erro
 	}
 	if len(inputFilesToCleanUp) > 0 {
 		for path := range inputFilesToCleanUp {
-			if err := os.RemoveAll(filepath.Join(ws.Path(), path)); err != nil && !os.IsNotExist(err) {
+			if err := os.RemoveAll(filepath.Join(ws.Path(), path.NormalizedString())); err != nil && !os.IsNotExist(err) {
 				return status.UnavailableErrorf("Failed to clean inputs: %s", err)
 			}
 			delete(ws.Inputs, path)
@@ -272,21 +479,19 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		// Errors uploading stderr/stdout are swallowed.
-		var err error
-		stdoutDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stdout))
+		d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stdout))
 		if err != nil {
-			log.CtxWarningf(ctx, "Failed to upload stdout: %s", err)
+			return status.UnavailableErrorf("upload stdout: %s", err)
 		}
+		stdoutDigest = d
 		return nil
 	})
 	eg.Go(func() error {
-		// Errors uploading stderr/stdout are swallowed.
-		var err error
-		stderrDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stderr))
+		d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stderr))
 		if err != nil {
-			log.CtxWarningf(ctx, "Failed to upload stderr: %s", err)
+			return status.UnavailableErrorf("upload stderr: %s", err)
 		}
+		stderrDigest = d
 		return nil
 	})
 	eg.Go(func() error {
@@ -299,14 +504,29 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 			// runner should be removed and cannot affect any files in the
 			// workspace anymore, so it is safe to rename the outputs files in
 			// upperdir here rather than copying.
-			recyclingEnabled := platform.IsTrue(platform.FindValue(ws.task.GetCommand().GetPlatform(), platform.RecycleRunnerPropertyName))
+			recyclingEnabled := platform.IsRecyclingEnabled(ws.task)
 			opts := overlayfs.ApplyOpts{AllowRename: !recyclingEnabled}
 			if err := ws.overlay.Apply(egCtx, opts); err != nil {
 				return status.WrapError(err, "apply overlay upperdir changes")
 			}
 		}
+		// Don't try to add files to the filecache if VFS is enabled. We use hard links to store data in the file
+		// cache and hard links across filesystems are not possible.
+		addToFileCache := ws.vfs == nil
 		var err error
-		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, ws.inputRoot(), cmd, executeResponse.Result)
+
+		txInfo, err = dirtools.UploadTree(
+			egCtx,
+			ws.env,
+			ws.dirHelper,
+			instanceName,
+			digestFunction,
+			filepath.Join(ws.inputRoot(), cmd.GetWorkingDirectory()),
+			cmd,
+			executeResponse.Result,
+			addToFileCache,
+			ws.task.GetFastCdc_2020Params(),
+		)
 		return err
 	})
 	var logsMu sync.Mutex
@@ -331,12 +551,41 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
+	txInfo.FileCount += 2 // for stdout and stderr
+	txInfo.BytesTransferred += int64(len(cmdResult.Stdout) + len(cmdResult.Stderr))
+	txInfo.FileCount += int64(len(cmdResult.AuxiliaryLogs))
+	for _, b := range cmdResult.AuxiliaryLogs {
+		txInfo.BytesTransferred += int64(len(b))
+	}
 	executeResponse.Result.StdoutDigest = stdoutDigest
 	executeResponse.Result.StderrDigest = stderrDigest
 	executeResponse.ServerLogs = serverLogs
 	span.SetAttributes(attribute.Int64("file_count", txInfo.FileCount))
 	span.SetAttributes(attribute.Int64("bytes_transferred", txInfo.BytesTransferred))
 	return txInfo, nil
+}
+
+func (ws *Workspace) stopVFS(ctx context.Context) error {
+	var unmountErr error
+	if ws.vfs != nil {
+		unmountErr = ws.vfs.Unmount()
+	}
+	if ws.vfsServer != nil {
+		ws.vfsServer.Stop()
+		errorChan := make(chan error)
+		deleteWaitGroup.Go(func() error {
+			errorChan <- disk.ForceRemove(ctx, ws.vfsServer.Path())
+			return nil
+		})
+		if removeErr := <-errorChan; removeErr != nil {
+			if unmountErr == nil {
+				return status.InternalErrorf("failed to clean up vfs scratch directory: %s", removeErr)
+			} else {
+				log.CtxWarningf(ctx, "Failed to clean up vfs scratch directory: %s", removeErr)
+			}
+		}
+	}
+	return unmountErr
 }
 
 func (ws *Workspace) Remove(ctx context.Context) error {
@@ -350,9 +599,19 @@ func (ws *Workspace) Remove(ctx context.Context) error {
 		return ws.overlay.Remove(ctx)
 	}
 
+	if ws.vfs != nil {
+		return ws.stopVFS(ctx)
+	}
+
+	errorChan := make(chan error)
 	// Sometimes removal fails if badly-behaved actions write their
 	// directories read-only. Use force-removal to handle these cases.
-	if err := disk.ForceRemove(ctx, ws.rootDir); err != nil {
+	deleteWaitGroup.Go(func() error {
+		errorChan <- disk.ForceRemove(ctx, ws.rootDir)
+		return nil
+	})
+
+	if err := <-errorChan; err != nil {
 		return status.InternalErrorf("failed to force-remove workspace: %s", err)
 	}
 	return nil
@@ -367,6 +626,35 @@ func (ws *Workspace) DiskUsageBytes() (int64, error) {
 	}
 
 	return disk.DirSize(ws.Path())
+}
+
+// ComputeVFSStats returns vfs-specific stats, if vfs is enabled.
+//
+// When VFS is enabled in the workspace, the VFS implementation keeps track
+// of its own IO stats and a call is necessary to propagate these stats to the
+// action results.
+func (ws *Workspace) ComputeVFSStats() *repb.VfsStats {
+	if ws.vfsServer == nil {
+		return nil
+	}
+	return ws.vfsServer.ComputeStats()
+}
+
+// TaskFinished informs the workspace that task execution is done.
+// Returns the transfer stats.
+func (ws *Workspace) TaskFinished() (*dirtools.TransferInfo, error) {
+	ws.mu.Lock()
+	tf := ws.treeFetcher
+	ws.mu.Unlock()
+	if tf == nil {
+		return nil, status.FailedPreconditionError("tree fetcher not set")
+	}
+	// TODO(vadim): cancel unfinished transfers instead of waiting for them
+	txInfo, err := tf.Wait()
+	ws.mu.Lock()
+	ws.treeFetcher = nil
+	ws.mu.Unlock()
+	return txInfo, err
 }
 
 // Clean removes files and directories in the workspace which are not preserved
@@ -387,33 +675,27 @@ func (ws *Workspace) Clean() error {
 	// as-is.
 	if ws.Opts.Preserve {
 		cmd := ws.task.GetCommand()
-		for _, path := range cmd.GetOutputFiles() {
-			if err := os.RemoveAll(filepath.Join(ws.Path(), path)); err != nil && !os.IsNotExist(err) {
+		outputPaths := slices.Concat(cmd.GetOutputFiles(), cmd.GetOutputDirectories(), cmd.GetOutputPaths())
+		workingDir := cmd.GetWorkingDirectory()
+		for _, outputPath := range outputPaths {
+			// Resolve output path relative to working directory, since
+			// output paths in the command are relative to working_directory
+			// but ws.Inputs and the filesystem are relative to the
+			// workspace root.
+			fullOutputPath := filepath.Join(workingDir, outputPath)
+			if err := os.RemoveAll(filepath.Join(ws.Path(), fullOutputPath)); err != nil && !os.IsNotExist(err) {
 				return status.UnavailableErrorf("Failed to clean workspace: %s", err)
 			}
-			// In case this output path was specified as an input path previously,
-			// delete it from known files.
-			delete(ws.Inputs, path)
-			// TODO: If we remove an output file whose path previously pointed to
-			// a directory, then we need to remove all `inputs` under that directory.
-		}
-		for _, outputDirPath := range cmd.GetOutputDirectories() {
-			if err := os.RemoveAll(filepath.Join(ws.Path(), outputDirPath)); err != nil && !os.IsNotExist(err) {
-				return status.UnavailableErrorf("Failed to clean workspace: %s", err)
-			}
-			// Need to delete any known input files which lived under that
-			// output directory.
-			// TODO: This nested loop impl may slow down the action if there are a lot
-			// of output directories. If this turns out to be an issue, might need to
-			// optimize this further.
-			for inputPath := range ws.Inputs {
-				if isParent(outputDirPath, inputPath) {
-					delete(ws.Inputs, inputPath)
+			// If the output path was a directory, we need to delete any known
+			// input files which lived under that output directory.
+			for inputKey := range ws.Inputs {
+				if fspath.IsParent(fullOutputPath, inputKey.NormalizedString(), ws.Opts.CaseInsensitive) {
+					delete(ws.Inputs, inputKey)
 				}
 			}
-			// In case this output dir previously pointed to an input file, delete it
-			// from the inputs index (this should be pretty uncommon).
-			delete(ws.Inputs, outputDirPath)
+			// In case this output path previously pointed to an input file,
+			// delete it from the inputs index (this should be pretty uncommon).
+			delete(ws.Inputs, fspath.NewKey(fullOutputPath, ws.Opts.CaseInsensitive))
 		}
 		return nil
 	}
@@ -435,8 +717,4 @@ func removeChildren(dirPath string) error {
 		}
 	}
 	return nil
-}
-
-func isParent(parent, child string) bool {
-	return strings.HasPrefix(child, parent+string(os.PathSeparator))
 }

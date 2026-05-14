@@ -1,6 +1,6 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
+load("@io_bazel_rules_docker//go:image.bzl", "go_image")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 # gazelle:default_visibility //enterprise:__subpackages__
 package(
@@ -15,13 +15,13 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner",
     deps = [
         "//enterprise/server/bes_artifacts",
-        "//enterprise/server/build_event_publisher",
-        "//enterprise/server/clientidentity",
+        "//enterprise/server/util/ci_runner_env",
         "//enterprise/server/workflow/config",
         "//proto:build_event_stream_go_proto",
         "//proto:command_line_go_proto",
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
+        "//proto:runner_go_proto",
+        "//server/build_event_publisher",
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
@@ -35,7 +35,9 @@ go_library(
         "//server/util/healthcheck",
         "//server/util/lockingbuffer",
         "//server/util/log",
+        "//server/util/redact",
         "//server/util/status",
+        "//server/util/usageutil",
         "@com_github_creack_pty//:pty",
         "@com_github_docker_go_units//:go-units",
         "@com_github_google_shlex//:shlex",

@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "golang",
     srcs = ["golang.go"],
@@ -8,10 +10,9 @@ go_library(
     deps = [
         "//cli/log",
         "//cli/workspace",
-        "@bazel_gazelle//language:go_default_library",
-        "@bazel_gazelle//language/go:go_default_library",
+        "@bazel_gazelle//label",
+        "@bazel_gazelle//language",
+        "@bazel_gazelle//language/go",
         "@org_golang_x_mod//modfile",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

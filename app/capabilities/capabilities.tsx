@@ -5,6 +5,20 @@ declare const window: Window & {
   gtag?: (method: string, ...args: any[]) => void;
 };
 
+/**
+ * Returns the default frontend config, matching the server defaults. During
+ * rollouts, setting default values here ensures that the client sees a
+ * reasonable default if it hits a server deployment that hasn't yet been fully
+ * rolled out. Fields only need to be set here explicitly if the desired default
+ * doesn't match the proto default.
+ */
+export function defaultConfig(): config.IFrontendConfig {
+  return {
+    apiKeyValueReadbackEnabled: true,
+    groupMembershipRequestsEnabled: true,
+  };
+}
+
 export class Capabilities {
   name: string = "";
   paths: Set<string> = new Set();
@@ -30,6 +44,7 @@ export class Capabilities {
   code: boolean = false;
   sso: boolean = false;
   usage: boolean = false;
+  readOnlyGitHubApp: boolean = false;
 
   constructor() {
     this.invocationSharing = true;
@@ -37,7 +52,10 @@ export class Capabilities {
     this.deleteInvocation = true;
     this.manageApiKeys = true;
 
-    this.config = window.buildbuddyConfig;
+    this.config = new config.FrontendConfig({
+      ...defaultConfig(),
+      ...window.buildbuddyConfig,
+    });
 
     // Note: Please don't add any new config fields below;
     // get them from the config directly.
@@ -53,6 +71,7 @@ export class Capabilities {
     this.executorKeyCreation = this.config.executorKeyCreationEnabled;
     this.code = this.config.codeEditorEnabled;
     this.usage = this.config.usageEnabled;
+    this.readOnlyGitHubApp = this.config.readOnlyGithubAppEnabled;
   }
 
   register(name: string, enterprise: boolean, paths: Array<string>) {

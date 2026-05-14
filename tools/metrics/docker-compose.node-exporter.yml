@@ -1,0 +1,14 @@
+version: "3.3"
+services:
+  node-exporter:
+    image: prom/node-exporter:latest
+    ports:
+      - "9200:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs

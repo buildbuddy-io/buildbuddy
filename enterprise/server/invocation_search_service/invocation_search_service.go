@@ -7,24 +7,30 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	sfpb "github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
+	gproto "google.golang.org/protobuf/proto"
 )
 
 const (
@@ -34,7 +40,8 @@ const (
 )
 
 var (
-	olapInvocationSearchEnabled = flag.Bool("app.olap_invocation_search_enabled", true, "If true, InvocationSearchService will query clickhouse for some queries.")
+	blendedInvocationSearchEnabled = flag.Bool("app.blended_invocation_search_enabled", false, "If true, InvocationSearchService will query clickhouse for all searches, filling in in-progress invocations from the regular DB.")
+	olapInvocationSearchEnabled    = flag.Bool("app.olap_invocation_search_enabled", true, "If true, InvocationSearchService will query clickhouse for a few impossibly slow queries (i.e., tags), but mostly use the regular DB.")
 )
 
 type InvocationSearchService struct {
@@ -59,8 +66,8 @@ func defaultSortParams() *inpb.InvocationSort {
 }
 
 func (s *InvocationSearchService) hydrateInvocationsFromDB(ctx context.Context, invocationIds []string, sort *inpb.InvocationSort) ([]*inpb.Invocation, error) {
-	q := query_builder.NewQuery(`SELECT * FROM "Invocations" as i`)
-	q.AddWhereClause("i.invocation_id IN ?", invocationIds)
+	q := query_builder.NewQuery(`SELECT * FROM "Invocations"`)
+	q.AddWhereClause("invocation_id IN ?", invocationIds)
 	addOrderBy(sort, q)
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -78,14 +85,14 @@ func (s *InvocationSearchService) hydrateInvocationsFromDB(ctx context.Context, 
 
 	invocations := make([]*inpb.Invocation, 0)
 	for _, ti := range out {
-		invocations = append(invocations, build_event_handler.TableInvocationToProto(ti))
+		invocations = append(invocations, invocationdb.TableInvocationToProto(ti))
 	}
 
 	return invocations, nil
 }
 
 func (s *InvocationSearchService) rawQueryInvocationsFromClickhouse(ctx context.Context, req *inpb.SearchInvocationRequest, offset int64, limit int64) ([]*inpb.Invocation, int64, error) {
-	sql, args, err := s.buildPrimaryQuery(ctx, "invocation_uuid", offset, limit, req)
+	sql, args, err := s.buildPrimaryQuery(ctx, "invocation_uuid", offset, limit, req, true)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -112,7 +119,7 @@ func (s *InvocationSearchService) rawQueryInvocationsFromClickhouse(ctx context.
 }
 
 func (s *InvocationSearchService) rawQueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest, offset int64, limit int64) ([]*inpb.Invocation, int64, error) {
-	sql, args, err := s.buildPrimaryQuery(ctx, "*", offset, limit, req)
+	sql, args, err := s.buildPrimaryQuery(ctx, "*", offset, limit, req, false)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -124,7 +131,7 @@ func (s *InvocationSearchService) rawQueryInvocations(ctx context.Context, req *
 
 	invocations := make([]*inpb.Invocation, 0)
 	for _, ti := range tis {
-		invocations = append(invocations, build_event_handler.TableInvocationToProto(ti))
+		invocations = append(invocations, invocationdb.TableInvocationToProto(ti))
 	}
 
 	return invocations, int64(len(invocations)), nil
@@ -148,7 +155,7 @@ func (s *InvocationSearchService) checkPreconditions(req *inpb.SearchInvocationR
 // TODO(tylerw): move this to a common place -- we'll use it a bunch.
 func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
 	o := query_builder.OrClauses{}
-	o.AddOr("(i.perms & ? != 0)", perms.OTHERS_READ)
+	o.AddOr("(perms & ? != 0)", perms.OTHERS_READ)
 	groupArgs := []interface{}{
 		perms.GROUP_READ,
 	}
@@ -158,15 +165,45 @@ func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
 		groupParams = append(groupParams, "?")
 	}
 	groupParamString := "(" + strings.Join(groupParams, ", ") + ")"
-	groupQueryStr := fmt.Sprintf("(i.perms & ? != 0 AND i.group_id IN %s)", groupParamString)
+	groupQueryStr := fmt.Sprintf("(perms & ? != 0 AND group_id IN %s)", groupParamString)
 	o.AddOr(groupQueryStr, groupArgs...)
-	o.AddOr("(i.perms & ? != 0 AND i.user_id = ?)", perms.OWNER_READ, u.GetUserID())
+	o.AddOr("(perms & ? != 0 AND user_id = ?)", perms.OWNER_READ, u.GetUserID())
 	orQuery, orArgs := o.Build()
 	q.AddWhereClause("("+orQuery+")", orArgs...)
 }
 
+func containsArrayFilters(filters []*sfpb.GenericFilter) bool {
+	for _, f := range filters {
+		typeDescriptorOptions := protoreflect.EnumValueDescriptor(f.GetType().Descriptor().Values().ByNumber(f.GetType().Number())).Options()
+		if typeDescriptorOptions == nil {
+			continue
+		}
+		typeOptions := gproto.GetExtension(typeDescriptorOptions, sfpb.E_FilterTypeOptions).(*sfpb.FilterTypeOptions)
+		if typeOptions == nil {
+			continue
+		}
+		if typeOptions.GetCategory() == sfpb.FilterCategory_STRING_ARRAY_FILTER_CATEGORY {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *InvocationSearchService) shouldQueryClickhouse(req *inpb.SearchInvocationRequest) bool {
-	return s.olapdbh != nil && *olapInvocationSearchEnabled && (len(req.GetQuery().GetTags()) > 0 || len(req.GetQuery().GetFilter()) > 0)
+	olapSearchEnabled := *olapInvocationSearchEnabled && (len(req.GetQuery().GetTags()) > 0 || len(req.GetQuery().GetFilter()) > 0 || containsArrayFilters(req.GetQuery().GetGenericFilters()))
+	return s.olapdbh != nil && (olapSearchEnabled || shouldUseBlendedSearch(req))
+}
+
+func shouldUseBlendedSearch(req *inpb.SearchInvocationRequest) bool {
+	sort := req.Sort
+	if sort == nil {
+		sort = defaultSortParams()
+	} else if sort.SortField == inpb.InvocationSort_UNKNOWN_SORT_FIELD {
+		sort.SortField = defaultSortParams().SortField
+	}
+	isSupportedSort := sort.SortField == inpb.InvocationSort_UPDATED_AT_USEC_SORT_FIELD
+
+	return *blendedInvocationSearchEnabled && isSupportedSort && requestIncludesUnfinishedBuilds(req)
 }
 
 func addOrderBy(sort *inpb.InvocationSort, q *query_builder.Query) {
@@ -204,7 +241,7 @@ func addOrderBy(sort *inpb.InvocationSort, q *query_builder.Query) {
 	}
 }
 
-func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields string, offset int64, limit int64, req *inpb.SearchInvocationRequest) (string, []interface{}, error) {
+func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields string, offset int64, limit int64, req *inpb.SearchInvocationRequest, isOlapQuery bool) (string, []interface{}, error) {
 	if req.GetQuery().GetRepoUrl() != "" {
 		norm, err := git.NormalizeRepoURL(req.GetQuery().GetRepoUrl())
 		if err == nil { // if we normalized successfully
@@ -225,56 +262,56 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 	q := query_builder.NewQuery(fmt.Sprintf(`SELECT %s FROM "Invocations" as i`, fields))
 
 	// Don't include anonymous builds.
-	q.AddWhereClause("((i.user_id != '' AND i.user_id IS NOT NULL) OR (i.group_id != '' AND i.group_id IS NOT NULL))")
+	q.AddWhereClause("((user_id != '' AND user_id IS NOT NULL) OR (group_id != '' AND group_id IS NOT NULL))")
 
 	if user := req.GetQuery().GetUser(); user != "" {
-		q.AddWhereClause("i.user = ?", user)
+		q.AddWhereClause("\"user\" = ?", user)
 	}
 	if host := req.GetQuery().GetHost(); host != "" {
-		q.AddWhereClause("i.host = ?", host)
+		q.AddWhereClause("host = ?", host)
 	}
 	if url := req.GetQuery().GetRepoUrl(); url != "" {
-		q.AddWhereClause("i.repo_url = ?", url)
+		q.AddWhereClause("repo_url = ?", url)
 	}
 	if branch := req.GetQuery().GetBranchName(); branch != "" {
-		q.AddWhereClause("i.branch_name = ?", branch)
+		q.AddWhereClause("branch_name = ?", branch)
 	}
 	if command := req.GetQuery().GetCommand(); command != "" {
-		q.AddWhereClause("i.command = ?", command)
+		q.AddWhereClause("command = ?", command)
 	}
 	if pattern := req.GetQuery().GetPattern(); pattern != "" {
-		q.AddWhereClause("i.pattern = ?", pattern)
+		q.AddWhereClause("pattern = ?", pattern)
 	}
 	if sha := req.GetQuery().GetCommitSha(); sha != "" {
-		q.AddWhereClause("i.commit_sha = ?", sha)
+		q.AddWhereClause("commit_sha = ?", sha)
 	}
 	if group_id := req.GetQuery().GetGroupId(); group_id != "" {
-		q.AddWhereClause("i.group_id = ?", group_id)
+		q.AddWhereClause("group_id = ?", group_id)
 	}
 	roleClauses := query_builder.OrClauses{}
 	for _, role := range req.GetQuery().GetRole() {
-		roleClauses.AddOr("i.role = ?", role)
+		roleClauses.AddOr("role = ?", role)
 	}
 	if roleQuery, roleArgs := roleClauses.Build(); roleQuery != "" {
 		q.AddWhereClause("("+roleQuery+")", roleArgs...)
 	}
 	if start := req.GetQuery().GetUpdatedAfter(); start.IsValid() {
-		q.AddWhereClause("i.updated_at_usec >= ?", start.AsTime().UnixMicro())
+		q.AddWhereClause("updated_at_usec >= ?", start.AsTime().UnixMicro())
 	}
 	if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
-		q.AddWhereClause("i.updated_at_usec < ?", end.AsTime().UnixMicro())
+		q.AddWhereClause("updated_at_usec < ?", end.AsTime().UnixMicro())
 	}
 	if tags := req.GetQuery().GetTags(); len(tags) > 0 {
-		if s.shouldQueryClickhouse(req) {
-			clause, args := invocation_format.GetTagsAsClickhouseWhereClause("i.tags", tags)
+		if isOlapQuery {
+			clause, args := invocation_format.GetTagsAsClickhouseWhereClause("tags", tags)
 			q.AddWhereClause(clause, args...)
 		} else if s.dbh.GORM(ctx, "dialector").Dialector.Name() == "mysql" {
 			for _, tag := range tags {
-				q.AddWhereClause("FIND_IN_SET(?, i.tags)", tag)
+				q.AddWhereClause("FIND_IN_SET(?, tags)", tag)
 			}
 		} else {
 			for _, tag := range tags {
-				q.AddWhereClause("i.tags LIKE ?", "%"+strings.ReplaceAll(tag, "%", "\\%")+"%")
+				q.AddWhereClause("tags LIKE ?", "%"+strings.ReplaceAll(tag, "%", "\\%")+"%")
 			}
 		}
 	}
@@ -301,34 +338,52 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 		q.AddWhereClause(fmt.Sprintf("(%s)", statusQuery), statusArgs...)
 	}
 
-	// The underlying data is not precise enough to accurately support nanoseconds and there's no use case for it yet.
-	if req.GetQuery().GetMinimumDuration().GetNanos() != 0 || req.GetQuery().GetMaximumDuration().GetNanos() != 0 {
-		return "", nil, status.InvalidArgumentError("InvocationSearchService does not support nanoseconds in duration queries")
+	if minDuration := req.GetQuery().GetMinimumDuration().AsDuration(); minDuration > 0 {
+		q.AddWhereClause(`duration_usec >= ?`, minDuration.Microseconds())
 	}
-
-	if req.GetQuery().GetMinimumDuration().GetSeconds() != 0 {
-		q.AddWhereClause(`duration_usec >= ?`, req.GetQuery().GetMinimumDuration().GetSeconds()*1000*1000)
-	}
-	if req.GetQuery().GetMaximumDuration().GetSeconds() != 0 {
-		q.AddWhereClause(`duration_usec <= ?`, req.GetQuery().GetMaximumDuration().GetSeconds()*1000*1000)
+	if maxDuration := req.GetQuery().GetMaximumDuration().AsDuration(); maxDuration > 0 {
+		q.AddWhereClause(`duration_usec <= ?`, maxDuration.Microseconds())
 	}
 
 	for _, f := range req.GetQuery().GetFilter() {
 		if f.GetMetric().Invocation == nil {
 			continue
 		}
-		str, args, err := filter.GenerateFilterStringAndArgs(f, "i.")
+		str, args, err := filter.GenerateFilterStringAndArgs(f)
+		if err != nil {
+			return "", nil, err
+		}
+		q.AddWhereClause(str, args...)
+	}
+	for _, f := range req.GetQuery().GetDimensionFilter() {
+		if f.GetDimension().Invocation == nil {
+			continue
+		}
+		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f)
 		if err != nil {
 			return "", nil, err
 		}
 		q.AddWhereClause(str, args...)
 	}
 
+	dialectName := s.dbh.DialectName()
+	if isOlapQuery {
+		dialectName = s.olapdbh.DialectName()
+	}
+
+	for _, f := range req.GetQuery().GetGenericFilters() {
+		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, sfpb.ObjectTypes_INVOCATION_OBJECTS, dialectName)
+		if err != nil {
+			return "", nil, err
+		}
+		q.AddWhereClause(s, a...)
+	}
+
 	// Clickhouse doesn't hold permissions data, but we need to *always*
 	// check permissions when we query from the main DB.  This is handled
 	// here for the non-Clickhouse case, and at the hydration step when
 	// querying clickhouse.
-	if !s.shouldQueryClickhouse(req) {
+	if !isOlapQuery {
 		addPermissionsCheckToQuery(u, q)
 	}
 
@@ -361,16 +416,183 @@ func computeOffsetAndLimit(req *inpb.SearchInvocationRequest) (int64, int64, err
 
 }
 
+func requestIncludesUnfinishedBuilds(req *inpb.SearchInvocationRequest) bool {
+	if len(req.GetQuery().GetStatus()) == 0 {
+		// No filters on status, so the query includes both pending and disconnected builds.
+		return true
+	}
+	for _, s := range req.GetQuery().GetStatus() {
+		if s == inspb.OverallStatus_IN_PROGRESS || s == inspb.OverallStatus_DISCONNECTED {
+			return true
+		}
+	}
+	return false
+}
+
+func compareInvocationsBySortField(a *inpb.Invocation, b *inpb.Invocation, sort *inpb.InvocationSort) bool {
+	var v1, v2 int64
+	switch sort.SortField {
+	case inpb.InvocationSort_UPDATED_AT_USEC_SORT_FIELD:
+		v1 = a.GetUpdatedAtUsec()
+		v2 = b.GetUpdatedAtUsec()
+	default:
+		alert.UnexpectedEvent("blended_invocation_search_unsupported_sort")
+	}
+	if sort.Ascending {
+		return v1 < v2
+	}
+	return v1 > v2
+}
+
+func getFilterValue(inv *inpb.Invocation, sortField inpb.InvocationSort_SortField) int64 {
+	switch sortField {
+	case inpb.InvocationSort_UPDATED_AT_USEC_SORT_FIELD:
+		return inv.GetUpdatedAtUsec()
+	default:
+		alert.UnexpectedEvent("blended_invocation_search_unsupported_sort")
+	}
+	return -1
+}
+
+func getExtraFilterForBlendedQuery(firstResult *inpb.Invocation, lastResult *inpb.Invocation, sort *inpb.InvocationSort) *sfpb.StatFilter {
+	if firstResult == nil && lastResult == nil {
+		return nil
+	}
+	f := &sfpb.StatFilter{}
+	switch sort.SortField {
+	case inpb.InvocationSort_UPDATED_AT_USEC_SORT_FIELD:
+		metric := sfpb.InvocationMetricType_UPDATED_AT_USEC_INVOCATION_METRIC
+		f.Metric = &sfpb.Metric{Invocation: &metric}
+	default:
+		alert.UnexpectedEvent("blended_invocation_search_unsupported_sort")
+	}
+	if firstResult != nil {
+		v := getFilterValue(firstResult, sort.SortField)
+		if sort.Ascending {
+			f.Min = &v
+		} else {
+			f.Max = &v
+		}
+	}
+	if lastResult != nil {
+		v := getFilterValue(lastResult, sort.SortField)
+		if sort.Ascending {
+			f.Max = &v
+		} else {
+			f.Min = &v
+		}
+	}
+	return f
+}
+
+func mergeSortedInvocations(a []*inpb.Invocation, b []*inpb.Invocation, sort *inpb.InvocationSort) []*inpb.Invocation {
+	if len(a) == 0 {
+		return b
+	}
+	if sort == nil {
+		sort = defaultSortParams()
+	}
+	i := 0
+	j := 0
+	out := make([]*inpb.Invocation, 0, len(a)+len(b))
+	for i <= len(a) && j <= len(b) {
+		if i == len(a) {
+			out = append(out, b[j:]...)
+			break
+		}
+		if j == len(b) {
+			out = append(out, a[i:]...)
+			break
+		}
+		if compareInvocationsBySortField(a[i], b[j], sort) {
+			out = append(out, a[i])
+			i++
+		} else {
+			out = append(out, b[j])
+			j++
+		}
+	}
+	return out
+}
+
+func (s *InvocationSearchService) mergeUnfinishedBuildsFromMysql(ctx context.Context, olapInvocations []*inpb.Invocation, isLastPage bool, req *inpb.SearchInvocationRequest, offset int64, limit int64) ([]*inpb.Invocation, error) {
+	sqlReq := proto.Clone(req).(*inpb.SearchInvocationRequest)
+
+	// Add new filters to only include range we saw from the OLAP DB.
+	// Clamping down to the relevant range based on sort order means
+	// that we will scan way less data in mysql looking for pending
+	// and disconnected builds regardless of other filters on the
+	// query.
+	if len(olapInvocations) > 0 {
+		var firstResult, lastResult *inpb.Invocation
+		// If this is the first page of results, don't filter left side.
+		if offset == 0 {
+			firstResult = nil
+		} else {
+			firstResult = olapInvocations[0]
+		}
+		// If this is the last page of results, don't filter the right side.
+		if isLastPage {
+			lastResult = nil
+		} else {
+			lastResult = olapInvocations[len(olapInvocations)-1]
+		}
+
+		if f := getExtraFilterForBlendedQuery(firstResult, lastResult, req.GetSort()); f != nil {
+			sqlReq.GetQuery().Filter = append(sqlReq.GetQuery().Filter, f)
+		}
+	}
+
+	// Add filters for pending + disconnected only.
+	newStatusFilters := make([]inspb.OverallStatus, 0)
+	if len(sqlReq.Query.Status) == 0 {
+		newStatusFilters = append(newStatusFilters, inspb.OverallStatus_IN_PROGRESS, inspb.OverallStatus_DISCONNECTED)
+	} else {
+		for _, s := range sqlReq.Query.Status {
+			if s == inspb.OverallStatus_IN_PROGRESS || s == inspb.OverallStatus_DISCONNECTED {
+				newStatusFilters = append(newStatusFilters, s)
+			}
+		}
+	}
+	sqlReq.GetQuery().Status = newStatusFilters
+
+	// No offset here as we're depending on output from
+	// getExtraFilterForBlendedQuery to offset the returned results.
+	sqlInvocations, _, err := s.rawQueryInvocations(ctx, sqlReq, 0, limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(sqlInvocations) == int(limit) {
+		log.Warningf("An invocation query fetched more than one page of results from mysql: %v", sqlReq)
+	}
+
+	return mergeSortedInvocations(olapInvocations, sqlInvocations, req.Sort), nil
+}
+
 func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error) {
 	offset, limit, err := computeOffsetAndLimit(req)
 	if err != nil {
 		return nil, err
+	}
+	if req.Sort == nil {
+		req.Sort = defaultSortParams()
+	} else if req.Sort.SortField == inpb.InvocationSort_UNKNOWN_SORT_FIELD {
+		req.Sort.SortField = defaultSortParams().SortField
 	}
 
 	var invocations []*inpb.Invocation
 	var count int64
 	if s.shouldQueryClickhouse(req) {
 		invocations, count, err = s.rawQueryInvocationsFromClickhouse(ctx, req, offset, limit)
+		if err != nil {
+			return nil, err
+		}
+		if shouldUseBlendedSearch(req) {
+			invocations, err = s.mergeUnfinishedBuildsFromMysql(ctx, invocations, limit != count /* isLastPage */, req, offset, limit)
+			if err != nil {
+				return nil, err
+			}
+		}
 	} else {
 		invocations, count, err = s.rawQueryInvocations(ctx, req, offset, limit)
 	}
@@ -380,7 +602,87 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 
 	rsp := &inpb.SearchInvocationResponse{Invocation: invocations}
 	if count == limit {
-		rsp.NextPageToken = pageSizeOffsetPrefix + strconv.FormatInt(offset+limit, 10)
+		nextPageStart := offset + limit
+		if shouldUseBlendedSearch(req) {
+			// Woohoo, a hack! We fetch invocations from mysql based on the
+			// range of values we see in clickhouse.  We can either send
+			// information about how many results were fetched from mySQL to the
+			// client in NextPageToken or play this goofy trick, where we drop
+			// the last result from clickhouse (and expect to fetch it on the
+			// next request).  This way is less crufty as an interface, but it
+			// means we don't support cases where the mySQL requests returns
+			// more than the specified limit.
+			nextPageStart = nextPageStart - 1
+			rsp.Invocation = rsp.Invocation[:(len(rsp.Invocation) - 1)]
+		}
+		rsp.NextPageToken = pageSizeOffsetPrefix + strconv.FormatInt(nextPageStart, 10)
 	}
 	return rsp, nil
+}
+
+func (s *InvocationSearchService) GetInvocationFilterSuggestions(ctx context.Context, req *inpb.GetInvocationFilterSuggestionsRequest) (*inpb.GetInvocationFilterSuggestionsResponse, error) {
+	if err := authutil.AuthorizeGroupAccessForStats(ctx, s.env, req.GetRequestContext().GetGroupId()); err != nil {
+		return nil, err
+	}
+
+	if s.olapdbh == nil {
+		return nil, status.UnimplementedError("Suggestions only supported for OLAP DB.")
+	}
+	q := query_builder.NewQuery("SELECT topK(8, 3)(user) AS top_users, topK(8, 3)(host) AS top_hosts, topK(8, 3)(branch_name) AS top_branches, topK(3)(command) AS top_commands FROM Invocations")
+	q.AddWhereClause("group_id = ?", req.GetRequestContext().GetGroupId())
+	for _, f := range req.GetFilters() {
+		fStr, fArgs, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, sfpb.ObjectTypes_INVOCATION_OBJECTS, "clickhouse")
+		if err != nil {
+			return nil, err
+		}
+		q.AddWhereClause(fStr, fArgs...)
+	}
+	qStr, qArgs := q.Build()
+	rq := s.olapdbh.NewQuery(ctx, "invocation_search_service_filter_suggestions").Raw(qStr, qArgs...)
+
+	type suggestionOutput struct {
+		TopUsers    []string `gorm:"type:Array(String);"`
+		TopHosts    []string `gorm:"type:Array(String);"`
+		TopBranches []string `gorm:"type:Array(String);"`
+		TopCommands []string `gorm:"type:Array(String);"`
+	}
+
+	out, err := db.ScanAll(rq, &suggestionOutput{})
+	if err != nil {
+		return nil, err
+	}
+
+	suggestions := make([]*sfpb.GenericFilter, 0)
+	for _, s := range out {
+		for _, u := range s.TopUsers {
+			suggestions = append(suggestions, &sfpb.GenericFilter{
+				Type:    sfpb.FilterType_USER_FILTER_TYPE,
+				Operand: sfpb.FilterOperand_IN_OPERAND,
+				Value:   &sfpb.FilterValue{StringValue: []string{u}},
+			})
+		}
+		for _, h := range s.TopHosts {
+			suggestions = append(suggestions, &sfpb.GenericFilter{
+				Type:    sfpb.FilterType_HOST_FILTER_TYPE,
+				Operand: sfpb.FilterOperand_IN_OPERAND,
+				Value:   &sfpb.FilterValue{StringValue: []string{h}},
+			})
+		}
+		for _, b := range s.TopBranches {
+			suggestions = append(suggestions, &sfpb.GenericFilter{
+				Type:    sfpb.FilterType_BRANCH_FILTER_TYPE,
+				Operand: sfpb.FilterOperand_IN_OPERAND,
+				Value:   &sfpb.FilterValue{StringValue: []string{b}},
+			})
+		}
+		for _, c := range s.TopCommands {
+			suggestions = append(suggestions, &sfpb.GenericFilter{
+				Type:    sfpb.FilterType_BRANCH_FILTER_TYPE,
+				Operand: sfpb.FilterOperand_IN_OPERAND,
+				Value:   &sfpb.FilterValue{StringValue: []string{c}},
+			})
+		}
+	}
+
+	return &inpb.GetInvocationFilterSuggestionsResponse{Suggestions: suggestions}, nil
 }

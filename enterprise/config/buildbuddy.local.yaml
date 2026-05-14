@@ -6,6 +6,13 @@ app:
   default_redis_target: "localhost:6379"
   enable_target_tracking: true
   user_owned_keys_enabled: true
+  streaming_http_enabled: true
+  invocation_log_streaming_enabled: true
+  dark_mode_enabled: true
+  build_buddy_url: "http://localhost:8080"
+  events_api_url: "grpc://localhost:1985"
+  cache_api_url: "grpc://localhost:1985"
+  remote_execution_api_url: "grpc://localhost:1985"
 database:
   data_source: "sqlite3:///tmp/${USER}-buildbuddy-enterprise.db"
 #olap_database:
@@ -17,8 +24,10 @@ storage:
   enable_chunked_event_logs: true
   tempdir: /tmp/${USER}
 cache:
-  disk:
-    root_directory: /tmp/${USER}-buildbuddy-enterprise-cache
+  pebble:
+    name: "pebble_cache"
+    active_key_version: 5
+    root_directory: /tmp/${USER}-buildbuddy-enterprise-pebble-cache
 auth:
   enable_anonymous_usage: true
   enable_self_auth: true

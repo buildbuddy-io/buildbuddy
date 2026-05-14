@@ -1,8 +1,8 @@
 import React from "react";
-import Modal from "../../../app/components/modal/modal";
-import shortcuts, { KeyCombo } from "../../../app/shortcuts/shortcuts";
 import Dialog, { DialogBody, DialogFooter, DialogHeader, DialogTitle } from "../../../app/components/dialog/dialog";
+import Modal from "../../../app/components/modal/modal";
 import UserPreferences from "../../../app/preferences/preferences";
+import shortcuts, { KeyCombo } from "../../../app/shortcuts/shortcuts";
 
 interface State {
   showing: boolean;
@@ -62,6 +62,10 @@ export default class ShortcutsComponent extends React.Component<Props, State> {
               <tr>
                 <td className="keyboard-shortcut-key">g-t</td>
                 <td>Go to Tests page</td>
+              </tr>
+              <tr>
+                <td className="keyboard-shortcut-key">g-s</td>
+                <td>Go to Targets page</td>
               </tr>
               <tr>
                 <td className="keyboard-shortcut-key">g-x</td>

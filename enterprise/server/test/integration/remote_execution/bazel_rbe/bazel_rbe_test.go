@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -366,6 +367,9 @@ func TestActionWithRunnerRecycling_InvalidArgument(t *testing.T) {
 func setup(t *testing.T) *rbetest.Env {
 	env := rbetest.NewRBETestEnv(t)
 	env.AddBuildBuddyServer()
+	// Run the executor with an API key to more closely match a production
+	// setup.
+	flags.Set(t, "executor.api_key", env.APIKey1)
 	env.AddExecutor(t)
 	// observe initial count so that we can get the diff at the end of the test
 	_ = tasksStarted(t)
@@ -400,8 +404,7 @@ func GetNumExecutionsFlushedToOLAPDB(t *testing.T, env *rbetest.Env) int {
 }
 
 func runRemoteShellActionViaBazel(t *testing.T, ctx context.Context, env *rbetest.Env, shCommand string, extraBazelArgs ...string) *bazel.InvocationResult {
-	ws := testbazel.MakeTempWorkspace(t, map[string]string{
-		"WORKSPACE": "",
+	ws := testbazel.MakeTempModule(t, map[string]string{
 		// Define a bazel rule that runs exactly one action, which creates a dummy
 		// file (because Bazel requires actions to have outputs) then executes our
 		// test command.

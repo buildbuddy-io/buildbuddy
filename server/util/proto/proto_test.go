@@ -11,7 +11,7 @@ import (
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	dspb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	gproto "google.golang.org/protobuf/proto"
 )
 
@@ -23,7 +23,7 @@ var (
 	testProtoTypes = map[string]testProtoType{
 		"FileMetadata": testProtoType{
 			providerFn: func() protoMessage {
-				return &rfpb.FileMetadata{}
+				return &sgpb.FileMetadata{}
 			},
 		},
 		"ScoreCard": testProtoType{
@@ -88,7 +88,7 @@ type unmarshalFunc func([]byte, protoMessage) error
 type cloneFunc func(v proto.Message) proto.Message
 
 func TestMarshal(t *testing.T) {
-	md := &rfpb.FileMetadata{}
+	md := &sgpb.FileMetadata{}
 	err := faker.FakeData(md)
 	require.NoError(t, err, "unable to fake data")
 
@@ -100,14 +100,14 @@ func TestMarshal(t *testing.T) {
 }
 
 func TestUnmarshal(t *testing.T) {
-	md := &rfpb.FileMetadata{}
+	md := &sgpb.FileMetadata{}
 	err := faker.FakeData(md)
 	require.NoError(t, err, "unable to fake data")
 
 	data, err := proto.MarshalOld(md)
 	require.NoError(t, err)
 
-	actual := &rfpb.FileMetadata{}
+	actual := &sgpb.FileMetadata{}
 	err = proto.Unmarshal(data, actual)
 	require.NoError(t, err)
 
@@ -115,7 +115,7 @@ func TestUnmarshal(t *testing.T) {
 }
 
 func TestClone(t *testing.T) {
-	md := &rfpb.FileMetadata{}
+	md := &sgpb.FileMetadata{}
 	err := faker.FakeData(md)
 	require.NoError(t, err, "unable to fake data")
 

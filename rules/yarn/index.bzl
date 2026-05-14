@@ -1,10 +1,12 @@
 DEFAULT_CMD_TPL = """
 # NOTE: BazelBinResolverPlugin in docusaurus.config.js depends on ROOTDIR being set
 # to the original execution working directory.
+export BAZEL_BINDIR=. &&
 export ROOTDIR=$$(pwd) &&
 export PACKAGEDIR=$$(dirname $(location {package})) &&
-export PATH=$$ROOTDIR/$$(dirname $(location {yarn})):$$ROOTDIR/$$(dirname $(location {node})):$$PATH &&
+export PATH=$$ROOTDIR/$$(dirname $(location {corepack})):$$ROOTDIR/$$(dirname $(NODE_PATH)):$$PATH &&
 cd $$PACKAGEDIR &&
+corepack enable &&
 yarn install &&
 yarn {command} &&
 cd build &&
@@ -13,16 +15,33 @@ cd $$ROOTDIR &&
 mv $$PACKAGEDIR/build.tar $@
 """
 
-EXECUTABLE_CMD_TPL = """
+EXECUTABLE_CMD_TPL = (
+    """
 cat << EOF > $@
-export PATH=$$(pwd)/$$(dirname $(location {yarn})):$$(pwd)/$$(dirname $(location {node})):$$PATH &&
+export BAZEL_BINDIR=. &&
+export PATH=$$(pwd)/$$(dirname $(location {corepack})):$$(pwd)/$$(dirname $(NODE_PATH)):$$PATH &&
 cd $$(dirname $(location {package})) &&
-yarn install &&
-yarn {command}
+corepack enable &&
+yarn install &&""" +
+
+    # To explain the complicated escaping here:
+    # starlark resolves `\\` to a literal backslash, giving us `\$$@`
+    #
+    # genrule interprets `\` as a literal backslash, then resolves `$$` to a
+    # literal dollar sign, giving us `\$@`
+    #
+    # the bash process that runs the `cat` command then resolves `\$` to a
+    # literal dollar sign, giving us `$@`
+    #
+    # the bash process that runs the yarn command then resolves `$@` to the
+    # command line arguments, effectively forwarding them to yarn.
+    """
+yarn {command} \\$$@
 EOF
 """
+)
 
-def yarn(name, srcs, package, command = "build", deps = [], yarn = "@yarn//:yarn_bin", node = "@nodejs_host//:node_bin", **kwargs):
+def yarn(name, srcs, package, command = "build", deps = [], corepack = Label("//rules/yarn:corepack"), node = Label("@nodejs_toolchains//:resolved_toolchain"), **kwargs):
     extension = ".tar"
     executable = False
     if command != "build":
@@ -36,8 +55,7 @@ def yarn(name, srcs, package, command = "build", deps = [], yarn = "@yarn//:yarn
 
     cmd = cmd_tpl.format(
         package = package,
-        yarn = yarn,
-        node = node,
+        corepack = corepack,
         command = command,
     )
 
@@ -47,7 +65,8 @@ def yarn(name, srcs, package, command = "build", deps = [], yarn = "@yarn//:yarn
         outs = [name + extension],
         cmd_bash = cmd,
         executable = executable,
-        tools = [yarn, node],
+        tools = [corepack, node],
+        toolchains = [node],
         local = 1,
         **kwargs
     )

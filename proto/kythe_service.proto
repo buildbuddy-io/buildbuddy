@@ -1,0 +1,243 @@
+syntax = "proto3";
+
+import "kythe/proto/explore.proto";
+import "kythe/proto/status_service.proto";
+import "kythe/proto/graph.proto";
+import "kythe/proto/filetree.proto";
+import "kythe/proto/storage.proto";
+import "kythe/proto/identifier.proto";
+import "kythe/proto/analysis.proto";
+import "kythe/proto/link.proto";
+import "kythe/proto/xref.proto";
+
+package kythe.service;
+
+option go_package = "kythe_service";
+
+// ExploreService provides read-only access to aspects of the Kythe code graph,
+// such as type hierarchies, call graphs, function parameters, and
+// parents/children relationships.  Requests should generally take time
+// proportional to the size of the response (in the absence of filtering, at
+// least).
+
+// In cases where properties of a node are requested (e.g. callers of a
+// function) for which there are no such (e.g., the function has no callers),
+// the response will not include that node.
+
+// THIS API IS EXPERIMENTAL; IMPLEMENTATION IS IN PROGRESS, AND THE API AND
+// IMPLEMENTATION ARE SUBJECT TO CHANGE.  PLEASE DO NOT USE WITHOUT CONTACTING
+// THE KYTHE TEAM (kythe-dev@googlegroups.com).
+service ExploreService {
+  // Returns the (recursive) callers of a specified function, as a directed
+  // graph.
+  // The Callers/Callees functions are distinct from XrefService.CrossReferences
+  // in that these functions capture the semantic relationships between methods,
+  // rather than the locations in the code base where a method is called.
+  rpc Callers(kythe.proto.CallersRequest) returns (kythe.proto.CallersReply) {}
+
+  // Returns the (recursive) callees of a specified function (that is, what
+  // functions this function calls), as a directed graph.
+  rpc Callees(kythe.proto.CalleesRequest) returns (kythe.proto.CalleesReply) {}
+
+  // Returns the parents of a specified node (for example,
+  // the file for a class, or the class for a function).
+  // Note that in some cases a node may have more than one parent.
+  rpc Parents(kythe.proto.ParentsRequest) returns (kythe.proto.ParentsReply) {}
+
+  // Returns the children of a specified node (for example,
+  // the classes contained in a file, or the functions contained in a class).
+  rpc Children(kythe.proto.ChildrenRequest)
+      returns (kythe.proto.ChildrenReply) {}
+
+  // Returns the hierarchy (supertypes and subtypes, including implementations)
+  // of a specified type, as a directed acyclic graph.
+  // NOT YET IMPLEMENTED
+  rpc TypeHierarchy(kythe.proto.TypeHierarchyRequest)
+      returns (kythe.proto.TypeHierarchyReply) {}
+
+  // Returns the parameters of a specified function.
+  // NOT YET IMPLEMENTED
+  rpc Parameters(kythe.proto.ParametersRequest)
+      returns (kythe.proto.ParametersReply) {}
+}
+
+// StatusService provides clients a way to request information about the data
+// provided by another Kythe service such as XRefService. Clients can use this
+// to inform decisions about what requests to make to the primary service.
+service StatusService {
+  rpc Status(kythe.proto.StatusRequest) returns (kythe.proto.StatusReply) {}
+}
+
+// This file defines a graph service interface, based on Kythe data.
+//
+// Tickets are Kythe URIs (http://www.kythe.io/docs/kythe-uri-spec.html).
+
+// GraphService provides fast single-step node and edge lookups in a Kythe
+// graph. The difference between this and a GraphStore is that queries for
+// reverse relationships are also expected to be fast.
+//
+// There is no distinction between "node not found" and "no facts/edges for
+// node".  A node is extensionally defined by its facts and edges, so a node
+// without any facts or edges is not considered to exist.
+service GraphService {
+  // Nodes returns a subset of the facts for each of the requested nodes.
+  rpc Nodes(kythe.proto.NodesRequest) returns (kythe.proto.NodesReply) {}
+
+  // Edges returns a subset of the outbound edges for each of a set of
+  // requested nodes.
+  rpc Edges(kythe.proto.EdgesRequest) returns (kythe.proto.EdgesReply) {}
+}
+
+// FileTreeService provides an interface to explore a tree of files.
+service FileTreeService {
+  // CorpusRoots returns all known corpus/root pairs for stored files.
+  rpc CorpusRoots(kythe.proto.CorpusRootsRequest)
+      returns (kythe.proto.CorpusRootsReply) {}
+
+  // Directory returns the file/sub-directory contents of the given directory.
+  rpc Directory(kythe.proto.DirectoryRequest)
+      returns (kythe.proto.DirectoryReply) {}
+}
+
+// Persistent storage server for Kythe analysis data.
+// See: http://www.kythe.io/docs/kythe-storage.html
+service GraphStore {
+  // Read responds with all Entry messages that match the given ReadRequest.
+  // The Read operation should be implemented with time complexity proportional
+  // to the size of the return set.
+  rpc Read(kythe.proto.ReadRequest) returns (stream kythe.proto.Entry) {}
+
+  // Scan responds with all Entry messages matching the given ScanRequest.  If a
+  // ScanRequest field is empty, any entry value for that field matches and will
+  // be returned.  Scan is similar to Read, but with no time complexity
+  // restrictions.
+  rpc Scan(kythe.proto.ScanRequest) returns (stream kythe.proto.Entry) {}
+
+  // Write atomically inserts or updates a collection of entries into the store.
+  // Each update is a tuple of the form (kind, target, fact, value).  For each
+  // such update, an entry (source, kind, target, fact, value) is written into
+  // the store, replacing any existing entry (source, kind, target, fact,
+  // value') that may exist.  Note that this operation cannot delete any data
+  // from the store; entries are only ever inserted or updated.  Apart from
+  // acting atomically, no other constraints are placed on the implementation.
+  rpc Write(kythe.proto.WriteRequest) returns (kythe.proto.WriteReply) {}
+}
+
+// ShardedGraphStores can be arbitrarily sharded for parallel processing.
+// Depending on the implementation, these methods may not return consistent
+// results when the store is being written to.  Shards are indexed from 0.
+service ShardedGraphStore {
+  // Count returns the number of entries in the given shard.
+  rpc Count(kythe.proto.CountRequest) returns (kythe.proto.CountReply) {}
+
+  // Shard responds with each Entry in the given shard.
+  rpc Shard(kythe.proto.ShardRequest) returns (stream kythe.proto.Entry) {}
+}
+
+// CompilationAnalyzer services are exposed by any program that wants to plug
+// into the Kythe pipeline to perform per-compilation analysis.
+service CompilationAnalyzer {
+  // Analyze is the main entry point for the analysis driver to send work to the
+  // analyzer.  The analysis may produce many outputs which will be streamed as
+  // framed AnalysisOutput messages.
+  //
+  // A driver may choose to retry analyses that return RPC errors.  It should
+  // not retry analyses that are reported as finished unless it is necessary to
+  // recover from an external production issue.
+  //
+  // If the RPC implementation does not support out-of-band error messages, the
+  // analyzer may report status by setting the final_result field of its last
+  // AnalysisOutput message.
+  rpc Analyze(kythe.proto.AnalysisRequest)
+      returns (stream kythe.proto.AnalysisOutput) {}
+}
+
+// FileDataServices are used by a CompilationAnalyzer to retrieve the contents
+// of input files required for analysis.
+service FileDataService {
+  // Get returns the contents of one or more files needed for analysis.  It is
+  // the server's responsibility to do any caching necessary to make this
+  // perform well, so that an analyzer does not need to implement its own
+  // caches unless it is doing something unusual.
+  //
+  // For each distinct path/digest pair in the request, the server must return
+  // exactly one response.  The order of the responses is arbitrary.
+  //
+  // For each requested file, one or both of the path and digest fields must be
+  // nonempty, otherwise an error is returned.  It is not an error for there to
+  // be no requested files, however.
+  rpc Get(kythe.proto.FilesRequest) returns (stream kythe.proto.FileData) {}
+
+  // GetFileData returns the contents a file needed for analysis.  It is the
+  // server's responsibility to do any caching necessary to make this perform
+  // well, so that an analyzer does not need to implement its own caches unless
+  // it is doing something unusual.
+  //
+  // One or both of the path and digest fields must be nonempty, otherwise an
+  // error is returned.
+  rpc GetFileData(kythe.proto.FileInfo) returns (kythe.proto.FileData) {}
+}
+
+service IdentifierService {
+  // Find returns a list of tickets associated with a given identifier string.
+  rpc Find(kythe.proto.FindRequest) returns (kythe.proto.FindReply);
+}
+
+// A LinkService resolves "links" based on qualified names.  Given a qualified
+// name, resolution consists of finding the entities that define that name and
+// returning the locations of their definition sites. This permits a client to
+// record a durable reference to an object whose definition may move within a
+// source file or even across source files over time.
+//
+// Because the mapping between qualified names and definitions is not unique in
+// general, the service permits the client to specify various constraints on a
+// query. The client records the effective constraints along with the qualified
+// name, e.g., as query parameters.
+//
+// Qualified names use the same format and have the same constraints as in the
+// IdentifierService defined by identifier.proto. This concurrence is intended,
+// so that a link service can be implemented using the same underlying data.
+service LinkService {
+  // Resolve returns the links matching the specified request.  The server is
+  // permitted to limit the size of the result set in order to ensure fast
+  // responses. The server will report an error if its limits are exceeded.
+  rpc Resolve(kythe.proto.LinkRequest) returns (kythe.proto.LinkReply) {}
+}
+
+// This file defines a cross-reference service interface, based on Kythe data.
+//
+// Tickets are Kythe URIs (http://www.kythe.io/docs/kythe-uri-spec.html).
+
+// XRefService provides fast read-only access to Kythe cross-reference
+// relationships.  "Cross-references" generally include non-transitive
+// (single-step) relations like usage of a declaration, instantiation of a
+// type, invocation of a function, direct inheritance or overrides, and so
+// forth.  Some transitive relations can be converted into cross-references by
+// precomputing a flattened representation of a transitive relation.
+//
+// Key design principles:
+//  - All requests must be satisfied "quickly", e.g., in time proportional to
+//    the size of the returned set.
+//
+//  - The client should be able to batch related requests.
+//
+//  - The client specifies exactly what facts should be returned.
+//
+service XRefService {
+  // Decorations returns an index of the nodes and edges associated with a
+  // particular file node.
+  rpc Decorations(kythe.proto.DecorationsRequest)
+      returns (kythe.proto.DecorationsReply) {}
+
+  // CrossReferences returns the global references, definitions, declarations,
+  // callers, and related nodes of a set of requested nodes.
+  rpc CrossReferences(kythe.proto.CrossReferencesRequest)
+      returns (kythe.proto.CrossReferencesReply) {}
+
+  // Documentation takes a set of tickets for semantic objects and returns
+  // documentation about them, including generated signatures and
+  // user-provided text. The documentation may refer to tickets for other
+  // nodes in the graph.
+  rpc Documentation(kythe.proto.DocumentationRequest)
+      returns (kythe.proto.DocumentationReply) {}
+}

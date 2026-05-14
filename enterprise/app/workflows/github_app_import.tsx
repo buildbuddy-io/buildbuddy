@@ -3,17 +3,19 @@ import React from "react";
 import alertService from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/user";
 import Banner from "../../../app/components/banner/banner";
+import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import LinkButton from "../../../app/components/button/link_button";
 import { FilterInput } from "../../../app/components/filter_input/filter_input";
+import { TextLink } from "../../../app/components/link/link";
 import Select, { Option } from "../../../app/components/select/select";
 import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
 import router from "../../../app/router/router";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { normalizeRepoURL } from "../../../app/util/git";
+import { linkReadOnlyGitHubAppURL, linkReadWriteGitHubAppURL } from "../../../app/util/github";
 import { github } from "../../../proto/github_ts_proto";
-import { TextLink } from "../../../app/components/link/link";
 
 type GitHubAppImportProps = {
   user: User;
@@ -163,23 +165,22 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
       .finally(() => this.setState({ linkRequest: null, linkLoading: false }));
   }
   private getLinkedRepoUrls(): Set<string> {
-    return new Set(this.state.linkedReposResponse?.repoUrls || []);
+    return new Set(this.state.linkedReposResponse?.repos?.map((repo) => repo.repoUrl) || []);
   }
 
-  private githubLinkURL(): string {
-    return `/auth/github/app/link/?${new URLSearchParams({
-      user_id: this.props.user?.displayUser?.userId?.id || "",
-      group_id: this.props.user?.selectedGroup?.id || "",
-      redirect_url: window.location.href,
-    })}`;
-  }
-  private appInstallURL(): string {
-    return `/auth/github/app/link/?${new URLSearchParams({
-      user_id: this.props.user?.displayUser?.userId?.id || "",
-      group_id: this.props.user?.selectedGroup?.id || "",
-      redirect_url: window.location.href,
-      install: "true",
-    })}`;
+  private onClickInstallApp() {
+    rpcService.service
+      .getGitHubAppInstallPath(new github.GetGithubAppInstallPathRequest())
+      .then((response) => {
+        const path = `${response.installPath}?${new URLSearchParams({
+          user_id: this.props.user?.displayUser?.userId?.id || "",
+          group_id: this.props.user?.selectedGroup?.id || "",
+          redirect_url: window.location.href,
+          install: "true",
+        })}`;
+        window.location.href = path;
+      })
+      .catch((e) => errorService.handleError(e));
   }
 
   private renderRepos() {
@@ -226,7 +227,7 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
           </div>
         )}
         <div className="create-other-container">
-          <a className="create-other clickable" href={this.appInstallURL()}>
+          <a className="create-other clickable" onClick={this.onClickInstallApp.bind(this)}>
             Don't see a repo in this list? Configure repo permissions <ExternalLink className="icon" />
           </a>
         </div>
@@ -242,28 +243,48 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
       <div className="workflows-github-import">
         <div className="shelf">
           <div className="container">
-            <div className="breadcrumbs">
+            <Breadcrumbs>
               <span>
                 <TextLink href="/workflows/">Workflows</TextLink>
               </span>
               <span>Link GitHub repo</span>
-            </div>
+            </Breadcrumbs>
             <div className="title">Link GitHub repo</div>
           </div>
         </div>
         <div className="container content-container">
           {!this.props.user.githubLinked && (
             <Banner type="info" className="install-app-banner">
-              <div>To get started, link a GitHub account to your BuildBuddy account.</div>
-              <LinkButton className="big-button" href={this.githubLinkURL()}>
-                Link GitHub account
+              <div>
+                To get started, link a GitHub account to your BuildBuddy account through one of the BuildBuddy GitHub
+                apps.
+              </div>
+              <div>
+                To see requested permissions for each app, click through the install flow. There will be a final
+                confirmation screen before any permissions are granted.
+              </div>
+              <LinkButton
+                className="big-button"
+                href={linkReadWriteGitHubAppURL(
+                  this.props.user?.displayUser?.userId?.id || "",
+                  this.props.user?.selectedGroup?.id || ""
+                )}>
+                Link via the read-write app
+              </LinkButton>
+              <LinkButton
+                className="big-button"
+                href={linkReadOnlyGitHubAppURL(
+                  this.props.user?.displayUser?.userId?.id || "",
+                  this.props.user?.selectedGroup?.id || ""
+                )}>
+                Link via the read-only app
               </LinkButton>
             </Banner>
           )}
           {this.props.user.githubLinked && !this.state.installationsResponse?.installations?.length && (
             <Banner type="info" className="install-app-banner">
               <div>To link a repository, install the BuildBuddy app on GitHub.</div>
-              <LinkButton className="big-button" href={this.appInstallURL()}>
+              <LinkButton className="big-button" onClick={this.onClickInstallApp.bind(this)}>
                 Install
               </LinkButton>
             </Banner>

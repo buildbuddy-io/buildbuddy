@@ -3,13 +3,14 @@ package interceptors
 import (
 	"compress/gzip"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"flag"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -19,6 +20,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/features"
+	"github.com/buildbuddy-io/buildbuddy/server/http/csp"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -31,23 +34,144 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 
+	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
 var (
-	upgradeInsecure = flag.Bool("ssl.upgrade_insecure", false, "True if http requests should be redirected to https. Assumes http traffic is served on port 80 and https traffic is served on port 443 (typically via an ingress / load balancer).")
-
-	uuidV4Regexp = regexp.MustCompile("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
+	upgradeInsecure  = flag.Bool("ssl.upgrade_insecure", false, "True if http requests should be redirected to https. Assumes http traffic is served on port 80 and https traffic is served on port 443 (typically via an ingress / load balancer).")
+	strictCspEnabled = flag.Bool("app.strict_csp_enabled", false, "If set, set a strict CSP header. Violations are logged at warning level.")
 )
+
+const contentSecurityPolicyReportingEndpointName = "csp-endpoint"
+
+var (
+	rpcNameContextKey       = struct{}{}
+	buildBuddyHTTPPrefix    = "/rpc/BuildBuddyService/"
+	buildBuddyServicePrefix = "/" + bbspb.BuildBuddyService_ServiceDesc.ServiceName + "/"
+	apiHTTPPrefix           = "/api/v1/"
+	apiServicePrefix        = "/" + apipb.ApiService_ServiceDesc.ServiceName + "/"
+)
+
+func getContentSecurityPolicyHeaderValue(nonce string) string {
+	var regionConnectSrcs []string
+	for _, r := range region.Protos() {
+		regionConnectSrcs = append(regionConnectSrcs, r.Subdomains)
+	}
+	nonceSrc := fmt.Sprintf("'nonce-%s'", nonce)
+	var styleNonceSrc string
+	var workerSrcs string
+	// Allow inline styles to support the Monaco code editor.
+	// https://github.com/microsoft/monaco-editor/issues/271
+	if *features.CodeEditorEnabled || *features.CodeEditorV2Enabled {
+		// unsafe-inline takes effect.
+		styleNonceSrc = ""
+		// Set via MonacoEnvironment.getWorkerUrl.
+		workerSrcs = "data:"
+	} else {
+		// A nonce source automatically overrides unsafe-inline.
+		styleNonceSrc = nonceSrc
+		workerSrcs = "'none'"
+	}
+	return strings.Join([]string{
+		"default-src 'self'",
+		// Monaco editor dynamically loads fonts from its CDN.
+		"font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/",
+		// We directly embed profile images from Google accounts and don't control their URLs.
+		"img-src 'self' https: data:",
+		"form-action 'self'",
+		"frame-src 'none'",
+		"worker-src " + workerSrcs,
+		"frame-ancestors 'none'",
+		"base-uri 'none'",
+		"block-all-mixed-content",
+		// libsodium.js requires data: for wasm.
+		"connect-src 'self' data: https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://registry.build " + strings.Join(regionConnectSrcs, " "),
+		"report-to " + contentSecurityPolicyReportingEndpointName,
+		"report-uri " + csp.ReportingEndpoint,
+		// libsodium.js requires 'wasm-unsafe-eval' to avoid a fallback to asm.js.
+		fmt.Sprintf("script-src %s 'strict-dynamic' 'wasm-unsafe-eval' 'self' https: 'unsafe-inline'", nonceSrc),
+		fmt.Sprintf("style-src %s 'self' https://fonts.googleapis.com/css 'unsafe-inline'", styleNonceSrc),
+	}, ";")
+}
+
+func setContentSecurityPolicy(h http.Header) string {
+	nonceBytes := make([]byte, 16)
+	_, err := rand.Read(nonceBytes)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to generate nonce: %s", err))
+	}
+	nonce := base64.StdEncoding.EncodeToString(nonceBytes)
+	h.Set("Content-Security-Policy", getContentSecurityPolicyHeaderValue(nonce))
+	return nonce
+}
 
 func SetSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+		w.Header().Set("X-Frame-Options", "deny")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
-		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
-		next.ServeHTTP(w, r)
+		if *strictCspEnabled {
+			nonce := setContentSecurityPolicy(w.Header())
+			w.Header().Set("Reporting-Endpoints", fmt.Sprintf("%s=%q", contentSecurityPolicyReportingEndpointName, csp.ReportingEndpoint))
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), csp.Nonce{}, nonce)))
+		} else {
+			next.ServeHTTP(w, r)
+		}
 	})
+}
+
+// BasicMIMETypeFromExtension returns a safe MIME type guessed from the given
+// extension. Only some basic media formats are supported. This function may be
+// useful in some cases where the user has requested to view their uploaded file
+// contents, but our default strict `X-Content-Type-Options: nosniff` header is
+// preventing the content from being displayed.
+//
+// The returned MIME types are all "inert" - executable contents such as JS, SVG
+// (which can contain embedded <script> tags), and PDF, are treated as generic
+// octet streams.
+func BasicMIMETypeFromExtension(ext string) string {
+	switch strings.ToLower(ext) {
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg", ".jfif":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".bmp":
+		return "image/bmp"
+	case ".webp":
+		return "image/webp"
+	case ".ico":
+		return "image/x-icon"
+	case ".tif", ".tiff":
+		return "image/tiff"
+	case ".mp4", ".m4v":
+		return "video/mp4"
+	case ".mov":
+		return "video/quicktime"
+	case ".avi":
+		return "video/x-msvideo"
+	case ".mkv":
+		return "video/x-matroska"
+	case ".webm":
+		return "video/webm"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".wav":
+		return "audio/wav"
+	case ".ogg":
+		return "audio/ogg"
+	case ".flac":
+		return "audio/flac"
+	case ".m4a", ".m4b", ".m4p", ".m4r":
+		return "audio/mp4"
+	case ".aac":
+		return "audio/aac"
+	}
+	return "application/octet-stream"
 }
 
 func RedirectIfNotForwardedHTTPS(next http.Handler) http.Handler {
@@ -162,10 +286,40 @@ func Authenticate(env environment.Env, next http.Handler) http.Handler {
 	})
 }
 
+// parseProtoletRPCName converts a protolet HTTP route to the canonical full RPC
+// name and stores it in the request context for later interceptors (e.g. quota,
+// capabilities filter).
+//
+// Examples:
+//
+//	/rpc/BuildBuddyService/SearchInvocation -> /buildbuddy.service.BuildBuddyService/SearchInvocation
+//	/api/v1/Run -> /api.v1.ApiService/Run
+func parseProtoletRPCName(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, buildBuddyHTTPPrefix):
+			r = r.WithContext(context.WithValue(r.Context(), rpcNameContextKey, buildBuddyServicePrefix+strings.TrimPrefix(r.URL.Path, buildBuddyHTTPPrefix)))
+		case strings.HasPrefix(r.URL.Path, apiHTTPPrefix):
+			r = r.WithContext(context.WithValue(r.Context(), rpcNameContextKey, apiServicePrefix+strings.TrimPrefix(r.URL.Path, apiHTTPPrefix)))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func rpcNameFromContext(ctx context.Context) (string, bool) {
+	rpcName, ok := ctx.Value(rpcNameContextKey).(string)
+	return rpcName, ok
+}
+
 func AuthorizeSelectedGroupRole(env environment.Env, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		if err := capabilities_filter.AuthorizeRPC(ctx, env, r.URL.Path); err != nil {
+		rpcName, ok := rpcNameFromContext(ctx)
+		if !ok {
+			http.Error(w, "unsupported RPC path", http.StatusForbidden)
+			return
+		}
+		if err := capabilities_filter.AuthorizeRPC(ctx, env, rpcName); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
@@ -175,11 +329,13 @@ func AuthorizeSelectedGroupRole(env environment.Env, next http.Handler) http.Han
 
 func AuthorizeIP(env environment.Env, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if irs := env.GetIPRulesService(); irs != nil {
-			if err := irs.AuthorizeHTTPRequest(r.Context(), r); err != nil {
+		if irs := env.GetIPRulesEnforcer(); irs != nil {
+			newCtx, err := irs.AuthorizeHTTPRequest(r.Context(), r)
+			if err != nil {
 				http.Error(w, err.Error(), http.StatusForbidden)
 				return
 			}
+			r = r.WithContext(newCtx)
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -273,10 +429,10 @@ func (w *instrumentedResponseWriter) Flush() {
 	}
 }
 
-func alertOnPanic() {
+func alertOnPanic(err any) {
 	buf := make([]byte, 1<<20)
 	n := runtime.Stack(buf, true)
-	alert.UnexpectedEvent("recovered_panic", buf[:n])
+	alert.UnexpectedEvent("recovered_panic", "%v\n%s", err, buf[:n])
 }
 
 func RecoverAndAlert(next http.Handler) http.Handler {
@@ -284,7 +440,7 @@ func RecoverAndAlert(next http.Handler) http.Handler {
 		defer func() {
 			if panicErr := recover(); panicErr != nil {
 				http.Error(w, "A panic occurred", http.StatusInternalServerError)
-				alertOnPanic()
+				alertOnPanic(panicErr)
 			}
 		}()
 		next.ServeHTTP(w, r)
@@ -319,6 +475,9 @@ func routeLabel(r *http.Request) string {
 	if path == "" || path == "/" {
 		return "/"
 	}
+	if path == "/readyz" || path == "/healthz" || path == "/file/download" || path == "/file/view" {
+		return path
+	}
 	if strings.HasPrefix(path, "/image/") {
 		return "/image/[...]"
 	}
@@ -333,6 +492,23 @@ func routeLabel(r *http.Request) string {
 	}
 	if path == "/api/v1/metrics" {
 		return "/api/v1/metrics"
+	} else if strings.HasPrefix(path, "/api/v1/") {
+		return "/api/v1/[...]"
+	}
+	if path == "/mcp" {
+		return "/mcp"
+	}
+	// OCI registry
+	if strings.HasPrefix(path, "/v2/") {
+		if strings.Contains(path, "/blobs/") {
+			return "/v2/[...]/blobs/[...]"
+		} else if strings.Contains(path, "/manifests/") {
+			return "/v2/[...]/manifests/[...]"
+		} else if path == "/v2/" {
+			return "/v2/"
+		} else {
+			return "/v2/[...]"
+		}
 	}
 	return "[OTHER]"
 }
@@ -375,6 +551,7 @@ func WrapAuthenticatedExternalProtoletHandler(env environment.Env, httpPrefix st
 	return wrapHandler(env, handlers.RequestHandler, &[]wrapFn{
 		Gzip,
 		func(h http.Handler) http.Handler { return AuthorizeSelectedGroupRole(env, h) },
+		parseProtoletRPCName,
 		func(h http.Handler) http.Handler { return AuthorizeIP(env, h) },
 		func(h http.Handler) http.Handler { return Authenticate(env, h) },
 		// The request message is parsed before authentication since the request_context
@@ -431,4 +608,30 @@ func (f RedirectOnError) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Warning(err.Error())
 		http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusTemporaryRedirect)
 	}
+}
+
+// captureStatusWriter is like http.ResponseWriter but captures any status code
+// written with WriteHeader.
+type captureStatusWriter struct {
+	http.ResponseWriter
+	Status int
+}
+
+func (rw *captureStatusWriter) WriteHeader(status int) {
+	rw.ResponseWriter.WriteHeader(status)
+	rw.Status = status
+}
+
+// DefaultRedirect invokes an HTTP handler and redirects to the given URL if the
+// handler function did not call WriteHeader to write a response.
+func DefaultRedirect(h http.Handler, url string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wrapper := &captureStatusWriter{ResponseWriter: w}
+		h.ServeHTTP(wrapper, r)
+		if wrapper.Status == 0 {
+			// Wrapped handler did not write a status code; perform the redirect
+			// to the provided url.
+			http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+		}
+	})
 }

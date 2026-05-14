@@ -5,31 +5,42 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/cas"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/fastcdc2020/fastcdc"
 	"github.com/google/uuid"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -37,7 +48,7 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-func runCASServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc.ClientConn {
+func runCASServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
 	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	if err != nil {
 		t.Error(err)
@@ -47,12 +58,12 @@ func runCASServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc
 		t.Error(err)
 	}
 
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env)
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()
 
-	clientConn, err := testenv.LocalGRPCConn(ctx, env)
+	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
 	if err != nil {
 		t.Error(err)
 	}
@@ -72,15 +83,50 @@ func (e *evilCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName
 	return rsp, err
 }
 
+type casCompressionCache struct {
+	interfaces.Cache
+}
+
+func (c *casCompressionCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
+	if r.GetCacheType() != rspb.CacheType_CAS {
+		return c.Cache.Get(ctx, r)
+	}
+	return (&testcompression.CompressionCache{Cache: c.Cache}).Get(ctx, r)
+}
+
+func (c *casCompressionCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
+	for _, r := range resources {
+		data, err := c.Get(ctx, r)
+		if status.IsNotFoundError(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		foundMap[r.GetDigest()] = data
+	}
+	return foundMap, nil
+}
+
+func (c *casCompressionCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
+	switch compressor {
+	case repb.Compressor_IDENTITY, repb.Compressor_ZSTD:
+		return true
+	default:
+		return false
+	}
+}
+
 func TestBatchUpdateBlobs(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	clientConn := runCASServer(ctx, te, t)
+	clientConn := runCASServer(ctx, t, te)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	var digests []*repb.Digest
@@ -106,7 +152,6 @@ func TestBatchUpdateBlobs(t *testing.T) {
 	}
 	_, err = casClient.BatchReadBlobs(ctx, readReq)
 	require.NoError(t, err)
-
 }
 
 func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
@@ -117,7 +162,7 @@ func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
 	require.NoError(t, err)
 	te.SetMetricsCollector(mc)
-	clientConn := runCASServer(ctx, te, t)
+	clientConn := runCASServer(ctx, t, te)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	blob := []byte("AAAAAAAAAAAAAAAAAAAAAAAAA")
@@ -212,7 +257,7 @@ func TestBatchUpdateRejectsCompressedBlobsIfCompressionDisabled(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "cache.zstd_transcoding_enabled", false)
-	clientConn := runCASServer(ctx, te, t)
+	clientConn := runCASServer(ctx, t, te)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	blob := []byte("AAAAAAAAAAAAAAAAAAAAAAAAA")
@@ -237,12 +282,12 @@ func TestBatchUpdateRejectsCompressedBlobsIfCompressionDisabled(t *testing.T) {
 func TestBatchUpdateRejectCorruptBlobs(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	clientConn := runCASServer(ctx, te, t)
+	clientConn := runCASServer(ctx, t, te)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	req := &repb.BatchUpdateBlobsRequest{}
@@ -271,8 +316,8 @@ func TestBatchUpdateRejectCorruptBlobs(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Equal(t, 3, len(rsp.GetResponses()))
-	assert.Equal(t, int32(gcodes.DataLoss), rsp.GetResponses()[0].GetStatus().GetCode())
-	assert.Equal(t, int32(gcodes.DataLoss), rsp.GetResponses()[1].GetStatus().GetCode())
+	assert.Equal(t, int32(gcodes.InvalidArgument), rsp.GetResponses()[0].GetStatus().GetCode())
+	assert.Equal(t, int32(gcodes.InvalidArgument), rsp.GetResponses()[1].GetStatus().GetCode())
 	assert.Equal(t, int32(gcodes.OK), rsp.GetResponses()[2].GetStatus().GetCode())
 }
 
@@ -317,7 +362,7 @@ func TestBatchUpdateAndRead_CacheHandlesCompression(t *testing.T) {
 			mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
 			require.NoError(t, err)
 			te.SetMetricsCollector(mc)
-			clientConn := runCASServer(ctx, te, t)
+			clientConn := runCASServer(ctx, t, te)
 			casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 			uploadBlob := blob
@@ -393,7 +438,7 @@ func TestBatchUpdateAndRead_CacheHandlesCompression(t *testing.T) {
 func TestMalevolentCache(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -403,7 +448,7 @@ func TestMalevolentCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	te.SetCache(&evilCache{c})
-	clientConn := runCASServer(ctx, te, t)
+	clientConn := runCASServer(ctx, t, te)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
@@ -437,99 +482,23 @@ func zstdDecompress(t *testing.T, b []byte) []byte {
 	return out
 }
 
-func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient, instanceName string, depth, branchingFactor int) (*repb.Digest, []string) {
-	numFiles := int(math.Pow(float64(branchingFactor), float64(depth)))
-	fileNames := make([]string, 0, numFiles)
-	var leafNodes []*repb.DirectoryNode
-
-	for d := depth; d > 0; d-- {
-		numNodes := int(math.Pow(float64(branchingFactor), float64(d)))
-		nextLeafNodes := make([]*repb.DirectoryNode, 0, numNodes)
-		for n := 0; n < numNodes; n++ {
-			subdir := &repb.Directory{}
-			if d == depth {
-				rn, buf := testdigest.RandomCASResourceBuf(t, 100)
-				_, err := cachetools.UploadBlob(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, bytes.NewReader(buf))
-				require.NoError(t, err)
-				fileName := fmt.Sprintf("leaf-file-%s-%d", rn.GetDigest().GetHash(), n)
-				fileNames = append(fileNames, fileName)
-				subdir.Files = append(subdir.Files, &repb.FileNode{
-					Name:   fileName,
-					Digest: rn.GetDigest(),
-				})
-			} else {
-				start := n * branchingFactor
-				end := branchingFactor + start
-				subdir.Directories = append(subdir.Directories, leafNodes[start:end]...)
-			}
-
-			subdirDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, subdir)
-			require.NoError(t, err)
-			dirName := fmt.Sprintf("node-%s-depth-%d-node-%d", subdirDigest.GetHash(), d, n)
-			fileNames = append(fileNames, dirName)
-			nextLeafNodes = append(nextLeafNodes, &repb.DirectoryNode{
-				Name:   dirName,
-				Digest: subdirDigest,
-			})
-		}
-		leafNodes = nextLeafNodes
-	}
-
-	parentDir := &repb.Directory{
-		Directories: leafNodes,
-	}
-	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, parentDir)
-	require.NoError(t, err)
-	return rootDigest, fileNames
-}
-
-func readTree(ctx context.Context, t *testing.T, casClient repb.ContentAddressableStorageClient, instanceName string, rootDigest *repb.Digest) []string {
-	// Fetch the tree, and return contents.
-	stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
-		InstanceName: instanceName,
-		RootDigest:   rootDigest,
-	})
-	assert.Nil(t, err)
-
-	names := make([]string, 0)
-
-	for {
-		rsp, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, dir := range rsp.GetDirectories() {
-			for _, file := range dir.GetFiles() {
-				names = append(names, file.GetName())
-			}
-			for _, subdir := range dir.GetDirectories() {
-				names = append(names, subdir.GetName())
-			}
-		}
-	}
-	return names
-}
-
 func TestGetTree(t *testing.T) {
 	instanceName := ""
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	clientConn := runCASServer(ctx, te, t)
+	clientConn := runCASServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	// Upload a dir containing fileCount files, and return the file
 	// names and directory digest.
 	uploadDirWithFiles := func(depth, branchingFactor int) (*repb.Digest, []string) {
-		return makeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
+		return cas.MakeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
 	}
 
 	child1Digest, child1Files := uploadDirWithFiles(2, 1)
@@ -538,11 +507,11 @@ func TestGetTree(t *testing.T) {
 	// Upload a root directory containing both child directories.
 	rootDir := &repb.Directory{
 		Directories: []*repb.DirectoryNode{
-			&repb.DirectoryNode{
+			{
 				Name:   "child1",
 				Digest: child1Digest,
 			},
-			&repb.DirectoryNode{
+			{
 				Name:   "child2",
 				Digest: child2Digest,
 			},
@@ -553,25 +522,26 @@ func TestGetTree(t *testing.T) {
 
 	allFiles := append(child1Files, child2Files...)
 	allFiles = append(allFiles, "child1", "child2")
-	treeFiles := readTree(ctx, t, casClient, instanceName, rootDigest)
+	treeFiles := cas.ReadTree(ctx, t, casClient, instanceName, rootDigest)
 	assert.ElementsMatch(t, allFiles, treeFiles)
 }
 
 func TestGetTreeCaching(t *testing.T) {
+	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
 	instanceName := ""
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	clientConn := runCASServer(ctx, te, t)
+	clientConn := runCASServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	uploadDirWithFiles := func(depth, branchingFactor int) (*repb.Digest, []string) {
-		return makeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
+		return cas.MakeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
 	}
 
 	child1Digest, child1Files := uploadDirWithFiles(10, 2)
@@ -581,11 +551,11 @@ func TestGetTreeCaching(t *testing.T) {
 	// Upload a root directory containing both child directories.
 	rootDir1 := &repb.Directory{
 		Directories: []*repb.DirectoryNode{
-			&repb.DirectoryNode{
+			{
 				Name:   "child1",
 				Digest: child1Digest,
 			},
-			&repb.DirectoryNode{
+			{
 				Name:   "child2",
 				Digest: child2Digest,
 			},
@@ -596,11 +566,11 @@ func TestGetTreeCaching(t *testing.T) {
 
 	rootDir2 := &repb.Directory{
 		Directories: []*repb.DirectoryNode{
-			&repb.DirectoryNode{
+			{
 				Name:   "child2",
 				Digest: child2Digest,
 			},
-			&repb.DirectoryNode{
+			{
 				Name:   "child3",
 				Digest: child3Digest,
 			},
@@ -613,7 +583,7 @@ func TestGetTreeCaching(t *testing.T) {
 	uploadedFiles1 = append(uploadedFiles1, "child1", "child2")
 
 	start := time.Now()
-	treeFiles1 := readTree(ctx, t, casClient, instanceName, rootDigest1)
+	treeFiles1 := cas.ReadTree(ctx, t, casClient, instanceName, rootDigest1)
 	fetch1Time := time.Since(start)
 
 	assert.ElementsMatch(t, uploadedFiles1, treeFiles1)
@@ -621,11 +591,225 @@ func TestGetTreeCaching(t *testing.T) {
 	uploadedFiles2 := append(child2Files, child3Files...)
 	uploadedFiles2 = append(uploadedFiles2, "child2", "child3")
 	start = time.Now()
-	treeFiles2 := readTree(ctx, t, casClient, instanceName, rootDigest2)
+	treeFiles2 := cas.ReadTree(ctx, t, casClient, instanceName, rootDigest2)
 	fetch2Time := time.Since(start)
 
 	assert.ElementsMatch(t, uploadedFiles2, treeFiles2)
 	assert.Less(t, fetch2Time, fetch1Time/2)
+}
+
+func NestForTest(t *testing.T, ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, dirToNest *repb.Directory, prefix string, levels int) (*repb.Digest, []string) {
+	outFiles := make([]string, 0)
+	rootDir := dirToNest
+	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir)
+	assert.Nil(t, err)
+	for i := range levels {
+		name := fmt.Sprintf("%s-%d", prefix, i)
+		outFiles = append(outFiles, name)
+		rootDir = &repb.Directory{
+			Directories: []*repb.DirectoryNode{
+				{
+					Name:   name,
+					Digest: rootDigest,
+				},
+			},
+		}
+		rootDigest, err = cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir)
+		assert.Nil(t, err)
+	}
+	return rootDigest, outFiles
+}
+
+func TestGetTreeCachingWithSplitting(t *testing.T) {
+	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
+	flags.Set(t, "cache.tree_cache_splitting", true)
+	flags.Set(t, "cache.tree_cache_splitting_min_size", 1000)
+
+	instanceName := ""
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	clientConn := runCASServer(ctx, t, te)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	uploadDirWithFiles := func(depth, branchingFactor int) (*repb.Digest, []string) {
+		return cas.MakeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
+	}
+
+	child1Digest, child1Files := uploadDirWithFiles(10, 2)
+	nodeModulesDigest, nodeModulesFiles := uploadDirWithFiles(10, 2)
+	child3Digest, child3Files := uploadDirWithFiles(1, 1)
+
+	// Upload a root directory containing both child directories.
+	rootDir1 := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			{
+				Name:   "child1",
+				Digest: child1Digest,
+			},
+			{
+				Name:   "node_modules",
+				Digest: nodeModulesDigest,
+			},
+		},
+	}
+	rootDigest1, extraFiles1 := NestForTest(t, ctx, bsClient, instanceName, rootDir1, "dir1", 5)
+
+	rootDir2 := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			{
+				Name:   "node_modules",
+				Digest: nodeModulesDigest,
+			},
+			{
+				Name:   "child3",
+				Digest: child3Digest,
+			},
+		},
+	}
+	rootDigest2, extraFiles2 := NestForTest(t, ctx, bsClient, instanceName, rootDir2, "dir2", 5)
+
+	uploadedFiles1 := append(child1Files, nodeModulesFiles...)
+	uploadedFiles1 = append(uploadedFiles1, "child1", "node_modules")
+	uploadedFiles1 = append(uploadedFiles1, extraFiles1...)
+
+	start := time.Now()
+	treeFiles1 := cas.ReadTree(ctx, t, casClient, instanceName, rootDigest1)
+	fetch1Time := time.Since(start)
+
+	assert.ElementsMatch(t, uploadedFiles1, treeFiles1)
+
+	uploadedFiles2 := append(nodeModulesFiles, child3Files...)
+	uploadedFiles2 = append(uploadedFiles2, "node_modules", "child3")
+	uploadedFiles2 = append(uploadedFiles2, extraFiles2...)
+	start = time.Now()
+	treeFiles2 := cas.ReadTree(ctx, t, casClient, instanceName, rootDigest2)
+	fetch2Time := time.Since(start)
+
+	assert.ElementsMatch(t, uploadedFiles2, treeFiles2)
+	assert.Less(t, fetch2Time, fetch1Time/2)
+}
+
+func TestGetTreeWithSubtrees(t *testing.T) {
+	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
+	flags.Set(t, "cache.get_tree_subtree_support", true)
+
+	instanceName := ""
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	clientConn := runCASServer(ctx, t, te)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	uploadDirWithFiles := func(depth, branchingFactor int) (*repb.Digest, []string) {
+		return cas.MakeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
+	}
+
+	child1Digest, child1Files := uploadDirWithFiles(10, 2)
+	nodeModulesDigest, nodeModulesFiles := uploadDirWithFiles(10, 2)
+	child3Digest, child3Files := uploadDirWithFiles(1, 1)
+
+	// Upload a root directory containing both child directories.
+	rootDir1 := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			{
+				Name:   "child1",
+				Digest: child1Digest,
+			},
+			{
+				Name:   "node_modules",
+				Digest: nodeModulesDigest,
+			},
+		},
+	}
+	rootDigest1, extraFiles1 := NestForTest(t, ctx, bsClient, instanceName, rootDir1, "dir1", 5)
+
+	rootDir2 := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			{
+				Name:   "node_modules",
+				Digest: nodeModulesDigest,
+			},
+			{
+				Name:   "child3",
+				Digest: child3Digest,
+			},
+		},
+	}
+	rootDigest2, extraFiles2 := NestForTest(t, ctx, bsClient, instanceName, rootDir2, "dir2", 5)
+
+	uploadedFiles1 := append(child1Files, nodeModulesFiles...)
+	uploadedFiles1 = append(uploadedFiles1, "child1", "node_modules")
+	uploadedFiles1 = append(uploadedFiles1, extraFiles1...)
+
+	// Stuff cache.
+	treeFiles1 := cas.ReadTree(ctx, t, casClient, instanceName, rootDigest1)
+
+	assert.ElementsMatch(t, uploadedFiles1, treeFiles1)
+
+	// Now read with subtrees..
+	stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
+		InstanceName:             instanceName,
+		RootDigest:               rootDigest2,
+		SendCachedSubtreeDigests: true,
+	})
+	assert.Nil(t, err)
+
+	treeFiles2 := make([]string, 0)
+	subtrees := make([]*repb.SubtreeResourceName, 0)
+	directoryCount := 0
+
+	for {
+		rsp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		directoryCount += len(rsp.GetDirectories())
+		for _, dir := range rsp.GetDirectories() {
+			for _, file := range dir.GetFiles() {
+				treeFiles2 = append(treeFiles2, file.GetName())
+			}
+			for _, subdir := range dir.GetDirectories() {
+				treeFiles2 = append(treeFiles2, subdir.GetName())
+			}
+		}
+		subtrees = append(subtrees, rsp.GetSubtrees()...)
+	}
+
+	assert.Equal(t, 8, directoryCount)
+	assert.Equal(t, 1, len(subtrees))
+
+	subtree := &capb.TreeCache{}
+	rn := digest.NewCASResourceName(subtrees[0].GetDigest(), instanceName, subtrees[0].GetDigestFunction())
+	rn.SetCompressor(subtrees[0].GetCompressor())
+	err = cachetools.GetBlobAsProto(ctx, bsClient, rn, subtree)
+	assert.NoError(t, err)
+
+	uploadedFiles2 := append(nodeModulesFiles, child3Files...)
+	uploadedFiles2 = append(uploadedFiles2, "node_modules", "child3")
+	uploadedFiles2 = append(uploadedFiles2, extraFiles2...)
+	assert.Equal(t, 2047, len(subtree.GetChildren()))
+	for _, child := range subtree.GetChildren() {
+		for _, file := range child.GetDirectory().GetFiles() {
+			treeFiles2 = append(treeFiles2, file.GetName())
+		}
+		for _, subdir := range child.GetDirectory().GetDirectories() {
+			treeFiles2 = append(treeFiles2, subdir.GetName())
+		}
+	}
+
+	assert.ElementsMatch(t, uploadedFiles2, treeFiles2)
 }
 
 func hasMissingDigestError(err error) bool {
@@ -645,19 +829,19 @@ func TestGetTreeMissingRoot(t *testing.T) {
 	instanceName := ""
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	clientConn := runCASServer(ctx, te, t)
+	clientConn := runCASServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	// Upload a dir containing fileCount files, and return the file
 	// names and directory digest.
 	uploadDirWithFiles := func(depth, branchingFactor int) (*repb.Digest, []string) {
-		return makeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
+		return cas.MakeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
 	}
 
 	child1Digest, _ := uploadDirWithFiles(2, 1)
@@ -666,11 +850,11 @@ func TestGetTreeMissingRoot(t *testing.T) {
 	// Upload a root directory containing both child directories.
 	rootDir := &repb.Directory{
 		Directories: []*repb.DirectoryNode{
-			&repb.DirectoryNode{
+			{
 				Name:   "child11",
 				Digest: child1Digest,
 			},
-			&repb.DirectoryNode{
+			{
 				Name:   "child2",
 				Digest: child2Digest,
 			},
@@ -691,4 +875,412 @@ func TestGetTreeMissingRoot(t *testing.T) {
 	_, err = stream.Recv()
 	require.Error(t, err)
 	require.True(t, hasMissingDigestError(err))
+}
+
+func TestSpliceAndSplitBlob(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	testFile := "testdata/server_notification.a"
+	fileData, err := os.ReadFile(testFile)
+	require.NoError(t, err)
+	require.Greater(t, len(fileData), 0)
+
+	avgChunkSize := 64 << 10 // 64KB
+	chunker, err := fastcdc.NewChunker(bytes.NewReader(fileData), avgChunkSize)
+	require.NoError(t, err)
+
+	var chunks [][]byte
+	var chunkDigests []*repb.Digest
+
+	for {
+		chunk, err := chunker.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+
+		chunkData := make([]byte, len(chunk.Data))
+		copy(chunkData, chunk.Data)
+		chunks = append(chunks, chunkData)
+
+		chunkDigest, err := digest.Compute(bytes.NewReader(chunkData), repb.DigestFunction_BLAKE3)
+		require.NoError(t, err)
+		chunkDigests = append(chunkDigests, chunkDigest)
+	}
+
+	require.Equal(t, len(chunks), 10)
+	batchReq := &repb.BatchUpdateBlobsRequest{
+		Requests:       make([]*repb.BatchUpdateBlobsRequest_Request, len(chunks)),
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+	for i, chunk := range chunks {
+		batchReq.Requests[i] = &repb.BatchUpdateBlobsRequest_Request{
+			Digest: chunkDigests[i],
+			Data:   chunk,
+		}
+	}
+
+	blobDigest, err := digest.Compute(bytes.NewReader(fileData), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	spliceReq := &repb.SpliceBlobRequest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   chunkDigests,
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+
+	// First, show that SpliceBlob fails if the chunks are not yet uploaded.
+	_, err = casClient.SpliceBlob(ctx, spliceReq)
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err))
+
+	// Upload the chunks, then show successful SpliceBlob and SplitBlob.
+	_, err = casClient.BatchUpdateBlobs(ctx, batchReq)
+	require.NoError(t, err)
+
+	spliceResp, err := casClient.SpliceBlob(ctx, spliceReq)
+	require.NoError(t, err)
+	require.Equal(t, blobDigest.Hash, spliceResp.BlobDigest.Hash)
+	require.Equal(t, blobDigest.SizeBytes, spliceResp.BlobDigest.SizeBytes)
+
+	splitReq := &repb.SplitBlobRequest{
+		BlobDigest:     blobDigest,
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+
+	splitResp, err := casClient.SplitBlob(ctx, splitReq)
+	require.NoError(t, err)
+	require.Equal(t, len(chunkDigests), len(splitResp.ChunkDigests))
+
+	for i, expectedDigest := range chunkDigests {
+		actualDigest := splitResp.ChunkDigests[i]
+		assert.Equal(t, expectedDigest.Hash, actualDigest.Hash)
+		assert.Equal(t, expectedDigest.SizeBytes, actualDigest.SizeBytes)
+	}
+}
+
+func TestSplitBlobNotFound(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	// Create a digest for a blob that has never been spliced
+	blobDigest := &repb.Digest{
+		Hash:      strings.Repeat("a", 64),
+		SizeBytes: 12345,
+	}
+
+	splitReq := &repb.SplitBlobRequest{
+		BlobDigest:     blobDigest,
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+
+	_, err = casClient.SplitBlob(ctx, splitReq)
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got: %v", err)
+}
+
+func TestSpliceBlobSingleChunk(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	// Upload a single chunk. This is not supported by the server.
+	chunkData := []byte("this is a single chunk of data")
+	chunkDigest, err := digest.Compute(bytes.NewReader(chunkData), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	batchReq := &repb.BatchUpdateBlobsRequest{
+		Requests: []*repb.BatchUpdateBlobsRequest_Request{
+			{
+				Digest: chunkDigest,
+				Data:   chunkData,
+			},
+		},
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+	_, err = casClient.BatchUpdateBlobs(ctx, batchReq)
+	require.NoError(t, err)
+
+	blobDigest := chunkDigest
+
+	spliceReq := &repb.SpliceBlobRequest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunkDigest},
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+
+	_, err = casClient.SpliceBlob(ctx, spliceReq)
+	require.Error(t, err)
+	require.True(t, status.IsUnimplementedError(err), "expected UnimplementedError, got: %v", err)
+}
+
+func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+	cache := te.GetCache()
+
+	chunk1RN, chunk1 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	chunk2RN, chunk2 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	fullBlob := append(append(chunk1, chunk2...), chunk3...)
+
+	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1))
+	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2))
+	require.NoError(t, cache.Set(ctx, chunk3RN, chunk3))
+
+	manifest := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	require.NoError(t, manifest.Store(ctx, cache))
+
+	regularBlob := []byte("small")
+	regularDigest, err := digest.Compute(bytes.NewReader(regularBlob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	rsp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{blobDigest, regularDigest},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, rsp.MissingBlobDigests, 1)
+	require.Equal(t, regularDigest.GetHash(), rsp.MissingBlobDigests[0].GetHash())
+}
+
+func TestBatchReadBlobsWithChunkedBlob(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		acceptableCompressors []repb.Compressor_Value
+		wantCompressor        repb.Compressor_Value
+		useCompressionCache   bool
+	}{
+		{
+			name:           "Identity",
+			wantCompressor: repb.Compressor_IDENTITY,
+		},
+		{
+			name:                  "Zstd",
+			acceptableCompressors: []repb.Compressor_Value{repb.Compressor_ZSTD},
+			wantCompressor:        repb.Compressor_ZSTD,
+			useCompressionCache:   true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+				"cache.chunking_enabled": {
+					State:          memprovider.Enabled,
+					DefaultVariant: "true",
+					Variants: map[string]any{
+						"true":  true,
+						"false": false,
+					},
+				},
+			})
+			require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+
+			fp, err := experiments.NewFlagProvider(t.Name())
+			require.NoError(t, err)
+
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			te.SetExperimentFlagProvider(fp)
+			if tc.useCompressionCache {
+				flags.Set(t, "cache.zstd_transcoding_enabled", true)
+				te.SetCache(&casCompressionCache{Cache: te.GetCache()})
+			}
+
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+			require.NoError(t, err)
+
+			clientConn := runCASServer(ctx, t, te)
+			casClient := repb.NewContentAddressableStorageClient(clientConn)
+			cache := te.GetCache()
+
+			regularBlob := []byte("regular blob")
+			regularDigest, err := digest.Compute(bytes.NewReader(regularBlob), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			require.NoError(t, cache.Set(ctx, digest.NewCASResourceName(regularDigest, "", repb.DigestFunction_SHA256).ToProto(), regularBlob))
+
+			chunk1RN, chunk1 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+			chunk2RN, chunk2 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+			chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+			chunkedBlob := append(append(chunk1, chunk2...), chunk3...)
+
+			chunkedBlobDigest, err := digest.Compute(bytes.NewReader(chunkedBlob), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+
+			require.NoError(t, cache.Set(ctx, chunk1RN, chunk1))
+			require.NoError(t, cache.Set(ctx, chunk2RN, chunk2))
+			require.NoError(t, cache.Set(ctx, chunk3RN, chunk3))
+
+			manifest := &chunking.Manifest{
+				BlobDigest:     chunkedBlobDigest,
+				ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
+				InstanceName:   "",
+				DigestFunction: repb.DigestFunction_SHA256,
+			}
+			require.NoError(t, manifest.Store(ctx, cache))
+
+			wantByDigest := map[string][]byte{
+				regularDigest.GetHash():     regularBlob,
+				chunkedBlobDigest.GetHash(): chunkedBlob,
+			}
+
+			readResp, err := casClient.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
+				Digests:               []*repb.Digest{regularDigest, chunkedBlobDigest},
+				AcceptableCompressors: tc.acceptableCompressors,
+			})
+			require.NoError(t, err)
+			require.Len(t, readResp.GetResponses(), len(wantByDigest))
+
+			for _, resp := range readResp.GetResponses() {
+				require.Equal(t, int32(gcodes.OK), resp.GetStatus().GetCode())
+				require.Equal(t, tc.wantCompressor, resp.GetCompressor())
+
+				wantBlob, ok := wantByDigest[resp.GetDigest().GetHash()]
+				require.True(t, ok, "unexpected digest %s", resp.GetDigest().GetHash())
+				if tc.wantCompressor == repb.Compressor_ZSTD {
+					require.Equal(t, wantBlob, zstdDecompress(t, resp.GetData()))
+				} else {
+					require.Equal(t, wantBlob, resp.GetData())
+				}
+			}
+		})
+	}
+}
+
+func TestSpliceBlobReadOnlyKey(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	te.SetExperimentFlagProvider(fp)
+
+	readOnlyUser := &testauth.TestUser{
+		UserID:       "US1",
+		GroupID:      "GR1",
+		Capabilities: []cappb.Capability{},
+	}
+	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{readOnlyUser.UserID: readOnlyUser})
+	te.SetAuthenticator(ta)
+
+	ctx = testauth.WithAuthenticatedUserInfo(ctx, readOnlyUser)
+
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	spliceReq := &repb.SpliceBlobRequest{
+		BlobDigest:     &repb.Digest{Hash: "abc123", SizeBytes: 100},
+		ChunkDigests:   []*repb.Digest{{Hash: "chunk1", SizeBytes: 50}, {Hash: "chunk2", SizeBytes: 50}},
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+
+	_, err = casClient.SpliceBlob(ctx, spliceReq)
+	require.NoError(t, err)
 }

@@ -2,7 +2,24 @@ syntax = "proto3";
 
 package firecracker;
 
+import "google/protobuf/timestamp.proto";
 import "proto/remote_execution.proto";
+
+// Network mode for a VM.
+enum NetworkMode {
+  // Defaults to NETWORK_MODE_EXTERNAL for backward compatibility.
+  NETWORK_MODE_UNSPECIFIED = 0;
+
+  // VM has no network interface.
+  NETWORK_MODE_OFF = 1;
+
+  // VM can communicate with the host (MMDS works for init-dockerd) but the
+  // host rejects packets routed through it.
+  NETWORK_MODE_LOCAL = 2;
+
+  // VM has full network access.
+  NETWORK_MODE_EXTERNAL = 3;
+}
 
 // VM properties which cannot be changed across snapshot/resume cycles.
 //
@@ -15,24 +32,54 @@ message VMConfiguration {
   int64 num_cpus = 1;
   int64 mem_size_mb = 2;
   int64 scratch_disk_size_mb = 3;
-  bool enable_networking = 4;
+
+  reserved 4, 17;
+  reserved "enable_networking", "enable_external_networking";
+
+  // Network mode for this VM.
+  NetworkMode network_mode = 18;
+
+  // Whether IPv6 should be enabled in the guest.
+  bool ipv6_enabled = 19;
+
   bool init_dockerd = 5;
   bool debug_mode = 6;
   bool enable_dockerd_tcp = 7;
-  string kernel_version = 8;
+  string guest_kernel_version = 8;
+  string host_kernel_version = 15;
   string firecracker_version = 9;
   string guest_api_version = 10;
   bool enable_logging = 12;
+  reserved 13;
 
   // Guest kernel boot args.
   string boot_args = 11;
 
+  // Host CPUID information. For now, if hosts differ in any of these CPUID
+  // fields, we do not share snapshots across the hosts.
+  CPUID host_cpuid = 14;
+
+  bool enable_vfs = 16;
+  bool enable_pci = 20;
+
   // TODO: add container_image here?
 }
 
+message CPUID {
+  // Representation of the CPU Vendor ID. This is a non-standard enum
+  // representation, and is defined here:
+  // https://github.com/klauspost/cpuid/blob/60035f3080f8a64825fc56d16a06103d44e36d4f/cpuid.go#L26-L65
+  int64 vendor_id = 1;
+
+  // CPU family number.
+  int64 family = 2;
+
+  // CPU model number.
+  int64 model = 3;
+}
+
 message SnapshotKeySet {
-  // Snapshot key to be read from when resuming the snapshot and written to when
-  // the task is complete.
+  // Snapshot key to be read from when resuming the snapshot.
   //
   // For workflows, this is associated with the git branch checked out in the
   // snapshotted git repo directory.
@@ -42,9 +89,24 @@ message SnapshotKeySet {
   // read-only; only the main key will be updated when writing the snapshot back
   // to cache.
   repeated SnapshotKey fallback_keys = 2;
+
+  // The snapshot key that should be written to when the task is complete.
+  // By default, this is the branch key.
+  SnapshotKey write_key = 3;
 }
 
 message SnapshotKey {
+  // If set, this key corresponds to a specific snapshot instance, and should
+  // never be overwritten by other snapshot manifests.
+  //
+  // Because the snapshot ID uniquely identifies a snapshot, all other fields
+  // should be unset when using this field, except for instance_name.
+  // TODO: instance_name should not be part of the cache key.
+  //
+  // If not set, this key corresponds to the newest snapshot matching the other
+  // parameters.
+  string snapshot_id = 6;
+
   // Remote instance name associated with the snapshot.
   string instance_name = 1;
 
@@ -62,11 +124,6 @@ message SnapshotKey {
   // Git ref associated with the snapshot. For workflows, this represents the
   // branch that was checked out when running the workflow.
   string ref = 5;
-
-  // If set, this key corresponds to a specific snapshot run.
-  // If not set, this key should fetch the newest snapshot matching the other
-  // parameters.
-  string snapshot_id = 6;
 
   // If set, corresponds to a specific version of the snapshot. Updating this
   // can be used to invalidate earlier snapshots (Ex. you may want to do this
@@ -159,6 +216,9 @@ message VMMetadata {
     // For example, even if the same execution is retried multiple times using
     // the same snapshot key, each run will have a unqiue snapshot_id.
     string snapshot_id = 5;
+
+    // The approximate finish time of the task.
+    google.protobuf.Timestamp completed_timestamp = 6;
   }
 
   // The last task to execute on this VM. When resuming from snapshot, this
@@ -170,6 +230,20 @@ message VMMetadata {
 
   // The snapshot key the currently executing task saved to after execution.
   SnapshotKey snapshot_key = 4;
+
+  // The time at which the VM was created.
+  google.protobuf.Timestamp created_timestamp = 5;
+
+  // The number of times the VM has been saved by resuming, running an
+  // action, pausing, and saving a new version. It starts at 1 when the VM is
+  // first saved.
+  int64 saved_snapshot_version_number = 6;
+
+  // Whether a local snapshot should be saved for this run.
+  bool saved_local_snapshot = 7;
+
+  // Whether a remote snapshot should be saved for this run.
+  bool saved_remote_snapshot = 8;
 }
 
 // SnapshotVersionMetadata contains the version ID to be used for snapshots.

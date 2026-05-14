@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "codesearch",
     srcs = ["codesearch.go"],
@@ -11,10 +13,9 @@ go_library(
         "//proto:search_go_proto",
         "//server/environment",
         "//server/real_environment",
+        "//server/util/claims",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/status",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

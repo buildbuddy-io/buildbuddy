@@ -1,11 +1,12 @@
 import React from "react";
-import authService, { User } from "../auth/auth_service";
-import { BuildBuddyError } from "../util/errors";
-import capabilities from "../capabilities/capabilities";
-import rpcService from "../service/rpc_service";
-import FilledButton from "../components/button/button";
 import { invocation } from "../../proto/invocation_ts_proto";
+import authService, { User } from "../auth/auth_service";
+import capabilities from "../capabilities/capabilities";
+import Breadcrumbs from "../components/breadcrumbs/breadcrumbs";
+import FilledButton from "../components/button/button";
 import errorService from "../errors/error_service";
+import rpcService from "../service/rpc_service";
+import { BuildBuddyError } from "../util/errors";
 
 interface Props {
   invocationId: string;
@@ -68,10 +69,10 @@ export default class InvocationNotFoundComponent extends React.Component<Props, 
     }
 
     return (
-      <div className="state-page">
+      <div className="state-page" debug-id="invocation-not-found">
         <div className="shelf">
           <div className="container">
-            <div className="breadcrumbs">Invocation {this.props.invocationId}</div>
+            <Breadcrumbs>Invocation {this.props.invocationId}</Breadcrumbs>
             {this.props.error?.code === "NotFound" && (
               <>
                 <div className="titles">

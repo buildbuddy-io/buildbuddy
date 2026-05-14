@@ -2,19 +2,26 @@ package statusz
 
 import (
 	"context"
+	"fmt"
 	"html/template"
 	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 )
 
-const templateContents = `<!DOCTYPE html>
+const (
+	BasePath = "/statusz"
+
+	Route = "/statusz/{section_name...}"
+
+	templateContents = `<!DOCTYPE html>
 <html>
   <head>
     <title>/statusz</title>
@@ -66,6 +73,7 @@ const templateContents = `<!DOCTYPE html>
   {{end}}
 </html>
 `
+)
 
 var (
 	startTime          time.Time
@@ -91,16 +99,24 @@ type StatusReporter interface {
 	// running state in a compact way.
 	Statusz(ctx context.Context) string
 }
-type StatusFunc func(ctx context.Context) string
 
-func (f StatusFunc) Statusz(ctx context.Context) string {
-	return f(ctx)
+type StatusServer interface {
+	// Sections that implement this interface may implement arbitrary additional
+	// HTTP serving logic, e.g. to implement POST updates or expose artifacts
+	// referenced in the statusz sections. Requests are only routed to these
+	// handlers if they contain a path starting with "/statusz/{section_name}/".
+	// The "/statusz/{section_name}" prefix is stripped.
+	ServeStatusz(w http.ResponseWriter, r *http.Request)
 }
+
+type StatusFunc func(ctx context.Context) string
+type ServeFunc = http.HandlerFunc
 
 type Section struct {
 	Name        string
 	Description string
-	Fn          StatusFunc
+	Status      StatusFunc
+	Serve       ServeFunc
 }
 
 type Handler struct {
@@ -118,11 +134,15 @@ func NewHandler() *Handler {
 func (h *Handler) AddSection(name, description string, statusReporter StatusReporter) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.sections[name] = &Section{
+	s := &Section{
 		Name:        name,
 		Description: description,
-		Fn:          statusReporter.Statusz,
+		Status:      statusReporter.Statusz,
 	}
+	if sm, ok := statusReporter.(StatusServer); ok {
+		s.Serve = http.StripPrefix(BasePath+"/"+name, http.HandlerFunc(sm.ServeStatusz)).ServeHTTP
+	}
+	h.sections[name] = s
 }
 
 type renderedSection struct {
@@ -131,22 +151,9 @@ type renderedSection struct {
 	HTML        template.HTML
 }
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	ctx := r.Context()
-	orderedSections := make([]*renderedSection, 0, len(h.sections))
-	for _, s := range h.sections {
-		rs := &renderedSection{
-			Name:        s.Name,
-			Description: s.Description,
-			HTML:        template.HTML(s.Fn(ctx)),
-		}
-		orderedSections = append(orderedSections, rs)
-	}
-	sort.Slice(orderedSections, func(i, j int) bool {
-		return orderedSections[i].Name < orderedSections[j].Name
+func (h *Handler) renderSections(sections []*renderedSection, w http.ResponseWriter) {
+	sort.Slice(sections, func(i, j int) bool {
+		return sections[i].Name < sections[j].Name
 	})
 
 	data := struct {
@@ -166,11 +173,46 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Hostname:    hostname,
 		StartTime:   startTime,
 		CurrentTime: time.Now(),
-		AppVersion:  version.AppVersion(),
+		AppVersion:  version.Tag(),
 		GoVersion:   version.GoVersion(),
-		Sections:    orderedSections,
+		Sections:    sections,
 	}
 	statusPageTemplate.Execute(w, data)
+}
+
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	ctx := r.Context()
+
+	sectionName, _, _ := strings.Cut(r.PathValue("section_name"), "/")
+	if section, ok := h.sections[sectionName]; ok {
+		if section.Serve != nil {
+			section.Serve(w, r)
+			return
+		}
+		http.Error(w, fmt.Sprintf("section %q does not support HTTP handling", sectionName), http.StatusBadRequest)
+		return
+	}
+
+	// If no single-section was specified, render all sections.
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	sections := make([]*renderedSection, 0, len(h.sections))
+	for _, section := range h.sections {
+		if sectionName != "" && section.Name != sectionName {
+			continue
+		}
+		rs := &renderedSection{
+			Name:        section.Name,
+			Description: section.Description,
+			HTML:        template.HTML(section.Status(ctx)),
+		}
+		sections = append(sections, rs)
+	}
+	h.renderSections(sections, w)
 }
 
 func AddSection(name, description string, statusReporter StatusReporter) {

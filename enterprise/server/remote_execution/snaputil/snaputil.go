@@ -9,32 +9,63 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/genproto/googleapis/bytestream"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
-var EnableLocalSnapshotSharing = flag.Bool("executor.enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs. Also requires that executor.firecracker_enable_nbd is true.")
-var EnableRemoteSnapshotSharing = flag.Bool("executor.enable_remote_snapshot_sharing", false, "Enables remote snapshot sharing for firecracker VMs. Also requires that executor.firecracker_enable_nbd and executor.firecracker_enable_uffd are true.")
-var RemoteSnapshotReadonly = flag.Bool("executor.remote_snapshot_readonly", false, "Disables remote snapshot writes.")
-var VerboseLogging = flag.Bool("executor.verbose_snapshot_logs", false, "Enables extra-verbose snapshot logs (even at debug log level)")
-
-// ChunkSource represents how a snapshot chunk was initialized
-type ChunkSource int
+var (
+	EnableLocalSnapshotSharing       = flag.Bool("executor.enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs.")
+	EnableRemoteSnapshotSharing      = flag.Bool("executor.enable_remote_snapshot_sharing", false, "Enables remote snapshot sharing for firecracker VMs.")
+	RemoteSnapshotReadonly           = flag.Bool("executor.remote_snapshot_readonly", false, "Disables remote snapshot writes.")
+	EnableBalloon                    = flag.Bool("executor.firecracker_enable_balloon", false, "Enable memory balloon support when snapshotting firecracker VMs.")
+	VerboseLogging                   = flag.Bool("executor.verbose_snapshot_logs", false, "Enables extra-verbose snapshot logs (even at debug log level)")
+	storeSnapshotsInLocalClusterOnly = flag.Bool("executor.store_snapshots_in_local_cluster_only", false, "If true, snapshots are only stored in the cache proxy in the cluster where this executor is running.")
+	enableUploadCompresssion         = flag.Bool("executor.enable_snapshot_chunk_upload_compression", true, "If true, snapshot chunks will be sent to the remote cache compressed.")
+	ThrottleSnapshotWrites           = flag.Bool("executor.throttle_snapshot_writes", false, "If true, snapshot writes will be throttled to avoid high IO pressure.")
+)
 
 const (
+	// SnapshotPartitionPrefix is added to the beginning of instance names
+	// for remote runs that create snapshots. In certain clusters,
+	// snapshots should be cached in a separate partition. This prefix will route
+	// snapshot data to that partition.
+	SnapshotPartitionPrefix = "bb-snapshot"
+
+	// Similar to SnapshotPartitionPrefix, when this prefix starts an instance name,
+	// that snapshot data will be stored in a different partition.
+	DevboxPartitionPrefix = "bb-devbox"
+
 	// MemoryFileName is the fixed file name of the memory snapshot file.
 	// We rely on this name to locate the memory file in snapshots. Do not
 	// change!
 	MemoryFileName = "memory"
 
+	// DefaultMaxStaleFallbackSnapshotAge is the max age of a valid fallback snapshot.
+	// This is used to prevent using very stale local snapshots that may cause performance degradation.
+	DefaultMaxStaleFallbackSnapshotAge = 24 * time.Hour
+
+	// DefaultSnapshotWriteInterval is the default interval between snapshot writes.
+	// This is used to prevent writing snapshots too frequently.
+	DefaultSnapshotWriteInterval = 1 * time.Hour
+
+	ConvertToCOWConcurrency       = 8
+	WriteSnapshotChunkConcurrency = 8
+)
+
+// ChunkSource represents how a snapshot chunk was initialized
+type ChunkSource int
+
+const (
 	// ChunkSourceUnmapped means the lazy chunk has not been initialized yet
 	ChunkSourceUnmapped ChunkSource = iota
 	// ChunkSourceHole means the chunk was initialized as a hole - i.e. it started
@@ -68,14 +99,20 @@ func (s ChunkSource) String() string {
 }
 
 func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, instanceName string, outputPath string) (ChunkSource, error) {
-	node := &repb.FileNode{Digest: d}
-	fetchedLocally := localCache.FastLinkFile(ctx, node, outputPath)
-	if fetchedLocally {
-		return ChunkSourceLocalFilecache, nil
+	if !*EnableLocalSnapshotSharing && !*EnableRemoteSnapshotSharing {
+		return 0, status.UnimplementedError("Snapshot sharing not enabled")
 	}
 
-	if !*EnableRemoteSnapshotSharing || !remoteEnabled {
-		return 0, status.UnavailableErrorf("snapshot artifact with digest %v not found in local cache", d)
+	if *EnableLocalSnapshotSharing {
+		node := &repb.FileNode{Digest: d}
+		fetchedLocally := localCache.FastLinkFile(ctx, node, outputPath)
+		if fetchedLocally {
+			return ChunkSourceLocalFilecache, nil
+		}
+
+		if !*EnableRemoteSnapshotSharing || !remoteEnabled {
+			return 0, status.UnavailableErrorf("snapshot artifact with digest %v not found in local cache", d)
+		}
 	}
 
 	if *VerboseLogging {
@@ -90,15 +127,24 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 		return 0, err
 	}
 	defer f.Close()
-	r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
+
+	// Modify the context for snapshot fetch.
+	ctx = GetSnapshotAccessContext(ctx)
+
+	r := digest.NewCASResourceName(d, instanceName, repb.DigestFunction_BLAKE3)
 	r.SetCompressor(repb.Compressor_ZSTD)
 	if err := cachetools.GetBlob(ctx, bsClient, r, f); err != nil {
+		if err := os.Remove(outputPath); err != nil {
+			log.CtxErrorf(ctx, "failed to clean up path %s after failed fetch: %s", outputPath, err)
+		}
 		return 0, status.WrapError(err, "remote fetch snapshot artifact")
 	}
 
-	// Save to local cache so next time fetching won't require a remote get
-	if err := cacheLocally(ctx, localCache, d, outputPath); err != nil {
-		log.Warningf("saving %s to local filecache failed: %s", outputPath, err)
+	if *EnableLocalSnapshotSharing {
+		// Save to local cache so next time fetching won't require a remote get
+		if err := cacheLocally(ctx, localCache, d, outputPath); err != nil {
+			log.Warningf("saving %s to local filecache failed: %s", outputPath, err)
+		}
 	}
 
 	return ChunkSourceRemoteCache, nil
@@ -124,11 +170,23 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 }
 
 // Cache saves a file written to `path` to the local cache, and the remote cache
-// if remote snapshot sharing is enabled
-func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string) error {
-	localCacheErr := cacheLocally(ctx, localCache, d, path)
-	if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !remoteEnabled {
-		return localCacheErr
+// if remote snapshot sharing is enabled.
+//
+// Returns the number of bytes written to the remote cache (including short-circuited or failed uploads).
+func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, shouldCacheRemotely bool, shouldCacheLocally bool, d *repb.Digest, remoteInstanceName string, path string, fileTypeLabel string) (int64, error) {
+	if !*EnableLocalSnapshotSharing && !*EnableRemoteSnapshotSharing {
+		return 0, status.UnimplementedError("Snapshot sharing not enabled")
+	}
+
+	if *EnableLocalSnapshotSharing && shouldCacheLocally {
+		localCacheErr := cacheLocally(ctx, localCache, d, path)
+		if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !shouldCacheRemotely {
+			return 0, localCacheErr
+		}
+	}
+
+	if !shouldCacheRemotely {
+		return 0, nil
 	}
 
 	if *VerboseLogging {
@@ -137,20 +195,31 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 		defer func() { log.CtxDebugf(ctx, "Uploaded snapshot artifact in %s", time.Since(start)) }()
 	}
 
-	rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
-	rn.SetCompressor(repb.Compressor_ZSTD)
+	rn := digest.NewCASResourceName(d, remoteInstanceName, repb.DigestFunction_BLAKE3)
+	if *enableUploadCompresssion {
+		rn.SetCompressor(repb.Compressor_ZSTD)
+	}
 	file, err := os.Open(path)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer file.Close()
-	_, err = cachetools.UploadFromReader(ctx, bsClient, rn, file)
-	return err
+
+	// Modify the context for snapshot storage.
+	ctx = GetSnapshotAccessContext(ctx)
+
+	_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, rn, file)
+	if err == nil && bytesUploaded > 0 {
+		metrics.SnapshotRemoteCacheUploadSizeBytes.With(prometheus.Labels{
+			metrics.FileName: fileTypeLabel,
+		}).Add(float64(bytesUploaded))
+	}
+	return bytesUploaded, err
 }
 
 // CacheBytes saves bytes to the cache.
 // It does this by writing the bytes to a temporary file in tmpDir.
-func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, b []byte) error {
+func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, shouldCacheRemotely bool, shouldCacheLocally bool, d *repb.Digest, remoteInstanceName string, b []byte, fileTypeLabel string) error {
 	// Write temp file containing bytes
 	randStr, err := random.RandomString(10)
 	if err != nil {
@@ -166,7 +235,8 @@ func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient b
 		}
 	}()
 
-	return Cache(ctx, localCache, bsClient, remoteEnabled, d, remoteInstanceName, tmpPath)
+	_, err = Cache(ctx, localCache, bsClient, shouldCacheRemotely, shouldCacheLocally, d, remoteInstanceName, tmpPath, fileTypeLabel)
+	return err
 }
 
 var chrootPrefix = regexp.MustCompile("^.*/firecracker/[^/]+/root/")
@@ -205,4 +275,30 @@ func ChunkSourceLabel(c ChunkSource) string {
 	default:
 		return "invalid_chunk_source"
 	}
+}
+
+// Chunked snapshot sharing allows snapshot files to be split into smaller chunks,
+// which can be cached locally or remotely. These chunks are then provided to
+// the guest using userfaultfd for memory and VBD for disk.
+//
+// When enabled, we can use VBD to support a single rootfs. This removes the need
+// to use overlayfs with the read-only container image (containerfs) and the
+// writeable scratch disk image (scratchfs).
+//
+// If disabled, Firecracker can still resume from full snapshot files stored on disk.
+// However, these files are too large to transfer between machines and will be lost
+// if the executor shuts down. Instead of a single root filesystem,
+// there will be separate containerfs and scratchfs.
+func IsChunkedSnapshotSharingEnabled() bool {
+	return *EnableRemoteSnapshotSharing || *EnableLocalSnapshotSharing
+}
+
+// If possible, avoid writing snapshots to the remote cache to minimize high
+// network transfer. Snapshots can't be shared across different machine types,
+// so there's not always a need to support snapshot sharing across clusters.
+func GetSnapshotAccessContext(ctx context.Context) context.Context {
+	if *storeSnapshotsInLocalClusterOnly {
+		return proxy_util.SetSkipRemote(ctx)
+	}
+	return ctx
 }

@@ -1,6 +1,6 @@
-import { getUniformBrightnessColor, getMaterialChartColor, getLightMaterialChartColor } from "../util/color";
-import { Profile, TraceEvent, buildThreadTimelines, buildTimeSeries } from "./trace_events";
+import { getLightMaterialChartColor, getMaterialChartColor } from "../util/color";
 import * as constants from "./constants";
+import { Profile, TraceEvent, buildThreadTimelines, buildTimeSeries } from "./trace_events";
 
 /**
  * A trace event profile structured for easier rendering in the trace viewer.
@@ -29,7 +29,7 @@ export type SectionModel = {
 export type TrackModel = {
   xs: number[];
   widths: number[];
-  colors: string[];
+  colorIds: string[];
   events: TraceEvent[];
 };
 
@@ -39,17 +39,26 @@ export type LinePlotModel = {
   yMax: number;
   darkColor: string;
   lightColor: string;
+  unit?: string;
 };
 
-export function buildTraceViewerModel(trace: Profile): TraceViewerModel {
-  const panels = [buildEventsPanel(trace.traceEvents), buildLinePlotsPanel(trace.traceEvents)];
+export function buildTraceViewerModel(trace: Profile, fitToContent?: boolean): TraceViewerModel {
+  let panels = [
+    buildEventsPanel(trace.traceEvents, fitToContent),
+    buildLinePlotsPanel(trace.traceEvents, fitToContent),
+  ];
+  // If there is no data available (e.g. the executor doesn't have timeseries
+  // recording enabled yet) then the panel will be empty - just remove the panel
+  // in this case since we don't handle this empty state in a good way yet.
+  panels = panels.filter((panel) => panel.sections.length);
+
   return {
     panels,
     xMax: computeXMax(panels),
   };
 }
 
-function buildEventsPanel(events: TraceEvent[]): PanelModel {
+function buildEventsPanel(events: TraceEvent[], fitToContent?: boolean): PanelModel {
   const sections: SectionModel[] = [];
   let sectionY = 0;
   const timelines = buildThreadTimelines(events);
@@ -64,12 +73,12 @@ function buildEventsPanel(events: TraceEvent[]): PanelModel {
       const track = (tracks[depth] ??= {
         xs: [],
         widths: [],
-        colors: [],
+        colorIds: [],
         events: [],
       });
       track.xs.push(ts);
       track.widths.push(dur);
-      track.colors.push(getUniformBrightnessColor(`${cat}#${name}`));
+      track.colorIds.push(`${cat}#${name}`);
       track.events.push(event);
     }
 
@@ -90,12 +99,14 @@ function buildEventsPanel(events: TraceEvent[]): PanelModel {
   }
 
   return {
-    height: constants.EVENTS_PANEL_HEIGHT,
+    height: fitToContent
+      ? constants.TIMESTAMP_HEADER_SIZE + sectionY + constants.BOTTOM_CONTROLS_HEIGHT + constants.SCROLLBAR_SIZE
+      : constants.EVENTS_PANEL_HEIGHT,
     sections,
   };
 }
 
-function buildLinePlotsPanel(events: TraceEvent[]): PanelModel {
+function buildLinePlotsPanel(events: TraceEvent[], fitToContent?: boolean): PanelModel {
   const timeSeries = buildTimeSeries(events);
   let sectionY = 0;
   let index = 0;
@@ -105,7 +116,7 @@ function buildLinePlotsPanel(events: TraceEvent[]): PanelModel {
     constants.TIME_SERIES_HEIGHT +
     constants.SECTION_PADDING_BOTTOM;
   const sections: SectionModel[] = [];
-  for (const { name, events } of timeSeries) {
+  for (const { name, events, unit } of timeSeries) {
     const xs: number[] = [];
     const ys: number[] = [];
     let yMax = 0;
@@ -127,6 +138,7 @@ function buildLinePlotsPanel(events: TraceEvent[]): PanelModel {
         yMax,
         darkColor: getMaterialChartColor(index),
         lightColor: getLightMaterialChartColor(index),
+        unit,
       },
     });
     sectionY += sectionHeight;
@@ -134,7 +146,9 @@ function buildLinePlotsPanel(events: TraceEvent[]): PanelModel {
   }
 
   return {
-    height: constants.LINE_PLOTS_PANEL_HEIGHT,
+    height: fitToContent
+      ? constants.TIMESTAMP_HEADER_SIZE + sectionY + constants.BOTTOM_CONTROLS_HEIGHT + constants.SCROLLBAR_SIZE
+      : constants.LINE_PLOTS_PANEL_HEIGHT,
     sections,
   };
 }

@@ -1,17 +1,23 @@
+load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@bazel_gazelle//:def.bzl", "DEFAULT_LANGUAGES", "gazelle", "gazelle_binary")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@com_github_bazelbuild_buildtools//buildifier:def.bzl", "buildifier")
 load("@com_github_sluongng_nogo_analyzer//staticcheck:def.bzl", "ANALYZERS", "staticcheck_analyzers")
 load("@io_bazel_rules_go//go:def.bzl", "nogo")
-load("@npm//@bazel/typescript:index.bzl", "ts_config")
+load("@npm//:defs.bzl", "npm_link_all_packages")
+load("@pypi//:requirements.bzl", "all_whl_requirements")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:pip.bzl", "compile_pip_requirements")
+load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
+load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
+load("@rules_uv//uv:pip.bzl", "pip_compile")
 load("//rules/go:index.bzl", "go_sdk_tool")
+load("//rules/go/analyzer:def.bzl", "MODERNIZE_ANALYZERS")
 
 package(default_visibility = ["//visibility:public"])
 
-alias(
-    name = "zlib",
-    actual = "@zlib",
-    tags = ["manual"],
-)
+npm_link_all_packages(name = "node_modules")
 
 # Rendered JSON result could be checked by doing:
 #   bazel build //:no_go_config
@@ -23,64 +29,10 @@ write_file(
         json.encode_indent(
             {
                 "exhaustive": {
-                    "exclude_files": {
-                        "external[\\\\,\\/]": "third_party",
-                    },
                     "analyzer_flags": {
                         "default-signifies-exhaustive": "true",
                     },
                 },
-            } | {
-                analyzer: {
-                    "exclude_files": {
-                        "external[\\\\,\\/]": "third_party",
-                        ".*\\.pb\\.go": "Auto-generated proto files",
-                        # TODO(sluongng): this should be fixed on rules_go side
-                        # https://github.com/bazelbuild/rules_go/issues/3619
-                        "cgo[\\\\,\\/]github.com[\\\\,\\/]shirou[\\\\,\\/]gopsutil[\\\\,\\/]": "third_party cgo",
-                    },
-                }
-                for analyzer in ANALYZERS + [
-                    "appends",
-                    "asmdecl",
-                    "assign",
-                    "atomicalign",
-                    "bools",
-                    "buildtag",
-                    # "cgocall",
-                    "composites",
-                    "copylocks",
-                    "deepequalerrors",
-                    "defers",
-                    "directive",
-                    "errorsas",
-                    # Noisy and is not part of 'go vet'
-                    # "fieldalignment",
-                    "framepointer",
-                    "httpresponse",
-                    "ifaceassert",
-                    "loopclosure",
-                    "lostcancel",
-                    "nilfunc",
-                    "nilness",
-                    "printf",
-                    # Everyone shadows `err`
-                    # "shadow",
-                    "shift",
-                    "sigchanyzer",
-                    "slog",
-                    "sortslice",
-                    "stdmethods",
-                    "stringintconv",
-                    "structtag",
-                    "testinggoroutine",
-                    "tests",
-                    "timeformat",
-                    "unmarshal",
-                    "unreachable",
-                    "unsafeptr",
-                    "unusedresult",
-                ]
             },
         ),
     ],
@@ -107,13 +59,15 @@ nogo(
         "@org_golang_x_tools//go/analysis/passes/errorsas",
         # "@org_golang_x_tools//go/analysis/passes/fieldalignment",
         "@org_golang_x_tools//go/analysis/passes/framepointer",
+        "@org_golang_x_tools//go/analysis/passes/hostport",
+        "@org_golang_x_tools//go/analysis/passes/httpmux",
         "@org_golang_x_tools//go/analysis/passes/httpresponse",
         "@org_golang_x_tools//go/analysis/passes/ifaceassert",
-        "@org_golang_x_tools//go/analysis/passes/loopclosure",
         "@org_golang_x_tools//go/analysis/passes/lostcancel",
         "@org_golang_x_tools//go/analysis/passes/nilfunc",
         "@org_golang_x_tools//go/analysis/passes/nilness",
         "@org_golang_x_tools//go/analysis/passes/printf",
+        "@org_golang_x_tools//go/analysis/passes/reflectvaluecompare",
         # Everyone shadows `err`
         # "@org_golang_x_tools//go/analysis/passes/shadow",
         "@org_golang_x_tools//go/analysis/passes/shift",
@@ -121,6 +75,7 @@ nogo(
         "@org_golang_x_tools//go/analysis/passes/slog",
         "@org_golang_x_tools//go/analysis/passes/sortslice",
         "@org_golang_x_tools//go/analysis/passes/stdmethods",
+        "@org_golang_x_tools//go/analysis/passes/stdversion",
         "@org_golang_x_tools//go/analysis/passes/stringintconv",
         "@org_golang_x_tools//go/analysis/passes/structtag",
         "@org_golang_x_tools//go/analysis/passes/testinggoroutine",
@@ -130,6 +85,8 @@ nogo(
         "@org_golang_x_tools//go/analysis/passes/unreachable",
         "@org_golang_x_tools//go/analysis/passes/unsafeptr",
         "@org_golang_x_tools//go/analysis/passes/unusedresult",
+        "@org_golang_x_tools//go/analysis/passes/unusedwrite",
+        "@org_golang_x_tools//go/analysis/passes/waitgroup",
         "@com_github_nishanths_exhaustive//:exhaustive",
     ] + staticcheck_analyzers(ANALYZERS + [
         "-SA1019",
@@ -154,40 +111,127 @@ nogo(
         "-QF1008",
         "-QF1011",
         "-QF1012",
-    ]),
+        "-U1000",
+    ]) + MODERNIZE_ANALYZERS,
 )
 
 gazelle_binary(
     name = "bb_gazelle_binary",
-    languages = DEFAULT_LANGUAGES + ["@bazel_gazelle//language/bazel/visibility:go_default_library"],
+    languages = DEFAULT_LANGUAGES + [
+        "@rules_python_gazelle_plugin//python",
+        "//cli/fix/typescript",
+    ],
 )
 
-# Ignore the node_modules dir
-# gazelle:exclude node_modules
-# Ignore generated proto files
+pip_compile(
+    name = "requirements",
+    exec_properties = {
+        "dockerNetwork": "bridge",
+    },
+    requirements_in = "requirements.txt",
+    requirements_txt = "requirements.lock",
+)
+
+# This rule fetches the metadata for python packages we depend on. That data is
+# required for the gazelle_python_manifest rule to update our manifest file.
+modules_mapping(
+    name = "modules_map",
+
+    # include_stub_packages: bool (default: False)
+    # If set to True, this flag automatically includes any corresponding type stub packages
+    # for the third-party libraries that are present and used. For example, if you have
+    # `boto3` as a dependency, and this flag is enabled, the corresponding `boto3-stubs`
+    # package will be automatically included in the BUILD file.
+    # Enabling this feature helps ensure that type hints and stubs are readily available
+    # for tools like type checkers and IDEs, improving the development experience and
+    # reducing manual overhead in managing separate stub packages.
+    include_stub_packages = True,
+    visibility = ["//visibility:public"],
+    wheels = all_whl_requirements,
+)
+
+exports_files(["requirements.lock"])
+
+# Gazelle python extension needs a manifest file mapping from
+# an import to the installed package that provides it.
+# This macro produces two targets:
+# - //:gazelle_python_manifest.update can be used with `bazel run`
+#   to recalculate the manifest
+# - //:gazelle_python_manifest.test is a test target ensuring that
+#   the manifest doesn't need to be updated
+gazelle_python_manifest(
+    name = "gazelle_python_manifest",
+    modules_mapping = "//:modules_map",
+
+    # This is what we called our `pip.parse` rule in MODULE.bazel, where third-party
+    # python libraries are loaded in BUILD files.
+    pip_repository_name = "pypi",
+
+    # This should point to wherever we declare our python dependencies
+    # (the same as what we passed to the modules_mapping rule in WORKSPACE)
+    # This argument is optional. If provided, the `.test` target is very
+    # fast because it just has to check an integrity field. If not provided,
+    # the integrity field is not added to the manifest which can help avoid
+    # merge conflicts in large repos.
+    requirements = "//:requirements.lock",
+)
+
+## Ignore generated proto files
 # gazelle:exclude **/*.pb.go
 # gazelle:exclude bundle.go
 # gazelle:exclude enterprise/bundle.go
-# Prefer generated BUILD files to be called BUILD over BUILD.bazel
+#
+## Ignore website dir
+# TODO(siggisim): remove once we support .css imports properly
+# gazelle:exclude website/**
+#
+# gazelle:python_library_naming_convention $package_name$_py_library
+# gazelle:python_generation_mode file
+#
+## Prefer generated BUILD files to be called BUILD over BUILD.bazel
 # gazelle:build_file_name BUILD,BUILD.bazel
 # gazelle:prefix github.com/buildbuddy-io/buildbuddy
 # gazelle:proto disable
 # gazelle:map_kind ts_project ts_library //rules/typescript:index.bzl
-# gazelle:exclude **/node_modules/**
-# TODO(siggisim): remove once we support .css imports properly
-# gazelle:exclude website/**
 #
-# Make these the default compilers for proto rules.
-# See https://github.com/bazelbuild/rules_go/pull/3761 for more details
-# gazelle:go_proto_compilers	@io_bazel_rules_go//proto:go_proto,@io_bazel_rules_go//proto:go_grpc_v2
+## VTProtobuf
+# gazelle:resolve go github.com/prometheus/client_model/go @com_github_prometheus_client_model//io/prometheus/client:go
+#
+## Kythe protobufs
+#
+# gazelle:resolve go kythe.io/kythe/proto/common_go_proto @io_kythe//kythe/proto:common_go_proto
+# gazelle:resolve go kythe.io/kythe/proto/filetree_go_proto @io_kythe//kythe/proto:filetree_go_proto
+# gazelle:resolve go kythe.io/kythe/proto/graph_go_proto @io_kythe//kythe/proto:graph_go_proto
+# gazelle:resolve go kythe.io/kythe/proto/xref_go_proto @io_kythe//kythe/proto:xref_go_proto
+#
+## This is a list of default when using Gazelle from BzlMod.
+## We force these mapping manually so that we do not oscillate during migrating to BzlMod
+## (and potentially any revert back to WORKSPACE mode).
+## TODO(sluongng): remove these once we deem BzlMod stable enough
+#
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/config @bazel_gazelle//config
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/label @bazel_gazelle//label
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/language @bazel_gazelle//language
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/language/bazel/visibility @bazel_gazelle//language/bazel/visibility
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/language/go @bazel_gazelle//language/go
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/language/proto @bazel_gazelle//language/proto
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/repo @bazel_gazelle//repo
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/resolve @bazel_gazelle//resolve
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/rule @bazel_gazelle//rule
+# gazelle:resolve go github.com/bazelbuild/rules_go/go/runfiles @io_bazel_rules_go//go/runfiles
+# gazelle:resolve go github.com/bazelbuild/rules_go/go/tools/bazel @io_bazel_rules_go//go/tools/bazel
 gazelle(
     name = "gazelle",
     gazelle = ":bb_gazelle_binary",
 )
 
-go_sdk_tool(
+buildifier(
+    name = "buildifier",
+)
+
+alias(
     name = "go",
-    goroot_relative_path = "bin/go",
+    actual = "@io_bazel_rules_go//go",
 )
 
 # Example usage: "bazel run //:gofmt -- -w ."
@@ -197,10 +241,14 @@ go_sdk_tool(
 )
 
 exports_files([
-    ".swcrc",
     "package.json",
     "yarn.lock",
 ])
+
+copy_to_bin(
+    name = "swcrc",
+    srcs = [".swcrc"],
+)
 
 ts_config(
     name = "tsconfig",
@@ -282,15 +330,16 @@ platform(
     },
 )
 
-# TODO(#2282): remove this
-platform(
-    name = "many_layered_image",
-    constraint_values = [
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
-    ],
-    exec_properties = {
-        "OSFamily": "Linux",
-        "container-image": "docker://gcr.io/flame-public/iain-test:latest",
-    },
+py_binary(
+    name = "release",
+    srcs = ["release.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//requests"],
+)
+
+py_library(
+    name = "buildbuddy_py_library",
+    srcs = ["release.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//requests"],
 )

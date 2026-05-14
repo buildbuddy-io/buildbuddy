@@ -1,12 +1,12 @@
-import React from "react";
 import { Cpu, Hash, Package } from "lucide-react";
+import React from "react";
 
 import * as format from "../../../app/format/format";
 import { stats } from "../../../proto/stats_ts_proto";
 import {
-  isAnyNonDateFilterSet,
-  formatDateRangeFromSearchParams,
   formatDateRangeDurationFromSearchParams,
+  formatDateRangeFromUrlParams,
+  isAnyNonDateFilterSet,
 } from "../filter/filter_util";
 
 interface Props {
@@ -67,7 +67,7 @@ export default class TrendsSummaryCard extends React.Component<Props> {
     return (
       <div className="trend-chart">
         <div className="trend-chart-title">
-          Summary ({formatDateRangeFromSearchParams(this.props.search)}
+          Summary ({formatDateRangeFromUrlParams(this.props.search)}
           {isAnyNonDateFilterSet(this.props.search) ? ", including filters" : ""})
         </div>
         <div className="trend-summary-block">

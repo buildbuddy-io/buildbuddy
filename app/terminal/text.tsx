@@ -14,8 +14,13 @@
  *   multiple rows.
  */
 
-import parseAnsi, { stripAnsiCodes, AnsiTextSpan } from "./ansi";
 import memoizeOne from "memoize-one";
+import parseAnsi, { AnsiStyle, FormatTag, stripAnsiCodes } from "./ansi";
+
+export type SearchQuery = {
+  match: string;
+  caseSensitive: boolean;
+};
 
 /**
  * Rounding errors start messing with row positioning when there are this many
@@ -42,21 +47,21 @@ export interface ListData {
   /** Text length at which a row is wrapped onto a new line. */
   rowLength: number;
 
-  search: string;
+  searchQuery: SearchQuery;
   activeMatchIndex: number;
 }
 
 /**
  * Data needed to render a row in the virtual list.
  *
- * Note that the fine-grained line parts (parsed ANSI text spans, highlighted
- * search match regions, etc.) are not stored here, since that data is expensive
- * to compute and keep in memory. Instead, those are computed lazily by calling
+ * Note that the fine-grained line parts, such as highlighted search match
+ * regions, etc. are not stored here, since that data is expensive to compute
+ * and keep in memory. Instead, those are computed lazily by calling
  * `computeRows`.
  */
 export interface RowData {
-  /** The original line, including ANSI escape codes. */
-  line: string;
+  /** The plaintext of the original line, with ANSI escape codes removed. */
+  plaintext: string;
   /**
    * The global match index of the first match in the original line, if the line
    * contains a match; otherwise null. This is used to compute the global match
@@ -73,9 +78,20 @@ export interface RowData {
    * 160.
    */
   wrapOffset: number;
+  /**
+   * The ANSI data for this text. ANSI spans refer to the next N characters of
+   * the line, tagging them with the appropriate style and/or link.
+   */
+  tags: FormatTag[];
 }
 
-export interface SpanData extends AnsiTextSpan {
+export interface SpanData {
+  /** The plaintext in this span. */
+  text: string;
+  /** Parsed ANSI style. */
+  style?: AnsiStyle;
+  /** Parsed link, if any.  */
+  link?: string;
   /**
    * If this part of the line is matched by the current search term, this will
    * be set to the match index. For example, if this is the last match out of 5
@@ -98,17 +114,8 @@ export interface Match {
    * span multiple rows due to wrapping).
    */
   rowIndex: number;
-  /**
-   * Information about the line where this match originally comes from
-   * (pre-wrapping). This is used to determine whether a match is still relevant
-   * after the search text is updated.
-   */
-  originalLine: {
-    /** Plain text of the original line that this match comes from. */
-    plaintext: string;
-    /** Start index of this match within the original line. */
-    matchIndex: number;
-  };
+  /** Start index of this match within the original line. */
+  matchIndex: number;
 }
 
 /**
@@ -118,7 +125,7 @@ export interface Match {
  * results. It does *not* do a full ANSI parse, which is too expensive. Instead,
  * ANSI parsing is done lazily, when lines are rendered.
  */
-export function getContent(text: string, search: string, lineLengthLimit: number | null): Content {
+export function getContent(text: string, searchQuery: SearchQuery, lineLengthLimit: number | null): Content {
   // If the line length limit is not yet known, then return empty contents,
   // since we don't yet know how to wrap the contents.
   if (lineLengthLimit === null) {
@@ -129,26 +136,32 @@ export function getContent(text: string, search: string, lineLengthLimit: number
   const rows: RowData[] = [];
   const matches: Match[] = [];
   let matchStartIndex = 0;
+  let currentStyle: AnsiStyle = {};
   for (let line of lines) {
     // Ensure that all characters have the same visual width so that we can
     // compute wrapping more easily.
     line = normalizeSpace(line);
 
-    const plaintext = toPlainText(line);
-    const matchRanges = getMatchedRanges(plaintext, search);
+    const [plaintext, tags] = parseAnsi(line, currentStyle);
+    const matchRanges = getMatchedRanges(plaintext, searchQuery);
     let matchIndex = 0;
-    const numRowsForLine = lineLengthLimit ? Math.ceil(plaintext.length / lineLengthLimit) : 1;
+    const numRowsForLine = lineLengthLimit ? Math.max(1, Math.ceil(plaintext.length / lineLengthLimit)) : 1;
     for (let i = 0; i < numRowsForLine; i++) {
       const rowEndIndex = (i + 1) * lineLengthLimit;
       while (matchRanges[matchIndex] && matchRanges[matchIndex].start < rowEndIndex) {
         const matchRange = matchRanges[matchIndex];
         matches.push({
           rowIndex: rows.length,
-          originalLine: { plaintext: plaintext, matchIndex: matchRange.start },
+          matchIndex: matchRange.start,
         });
         matchIndex++;
       }
-      rows.push({ line, matchStartIndex: matchRanges.length ? matchStartIndex : null, wrapOffset: i });
+      rows.push({
+        plaintext: plaintext,
+        matchStartIndex: matchRanges.length ? matchStartIndex : null,
+        wrapOffset: i,
+        tags: tags,
+      });
     }
     matchStartIndex += matchRanges.length;
   }
@@ -205,21 +218,25 @@ export function toPlainText(text: string) {
   return normalizeSpace(stripAnsiCodes(text));
 }
 
-export function getMatchedRanges(line: string, search: string): Range[] {
+export function getMatchedRanges(line: string, searchQuery: SearchQuery): Range[] {
   // For now, don't support searches less than 3 chars long; they are not very
   // useful and cause jank since they often generate a huge number of matches.
-  if (search.length < 3) return [];
+  if (searchQuery.match.length < 3) return [];
 
   // Note: This logic probably doesn't work for some unicode chars
   // which have a different uppercase and lowercase length (e.g.: İ)
-  search = search.toLocaleLowerCase();
-  line = line.toLocaleLowerCase();
+  let searchTerm = searchQuery.match;
+  let searchLine = line;
+  if (!searchQuery.caseSensitive) {
+    searchTerm = searchQuery.match.toLocaleLowerCase();
+    searchLine = line.toLocaleLowerCase();
+  }
   const ranges: Range[] = [];
-  let index = line.indexOf(search);
+  let index = searchLine.indexOf(searchTerm);
   while (index !== -1) {
-    const end = index + search.length;
+    const end = index + searchTerm.length;
     ranges.push({ start: index, end });
-    index = line.indexOf(search, end);
+    index = searchLine.indexOf(searchTerm, end);
   }
   return ranges;
 }
@@ -229,7 +246,7 @@ export function getMatchedRanges(line: string, search: string): Range[] {
  */
 export function updatedMatchIndexForSearch(
   nextContent: Content,
-  nextSearch: string,
+  nextSearchQuery: SearchQuery,
   currentMatch: Match | null,
   rowRangeInView: Range | null
 ): number {
@@ -237,20 +254,21 @@ export function updatedMatchIndexForSearch(
 
   // If there is already an active match and it lines up with one of the new
   // matches, return the index of the match it lines up with.
-  if (
-    currentMatch &&
-    nextContent.rows[currentMatch.rowIndex]?.line
-      .toLocaleLowerCase()
-      .substring(currentMatch.originalLine.matchIndex)
-      .startsWith(nextSearch.toLocaleLowerCase())
-  ) {
-    for (let i = 0; i < nextContent.matches.length; i++) {
-      const newMatch = nextContent.matches[i];
-      if (
-        newMatch.rowIndex === currentMatch.rowIndex &&
-        newMatch.originalLine.matchIndex === currentMatch.originalLine.matchIndex
-      ) {
-        return i;
+  if (currentMatch) {
+    const plaintext = nextContent.rows[currentMatch.rowIndex]?.plaintext;
+    if (plaintext) {
+      const substring = plaintext.substring(currentMatch.matchIndex);
+      const searchTerm = nextSearchQuery.caseSensitive
+        ? nextSearchQuery.match
+        : nextSearchQuery.match.toLocaleLowerCase();
+      const textToCompare = nextSearchQuery.caseSensitive ? substring : substring.toLocaleLowerCase();
+      if (textToCompare.startsWith(searchTerm)) {
+        for (let i = 0; i < nextContent.matches.length; i++) {
+          const newMatch = nextContent.matches[i];
+          if (newMatch.rowIndex === currentMatch.rowIndex && newMatch.matchIndex === currentMatch.matchIndex) {
+            return i;
+          }
+        }
       }
     }
   }
@@ -269,39 +287,36 @@ export function updatedMatchIndexForSearch(
   return 0;
 }
 
-const BLANK_LINE_DATA: SpanData[][] = [[{ text: "", style: {}, matchIndex: null, link: "" }]];
+const BLANK_LINE_DATA: SpanData[][] = [[{ text: "", matchIndex: null }]];
 /**
  * Splits an ANSI line into multiple wrapped rows, with matched ranges
  * annotated.
  */
 function computeRowsImpl(
-  line: string,
+  plaintext: string,
   lengthLimit: number,
-  search: string,
-  matchStartIndex: number | null
+  searchQuery: SearchQuery,
+  matchStartIndex: number | null,
+  tags: FormatTag[]
 ): SpanData[][] {
-  if (!line) return BLANK_LINE_DATA;
-
-  const ansiSpans = parseAnsi(line);
+  if (!plaintext) return BLANK_LINE_DATA;
 
   // TODO: Integrate the search-matching and line-wrapping logic into the
   // parseAnsi routine to avoid the need for this extra splitting logic.
 
   // Build up the list of indexes at which we'll split up the ANSI parts.
-  let spanOffset = 0;
-  let plaintext = "";
+  let tagOffset = 0;
   const splitIndexSet = new Set<number>();
-  for (const span of ansiSpans) {
-    splitIndexSet.add(spanOffset);
-    spanOffset += span.text.length;
-    plaintext += span.text;
+  for (const tag of tags) {
+    splitIndexSet.add(tagOffset);
+    tagOffset += tag.length;
   }
   let wrapOffset = 0;
   while (wrapOffset < plaintext.length) {
     splitIndexSet.add(wrapOffset);
     wrapOffset += lengthLimit;
   }
-  const matches = getMatchedRanges(plaintext, search);
+  const matches = getMatchedRanges(plaintext, searchQuery);
   for (const match of matches) {
     splitIndexSet.add(match.start);
     splitIndexSet.add(match.end);
@@ -324,8 +339,8 @@ function computeRowsImpl(
   const rows: SpanData[][] = [];
   let row: SpanData[] | null = null;
   let spanTextOffset = 0;
-  let span: AnsiTextSpan | null = null;
-  let spanIndex = -1;
+  let tag: FormatTag | null = null;
+  let tagIndex = -1;
   let match: Range | null = null;
   let matchIndex = -1;
   for (let i = 0; i < splitIndexes.length; i++) {
@@ -335,11 +350,11 @@ function computeRowsImpl(
       row = [];
       rows.push(row);
     }
-    // Move on to the next span initially or if we've consumed all text from the
-    // current span.
-    if (!span || spanTextOffset === span.text.length) {
-      spanIndex++;
-      span = ansiSpans[spanIndex];
+    // Move on to the next tag initially or if we've consumed all text from the
+    // current tag.
+    if (!tag || spanTextOffset === tag.length) {
+      tagIndex++;
+      tag = tags[tagIndex];
       spanTextOffset = 0;
     }
     // Update the match initially or if we're past the current match.
@@ -349,10 +364,11 @@ function computeRowsImpl(
     }
     const isMatched = match && splitIndex >= match.start;
     const nextSplitIndex = splitIndexes[i + 1];
-    const partLength = nextSplitIndex === undefined ? span.text.length - spanTextOffset : nextSplitIndex - splitIndex;
+    const partLength = nextSplitIndex === undefined ? plaintext.length - splitIndex : nextSplitIndex - splitIndex;
     row.push({
-      ...span,
-      text: span.text.substring(spanTextOffset, spanTextOffset + partLength),
+      text: plaintext.substring(splitIndex, splitIndex + partLength),
+      style: tag?.style,
+      link: tag?.link,
       matchIndex: isMatched ? matchStartIndex! + matchIndex : null,
     });
     spanTextOffset += partLength;

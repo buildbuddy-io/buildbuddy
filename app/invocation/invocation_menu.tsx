@@ -4,7 +4,6 @@ import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
 import FilledButton, { OutlinedButton } from "../components/button/button";
-import Spinner from "../components/spinner/spinner";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -15,6 +14,7 @@ import Dialog, {
 import Menu, { MenuItem } from "../components/menu/menu";
 import Modal from "../components/modal/modal";
 import Popup from "../components/popup/popup";
+import Spinner from "../components/spinner/spinner";
 import router from "../router/router";
 import rpcService from "../service/rpc_service";
 import { BuildBuddyError } from "../util/errors";

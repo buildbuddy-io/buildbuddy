@@ -11,6 +11,7 @@ import (
 	"path"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -18,8 +19,8 @@ import (
 	spb "github.com/buildbuddy-io/buildbuddy/proto/spawn"
 )
 
-func printSpawnExec(s *spb.SpawnExec) error {
-	b, err := protojson.MarshalOptions{Multiline: true}.Marshal(s)
+func printProtoMsg[M proto.Message](m M) error {
+	b, err := protojson.MarshalOptions{Multiline: true}.Marshal(m)
 	if err != nil {
 		return fmt.Errorf("failed to marshal remote gRPC log entry: %s", err)
 	}
@@ -38,7 +39,7 @@ func printSpawnExec(s *spb.SpawnExec) error {
 	return nil
 }
 
-func PrintCompactExecLog(path string, sort bool) error {
+func PrintCompactExecLog(path string, raw bool, sort bool) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -49,8 +50,26 @@ func PrintCompactExecLog(path string, sort bool) error {
 		return err
 	}
 	defer r.Close()
-	slr := NewSpawnLogReconstructor(r)
+	reader := bufio.NewReader(r)
 
+	if raw {
+		entry := &spb.ExecLogEntry{}
+		for {
+			err := protodelim.UnmarshalOptions{MaxSize: -1}.UnmarshalFrom(reader, entry)
+			if err == io.EOF {
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf("failed to read execution log entry: %s", err)
+			}
+
+			if err := printProtoMsg(entry); err != nil {
+				return err
+			}
+		}
+	}
+
+	slr := NewSpawnLogReconstructor(reader)
 	var spawns []*spb.SpawnExec
 	for {
 		s, err := slr.GetSpawnExec()
@@ -65,13 +84,13 @@ func PrintCompactExecLog(path string, sort bool) error {
 			continue
 		}
 
-		if err := printSpawnExec(s); err != nil {
+		if err := printProtoMsg(s); err != nil {
 			return err
 		}
 	}
 
 	if sort {
-		return StableSortExec(spawns, printSpawnExec)
+		return StableSortExec(spawns, printProtoMsg)
 	}
 	return nil
 }
@@ -226,13 +245,13 @@ func (ismm spawnSetMultiMap) remove(key *spb.SpawnExec, val *spb.SpawnExec) {
 // SpawnLogReconstructor reconstructs "compact execution log" format back to the original format.
 // As of Bazel 7.1, this is the recommended way to consume the new compact format.
 type SpawnLogReconstructor struct {
-	input *bufio.Reader
+	input protodelim.Reader
 
 	hashFunc string
-	files    map[int32]*spb.File
-	dirs     map[int32]*reconstructedDir
-	symlinks map[int32]*spb.File
-	sets     map[int32]*spb.ExecLogEntry_InputSet
+	files    map[uint32]*spb.File
+	dirs     map[uint32]*reconstructedDir
+	symlinks map[uint32]*spb.File
+	sets     map[uint32]*spb.ExecLogEntry_InputSet
 }
 
 type reconstructedDir struct {
@@ -240,21 +259,21 @@ type reconstructedDir struct {
 	files []*spb.File
 }
 
-func NewSpawnLogReconstructor(input io.Reader) *SpawnLogReconstructor {
+func NewSpawnLogReconstructor(input protodelim.Reader) *SpawnLogReconstructor {
 	return &SpawnLogReconstructor{
-		input:    bufio.NewReader(input),
+		input:    input,
 		hashFunc: "",
-		files:    make(map[int32]*spb.File),
-		dirs:     make(map[int32]*reconstructedDir),
-		symlinks: make(map[int32]*spb.File),
-		sets:     make(map[int32]*spb.ExecLogEntry_InputSet),
+		files:    make(map[uint32]*spb.File),
+		dirs:     make(map[uint32]*reconstructedDir),
+		symlinks: make(map[uint32]*spb.File),
+		sets:     make(map[uint32]*spb.ExecLogEntry_InputSet),
 	}
 }
 
 func (slr *SpawnLogReconstructor) GetSpawnExec() (*spb.SpawnExec, error) {
 	entry := &spb.ExecLogEntry{}
 	for {
-		err := protodelim.UnmarshalFrom(slr.input, entry)
+		err := protodelim.UnmarshalOptions{MaxSize: -1}.UnmarshalFrom(slr.input, entry)
 		if err == io.EOF {
 			return nil, io.EOF
 		}
@@ -275,6 +294,12 @@ func (slr *SpawnLogReconstructor) GetSpawnExec() (*spb.SpawnExec, error) {
 			slr.sets[entry.GetId()] = e.InputSet
 		case *spb.ExecLogEntry_Spawn_:
 			return slr.reconstructSpawn(e.Spawn), nil
+		case *spb.ExecLogEntry_SymlinkAction_:
+			// TODO: Handle symlink actions
+		case *spb.ExecLogEntry_SymlinkEntrySet_:
+			// TODO: Handle symlink entry sets
+		case *spb.ExecLogEntry_RunfilesTree_:
+			// TODO: Handle runfiles trees
 		default:
 			log.Warnf("unknown exec log entry: %v", entry)
 		}
@@ -318,6 +343,22 @@ func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn) *s
 	var actualOutputs []*spb.File
 	for _, output := range s.GetOutputs() {
 		switch o := output.GetType().(type) {
+		case *spb.ExecLogEntry_Output_OutputId:
+			if f, ok := slr.files[o.OutputId]; ok {
+				listedOutputs = append(listedOutputs, f.GetPath())
+				actualOutputs = append(actualOutputs, f)
+				continue
+			}
+			if d, ok := slr.dirs[o.OutputId]; ok {
+				listedOutputs = append(listedOutputs, d.path)
+				actualOutputs = append(actualOutputs, d.files...)
+				continue
+			}
+			if symlink, ok := slr.symlinks[o.OutputId]; ok {
+				listedOutputs = append(listedOutputs, symlink.GetPath())
+				actualOutputs = append(actualOutputs, symlink)
+				continue
+			}
 		case *spb.ExecLogEntry_Output_FileId:
 			f := slr.files[o.FileId]
 			listedOutputs = append(listedOutputs, f.GetPath())
@@ -342,11 +383,11 @@ func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn) *s
 	return se
 }
 
-func (slr *SpawnLogReconstructor) reconstructInputs(setID int32) ([]string, map[string]*spb.File) {
+func (slr *SpawnLogReconstructor) reconstructInputs(setID uint32) ([]string, map[string]*spb.File) {
 	var order []string
 	inputs := make(map[string]*spb.File)
-	setsToVisit := []int32{}
-	visited := make(map[int32]struct{})
+	var setsToVisit []uint32
+	visited := make(map[uint32]struct{})
 	if setID != 0 {
 		setsToVisit = append(setsToVisit, setID)
 		visited[setID] = struct{}{}
@@ -356,37 +397,73 @@ func (slr *SpawnLogReconstructor) reconstructInputs(setID int32) ([]string, map[
 		setsToVisit = setsToVisit[1:]
 		set := slr.sets[currentID]
 
+		for _, setID := range set.GetTransitiveSetIds() {
+			if _, ok := visited[setID]; ok {
+				continue
+			}
+			visited[setID] = struct{}{}
+			setsToVisit = append(setsToVisit, setID)
+		}
+
+		// The input_id is a relatively new field that combines
+		// files, directories, unresolved symlinks or runfiles trees.
+		if len(set.GetInputIds()) > 0 {
+			for _, inputIds := range set.GetInputIds() {
+				if _, ok := visited[inputIds]; ok {
+					continue
+				}
+
+				visited[inputIds] = struct{}{}
+				if f, ok := slr.files[inputIds]; ok {
+					order = append(order, f.GetPath())
+					inputs[f.GetPath()] = f
+					continue
+				}
+				if d, ok := slr.dirs[inputIds]; ok {
+					for _, f := range d.files {
+						order = append(order, f.GetPath())
+						inputs[f.GetPath()] = f
+					}
+					continue
+				}
+				if symlink, ok := slr.symlinks[inputIds]; ok {
+					order = append(order, symlink.GetPath())
+					inputs[symlink.GetPath()] = symlink
+					continue
+				}
+			}
+			continue
+		}
+
+		// Handle deprecated fields
 		for _, fileID := range set.GetFileIds() {
-			if _, ok := visited[fileID]; !ok {
-				visited[fileID] = struct{}{}
-				f := slr.files[fileID]
+			if _, ok := visited[fileID]; ok {
+				continue
+			}
+			visited[fileID] = struct{}{}
+			f := slr.files[fileID]
+			order = append(order, f.GetPath())
+			inputs[f.GetPath()] = f
+		}
+		for _, dirID := range set.GetDirectoryIds() {
+			if _, ok := visited[dirID]; ok {
+				continue
+			}
+			visited[dirID] = struct{}{}
+			d := slr.dirs[dirID]
+			for _, f := range d.files {
 				order = append(order, f.GetPath())
 				inputs[f.GetPath()] = f
 			}
 		}
-		for _, dirID := range set.GetDirectoryIds() {
-			if _, ok := visited[dirID]; !ok {
-				visited[dirID] = struct{}{}
-				d := slr.dirs[dirID]
-				for _, f := range d.files {
-					order = append(order, f.GetPath())
-					inputs[f.GetPath()] = f
-				}
-			}
-		}
 		for _, symlinkID := range set.GetUnresolvedSymlinkIds() {
-			if _, ok := visited[symlinkID]; !ok {
-				visited[symlinkID] = struct{}{}
-				s := slr.symlinks[symlinkID]
-				order = append(order, s.GetPath())
-				inputs[s.GetPath()] = s
+			if _, ok := visited[symlinkID]; ok {
+				continue
 			}
-		}
-		for _, setID := range set.GetTransitiveSetIds() {
-			if _, ok := visited[setID]; !ok {
-				visited[setID] = struct{}{}
-				setsToVisit = append(setsToVisit, setID)
-			}
+			visited[symlinkID] = struct{}{}
+			s := slr.symlinks[symlinkID]
+			order = append(order, s.GetPath())
+			inputs[s.GetPath()] = s
 		}
 	}
 	return order, inputs

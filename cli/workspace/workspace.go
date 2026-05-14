@@ -25,7 +25,12 @@ var (
 	pathErr  error
 	basename string
 
-	WorkspaceIndicatorFiles = []string{WorkspaceFileName, WorkspaceAltFileName, ModuleFileName}
+	WorkspaceIndicatorFiles = []string{
+		// Prioritize MODULE if both MODULE and WORKSPACE exist, since MODULE is
+		// newer.
+		ModuleFileName,
+		WorkspaceFileName, WorkspaceAltFileName,
+	}
 )
 
 // Path returns the current Bazel workspace path by traversing upwards until
@@ -67,26 +72,33 @@ func path() (string, string, error) {
 }
 
 // TODO: Take workspace dir as a param everywhere so that this isn't needed.
-func SetForTest(path string) {
+func SetForTest(t interface {
+	Helper()
+	Cleanup(func())
+}, path string) {
 	_, _ = Path()
+	previousPathVal := pathVal
+	previousPathErr := pathErr
+	previousBasename := basename
 	pathVal, pathErr = path, nil
+	basename = ""
+	t.Cleanup(func() {
+		pathVal = previousPathVal
+		pathErr = previousPathErr
+		basename = previousBasename
+	})
 }
 
-func CreateWorkspaceIfNotExists(bzlmodEnabled bool) (string, string, error) {
-	log.Debugf("Checking if workspace file exists")
+func CreateModuleIfNotExists() (string, string, error) {
+	log.Debugf("Checking if workspace / module file exists")
 	path, base, err := PathAndBasename()
 	if err == nil {
 		return path, base, nil
 	}
 
-	fileName := ModuleFileName
-	if !bzlmodEnabled {
-		fileName = WorkspaceFileName // gazelle doesn't like WORKSPACE.bazel...
-	}
+	log.Debugf("Creating %s file", ModuleFileName)
 
-	log.Debugf("Creating %s file", fileName)
-
-	f, err := os.OpenFile(fileName, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
+	f, err := os.OpenFile(ModuleFileName, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
 	if err != nil {
 		return "", "", err
 	}
@@ -95,19 +107,14 @@ func CreateWorkspaceIfNotExists(bzlmodEnabled bool) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	contents := ""
-	if bzlmodEnabled {
-		contents = `module(name = "` + filepath.Base(workspacePath) + `")` + "\n"
-	} else {
-		contents = `workspace(name = "` + filepath.Base(workspacePath) + `")` + "\n"
-	}
+	contents := `module(name = "` + filepath.Base(workspacePath) + `")` + "\n"
 	if _, err := f.WriteString(contents); err != nil {
 		return "", "", err
 	}
 	pathVal = workspacePath
-	basename = fileName
+	basename = ModuleFileName
 	pathErr = nil
-	log.Debugf("Created %s file at %s/%s", fileName, pathVal, basename)
+	log.Debugf("Created %s file at %s/%s", ModuleFileName, pathVal, basename)
 	return pathVal, basename, nil
 }
 

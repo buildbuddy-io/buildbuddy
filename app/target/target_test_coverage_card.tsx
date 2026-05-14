@@ -2,6 +2,7 @@ import { Percent } from "lucide-react";
 import React from "react";
 
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { TextLink } from "../components/link/link";
 import format from "../format/format";
 import rpcService from "../service/rpc_service";
 import { percentageColor } from "../util/color";
@@ -106,20 +107,22 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
                   const percent = (record.numLinesHit * 1.0) / record.numLinesFound;
                   return (
                     <div className="coverage-record">
-                      <a
+                      <TextLink
+                        plain
+                        className="coverage-source"
                         href={
                           repoPath
                             ? `${repoPath}${record.sourceFile}?lcov=${testCoverageUrl}&invocation_id=${this.props.invocationId}&commit=${this.props.commit}`
                             : "#"
                         }>
-                        <span className="coverage-source">{record.sourceFile}</span>:{" "}
-                        <span className="coverage-percent" style={{ color: percentageColor(percent) }}>
-                          {format.percent(percent)}%
-                        </span>{" "}
-                        <span className="coverage-details">
-                          ({record.numLinesHit} hits / {record.numLinesFound} lines)
-                        </span>
-                      </a>
+                        {record.sourceFile}
+                      </TextLink>{" "}
+                      <span className="coverage-percent" style={{ color: percentageColor(percent) }}>
+                        {format.percent(percent)}%
+                      </span>{" "}
+                      <span className="coverage-details">
+                        ({record.numLinesHit} hits / {record.numLinesFound} lines)
+                      </span>
                     </div>
                   );
                 })}

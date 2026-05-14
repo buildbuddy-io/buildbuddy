@@ -10,13 +10,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"gorm.io/gorm/clause"
 
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
-	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
@@ -46,7 +46,7 @@ func (t *TelemetryServer) StartOrDieIfEnabled() {
 
 	grpcOptions := []grpc.ServerOption{
 		interceptors.GetUnaryInterceptor(t.env),
-		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
+		grpc.UnaryInterceptor(grpc_server.Metrics().UnaryServerInterceptor()),
 	}
 
 	grpcServer := grpc.NewServer(grpcOptions...)

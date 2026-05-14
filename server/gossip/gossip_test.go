@@ -31,7 +31,7 @@ func localAddr(t *testing.T) string {
 }
 
 func newGossipManager(t *testing.T, addr string, seeds []string, broker interfaces.GossipListener) *gossip.GossipManager {
-	node, err := gossip.New("name-"+addr, addr, seeds)
+	node, err := gossip.NewWithArgs("name-"+addr, addr, seeds)
 	require.NoError(t, err)
 	require.NotNil(t, node)
 	node.AddListener(broker)
@@ -153,6 +153,9 @@ func removeDuplicates(dups []string) []string {
 }
 
 func TestUserQuery(t *testing.T) {
+	// Increase --gossip.retransmit_mult to 10 from 4 (default) to prevent from
+	// flakiness due to broadcast failures.
+	flags.Set(t, "gossip.retransmit_mult", 10)
 	data := make(map[string][]string, 0)
 
 	addrs := make([]string, 0)
@@ -220,6 +223,9 @@ func TestUserQuery(t *testing.T) {
 }
 
 func TestUserEvents(t *testing.T) {
+	// Increase --gossip.retransmit_mult to 10 from 4 (default) to prevent from
+	// flakiness due to broadcast failures.
+	flags.Set(t, "gossip.retransmit_mult", 10)
 	addrs := make([]string, 0)
 	for i := 0; i < 5; i++ {
 		addrs = append(addrs, localAddr(t))

@@ -10,11 +10,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 const (
@@ -31,7 +35,27 @@ const (
 
 	// FS block size that we always use when creating ext4 images.
 	blockSize = 4096
+
+	mke2fsPath  = "/sbin/mke2fs"
+	debugfsPath = "/sbin/debugfs"
 )
+
+// EnsureDependencies verifies that all external binaries required for ext4
+// image operations are present and executable.
+func EnsureDependencies() error {
+	requiredBinaries := []string{mke2fsPath, debugfsPath}
+
+	for _, binary := range requiredBinaries {
+		info, err := os.Stat(binary)
+		if err != nil {
+			return status.UnavailableErrorf("required binary %q is missing: %s", binary, err)
+		}
+		if info.Mode()&0o111 == 0 {
+			return status.UnavailableErrorf("required binary %q is not executable", binary)
+		}
+	}
+	return nil
+}
 
 // DirectoryToImage creates an ext4 image of the specified size from inputDir
 // and writes it to outputFile.
@@ -44,7 +68,7 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 	defer span.End()
 
 	args := []string{
-		"/sbin/mke2fs",
+		mke2fsPath,
 		"-L", "''",
 		"-N", "0",
 		"-O", "^64bit",
@@ -61,6 +85,21 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 		log.Errorf("Error running %q: %s %s", cmd.String(), err, out)
 		return status.InternalErrorf("%s: %s", err, out)
 	}
+	if cmd.ProcessState != nil {
+		if span.IsRecording() {
+			span.SetAttributes(
+				attribute.Int64(
+					"cpu_millis",
+					(cmd.ProcessState.UserTime()+cmd.ProcessState.SystemTime()).Milliseconds()),
+				attribute.Int64("directory_bytes", sizeBytes),
+			)
+		}
+		if rusage, _ := cmd.ProcessState.SysUsage().(*syscall.Rusage); rusage != nil {
+			metrics.FirecrackerWorkspaceDiskWriteOps.With(prometheus.Labels{
+				metrics.CommandName: "mke2fs",
+			}).Add(float64(rusage.Oublock))
+		}
+	}
 	return nil
 }
 
@@ -75,7 +114,7 @@ func MakeEmptyImage(ctx context.Context, outputFile string, sizeBytes int64) err
 	defer span.End()
 
 	args := []string{
-		"/sbin/mke2fs",
+		mke2fsPath,
 		"-L", "",
 		"-N", "0",
 		"-O", "^64bit",
@@ -166,7 +205,10 @@ func isDirEmpty(dir string) (bool, error) {
 }
 
 // ImageToDirectory unpacks an ext4 image into outputDir, which must be empty.
-func ImageToDirectory(ctx context.Context, inputFile, outputDir string) error {
+// Only the given paths are unpacked. Paths are unpacked recursively, which
+// means that they can reference either directories or files. Non-existent
+// paths are silently ignored.
+func ImageToDirectory(ctx context.Context, inputFile, outputDir string, paths []string) error {
 	empty, err := isDirEmpty(outputDir)
 	if err != nil {
 		return err
@@ -174,14 +216,27 @@ func ImageToDirectory(ctx context.Context, inputFile, outputDir string) error {
 	if !empty {
 		return status.FailedPreconditionError("Unpacking image in non-empty directory is unsupported.")
 	}
-	args := []string{
-		"/sbin/debugfs",
-		inputFile,
-		"-R",
-		fmt.Sprintf("rdump \"/\" \"%s\"", outputDir),
+	requests := make([]string, 0, len(paths))
+	for _, p := range paths {
+		p = filepath.Clean(filepath.Join(outputDir, p))
+		p = strings.TrimPrefix(p, filepath.Clean(outputDir))
+		parent := filepath.Dir(p)
+		if err := os.MkdirAll(filepath.Join(outputDir, parent), 0755); err != nil {
+			return status.InternalErrorf("make parent dir %q: %s", parent, err)
+		}
+		requests = append(requests, fmt.Sprintf("rdump %q %q", p, filepath.Join(outputDir, parent)))
 	}
-	if out, err := exec.CommandContext(ctx, args[0], args[1:]...).CombinedOutput(); err != nil {
+	cmd := exec.CommandContext(ctx, debugfsPath, inputFile)
+	cmd.Stdin = strings.NewReader(strings.Join(requests, "\n"))
+	if out, err := cmd.CombinedOutput(); err != nil {
 		return status.InternalErrorf("%s: %s", err, out)
+	}
+	if cmd.ProcessState != nil {
+		if rusage, _ := cmd.ProcessState.SysUsage().(*syscall.Rusage); rusage != nil {
+			metrics.FirecrackerWorkspaceDiskWriteOps.With(prometheus.Labels{
+				metrics.CommandName: "debugfs",
+			}).Add(float64(rusage.Oublock))
+		}
 	}
 	return nil
 }

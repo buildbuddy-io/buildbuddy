@@ -5,13 +5,14 @@ import (
 	"flag"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
@@ -23,14 +24,16 @@ var (
 )
 
 type BuildStatusReporter struct {
-	baseBBURL                 string
-	env                       environment.Env
-	githubClient              *github.GithubClient
-	buildEventAccumulator     *accumulator.BEValues
-	groups                    map[string]*GroupStatus
-	inFlight                  map[string]bool
-	payloads                  []*github.GithubStatusPayload
-	shouldReportStatusPerTest bool
+	baseBBURL                  string
+	env                        environment.Env
+	githubClient               interfaces.GitHubStatusClient
+	buildEventAccumulator      accumulator.Accumulator
+	groups                     map[string]*GroupStatus
+	inFlight                   map[string]bool
+	payloads                   []*github.GithubStatusPayload
+	shouldReportStatusPerTest  bool
+	shouldReportCommitStatuses bool
+	once                       sync.Once
 }
 
 type GroupStatus struct {
@@ -41,8 +44,8 @@ type GroupStatus struct {
 	numAborted int
 }
 
-func NewBuildStatusReporter(env environment.Env, buildEventAccumulator *accumulator.BEValues) *BuildStatusReporter {
-	return &BuildStatusReporter{
+func NewBuildStatusReporter(env environment.Env, buildEventAccumulator accumulator.Accumulator) *BuildStatusReporter {
+	r := &BuildStatusReporter{
 		baseBBURL:                 build_buddy_url.String(),
 		env:                       env,
 		shouldReportStatusPerTest: *statusPerTestTarget,
@@ -50,83 +53,114 @@ func NewBuildStatusReporter(env environment.Env, buildEventAccumulator *accumula
 		payloads:                  make([]*github.GithubStatusPayload, 0),
 		inFlight:                  make(map[string]bool),
 	}
+
+	if env.GetGitHubStatusService() != nil {
+		r.githubClient = env.GetGitHubStatusService().GetStatusClient()
+	}
+	return r
 }
 
 func (r *BuildStatusReporter) SetBaseBuildBuddyURL(url string) {
 	r.baseBBURL = url
 }
 
-func (r *BuildStatusReporter) initGHClient(ctx context.Context) *github.GithubClient {
-	if workflowID := r.buildEventAccumulator.WorkflowID(); workflowID != "" {
-		if dbh := r.env.GetDBHandle(); dbh != nil {
-			workflow := &tables.Workflow{}
-			if err := dbh.NewQuery(ctx, "build_status_reporter_get_workflow").Raw(
-				`SELECT * from "Workflows" WHERE workflow_id = ?`, workflowID).Take(workflow); err == nil {
-				return github.NewGithubClient(r.env, workflow.AccessToken)
-			}
+func (r *BuildStatusReporter) isStatusReportingEnabled(ctx context.Context, groupID, repoURL string) bool {
+	r.once.Do(func() {
+		enabled, err := r.githubClient.IsStatusReportingEnabled(ctx, groupID, repoURL)
+		if err != nil {
+			log.CtxInfof(ctx, "Failed to check if GitHub status reporting is enabled: %s", err)
+			return
 		}
-	}
-	return github.NewGithubClient(r.env, "")
+
+		r.shouldReportCommitStatuses = enabled
+	})
+
+	return r.shouldReportCommitStatuses
 }
 
+// ReportStatusForEvent reports a status to GitHub for the event if applicable.
+// This function must be called after the accumulator has been updated with
+// the given event data.
 func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
-	if role := r.buildEventAccumulator.Invocation().GetRole(); !(role == "CI" || role == "CI_RUNNER") {
-		return
+	githubPayload := r.getStatusPayloadForEvent(event)
+	if githubPayload != nil {
+		r.payloads = append(r.payloads, githubPayload)
+		r.flushPayloadsIfMetadataLoaded(ctx)
+	}
+}
+
+func (r *BuildStatusReporter) getStatusPayloadForEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
+	// Don't attempt to create a status payload if build metadata is not loaded.
+	if !r.buildEventAccumulator.MetadataIsLoaded() {
+		return nil
 	}
 
-	// TODO: support other providers than just GitHub
-	var githubPayload *github.GithubStatusPayload
+	// Only report GitHub statuses for CI or CI_RUNNER roles.
+	if role := r.buildEventAccumulator.Invocation().GetRole(); !(role == "CI" || role == "CI_RUNNER") {
+		return nil
+	}
+
+	// If this is a metadata event, then it must be the last metadata event,
+	// because we just checked that metadata is fully loaded, which only becomes
+	// true once the last metadata event has been handled.
+	//
+	// Once we observe the last metadata event, we can report the initial
+	// status with basic metadata.
+	if accumulator.IsMetadataEvent(event.GetId()) {
+		return r.githubPayloadForBuildMetadata()
+	}
 
 	switch event.Payload.(type) {
-	case *build_event_stream.BuildEvent_WorkspaceStatus:
-		githubPayload = r.githubPayloadFromWorkspaceStatusEvent(event)
-
 	case *build_event_stream.BuildEvent_Configured:
 		if r.shouldReportStatusPerTest {
-			githubPayload = r.githubPayloadFromConfiguredEvent(event)
+			return r.githubPayloadFromConfiguredEvent(event)
 		}
 	case *build_event_stream.BuildEvent_TestSummary:
 		if r.shouldReportStatusPerTest {
-			githubPayload = r.githubPayloadFromTestSummaryEvent(event)
+			return r.githubPayloadFromTestSummaryEvent(event)
 		}
 	case *build_event_stream.BuildEvent_Aborted:
-		githubPayload = r.githubPayloadFromAbortedEvent(event)
-
+		return r.githubPayloadFromAbortedEvent(event)
 	case *build_event_stream.BuildEvent_Finished:
-		githubPayload = r.githubPayloadFromFinishedEvent(event)
+		return r.githubPayloadFromFinishedEvent(event)
 	}
 
-	if githubPayload != nil {
-		r.payloads = append(r.payloads, githubPayload)
-		r.flushPayloadsIfWorkspaceLoaded(ctx)
-	}
+	return nil
 }
 
 func (r *BuildStatusReporter) ReportDisconnect(ctx context.Context) {
 	for label := range r.inFlight {
 		r.payloads = append(r.payloads, github.NewGithubStatusPayload(label, r.invocationURL(), "Disconnected", github.ErrorState))
 	}
-	r.flushPayloadsIfWorkspaceLoaded(ctx)
+	r.flushPayloadsIfMetadataLoaded(ctx)
 }
 
-func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context) {
-	if !r.buildEventAccumulator.WorkspaceIsLoaded() {
-		return // If we haven't loaded the workspace, we can't flush payloads yet.
-	}
-	// Don't flush payloads if explicitly disabled in build metadata, or if we
-	// don't yet have the metadata.
-	if !r.buildEventAccumulator.BuildMetadataIsLoaded() || r.buildEventAccumulator.DisableCommitStatusReporting() {
+func (r *BuildStatusReporter) flushPayloadsIfMetadataLoaded(ctx context.Context) {
+	// TODO: support other providers than just GitHub
+	if r.env.GetGitHubStatusService() == nil {
 		return
 	}
-	if r.githubClient == nil {
-		r.githubClient = r.initGHClient(ctx)
+
+	userInfo, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to get authenticated user: %s", err)
+		return
+	}
+	groupID := userInfo.GetGroupID()
+
+	// Don't report statuses if we don't yet have the metadata, it's explicitly
+	// disabled in build metadata, or it's not enabled for this repo.
+	if !r.buildEventAccumulator.MetadataIsLoaded() ||
+		r.buildEventAccumulator.DisableCommitStatusReporting() ||
+		!r.isStatusReportingEnabled(ctx, groupID, r.buildEventAccumulator.Invocation().GetRepoUrl()) {
+		return
 	}
 
 	for _, payload := range r.payloads {
-		if payload.State == github.PendingState {
-			r.inFlight[payload.Context] = true
+		if github.State(payload.GetState()) == github.PendingState {
+			r.inFlight[payload.GetContext()] = true
 		} else {
-			delete(r.inFlight, payload.Context)
+			delete(r.inFlight, payload.GetContext())
 		}
 
 		// TODO(siggisim): Kick these into a queue or something (but maintain order).
@@ -138,7 +172,7 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 		}
 		commitSHA := r.buildEventAccumulator.Invocation().GetCommitSha()
 		if ownerRepo != "" && commitSHA != "" {
-			err = r.githubClient.CreateStatus(ctx, ownerRepo, commitSHA, payload)
+			err = r.githubClient.CreateStatus(ctx, groupID, ownerRepo, commitSHA, payload)
 			if err != nil {
 				// Note: using info-level log since this is often due to client
 				// misconfiguration (e.g. user doesn't have BB GitHub app
@@ -154,7 +188,7 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 	r.payloads = make([]*github.GithubStatusPayload, 0)
 }
 
-func (r *BuildStatusReporter) githubPayloadFromWorkspaceStatusEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
+func (r *BuildStatusReporter) githubPayloadForBuildMetadata() *github.GithubStatusPayload {
 	return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), "Running...", github.PendingState)
 }
 
@@ -207,13 +241,13 @@ func (r *BuildStatusReporter) githubPayloadFromTestSummaryEvent(event *build_eve
 
 func (r *BuildStatusReporter) githubPayloadFromFinishedEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
 	finished := event.GetFinished()
-	description := descriptionFromExitCodeName(finished.ExitCode.Name)
+	description := descriptionFromExitCodeName(finished.GetExitCode().GetName())
 	startTime := r.buildEventAccumulator.StartTime()
 	endTime := timeutil.GetTimeWithFallback(finished.GetFinishTime(), finished.GetFinishTimeMillis())
 	if !startTime.IsZero() && endTime.After(startTime) {
 		description = fmt.Sprintf("%s in %s", description, timeutil.ShortFormatDuration(endTime.Sub(startTime)))
 	}
-	if finished.ExitCode.Code == 0 || finished.ExitCode.Name == "NO_TESTS_FOUND" {
+	if finished.GetExitCode().GetCode() == 0 || finished.GetExitCode().GetName() == "NO_TESTS_FOUND" {
 		return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), description, github.SuccessState)
 	}
 
@@ -268,7 +302,7 @@ func (r *BuildStatusReporter) targetURL(label string) string {
 
 func (r *BuildStatusReporter) initializeGroups(testGroups string) {
 	r.groups = make(map[string]*GroupStatus)
-	for _, group := range strings.Split(testGroups, ",") {
+	for group := range strings.SplitSeq(testGroups, ",") {
 		r.groups[group] = &GroupStatus{
 			name: group,
 		}

@@ -72,6 +72,15 @@ func (l *FakeAuditLog) LogForSecret(ctx context.Context, secretName string, acti
 	l.Log(ctx, r, action, request)
 }
 
+func (l *FakeAuditLog) LogForUserList(ctx context.Context, userListID string, userListName string, action alpb.Action, request proto.Message) {
+	r := &alpb.ResourceID{
+		Type: alpb.ResourceType_USER_LIST,
+		Id:   userListID,
+		Name: userListName,
+	}
+	l.Log(ctx, r, action, request)
+}
+
 func (f *FakeAuditLog) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error) {
 	return nil, status.UnimplementedError("not implemented")
 }

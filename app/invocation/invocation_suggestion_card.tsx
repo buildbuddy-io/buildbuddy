@@ -1,12 +1,13 @@
-import React from "react";
 import { AlertCircle, AlertTriangle, HelpCircle } from "lucide-react";
-import { TextLink } from "../components/link/link";
-import InvocationModel from "./invocation_model";
-import capabilities from "../capabilities/capabilities";
-import { User } from "../auth/user";
-import { grp } from "../../proto/group_ts_proto";
+import React from "react";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
+import { grp } from "../../proto/group_ts_proto";
+import { User } from "../auth/user";
+import capabilities from "../capabilities/capabilities";
+import { TextLink } from "../components/link/link";
 import { bytes as formatBytes } from "../format/format";
+import InvocationModel from "./invocation_model";
 
 interface Props {
   suggestions: Suggestion[];
@@ -35,6 +36,14 @@ export enum SuggestionLevel {
   INFO,
   WARNING,
   ERROR,
+}
+
+function sortSuggestionsByLevel<T extends { level: SuggestionLevel }>(suggestions: T[]): T[] {
+  return [...suggestions].sort((a, b) => b.level - a.level);
+}
+
+export function hasSuggestionAboveInfo<T extends { level: SuggestionLevel }>(suggestions: T[]): boolean {
+  return suggestions.some((suggestion) => suggestion.level > SuggestionLevel.INFO);
 }
 
 /** Given some data about an invocation, optionally returns a suggestion. */
@@ -92,6 +101,70 @@ export const getTimingDataSuggestion: SuggestionMatcher = ({ model }) => {
       </>
     ),
     reason: <>Shown because these flags are neither enabled nor explicitly disabled.</>,
+  };
+};
+
+export const getTestShardingSuggestion = ({
+  model,
+  resultEvents,
+}: {
+  model: InvocationModel;
+  resultEvents?: build_event_stream.BuildEvent[];
+}) => {
+  if (!capabilities.config.expandedSuggestionsEnabled) {
+    return null;
+  }
+  if (!model.isBazelInvocation()) {
+    return null;
+  }
+
+  // Only suggest for test commands
+  const command = model.getCommand();
+  if (command !== "test") return null;
+
+  // Check if --test_filter is specified
+  const testFilter = model.optionsMap.get("test_filter");
+  if (!testFilter) return null;
+
+  // Check if --test_sharding_strategy is already set to disabled
+  const testShardingStrategy = model.optionsMap.get("test_sharding_strategy");
+  if (testShardingStrategy === "disabled") return null;
+
+  // Check if any tests have multiple shards configured by looking at test results
+  let hasMultipleShards = false;
+
+  if (resultEvents && resultEvents.length > 0) {
+    // Early exit optimization: stop as soon as we find two different shard numbers
+    let firstShard: number | null = null;
+    for (const event of resultEvents) {
+      const shard = event.id?.testResult?.shard || 0;
+      if (firstShard === null) {
+        firstShard = shard;
+      } else if (firstShard !== shard) {
+        hasMultipleShards = true;
+        break;
+      }
+    }
+  }
+
+  if (!hasMultipleShards) {
+    return null;
+  }
+
+  return {
+    level: SuggestionLevel.INFO,
+    message: (
+      <>
+        When using <BazelFlag>--test_filter</BazelFlag>, consider adding{" "}
+        <BazelFlag>--test_sharding_strategy=disabled</BazelFlag> to find the test logs faster.
+      </>
+    ),
+    reason: (
+      <>
+        Shown because this build uses <span className="inline-code">--test_filter</span> with sharded tests, which can
+        cause misleading "no tests to run" warnings when test shards don't contain matching tests.
+      </>
+    ),
   };
 };
 
@@ -225,7 +298,7 @@ const matchers: SuggestionMatcher[] = [
   - name: ${model.workflowConfigured?.actionName || "..."}
     # ...
     resource_requests:
-${yamlSuggestions.map((s) => `      - ${s}`).join("\n")}`}
+${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
             </pre>
           </code>
         </>
@@ -327,23 +400,64 @@ ${yamlSuggestions.map((s) => `      - ${s}`).join("\n")}`}
     if (model.optionsMap.get("remote_cache_compression")) return null;
     if (model.optionsMap.get("experimental_remote_cache_compression")) return null;
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
-    const version = getBazelMajorVersion(model);
+
+    const version = model.getBazelVersion();
     // Bazel pre-v5 doesn't support compression.
-    if (version === null || version < 5) return null;
+    if (version === null || version.major < 5) return null;
+
+    // --experimental_remote_cache_compression was renamed to --remote_cache_compression in Bazel 7.0.
+    const flag = version.major >= 7 ? "--remote_cache_compression" : "--experimental_remote_cache_compression";
 
     return {
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Consider adding the Bazel flag <BazelFlag>--experimental_remote_cache_compression</BazelFlag> to improve
-          remote cache throughput.
+          Consider adding the Bazel flag <BazelFlag>{flag}</BazelFlag> to improve remote cache throughput.
         </>
       ),
       reason: (
         <>
-          Shown because this build is cache-enabled but{" "}
-          <span className="inline-code">--experimental_remote_cache_compression</span> is neither enabled nor explicitly
-          disabled.
+          Shown because this build is cache-enabled but <span className="inline-code">{flag}</span> is neither enabled
+          nor explicitly disabled.
+        </>
+      ),
+    };
+  },
+  // Suggest compression threshold for Bazel versions where threshold default is 0.
+  ({ model }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
+
+    if (model.optionsMap.get("experimental_remote_cache_compression_threshold")) return null;
+    if (
+      !model.optionsMap.get("remote_cache_compression") &&
+      !model.optionsMap.get("experimental_remote_cache_compression")
+    )
+      return null;
+    if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
+
+    const version = model.getBazelVersion();
+    // Threshold flag first appears in Bazel 7.1, and defaults to 100 in Bazel 8.0+.
+    if (version === null || version.major < 7 || (version.major === 7 && version.minor < 1) || version.major >= 8) {
+      return null;
+    }
+
+    const compressionFlag = model.optionsMap.get("remote_cache_compression")
+      ? "--remote_cache_compression"
+      : "--experimental_remote_cache_compression";
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          Consider adding the Bazel flag <BazelFlag>--experimental_remote_cache_compression_threshold=100</BazelFlag> to
+          avoid inflating blobs smaller than 100 bytes with ZSTD compression.
+        </>
+      ),
+      reason: (
+        <>
+          Shown because this build is cache-enabled with <span className="inline-code">{compressionFlag}</span> set
+          without <span className="inline-code">--experimental_remote_cache_compression_threshold</span> set.
         </>
       ),
     };
@@ -376,10 +490,10 @@ ${yamlSuggestions.map((s) => `      - ${s}`).join("\n")}`}
     if (!model.optionsMap.get("remote_cache")) return null;
     if (model.optionsMap.get("remote_build_event_upload")) return null;
     if (model.optionsMap.get("experimental_remote_build_event_upload")) return null;
-    const version = getBazelMajorVersion(model);
+    const version = model.getBazelVersion();
     // Bazel pre-v6 doesn't support --experimental_remote_build_event_upload=minimal, and Bazel post-v6 default to the
     // correct setting
-    if (version === null || version != 6) return null;
+    if (version === null || version.major != 6) return null;
 
     return {
       level: SuggestionLevel.INFO,
@@ -403,6 +517,9 @@ ${yamlSuggestions.map((s) => `      - ${s}`).join("\n")}`}
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
     if (!model.isBazelInvocation()) return null;
+
+    const version = model.getBazelVersion();
+    if (version === null || version.major >= 8) return null;
 
     if (model.optionsMap.get("legacy_important_outputs")) return null;
 
@@ -556,7 +673,7 @@ export function getSuggestions({
     const suggestion = matcher({ buildLogs, model, runnerExecution });
     if (suggestion) suggestions.push(suggestion);
   }
-  return suggestions;
+  return sortSuggestionsByLevel(suggestions);
 }
 
 export default class SuggestionCardComponent extends React.Component<Props> {
@@ -687,12 +804,4 @@ function InlineProseList({ items }: { items: React.ReactNode[] }) {
     }
   }
   return <>{out}</>;
-}
-
-function getBazelMajorVersion(model: InvocationModel): number | null {
-  const version = model.started?.buildToolVersion;
-  if (!version) return null;
-  const segments = version.split(".").map(Number);
-  if (isNaN(segments[0])) return null;
-  return segments[0];
 }

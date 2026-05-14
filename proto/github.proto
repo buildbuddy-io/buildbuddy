@@ -4,13 +4,25 @@ import "proto/context.proto";
 
 package github;
 
+// UnlinkUserGitHubAccountRequest is a request to unlink the GitHub account
+// associated with the authenticated user.
+message UnlinkUserGitHubAccountRequest {
+  context.RequestContext request_context = 1;
+}
+
+message UnlinkUserGitHubAccountResponse {
+  context.ResponseContext response_context = 1;
+}
+
 // UnlinkGitHubAccountRequest is a request to unlink the GitHub account
 // associated with the group selected in the request context.
 message UnlinkGitHubAccountRequest {
   context.RequestContext request_context = 1;
 
   // Whether to unlink the user-level account.
-  bool unlink_user_account = 2;
+  // DEPRECATED: use UnlinkUserGitHubAccount RPC instead.
+  // TODO(bduffany): delete this after next rollout.
+  bool unlink_user_account = 2 [deprecated = true];
 }
 
 message UnlinkGitHubAccountResponse {
@@ -49,9 +61,13 @@ message UnlinkGitHubAccountResponse {
 message LinkAppInstallationRequest {
   context.RequestContext request_context = 1;
 
-  // The installation ID to link.
-  // Required.
+  // The installation ID to link. This is unique to every GitHub account that
+  // has installed the app. Required.
   int64 installation_id = 2;
+
+  // The ID of the GitHub app being linked.
+  // Required.
+  int64 app_id = 3;
 }
 
 message LinkAppInstallationResponse {
@@ -59,7 +75,8 @@ message LinkAppInstallationResponse {
 }
 
 message AppInstallation {
-  // The GitHub App installation ID.
+  // The installation ID. This is unique to every GitHub account that has
+  // installed the app.
   int64 installation_id = 1;
 
   // The GitHub username or organization where the app is installed.
@@ -68,6 +85,14 @@ message AppInstallation {
 
   // The group ID to which the installation is linked.
   string group_id = 3;
+
+  // The ID of the GitHub app being linked. There are only 2 possible values,
+  // corresponding to either the read-write or read-only app.
+  int64 app_id = 4;
+
+  // Whether to automatically report GitHub commit statuses for build with
+  // role=CI or CI_RUNNER.
+  bool report_commit_statuses_for_ci_builds = 5;
 }
 
 // A request to list GitHub App installations accessible to user as well as
@@ -102,10 +127,25 @@ message UnlinkAppInstallationRequest {
   context.RequestContext request_context = 1;
 
   // The installation ID to unlink.
+  // This is unique to every user that has installed the app.
   int64 installation_id = 2;
+
+  // The ID of the GitHub app being unlinked.
+  int64 app_id = 3;
 }
 
 message UnlinkAppInstallationResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message UpdateGitHubAppInstallationRequest {
+  context.RequestContext request_context = 1;
+  int64 app_id = 2;
+  string owner = 3;
+  bool report_commit_statuses_for_ci_builds = 4;
+}
+
+message UpdateGitHubAppInstallationResponse {
   context.ResponseContext response_context = 1;
 }
 
@@ -142,10 +182,23 @@ message GetLinkedReposRequest {
   context.RequestContext request_context = 1;
 }
 
+message GitRepository {
+  string repo_url = 1;
+
+  // Whether to use the default workflow config if buildbuddy.yaml is missing.
+  // If enabled, workflows will automatically start running for a git repo when
+  // linked, even if buildbuddy.yaml is missing from the repo. If disabled,
+  // workflows will only run when buildbuddy.yaml is present in the repo.
+  bool use_default_workflow_config = 2;
+}
+
 message GetLinkedReposResponse {
   context.ResponseContext response_context = 1;
 
-  repeated string repo_urls = 2;
+  repeated GitRepository repos = 3;
+
+  // DEPRECATED: Use repos instead.
+  repeated string repo_urls = 2 [deprecated = true];
 }
 
 // A request to link a repo to the authenticated org.
@@ -178,6 +231,31 @@ message UnlinkRepoResponse {
   context.ResponseContext response_context = 1;
 }
 
+message UpdateRepoSettingsRequest {
+  context.RequestContext request_context = 1;
+
+  string repo_url = 2;
+
+  // Whether to use the default workflow config if buildbuddy.yaml is missing.
+  // If enabled, workflows will automatically start running for a git repo when
+  // linked, even if buildbuddy.yaml is missing from the repo. If disabled,
+  // workflows will only run when buildbuddy.yaml is present in the repo.
+  bool use_default_workflow_config = 3;
+}
+
+message UpdateRepoSettingsResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message GetGithubAppInstallPathRequest {
+  context.RequestContext request_context = 1;
+}
+
+message GetGithubAppInstallPathResponse {
+  context.ResponseContext response_context = 1;
+  string install_path = 2;
+}
+
 // GET /user/installations
 message GetGithubUserInstallationsRequest {
   context.RequestContext request_context = 1;
@@ -189,6 +267,7 @@ message UserInstallation {
   string url = 3;
   string target_type = 4;
   UserInstallationPermissions permissions = 5;
+  int64 app_id = 6;
 }
 
 message UserInstallationPermissions {
@@ -356,17 +435,15 @@ message GetGithubCompareResponse {
   context.ResponseContext response_context = 1;
   int64 ahead_by = 2;
   repeated Commit commits = 3;
-  repeated File files = 4;
+  repeated FileSummary files = 5;
+
+  reserved 4;
 }
 
 message Commit {
   string sha = 1;
   string tree_sha = 2;
-}
-
-message File {
-  string name = 1;
-  string sha = 2;
+  string message = 3;
 }
 
 // GET /repos/{owner}/{repo}/forks
@@ -550,6 +627,8 @@ message FileSummary {
 
   FileChangeType change_type = 8;
 
+  string sha = 10;
+
   reserved 4;  // formerly pr-level comment count.
 }
 
@@ -638,7 +717,7 @@ message DeleteGithubPullRequestCommentResponse {
   context.ResponseContext response_context = 1;
 }
 
-// Next ID: 23
+// Next ID: 24
 message GetGithubPullRequestDetailsResponse {
   context.ResponseContext response_context = 1;
 
@@ -665,6 +744,9 @@ message GetGithubPullRequestDetailsResponse {
   string branch = 16;
   string base_commit_sha = 21;
   string head_commit_sha = 22;
+
+  // A sorted list of the commits in this PR (oldest comes first).
+  repeated Commit commits = 23;
 
   repeated Comment comments = 17;
 

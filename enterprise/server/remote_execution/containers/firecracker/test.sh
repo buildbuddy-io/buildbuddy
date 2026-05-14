@@ -12,7 +12,6 @@ set -e
 : "${BAZEL:=bazel}"
 # RUN_UNDER: test wrapper. 'sudo strace -f' is also useful.
 : "${RUN_UNDER:=sudo}"
-: "${TARGET:=firecracker_test_blockio}"
 
 # Make sure buildozer is installed
 ./tools/buildozer.sh
@@ -21,7 +20,7 @@ BAZEL_ARGS=()
 # Read test 'args' attribute into GO_TEST_ARGS array
 mapfile -t GO_TEST_ARGS < <(
   ./tools/buildozer.sh -output_json 'print args' \
-    "//enterprise/server/remote_execution/containers/firecracker:$TARGET" |
+    "//enterprise/server/remote_execution/containers/firecracker:firecracker_test" |
     jq -r '.records[0].fields[0].list.strings[]'
 )
 
@@ -38,10 +37,10 @@ for arg in "$@"; do
 done
 
 $BAZEL \
-  build "//enterprise/server/remote_execution/containers/firecracker:$TARGET" \
+  build "//enterprise/server/remote_execution/containers/firecracker:firecracker_test" \
   "${BAZEL_ARGS[@]}"
 
 echo "Running test as root (may ask for password)"
 $RUN_UNDER \
-  "./bazel-bin/enterprise/server/remote_execution/containers/firecracker/${TARGET}_/$TARGET" \
+  "./bazel-bin/enterprise/server/remote_execution/containers/firecracker/firecracker_test_/firecracker_test" \
   "${GO_TEST_ARGS[@]}"

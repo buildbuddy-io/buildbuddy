@@ -1,28 +1,21 @@
 actions:
   - name: Test
-    container_image: ubuntu-20.04
+    container_image: ubuntu-22.04
+    resource_requests:
+      disk: 27GB
     triggers:
       push:
         branches:
           - "master"
+          - "bb_release_*"
       pull_request:
         branches:
           - "*"
-    bazel_commands:
-      - test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
-  - name: Test with BzlMod
-    container_image: ubuntu-20.04
-    triggers:
-      push:
-        branches:
-          - "master"
-      pull_request:
-        branches:
-          - "*"
-    bazel_commands:
-      - test //... --enable_bzlmod --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
+    steps:
+      - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-bare"
+    allow_concurrent_runs: false
   - name: Check style
-    container_image: ubuntu-20.04
+    container_image: ubuntu-22.04
     triggers:
       push:
         branches:
@@ -30,10 +23,16 @@ actions:
       pull_request:
         branches:
           - "*"
-    bazel_commands:
-      - run //tools/checkstyle --config=linux-workflows
+    # Do a non-shallow fetch so that we can diff against the previous commit
+    # when running on push to master.
+    git_fetch_depth: 0
+    steps:
+      - run: "bazel run //tools/lint --config=linux-workflows"
+    allow_concurrent_runs: false
   - name: Test (darwin_amd64)
     os: "darwin"
+    self_hosted: true
+    pool: workflows
     triggers:
       push:
         branches:
@@ -42,53 +41,57 @@ actions:
         branches:
           - "*"
     # TODO: Fix the tests below on Mac, and re-enable.
-    bazel_commands:
-      - >-
-        test --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare
-        --
-        //...
-        -//server/backends/disk_cache:all
-        -//enterprise/server/backends/pebble_cache:all
-        -//enterprise/server/raft/store:all
-        -//enterprise/server/remote_execution/commandutil:all
-        -//enterprise/server/remote_execution/runner:all
-        -//enterprise/server/test/integration/...
+    steps:
+      - run: >-
+          bazel test --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare
+          --
+          //...
+          -//server/backends/disk_cache:all
+          -//server/test/integration/remote_asset:all
+          -//enterprise/server/backends/pebble_cache:all
+          -//enterprise/server/raft/txn:all
+          -//enterprise/server/raft/store:all
+          -//enterprise/server/remote_execution/commandutil:all
+          -//enterprise/server/remote_execution/runner:all
+          -//enterprise/server/test/integration/...
+    allow_concurrent_runs: false
+  - name: Test (darwin_arm64)
+    os: "darwin"
+    arch: "arm64"
+    self_hosted: true
+    pool: workflows
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "*"
+    # TODO: Fix the tests below on Mac, and re-enable.
+    steps:
+      - run: >-
+          bazel test --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare
+          --
+          //...
+          -//server/backends/disk_cache:all
+          -//server/test/integration/remote_asset:all
+          -//enterprise/server/backends/pebble_cache:all
+          -//enterprise/server/raft/txn:all
+          -//enterprise/server/raft/store:all
+          -//enterprise/server/remote_execution/commandutil:all
+          -//enterprise/server/remote_execution/runner:all
+          -//enterprise/server/test/integration/...
+    allow_concurrent_runs: false
   - name: Benchmark
-    container_image: ubuntu-20.04
+    container_image: ubuntu-22.04
     triggers:
       push:
         branches:
           - "master"
-    bazel_commands:
-      - test //... --config=linux-workflows --config=performance --test_tag_filters=+performance
-  - name: Browser tests
-    container_image: ubuntu-20.04
-    triggers:
-      push:
-        branches:
-          - "master"
-      pull_request:
-        branches:
-          - "*"
-    bazel_commands:
-      # TODO(http://go/b/958): See if we can remove --remote_download_outputs=toplevel
-      - test //... --config=linux-workflows --config=race --remote_download_outputs=toplevel --test_tag_filters=+webdriver
-  # TODO(bduffany): Move docker tests to the Test workflow when they are fast enough.
-  - name: Docker tests
-    container_image: ubuntu-20.04
-    triggers:
-      push:
-        branches:
-          - "master"
-      pull_request:
-        branches:
-          - "*"
-    bazel_commands:
-      # TODO(http://go/b/1249): Increase reliability of runner recycling when
-      # executing with high concurrency, and remove `--jobs=3`
-      - test //... --config=linux-workflows --config=race --test_tag_filters=+docker --build_tag_filters=+docker --jobs=3
+    steps:
+      - run: "bazel test //... --config=linux-workflows --config=performance --test_tag_filters=+performance"
   - name: Baremetal tests
-    container_image: ubuntu-20.04
+    container_image: ubuntu-22.04
     triggers:
       push:
         branches:
@@ -96,20 +99,9 @@ actions:
       pull_request:
         branches:
           - "*"
-    bazel_commands:
-      - test //... --config=linux-workflows --config=race --test_tag_filters=+bare --build_tag_filters=+bare
-  # TODO(http://go/b/2282): delete this workflow.
-  - name: Image streaming test
-    container_image: ubuntu-20.04
-    triggers:
-      push:
-        branches:
-          - "master"
-      pull_request:
-        branches:
-          - "*"
-    bazel_commands:
-      - test //... --host_platform=//:many_layered_image --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
+    steps:
+      - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=+bare --build_tag_filters=+bare"
+    allow_concurrent_runs: false
 
 plugins:
   - path: cli/plugins/go-deps

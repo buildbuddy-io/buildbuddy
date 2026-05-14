@@ -1,49 +1,96 @@
 # NOTE: this is a multi-platform image, so each step needs to work on both amd64 and arm64.
 # See README for details.
 
-# debian 11
-FROM debian@sha256:5a87974e73c64b3fb161d444a84bdd47c0e6b6058eacaeea64342e7cbce1f04d
+# Extract nvidia-cdi-hook in an intermediate stage so the final image gets only
+# the binary and not any apt/dpkg metadata churn from package installation.
+FROM mirror.gcr.io/debian@sha256:01a723bf5bfb21b9dda0c9a33e0538106e4d02cce8f557e118dd61259553d598 AS nvidia_cdi_hook_extractor
 
-RUN apt-get update && \
+RUN NVIDIA_CONTAINER_TOOLKIT_BASE_VERSION="1.19.0-1" && \
+    apt-get update && \
+    apt-get install -y ca-certificates curl && \
+    arch="$(dpkg --print-architecture)" && \
+    curl -fsSL \
+    "https://nvidia.github.io/libnvidia-container/stable/deb/${arch}/nvidia-container-toolkit-base_${NVIDIA_CONTAINER_TOOLKIT_BASE_VERSION}_${arch}.deb" \
+    -o /tmp/nvidia-container-toolkit-base.deb && \
+    dpkg-deb -x /tmp/nvidia-container-toolkit-base.deb /tmp/rootfs && \
+    rm -rf /var/lib/apt/lists/* && apt-get clean
+
+# debian 12
+FROM mirror.gcr.io/debian@sha256:01a723bf5bfb21b9dda0c9a33e0538106e4d02cce8f557e118dd61259553d598
+
+RUN \
+    # /etc/apt/debian.sources doesn't pin the debian release by name, but by `stable`.
+    sed -i 's/^Suites: stable stable-updates$/Suites: trixie trixie-updates/' /etc/apt/sources.list.d/debian.sources && \
+    sed -i 's/^Suites: stable-security$/Suites: trixie-security/' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && \
     apt-get install -y \
-    curl apt-transport-https ca-certificates gnupg-agent software-properties-common fuse && \
+    # Necessary for firecracker
+    e2fsprogs \
+    # FUSE support, used by vbd and vfs packages.
+    # TODO: probably not needed since we use DirectMountStrict now?
+    fuse \
+    # Networking tools used by networking package.
+    # iproute2 provides the "ip" command.
+    iproute2 conntrack \
+    # Credential helper for custom execution images hosted on ECR.
+    amazon-ecr-credential-helper \
+    # cgroup-aware proc mounts for OCI containers.
+    lxcfs && \
+    apt-get remove -y docker.io docker-cli containerd runc docker-buildx && \
+    # Can't safely run autoremove, too many builds have non-hermetic implicit dependencies.
+    # TODO(zoey): investigate common implicit deps and install them explicitly
+    # so we can run autoremove
+    # apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
-RUN ARCH=$(dpkg --print-architecture) && \
-    SHASUM=$(case $ARCH in \
-        amd64) echo '93dcc18adc78c65a028a84799ecf8ad40c936fdfc5f2a57b1acda5a8117fa82c' ;; \
-        arm64) echo '07952557df20bfd2a95f9bef198b445e006171969499a1d361bd9e6f8e5e0e81' ;; \
-    esac) && \
-    curl -o /tini -fsSL "https://github.com/krallin/tini/releases/download/v0.19.0/tini-${ARCH}" && \
-    echo "$SHASUM /tini" | sha256sum -c && \
-    chmod +x /tini
+RUN DOCKER_VERSION="5:29.0.1-1~debian.13~trixie" && \
+    CONTAINERD_DEB_VERSION="2.1.5-1~debian.13~trixie" && \
+    DOCKER_BUILDX_VERSION="0.30.0-1~debian.13~trixie" && \
+    DOCKER_COMPOSE_VERSION="2.40.3-1~debian.13~trixie" && \
+    apt-get update && \
+    apt-get install -y \
+    curl ca-certificates apt-transport-https && \
+    install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
+    chmod a+r /etc/apt/keyrings/docker.asc && \
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+    tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+    apt-get update && apt-get install -y \
+    docker-ce=${DOCKER_VERSION} \
+    docker-ce-cli=${DOCKER_VERSION} \
+    docker-ce-rootless-extras=${DOCKER_VERSION} \
+    containerd.io=${CONTAINERD_DEB_VERSION} \
+    docker-buildx-plugin=${DOCKER_BUILDX_VERSION} \
+    docker-compose-plugin=${DOCKER_COMPOSE_VERSION} && \
+    apt-mark auto \
+    curl ca-certificates apt-transport-https && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/* && apt-get clean && \
+    rm \
+    # keep these in sync with the binaries we are manually
+    # adding in enterprise/server/cmd/executor/BUILD.
+    #
+    # containerd
+    /usr/bin/containerd \
+    /usr/bin/containerd-shim-runc-v2 \
+    /usr/bin/ctr \
+    # rootlesskit
+    # /usr/bin/rootlesskit \
+    # runc
+    /usr/bin/runc
 
-RUN curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add - && \
-    apt-key fingerprint 0EBFCD88 && \
-    add-apt-repository "deb [arch=$(dpkg --print-architecture)] https://download.docker.com/linux/debian $(lsb_release -cs) stable" && \
-    apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io && \
-    rm -rf /var/lib/apt/lists/* && apt-get clean
-
-# Install skopeo and umoci which we use to unpack OCI images when we're not using docker.
-# Install iproute2 ("ip" command) to configure networking on host.
-RUN apt-get update && \
-    apt-get install -y skopeo umoci iproute2 amazon-ecr-credential-helper && \
-    rm -rf /var/lib/apt/lists/* && apt-get clean
-
-# Install gVisor
-#RUN curl -fsSL https://gvisor.dev/archive.key | gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" >>  /etc/apt/sources.list.d/gvisor.list && apt-get update && apt-get install -y runsc
-# ALTERNATIVE non-apt method:
-#RUN ARCH=$(uname -m); URL=https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}; curl -LO ${URL}/runsc && curl -LO ${URL}/runsc.sha512 && sha512sum -c runsc.sha512 && rm -f *.sha512 && chmod a+rx runsc && mv runsc /usr/local/bin
-
-# Configure docker credentials so we can pull marketplace.gcr.io images generated by rbe_autoconfig
-RUN ARCH=$(dpkg --print-architecture) && \
-    SHASUM=$(case $ARCH in \
-        amd64) echo '1f98cbe13be7876b3a031540c48c04739ad22aa4b0c5d1b5b2c48d558eb44581' ;; \
-        arm64) echo '8a563549e3559234402b802ee450cfd7817a908330ebf95ea72db00829145d59' ;; \
-    esac) && \
-    curl -o "docker-credential-gcr.tar.gz" -fsSL "https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v2.0.0/docker-credential-gcr_linux_${ARCH}-2.0.0.tar.gz" && \
-    echo "$SHASUM docker-credential-gcr.tar.gz" | sha256sum -c && \
-    tar -xz -f docker-credential-gcr.tar.gz --to-stdout ./docker-credential-gcr > /usr/local/bin/docker-credential-gcr && \
-    chmod +x /usr/local/bin/docker-credential-gcr && \
-    rm docker-credential-gcr.tar.gz && \
-    docker-credential-gcr configure-docker
+# nvidia-cdi-hook is needed for the executor to spawn child containers that need
+# to access the GPU. CDI takes care of mounting device files and libraries
+# needed for the GPU, but it doesn't mount the supporting files used to set up
+# the container itself. So, these container support files need to be provisioned
+# manually.
+#
+# For NVIDIA, the relevant container support files are nvidia-cdi-hook as well
+# as some configs under /usr/share/vulkan. It's fine to mount /usr/share/vulkan
+# from the host since it just contains some JSON manifests, but we can't mount
+# nvidia-cdi-hook since it's usually dynamically linked against GLIBC, and we
+# can't assume the host GLIBC version will be compatible with the one installed
+# in the executor image. Copy only nvidia-cdi-hook from an extractor stage.
+COPY --from=nvidia_cdi_hook_extractor /tmp/rootfs/usr/bin/nvidia-cdi-hook /usr/bin/nvidia-cdi-hook

@@ -1,0 +1,29 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//cli:__subpackages__"])
+
+go_library(
+    name = "flaghistory",
+    srcs = ["flaghistory.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/cli/flaghistory",
+    deps = [
+        "//cli/arg",
+        "//cli/log",
+        "//cli/storage",
+        "//cli/workspace",
+        "//server/util/hash",
+        "//server/util/uuid",
+    ],
+)
+
+go_test(
+    name = "flaghistory_test",
+    srcs = ["flaghistory_test.go"],
+    embed = [":flaghistory"],
+    deps = [
+        "//cli/arg",
+        "//cli/parser",
+        "//cli/parser/test_data",
+        "@com_github_stretchr_testify//require",
+    ],
+)

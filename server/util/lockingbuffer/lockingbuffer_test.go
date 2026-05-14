@@ -13,8 +13,6 @@ import (
 )
 
 func TestLockingBuffer_ReadWrite(t *testing.T) {
-	rand.Seed(int64(time.Now().UnixNano()))
-
 	buf := lockingbuffer.New()
 
 	writer := func(val string, writeCount int, done *bool, doneLock *sync.RWMutex) {
@@ -97,8 +95,6 @@ func charCount(s string, c byte) int {
 }
 
 func TestLockingBuffer_ReadAll(t *testing.T) {
-	rand.Seed(int64(time.Now().UnixNano()))
-
 	buf := lockingbuffer.New()
 
 	writer := func(val string, writeCount int, done *bool, doneLock *sync.RWMutex) {

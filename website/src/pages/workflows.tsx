@@ -1,9 +1,9 @@
-import React from "react";
 import Layout from "@theme/Layout";
+import React from "react";
 import common from "../css/common.module.css";
 
-import Hero from "../components/hero/hero";
 import CTA from "../components/cta/cta";
+import Hero from "../components/hero/hero";
 
 function Component() {
   return (
@@ -17,7 +17,7 @@ function Component() {
           lessPadding={true}
           primaryButtonHref="https://app.buildbuddy.io/workflows/"
           secondaryButtonText="Workflow Docs"
-          secondaryButtonHref="/docs/workflows-introduction"
+          secondaryButtonHref="/docs/workflows-setup"
           gradientButton={true}
         />
 

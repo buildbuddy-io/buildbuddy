@@ -5,13 +5,12 @@ package(default_visibility = ["//visibility:public"])
 SRCS = glob([
     "src/**",
     "static/**",
-    "docs/**",
 ]) + [
     "docusaurus.config.js",
     "yarn.lock",
     "sidebars.js",
     "//server/cmd/buildbuddy/yaml_doc:generate_mdx",
-    "//server/metrics:generate_mdx",
+    "//server/metrics/generate_docs:generate_mdx",
     "//enterprise/server/cmd/server/yaml_doc:generate_mdx",
     "//enterprise/server/backends/prom/generate_docs:generate_mdx",
     "//enterprise/server/cmd/executor/yaml_doc:generate_mdx",

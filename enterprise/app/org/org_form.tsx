@@ -1,14 +1,14 @@
 import React from "react";
+import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import Banner from "../../../app/components/banner/banner";
-import { User } from "../../../app/auth/auth_service";
-import { grp } from "../../../proto/group_ts_proto";
-import { BuildBuddyError } from "../../../app/util/errors";
 import Select, { Option } from "../../../app/components/select/select";
-import Checkbox from "../../../app/components/checkbox/checkbox";
+import { BuildBuddyError } from "../../../app/util/errors";
+import { grp } from "../../../proto/group_ts_proto";
 
 export type FormProps = {
   user: User;
+  search: URLSearchParams;
 };
 
 type GroupRequest = Partial<grp.CreateGroupRequest & grp.UpdateGroupRequest>;
@@ -36,7 +36,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
   }
 
   abstract newRequest(values?: Record<string, any>): T;
-  abstract submitRequest(): void;
+  abstract submitRequest(): Promise<any>;
   abstract showAdvancedSettings(): boolean;
 
   async onSubmit(e: any) {
@@ -118,7 +118,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
           </label>
           <div className="input-help-text">May contain lowercase letters, numbers, or hyphens (-)</div>
           <div className="url-input-row">
-            {!capabilities.config.subdomainsEnabled && (
+            {capabilities.config.groupMembershipRequestsEnabled && !capabilities.config.subdomainsEnabled && (
               <span>
                 {window.location.hostname}
                 {window.location.port && `:${window.location.port}`}/join/
@@ -135,7 +135,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
             {capabilities.config.subdomainsEnabled && (
               <span>
                 .{capabilities.config.domain}
-                {window.location.port && `:${window.location.port}`}/join/
+                {window.location.port && `:${window.location.port}`}
               </span>
             )}
           </div>
@@ -193,7 +193,10 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
               name="sharingEnabled"
               checked={request.sharingEnabled}
             />
-            <span>Allow members of this org to make builds public (viewable by anyone with a link)</span>
+            <span>
+              Allow members of this org to make builds public (viewable by anyone with a link, including all build
+              artifacts)
+            </span>
           </label>
         )}
         {capabilities.userOwnedExecutors && (
@@ -235,7 +238,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
             <span>Enable "Ask Buddy" button</span>
           </label>
         )}
-        {capabilities.config.codeSearchEnabled && (
+        {capabilities.config.codeSearchEnabled && this.props.user.codesearchAllowed && (
           <label className="form-row input-label">
             <input
               autoComplete="off"

@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 genrule(
     name = "copy_install",
     srcs = ["//cli:install.sh"],
@@ -19,5 +21,3 @@ go_library(
         "//cli/workspace",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

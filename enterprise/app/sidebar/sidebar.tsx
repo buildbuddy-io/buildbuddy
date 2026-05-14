@@ -1,24 +1,27 @@
 import {
-  BookOpen,
-  Gauge,
-  Cloud,
-  PlayCircle,
-  Code,
-  SearchCode,
-  HardDrive,
-  Users,
-  GitBranch,
-  Github,
   BarChart2,
-  LayoutGrid,
+  BookOpen,
+  Cloud,
+  Code,
+  Fingerprint,
+  Gauge,
+  GitBranch,
   GitCommit,
+  Github,
+  HardDrive,
+  LayoutGrid,
   List,
-  Sliders,
-  Terminal,
+  MessageCircle,
   PanelLeftClose,
   PanelLeftOpen,
-  Fingerprint,
-  MessageCircle,
+  PlayCircle,
+  SearchCode,
+  Sliders,
+  Snowflake,
+  Target,
+  Terminal,
+  Users,
+  ZoomIn,
 } from "lucide-react";
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
@@ -59,6 +62,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
 
   isTrendsSelected() {
     return this.props.path.startsWith("/trends/");
+  }
+
+  isTargetsSelected() {
+    return this.props.path.startsWith("/targets/");
   }
 
   isExecutorsSelected() {
@@ -125,6 +132,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
     rpcService.events.next("refresh");
   }
 
+  flipLogoOnHover() {
+    return capabilities.config.flipLogoOnHover;
+  }
+
   render() {
     let expanded =
       (!localStorage[sidebarExpandedKey] && !this.props.dense) ||
@@ -134,7 +145,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
       <div className={`sidebar ${expanded ? "expanded" : "collapsed"}`}>
         <div className="sidebar-header">
           <a href="/">
-            <img src="/image/logo_white.svg" className="logo" />
+            <img src="/image/logo_white.svg" className={`logo ${this.flipLogoOnHover() ? "flipflop" : ""}`} />
           </a>
         </div>
         <div className="sidebar-body">
@@ -142,14 +153,44 @@ export default class SidebarComponent extends React.Component<Props, State> {
             <List className="icon" />
             <span className="sidebar-item-text">All builds</span>
           </SidebarLink>
-          <SidebarLink selected={this.isTrendsSelected()} href={Path.trendsPath} title="Trends">
+          <SidebarLink
+            selected={this.isTrendsSelected() && this.props.tab != "#drilldown"}
+            href={Path.trendsPath}
+            title="Trends">
             <BarChart2 className="icon" />
             <span className="sidebar-item-text">Trends</span>
           </SidebarLink>
+          {capabilities.config.trendsHeatmapEnabled && (
+            <SidebarLink
+              selected={this.isTrendsSelected() && this.props.tab == "#drilldown"}
+              href={Path.trendsPath + "#drilldown"}
+              title="Drilldown">
+              <ZoomIn className="icon" />
+              <span className="sidebar-item-text">Drilldown</span>
+            </SidebarLink>
+          )}
+          {capabilities.config.targetsPageEnabled && (
+            <SidebarLink selected={this.isTargetsSelected()} href={Path.targetsPath} title="Targets">
+              <Target className="icon" />
+              <span className="sidebar-item-text">Targets</span>
+            </SidebarLink>
+          )}
           {capabilities.test && (
-            <SidebarLink selected={this.isTapSelected()} href={Path.tapPath} title="Tests">
+            <SidebarLink
+              selected={this.isTapSelected() && this.props.tab != "#flakes"}
+              href={Path.tapPath}
+              title="Tests">
               <LayoutGrid className="icon" />
               <span className="sidebar-item-text">Tests</span>
+            </SidebarLink>
+          )}
+          {capabilities.config.targetFlakesUiEnabled && (
+            <SidebarLink
+              selected={this.isTapSelected() && this.props.tab == "#flakes"}
+              href={Path.tapPath + "#flakes"}
+              title="Flakes">
+              <Snowflake className="icon" />
+              <span className="sidebar-item-text">Flakes</span>
             </SidebarLink>
           )}
           <SidebarLink selected={this.isUsersSelected()} href="/#users" title="Users">
@@ -178,7 +219,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
               <span className="sidebar-item-text">Executors</span>
             </SidebarLink>
           )}
-          {router.canAccessWorkflowsPage(this.props.user) && (
+          {router.canAccessWorkflowsPage() && (
             <SidebarLink selected={this.isWorkflowsSelected()} href={Path.workflowsPath} title="Workflows">
               <PlayCircle className="icon" />
               <span className="sidebar-item-text">Workflows</span>

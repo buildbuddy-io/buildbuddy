@@ -136,4 +136,15 @@ describe("CancelablePromise", () => {
     expect(value1).toBe(undefined);
     expect(value2).toBe(undefined);
   });
+
+  it("should invoke oncancelled callback when cancelled", () => {
+    const promise = Promise.resolve();
+    let value = 0;
+    new CancelablePromise(promise, {
+      oncancelled: () => {
+        value = 1;
+      },
+    }).cancel();
+    expect(value).toBe(1);
+  });
 });

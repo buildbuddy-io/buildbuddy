@@ -1,0 +1,30 @@
+load("//rules/webdriver:index.bzl", "go_web_test_suite")
+
+package(default_visibility = ["//enterprise:__subpackages__"])
+
+go_web_test_suite(
+    name = "executions_clickhouse_test",
+    srcs = ["executions_clickhouse_test.go"],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+        "test.runner-recycling-key": "clickhouse25.3",
+        "test.EstimatedComputeUnits": "8",
+    },
+    shard_count = 2,
+    tags = ["docker"],
+    deps = [
+        "//enterprise/server/testutil/buildbuddy_enterprise",
+        "//enterprise/server/testutil/testexecutor",
+        "//proto/api/v1:common_go_proto",
+        "//server/testutil/testbazel",
+        "//server/testutil/testclickhouse",
+        "//server/testutil/testfs",
+        "//server/testutil/webtester",
+        "//server/util/shlex",
+        "//server/util/uuid",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_x_sync//errgroup",
+    ],
+)

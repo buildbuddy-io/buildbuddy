@@ -2,11 +2,8 @@
 slug: bazel-remote-cache-debugging
 title: Bazel Remote Cache Debugging
 description: All about the new cache requests card and how to use it.
-author: Brandon Duffany
-author_title: "Engineer @ BuildBuddy"
+authors: brandon
 date: 2022-06-07:12:00:00
-author_url: https://github.com/bduffany
-author_image_url: https://avatars.githubusercontent.com/u/2414826?v=4
 image: /img/blog/remote-cache-debugging.png
 tags: [product, engineering]
 ---

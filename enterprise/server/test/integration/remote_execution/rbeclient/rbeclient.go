@@ -8,7 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -18,7 +19,6 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -85,7 +85,7 @@ type Command struct {
 
 	gRPCClientSource GRPCClientSource
 
-	actionResourceName *digest.ResourceName
+	actionResourceName *digest.ACResourceName
 
 	cancelExecutionRequest context.CancelFunc
 	accepted               chan string
@@ -93,6 +93,9 @@ type Command struct {
 
 	beforeExecuteTime time.Time
 	afterExecuteTime  time.Time
+
+	// Complete list of operations received on the stream.
+	operations []*longrunningpb.Operation
 
 	mu     sync.Mutex
 	opName string
@@ -106,8 +109,12 @@ func (c *Command) AcceptedChannel() <-chan string {
 	return c.accepted
 }
 
-func (c *Command) GetActionResourceName() *digest.ResourceName {
+func (c *Command) GetActionResourceName() *digest.ACResourceName {
 	return c.actionResourceName
+}
+
+func (c *Command) GetOperations() []*longrunningpb.Operation {
+	return c.operations
 }
 
 type StartOpts struct {
@@ -208,7 +215,8 @@ func (c *Command) processUpdatesAsync(ctx context.Context, stream repb.Execution
 			if err != nil {
 				sendStatus(&CommandResult{
 					Stage: repb.ExecutionStage_COMPLETED,
-					Err:   status.AbortedErrorf("stream to server broken: %v", err)})
+					Err:   err,
+				})
 			}
 			continue // retry recv using new stream
 		}
@@ -216,9 +224,12 @@ func (c *Command) processUpdatesAsync(ctx context.Context, stream repb.Execution
 		if err != nil {
 			sendStatus(&CommandResult{
 				Stage: repb.ExecutionStage_COMPLETED,
-				Err:   status.AbortedErrorf("stream to server broken: %v", err)})
+				Err:   err,
+			})
 			return
 		}
+
+		c.operations = append(c.operations, op)
 
 		if taskID == "" {
 			taskID = op.GetName()
@@ -278,7 +289,12 @@ func (c *Command) processUpdatesAsync(ctx context.Context, stream repb.Execution
 	}
 }
 
-func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name string, inputRootDigest *repb.Digest, commandProto *repb.Command, timeout time.Duration) (*Command, error) {
+func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name string, inputRootDigest *repb.Digest, commandProto *repb.Command, timeout time.Duration, doNotCache bool) (*Command, error) {
+	commandProto = commandProto.CloneVT()
+	// Remove the platform from the command and set it in the action since that
+	// is new since RE API v2.2. This lets us test the new path.
+	plat := commandProto.GetPlatform()
+	commandProto.Platform = nil
 	commandDigest, err := cachetools.UploadProto(ctx, c.gRPClientSource.GetByteStreamClient(), instanceName, repb.DigestFunction_SHA256, commandProto)
 	if err != nil {
 		return nil, status.UnknownErrorf("unable to upload command %q to CAS: %s", name, err)
@@ -287,6 +303,8 @@ func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name s
 	action := &repb.Action{
 		CommandDigest:   commandDigest,
 		InputRootDigest: inputRootDigest,
+		Platform:        plat,
+		DoNotCache:      doNotCache,
 	}
 	if timeout != 0 {
 		action.Timeout = durationpb.New(timeout)
@@ -299,7 +317,7 @@ func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name s
 	command := &Command{
 		gRPCClientSource:   c.gRPClientSource,
 		Name:               name,
-		actionResourceName: digest.NewResourceName(actionDigest, instanceName, rspb.CacheType_AC, repb.DigestFunction_SHA256),
+		actionResourceName: digest.NewACResourceName(actionDigest, instanceName, repb.DigestFunction_SHA256),
 	}
 
 	return command, nil
@@ -311,7 +329,7 @@ func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env,
 		if err := os.MkdirAll(filepath.Dir(path), 0777); err != nil {
 			return err
 		}
-		d := digest.NewResourceName(out.GetDigest(), res.InstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+		d := digest.NewCASResourceName(out.GetDigest(), res.InstanceName, repb.DigestFunction_SHA256)
 		f, err := os.Create(path)
 		if err != nil {
 			return err
@@ -327,12 +345,12 @@ func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env,
 		if err := os.MkdirAll(path, 0777); err != nil {
 			return err
 		}
-		treeDigest := digest.NewResourceName(dir.GetTreeDigest(), res.InstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+		treeDigest := digest.NewCASResourceName(dir.GetTreeDigest(), res.InstanceName, repb.DigestFunction_SHA256)
 		tree := &repb.Tree{}
 		if err := cachetools.GetBlobAsProto(ctx, c.gRPClientSource.GetByteStreamClient(), treeDigest, tree); err != nil {
 			return err
 		}
-		if _, err := dirtools.DownloadTree(ctx, env, res.InstanceName, repb.DigestFunction_SHA256, tree, path, &dirtools.DownloadTreeOpts{}); err != nil {
+		if _, err := dirtools.DownloadTree(ctx, env, res.InstanceName, repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{RootDir: path}); err != nil {
 			return err
 		}
 	}

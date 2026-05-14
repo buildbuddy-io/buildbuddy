@@ -1,11 +1,11 @@
 import Long from "long";
 import React from "react";
+import Link from "../../../app/components/link/link";
 import format from "../../../app/format/format";
+import router from "../../../app/router/router";
 import rpc_service from "../../../app/service/rpc_service";
 import { joinReactNodes } from "../../../app/util/react";
 import { github } from "../../../proto/github_ts_proto";
-import Link from "../../../app/components/link/link";
-import router from "../../../app/router/router";
 
 interface ReviewListComponentProps {
   user?: string;
@@ -163,6 +163,17 @@ interface PRProps {
 }
 
 class PR extends React.Component<PRProps> {
+  private onClick(e: React.MouseEvent<HTMLAnchorElement>) {
+    if (e.ctrlKey && e.shiftKey) {
+      // When clicking with Ctrl+Shift+Click, go directly to the GitHub PR page.
+      e.preventDefault();
+      window.open(
+        `https://github.com/${this.props.pr.owner}/${this.props.pr.repo}/pull/${Number(this.props.pr.number)}`,
+        "_blank"
+      );
+    }
+  }
+
   render() {
     let reviewers: React.ReactNode[] = [];
     let unresolved = false;
@@ -192,7 +203,10 @@ class PR extends React.Component<PRProps> {
     }
 
     return (
-      <Link className="pr" href={router.getReviewUrl(this.props.pr.owner, this.props.pr.repo, +this.props.pr.number)}>
+      <Link
+        className="pr"
+        href={router.getReviewUrl(this.props.pr.owner, this.props.pr.repo, +this.props.pr.number)}
+        onClick={(e) => this.onClick(e)}>
         <div>{this.props.pr.number}</div>
         <div>{this.props.pr.author}</div>
         <div>

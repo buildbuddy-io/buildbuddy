@@ -2,6 +2,7 @@ package usage_test
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -15,16 +16,22 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclock"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/go-redis/redis/v8"
 	"github.com/go-sql-driver/mysql"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
+
+	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 )
 
 const (
@@ -32,6 +39,8 @@ const (
 )
 
 var (
+	clickhouseEnabled = flag.Bool("test_clickhouse_enabled", false, "Whether to enable Clickhouse for usage tracking tests")
+
 	// Define some usage periods
 
 	period1Start = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -40,8 +49,30 @@ var (
 	period4Start = period1Start.Add(3 * periodDuration)
 )
 
-func setupEnv(t *testing.T) *testenv.TestEnv {
-	te := testenv.GetTestEnv(t)
+func setupEnv(t *testing.T, opts ...testenv.TestEnvOption) *testenv.TestEnv {
+	te := testenv.GetTestEnv(t, opts...)
+
+	if *clickhouseEnabled {
+		clickhouseDSN := testclickhouse.Start(t, true /*=reuseServer*/)
+		flags.Set(t, "olap_database.data_source", clickhouseDSN)
+		flags.Set(t, "app.write_usage_to_olap_db", true)
+		err := clickhouse.Register(te)
+		require.NoError(t, err)
+
+		// Create the Usage view which is how we will actually query
+		// usage.
+		// TODO: move this to clickhouse schema package
+		dbh := te.GetOLAPDBHandle()
+		err = dbh.GORM(context.Background(), "create_usage_view").Exec(`
+			CREATE VIEW "Usage" AS
+			SELECT
+				group_id, period_start, sku, labels, SUM(count) AS count
+			FROM RawUsage FINAL
+			GROUP BY
+				group_id, period_start, sku, labels
+		`).Error
+		require.NoError(t, err)
+	}
 
 	redisTarget := testredis.Start(t).Target
 	rdb := redis.NewClient(redisutil.TargetToOptions(redisTarget))
@@ -50,7 +81,7 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	rmc := redis_metrics_collector.New(rdb, rbuf)
 	te.SetMetricsCollector(rmc)
 
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers(
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers(
 		"US1", "GR1",
 		"US2", "GR2",
 	))
@@ -76,7 +107,7 @@ func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 	dbh := te.GetDBHandle()
 	rq := dbh.NewQuery(ctx, "get_usages").Raw(`
 		SELECT * From "Usages"
-		ORDER BY group_id, period_start_usec, region, client, origin ASC;
+		ORDER BY group_id, period_start_usec, region, client, server, origin ASC;
 	`)
 
 	err := db.ScanEach(rq, func(ctx context.Context, tu *tables.Usage) error {
@@ -89,6 +120,22 @@ func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 	})
 	require.NoError(t, err)
 	return usages
+}
+
+func queryAllOLAPUsages(t *testing.T, te *testenv.TestEnv) []*olaptables.Usage {
+	rows := []*olaptables.Usage{}
+	ctx := context.Background()
+	dbh := te.GetOLAPDBHandle()
+	rq := dbh.NewQuery(ctx, "get_olap_usages").Raw(`
+		SELECT * From "Usage"
+		ORDER BY group_id, period_start, sku, labels ASC;
+	`)
+	err := db.ScanEach(rq, func(ctx context.Context, u *olaptables.Usage) error {
+		rows = append(rows, u)
+		return nil
+	})
+	require.NoError(t, err)
+	return rows
 }
 
 // requireNoFurtherDBAccess makes the test fail immediately if it tries to
@@ -112,7 +159,7 @@ func (*nopDistributedLock) Lock(context context.Context) error   { return nil }
 func (*nopDistributedLock) Unlock(context context.Context) error { return nil }
 
 func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.T) {
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	te := setupEnv(t)
 	ctx1 := authContext(te, "US1")
 	ctx2 := authContext(te, "US2")
@@ -121,9 +168,20 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 
 	labels := &tables.UsageLabels{Origin: "internal", Client: "bazel"}
 
-	// Increment for group 1, then group 2
-	ut.Increment(ctx1, labels, &tables.UsageCounts{CASCacheHits: 1})
-	ut.Increment(ctx2, labels, &tables.UsageCounts{CASCacheHits: 10})
+	// Increment cache usage for group 1, then group 2. Cached action exec
+	// duration is stored in microseconds in the legacy usage shape.
+	ut.Increment(ctx1, labels, &tables.UsageCounts{
+		CASCacheHits:               1,
+		LinuxExecutionDurationUsec: 12,
+		TotalCachedActionExecUsec:  123,
+		MemoryGBUsec:               34,
+	})
+	ut.Increment(ctx2, labels, &tables.UsageCounts{
+		CASCacheHits:               10,
+		LinuxExecutionDurationUsec: 56,
+		TotalCachedActionExecUsec:  456,
+		MemoryGBUsec:               78,
+	})
 
 	encodedCollection1 := "group_id=GR1&origin=internal&client=bazel"
 	encodedCollection2 := "group_id=GR2&origin=internal&client=bazel"
@@ -138,20 +196,65 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	collectionsKey := "usage/collections/" + timeStr(period1Start)
 	countsKey1 := "usage/counts/" + timeStr(period1Start) + "/" + encodedCollection1
 	countsKey2 := "usage/counts/" + timeStr(period1Start) + "/" + encodedCollection2
+	expectedKeys := []string{countsKey1, countsKey2, collectionsKey}
+	if *clickhouseEnabled {
+		chCollectionsKey := "usage/v2/collections/" + timeStr(period1Start)
+		chEncodedCollection1 := "group_id=GR1&label=client=bazel&label=origin=internal"
+		chEncodedCollection2 := "group_id=GR2&label=client=bazel&label=origin=internal"
+		chEncodedExecutionCollection1 := "group_id=GR1&label=client=bazel&label=origin=internal&label=os=linux&label=self_hosted=false"
+		chEncodedExecutionCollection2 := "group_id=GR2&label=client=bazel&label=origin=internal&label=os=linux&label=self_hosted=false"
+		chCountsKey1 := "usage/v2/counts/" + timeStr(period1Start) + "/" + chEncodedCollection1
+		chCountsKey2 := "usage/v2/counts/" + timeStr(period1Start) + "/" + chEncodedCollection2
+		chCountsExecutionKey1 := "usage/v2/counts/" + timeStr(period1Start) + "/" + chEncodedExecutionCollection1
+		chCountsExecutionKey2 := "usage/v2/counts/" + timeStr(period1Start) + "/" + chEncodedExecutionCollection2
+		expectedKeys = append(expectedKeys, chCollectionsKey, chCountsKey1, chCountsKey2, chCountsExecutionKey1, chCountsExecutionKey2)
+
+		chCounts1, err := rdb.HGetAll(ctx, chCountsKey1).Result()
+		require.NoError(t, err)
+		assert.Equal(t, map[string]string{
+			"remote_cache.content_addressable_storage.hits":             "1",
+			"remote_cache.action_cache.cached_execution_duration_nanos": "123000",
+		}, chCounts1, "counts should match what we observed")
+		chExecCounts1, err := rdb.HGetAll(ctx, chCountsExecutionKey1).Result()
+		require.NoError(t, err)
+		assert.Equal(t, map[string]string{
+			"remote_execution.execute.worker_duration_nanos":  "12000",
+			"remote_execution.execute.worker_memory_gb_nanos": "34000",
+		}, chExecCounts1, "counts should match what we observed")
+
+		chCounts2, err := rdb.HGetAll(ctx, chCountsKey2).Result()
+		require.NoError(t, err)
+		assert.Equal(t, map[string]string{
+			"remote_cache.content_addressable_storage.hits":             "10",
+			"remote_cache.action_cache.cached_execution_duration_nanos": "456000",
+		}, chCounts2, "counts should match what we observed")
+		chExecCounts2, err := rdb.HGetAll(ctx, chCountsExecutionKey2).Result()
+		require.NoError(t, err)
+		assert.Equal(t, map[string]string{
+			"remote_execution.execute.worker_duration_nanos":  "56000",
+			"remote_execution.execute.worker_memory_gb_nanos": "78000",
+		}, chExecCounts2, "counts should match what we observed")
+	}
 	require.ElementsMatch(
-		t, []string{countsKey1, countsKey2, collectionsKey}, keys,
+		t, expectedKeys, keys,
 		"redis keys should match expected format")
 
 	counts1, err := rdb.HGetAll(ctx, countsKey1).Result()
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
-		"cas_cache_hits": "1",
+		"cas_cache_hits":                "1",
+		"linux_execution_duration_usec": "12",
+		"total_cached_action_exec_usec": "123",
+		"memory_gb_usec":                "34",
 	}, counts1, "counts should match what we observed")
 
 	counts2, err := rdb.HGetAll(ctx, countsKey2).Result()
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
-		"cas_cache_hits": "10",
+		"cas_cache_hits":                "10",
+		"linux_execution_duration_usec": "56",
+		"total_cached_action_exec_usec": "456",
+		"memory_gb_usec":                "78",
 	}, counts2, "counts should match what we observed")
 
 	encodedCollections, err := rdb.SMembers(ctx, collectionsKey).Result()
@@ -162,7 +265,7 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 		"encoded collections should match the groups/labels with usage data")
 
 	// Set clock so that the written periods are finalized.
-	clock.Set(clock.Now().Add(2 * periodDuration))
+	clock.Advance(2 * periodDuration)
 	// Now flush the data to the DB.
 	err = ut.FlushToDB(context.Background())
 
@@ -176,7 +279,10 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 			GroupID:         "GR1",
 			Region:          "us-west1",
 			UsageCounts: tables.UsageCounts{
-				CASCacheHits: 1,
+				CASCacheHits:               1,
+				LinuxExecutionDurationUsec: 12,
+				TotalCachedActionExecUsec:  123,
+				MemoryGBUsec:               34,
 			},
 			UsageLabels: *labels,
 		},
@@ -185,15 +291,147 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 			GroupID:         "GR2",
 			Region:          "us-west1",
 			UsageCounts: tables.UsageCounts{
-				CASCacheHits: 10,
+				CASCacheHits:               10,
+				LinuxExecutionDurationUsec: 56,
+				TotalCachedActionExecUsec:  456,
+				MemoryGBUsec:               78,
 			},
 			UsageLabels: *labels,
 		},
 	}, usages, "data flushed to DB should match expected values")
+
+	if *clickhouseEnabled {
+		olapUsages := queryAllOLAPUsages(t, te)
+		require.Equal(t, []*olaptables.Usage{
+			{
+				GroupID:     "GR1",
+				PeriodStart: period1Start,
+				SKU:         sku.RemoteCacheACCachedExecDurationNanos,
+				Labels: map[sku.LabelName]sku.LabelValue{
+					sku.Origin: "internal",
+					sku.Client: "bazel",
+				},
+				Count: 123000,
+			},
+			{
+				GroupID:     "GR1",
+				PeriodStart: period1Start,
+				SKU:         sku.RemoteCacheCASHits,
+				Labels: map[sku.LabelName]sku.LabelValue{
+					sku.Origin: "internal",
+					sku.Client: "bazel",
+				},
+				Count: 1,
+			},
+			{
+				GroupID:     "GR1",
+				PeriodStart: period1Start,
+				SKU:         sku.RemoteExecutionExecuteWorkerDurationNanos,
+				Labels: map[sku.LabelName]sku.LabelValue{
+					sku.Origin:     "internal",
+					sku.Client:     "bazel",
+					sku.OS:         sku.OSLinux,
+					sku.SelfHosted: sku.SelfHostedFalse,
+				},
+				Count: 12000,
+			},
+			{
+				GroupID:     "GR1",
+				PeriodStart: period1Start,
+				SKU:         sku.RemoteExecutionExecuteWorkerMemoryGBNanos,
+				Labels: map[sku.LabelName]sku.LabelValue{
+					sku.Origin:     "internal",
+					sku.Client:     "bazel",
+					sku.OS:         sku.OSLinux,
+					sku.SelfHosted: sku.SelfHostedFalse,
+				},
+				Count: 34000,
+			},
+			{
+				GroupID:     "GR2",
+				PeriodStart: period1Start,
+				SKU:         sku.RemoteCacheACCachedExecDurationNanos,
+				Labels: map[sku.LabelName]sku.LabelValue{
+					sku.Origin: "internal",
+					sku.Client: "bazel",
+				},
+				Count: 456000,
+			},
+			{
+				GroupID:     "GR2",
+				PeriodStart: period1Start,
+				SKU:         sku.RemoteCacheCASHits,
+				Labels: map[sku.LabelName]sku.LabelValue{
+					sku.Origin: "internal",
+					sku.Client: "bazel",
+				},
+				Count: 10,
+			},
+			{
+				GroupID:     "GR2",
+				PeriodStart: period1Start,
+				SKU:         sku.RemoteExecutionExecuteWorkerDurationNanos,
+				Labels: map[sku.LabelName]sku.LabelValue{
+					sku.Origin:     "internal",
+					sku.Client:     "bazel",
+					sku.OS:         sku.OSLinux,
+					sku.SelfHosted: sku.SelfHostedFalse,
+				},
+				Count: 56000,
+			},
+			{
+				GroupID:     "GR2",
+				PeriodStart: period1Start,
+				SKU:         sku.RemoteExecutionExecuteWorkerMemoryGBNanos,
+				Labels: map[sku.LabelName]sku.LabelValue{
+					sku.Origin:     "internal",
+					sku.Client:     "bazel",
+					sku.OS:         sku.OSLinux,
+					sku.SelfHosted: sku.SelfHostedFalse,
+				},
+				Count: 78000,
+			},
+		}, olapUsages)
+	}
+}
+
+func TestUsageTracker_Increment_ImpersonationSuppressesUsage(t *testing.T) {
+	clock := clockwork.NewFakeClockAt(period1Start)
+	te := setupEnv(t)
+	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
+	require.NoError(t, err)
+
+	// Create an impersonating user context.
+	impersonatingUser := &claims.Claims{
+		UserID:        "US1",
+		GroupID:       "GR1",
+		AllowedGroups: []string{"GR1"},
+		Impersonating: true,
+	}
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), impersonatingUser)
+
+	labels := &tables.UsageLabels{Origin: "internal", Client: "bazel"}
+	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 100})
+	require.NoError(t, err)
+
+	// Flush redis buffer and verify no usage keys were written.
+	err = te.GetMetricsCollector().Flush(context.Background())
+	require.NoError(t, err)
+	rdb := te.GetDefaultRedisClient()
+	keys, err := rdb.Keys(context.Background(), "usage/*").Result()
+	require.NoError(t, err)
+	assert.Empty(t, keys, "no usage data should be written for impersonation requests")
+
+	// Advance clock and flush to DB to confirm nothing is persisted.
+	clock.Advance(2 * periodDuration)
+	err = ut.FlushToDB(context.Background())
+	require.NoError(t, err)
+	usages := queryAllUsages(t, te)
+	assert.Empty(t, usages, "no usage rows should be flushed for impersonation requests")
 }
 
 func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T) {
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
 	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
@@ -203,10 +441,10 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 
 	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
-	clock.Set(period2Start)
+	clock.Advance(period2Start.Sub(clock.Now()))
 	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 10})
 	require.NoError(t, err)
-	clock.Set(period3Start)
+	clock.Advance(period3Start.Sub(clock.Now()))
 	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 100})
 	require.NoError(t, err)
 
@@ -236,7 +474,7 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 }
 
 func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	te := setupEnv(t)
 	flags.Set(t, "app.usage_tracking_enabled", true)
 	ctx := authContext(te, "US1")
@@ -251,7 +489,7 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 
 	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
-	clock.Set(clock.Now().Add(2 * periodDuration))
+	clock.Advance(2 * periodDuration)
 	err = ut.FlushToDB(ctx)
 	require.NoError(t, err)
 
@@ -267,7 +505,7 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 }
 
 func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
 
@@ -279,12 +517,12 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	// Write 2 collection periods worth of data.
 	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
-	clock.Set(clock.Now().Add(periodDuration))
+	clock.Advance(periodDuration)
 	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 1000})
 	require.NoError(t, err)
 	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
-	clock.Set(clock.Now().Add(2 * periodDuration))
+	clock.Advance(2 * periodDuration)
 
 	eg, ctx := errgroup.WithContext(ctx)
 	for i := 0; i < 100; i++ {
@@ -334,11 +572,10 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 	// Set up 2 envs, one for each region. DB should be the same for each, but
 	// Redis instances should be different.
 	te1 := setupEnv(t)
-	te2 := setupEnv(t)
-	te2.SetDBHandle(te1.GetDBHandle())
+	te2 := setupEnv(t, testenv.WithDBHandle(te1.GetDBHandle()))
 	ctx1 := authContext(te1, "US1")
 	ctx2 := authContext(te2, "US1")
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	flags.Set(t, "app.region", "us-west1")
 	ut1, err := usage.NewTracker(te1, clock, newFlushLock(t, te1))
 	require.NoError(t, err)
@@ -357,7 +594,7 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 	require.NoError(t, err)
 	err = te2.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
-	clock.Set(clock.Now().Add(2 * periodDuration))
+	clock.Advance(2 * periodDuration)
 	err = ut1.FlushToDB(context.Background())
 	require.NoError(t, err)
 	err = ut2.FlushToDB(context.Background())
@@ -386,7 +623,7 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
 	te := setupEnv(t)
 	flags.Set(t, "app.usage_tracking_enabled", true)
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	ctx := authContext(te, "US1")
 	flags.Set(t, "app.region", "us-west1")
 	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
@@ -399,7 +636,7 @@ func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
 
 	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
-	clock.Set(clock.Now().Add(2 * periodDuration))
+	clock.Advance(2 * periodDuration)
 	err = ut.FlushToDB(ctx)
 	require.NoError(t, err)
 
@@ -415,7 +652,7 @@ func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
 
 func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 	te := setupEnv(t)
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	ut, err := usage.NewTracker(te, clock, &nopDistributedLock{})
 	require.NoError(t, err)
 	ctx := context.Background()
@@ -433,7 +670,7 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 	}
 	// Advance to the next collection period and flush the one we just
 	// populated.
-	clock.Set(clock.Now().Add(2 * periodDuration))
+	clock.Advance(2 * periodDuration)
 	err = te.GetMetricsCollector().Flush(ctx)
 	require.NoError(t, err)
 	err = ut.FlushToDB(ctx)
@@ -475,7 +712,7 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 	}
 	// Advance to the next collection period and flush the one we just
 	// populated.
-	clock.Set(clock.Now().Add(2 * periodDuration))
+	clock.Advance(2 * periodDuration)
 	err = te.GetMetricsCollector().Flush(ctx)
 	require.NoError(t, err)
 	err = ut.FlushToDB(ctx)
@@ -542,7 +779,7 @@ func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
 	labelsToTest = append(labelsToTest, tables.UsageLabels{})
 
 	te := setupEnv(t)
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	ut, err := usage.NewTracker(te, clock, &nopDistributedLock{})
 	require.NoError(t, err)
 	ctx := context.Background()
@@ -552,19 +789,22 @@ func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
 	// period data twice for each label set, as though our WeakLock failed. The
 	// logic in the SQL transaction should guarantee that we don't double-count
 	// in this case.
-	for i := 1; i <= 2; i++ {
-		for _, labels := range labelsToTest {
-			err = ut.Increment(ctx1, &labels, &tables.UsageCounts{Invocations: 1})
-			require.NoError(t, err)
-		}
-		tBefore := clock.Now()
-		clock.Set(tBefore.Add(2 * periodDuration))
-		err = te.GetMetricsCollector().Flush(ctx)
+	for _, labels := range labelsToTest {
+		err = ut.Increment(ctx1, &labels, &tables.UsageCounts{Invocations: 1})
 		require.NoError(t, err)
-		err = ut.FlushToDB(ctx)
-		require.NoError(t, err)
-		clock.Set(tBefore)
 	}
+	err = te.GetMetricsCollector().Flush(ctx)
+	require.NoError(t, err)
+	clock.Advance(2 * periodDuration)
+	var eg errgroup.Group
+	for i := 0; i < 2; i++ {
+		eg.Go(func() error {
+			err := ut.FlushToDB(ctx)
+			require.NoError(t, err)
+			return nil
+		})
+	}
+	eg.Wait()
 
 	usages := queryAllUsages(t, te)
 	// There should be only one invocation recorded for each label, even though
@@ -596,6 +836,20 @@ func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
 			GroupID:         "GR1",
 			PeriodStartUsec: period1Start.UnixMicro(),
 			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			UsageLabels:     tables.UsageLabels{Server: "Server-TestValue1"},
+		},
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period1Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			UsageLabels:     tables.UsageLabels{Server: "Server-TestValue2"},
+		},
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period1Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 1},
 			UsageLabels:     tables.UsageLabels{Client: "Client-TestValue1"},
 		},
 		{
@@ -614,7 +868,7 @@ func TestUsageTracker_UsageLabels_UnrecognizedLabelsAreNotFlushed(t *testing.T) 
 	// flush and instead lets the new app flush.
 
 	te := setupEnv(t)
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	ut, err := usage.NewTracker(te, clock, &nopDistributedLock{})
 	require.NoError(t, err)
 	ctx := context.Background()
@@ -633,7 +887,7 @@ func TestUsageTracker_UsageLabels_UnrecognizedLabelsAreNotFlushed(t *testing.T) 
 	err = mc.Flush(ctx)
 	require.NoError(t, err)
 
-	clock.Set(period2Start.Add(2 * periodDuration))
+	clock.Advance(period2Start.Add(2 * periodDuration).Sub(clock.Now()))
 	err = ut.FlushToDB(ctx)
 	require.NoError(t, err)
 

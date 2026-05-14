@@ -2,6 +2,7 @@ package container_test
 
 import (
 	"context"
+	"syscall"
 	"testing"
 	"time"
 
@@ -11,12 +12,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeseries"
+	"github.com/google/go-cmp/cmp"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
 type FakeContainer struct {
@@ -48,14 +53,14 @@ func (c *FakeContainer) Create(context.Context, string) error { return nil }
 func (c *FakeContainer) Exec(context.Context, *repb.Command, *interfaces.Stdio) *interfaces.CommandResult {
 	return nil
 }
+func (c *FakeContainer) Signal(context.Context, syscall.Signal) error {
+	return status.UnimplementedError("not implemented")
+}
 func (c *FakeContainer) Remove(ctx context.Context) error  { return nil }
 func (c *FakeContainer) Pause(ctx context.Context) error   { return nil }
 func (c *FakeContainer) Unpause(ctx context.Context) error { return nil }
 func (c *FakeContainer) Stats(context.Context) (*repb.UsageStats, error) {
 	return &repb.UsageStats{}, nil
-}
-func (c *FakeContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
-	return nil, status.UnimplementedError("not implemented")
 }
 
 func userCtx(t *testing.T, ta *testauth.TestAuthenticator, userID string) context.Context {
@@ -66,7 +71,7 @@ func userCtx(t *testing.T, ta *testauth.TestAuthenticator, userID string) contex
 
 func TestPullImageIfNecessary_ValidCredentials(t *testing.T) {
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 	env.SetAuthenticator(ta)
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	imageRef := "docker.io/some-org/some-image:v1.0.0"
@@ -83,17 +88,17 @@ func TestPullImageIfNecessary_ValidCredentials(t *testing.T) {
 
 	assert.Equal(t, 0, c.PullCount, "sanity check: pull count should be 0 initially")
 
-	err := container.PullImageIfNecessary(ctx, env, c, goodCreds1, imageRef)
+	err := container.PullImageIfNecessary(ctx, env, c, goodCreds1, imageRef, false)
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, c.PullCount, "should pull the image if credentials are valid")
 
-	err = container.PullImageIfNecessary(ctx, env, c, goodCreds1, imageRef)
+	err = container.PullImageIfNecessary(ctx, env, c, goodCreds1, imageRef, false)
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, c.PullCount, "should not need to immediately re-authenticate with the remote registry")
 
-	err = container.PullImageIfNecessary(ctx, env, c, goodCreds2, imageRef)
+	err = container.PullImageIfNecessary(ctx, env, c, goodCreds2, imageRef, false)
 
 	require.NoError(t, err)
 	assert.Equal(
@@ -103,7 +108,7 @@ func TestPullImageIfNecessary_ValidCredentials(t *testing.T) {
 
 func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) {
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 	env.SetAuthenticator(ta)
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	imageRef := "docker.io/some-org/some-image:v1.0.0"
@@ -118,22 +123,22 @@ func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) 
 		Password: "trying-to-guess-the-real-secret",
 	}
 
-	err := container.PullImageIfNecessary(ctx, env, c, badCreds, imageRef)
+	err := container.PullImageIfNecessary(ctx, env, c, badCreds, imageRef, false)
 
 	require.True(t, status.IsPermissionDeniedError(err), "should return PermissionDenied if credentials are valid")
 
-	err = container.PullImageIfNecessary(ctx, env, c, badCreds, imageRef)
+	err = container.PullImageIfNecessary(ctx, env, c, badCreds, imageRef, false)
 
 	require.True(t, status.IsPermissionDeniedError(err), "should return PermissionDenied on subsequent attempts as well")
 
-	err = container.PullImageIfNecessary(ctx, env, c, goodCreds, imageRef)
+	err = container.PullImageIfNecessary(ctx, env, c, goodCreds, imageRef, false)
 
 	require.NoError(t, err, "good creds should still work after previous incorrect attempts")
 }
 
 func TestPullImageIfNecessary_ParallelCallsSerialized(t *testing.T) {
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 	env.SetAuthenticator(ta)
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	imageRef := "docker.io/some-org/some-image:v1.0.0"
@@ -143,7 +148,7 @@ func TestPullImageIfNecessary_ParallelCallsSerialized(t *testing.T) {
 	assert.Equal(t, 0, c.PullCount, "sanity check: pull count should be 0 initially")
 	eg := errgroup.Group{}
 	for i := 0; i < 20; i++ {
-		eg.Go(func() error { return container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, imageRef) })
+		eg.Go(func() error { return container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, imageRef, false) })
 	}
 	require.NoError(t, eg.Wait())
 	assert.Equal(t, 1, c.PullCount, "image should only be pulled once")
@@ -151,7 +156,7 @@ func TestPullImageIfNecessary_ParallelCallsSerialized(t *testing.T) {
 
 func TestImageCacheAuthenticator(t *testing.T) {
 	env := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
 	env.SetAuthenticator(ta)
 
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
@@ -261,5 +266,167 @@ func TestImageCacheAuthenticator(t *testing.T) {
 		isAuthorized := auth.IsAuthorized(immediatelyExpiredToken)
 
 		assert.False(t, isAuthorized, "Expired tokens should not be authorized")
+	}
+}
+
+func TestUsageStats(t *testing.T) {
+	s := &container.UsageStats{}
+	require.Empty(t, cmp.Diff(&repb.UsageStats{}, s.TaskStats(), protocmp.Transform()))
+
+	s.Reset()
+	require.Empty(t, cmp.Diff(&repb.UsageStats{}, s.TaskStats(), protocmp.Transform()))
+
+	// Observe some cgroup usage.
+	s.Update(&repb.UsageStats{
+		CpuNanos:       1e9,
+		MemoryBytes:    50 * 1024 * 1024,
+		CgroupIoStats:  &repb.CgroupIOStats{Maj: 8, Min: 0, Rbytes: 4096, Rios: 1},
+		CpuPressure:    makePSI(100, 10),
+		MemoryPressure: makePSI(2_000, 200),
+		IoPressure:     makePSI(30_000, 3_000),
+	})
+
+	// Observe the same usage again but with higher memory.
+	s.Update(&repb.UsageStats{
+		CpuNanos:       1e9,
+		MemoryBytes:    55 * 1024 * 1024,
+		CgroupIoStats:  &repb.CgroupIOStats{Maj: 8, Min: 0, Rbytes: 4096, Rios: 1},
+		CpuPressure:    makePSI(100, 10),
+		MemoryPressure: makePSI(2_000, 200),
+		IoPressure:     makePSI(30_000, 3_000),
+	})
+
+	// Observe the same usage again but with lower memory than the first
+	// observation. Also, accumulate some CPU, read ops, and pressure stall
+	// time.
+	s.Update(&repb.UsageStats{
+		CpuNanos:       2e9,
+		MemoryBytes:    45 * 1024 * 1024,
+		CgroupIoStats:  &repb.CgroupIOStats{Maj: 8, Min: 0, Rbytes: 8192, Rios: 2},
+		CpuPressure:    makePSI(150, 10),
+		MemoryPressure: makePSI(2_000, 200),
+		IoPressure:     makePSI(30_000, 3_000),
+	})
+	require.Empty(t, cmp.Diff(&repb.UsageStats{
+		CpuNanos:        2e9,
+		MemoryBytes:     45 * 1024 * 1024,
+		PeakMemoryBytes: 55 * 1024 * 1024,
+		CgroupIoStats:   &repb.CgroupIOStats{Maj: 8, Min: 0, Rbytes: 8192, Rios: 2},
+		CpuPressure:     makePSI(150, 10),
+		MemoryPressure:  makePSI(2_000, 200),
+		IoPressure:      makePSI(30_000, 3_000),
+	}, s.TaskStats(), protocmp.Transform()))
+
+	// Start a new task, using the same UsageStats instance. The cgroup
+	// accumulated CPU etc. will not be reset, but the metrics that we report
+	// should appear as though they were.
+	s.Reset()
+	require.Empty(t, cmp.Diff(&repb.UsageStats{
+		CgroupIoStats:  &repb.CgroupIOStats{Maj: 8, Min: 0},
+		CpuPressure:    makePSI(0, 0),
+		MemoryPressure: makePSI(0, 0),
+		IoPressure:     makePSI(0, 0),
+	}, s.TaskStats(), protocmp.Transform()))
+
+	// Re-observe the last observation again. The only usage that should be
+	// reported is memory, since all other usage should be relative to the last
+	// observation from the previous task.
+	s.Update(&repb.UsageStats{
+		CpuNanos:       2e9,
+		MemoryBytes:    45 * 1024 * 1024,
+		CgroupIoStats:  &repb.CgroupIOStats{Maj: 8, Min: 0, Rbytes: 8192, Rios: 2},
+		CpuPressure:    makePSI(150, 10),
+		MemoryPressure: makePSI(2_000, 200),
+		IoPressure:     makePSI(30_000, 3_000),
+	})
+	require.Empty(t, cmp.Diff(&repb.UsageStats{
+		MemoryBytes:     45 * 1024 * 1024,
+		PeakMemoryBytes: 45 * 1024 * 1024,
+		CgroupIoStats:   &repb.CgroupIOStats{Maj: 8, Min: 0},
+		CpuPressure:     makePSI(0, 0),
+		MemoryPressure:  makePSI(0, 0),
+		IoPressure:      makePSI(0, 0),
+	}, s.TaskStats(), protocmp.Transform()))
+
+	// Accumulate some CPU usage, pressure stall time, and write IO. Task stats
+	// should only reflect the accumulated amount.
+	s.Update(&repb.UsageStats{
+		CpuNanos:       2e9 + 7e9,
+		MemoryBytes:    45 * 1024 * 1024,
+		CgroupIoStats:  &repb.CgroupIOStats{Maj: 8, Min: 0, Rbytes: 8192, Rios: 2, Wbytes: 4096, Wios: 1},
+		CpuPressure:    makePSI(150+117, 10+17),
+		MemoryPressure: makePSI(2_000+1_118, 200+118),
+		IoPressure:     makePSI(30_000+11_119, 3_000+1_119),
+	})
+	require.Empty(t, cmp.Diff(&repb.UsageStats{
+		CpuNanos:        7e9,
+		MemoryBytes:     45 * 1024 * 1024,
+		CgroupIoStats:   &repb.CgroupIOStats{Maj: 8, Min: 0, Wbytes: 4096, Wios: 1},
+		PeakMemoryBytes: 45 * 1024 * 1024,
+		CpuPressure:     makePSI(117, 17),
+		MemoryPressure:  makePSI(1_118, 118),
+		IoPressure:      makePSI(11_119, 1_119),
+	}, s.TaskStats(), protocmp.Transform()))
+}
+
+func TestUsageStats_Timeseries(t *testing.T) {
+	flags.Set(t, "executor.record_usage_timelines", true)
+
+	start := time.Unix(100, 0)
+	clock := clockwork.NewFakeClockAt(start)
+	lifetimeStats := &repb.UsageStats{}
+	stats := &container.UsageStats{Clock: clock}
+
+	stats.Reset()
+	clock.Advance(100 * time.Millisecond)
+	lifetimeStats.CpuNanos += 3e9
+	lifetimeStats.MemoryBytes = 500_000
+	stats.Update(lifetimeStats)
+	timeline := stats.TaskStats().GetTimeline()
+
+	timestamps := timeseries.DeltaDecode(timeline.GetTimestamps())
+	cpuSamples := timeseries.DeltaDecode(timeline.GetCpuSamples())
+	memKBSamples := timeseries.DeltaDecode(timeline.GetMemoryKbSamples())
+	assert.Equal(t, start.UnixNano(), timeline.GetStartTime().AsTime().UnixNano())
+	assert.Equal(t, []int64{
+		start.UnixMilli(),
+		start.UnixMilli() + 100,
+	}, timestamps, "timestamps")
+	assert.Equal(t, []int64{0, 3000}, cpuSamples, "cpu samples")
+	assert.Equal(t, []int64{0, 500}, memKBSamples, "memory kb samples")
+
+	clock.Advance(250 * time.Millisecond)
+	start = clock.Now()
+	stats.Reset()
+	clock.Advance(500 * time.Millisecond)
+	lifetimeStats.CpuNanos += 7e9
+	stats.Update(lifetimeStats)
+	clock.Advance(500 * time.Millisecond)
+	lifetimeStats.CpuNanos += 2.5e9
+	lifetimeStats.MemoryBytes = 400_000
+	stats.Update(lifetimeStats)
+	timeline = stats.TaskStats().GetTimeline()
+
+	timestamps = timeseries.DeltaDecode(timeline.GetTimestamps())
+	cpuSamples = timeseries.DeltaDecode(timeline.GetCpuSamples())
+	memKBSamples = timeseries.DeltaDecode(timeline.GetMemoryKbSamples())
+	assert.Equal(t, start.UnixNano(), timeline.GetStartTime().AsTime().UnixNano())
+	assert.Equal(t, []int64{
+		start.UnixMilli(),
+		start.UnixMilli() + 500,
+		start.UnixMilli() + 1000,
+	}, timestamps, "timestamps")
+	assert.Equal(t, []int64{0, 7000, 9500}, cpuSamples, "cpu samples")
+	assert.Equal(t, []int64{0, 500, 400}, memKBSamples, "memory kb samples")
+}
+
+func makePSI(someTotal, fullTotal int64) *repb.PSI {
+	return &repb.PSI{
+		Some: &repb.PSI_Metrics{
+			Total: someTotal,
+		},
+		Full: &repb.PSI_Metrics{
+			Total: fullTotal,
+		},
 	}
 }

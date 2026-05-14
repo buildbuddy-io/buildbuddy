@@ -1,29 +1,55 @@
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  Box,
+  CheckCircle,
+  Clock,
+  Copy,
+  Hash,
+  HelpCircle,
+  History,
+  SkipForward,
+  Target,
+  XCircle,
+} from "lucide-react";
 import React from "react";
-import TargetTestLogCardComponent from "./target_test_log_card";
-import TargetTestDocumentCardComponent from "./target_test_document_card";
-import TargetTestCoverageCardComponent from "./target_test_coverage_card";
-import TargetArtifactsCardComponent from "./target_artifacts_card";
-import ActionCardComponent from "./action_card";
-import router from "../router/router";
-import format from "../format/format";
-import { User } from "../auth/auth_service";
-import { Hash, Target, Box, SkipForward, CheckCircle, XCircle, HelpCircle, Clock, Copy, History } from "lucide-react";
-import { invocation } from "../../proto/invocation_ts_proto";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
-import { copyToClipboard } from "../util/clipboard";
-import alert_service from "../alert/alert_service";
-import { addDurationToTimestamp, timestampToDateWithFallback } from "../util/proto";
-import { OutlinedLinkButton } from "../components/button/link_button";
-import { target } from "../../proto/target_ts_proto";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
-import rpc_service from "../service/rpc_service";
-import error_service from "../errors/error_service";
-import { renderTestSize } from "../invocation/target_util";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { target } from "../../proto/target_ts_proto";
+import alert_service from "../alert/alert_service";
+import { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
+import Breadcrumbs from "../components/breadcrumbs/breadcrumbs";
+import { OutlinedButton } from "../components/button/button";
+import { OutlinedLinkButton } from "../components/button/link_button";
+import Link from "../components/link/link";
+import format from "../format/format";
 import CacheRequestsCardComponent from "../invocation/cache_requests_card";
+import InvocationExecLogCard from "../invocation/invocation_exec_log_card";
 import InvocationModel from "../invocation/invocation_model";
+import { getTestShardingSuggestion, SuggestionComponent } from "../invocation/invocation_suggestion_card";
+import LinkGithubRepoModal from "../invocation/link_github_repo_modal";
+import { renderTestSize } from "../invocation/target_util";
+import router, { Path } from "../router/router";
+import rpc_service from "../service/rpc_service";
+import { copyToClipboard } from "../util/clipboard";
+import { addDurationToTimestamp, timestampToDateWithFallback } from "../util/proto";
+import { commandWithRemoteRunnerFlags, supportsRemoteRun, triggerRemoteRun } from "../util/remote_runner";
+import ActionCardComponent from "./action_card";
+import FlakyTargetChipComponent from "./flaky_target_chip";
+import TargetArtifactsCardComponent from "./target_artifacts_card";
+import TargetTestCoverageCardComponent from "./target_test_coverage_card";
+import TargetTestDocumentCardComponent from "./target_test_document_card";
+import TargetTestLogCardComponent from "./target_test_log_card";
 
 const Status = api_common.v1.Status;
+
+type SectionFilter = "all" | "documents" | "logs" | "coverage" | "actions" | "artifacts" | "cache" | "executions";
+
+interface SectionTab {
+  id: SectionFilter;
+  label: string;
+}
 
 export interface TargetProps {
   invocationId: string;
@@ -43,11 +69,13 @@ export interface TargetProps {
 interface State {
   loading: boolean;
   target?: target.Target;
+  isLinkRepoModalOpen: boolean;
 }
 
 export default class TargetV2Component extends React.Component<TargetProps, State> {
   state: State = {
     loading: false,
+    isLinkRepoModalOpen: false,
   };
 
   componentDidMount() {
@@ -74,14 +102,6 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     // TODO: maybe refresh every 3s to handle the case where the invocation is
     // still in progress and NamedSetOfFiles events are still being published
     // for the target
-  }
-
-  private handleOrganizationClicked() {
-    router.navigateHome();
-  }
-
-  private handleInvocationClicked() {
-    router.navigateToInvocation(this.props.invocationId);
   }
 
   renderStatusIcon(): React.ReactNode {
@@ -161,6 +181,34 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     return adjective + " test";
   }
 
+  getTestDurationStats(): { avg: number; min: number; max: number } | null {
+    const resultEvents = this.state.target?.testResultEvents;
+    if (!resultEvents || resultEvents.length === 0) return null;
+
+    let totalDurationMillis = 0;
+    let minDurationMillis = Number.MAX_VALUE;
+    let maxDurationMillis = 0;
+    let validDurationCount = 0;
+
+    for (const event of resultEvents) {
+      const durationMillis = event.testResult?.testAttemptDurationMillis;
+      if (durationMillis) {
+        const duration = Number(durationMillis);
+        totalDurationMillis += duration;
+        minDurationMillis = Math.min(minDurationMillis, duration);
+        maxDurationMillis = Math.max(maxDurationMillis, duration);
+        validDurationCount++;
+      }
+    }
+
+    if (validDurationCount === 0) return null;
+    return {
+      avg: totalDurationMillis / validDurationCount,
+      min: minDurationMillis,
+      max: maxDurationMillis,
+    };
+  }
+
   resultSort(a: build_event_stream.BuildEvent, b: build_event_stream.BuildEvent) {
     let statusDiff = (b?.testResult?.status ?? 0) - (b?.testResult?.status ?? 0);
     if (statusDiff != 0) {
@@ -198,8 +246,12 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
   }
 
   getTargetHistoryURL() {
-    // Test history doesn't work without a repo selected.
-    if (!this.props.repo) return "";
+    // Test history doesn't work without a repo selected.  We only show this
+    // link if the target has a testSummary event because we only store target
+    // history for tests.
+    // TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/3584):
+    // support target history for plain-old-build targets, too.
+    if (!this.props.repo || !this.state.target || !this.state.target.testSummary) return "";
 
     const search = new URLSearchParams({
       filter: this.props.label,
@@ -212,22 +264,57 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     return `Run ${testResult.run} (Attempt ${testResult.attempt}, Shard ${testResult.shard})`;
   }
 
-  getTab() {
-    // If the user explicitly clicked on a tab, show that
-    if (this.props.tab) {
-      return this.props.tab;
-    }
+  private renderTestShardingSuggestionCard(resultEvents: any[]) {
+    const suggestion = getTestShardingSuggestion({ model: this.props.model, resultEvents });
+    return suggestion ? <SuggestionComponent suggestion={suggestion} /> : null;
+  }
 
-    // If any of the attempts didn't pass, let's default ot that one.
-    let events = this.state.target?.testResultEvents?.sort(this.resultSort) || [];
-    for (let [i, event] of events.entries()) {
+  // Parses hash like "#coverage-2", "#coverage", "#2", or "#".
+  private parseHash(): { section: SectionFilter; run?: number } {
+    const parts = (this.props.tab?.replace("#", "") || "").split("-");
+    const sections: string[] = ["documents", "logs", "coverage", "actions", "artifacts", "cache", "executions"];
+    const section = sections.includes(parts[0]) ? (parts[0] as SectionFilter) : "all";
+    const runStr = section !== "all" ? parts[1] : parts[0];
+    const run = runStr && /^\d+$/.test(runStr) ? Number(runStr) : undefined;
+    return { section, run };
+  }
+
+  private getRun(): number {
+    const { run } = this.parseHash();
+    if (run !== undefined) return run;
+
+    // Default to the first non-passing attempt, or the first attempt.
+    const events = this.state.target?.testResultEvents?.sort(this.resultSort) || [];
+    for (const [i, event] of events.entries()) {
       if (event.testResult?.status != build_event_stream.TestStatus.PASSED) {
-        return `#${i + 1}`;
+        return i + 1;
       }
     }
+    return 1;
+  }
 
-    // If all attempts passed, let's fall back to the first one.
-    return "#1";
+  private buildHash(section?: string, run?: number): string {
+    const resolved = section ?? this.parseHash().section;
+    const s = resolved !== "all" ? resolved : "";
+    const r = run ?? this.parseHash().run;
+    if (s && r) return `#${s}-${r}`;
+    return s ? `#${s}` : r ? `#${r}` : "#";
+  }
+
+  private getSectionFromHash(): SectionFilter {
+    return this.parseHash().section;
+  }
+
+  async executeRemoteBazelQuery(target: string) {
+    const isSupported = await supportsRemoteRun(this.props.model.getRepo());
+    if (!isSupported) {
+      this.setState({ isLinkRepoModalOpen: true });
+      return;
+    }
+    const command = commandWithRemoteRunnerFlags(
+      `bazel query "allpaths(${this.props.model.invocation.pattern}, ${target})" --output=graph`
+    );
+    triggerRemoteRun(this.props.model, command, true /*autoOpenChild*/, null);
   }
 
   render() {
@@ -242,26 +329,43 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     }
     const resultEvents = target.testResultEvents?.sort(this.resultSort) || [];
     const actionEvents = target.actionEvents?.sort(this.actionSort) || [];
+    const sectionTabs: SectionTab[] = [
+      { id: "all", label: "All" },
+      { id: "logs", label: "Test logs" },
+      { id: "coverage", label: "Coverage" },
+      { id: "artifacts", label: "Artifacts" },
+    ];
+    if (actionEvents.length > 0) {
+      sectionTabs.push({ id: "actions", label: "Actions" });
+    }
+    if (capabilities.config.detailedCacheStatsEnabled) {
+      sectionTabs.push({ id: "cache", label: "Cache" });
+    }
+    if (this.props.model.getIsRBEEnabled()) {
+      sectionTabs.push({ id: "executions", label: "Executions" });
+    }
+    const sectionFromHash = this.getSectionFromHash();
+    const activeSection = sectionTabs.some((tab) => tab.id === sectionFromHash) ? sectionFromHash : "all";
     return (
       <div className="target-page">
         <div className="shelf">
           <div className="container">
-            <div className="breadcrumbs">
+            <Breadcrumbs>
               {this.props.user && (
-                <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
+                <Link className="clickable" href={Path.home}>
                   {this.props.user?.selectedGroupName()}
-                </span>
+                </Link>
               )}
               {this.props.user && (
-                <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
+                <Link className="clickable" href={Path.home}>
                   Builds
-                </span>
+                </Link>
               )}
-              <span onClick={this.handleInvocationClicked.bind(this)} className="clickable">
+              <Link className="clickable" href={router.getInvocationUrl(this.props.invocationId)}>
                 Invocation {this.props.invocationId}
-              </span>
+              </Link>
               <span>Target {this.props.label}</span>
-            </div>
+            </Breadcrumbs>
             <div className="titles">
               <div className="title">
                 {this.props.label}{" "}
@@ -273,6 +377,25 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
                   <History className="icon" />
                   <span>Target history</span>
                 </OutlinedLinkButton>
+              )}
+              {capabilities.config.targetFlakesUiEnabled &&
+                this.props.repo &&
+                isPotentialFailureOrFlakeStatus(this.props.status) && (
+                  <FlakyTargetChipComponent
+                    labels={[this.props.label]}
+                    repo={this.props.repo}></FlakyTargetChipComponent>
+                )}
+              {capabilities.config.bazelButtonsEnabled && (
+                <>
+                  <OutlinedButton className="" onClick={this.executeRemoteBazelQuery.bind(this, this.props.label)}>
+                    <HelpCircle className="icon blue" />
+                    <span>Why did this build?</span>
+                  </OutlinedButton>
+                  <LinkGithubRepoModal
+                    isOpen={this.state.isLinkRepoModalOpen}
+                    onRequestClose={() => this.setState({ isLinkRepoModalOpen: false })}
+                  />
+                </>
               )}
             </div>
             <div className="details">
@@ -289,6 +412,29 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
                   {target.testSummary.totalRunCount ?? 0} total runs
                 </div>
               )}
+              {target?.testSummary &&
+                (() => {
+                  const durationStats = this.getTestDurationStats();
+                  if (durationStats !== null) {
+                    return (
+                      <>
+                        <div className="detail">
+                          <Clock className="icon" />
+                          {format.durationMillis(durationStats.avg)} avg duration
+                        </div>
+                        <div className="detail">
+                          <ArrowDownToLine className="icon" />
+                          {format.durationMillis(durationStats.min)} min duration
+                        </div>
+                        <div className="detail">
+                          <ArrowUpToLine className="icon" />
+                          {format.durationMillis(durationStats.max)} max duration
+                        </div>
+                      </>
+                    );
+                  }
+                  return null;
+                })()}
               {Boolean(target?.metadata?.ruleType || target?.actionEvents.length) && (
                 <div className="detail">
                   <Target className="icon" />
@@ -306,66 +452,92 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
           </div>
         </div>
         <div className="container nopadding-dense">
+          {this.renderTestShardingSuggestionCard(resultEvents)}
+          <div className="tabs target-section-tabs">
+            {sectionTabs.map((tab) => (
+              <a
+                key={tab.id}
+                href={this.buildHash(tab.id)}
+                debug-id={`target-section-tab-${tab.id}`}
+                className={`tab ${activeSection === tab.id ? "selected" : ""}`}>
+                {tab.label}
+              </a>
+            ))}
+          </div>
           {resultEvents.length > 1 && (
             <div className={`runs ${resultEvents.length > 9 && "run-grid"}`}>
               {resultEvents.map((event, index) => (
                 <a
-                  href={`#${index + 1}`}
+                  href={this.buildHash(undefined, index + 1)}
                   title={this.generateRunName(event?.id?.testResult ?? {})}
                   className={`run ${this.getTestResultStatusClass(
                     event.testResult?.status ?? build_event_stream.TestStatus.NO_STATUS
-                  )} ${this.getTab() == `#${index + 1}` ? "selected" : ""}`}>
+                  )} ${this.getRun() === index + 1 ? "selected" : ""}`}>
                   Run {event.id?.testResult?.run ?? 0} (Attempt {event.id?.testResult?.attempt ?? 0}, Shard{" "}
-                  {event.id?.testResult?.shard ?? 0})
+                  {event.id?.testResult?.shard ?? 0}
+                  {event.testResult?.cachedLocally
+                    ? ", Cached locally"
+                    : event.testResult?.executionInfo?.cachedRemotely
+                      ? ", Cached remotely"
+                      : ""}
+                  )
                 </a>
               ))}
             </div>
           )}
           {resultEvents
-            .filter((value, index) => `#${index + 1}` == this.getTab())
+            .filter((_, index) => index + 1 === this.getRun())
             .map((buildEvent) => (
               <span>
-                <TargetTestDocumentCardComponent
-                  dark={this.props.dark}
-                  invocationId={this.props.invocationId}
-                  buildEvent={buildEvent}
-                />
-                <TargetTestLogCardComponent
-                  dark={this.props.dark}
-                  invocationId={this.props.invocationId}
-                  buildEvent={buildEvent}
-                />
-                <TargetTestCoverageCardComponent
-                  invocationId={this.props.invocationId}
-                  repo={this.props.repo || ""}
-                  commit={this.props.commit || ""}
-                  buildEvent={buildEvent}
-                />
+                {(activeSection === "all" || activeSection === "documents") && (
+                  <TargetTestDocumentCardComponent
+                    dark={this.props.dark}
+                    invocationId={this.props.invocationId}
+                    buildEvent={buildEvent}
+                  />
+                )}
+                {(activeSection === "all" || activeSection === "logs") && (
+                  <TargetTestLogCardComponent
+                    dark={this.props.dark}
+                    invocationId={this.props.invocationId}
+                    buildEvent={buildEvent}
+                  />
+                )}
+                {(activeSection === "all" || activeSection === "coverage") && (
+                  <TargetTestCoverageCardComponent
+                    invocationId={this.props.invocationId}
+                    repo={this.props.repo || ""}
+                    commit={this.props.commit || ""}
+                    buildEvent={buildEvent}
+                  />
+                )}
               </span>
             ))}
-          {actionEvents.map((action) => (
-            <ActionCardComponent dark={this.props.dark} invocationId={this.props.invocationId} buildEvent={action} />
-          ))}
-          {Boolean(target.files.length) && (
+          {(activeSection === "all" || activeSection === "actions") &&
+            actionEvents.map((action) => (
+              <ActionCardComponent dark={this.props.dark} invocationId={this.props.invocationId} buildEvent={action} />
+            ))}
+          {(activeSection === "all" || activeSection === "artifacts") && Boolean(target.files.length) && (
             <TargetArtifactsCardComponent
               name={"Target outputs"}
               invocationId={this.props.invocationId}
               files={target.files}
             />
           )}
-          {resultEvents
-            .filter((event, index) => `#${index + 1}` == this.getTab() && event?.testResult?.testActionOutput)
-            .map((event) => (
-              <div>
-                <TargetArtifactsCardComponent
-                  name={this.generateRunName(event?.id?.testResult ?? {})}
-                  invocationId={this.props.invocationId}
-                  files={event?.testResult?.testActionOutput as build_event_stream.File[]}
-                />
-              </div>
-            ))}
+          {(activeSection === "all" || activeSection === "artifacts") &&
+            resultEvents
+              .filter((event, index) => index + 1 === this.getRun() && event?.testResult?.testActionOutput)
+              .map((event) => (
+                <div>
+                  <TargetArtifactsCardComponent
+                    name={this.generateRunName(event?.id?.testResult ?? {})}
+                    invocationId={this.props.invocationId}
+                    files={event?.testResult?.testActionOutput as build_event_stream.File[]}
+                  />
+                </div>
+              ))}
 
-          {capabilities.config.detailedCacheStatsEnabled && (
+          {(activeSection === "all" || activeSection === "cache") && capabilities.config.detailedCacheStatsEnabled && (
             <CacheRequestsCardComponent
               model={this.props.model}
               query={this.props.label}
@@ -375,8 +547,29 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
               exactMatch={true}
             />
           )}
+          {(activeSection === "all" || activeSection === "executions") && this.props.model.getIsRBEEnabled() && (
+            <InvocationExecLogCard
+              model={this.props.model}
+              search={this.props.search}
+              filter=""
+              targetLabel={this.props.label}
+            />
+          )}
         </div>
       </div>
     );
+  }
+}
+
+function isPotentialFailureOrFlakeStatus(s: api_common.v1.Status): boolean {
+  switch (s) {
+    case Status.BUILDING:
+    case Status.BUILT:
+    case Status.TESTING:
+    case Status.PASSED:
+    case Status.SKIPPED:
+      return false;
+    default:
+      return true;
   }
 }

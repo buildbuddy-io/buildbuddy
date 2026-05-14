@@ -11,8 +11,8 @@ go_library(
         "//server/backends/blobstore/disk",
         "//server/backends/blobstore/gcs",
         "//server/backends/blobstore/util",
-        "//server/environment",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/util/log",
     ],
 )

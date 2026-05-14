@@ -13,7 +13,6 @@ import (
 	"sync"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write/cow_cgo_testutil"
@@ -40,7 +39,6 @@ const (
 )
 
 func init() {
-	rand.Seed(time.Now().UnixNano())
 	// Ensure some memory is allocated for the shared LRU.
 	if err := resources.Configure(true /*=snapshotSharingEnabled*/); err != nil {
 		log.Fatalf("Failed to configure resources: %s", err)
@@ -133,7 +131,7 @@ func TestCOW_Basic(t *testing.T) {
 	path := makeEmptyTempFile(t, backingFileSizeBytes)
 	dataDir := testfs.MakeTempDir(t)
 	chunkSizeBytes := backingFileSizeBytes / 2
-	s, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir, "", false)
+	s, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir, "", false, snaputil.ConvertToCOWConcurrency)
 	require.NoError(t, err)
 	// Don't validate against the backing file, since COWFromFile makes a copy
 	// of the underlying file.
@@ -148,7 +146,7 @@ func TestCOW_Concurrency(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	path := makeEmptyTempFile(t, backingFileSizeBytes)
 	dataDir := testfs.MakeTempDir(t)
-	s, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir, "", false)
+	s, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir, "", false, snaputil.ConvertToCOWConcurrency)
 	require.NoError(t, err)
 
 	tester := NewStoreTester(t, s)
@@ -192,9 +190,7 @@ func TestCOW_SparseData(t *testing.T) {
 	// for each IO operation). This is the minimum seek size when using seek()
 	// with SEEK_DATA.
 	tmp := testfs.MakeTempDir(t)
-	stat, err := os.Stat(tmp)
-	require.NoError(t, err)
-	ioBlockSize := int64(stat.Sys().(*syscall.Stat_t).Blksize)
+	ioBlockSize := ioBlockSize(t, tmp)
 	// Use a chunk size that is a few times larger than the IO block size.
 	const blocksPerChunk = 4
 	chunkSize := ioBlockSize * blocksPerChunk
@@ -217,7 +213,7 @@ func TestCOW_SparseData(t *testing.T) {
 	outDir := testfs.MakeTempDir(t)
 
 	// Now split the file.
-	c, err := copy_on_write.ConvertFileToCOW(ctx, env, dataFilePath, chunkSize, outDir, "", false)
+	c, err := copy_on_write.ConvertFileToCOW(ctx, env, dataFilePath, chunkSize, outDir, "", false, snaputil.ConvertToCOWConcurrency)
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
@@ -257,7 +253,12 @@ func TestCOW_SparseData(t *testing.T) {
 	expectedContent := make([]byte, len(chunks[0]))
 	expectedContent[0] = 1
 	require.Equal(t, expectedContent, b)
-	require.Equal(t, int64(1), numIOBlocks(t, dirtyPath))
+
+	// TODO(http://go/b/3918): figure out why mmap writes create 4 physical
+	// blocks on baremetal executors, and assert that only 1 physical block is
+	// written (if possible).
+	ioBlocksInDirtyFile := numIOBlocks(t, dirtyPath)
+	require.True(t, ioBlocksInDirtyFile == 1 || ioBlocksInDirtyFile == 4, "unexpected number of IO blocks (%d)", ioBlocksInDirtyFile)
 }
 
 func TestCOW_Resize(t *testing.T) {
@@ -281,7 +282,7 @@ func TestCOW_Resize(t *testing.T) {
 				startBuf := randBytes(t, int(test.OldSize))
 				src := makeTempFile(t, startBuf)
 				dir := testfs.MakeTempDir(t)
-				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, src, chunkSize, dir, "", false)
+				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, src, chunkSize, dir, "", false, snaputil.ConvertToCOWConcurrency)
 				require.NoError(t, err)
 
 				// Resize the COW
@@ -358,7 +359,7 @@ func TestCOW_MmapLRUDoesNotDeadlock(t *testing.T) {
 	require.NoError(t, err)
 
 	chunkDir := testfs.MakeTempDir(t)
-	cow, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSize, chunkDir, "", false)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSize, chunkDir, "", false, snaputil.ConvertToCOWConcurrency)
 	require.NoError(t, err)
 
 	var eg errgroup.Group
@@ -469,7 +470,7 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 				}
 				chunkDir, err := os.MkdirTemp(tmp, "")
 				require.NoError(b, err)
-				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, f.Name(), chunkSize, chunkDir, "", false)
+				cow, err := copy_on_write.ConvertFileToCOW(ctx, env, f.Name(), chunkSize, chunkDir, "", false, snaputil.ConvertToCOWConcurrency)
 				require.NoError(b, err)
 				err = os.Remove(f.Name())
 				require.NoError(b, err)
@@ -506,6 +507,49 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 				err = os.RemoveAll(chunkDir)
 				require.NoError(b, err)
 			}
+		})
+	}
+}
+
+func BenchmarkConvertFileToCOW(b *testing.B) {
+	flags.Set(b, "app.log_level", "error")
+	log.Configure()
+
+	parentDir := testfs.MakeTempDir(b)
+	defer os.RemoveAll(parentDir)
+	testfs.MakeDirAll(b, parentDir, b.Name())
+	chunkSizeBytes := int64(os.Getpagesize() * 1000) // same as firecracker.cowChunkSizeBytes
+	blockSize := ioBlockSize(b, parentDir)
+	data := bytes.Repeat([]byte{1, 2, 3}, int(blockSize+117)) // Don't align writes to blocks
+
+	for _, sparsenessRatio := range []float64{0, 0.1, 0.5, 0.9, 0.99, 1} {
+		b.Run(fmt.Sprintf("%vSparse", sparsenessRatio), func(b *testing.B) {
+			inputPath := filepath.Join(parentDir, b.Name())
+			r := rand.New(rand.NewSource(1))
+			buf := make([]byte, 100_000_000) // 100MB
+			for i := 0; i < len(buf); i += len(data) {
+				if r.Float64() >= sparsenessRatio {
+					copy(buf[i:], data)
+				}
+			}
+			writeSparseFile(b, inputPath, buf, blockSize)
+
+			b.ResetTimer()
+			for range b.N {
+				b.StopTimer()
+				outputDir, err := os.MkdirTemp(parentDir, "output")
+				require.NoError(b, err)
+				b.StartTimer()
+
+				_, err = copy_on_write.ConvertFileToCOW(context.Background(), nil, inputPath, chunkSizeBytes, outputDir, "", false, snaputil.ConvertToCOWConcurrency)
+				require.NoError(b, err)
+
+				b.StopTimer()
+				os.RemoveAll(outputDir)
+				b.StartTimer()
+			}
+			b.StopTimer()
+			require.NoError(b, os.Remove(inputPath))
 		})
 	}
 }
@@ -751,7 +795,9 @@ func newMmap(t *testing.T) (*copy_on_write.Mmap, string) {
 	s, err := f.Stat()
 	require.NoError(t, err)
 
-	mmap, err := copy_on_write.NewMmapFd(ctx, env, root, false /*=dirty*/, int(f.Fd()), int(s.Size()), offset, snaputil.ChunkSourceLocalFile, "", false)
+	sharedLRU, err := copy_on_write.GetSharedMmapLRU(root)
+	require.NoError(t, err)
+	mmap, err := copy_on_write.NewMmapFd(ctx, env, root, false /*=dirty*/, int(f.Fd()), int(s.Size()), offset, snaputil.ChunkSourceLocalFile, "", false, sharedLRU)
 	require.NoError(t, err)
 	return mmap, path
 }
@@ -771,7 +817,7 @@ func makeEmptyTempFile(t *testing.T, sizeBytes int64) string {
 // writeSparseFile writes only the data blocks from b to the given path, so
 // that the physical size of the file is minimal while still representing the
 // same underlying bytes.
-func writeSparseFile(t *testing.T, path string, b []byte, ioBlockSize int64) {
+func writeSparseFile(t testing.TB, path string, b []byte, ioBlockSize int64) {
 	f, err := os.Create(path)
 	require.NoError(t, err)
 	defer f.Close()

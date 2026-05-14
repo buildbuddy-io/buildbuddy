@@ -5,11 +5,12 @@ sidebar_label: Workflows configuration
 ---
 
 Once you've linked your repo to BuildBuddy via
-[BuildBuddy workflows](workflows-setup.md), BuildBuddy will automatically
-run `bazel test //...` on each push to your repo, reporting results to the
-BuildBuddy UI.
+[BuildBuddy workflows](workflows-setup.md), there are two ways to start running Workflows.
 
-But you may wish to configure multiple test commands with different test
+The default workflow config runs `bazel test //...` whenever a commit is pushed to your repo's default branch or a pull request branch is updated. In order to enable this, click "Enable default workflow config"
+in the three-dot dropdown for your repository on the Workflows page.
+
+You may wish to configure multiple test commands with different test
 tag filters, or run the same tests on multiple different platform
 configurations (running some tests on Linux, and some on macOS, for
 example).
@@ -23,7 +24,7 @@ BuildBuddy workflows can be configured using a file called
 `buildbuddy.yaml`, which can be placed at the root of your git repo.
 
 `buildbuddy.yaml` consists of multiple **actions**. Each action describes
-a list of bazel commands to be run in order, as well as the set of git
+a list of commands to be run in order, as well as the set of git
 events that should trigger these commands.
 
 :::note
@@ -47,44 +48,64 @@ actions:
       pull_request:
         branches:
           - "*"
-    bazel_commands:
-      - "test //..."
+    steps:
+      - run: "bazel test //..."
 ```
 
 This config is equivalent to the default config that we use if you
 do not have a `buildbuddy.yaml` file at the root of your repo.
 
-### Running shell scripts
+### Running bash commands
 
-It is possible to run shell scripts in BuildBuddy Workflows by declaring
-an `sh_binary` target in a `BUILD` file, then running that target as a
-step in the `bazel_commands` list:
+Each step can run arbitrary bash code, which may be useful for running Bazel commands
+conditionally, or for installing system dependencies
+that aren't available in BuildBuddy's available workflow images.
 
-```bash title="workflow_setup.sh"
-#!/usr/bin/env bash
-set -eo pipefail
-sudo apt-get update && sudo apt-get install -y my-lib
+Because workflows are run in [snapshotted microVMs](./rbe-microvms), system
+dependencies will be persisted across workflow runs. However, we recommend
+fetching dependencies with Bazel whenever possible, rather than relying
+on system dependencies.
+
+To specify multiple bash commands, you can either specify a block of bash code within a single step:
+
+```yaml title="buildbuddy.yaml"
+# ...
+steps:
+  - run: |
+      sudo apt-get update && sudo apt-get install -y my-lib
+      bazel test //...
 ```
 
-```python title="BUILD"
-sh_binary(name = "workflow_setup", srcs = ["workflow_setup.sh"])
+Or you can specify one command per step. Note that each step is run in a separate
+bash process, so locally initialized variables will not persist across steps:
+
+```yaml title="buildbuddy.yaml"
+# ...
+steps:
+  - run: sudo apt-get update && sudo apt-get install -y my-lib
+  - run: bazel test //...
 ```
+
+## Concurrent Workflow runs
+
+Starting June 1, 2026, BuildBuddy will automatically cancel in-progress
+Workflow runs when a newer run is triggered for the same action on a
+non-default branch. This helps avoid wasting resources on outdated runs
+when, for example, several commits are pushed in quick succession to a
+pull request branch.
+
+This behavior only applies to non-default branches. Runs on your repo's
+default branch are not affected.
+
+If you'd like to disable this behavior and allow concurrent runs for an
+action, set `allow_concurrent_runs: true` in the action's configuration:
 
 ```yaml title="buildbuddy.yaml"
 actions:
   - name: "Test all targets"
-    # ...
-    bazel_commands:
-      - "run :workflow_setup" # runs workflow_setup.sh with Bazel
-      - "test //..."
+    allow_concurrent_runs: true # <-- disables auto-cancellation of concurrent runs
+    ...
 ```
-
-Setup scripts are occasionally useful for installing system dependencies
-that aren't available in BuildBuddy's available workflow images. Because
-workflows are run in [snapshotted microVMs](./rbe-microvms), system
-dependencies will be persisted across workflow runs. However, we recommend
-fetching dependencies with Bazel whenever possible, rather than relying
-on system dependencies.
 
 ## Bazel configuration
 
@@ -107,7 +128,7 @@ adding them to your `.bazelrc` instead of adding them to your `buildbuddy.yaml`.
 
 BuildBuddy also provides a [`bazelrc`](https://bazel.build/docs/bazelrc)
 file which passes these default options to each bazel invocation listed in
-`bazel_commands`:
+`steps`:
 
 - `--bes_backend` and `--bes_results_url`, so that the results from each
   Bazel command are viewable with BuildBuddy
@@ -135,7 +156,6 @@ configuration steps are the same as when running Bazel locally. See the
 Trusted workflow executions can access [secrets](secrets) using
 environment variables.
 
-Environment variables are expanded inline in the `bazel_commands` list.
 For example, if we have a secret named `REGISTRY_TOKEN` and we want to set
 the remote header `x-buildbuddy-platform.container-registry-password` to
 the value of that secret, we can get the secret value using
@@ -143,8 +163,8 @@ the value of that secret, we can get the secret value using
 
 ```yaml title="buildbuddy.yaml"
 # ...
-bazel_commands:
-  - "test ... --remote_exec_header=x-buildbuddy-platform.container-registry-password=$REGISTRY_TOKEN"
+steps:
+  - run: "bazel test ... --remote_exec_header=x-buildbuddy-platform.container-registry-password=$REGISTRY_TOKEN"
 ```
 
 To access the environment variables within `build` or `test` actions, you
@@ -156,56 +176,9 @@ or
 
 ```yaml title="buildbuddy.yaml"
 # ...
-bazel_commands:
-  - "test ... --test_env=REGISTRY_TOKEN"
+steps:
+  - run: "bazel test ... --test_env=REGISTRY_TOKEN"
 ```
-
-### Dynamic bazel flags
-
-Sometimes, you may wish to set a bazel flag using a shell command. For
-example, you might want to set image pull credentials using a command like
-`aws` that requests an image pull token on the fly.
-
-To do this, we recommend using a setup script that generates a `bazelrc`
-file.
-
-For example, in `/buildbuddy.yaml`, you would write:
-
-```yaml title="buildbuddy.yaml"
-# ...
-bazel_commands:
-  - bazel run :generate_ci_bazelrc
-  - bazel --bazelrc=ci.bazelrc test //...
-```
-
-In `/BUILD`, you'd declare an `sh_binary` target for your setup script:
-
-```python title="/BUILD"
-sh_binary(name = "generate_ci_bazelrc", srcs = ["generate_ci_bazelrc.sh"])
-```
-
-Then in `/generate_ci_bazelrc.sh`, you'd generate the `ci.bazelrc` file in
-the workspace root (make sure to make this file executable with `chmod +x`):
-
-```shell title="/generate_ci_bazelrc.sh"
-#!/usr/bin/env bash
-set -e
-# Change to the WORKSPACE directory
-cd "$BUILD_WORKSPACE_DIRECTORY"
-# Run a command to request image pull credentials:
-REGISTRY_PASSWORD=$(some-command)
-# Write the credentials to ci.bazelrc in the workspace root directory:
-echo >ci.bazelrc "
-build --remote_exec_header=x-buildbuddy-platform.container-registry-password=${REGISTRY_PASSWORD}
-"
-```
-
-:::tip
-
-This `generate_ci_bazelrc.sh` script can access workflow secrets using
-environment variables.
-
-:::
 
 ## Merge queue support
 
@@ -218,33 +191,101 @@ branch, as described in [Triggering merge group checks with third-party CI provi
 Example `buildbuddy.yaml` file:
 
 ```yaml title="buildbuddy.yaml"
-- action: Test
-  triggers:
-    push:
-      # Run when a merge queue branch is pushed or the main branch is
-      # pushed.
-      branches: ["main", "gh-readonly-queue/*"]
-  # ...
+actions:
+  - name: Test
+    triggers:
+      push:
+        # Run when a merge queue branch is pushed or the main branch is
+        # pushed.
+        branches: ["main", "gh-readonly-queue/*"]
+    # ...
 ```
+
+## Ref pattern matching
+
+In `buildbuddy.yaml`, workflow triggers such as `push` and `pull_request`
+are configured using a list of patterns that are matched against
+the branch or tag name from the repository event.
+
+Ref patterns are evaluated using the following rules:
+
+- Patterns may contain a single wildcard character (`*`) which matches any
+  sequence of characters. For example, the branch pattern
+  `"release-*-linux"` results in a positive match for the branch
+  `"release-v1.2.3-linux"`. Note: if there is more than one wildcard, only
+  the first one is expanded, and subsequent wildcards are treated
+  literally.
+- Patterns starting with an exclamation mark (`!`) are _negated_ patterns
+  and result in a negative match if the rest of the pattern after the
+  exclamation mark is matched. For example, the branch pattern `"!main"`
+  results in a negative match for the branch `"main"`.
+- All characters other than negation flags or wildcards are matched
+  exactly. For example, the branch pattern `"main"` results in a positive
+  match for the branch `"main"`.
+- If multiple patterns are specified, then the last matching pattern
+  (positive or negative) determines whether the branch is matched. For
+  example, given the list of branch patterns
+  `["*", "!release-*", "release-special"]`, matching against the branch
+  name `"release-20210101"` results in a positive match for `"*"`, then a
+  negative match for `"!release-*"`, then a non-match for
+  `"release-special"`. The last matching pattern is `"!release-*"`, which
+  is a negative match, so the workflow is not triggered.
 
 ## Linux image configuration
 
-By default, workflows run on an Ubuntu 18.04-based image. You can use
-a newer, Ubuntu 20.04-based image using the `container_image` action
-setting:
+By default, workflows run on an Ubuntu 18.04-based image. You can
+customize the image using the `container_image` action setting:
 
 ```yaml title="buildbuddy.yaml"
 actions:
   - name: "Test all targets"
-    container_image: "ubuntu-20.04" # <-- add this line
-    bazel_commands:
-      - "bazel test //..."
+    container_image: "ubuntu-24.04" # <-- add this line
+    steps:
+      - run: "bazel test //..."
 ```
 
-The supported values for `container_image` are `"ubuntu-18.04"` (default)
-or `"ubuntu-20.04"`.
+The supported values for `container_image` are:
 
-By default, workflow VMs have the following resources available:
+- `"ubuntu-18.04"` (the default)
+- `"ubuntu-20.04"`
+- `"ubuntu-22.04"`
+- `"ubuntu-24.04"`
+
+These images are aliases for BuildBuddy's official Ubuntu-based CI images.
+
+### Installing custom software
+
+If BuildBuddy's official Ubuntu images do not contain the software that
+you need, you can install custom software using `apt-get` at runtime.
+
+Because workflow VMs are snapshotted and reused between runs, you can
+speed up workflows by skipping `apt-get install` if the package is already
+installed.
+
+Example:
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: Test
+    steps:
+      # Ensure apt packages are installed ("libexample0" in this example)
+      # Note: workflow VMs are snapshotted and reused, so normally,
+      # the apt-get install step only needs to run once.
+      - run: |
+          if ! [ -e /usr/lib/libexample.so.0 ] ; do
+            # libexample0 is not installed; install it:
+            sudo apt-get update && sudo apt-get install -y libexample0
+          fi
+      - run: |
+          bazel test //some/target/that/needs:libexample
+```
+
+If you have requirements that prevent you from using one of the official
+Ubuntu images, please [contact us](https://buildbuddy.io/contact).
+
+## Linux resource configuration
+
+By default, Linux workflow VMs have the following resources available:
 
 - 3 CPU
 - 8 GB of RAM
@@ -304,39 +345,13 @@ actions:
       pull_request:
         branches:
           - "*"
-    bazel_commands:
-      - "test //... --bes_backend=remote.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/"
+    steps:
+      - run: "bazel test //..."
 ```
 
 That's it! Whenever any of the configured triggers are matched, one of
 the Mac executors in the `workflows` pool should execute the
 workflow, and BuildBuddy will publish the results to your branch.
-
-## Attaching Bazel artifacts to workflows
-
-Bazel supports several flags such as `--remote_grpc_log` that allow
-writing additional debug logs and metadata files associated with an
-invocation.
-
-To provide easy access to these files, BuildBuddy supports a special
-directory called the **workflow artifacts directory**. If you write files
-to this directory, BuildBuddy will automatically upload those files and
-show them in the UI for the workflow. You can get the path to the workflow
-artifacts directory using the environment variable
-`$BUILDBUDDY_ARTIFACTS_DIRECTORY`.
-
-Example `buildbuddy.yaml` configuration:
-
-```yaml title="buildbuddy.yaml"
-actions:
-  - name: "Test"
-    # ...
-    bazel_commands:
-      - "test //... --remote_grpc_log=$BUILDBUDDY_ARTIFACTS_DIRECTORY/grpc.log"
-```
-
-BuildBuddy creates a new artifacts directory for each Bazel command, and
-recursively uploads all files in the directory after the command exits.
 
 ## buildbuddy.yaml schema
 
@@ -382,10 +397,22 @@ A named group of Bazel commands that run when triggered.
   and `"ubuntu-20.04"`. Defaults to `"ubuntu-18.04"`.
 - **`resource_requests`** ([`ResourceRequests`](#resourcerequests)):
   the requested resources for this action.
-- **`user`** (`string`): User to run the workflow as. For Linux workflows,
-  the user `buildbuddy` can be specified here to ensure that the action
-  runs as a non-root user, to accomodate certain Bazel actions that refuse
-  to run as root (like `rules_hermetic_python`).
+- **`user`** (`string`): User to run the workflow as. This can be set to
+  `"root"` to run the workflow as root, but it is recommended to keep the
+  default value, which is a non-root user provisioned in the CI
+  environment (usually named `"buildbuddy"`). Note: some legacy workflows
+  might still have `"root"` as the default user, but we are in the process
+  of migrating all users to non-root by default.
+- **`env`** (`map` with string values): Map of static environment variables and their values.
+- **`git_fetch_filters`** (`string` list): list of [`--filter` option](https://git-scm.com/docs/git-clone#Documentation/git-clone.txt-code--filtercodeemltfilter-specgtem)
+  values to the `git fetch` command used when fetching the git commits
+  to build. Defaults to `["blob:none"]`.
+- **`git_fetch_depth`** (`int`): [`--depth` option](https://git-scm.com/docs/git-fetch#Documentation/git-fetch.txt---depthltdepthgt) value used when
+  fetching the git commits to build. When using this option in combination
+  with a `pull_request` trigger, it's recommended to set
+  `merge_with_base: false` in the `pull_request` trigger, since the
+  limited fetch depth might prevent the merge-base commit from being
+  fetched. Defaults to `0` (unset).
 - **`git_clean_exclude`** (`string` list): List of directories within the
   workspace that are excluded when running `git clean` across actions that
   are executed in the same runner instance. This is an advanced option and
@@ -393,15 +420,19 @@ A named group of Bazel commands that run when triggered.
 - **`bazel_workspace_dir`** (`string`): A subdirectory within the repo
   containing the bazel workspace for this action. By default, this is
   assumed to be the repo root directory.
-- **`bazel_commands`** (`string` list): Bazel commands to be run in order.
+- **`steps`** (list): Bash commands to be run in order.
   If a command fails, subsequent ones are not run, and the action is
   reported as failed. Otherwise, the action is reported as succeeded.
-  Environment variables are expanded, which means that the bazel command
-  line can reference [secrets](secrets.md) if the workflow execution
+  Environment variables are expanded, which means that the commands
+  can reference [secrets](secrets.md) if the workflow execution
   is trusted.
-- **`timeout`** (`time.Duration`): If set, workflow actions that have been
-  running for longer than this timeout will be canceled automatically. This
+- **`timeout`** (`duration` string, e.g. '30m', '1h'): If set, workflow actions that have been
+  running for longer than this duration will be canceled automatically. This
   only applies to a single invocation, and does not include multiple retry attempts.
+- **`allow_concurrent_runs`** (`boolean`, default: `false`): If set to `true`,
+  multiple runs of the same action on the same branch will be allowed to run concurrently.
+  By default or if set to `false`, concurrent runs will be automatically cancelled.
+  See [Concurrent Workflow runs](#concurrent-workflow-runs).
 
 ### `Triggers`
 
@@ -409,10 +440,10 @@ Defines whether an action should run when a branch is pushed to the repo.
 
 **Fields:**
 
-- **`push`** ([`PushTrigger`](#push-trigger)): Configuration for push events associated with the repo.
+- **`push`** ([`PushTrigger`](#pushtrigger)): Configuration for push events associated with the repo.
   This is mostly useful for reporting commit statuses that show up on the
   home page of the repo.
-- **`pull_request`** ([`PullRequestTrigger`](#pull-request-trigger)):
+- **`pull_request`** ([`PullRequestTrigger`](#pullrequesttrigger)):
   Configuration for pull request events associated with the repo.
   This is required if you want to use BuildBuddy to report the status of
   this action on pull requests, and optionally prevent pull requests from
@@ -424,10 +455,15 @@ Defines whether an action should execute when a branch is pushed.
 
 **Fields:**
 
-- **`branches`** (`string` list): The branches that, when pushed to, will
-  trigger the action. This field accepts a simple wildcard character
-  (`"*"`) as a possible value, which will match any branch, as well as
-  `"gh-readonly-queue/*"`, which matches GitHub's merge queue branches.
+- **`branches`** (`string` list): The branch patterns that determine
+  whether a push to the branch will trigger the workflow. Patterns are
+  matched using the rules described in
+  [Ref pattern matching](#ref-pattern-matching)
+
+- **`tags`** (`string` list): The tag patterns that determine
+  whether a push to the tag will trigger the workflow. Patterns are
+  matched using the rules described in
+  [Ref pattern matching](#ref-pattern-matching)
 
 ### `PullRequestTrigger`
 
@@ -436,18 +472,25 @@ pushed.
 
 **Fields:**
 
-- **`branches`** (`string` list): The _base_ branches of a pull request.
-  For example, if this is set to `[ "v1", "v2" ]`, then the associated
-  action is only run when a PR wants to merge a branch _into_ the `v1`
-  branch or the `v2` branch. This field accepts a simple wildcard
-  character (`"*"`) as a possible value, which will match any branch.
+- **`branches`** (`string` list): The branch patterns that determine
+  whether an update to the pull request will trigger the workflow.
+  The _base_ branch of the PR is matched against this list.
+  For example, if this is set to `[ "v1", "v2" ]`, then the
+  associated action is only run when a PR wants to merge a branch _into_
+  the `v1` branch or the `v2` branch. Branch patterns are matched using
+  the rules described in [Ref pattern matching](#ref-pattern-matching)
+- **`tags`** (`string` list): The tag patterns that determine
+  whether a push to the tag will trigger the workflow. Patterns are
+  matched using the rules described in
+  [Ref pattern matching](#ref-pattern-matching)
 - **`merge_with_base`** (`boolean`, default: `true`): Whether to merge the
   base branch into the PR branch before running the workflow action. This
   can help ensure that the changes in the PR branch do not conflict with
   the main branch. However, the action will not be continuously re-run as
   changes are pushed to the base branch. For stronger protection against
   breaking the main branch, you may wish to use [merge
-  queues](#merge-queue-support).
+  queues](#merge-queue-support). This is not supported if the build trigger
+  is a tag.
 
 ### `ResourceRequests`
 

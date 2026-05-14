@@ -7,11 +7,22 @@ syntax = "proto3";
 
 package vfs;
 
+message ExtendedAttr {
+  string name = 1;
+  bytes value = 2;
+}
+
 message Attrs {
   int64 size = 1;
   uint32 perm = 2;
   bool immutable = 3;
   uint32 nlink = 4;
+  uint64 mtime_nanos = 5;
+  uint64 atime_nanos = 6;
+  // Number of 512-byte blocks used by the node.
+  int64 blocks = 7;
+  int64 block_size = 8;
+  repeated ExtendedAttr extended = 9;
 }
 
 message SymlinkEntry {
@@ -43,10 +54,60 @@ message SyscallError {
   uint32 errno = 1;
 }
 
-message OpenRequest {
-  string path = 1;
-  uint32 flags = 2;
+message LookupRequest {
+  uint64 parent_id = 1;
+  string name = 2;
+}
+
+message LookupResponse {
+  uint32 mode = 1;
+  Attrs attrs = 2;
+  uint64 id = 3;
+  string symlinkTarget = 4;
+}
+
+message GetDirectoryContentsRequest {
+  uint64 id = 1;
+}
+
+message Node {
+  uint64 id = 1;
+  uint32 mode = 2;
+  string name = 3;
+  Attrs attrs = 4;
+}
+
+message GetDirectoryContentsResponse {
+  repeated Node nodes = 1;
+}
+
+message MknodRequest {
+  uint64 parent_id = 1;
+  string name = 2;
   uint32 mode = 3;
+  uint32 dev = 4;
+}
+
+message MknodResponse {
+  uint64 id = 1;
+  Attrs attrs = 2;
+}
+
+message CreateRequest {
+  uint64 parent_id = 1;
+  string name = 2;
+  uint32 flags = 3;
+  uint32 mode = 4;
+}
+
+message CreateResponse {
+  uint64 id = 1;
+  uint64 handle_id = 2;
+}
+
+message OpenRequest {
+  uint64 id = 1;
+  uint32 flags = 2;
 }
 
 message OpenResponse {
@@ -117,8 +178,18 @@ message CopyFileRangeResponse {
   uint32 num_bytes_copied = 1;
 }
 
+message LseekRequest {
+  uint64 handle_id = 1;
+  uint64 offset = 2;
+  uint32 whence = 3;
+}
+
+message LseekResponse {
+  uint64 offset = 1;
+}
+
 message GetAttrRequest {
-  string path = 1;
+  uint64 id = 1;
 }
 
 message GetAttrResponse {
@@ -126,7 +197,7 @@ message GetAttrResponse {
 }
 
 message SetAttrRequest {
-  string path = 1;
+  uint64 id = 1;
   message SetSize {
     int64 size = 1;
   }
@@ -135,6 +206,28 @@ message SetAttrRequest {
     uint32 perms = 1;
   }
   SetPerms set_perms = 3;
+
+  message SetMTime {
+    uint64 mtime_nanos = 1;
+  }
+  SetMTime set_mtime = 4;
+
+  message SetATime {
+    uint64 atime_nanos = 1;
+  }
+  SetATime set_atime = 5;
+
+  message SetExtendedAttr {
+    string name = 1;
+    bytes value = 2;
+    uint32 flags = 3;
+  }
+  SetExtendedAttr set_extended = 6;
+
+  message RemoveExtendedAttr {
+    string name = 1;
+  }
+  RemoveExtendedAttr remove_extended = 7;
 }
 
 message SetAttrResponse {
@@ -142,35 +235,47 @@ message SetAttrResponse {
 }
 
 message RenameRequest {
-  string old_path = 1;
-  string new_path = 2;
+  uint64 old_parent_id = 1;
+  string old_name = 2;
+  uint64 new_parent_id = 3;
+  string new_name = 4;
+  uint32 flags = 5;
 }
 
 message RenameResponse {}
 
 message MkdirRequest {
-  string path = 1;
-  uint32 perms = 2;
+  uint64 parent_id = 1;
+  string name = 2;
+  uint32 perms = 3;
 }
 
-message MkdirResponse {}
+message MkdirResponse {
+  uint64 id = 1;
+  Attrs attrs = 2;
+}
 
 message RmdirRequest {
-  string path = 1;
+  uint64 parent_id = 1;
+  string name = 2;
 }
 
 message RmdirResponse {}
 
 message SymlinkRequest {
-  string path = 1;
-  string target = 2;
+  uint64 parent_id = 1;
+  string name = 2;
+  string target = 3;
 }
 
-message SymlinkResponse {}
+message SymlinkResponse {
+  uint64 id = 1;
+}
 
 message LinkRequest {
-  string path = 1;
-  string target = 2;
+  uint64 parent_id = 1;
+  string name = 2;
+  uint64 target_id = 3;
 }
 
 message LinkResponse {
@@ -178,7 +283,8 @@ message LinkResponse {
 }
 
 message UnlinkRequest {
-  string path = 1;
+  uint64 parent_id = 1;
+  string name = 2;
 }
 
 message UnlinkResponse {}
@@ -210,12 +316,27 @@ message SetLkRequest {
 
 message SetLkResponse {}
 
+message StatfsRequest {}
+
+message StatfsResponse {
+  int64 BlockSize = 1;
+  uint64 TotalBlocks = 2;
+  uint64 BlocksFree = 3;
+  uint64 BlocksAvailable = 4;
+}
+
 // FileSystem is Virtual File System API that follows the FUSE API.
 // Refer to the FUSE API documentation for details of specific operations.
 service FileSystem {
-  // Returns the initial directory and file layout of the filesystem to be
-  // presented to the user.
-  rpc GetLayout(GetLayoutRequest) returns (GetLayoutResponse);
+  rpc Lookup(LookupRequest) returns (LookupResponse);
+  rpc GetDirectoryContents(GetDirectoryContentsRequest)
+      returns (GetDirectoryContentsResponse);
+
+  // Mknod creates a file system node of a specific type.
+  rpc Mknod(MknodRequest) returns (MknodResponse);
+
+  // Create creates a file and returns a file handle.
+  rpc Create(CreateRequest) returns (CreateResponse);
 
   // API for operating on a single file.
   // Open will return an ID that can be used for the remaining file APIs.
@@ -248,6 +369,10 @@ service FileSystem {
   // CopyFileRange copies data between two open file handles on the server which
   // avoids the need to copy data to/from client.
   rpc CopyFileRange(CopyFileRangeRequest) returns (CopyFileRangeResponse);
+
+  rpc Lseek(LseekRequest) returns (LseekResponse);
+
+  rpc Statfs(StatfsRequest) returns (StatfsResponse);
 
   rpc GetAttr(GetAttrRequest) returns (GetAttrResponse);
   rpc SetAttr(SetAttrRequest) returns (SetAttrResponse);

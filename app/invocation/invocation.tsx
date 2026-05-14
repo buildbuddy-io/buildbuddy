@@ -1,52 +1,55 @@
+import { PlayCircleIcon } from "lucide-react";
 import moment from "moment";
 import React from "react";
 import { Subscription } from "rxjs";
-import { invocation } from "../../proto/invocation_ts_proto";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
+import { eventlog } from "../../proto/eventlog_ts_proto";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
 import { google as google_grpc_status } from "../../proto/grpc_status_ts_proto";
+import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
+import capabilities from "../capabilities/capabilities";
 import faviconService from "../favicon/favicon";
-import rpcService, { CancelablePromise } from "../service/rpc_service";
+import UserPreferences from "../preferences/preferences";
+import router from "../router/router";
+import { Cancelable, CancelablePromise, default as rpcService } from "../service/rpc_service";
+import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 import TargetComponent from "../target/target";
+import TargetV2Component from "../target/target_v2";
+import { BuildBuddyError } from "../util/errors";
+import CacheRequestsCardComponent from "./cache_requests_card";
+import ChildInvocations from "./child_invocations";
 import DenseInvocationOverviewComponent from "./dense/dense_invocation_overview";
+import { ExecuteOperation, ExecutionStage, executionStatusLabel, waitExecution } from "./execution_status";
+import InvocationActionCardComponent from "./invocation_action_card";
 import ArtifactsCardComponent from "./invocation_artifacts_card";
+import { InvocationBotCard } from "./invocation_bot_card";
 import BuildLogsCardComponent from "./invocation_build_logs_card";
-import QueryGraphCardComponent from "./invocation_query_graph_card";
 import CacheCardComponent from "./invocation_cache_card";
-import ScorecardCardComponent from "./scorecard_card";
-import FetchCardComponent from "./invocation_fetch_card";
+import InvocationCoverageCardComponent from "./invocation_coverage_card";
 import InvocationDetailsCardComponent from "./invocation_details_card";
 import ErrorCardComponent from "./invocation_error_card";
-import SuggestionCardComponent, { getSuggestions } from "./invocation_suggestion_card";
+import InvocationExecLogCardComponent from "./invocation_exec_log_card";
+import FetchCardComponent from "./invocation_fetch_card";
+import FileCardComponent from "./invocation_file_card";
 import InvocationFilterComponent from "./invocation_filter";
 import InvocationInProgressComponent from "./invocation_in_progress";
-import InvocationModel, { CI_RUNNER_ROLE } from "./invocation_model";
 import InvocationLogsModel from "./invocation_logs_model";
-import ChildInvocations from "./child_invocations";
+import InvocationModel, { CI_RUNNER_ROLE } from "./invocation_model";
 import InvocationNotFoundComponent from "./invocation_not_found";
 import InvocationOverviewComponent from "./invocation_overview";
+import QueryGraphCardComponent from "./invocation_query_graph_card";
 import RawLogsCardComponent from "./invocation_raw_logs_card";
+import SpawnCardComponent from "./invocation_spawn_card";
+import SuggestionCardComponent, { getSuggestions, hasSuggestionAboveInfo } from "./invocation_suggestion_card";
 import InvocationTabsComponent, { getActiveTab } from "./invocation_tabs";
-import TimingCardComponent from "./invocation_timing_card";
-import ExecutionCardComponent from "./invocation_execution_card";
-import InvocationActionCardComponent from "./invocation_action_card";
 import TargetsComponent from "./invocation_targets";
-import { BuildBuddyError } from "../util/errors";
-import UserPreferences from "../preferences/preferences";
-import capabilities from "../capabilities/capabilities";
-import CacheRequestsCardComponent from "./cache_requests_card";
-import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
-import router from "../router/router";
-import rpc_service from "../service/rpc_service";
-import { InvocationBotCard } from "./invocation_bot_card";
-import TargetV2Component from "../target/target_v2";
-import Banner from "../components/banner/banner";
+import TimingCardComponent from "./invocation_timing_card";
+import ScorecardCardComponent from "./scorecard_card";
 
 interface State {
   loading: boolean;
-  inProgress: boolean;
   error: BuildBuddyError | null;
 
   model?: InvocationModel;
@@ -56,6 +59,14 @@ interface State {
    * applicable.
    */
   runnerExecution?: execution_stats.Execution;
+  runnerLastExecuteOperation?: ExecuteOperation;
+
+  /*
+   * We only need to update the child invocation cards right when they've started and ended.
+   * Memoize them on the client, so we don't need to keep fetching them from the
+   * db in the meantime.
+   */
+  childInvocations: invocation.Invocation[];
 
   keyboardShortcutHandle: string;
 }
@@ -74,31 +85,49 @@ const smallPageSize = 10;
 export default class InvocationComponent extends React.Component<Props, State> {
   state: State = {
     loading: true,
-    inProgress: false,
     error: null,
     keyboardShortcutHandle: "",
+    childInvocations: [],
   };
 
-  private timeoutRef: number = 0;
+  private timeoutRef: number | undefined;
   private logsModel?: InvocationLogsModel;
+  private runLogsModel?: InvocationLogsModel;
   private logsSubscription?: Subscription;
+  private runLogsSubscription?: Subscription;
   private modelChangedSubscription?: Subscription;
   private runnerExecutionRPC?: CancelablePromise;
+  private cancelGroupIdOverride?: () => void;
+
+  private seenChildInvocationConfiguredIds = new Set<string>();
+  private seenChildInvocationCompletedIds = new Set<string>();
+  private didFetchAfterRunLogsComplete = false;
 
   componentWillMount() {
     document.title = `Invocation ${this.props.invocationId} | BuildBuddy`;
     // TODO(siggisim): Move moment configuration elsewhere
     moment.relativeTimeThreshold("ss", 0);
 
-    this.fetchInvocation();
+    if (this.failedToStart()) {
+      // If the invocation failed to start then there will be nothing to load -
+      // just disable the loading state so we can show the error.
+      this.setState({ loading: false });
+    } else {
+      this.fetchInvocation();
 
-    this.logsModel = new InvocationLogsModel(this.props.invocationId);
-    // Re-render whenever we fetch new log chunks.
-    this.logsSubscription = this.logsModel.onChange.subscribe({
-      next: () => this.forceUpdate(),
-    });
-    if (!this.isQueued() && !this.props.search.get("runnerFailed")) {
-      this.logsModel.startFetching();
+      this.logsModel = new InvocationLogsModel(this.props.invocationId, eventlog.LogType.BUILD_LOG);
+      // Re-render whenever we fetch new log chunks.
+      this.logsSubscription = this.logsModel.onChange.subscribe({
+        next: () => this.forceUpdate(),
+      });
+      if (!this.isQueued() && !this.props.search.get("runnerFailed")) {
+        this.logsModel.startFetching();
+      }
+
+      this.runLogsModel = new InvocationLogsModel(this.props.invocationId, eventlog.LogType.RUN_LOG);
+      this.runLogsSubscription = this.runLogsModel.onChange.subscribe({
+        next: () => this.forceUpdate(),
+      });
     }
   }
 
@@ -121,11 +150,16 @@ export default class InvocationComponent extends React.Component<Props, State> {
         this.modelChangedSubscription = this.state.model?.onChange.subscribe(() => this.forceUpdate());
       }
     }
+
+    if (this.props.search.get("openChild") == "true" && this.state.childInvocations.length > 0) {
+      const childInvocationId = this.state.childInvocations[0].invocationId;
+      const url = `/invocation/${childInvocationId}?queued=true`;
+      router.replaceURL(url);
+    }
+
     // Update title and favicon
     if (this.state.model) {
-      document.title = `${this.state.model.getUser(
-        true
-      )} ${this.state.model.getCommand()} ${this.state.model.getPattern()} | BuildBuddy`;
+      document.title = `${this.state.model.getUserPossessivePrefix()}${this.state.model.getCommand()} ${this.state.model.getPattern()} | BuildBuddy`;
       faviconService.setFaviconForType(this.state.model.getFaviconType());
     }
     // If in progress or queued, schedule another fetch of the invocation (and
@@ -138,10 +172,31 @@ export default class InvocationComponent extends React.Component<Props, State> {
       // the invocation and runner execution).
       this.fetchRunnerExecution();
     }
+    // If we don't have an invocation yet, stream updates from the runner
+    // execution so we can see what it's doing before the invocation is created.
+    if (prevState.runnerExecution?.executionId !== this.state.runnerExecution?.executionId && !this.state.model) {
+      this.runnerExecutionStream?.cancel();
+      if (this.state.runnerExecution?.executionId) {
+        this.streamRunnerExecution();
+      }
+    } else if (this.state.model) {
+      this.runnerExecutionStream?.cancel();
+    }
+
     // If we transitioned from queued to not queued, and we have an invocation,
     // start fetching logs for the workflow.
     if (this.isQueued(prevProps, prevState) && !this.isQueued() && this.state.model) {
       this.logsModel?.startFetching();
+    }
+    // If a run status was set on the invocation, start fetching run logs.
+    if (this.state.model?.hasRunStatus() && !prevState.model?.hasRunStatus()) {
+      this.runLogsModel?.startFetching();
+    }
+    // If the run log stream just completed while run is still in progress,
+    // fetch the invocation once more to get the final run status.
+    if (this.state.model?.isRunInProgress() && this.runLogsModel?.isComplete() && !this.didFetchAfterRunLogsComplete) {
+      this.didFetchAfterRunLogsComplete = true;
+      this.fetchInvocation();
     }
     // If we have an invocation, or we failed to fetch an invocation and the CI
     // runner failed, we're no longer queued.
@@ -159,14 +214,55 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   componentWillUnmount() {
-    clearTimeout(this.timeoutRef);
+    if (this.timeoutRef) {
+      clearTimeout(this.timeoutRef);
+    }
     this.logsModel?.stopFetching();
     this.logsSubscription?.unsubscribe();
+    this.runLogsModel?.stopFetching();
+    this.runLogsSubscription?.unsubscribe();
     this.runnerExecutionRPC?.cancel();
     shortcuts.deregister(this.state.keyboardShortcutHandle);
+
+    this.cancelGroupIdOverride?.();
+    this.cancelGroupIdOverride = undefined;
   }
 
-  fetchInvocation() {
+  /**
+   * Returns whether the invocation was never started. This can be true for
+   * buildbuddy-controlled invocations (workflows or remote bazel).
+   */
+  failedToStart(): boolean {
+    return this.props.search.has("runnerStartError");
+  }
+
+  /**
+   * Returns the error message for an invocation that failed to start.
+   */
+  getStartError(): string | null {
+    return this.props.search.get("runnerStartError");
+  }
+
+  /**
+   * Temporarily overrides the requestContext used by the RPC service to set the
+   * preferred group ID to the invocation owner group ID, even if that group is
+   * not currently selected in the group picker. Does nothing if the user does
+   * not have access to the invocation owner group ID.
+   *
+   * This is required since cache artifacts are group-specific, and various
+   * subcomponents of the invocation page will need to fetch cache artifacts
+   * associated with the invocation.
+   */
+  updateGroupIdOverride(model: InvocationModel) {
+    this.cancelGroupIdOverride?.();
+    this.cancelGroupIdOverride = undefined;
+    const invocationGroupId = model.invocation?.acl?.groupId;
+    if (invocationGroupId && this.props.user?.groups?.some((g) => g.id === invocationGroupId)) {
+      this.cancelGroupIdOverride = rpcService.overrideGroupId(invocationGroupId);
+    }
+  }
+
+  async fetchInvocation() {
     // If applicable, fetch the CI runner execution in parallel. The CI runner
     // execution is what creates the invocation, so it can give us some
     // diagnostic info in the case where the invocation is never created, and
@@ -175,42 +271,80 @@ export default class InvocationComponent extends React.Component<Props, State> {
       this.fetchRunnerExecution();
     }
 
+    const fetchChildren = this.shouldFetchChildren(this.state.model);
     let request = new invocation.GetInvocationRequest();
     request.lookup = new invocation.InvocationLookup();
     request.lookup.invocationId = this.props.invocationId;
-    rpcService.service
+    request.lookup.fetchChildInvocations = fetchChildren;
+    return rpcService.service
       .getInvocation(request)
       .then((response: invocation.GetInvocationResponse) => {
         console.log(response);
         if (!response.invocation || response.invocation.length === 0) {
           throw new BuildBuddyError("NotFound", "Invocation not found.");
         }
-        const model = new InvocationModel(response.invocation[0]);
-        // Only show the in-progress screen if we don't have any events yet.
-        const showInProgressScreen = model.isInProgress() && !response.invocation[0].event?.length;
+        const inv = response.invocation[0];
+        const model = new InvocationModel(inv);
+        this.updateGroupIdOverride(model);
+
+        // Only update the child invocations if we've fetched new updates.
+        const childInvocations = fetchChildren ? inv.childInvocations : this.state.childInvocations;
         this.setState({
-          inProgress: showInProgressScreen,
           model: model,
           error: null,
+          childInvocations: childInvocations,
         });
+
+        if (fetchChildren) {
+          for (let child of childInvocations) {
+            this.seenChildInvocationConfiguredIds.add(child.invocationId);
+          }
+        }
       })
       .catch((error: any) => {
-        console.error(error);
+        console.error("Failed to fetch invocation:", error);
         this.setState({ error: BuildBuddyError.parse(error) });
       })
       .finally(() => this.setState({ loading: false }));
   }
 
+  shouldFetchChildren(model: InvocationModel | undefined): boolean {
+    if (!model) return true;
+    const childInvocationConfiguredEvents = model.childInvocationsConfigured;
+    let shouldFetch = false;
+
+    for (const event of childInvocationConfiguredEvents) {
+      for (let inv of event.invocation) {
+        if (!this.seenChildInvocationConfiguredIds.has(inv.invocationId)) {
+          shouldFetch = true;
+        }
+      }
+    }
+
+    for (const iid of model.childInvocationCompletedByInvocationId.keys()) {
+      if (!this.seenChildInvocationCompletedIds.has(iid)) {
+        this.seenChildInvocationCompletedIds.add(iid);
+        shouldFetch = true;
+      }
+    }
+
+    return shouldFetch;
+  }
+
   scheduleRefetch() {
-    clearTimeout(this.timeoutRef);
-    // Refetch invocation data in 3 seconds to update status.
-    this.timeoutRef = window.setTimeout(async () => {
+    // Unless there is already a pending fetch, refetch invocation data
+    // every 3 seconds to update status.
+    this.timeoutRef ??= window.setTimeout(async () => {
       // Before fetching the invocation, wait for the runner execution to be
       // fetched, so we don't keep canceling the execution fetch if it takes
       // longer than the invocation poll interval.
       if (this.runnerExecutionRPC) await this.runnerExecutionRPC;
 
-      this.fetchInvocation();
+      await this.fetchInvocation();
+      this.timeoutRef = undefined;
+      if (this.state.model?.isInProgress() || this.isQueued()) {
+        this.scheduleRefetch();
+      }
     }, 3000);
   }
 
@@ -230,6 +364,14 @@ export default class InvocationComponent extends React.Component<Props, State> {
     return Boolean(this.logsModel?.isFetching() && !this.logsModel?.getLogs());
   }
 
+  getRunLogs(): string {
+    return this.runLogsModel?.getLogs() ?? "";
+  }
+
+  areRunLogsLoading() {
+    return Boolean(this.runLogsModel?.isFetching() && !this.runLogsModel?.getLogs());
+  }
+
   isQueued(props = this.props, state = this.state) {
     return !state.model && props.search.get("queued") === "true";
   }
@@ -244,7 +386,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
   fetchRunnerExecution() {
     this.runnerExecutionRPC?.cancel();
-    this.runnerExecutionRPC = rpc_service.service
+    this.runnerExecutionRPC = rpcService.service
       .getExecution({
         executionLookup: new execution_stats.ExecutionLookup({
           invocationId: this.props.invocationId,
@@ -255,8 +397,47 @@ export default class InvocationComponent extends React.Component<Props, State> {
       .then((response) => {
         const runnerExecution = response.execution?.[response.execution.length - 1] ?? undefined;
         this.setState({ runnerExecution });
+      })
+      .catch((e) => {
+        console.error("Failed to fetch runner execution", e);
+        this.setState({ runnerExecution: undefined });
       });
     return this.runnerExecutionRPC;
+  }
+
+  private runnerExecutionStream?: Cancelable;
+
+  streamRunnerExecution() {
+    if (!capabilities.config.streamingHttpEnabled) return;
+
+    const runnerExecution = this.state.runnerExecution;
+    if (!runnerExecution?.executionId) return;
+
+    // We technically know that we won't have the invocation at this point,
+    // but at least flagging this call here will get the default entry and
+    // ensure that we try to keep this matching region in the future (if we
+    // ever wind up needing it).
+    const service = rpcService.getRegionalServiceOrDefault(
+      this.state.model?.stringCommandLineOption("remote_execution") ?? ""
+    );
+
+    this.runnerExecutionStream = waitExecution(service, runnerExecution.executionId, {
+      next: (op) => {
+        this.setState({ runnerLastExecuteOperation: op });
+        if (op.response) {
+          this.setState({
+            runnerExecution: new execution_stats.Execution({
+              ...runnerExecution,
+              executeResponse: op.response,
+            }),
+          });
+        }
+      },
+      error: (error) => {
+        console.error("Failed to fetch runner execution", error);
+      },
+      complete: () => {},
+    });
   }
 
   renderTargetPage(targetLabel: string, targetStatus: api_common.v1.Status) {
@@ -297,7 +478,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
         model={this.state.model}
         invocationId={this.props.invocationId}
         tab={this.props.tab}
-        files={completed?.buildEvent ? this.state.model.getFiles(completed.buildEvent) ?? [] : []}
+        files={completed?.buildEvent ? (this.state.model.getFiles(completed.buildEvent) ?? []) : []}
         configuredEvent={this.state.model.configuredMap.get(targetLabel)}
         skippedEvent={this.state.model.skippedMap.get(targetLabel)}
         completedEvent={completed}
@@ -324,7 +505,18 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
   render() {
     if (this.state.loading) {
-      return <div className="loading"></div>;
+      return <div className="loading" debug-id="invocation-loading"></div>;
+    }
+
+    // If the invocation never started due to a scheduling error, show the error.
+    if (this.failedToStart()) {
+      return (
+        <InvocationInProgressComponent
+          invocationId={this.props.invocationId}
+          title={"Invocation failed to start"}
+          subtitle={<span className="error-text">{this.getStartError()}</span>}
+        />
+      );
     }
 
     // If we don't have an invocation but we have an execution error, show just
@@ -348,10 +540,21 @@ export default class InvocationComponent extends React.Component<Props, State> {
     }
 
     if (this.isQueued()) {
+      const op = this.state.runnerLastExecuteOperation;
       return (
         <InvocationInProgressComponent
           invocationId={this.props.invocationId}
-          title={"Invocation is waiting for an available worker..."}
+          title={
+            !op || op.metadata?.stage === ExecutionStage.QUEUED
+              ? "Invocation is waiting for an available worker..."
+              : "Invocation in progress..."
+          }
+          subtitle={
+            <div className="runner-execution-status">
+              <PlayCircleIcon className="icon blue" />
+              <span>{op ? executionStatusLabel(op) : "Queued"}...</span>
+            </div>
+          }
         />
       );
     }
@@ -366,7 +569,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
       );
     }
 
-    if (this.state.inProgress) {
+    // If we haven't received the invocation metadata yet (user, pattern, etc.),
+    // render a generic "in progress" message.
+    if (!this.state.model.isMetadataLoaded()) {
       return <InvocationInProgressComponent invocationId={this.props.invocationId} />;
     }
 
@@ -381,9 +586,13 @@ export default class InvocationComponent extends React.Component<Props, State> {
       role: this.state.model.getRole(),
       denseMode: this.props.preferences.denseModeEnabled,
     });
-    const isBazelInvocation = this.state.model.isBazelInvocation();
+    const isRemoteRunnerInvocation =
+      this.state.model.isWorkflowInvocation() || this.state.model.isHostedBazelInvocation();
     const fetchBuildLogs = () => {
-      rpc_service.downloadLog(this.props.invocationId, Number(this.state.model?.invocation.attempt ?? 0));
+      rpcService.downloadBuildLog(this.props.invocationId, Number(this.state.model?.invocation.attempt ?? 0));
+    };
+    const fetchRunLogs = () => {
+      rpcService.downloadRunLog(this.props.invocationId);
     };
 
     const suggestions = getSuggestions({
@@ -392,6 +601,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
       runnerExecution: this.state.runnerExecution,
       user: this.props.user,
     });
+    const showSuggestionsAboveBuildLogs = activeTab === "all" && hasSuggestionAboveInfo(suggestions);
 
     return (
       <div className="invocation">
@@ -401,17 +611,16 @@ export default class InvocationComponent extends React.Component<Props, State> {
           ) : (
             <InvocationOverviewComponent user={this.props.user} model={this.state.model} />
           )}
-          {!isBazelInvocation && (
+          {isRemoteRunnerInvocation && (
             <div className="container">
-              <ChildInvocations model={this.state.model} />
+              <ChildInvocations childInvocations={this.state.childInvocations} />
             </div>
           )}
         </div>
-        {!isBazelInvocation && (
+        {isRemoteRunnerInvocation && (
           <div className="container">
             <div className="workflow-details-header">
-              <h2>Runner results (advanced)</h2>
-              <div>Raw output from the runner instance that executed the Bazel commands.</div>
+              <h2>Run results</h2>
             </div>
           </div>
         )}
@@ -420,20 +629,21 @@ export default class InvocationComponent extends React.Component<Props, State> {
             tab={this.props.tab}
             denseMode={this.props.preferences.denseModeEnabled}
             role={this.state.model.getRole()}
-            executionsEnabled={
-              this.state.model.getIsExecutionLogEnabled() ||
-              this.state.model.getIsRBEEnabled() ||
-              this.state.model.isWorkflowInvocation() ||
-              this.state.model.isHostedBazelInvocation()
-            }
+            executionsEnabled={this.state.model.getIsRBEEnabled() || isRemoteRunnerInvocation}
+            hasCoverage={this.state.model.hasCoverage()}
             hasSuggestions={suggestions.length > 0}
+            hasExecutionLogs={this.state.model.getIsExecutionLogEnabled()}
           />
 
-          {(activeTab === "targets" || activeTab === "artifacts" || activeTab === "execution") && (
+          {(activeTab === "targets" ||
+            activeTab === "artifacts" ||
+            activeTab === "execution" ||
+            activeTab == "spawns" ||
+            activeTab == "files") && (
             <InvocationFilterComponent
-              tab={this.props.tab}
+              tab={`#${activeTab}`}
               search={this.props.search}
-              placeholder={activeTab === "execution" ? "Filter by digest or command..." : ""}
+              placeholder={activeTab === "execution" ? "Filter by target, action mnemonic, command, or digest..." : ""}
               // When serving a paginated invocation, debounce since searching
               // is done on the server.
               debounceMillis={this.state.model.invocation.targetGroups.length ? 200 : 0}
@@ -444,14 +654,17 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <InvocationBotCard suggestions={this.state.model.botSuggestions} />
           )}
 
-          {(activeTab === "all" || activeTab === "log") && <ErrorCardComponent model={this.state.model} />}
+          {(activeTab === "all" || activeTab === "log") && (
+            <ErrorCardComponent model={this.state.model} dark={this.props.preferences.darkModeEnabled} />
+          )}
 
-          {isBazelInvocation && (activeTab === "all" || activeTab === "targets") && (
+          {!isRemoteRunnerInvocation && (activeTab === "all" || activeTab === "targets") && (
             <TargetsComponent
               model={this.state.model}
               mode="failing"
               filter={this.props.search.get("targetFilter") ?? ""}
               pageSize={activeTab === "all" ? smallPageSize : largePageSize}
+              showLoader
             />
           )}
 
@@ -459,9 +672,13 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <QueryGraphCardComponent buildLogs={this.getBuildLogs(this.state.model)} />
           )}
 
+          {showSuggestionsAboveBuildLogs && (
+            <SuggestionCardComponent suggestions={suggestions} overview user={this.props.user} />
+          )}
+
           {(activeTab === "all" || activeTab === "log") && (
             <BuildLogsCardComponent
-              title={isBazelInvocation ? "Build logs" : "Runner logs"}
+              title={!isRemoteRunnerInvocation ? "Build logs" : "Runner logs"}
               dark={!this.props.preferences.lightTerminalEnabled}
               value={this.getBuildLogs(this.state.model)}
               loading={this.areBuildLogsLoading(this.state.model)}
@@ -470,15 +687,29 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {(activeTab === "all" || activeTab === "log" || activeTab === "suggestions") && (
-            <SuggestionCardComponent
-              suggestions={suggestions}
-              overview={activeTab !== "suggestions"}
-              user={this.props.user}
-            />
-          )}
+          {(activeTab === "all" || activeTab === "log") &&
+            this.state.model.hasRunStatus() &&
+            this.getRunLogs().length > 0 && (
+              <BuildLogsCardComponent
+                title="Run output"
+                dark={!this.props.preferences.lightTerminalEnabled}
+                value={this.getRunLogs()}
+                loading={this.areRunLogsLoading()}
+                expanded={activeTab === "log"}
+                fullLogsFetcher={fetchRunLogs}
+              />
+            )}
 
-          {isBazelInvocation && (activeTab === "all" || activeTab === "targets") && (
+          {!showSuggestionsAboveBuildLogs &&
+            (activeTab === "all" || activeTab === "log" || activeTab === "suggestions") && (
+              <SuggestionCardComponent
+                suggestions={suggestions}
+                overview={activeTab !== "suggestions"}
+                user={this.props.user}
+              />
+            )}
+
+          {!isRemoteRunnerInvocation && (activeTab === "all" || activeTab === "targets") && (
             <TargetsComponent
               model={this.state.model}
               mode="passing"
@@ -491,13 +722,13 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <InvocationDetailsCardComponent model={this.state.model} limitResults={!activeTab} />
           )}
 
-          {isBazelInvocation && (activeTab === "all" || activeTab === "cache") && (
+          {!isRemoteRunnerInvocation && (activeTab === "all" || activeTab === "cache") && (
             <CacheCardComponent model={this.state.model} />
           )}
-          {isBazelInvocation &&
+          {!isRemoteRunnerInvocation &&
             (activeTab === "all" || activeTab === "cache") &&
             !capabilities.config.detailedCacheStatsEnabled && <ScorecardCardComponent model={this.state.model} />}
-          {isBazelInvocation &&
+          {!isRemoteRunnerInvocation &&
             (activeTab === "all" || activeTab === "cache") &&
             capabilities.config.detailedCacheStatsEnabled && (
               <CacheRequestsCardComponent model={this.state.model} search={this.props.search} />
@@ -512,15 +743,34 @@ export default class InvocationComponent extends React.Component<Props, State> {
           )}
 
           {activeTab === "execution" && (
-            <ExecutionCardComponent
+            <InvocationExecLogCardComponent
               model={this.state.model}
-              inProgress={this.state.inProgress}
               search={this.props.search}
               filter={this.props.search.get("executionFilter") ?? ""}
             />
           )}
 
-          {activeTab === "timing" && <TimingCardComponent model={this.state.model} />}
+          {activeTab === "spawns" && (
+            <SpawnCardComponent
+              model={this.state.model}
+              search={this.props.search}
+              filter={this.props.search.get("spawnFilter") ?? ""}
+            />
+          )}
+
+          {activeTab === "files" && (
+            <FileCardComponent
+              model={this.state.model}
+              search={this.props.search}
+              filter={this.props.search.get("fileFilter") ?? ""}
+            />
+          )}
+
+          {activeTab === "timing" && (
+            <TimingCardComponent model={this.state.model} dark={this.props.preferences.darkModeEnabled} />
+          )}
+
+          {activeTab === "coverage" && <InvocationCoverageCardComponent model={this.state.model} />}
 
           {activeTab === "action" && (
             <InvocationActionCardComponent
@@ -530,9 +780,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {activeTab === "fetches" && (
-            <FetchCardComponent model={this.state.model} inProgress={this.state.inProgress} />
-          )}
+          {activeTab === "fetches" && <FetchCardComponent model={this.state.model} />}
 
           {activeTab === "raw" && <RawLogsCardComponent model={this.state.model} pageSize={largePageSize} />}
         </div>

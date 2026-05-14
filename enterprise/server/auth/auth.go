@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"flag"
 	"net/http"
 	"strings"
 
@@ -19,18 +18,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	"github.com/golang-jwt/jwt"
-)
-
-var (
-	adminGroupID = flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
+	"github.com/golang-jwt/jwt/v4"
 )
 
 func Register(ctx context.Context, env *real_environment.RealEnv) error {
 	httpAuthenticators := []interfaces.HTTPAuthenticator{}
 	userAuthenticators := []interfaces.UserAuthenticator{}
 
-	oidc, err := oidc.NewOpenIDAuthenticator(ctx, env, *adminGroupID)
+	oidc, err := oidc.NewOpenIDAuthenticator(ctx, env)
 	if err != nil {
 		return status.InternalErrorf("OIDC authenticator failed to configure: %v", err)
 	}
@@ -38,7 +33,10 @@ func Register(ctx context.Context, env *real_environment.RealEnv) error {
 	userAuthenticators = append(userAuthenticators, oidc)
 
 	if saml.IsEnabled(env) {
-		samlAuthenticator := saml.NewSAMLAuthenticator(env)
+		samlAuthenticator, err := saml.NewSAMLAuthenticator(env)
+		if err != nil {
+			return status.InternalErrorf("create SAML authenticator: %s", err)
+		}
 		httpAuthenticators = append(httpAuthenticators, samlAuthenticator)
 		userAuthenticators = append(userAuthenticators, samlAuthenticator)
 	}
@@ -67,12 +65,8 @@ func Register(ctx context.Context, env *real_environment.RealEnv) error {
 }
 
 func RegisterNullAuth(env *real_environment.RealEnv) error {
-	env.SetAuthenticator(
-		nullauth.NewNullAuthenticator(
-			oidc.AnonymousUsageEnabled(),
-			*adminGroupID,
-		),
-	)
+	na := nullauth.NewNullAuthenticator(oidc.AnonymousUsageEnabled())
+	env.SetAuthenticator(na)
 	return nil
 }
 
@@ -104,7 +98,7 @@ func (a *authenticator) Logout(w http.ResponseWriter, r *http.Request) error {
 	for _, authenticator := range a.http {
 		authenticator.Logout(w, r)
 	}
-	return status.UnauthenticatedError("Logged out!")
+	return nil
 }
 func (a *authenticator) Auth(w http.ResponseWriter, r *http.Request) error {
 	errors := make([]error, 0)

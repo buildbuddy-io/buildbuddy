@@ -1,10 +1,10 @@
-import React from "react";
 import Layout from "@theme/Layout";
-import common from "../css/common.module.css";
-import styles from "./open-source-repos.module.css";
-import contact from "./contact.module.css";
+import React from "react";
 import OSSList from "../components/oss/oss-list";
-import message from "../util/message";
+import common from "../css/common.module.css";
+import { sendFormsMessage } from "../util/message";
+import contact from "./contact.module.css";
+import styles from "./open-source-repos.module.css";
 
 let form = {
   name: React.createRef<HTMLInputElement>(),
@@ -58,7 +58,7 @@ function OpenSource() {
 }
 
 function sendMessage() {
-  message(
+  sendFormsMessage(
     `New Open Source Repo!\nName: ${form.name.current.value}\nEmail: ${form.email.current.value}\nRepo URL: ${form.repo.current.value}`
   );
 

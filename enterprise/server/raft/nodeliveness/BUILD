@@ -15,7 +15,9 @@ go_library(
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
+        "//server/util/tracing",
         "@com_github_hashicorp_serf//serf",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 

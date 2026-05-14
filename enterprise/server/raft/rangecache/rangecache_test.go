@@ -39,14 +39,14 @@ func TestMemberEvent(t *testing.T) {
 		End:        keys.MaxByte,
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ShardId: 1, ReplicaId: 1},
+			{RangeId: 1, ReplicaId: 1},
 		},
 	})
 
 	// Make sure we get back that range descriptor.
 	rd := rc.Get([]byte("a"))
 	require.NotNil(t, rd)
-	require.Equal(t, uint64(1), rd.GetReplicas()[0].GetShardId())
+	require.Equal(t, uint64(1), rd.GetReplicas()[0].GetRangeId())
 }
 
 func TestSimple(t *testing.T) {
@@ -57,9 +57,9 @@ func TestSimple(t *testing.T) {
 		End:        keys.MaxByte,
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ShardId: 1, ReplicaId: 1},
-			{ShardId: 1, ReplicaId: 2},
-			{ShardId: 1, ReplicaId: 3},
+			{RangeId: 1, ReplicaId: 1},
+			{RangeId: 1, ReplicaId: 2},
+			{RangeId: 1, ReplicaId: 3},
 		},
 	}
 
@@ -80,9 +80,9 @@ func TestRangeUpdatedMemberEvent(t *testing.T) {
 		End:        keys.MaxByte,
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ShardId: 1, ReplicaId: 1},
-			{ShardId: 1, ReplicaId: 2},
-			{ShardId: 1, ReplicaId: 3},
+			{RangeId: 1, ReplicaId: 1},
+			{RangeId: 1, ReplicaId: 2},
+			{RangeId: 1, ReplicaId: 3},
 		},
 	}
 
@@ -94,9 +94,9 @@ func TestRangeUpdatedMemberEvent(t *testing.T) {
 		End:        []byte("z"),
 		Generation: 2,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ShardId: 2, ReplicaId: 3},
-			{ShardId: 2, ReplicaId: 4},
-			{ShardId: 2, ReplicaId: 5},
+			{RangeId: 2, ReplicaId: 3},
+			{RangeId: 2, ReplicaId: 4},
+			{RangeId: 2, ReplicaId: 5},
 		},
 	}
 
@@ -118,9 +118,9 @@ func TestRangeStaleMemberEvent(t *testing.T) {
 		End:        []byte("b"),
 		Generation: 2,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ShardId: 1, ReplicaId: 1},
-			{ShardId: 1, ReplicaId: 2},
-			{ShardId: 1, ReplicaId: 3},
+			{RangeId: 1, ReplicaId: 1},
+			{RangeId: 1, ReplicaId: 2},
+			{RangeId: 1, ReplicaId: 3},
 		},
 	}
 
@@ -132,9 +132,9 @@ func TestRangeStaleMemberEvent(t *testing.T) {
 		End:        []byte("z"),
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ShardId: 2, ReplicaId: 3},
-			{ShardId: 2, ReplicaId: 4},
-			{ShardId: 2, ReplicaId: 5},
+			{RangeId: 2, ReplicaId: 3},
+			{RangeId: 2, ReplicaId: 4},
+			{RangeId: 2, ReplicaId: 5},
 		},
 	}
 

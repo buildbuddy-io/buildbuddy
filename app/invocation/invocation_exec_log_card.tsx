@@ -1,58 +1,70 @@
 import React from "react";
-import InvocationModel from "./invocation_model";
-import Select, { Option } from "../components/select/select";
+import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
-import rpcService from "../service/rpc_service";
 import { OutlinedButton } from "../components/button/button";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
-import { tools } from "../../proto/spawn_ts_proto";
+import Select, { Option } from "../components/select/select";
+import errorService from "../errors/error_service";
 import format from "../format/format";
-import error_service from "../errors/error_service";
-import * as varint from "varint";
-import { AlertCircle, CheckCircle, Download } from "lucide-react";
-import DigestComponent from "../components/digest/digest";
-import Link from "../components/link/link";
-import { digestToString } from "../util/cache";
+import rpcService from "../service/rpc_service";
+import InvocationExecutionTable from "./invocation_execution_table";
+import {
+  downloadDuration,
+  executionDuration,
+  getExecutionStatus,
+  queuedDuration,
+  subtractTimestamp,
+  totalDuration,
+  uploadDuration,
+} from "./invocation_execution_util";
+import InvocationModel from "./invocation_model";
 
 interface Props {
-  inProgress: boolean;
   model: InvocationModel;
   search: URLSearchParams;
   filter: string;
+  /** Optional target label to filter executions by (exact match). */
+  targetLabel?: string;
 }
 
 interface State {
   loading: boolean;
+  executions: execution_stats.Execution[];
   sort: string;
   direction: "asc" | "desc";
+  statusFilter: string;
   mnemonicFilter: string;
-  runnerFilter: string;
   limit: number;
-  log: tools.protos.ExecLogEntry[] | undefined;
 }
 
 const ExecutionStage = build.bazel.remote.execution.v2.ExecutionStage;
 
-export default class InvocationExecLogCardComponent extends React.Component<Props, State> {
+export default class SpawnCardComponent extends React.Component<Props, State> {
   state: State = {
+    executions: [],
     loading: true,
-    sort: "total-duration",
+    sort: "status",
     direction: "desc",
-    mnemonicFilter: "",
-    runnerFilter: "",
+    statusFilter: "all",
+    mnemonicFilter: "all",
     limit: 100,
-    log: undefined,
   };
 
   timeoutRef?: number;
 
   componentDidMount() {
-    this.fetchLog();
+    this.fetchExecution();
   }
 
   componentDidUpdate(prevProps: Props) {
-    if (this.props.model !== prevProps.model) {
-      this.fetchLog();
+    const invocationIdChanged = this.props.model.getInvocationId() !== prevProps.model.getInvocationId();
+    const invocationStatusChanged =
+      this.props.model.invocation.invocationStatus !== prevProps.model.invocation.invocationStatus;
+    const targetLabelChanged = this.props.targetLabel !== prevProps.targetLabel;
+
+    if (invocationIdChanged || invocationStatusChanged || targetLabelChanged) {
+      clearTimeout(this.timeoutRef);
+      this.timeoutRef = undefined;
+      this.fetchExecution();
     }
   }
 
@@ -60,82 +72,105 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     clearTimeout(this.timeoutRef);
   }
 
-  getExecutionLogFile(): build_event_stream.File | undefined {
-    return this.props.model.buildToolLogs?.log.find(
-      (log: build_event_stream.File) =>
-        (log.name == "execution.log" || log.name == "execution_log.binpb.zstd") &&
-        log.uri &&
-        Boolean(log.uri.startsWith("bytestream://"))
-    );
-  }
-
-  fetchLog() {
-    if (!this.getExecutionLogFile()) {
-      this.setState({ loading: false });
+  fetchExecution() {
+    let request = new execution_stats.GetExecutionRequest();
+    request.executionLookup = new execution_stats.ExecutionLookup();
+    request.executionLookup.invocationId = this.props.model.getInvocationId();
+    if (this.props.targetLabel) {
+      request.executionLookup.targetLabel = this.props.targetLabel;
     }
+    let inProgressBeforeRequestWasMade = this.props.model.isInProgress();
+    rpcService.service
+      .getExecution(request)
+      .then((response) => {
+        this.setState({ executions: response.execution, loading: false });
 
-    // Already fetched
-    if (this.state.log) return;
-
-    let logFile = this.getExecutionLogFile();
-    if (!logFile?.uri) return;
-
-    const init = {
-      // Set the stored encoding header to prevent the server from double-compressing.
-      headers: { "X-Stored-Encoding-Hint": "zstd" },
-    };
-
-    this.setState({ loading: true });
-    rpcService
-      .fetchBytestreamFile(logFile.uri, this.props.model.getInvocationId(), "arraybuffer", { init })
-      .then(async (body) => {
-        if (body === null) throw new Error("response body is null");
-        let entries: tools.protos.ExecLogEntry[] = [];
-        let byteArray = new Uint8Array(body);
-        for (var offset = 0; offset < body.byteLength; ) {
-          let length = varint.decode(byteArray, offset);
-          let bytes = varint.decode.bytes || 0;
-          offset += bytes;
-          entries.push(tools.protos.ExecLogEntry.decode(byteArray.subarray(offset, offset + length)));
-          offset += length;
+        if (inProgressBeforeRequestWasMade) {
+          this.fetchUpdatedProgress();
         }
-        console.log(entries);
-        return entries;
+
+        console.log(response);
       })
-      .then((log) => this.setState({ log: log }))
-      .catch((e) => error_service.handleError(e))
+      .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ loading: false }));
   }
 
-  downloadLog() {
-    let profileFile = this.getExecutionLogFile();
-    if (!profileFile?.uri) {
-      return;
-    }
+  fetchUpdatedProgress() {
+    clearTimeout(this.timeoutRef);
 
-    try {
-      rpcService.downloadBytestreamFile(
-        "execution_log.binpb.zstd",
-        profileFile.uri,
-        this.props.model.getInvocationId()
-      );
-    } catch {
-      console.error("Error downloading execution log");
-    }
+    // Refetch execution data in 3 seconds to update status.
+    this.timeoutRef = window.setTimeout(() => {
+      this.fetchExecution();
+    }, 3000);
   }
 
-  sort(a: tools.protos.ExecLogEntry, b: tools.protos.ExecLogEntry): number {
+  sort(a: execution_stats.Execution, b: execution_stats.Execution): number {
     let first = this.state.direction == "asc" ? a : b;
     let second = this.state.direction == "asc" ? b : a;
 
     switch (this.state.sort) {
       case "total-duration":
-        if (+(first?.spawn?.metrics?.totalTime?.seconds || 0) == +(second?.spawn?.metrics?.totalTime?.seconds || 0)) {
-          return +(first?.spawn?.metrics?.totalTime?.nanos || 0) - +(second?.spawn?.metrics?.totalTime?.nanos || 0);
+        return totalDuration(first) - totalDuration(second);
+      case "queued-duration":
+        return queuedDuration(first) - queuedDuration(second);
+      case "download-duration":
+        return downloadDuration(first) - downloadDuration(second);
+      case "execution-duration":
+        return executionDuration(first) - executionDuration(second);
+      case "upload-duration":
+        return uploadDuration(first) - uploadDuration(second);
+      case "files-downloaded":
+        return (
+          +(first.executedActionMetadata?.ioStats?.fileDownloadCount ?? 0) -
+          +(second.executedActionMetadata?.ioStats?.fileDownloadCount ?? 0)
+        );
+      case "files-uploaded":
+        return (
+          +(first.executedActionMetadata?.ioStats?.fileUploadCount ?? 0) -
+          +(second.executedActionMetadata?.ioStats?.fileUploadCount ?? 0)
+        );
+      case "file-size-downloaded":
+        return (
+          +(first.executedActionMetadata?.ioStats?.fileDownloadSizeBytes ?? 0) -
+          +(second.executedActionMetadata?.ioStats?.fileDownloadSizeBytes ?? 0)
+        );
+      case "file-size-uploaded":
+        return (
+          +(first.executedActionMetadata?.ioStats?.fileUploadSizeBytes ?? 0) -
+          +(second.executedActionMetadata?.ioStats?.fileUploadSizeBytes ?? 0)
+        );
+      case "queue-start":
+        return subtractTimestamp(
+          first.executedActionMetadata?.queuedTimestamp,
+          second.executedActionMetadata?.queuedTimestamp
+        );
+      case "execution-start":
+        return subtractTimestamp(
+          first.executedActionMetadata?.workerStartTimestamp,
+          second.executedActionMetadata?.workerStartTimestamp
+        );
+      case "execution-end":
+        return subtractTimestamp(
+          first.executedActionMetadata?.workerCompletedTimestamp,
+          second.executedActionMetadata?.workerCompletedTimestamp
+        );
+      case "worker":
+        return second.executedActionMetadata?.worker.localeCompare(first.executedActionMetadata?.worker ?? "") ?? NaN;
+      case "command":
+        return second.commandSnippet.localeCompare(first.commandSnippet);
+      case "action":
+        return second?.actionDigest?.hash.localeCompare(first?.actionDigest?.hash ?? "") ?? NaN;
+      default:
+        // Within COMPLETED actions, sort first by gRPC code (OK, DEADLINE_EXCEEDED, etc.)
+        // then by exit code.
+        if (first.stage === ExecutionStage.Value.COMPLETED && first.stage === second.stage) {
+          if (second.status?.code !== first.status?.code) {
+            return (second.status?.code ?? NaN) - (first.status?.code ?? NaN);
+          }
+          return second.exitCode - first.exitCode;
         }
-        return +(first?.spawn?.metrics?.totalTime?.seconds || 0) - +(second?.spawn?.metrics?.totalTime?.seconds || 0);
+        return second.stage - first.stage;
     }
-    return 0;
   }
 
   handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -152,15 +187,15 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     });
   }
 
-  handleMnemonicFilterChange(event: React.ChangeEvent<HTMLSelectElement>) {
+  handleStatusFilterChange(event: React.ChangeEvent<HTMLSelectElement>) {
     this.setState({
-      mnemonicFilter: event.target.value,
+      statusFilter: event.target.value,
     });
   }
 
-  handleRunnerFilterChange(event: React.ChangeEvent<HTMLSelectElement>) {
+  handleMnemonicFilterChange(event: React.ChangeEvent<HTMLSelectElement>) {
     this.setState({
-      runnerFilter: event.target.value,
+      mnemonicFilter: event.target.value,
     });
   }
 
@@ -172,60 +207,46 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     this.setState({ limit: Number.MAX_SAFE_INTEGER });
   }
 
-  getActionPageLink(entry: tools.protos.ExecLogEntry) {
-    const search = new URLSearchParams();
-    if (entry.spawn?.digest) {
-      search.set("actionDigest", digestToString(entry.spawn.digest));
-    }
-
-    return `/invocation/${this.props.model.getInvocationId()}?${search}#action`;
-  }
-
   render() {
     if (this.state.loading) {
-      return <div className="loading" />;
-    }
-    if (!this.state.log?.length) {
-      return (
-        <div className="invocation-execution-empty-state">
-          No execution log actions for this invocation{this.props.inProgress && <span> yet</span>}.
-        </div>
-      );
+      return <div className="loading loading-slim invocation-tab-loading" />;
     }
 
+    let completedCount = 0;
+    let incompleteCount = 0;
     const mnemonics = new Set<string>();
-    const runners = new Set<string>();
+    for (let execution of this.state.executions) {
+      if (execution.stage === ExecutionStage.Value.COMPLETED) {
+        completedCount++;
+      } else {
+        incompleteCount++;
+      }
+      if (execution.actionMnemonic) {
+        mnemonics.add(execution.actionMnemonic);
+      }
+    }
 
-    const spawns = this.state.log
-      .filter((l) => {
-        if (l.spawn?.mnemonic) {
-          mnemonics.add(l.spawn.mnemonic);
-        }
-        if (l.spawn?.runner) {
-          runners.add(l.spawn.runner);
-        }
-        if (l.type != "spawn") {
-          return false;
-        }
-        if (this.state.mnemonicFilter != "" && l.spawn?.mnemonic != this.state.mnemonicFilter) {
-          return false;
-        }
-        if (this.state.runnerFilter != "" && l.spawn?.runner != this.state.runnerFilter) {
-          return false;
-        }
-        if (
-          this.props.filter != "" &&
-          !l.spawn?.targetLabel.toLowerCase().includes(this.props.filter.toLowerCase()) &&
-          !l.spawn?.mnemonic.toLowerCase().includes(this.props.filter.toLowerCase()) &&
-          !l.spawn?.args.join(" ").toLowerCase().includes(this.props.filter.toLowerCase()) &&
-          !l.spawn?.digest?.hash.toLowerCase().includes(this.props.filter.toLowerCase())
-        ) {
-          return false;
-        }
-
-        return true;
-      })
-      .sort(this.sort.bind(this));
+    const filter = this.props.filter?.toLowerCase();
+    const filteredExecutions = this.state.executions
+      .filter(
+        (execution) =>
+          !filter ||
+          execution.targetLabel?.toLowerCase()?.includes(filter) ||
+          execution.actionMnemonic?.toLowerCase()?.includes(filter) ||
+          execution.commandSnippet?.toLowerCase()?.includes(filter) ||
+          execution.primaryOutputPath?.toLowerCase()?.includes(filter) ||
+          `${execution.actionDigest?.hash ?? ""}/${execution.actionDigest?.sizeBytes ?? ""}`
+            .toLowerCase()
+            .includes(filter)
+      )
+      .filter(
+        (execution) =>
+          this.state.statusFilter === "all" ||
+          getExecutionStatus(execution).name.toLowerCase().startsWith(this.state.statusFilter)
+      )
+      .filter(
+        (execution) => this.state.mnemonicFilter === "all" || execution.actionMnemonic === this.state.mnemonicFilter
+      );
 
     return (
       <div>
@@ -233,27 +254,50 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
           <div className="content">
             <div className="invocation-content-header">
               <div className="title">
-                Executed actions ({spawns.length}){" "}
-                <Download className="download-exec-log-button" onClick={() => this.downloadLog()} />
+                Remotely executed actions (
+                {!!incompleteCount && `${format.formatWithCommas(incompleteCount)} in progress, `}
+                {format.formatWithCommas(completedCount)} completed)
               </div>
+
               <div className="invocation-sort-controls">
-                <span className="invocation-filter-title">Mnemnonic</span>
-                <Select onChange={this.handleMnemonicFilterChange.bind(this)} value={this.state.mnemonicFilter}>
-                  <Option value="">All</Option>
-                  {[...mnemonics].map((m) => (
-                    <Option value={m}>{m}</Option>
-                  ))}
+                <span className="invocation-filter-title">Show</span>
+                <Select onChange={this.handleStatusFilterChange.bind(this)} value={this.state.statusFilter}>
+                  <Option value="all">All</Option>
+                  <Option value="starting">Starting</Option>
+                  <Option value="cache check">Cache Check</Option>
+                  <Option value="queued">Queued</Option>
+                  <Option value="executing">Executing</Option>
+                  <Option value="succeeded">Succeeded</Option>
+                  <Option value="failed">Failed</Option>
+                  <Option value="error">Errored</Option>
                 </Select>
-                <span className="invocation-sort-title">Runner</span>
-                <Select onChange={this.handleRunnerFilterChange.bind(this)} value={this.state.runnerFilter}>
-                  <Option value="">All</Option>
-                  {[...runners].map((m) => (
-                    <Option value={m}>{m}</Option>
+                <span className="invocation-filter-title">Mnemonic</span>
+                <Select onChange={this.handleMnemonicFilterChange.bind(this)} value={this.state.mnemonicFilter}>
+                  <Option value="all">All</Option>
+                  {[...mnemonics].sort().map((m) => (
+                    <Option key={m} value={m}>
+                      {m}
+                    </Option>
                   ))}
                 </Select>
                 <span className="invocation-sort-title">Sort by</span>
                 <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
                   <Option value="total-duration">Total Duration</Option>
+                  <Option value="queued-duration">Queued Duration</Option>
+                  <Option value="download-duration">Download Duration</Option>
+                  <Option value="execution-duration">Execution Duration</Option>
+                  <Option value="upload-duration">Upload Duration</Option>
+                  <Option value="files-downloaded">Files Downloaded</Option>
+                  <Option value="files-uploaded">Files Uploaded</Option>
+                  <Option value="file-size-downloaded">File Size Downloaded</Option>
+                  <Option value="file-size-uploaded">File Size Uploaded</Option>
+                  <Option value="queue-start">Queue Start Time</Option>
+                  <Option value="execution-start">Execution Start Time</Option>
+                  <Option value="execution-end">Execution End Time</Option>
+                  <Option value="worker">Worker</Option>
+                  <Option value="command">Command Snippet</Option>
+                  <Option value="action">Action Digest</Option>
+                  <Option value="status">Status</Option>
                 </Select>
                 <span className="group-container">
                   <div>
@@ -282,43 +326,20 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
               </div>
             </div>
             <div>
-              <div className="invocation-execution-table">
-                {spawns.slice(0, this.state.limit).map((spawn) => (
-                  <Link key={spawn.id} className="invocation-execution-row" href={this.getActionPageLink(spawn)}>
-                    <div className="invocation-execution-row-image">
-                      {spawn.spawn?.exitCode == 0 ? (
-                        <CheckCircle className="icon green" />
-                      ) : (
-                        <AlertCircle className="icon red" />
-                      )}
-                    </div>
-                    <div>
-                      <div className="invocation-execution-row-header">
-                        <span className="invocation-execution-row-header-status">{spawn.spawn?.targetLabel}</span>
-                        {spawn.spawn?.digest && <DigestComponent digest={spawn.spawn.digest} expanded={true} />}
-                      </div>
-                      <div>{spawn.spawn?.args.join(" ").slice(0, 200)}...</div>
-                      <div className="invocation-execution-row-stats">
-                        {spawn.spawn?.metrics?.totalTime && (
-                          <div>Duration: {format.durationProto(spawn.spawn.metrics.totalTime)}</div>
-                        )}
-                        <div>Mnemonic: {spawn.spawn?.mnemonic}</div>
-                        <div>Runner: {spawn.spawn?.runner}</div>
-                        <div>Remotable: {spawn.spawn?.remotable ? "true" : "false"}</div>
-                        <div>Cachable: {spawn.spawn?.cacheable ? "true" : "false"}</div>
-                        <div>Exit code: {spawn.spawn?.exitCode || 0}</div>
-                      </div>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-              {spawns.length > this.state.limit && (
-                <div className="more-buttons">
-                  <OutlinedButton onClick={this.handleMoreClicked.bind(this)}>See more executions</OutlinedButton>
-                  <OutlinedButton onClick={this.handleAllClicked.bind(this)}>See all executions</OutlinedButton>
-                </div>
+              {filteredExecutions.length ? (
+                <InvocationExecutionTable
+                  executions={filteredExecutions.sort(this.sort.bind(this)).slice(0, this.state.limit)}
+                  invocationIdProvider={() => this.props.model.getInvocationId()}></InvocationExecutionTable>
+              ) : (
+                <div className="invocation-execution-empty-actions">No matching actions.</div>
               )}
             </div>
+            {filteredExecutions.length > this.state.limit && (
+              <div className="more-buttons">
+                <OutlinedButton onClick={this.handleMoreClicked.bind(this)}>See more executions</OutlinedButton>
+                <OutlinedButton onClick={this.handleAllClicked.bind(this)}>See all executions</OutlinedButton>
+              </div>
+            )}
           </div>
         </div>
       </div>

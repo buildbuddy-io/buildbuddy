@@ -16,6 +16,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -149,10 +152,10 @@ func dialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.C
 	if err != nil {
 		return nil, err
 	}
-	conn.SetReadDeadline(time.Time{})
 	if !strings.HasPrefix(rsp, "OK ") {
 		return nil, status.InternalErrorf("HostDial failed: didn't receive 'OK' after CONNECT, got %q", rsp)
 	}
+	conn.SetReadDeadline(time.Time{})
 	return conn, nil
 }
 
@@ -162,14 +165,20 @@ func dialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.C
 // hit.
 // N.B. Callers are responsible for closing the returned connection.
 func SimpleGRPCDial(ctx context.Context, socketPath string, port uint32) (*grpc.ClientConn, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	bufDialer := func(ctx context.Context, _ string) (net.Conn, error) {
-		return dialHostToGuest(ctx, socketPath, port)
+		// gRPC doesn't pass through the context to the dialer, so manually
+		// propagate the span.
+		ctx = trace.ContextWithSpan(ctx, span)
+		conn, err := dialHostToGuest(ctx, socketPath, port)
+		return conn, err
 	}
 
 	// These params are tuned for a fast-reconnect to the vmexec server
 	// running inside the VM.
 	backoffConfig := backoff.Config{
-		BaseDelay:  1.0 * time.Millisecond,
+		BaseDelay:  1 * time.Millisecond,
 		Multiplier: 1.6,
 		Jitter:     0.2,
 		MaxDelay:   10 * time.Second,
@@ -184,6 +193,7 @@ func SimpleGRPCDial(ctx context.Context, socketPath string, port uint32) (*grpc.
 		grpc.WithInsecure(),
 		grpc.WithBlock(),
 		grpc.WithConnectParams(connectParams),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler(otelgrpc.WithMeterProvider(noop.NewMeterProvider()))),
 	}
 
 	connectionStart := time.Now()

@@ -1,22 +1,22 @@
 import { Subject } from "rxjs";
+import { BuildBuddyError } from "../../app/util/errors";
+import popup from "../../app/util/popup";
 import { grp } from "../../proto/group_ts_proto";
 import { user_id } from "../../proto/user_id_ts_proto";
 import { user } from "../../proto/user_ts_proto";
 import capabilities from "../capabilities/capabilities";
-import rpcService, { BuildBuddyServiceRpcName } from "../service/rpc_service";
 import errorService from "../errors/error_service";
-import { BuildBuddyError } from "../../app/util/errors";
-import popup from "../../app/util/popup";
 import router from "../router/router";
+import { BuildBuddyServiceRpcName, default as rpcService } from "../service/rpc_service";
 import { User } from "./user";
-import rpc_service from "../service/rpc_service";
 
 export { User };
 
 const SELECTED_GROUP_ID_COOKIE = "Selected-Group-ID";
 // Group ID used to be stored in local storage, but has been transitioned to being stored in a cookie.
 const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
-const IMPERSONATING_GROUP_ID_COOKIE = "Impersonating-Group-ID";
+const IMPERSONATING_GROUP_ID_SEARCH_PARAM = "impersonatingGroupId";
+const IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY = "impersonating_group_id";
 const AUTO_LOGIN_ATTEMPTED_STORAGE_KEY = "auto_login_attempted";
 const TOKEN_REFRESH_INTERVAL_SECONDS = 30 * 60; // 30 minutes
 
@@ -38,7 +38,17 @@ export class AuthService {
     // local storage location.
     this.setCookie(SELECTED_GROUP_ID_COOKIE, preferredGroupId);
 
-    rpcService.requestContext.impersonatingGroupId = this.getCookie(IMPERSONATING_GROUP_ID_COOKIE) || "";
+    // If the impersonation URL param is set (after a redirect), add it to
+    // session storage so that it lasts for the current session even if we
+    // switch places and refresh the page.
+    const search = new URLSearchParams(window.location.search);
+    const impersonatingGroupId = search.get(IMPERSONATING_GROUP_ID_SEARCH_PARAM);
+    if (impersonatingGroupId) {
+      sessionStorage.setItem(IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY, impersonatingGroupId);
+    }
+
+    rpcService.requestContext.impersonatingGroupId =
+      sessionStorage.getItem(IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY) || "";
 
     let request = new user.GetUserRequest();
     this.getUser(request)
@@ -87,10 +97,13 @@ export class AuthService {
     const sessionDuration = Number(this.getCookie("Session-Duration-Seconds") || 0);
     const refreshFrequencySeconds = sessionDuration ? sessionDuration / 2 : TOKEN_REFRESH_INTERVAL_SECONDS;
     console.info(`Refreshing access token every ${refreshFrequencySeconds} seconds.`);
-    setInterval(() => {
-      if (this.user) this.refreshToken();
-      // Calling setInterval with a number larger than a 32 bit int causes refresh spamming
-    }, Math.min(refreshFrequencySeconds * 1000, 86400000)); // One day in ms
+    setInterval(
+      () => {
+        if (this.user) this.refreshToken();
+        // Calling setInterval with a number larger than a 32 bit int causes refresh spamming
+      },
+      Math.min(refreshFrequencySeconds * 1000, 86400000)
+    ); // One day in ms
   }
 
   refreshToken() {
@@ -177,6 +190,7 @@ export class AuthService {
       ),
       isImpersonating: response.isImpersonating,
       subdomainGroupID: response.subdomainGroupId,
+      codesearchAllowed: response.experiments?.codesearchAllowed ?? false,
     });
   }
 
@@ -195,7 +209,9 @@ export class AuthService {
     let match = document.cookie.match("(^|[^;]+)\\s*" + cookieName + "\\s*=\\s*([^;]+)");
     let userIdFromCookie = match ? match.pop() : "";
     rpcService.requestContext.userId = new user_id.UserId({ id: userIdFromCookie });
-    rpcService.requestContext.groupId = this.user?.selectedGroup?.id || "";
+    let groupId = this.user?.selectedGroup?.id || "";
+    rpcService.requestContext.groupId = groupId;
+    this.setCookie(SELECTED_GROUP_ID_COOKIE, groupId);
   }
 
   async setSelectedGroupId(groupId: string, groupURL: string, { reload = false }: { reload?: boolean } = {}) {
@@ -223,26 +239,35 @@ export class AuthService {
   // Enters impersonation for the given group, which may either be a group ID or a URL identifier.
   async enterImpersonationMode(query: string, { redirectUrl = "" }: { redirectUrl?: string } = {}) {
     const request = grp.GetGroupRequest.create(query.startsWith("GR") ? { groupId: query } : { urlIdentifier: query });
-    const response = await rpc_service.service.getGroup(request);
-    this.setCookie(IMPERSONATING_GROUP_ID_COOKIE, response.id, { maxAge: 0 });
+    const response = await rpcService.service.getGroup(request);
 
-    // If we have an explicit redirect URL, navigate there directly.
-    if (redirectUrl) {
-      window.location.href = redirectUrl;
-      return;
+    if (!redirectUrl) {
+      // If we don't have an explicit redirect URL, use the current URL but with
+      // the subdomain replaced with the group subdomain, if applicable.
+      if (capabilities.config.subdomainsEnabled && new URL(response.url).hostname != window.location.hostname) {
+        redirectUrl = response.url + window.location.pathname + window.location.search + window.location.hash;
+      } else {
+        redirectUrl = window.location.href;
+      }
     }
 
-    // If the new group is on a different subdomain then we have to use a redirect.
-    if (capabilities.config.subdomainsEnabled && new URL(response.url).hostname != window.location.hostname) {
-      window.location.href = response.url + window.location.pathname + window.location.search + window.location.hash;
-    } else {
-      window.location.reload();
-    }
+    // Set a URL param to indicate that we're impersonating. This will be stored
+    // in sessionStorage after the redirect, so that the impersonation only
+    // lasts for the current browser session. We don't use a cookie because it's
+    // too sticky (can last more than a session), and we don't use
+    // sessionStorage until after redirecting, because sessionStorage is
+    // per-subdomain and we might be switching to a new subdomain here.
+    const impersonationUrl = new URL(redirectUrl);
+    impersonationUrl.searchParams.set(IMPERSONATING_GROUP_ID_SEARCH_PARAM, response.id);
+    // Navigate to the new URL.
+    window.location.href = impersonationUrl.toString();
   }
 
   async exitImpersonationMode() {
-    this.setCookie(IMPERSONATING_GROUP_ID_COOKIE, "", { maxAge: 0 });
-    window.location.reload();
+    sessionStorage.removeItem(IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY);
+    const url = new URL(window.location.href);
+    url.searchParams.delete(IMPERSONATING_GROUP_ID_SEARCH_PARAM);
+    window.location.href = url.toString();
   }
 
   login(slug?: string) {

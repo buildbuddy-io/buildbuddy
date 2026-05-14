@@ -11,11 +11,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,23 +29,20 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	"google.golang.org/grpc/metadata"
 )
 
 var (
 	detailedStatsEnabled = flag.Bool("cache.detailed_stats_enabled", false, "Whether to enable detailed stats recording for all cache requests.")
+	scorecardResultsTTL  = flag.Duration("cache.detailed_stats_ttl", 3*time.Hour, "How long to go without receiving any cache requests for an invocation before deleting the invocation's detailed results from the metrics collector. Has no effect if cache.detailed_stats_enabled is not set.")
 
 	// Example: "GoLink(//merger:merger_test)/16f1152b7b260f690ea06f8b938a1b60712b5ee41a1c125ecad8ed9416481fbb"
 	actionRegexp = regexp.MustCompile(`^(?P<action_mnemonic>[[:alnum:]]*)\((?P<target_id>.+)\)/(?P<action_id>[[:alnum:]]+)$`)
 )
 
-type CacheMode int
 type counterType int
 
 const (
-	// scorecardResultsExpiration determines how long we can go without receiving
-	// any cache requests for an invocation before we delete the invocation's
-	// detailed results from the metrics collector.
-	scorecardResultsExpiration = 3 * time.Hour
 
 	// CacheMissScoreCardLimit is the maximum number of results to return in
 	// the "cache misses" card (the card displayed when detailed stats are
@@ -138,13 +137,23 @@ func counterField(actionCache bool, ct counterType) string {
 	}
 }
 
-type HitTracker struct {
+type HitTrackerFactory struct {
+	env environment.Env
+}
+
+func Register(env *real_environment.RealEnv) {
+	env.SetHitTrackerFactory(HitTrackerFactory{env: env})
+}
+
+type hitTracker struct {
 	env         environment.Env
 	c           interfaces.MetricsCollector
 	usage       interfaces.UsageTracker
 	ctx         context.Context
 	iid         string
+	groupID     string
 	actionCache bool
+	serverName  string
 
 	// The request metadata, may be nil or incomplete.
 	requestMetadata *repb.RequestMetadata
@@ -153,27 +162,185 @@ type HitTracker struct {
 	executedActionMetadata *repb.ExecutedActionMetadata
 }
 
-func NewHitTracker(ctx context.Context, env environment.Env, actionCache bool) *HitTracker {
-	return &HitTracker{
-		env:             env,
-		c:               env.GetMetricsCollector(),
-		usage:           env.GetUsageTracker(),
-		ctx:             ctx,
-		iid:             bazel_request.GetInvocationID(ctx),
-		actionCache:     actionCache,
-		requestMetadata: bazel_request.GetRequestMetadata(ctx),
+func isTryingToDisableTracking(ctx context.Context) bool {
+	vals := metadata.ValueFromIncomingContext(ctx, usageutil.SkipUsageTrackingHeaderName)
+	if len(vals) == 0 {
+		return false
+	}
+	for _, v := range vals {
+		if v != usageutil.SkipUsageTrackingEnabledValue {
+			return false
+		}
+	}
+	return true
+}
+
+func (h *HitTrackerFactory) shouldSkipTracking(ctx context.Context) bool {
+	if h.env.GetClientIdentityService() == nil {
+		return false
+	}
+	id, err := h.env.GetClientIdentityService().IdentityFromContext(ctx)
+	if err != nil {
+		return false
+	}
+	if id == nil {
+		return false
+	}
+	if id.Client == interfaces.ClientIdentityCacheProxy {
+		return isTryingToDisableTracking(ctx)
+	}
+
+	if isTryingToDisableTracking(ctx) {
+		alert.CtxUnexpectedEvent(ctx, "unexpected_skip_tracking_attempt", "Only cache proxy can disable usage tracking. identity: %+v", id)
+	}
+	return false
+}
+
+func (h HitTrackerFactory) NewACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+	return h.newHitTracker(ctx, requestMetadata, true, usageutil.ServerName())
+}
+
+func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+	return h.newHitTracker(ctx, requestMetadata, false, usageutil.ServerName())
+}
+
+func (h HitTrackerFactory) NewRemoteACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) interfaces.HitTracker {
+	return h.newHitTracker(ctx, requestMetadata, true, server)
+}
+
+func (h HitTrackerFactory) NewRemoteCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) interfaces.HitTracker {
+	return h.newHitTracker(ctx, requestMetadata, false, server)
+}
+
+type metricsOnlyHitTracker struct {
+	groupID     string
+	actionCache bool
+	serverName  string
+}
+
+func (h *metricsOnlyHitTracker) cacheTypeLabel() string {
+	if h.actionCache {
+		return actionCacheLabel
+	}
+	return casLabel
+}
+
+func (h *metricsOnlyHitTracker) SetExecutedActionMetadata(md *repb.ExecutedActionMetadata) {
+	// Not used for any prometheus metrics.
+}
+
+func (h *metricsOnlyHitTracker) TrackMiss(d *repb.Digest) error {
+	metrics.CacheEvents.With(prometheus.Labels{
+		metrics.CacheTypeLabel:      h.cacheTypeLabel(),
+		metrics.CacheEventTypeLabel: missLabel,
+		metrics.GroupID:             h.groupID,
+		metrics.UsageTracked:        "false",
+	}).Inc()
+
+	return nil
+}
+
+func (h *metricsOnlyHitTracker) TrackDownload(d *repb.Digest) interfaces.TransferTimer {
+	start := time.Now()
+	return &metricsOnlyTransferTimer{
+		h:             h,
+		d:             d,
+		start:         start,
+		actionCounter: Hit,
+		sizeCounter:   DownloadSizeBytes,
+		timeCounter:   DownloadUsec,
 	}
 }
 
-func (h *HitTracker) counterKey() string {
+func (h *metricsOnlyHitTracker) TrackUpload(d *repb.Digest) interfaces.TransferTimer {
+	start := time.Now()
+	return &metricsOnlyTransferTimer{
+		h:             h,
+		d:             d,
+		start:         start,
+		actionCounter: Upload,
+		sizeCounter:   UploadSizeBytes,
+		timeCounter:   UploadUsec,
+	}
+}
+
+type metricsOnlyTransferTimer struct {
+	h *metricsOnlyHitTracker
+
+	d     *repb.Digest
+	start time.Time
+	actionCounter,
+	sizeCounter,
+	timeCounter counterType
+}
+
+func (t *metricsOnlyTransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error {
+	duration := time.Since(t.start)
+	t.emitMetrics(bytesTransferredCache, bytesTransferredClient, duration, compressor, serverLabel)
+	// This is a no-op but we do it because it's The Right Way or whatever.
+	return t.Record(bytesTransferredClient, time.Since(t.start), compressor)
+}
+
+// Records prometheus metrics about this transferTimer.
+func (t *metricsOnlyTransferTimer) emitMetrics(bytesTransferredCache, bytesTransferredClient int64, duration time.Duration, compressor repb.Compressor_Value, serverLabel string) {
+	et := cacheEventTypeLabel(t.actionCounter)
+	ct := t.h.cacheTypeLabel()
+	metrics.CacheEvents.With(prometheus.Labels{
+		metrics.CacheTypeLabel:      ct,
+		metrics.CacheEventTypeLabel: et,
+		metrics.GroupID:             t.h.groupID,
+		metrics.UsageTracked:        "false",
+	}).Inc()
+
+	emitSizeMetrics(t.h.groupID, compressor, t.sizeCounter, ct, serverLabel, float64(t.d.GetSizeBytes()), float64(bytesTransferredCache), float64(bytesTransferredClient), false)
+	durationMetric(t.timeCounter).With(prometheus.Labels{
+		metrics.CacheTypeLabel: ct,
+		metrics.UsageTracked:   "false",
+	}).Observe(float64(duration.Microseconds()))
+}
+
+func (t *metricsOnlyTransferTimer) Record(bytesTransferred int64, duration time.Duration, compressor repb.Compressor_Value) error {
+	return nil
+}
+
+func (h HitTrackerFactory) newHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, actionCache bool, serverName string) interfaces.HitTracker {
+	groupID := interfaces.AuthAnonymousUser
+	if a := h.env.GetAuthenticator(); a != nil {
+		if u, err := a.AuthenticatedUser(ctx); err == nil {
+			groupID = u.GetGroupID()
+		}
+	}
+
+	if h.shouldSkipTracking(ctx) {
+		return &metricsOnlyHitTracker{
+			groupID:     groupID,
+			actionCache: actionCache,
+			serverName:  serverName,
+		}
+	}
+
+	return &hitTracker{
+		env:             h.env,
+		c:               h.env.GetMetricsCollector(),
+		usage:           h.env.GetUsageTracker(),
+		ctx:             ctx,
+		iid:             requestMetadata.GetToolInvocationId(),
+		groupID:         groupID,
+		actionCache:     actionCache,
+		requestMetadata: requestMetadata,
+		serverName:      serverName,
+	}
+}
+
+func (h *hitTracker) counterKey() string {
 	return counterKey(h.iid)
 }
 
-func (h *HitTracker) targetMissesKey() string {
+func (h *hitTracker) targetMissesKey() string {
 	return targetMissesKey(h.iid)
 }
 
-func (h *HitTracker) targetField() string {
+func (h *hitTracker) targetField() string {
 	if h.requestMetadata == nil {
 		return ""
 	}
@@ -181,11 +348,11 @@ func (h *HitTracker) targetField() string {
 	return makeTargetField(rmd.GetActionMnemonic(), rmd.GetTargetId(), rmd.GetActionId())
 }
 
-func (h *HitTracker) counterField(ct counterType) string {
+func (h *hitTracker) counterField(ct counterType) string {
 	return counterField(h.actionCache, ct)
 }
 
-func (h *HitTracker) cacheTypeLabel() string {
+func (h *hitTracker) cacheTypeLabel() string {
 	if h.actionCache {
 		return actionCacheLabel
 	}
@@ -196,22 +363,33 @@ func makeTargetField(actionMnemonic, targetID, actionID string) string {
 	return fmt.Sprintf("%s(%s)/%s", actionMnemonic, targetID, actionID)
 }
 
-func (h *HitTracker) SetExecutedActionMetadata(md *repb.ExecutedActionMetadata) {
+func (h *hitTracker) SetExecutedActionMetadata(md *repb.ExecutedActionMetadata) {
 	h.executedActionMetadata = md
 }
 
-// Example Usage:
-//
-// ht := NewHitTracker(env, invocationID, false /*=actionCache*/)
-//
-//	if err := ht.TrackMiss(); err != nil {
-//	  log.Printf("Error counting cache miss.")
-//	}
-func (h *HitTracker) TrackMiss(d *repb.Digest) error {
+func extractOriginInvocationID(md *repb.ExecutedActionMetadata) string {
+	if md == nil {
+		return ""
+	}
+	origin := &repb.OriginMetadata{}
+	ok, err := rexec.FindFirstAuxiliaryMetadata(md, origin)
+	if err != nil {
+		log.Debugf("Unable to unmarshal origin metadata: %v", err)
+		return ""
+	}
+	if !ok {
+		return ""
+	}
+	return origin.GetInvocationId()
+}
+
+func (h *hitTracker) TrackMiss(d *repb.Digest) error {
 	start := time.Now()
 	metrics.CacheEvents.With(prometheus.Labels{
 		metrics.CacheTypeLabel:      h.cacheTypeLabel(),
 		metrics.CacheEventTypeLabel: missLabel,
+		metrics.GroupID:             h.groupID,
+		metrics.UsageTracked:        "true",
 	}).Inc()
 	if h.c == nil || h.iid == "" {
 		return nil
@@ -236,33 +414,7 @@ func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 	return nil
 }
 
-func (h *HitTracker) TrackEmptyHit() error {
-	start := time.Now()
-	metrics.CacheEvents.With(prometheus.Labels{
-		metrics.CacheTypeLabel:      h.cacheTypeLabel(),
-		metrics.CacheEventTypeLabel: hitLabel,
-	}).Inc()
-	if h.c == nil || h.iid == "" {
-		return nil
-	}
-	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(Hit), 1); err != nil {
-		return err
-	}
-	if *detailedStatsEnabled {
-		emptyDigest := &repb.Digest{Hash: digest.EmptySha256}
-		stats := &detailedStats{
-			Status:    Miss,
-			StartTime: start,
-			Duration:  time.Since(start),
-		}
-		if err := h.recordDetailedStats(emptyDigest, stats); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) error {
+func (h *hitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) error {
 	if h.requestMetadata.GetExecutorDetails().GetExecutorHostId() != "" {
 		// Don't store executor requests in the scorecard for now.
 		return nil
@@ -276,7 +428,7 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 	}
 	// Target/action mnemonic metadata is not expected for BES uploads, but
 	// otherwise this metadata is expected if action ID is present.
-	if h.requestMetadata.GetActionId() != "bes-upload" && (h.requestMetadata.GetActionMnemonic() == "" || h.requestMetadata.GetTargetId() == "") {
+	if h.requestMetadata.GetActionId() != bazel_request.BESUploadActionID && (h.requestMetadata.GetActionMnemonic() == "" || h.requestMetadata.GetTargetId() == "") {
 		log.Debugf("Cache request for invocation %s is missing ActionMnemonic and/or TargetId: %+v", h.iid, h.requestMetadata)
 	}
 
@@ -317,6 +469,11 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 		result.ExecutionStartTimestamp = md.GetExecutionStartTimestamp()
 		result.ExecutionCompletedTimestamp = md.GetExecutionCompletedTimestamp()
 	}
+	if h.actionCache && stats.Status == Hit {
+		if originInvocationID := extractOriginInvocationID(h.executedActionMetadata); originInvocationID != "" {
+			result.OriginInvocationId = originInvocationID
+		}
+	}
 	// ScoreCard_Result.MarshalVT is slower, so we use MarshalOld for now.
 	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3018
 	b, err := proto.MarshalOld(result)
@@ -327,7 +484,7 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 	if err := h.c.ListAppend(h.ctx, key, string(b)); err != nil {
 		return err
 	}
-	if err := h.c.Expire(h.ctx, key, scorecardResultsExpiration); err != nil {
+	if err := h.c.Expire(h.ctx, key, *scorecardResultsTTL); err != nil {
 		return err
 	}
 	return nil
@@ -352,33 +509,32 @@ func cacheEventTypeLabel(c counterType) string {
 	return uploadLabel
 }
 
-func (t *transferTimer) emitSizeMetrics(compressor repb.Compressor_Value, ct counterType, cacheTypeLabel, serverLabel string, digestSizeBytes, bytesTransferredCache, bytesTransferredClient float64) {
-	groupID := interfaces.AuthAnonymousUser
-	if a := t.h.env.GetAuthenticator(); a != nil {
-		if u, err := a.AuthenticatedUser(t.h.ctx); err == nil {
-			groupID = u.GetGroupID()
-		}
-	}
-
+func emitSizeMetrics(groupID string, compressor repb.Compressor_Value, ct counterType, cacheTypeLabel, serverLabel string, digestSizeBytes, bytesTransferredCache, bytesTransferredClient float64, isTracked bool) {
+	tracked := fmt.Sprintf("%t", isTracked)
 	if ct == UploadSizeBytes {
 		metrics.CacheUploadSizeBytes.With(prometheus.Labels{
 			metrics.CacheTypeLabel: cacheTypeLabel,
 			metrics.ServerName:     serverLabel,
+			metrics.GroupID:        groupID,
+			metrics.UsageTracked:   tracked,
 		}).Observe(bytesTransferredCache)
 		metrics.ServerUploadSizeBytes.With(prometheus.Labels{
 			metrics.CacheTypeLabel: cacheTypeLabel,
 			metrics.ServerName:     serverLabel,
+			metrics.UsageTracked:   tracked,
 		}).Observe(bytesTransferredClient)
 		if compressor == repb.Compressor_IDENTITY {
 			metrics.ServerUncompressedUploadBytesCount.With(prometheus.Labels{
 				metrics.CacheTypeLabel: cacheTypeLabel,
 				metrics.ServerName:     serverLabel,
 				metrics.GroupID:        groupID,
+				metrics.UsageTracked:   tracked,
 			}).Add(bytesTransferredClient)
 		}
 		metrics.DigestUploadSizeBytes.With(prometheus.Labels{
 			metrics.CacheTypeLabel: cacheTypeLabel,
 			metrics.ServerName:     serverLabel,
+			metrics.UsageTracked:   tracked,
 		}).Observe(digestSizeBytes)
 		return
 	}
@@ -386,21 +542,27 @@ func (t *transferTimer) emitSizeMetrics(compressor repb.Compressor_Value, ct cou
 	metrics.CacheDownloadSizeBytes.With(prometheus.Labels{
 		metrics.CacheTypeLabel: cacheTypeLabel,
 		metrics.ServerName:     serverLabel,
+		metrics.GroupID:        groupID,
+		metrics.UsageTracked:   tracked,
 	}).Observe(bytesTransferredCache)
 	metrics.ServerDownloadSizeBytes.With(prometheus.Labels{
 		metrics.CacheTypeLabel: cacheTypeLabel,
 		metrics.ServerName:     serverLabel,
+		metrics.GroupID:        groupID,
+		metrics.UsageTracked:   tracked,
 	}).Observe(bytesTransferredClient)
 	if compressor == repb.Compressor_IDENTITY {
 		metrics.ServerUncompressedDownloadBytesCount.With(prometheus.Labels{
 			metrics.CacheTypeLabel: cacheTypeLabel,
 			metrics.ServerName:     serverLabel,
 			metrics.GroupID:        groupID,
+			metrics.UsageTracked:   tracked,
 		}).Add(bytesTransferredClient)
 	}
 	metrics.DigestDownloadSizeBytes.With(prometheus.Labels{
 		metrics.CacheTypeLabel: cacheTypeLabel,
 		metrics.ServerName:     serverLabel,
+		metrics.UsageTracked:   tracked,
 	}).Observe(digestSizeBytes)
 }
 
@@ -412,7 +574,7 @@ func durationMetric(ct counterType) *prometheus.HistogramVec {
 }
 
 type transferTimer struct {
-	h *HitTracker
+	h *hitTracker
 
 	d     *repb.Digest
 	start time.Time
@@ -423,27 +585,32 @@ type transferTimer struct {
 	// TODO(bduffany): response code
 }
 
-// CloseWithBytesTransferred emits and saves metrics related to data transfer
-//
-// bytesTransferredCache refers to data uploaded/downloaded to the cache
-// bytesTransferredClient refers to data uploaded/downloaded from the client
-// They can be different if, for example, the client supports compression and uploads compressed bytes (bytesTransferredClient)
-// but the cache does not support compression and requires that uncompressed bytes are written (bytesTransferredCache)
 func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error {
-	dur := time.Since(t.start)
+	duration := time.Since(t.start)
+	t.emitMetrics(bytesTransferredCache, bytesTransferredClient, duration, compressor, serverLabel)
+	return t.Record(bytesTransferredClient, time.Since(t.start), compressor)
+}
 
-	h := t.h
+// Records prometheus metrics about this transferTimer.
+func (t *transferTimer) emitMetrics(bytesTransferredCache, bytesTransferredClient int64, duration time.Duration, compressor repb.Compressor_Value, serverLabel string) {
 	et := cacheEventTypeLabel(t.actionCounter)
-	ct := h.cacheTypeLabel()
+	ct := t.h.cacheTypeLabel()
 	metrics.CacheEvents.With(prometheus.Labels{
 		metrics.CacheTypeLabel:      ct,
 		metrics.CacheEventTypeLabel: et,
+		metrics.GroupID:             t.h.groupID,
+		metrics.UsageTracked:        "true",
 	}).Inc()
-	t.emitSizeMetrics(compressor, t.sizeCounter, ct, serverLabel, float64(t.d.GetSizeBytes()), float64(bytesTransferredCache), float64(bytesTransferredClient))
+
+	emitSizeMetrics(t.h.groupID, compressor, t.sizeCounter, ct, serverLabel, float64(t.d.GetSizeBytes()), float64(bytesTransferredCache), float64(bytesTransferredClient), true)
 	durationMetric(t.timeCounter).With(prometheus.Labels{
 		metrics.CacheTypeLabel: ct,
-	}).Observe(float64(dur.Microseconds()))
+		metrics.UsageTracked:   "true",
+	}).Observe(float64(duration.Microseconds()))
+}
 
+func (t *transferTimer) Record(bytesTransferred int64, duration time.Duration, compressor repb.Compressor_Value) error {
+	h := t.h
 	if err := h.recordCacheUsage(t.h.ctx, t.d, t.actionCounter); err != nil {
 		return err
 	}
@@ -462,19 +629,19 @@ func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 	if t.sizeCounter == UploadSizeBytes {
 		compressedSizeCounter = UploadTransferredSizeBytes
 	}
-	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(compressedSizeCounter), bytesTransferredClient); err != nil {
+	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(compressedSizeCounter), bytesTransferred); err != nil {
 		return err
 	}
-	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(t.timeCounter), dur.Microseconds()); err != nil {
+	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(t.timeCounter), duration.Microseconds()); err != nil {
 		return err
 	}
 	if *detailedStatsEnabled {
 		stats := &detailedStats{
 			Status:               t.actionCounter,
 			StartTime:            t.start,
-			Duration:             dur,
+			Duration:             duration,
 			Compressor:           compressor,
-			TransferredSizeBytes: bytesTransferredClient,
+			TransferredSizeBytes: bytesTransferred,
 		}
 		if err := h.recordDetailedStats(t.d, stats); err != nil {
 			return err
@@ -497,13 +664,7 @@ func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 	return nil
 }
 
-// Example Usage:
-//
-// ht := NewHitTracker(env, invocationID, false /*=actionCache*/)
-// dlt := ht.TrackDownload(d)
-// defer dlt.Close()
-// ... body of download logic ...
-func (h *HitTracker) TrackDownload(d *repb.Digest) *transferTimer {
+func (h *hitTracker) TrackDownload(d *repb.Digest) interfaces.TransferTimer {
 	start := time.Now()
 	return &transferTimer{
 		h:                   h,
@@ -516,13 +677,7 @@ func (h *HitTracker) TrackDownload(d *repb.Digest) *transferTimer {
 	}
 }
 
-// Example Usage:
-//
-// ht := NewHitTracker(env, invocationID, false /*=actionCache*/)
-// ult := ht.TrackUpload(d)
-// defer ult.Close()
-// ... body of download logic ...
-func (h *HitTracker) TrackUpload(d *repb.Digest) *transferTimer {
+func (h *hitTracker) TrackUpload(d *repb.Digest) interfaces.TransferTimer {
 	start := time.Now()
 	return &transferTimer{
 		h:                   h,
@@ -535,7 +690,7 @@ func (h *HitTracker) TrackUpload(d *repb.Digest) *transferTimer {
 	}
 }
 
-func (h *HitTracker) recordCacheUsage(ctx context.Context, d *repb.Digest, actionCounter counterType) error {
+func (h *hitTracker) recordCacheUsage(ctx context.Context, d *repb.Digest, actionCounter counterType) error {
 	if h.usage == nil {
 		return nil
 	}
@@ -558,7 +713,7 @@ func (h *HitTracker) recordCacheUsage(ctx context.Context, d *repb.Digest, actio
 	} else {
 		return nil
 	}
-	labels, err := usageutil.Labels(ctx)
+	labels, err := usageutil.LabelsForUsageRecording(ctx, h.serverName)
 	if err != nil {
 		return status.WrapError(err, "get usage labels")
 	}
@@ -712,6 +867,10 @@ func CleanupCacheStats(ctx context.Context, env environment.Env, iid string) {
 	}
 
 	if err := c.Delete(ctx, counterKey(iid)); err != nil {
+		log.Warningf("Failed to clean up cache stats for invocation %s: %s", iid, err)
+	}
+
+	if err := c.Delete(ctx, targetMissesKey(iid)); err != nil {
 		log.Warningf("Failed to clean up cache stats for invocation %s: %s", iid, err)
 	}
 }

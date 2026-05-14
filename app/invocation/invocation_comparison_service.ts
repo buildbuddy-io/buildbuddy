@@ -1,8 +1,8 @@
-import { invocation } from "../../proto/invocation_ts_proto";
-import InvocationModel from "./invocation_model";
-import rpcService, { CancelablePromise } from "../service/rpc_service";
 import { Subject, Subscription } from "rxjs";
+import { invocation } from "../../proto/invocation_ts_proto";
 import alert_service from "../alert/alert_service";
+import rpcService, { CancelablePromise } from "../service/rpc_service";
+import InvocationModel from "./invocation_model";
 
 export const INVOCATION_ID_TO_COMPARE_LOCALSTORAGE_KEY = "invocation_id_to_compare";
 
@@ -108,6 +108,7 @@ export class InvocationComparisonService {
 
   private publishState() {
     this.subject.next({ id: this.invocationId, model: this.invocationModel });
+    window.dispatchEvent(new Event("storage"));
   }
 
   isLoading(): boolean {

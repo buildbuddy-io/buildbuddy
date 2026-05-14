@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package gateway;
+
+option go_package = "gateway";
+
+message RegisterRequest {
+  // Optional. Identifies which network within the group to join.
+  // Defaults to "" (the group's default network).
+  string network_name = 1;
+
+  // Optional. Requested DNS name for this peer within the network. Other peers
+  // on the same network can resolve this name to this peer's assigned IP via
+  // the DNS server at <name>.internal. If the requested name is already taken,
+  // the server assigns a unique name by appending a numeric suffix (e.g.
+  // "foo-1"). The actual assigned name is returned in RegisterResponse.
+  string peer_name = 2;
+
+  // Client's WireGuard public key, hex-encoded. The client generates its own
+  // keypair locally and never shares its private key with the server.
+  string public_key = 3;
+}
+
+message RegisterResponse {
+  reserved 1;  // formerly private_key; clients now generate their own keypairs.
+
+  // Gateway's WireGuard public key for this network, hex-encoded.
+  string server_public_key = 2;
+
+  // host:udp_port that clients should configure as their WireGuard endpoint.
+  string server_endpoint = 3;
+
+  // IP address assigned to this client within the tunnel, e.g. "10.0.0.5" or
+  // "fd00:bb::2"
+  string assigned_ip = 4;
+
+  // IP address of the gateway hub within the tunnel. Also serves as the DNS
+  // resolver for peer names: pass this to netstack.CreateNetTUN so that
+  // hostnames registered via peer_name resolve through the tunnel.
+  string gateway_ip = 5;
+
+  // CIDR of the network, e.g. "10.0.0.0/24".
+  string network_cidr = 6;
+
+  // The DNS name actually assigned to this peer (may differ from the requested
+  // peer_name if there was a conflict). Reachable at
+  // <assigned_peer_name>.internal. Empty if no peer_name was requested.
+  string assigned_peer_name = 7;
+}
+
+message DeregisterRequest {
+  // The client's WireGuard public key, hex-encoded. Must match the key used
+  // during Register.
+  string public_key = 1;
+}
+
+message DeregisterResponse {}

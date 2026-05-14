@@ -7,6 +7,8 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/flagutil/common",
+        "//server/util/flagutil/types",
         "//server/util/flagutil/types/autoflags",
+        "//server/util/flagutil/types/autoflags/tags",
     ],
 )

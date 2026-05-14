@@ -4,13 +4,18 @@ package vfs
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfscommon"
+	"golang.org/x/sys/unix"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -28,11 +33,97 @@ type opStats struct {
 	timeSpent time.Duration
 }
 
+type perOpStats map[string]int
+
+type inodeCacheEntry struct {
+	// We track how many open handles there are for each inode and don't cache
+	// any attribute data if there are open handles since we assume that the
+	// inode attributes can change behind the scenes.
+	numHandles int
+	attrs      *vfspb.Attrs
+}
+
+type inodeCache struct {
+	mu   sync.Mutex
+	data map[uint64]*inodeCacheEntry
+}
+
+func newInodeCache() *inodeCache {
+	return &inodeCache{data: make(map[uint64]*inodeCacheEntry)}
+}
+
+func (ic *inodeCache) opened(inode uint64) {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	e := ic.data[inode]
+	if e == nil {
+		e = &inodeCacheEntry{}
+		ic.data[inode] = e
+	}
+	if e.numHandles == 0 {
+		e.attrs = nil
+	}
+	e.numHandles++
+}
+
+func (ic *inodeCache) released(inode uint64) {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	e := ic.data[inode]
+	if e == nil {
+		log.Warningf("release for unknown inode %d", inode)
+		return
+	}
+	e.numHandles--
+}
+
+func (ic *inodeCache) getCachedAttrs(inode uint64) (*vfspb.Attrs, bool) {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	e := ic.data[inode]
+	if e == nil || e.attrs == nil {
+		return nil, false
+	}
+	return e.attrs, true
+}
+
+func (ic *inodeCache) cacheAttrs(inode uint64, attrs *vfspb.Attrs) {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	e := ic.data[inode]
+	if e == nil {
+		e = &inodeCacheEntry{}
+		ic.data[inode] = e
+	}
+	// Don't cache attributes if there are open handles.
+	// Because of passthrough, some attributes such as size can change behind
+	// the scenes.
+	if e.numHandles > 0 {
+		return
+	}
+	e.attrs = attrs
+}
+
+func (ic *inodeCache) removeCachedAttrs(inode uint64) {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	e := ic.data[inode]
+	if e == nil {
+		return
+	}
+	e.attrs = nil
+	if e.numHandles == 0 {
+		delete(ic.data, inode)
+	}
+}
+
 type VFS struct {
-	vfsClient  vfspb.FileSystemClient
-	mountDir   string
-	verbose    bool
-	logFUSEOps bool
+	vfsClient           vfspb.FileSystemClient
+	mountDir            string
+	verbose             bool
+	logFUSEOps          bool
+	logFUSELatencyStats bool
+	logFUSEPerFileStats bool
 
 	server *fuse.Server // Not set until FS is mounted.
 
@@ -41,14 +132,24 @@ type VFS struct {
 	mu             sync.Mutex
 	internalTaskID string
 	rpcCtx         context.Context
+	inodeCache     *inodeCache
+	nodesByInodeID map[uint64]*fs.Inode
 	opStats        map[string]*opStats
+	perFileStats   map[string]perOpStats
 }
 
 type Options struct {
 	// Verbose enables logging of most per-file operations.
 	Verbose bool
-	// LogFUSEOps enabled logging of all operations received by the go fuse server from the kernel.
+	// LogFUSEOps enabled logging of all operations received by the go fuse
+	// server from the kernel.
 	LogFUSEOps bool
+	// LogFUSELatencyStats enables logging of per-operation latency stats when
+	// the filesystem is unmounted. Implicitly enabled when Verbose is true.
+	LogFUSELatencyStats bool
+	// LogFUSEPerFileStats enables tracking of operation counts on a per-file
+	// basis. The stats are logged when the filesystem is unmounted.
+	LogFUSEPerFileStats bool
 }
 
 func New(vfsClient vfspb.FileSystemClient, mountDir string, options *Options) *VFS {
@@ -57,15 +158,21 @@ func New(vfsClient vfspb.FileSystemClient, mountDir string, options *Options) *V
 	cancel()
 
 	vfs := &VFS{
-		vfsClient:  vfsClient,
-		mountDir:   mountDir,
-		verbose:    options.Verbose,
-		logFUSEOps: options.LogFUSEOps,
-		rpcCtx:     rpcCtx,
-		opStats:    make(map[string]*opStats),
+		vfsClient:           vfsClient,
+		mountDir:            mountDir,
+		verbose:             options.Verbose,
+		logFUSEOps:          options.LogFUSEOps,
+		logFUSELatencyStats: options.LogFUSELatencyStats,
+		logFUSEPerFileStats: options.LogFUSEPerFileStats,
+		rpcCtx:              rpcCtx,
+		inodeCache:          newInodeCache(),
+		nodesByInodeID:      make(map[uint64]*fs.Inode),
+		opStats:             make(map[string]*opStats),
+		perFileStats:        make(map[string]perOpStats),
 	}
 	root := &Node{vfs: vfs}
 	vfs.root = root
+	vfs.nodesByInodeID[vfscommon.RootInodeId] = &vfs.root.Inode
 	return vfs
 }
 
@@ -107,19 +214,25 @@ func (vfs *VFS) Mount() error {
 		EntryTimeout: &nodeAttrTimeout,
 		AttrTimeout:  &nodeAttrTimeout,
 		MountOptions: fuse.MountOptions{
-			AllowOther:    true,
-			Debug:         vfs.logFUSEOps,
-			DisableXAttrs: true,
+			AllowOther: true,
+			Debug:      vfs.logFUSEOps,
 			// Don't depend on `fusermount`.
 			// Disable fallback to fusermount as well, since it can cause
 			// deadlocks. See https://github.com/hanwen/go-fuse/issues/506
 			DirectMountStrict: true,
 			FsName:            "bbvfs",
 			MaxWrite:          fuse.MAX_KERNEL_WRITE,
-			EnableLocks:       true,
+		},
+		RootStableAttr: &fs.StableAttr{
+			Ino: vfscommon.RootInodeId,
 		},
 	}
 	nodeFS := fs.NewNodeFS(vfs.root, opts)
+	// fs.NewNodeFS initializes the node.
+	vfs.mu.Lock()
+	vfs.nodesByInodeID[vfscommon.RootInodeId] = &vfs.root.Inode
+	vfs.mu.Unlock()
+
 	server, err := fuse.NewServer(nodeFS, vfs.mountDir, &opts.MountOptions)
 	if err != nil {
 		return status.UnavailableErrorf("could not mount VFS at %q: %s", vfs.mountDir, err)
@@ -137,77 +250,79 @@ func (vfs *VFS) Mount() error {
 	return nil
 }
 
-// PrepareForTask prepares the virtual filesystem layout according to the provided `fsLayout`.
-// `ctx` is used for outgoing RPCs to the server and must stay alive as long as the filesystem is being used.
+// PrepareForTask prepares the virtual filesystem for a new task.
+//
+// `ctx` is used for outgoing RPCs to the server and must stay alive as long
+// as the filesystem is being used.
 // The passed `taskID` os only used for logging purposes.
-func (vfs *VFS) PrepareForTask(ctx context.Context, taskID string) error {
+//
+// If the layout of the filesystem has been modified w/o going though the
+// kernel then invalidatedInodeIDs is expected to contain the modified inodes
+// so that cached data in the kernel can be invalidated, if necessary.
+func (vfs *VFS) PrepareForTask(ctx context.Context, taskID string, invalidatedInodes *vfscommon.InodeInvalidations) error {
 	vfs.mu.Lock()
 	vfs.internalTaskID = taskID
 	vfs.rpcCtx = ctx
 	vfs.mu.Unlock()
 
-	rsp, err := vfs.vfsClient.GetLayout(ctx, &vfspb.GetLayoutRequest{})
-	if err != nil {
-		return err
+	// If the list of inodes to invalidate is sufficiently large, it might
+	// be more efficient to remount the filesystem? Newer kernels also have
+	// a feature that allows large invalidations via FUSE_NOTIFY_INC_EPOCH
+	// but that's not currently exposed in go-fuse.
+	start := time.Now()
+	numInvalidated := 0
+	for _, invalidatedInodeID := range invalidatedInodes.Content {
+		if vfs.verbose {
+			log.CtxDebugf(ctx, "Need to invalidate inode %d", invalidatedInodeID)
+		}
+		node, err := vfs.GetInode(invalidatedInodeID)
+		if err != nil {
+			// If the inode has not been looked up by the kernel before it
+			// won't be in the internal map so we can skip it.
+			if status.IsNotFoundError(err) {
+				if vfs.verbose {
+					log.CtxDebugf(ctx, "Skipping invalidation for inode %d, not found in inode map", invalidatedInodeID)
+				}
+				continue
+			}
+			return status.WrapErrorf(err, "could not find inode for invalidation")
+		}
+		errno := node.NotifyContent(0, -1)
+		if errno != 0 {
+			log.CtxWarningf(ctx, "Failed to notify content for inode %d for path %q: %d", invalidatedInodeID, node.Path(nil), errno)
+			return status.InternalErrorf("could not invalidate directory inode %d for path %q: %s", invalidatedInodeID, node.Path(nil), errno)
+		}
+		numInvalidated++
 	}
-
-	var walkDir func(dir *vfspb.DirectoryEntry, node *Node) error
-	walkDir = func(dir *vfspb.DirectoryEntry, parentNode *Node) error {
-		for _, childDirNode := range dir.GetDirectories() {
-			child := &Node{
-				vfs:         vfs,
-				parent:      parentNode,
-				cachedAttrs: childDirNode.Attrs,
-				immutable:   childDirNode.GetAttrs().GetImmutable(),
-			}
-			inode := vfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR})
-			if !parentNode.AddChild(childDirNode.Name, inode, false) {
-				return status.UnknownErrorf("could not add child %q to %q, already exists", childDirNode.Name, parentNode.relativePath())
-			}
-			if vfs.verbose {
-				log.Debugf("[%s] Input directory: %s", vfs.taskID(), child.relativePath())
-			}
-			if err := walkDir(childDirNode, child); err != nil {
-				return err
-			}
+	for _, invalidatedEntry := range invalidatedInodes.Entry {
+		if vfs.verbose {
+			log.CtxDebugf(ctx, "Need to invalidate %q in inode %d", invalidatedEntry.Name, invalidatedEntry.InodeID)
 		}
-		for _, childFileNode := range dir.GetFiles() {
-			child := &Node{
-				vfs:         vfs,
-				parent:      parentNode,
-				cachedAttrs: childFileNode.Attrs,
-				immutable:   childFileNode.GetAttrs().GetImmutable(),
+		node, err := vfs.GetInode(invalidatedEntry.InodeID)
+		if err != nil {
+			// If the inode has not been looked up by the kernel before it
+			// won't be in the internal map so we can skip it.
+			if status.IsNotFoundError(err) {
+				if vfs.verbose {
+					log.CtxDebugf(ctx, "Skipping invalidation for inode %d, not found in inode map", invalidatedEntry.InodeID)
+				}
+				continue
 			}
-			inode := vfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG})
-			if !parentNode.AddChild(childFileNode.Name, inode, false) {
-				return status.UnknownErrorf("could not add child %q to %q, already exists", childFileNode.Name, parentNode.relativePath())
-			}
-			if vfs.verbose {
-				log.Debugf("[%s] Input file: %s", vfs.taskID(), child.relativePath())
-			}
+			return status.WrapErrorf(err, "could not find inode for invalidation")
 		}
-		for _, childSymlinkNode := range dir.GetSymlinks() {
-			child := &Node{
-				vfs:           vfs,
-				parent:        parentNode,
-				symlinkTarget: childSymlinkNode.GetTarget(),
-				cachedAttrs:   childSymlinkNode.Attrs,
-				immutable:     childSymlinkNode.GetAttrs().GetImmutable(),
-			}
-			inode := vfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFLNK})
-			if !parentNode.AddChild(childSymlinkNode.Name, inode, false) {
-				return status.UnknownErrorf("could not add child %q to %q, already exists", childSymlinkNode.Name, parentNode.relativePath())
-			}
-			if vfs.verbose {
-				log.Debugf("[%s] Input symlink: %s", vfs.taskID(), child.relativePath())
-			}
+		errno := node.NotifyEntry(invalidatedEntry.Name)
+		if errno != 0 {
+			log.CtxWarningf(ctx, "Failed to notify entry %q for inode %d for path %q: %d", invalidatedEntry.Name, invalidatedEntry.InodeID, node.Path(nil), errno)
+			return status.InternalErrorf("could not invalidate entry %q for inode %d for path %q: %s", invalidatedEntry.Name, invalidatedEntry.InodeID, node.Path(nil), errno)
 		}
-		return nil
+		success, _ := node.RmChild(invalidatedEntry.Name)
+		if !success {
+			log.CtxInfof(ctx, "Could not remove child %q from inode %d for path %q (may already have been removed async via kernel notification)", invalidatedEntry.Name, invalidatedEntry.InodeID, node.Path(nil))
+		}
+		numInvalidated++
 	}
-
-	err = walkDir(rsp.Root, vfs.root)
-	if err != nil {
-		return err
+	if numInvalidated > 0 {
+		log.CtxInfof(ctx, "Invalidated %d inodes in %s", numInvalidated, time.Since(start))
 	}
 
 	return nil
@@ -219,21 +334,58 @@ func (vfs *VFS) taskID() string {
 	return vfs.internalTaskID
 }
 
-func (vfs *VFS) FinishTask() error {
+func (vfs *VFS) logStats() {
 	vfs.mu.Lock()
 	defer vfs.mu.Unlock()
 
-	// TODO(vadim): propagate stats to ActionResult
-	if vfs.verbose {
+	if vfs.verbose || vfs.logFUSELatencyStats {
+		log.CtxDebugf(vfs.rpcCtx, "OP stats:")
+
+		var opNames []string
+		for op := range vfs.opStats {
+			opNames = append(opNames, op)
+		}
+		slices.Sort(opNames)
+
 		var totalTime time.Duration
-		log.Debugf("[%s] OP stats:", vfs.internalTaskID)
-		for op, s := range vfs.opStats {
-			log.Infof("[%s] %-20s num_calls=%-08d time=%.2fs", vfs.internalTaskID, op, s.count, s.timeSpent.Seconds())
+		for _, op := range opNames {
+			s := vfs.opStats[op]
+			log.CtxDebugf(vfs.rpcCtx, "%-20s num_calls=%-08d time=%.2fs", op, s.count, s.timeSpent.Seconds())
 			totalTime += s.timeSpent
 		}
-		log.Debugf("[%s] Total time spent in OPs: %s", vfs.internalTaskID, totalTime)
+		log.CtxDebugf(vfs.rpcCtx, "Total time spent in OPs: %s", totalTime)
 	}
 
+	if vfs.logFUSEPerFileStats {
+		var paths []string
+		for p := range vfs.perFileStats {
+			paths = append(paths, p)
+		}
+		slices.Sort(paths)
+
+		log.CtxDebugf(vfs.rpcCtx, "%d paths accessed:", len(vfs.perFileStats))
+		for _, p := range paths {
+			stats := vfs.perFileStats[p]
+			var opNames []string
+			for op := range stats {
+				opNames = append(opNames, op)
+			}
+			slices.Sort(opNames)
+			var s strings.Builder
+			for _, k := range opNames {
+				s.WriteString(fmt.Sprintf("%s:%d ", k, stats[k]))
+			}
+			log.CtxDebugf(vfs.rpcCtx, "%s %s", p, s.String())
+		}
+	}
+}
+
+func (vfs *VFS) FinishTask() error {
+	// TODO(vadim): propagate stats to ActionResult
+	vfs.logStats()
+
+	vfs.mu.Lock()
+	defer vfs.mu.Unlock()
 	vfs.internalTaskID = "unset"
 
 	return nil
@@ -244,18 +396,84 @@ func (vfs *VFS) Unmount() error {
 		return nil
 	}
 
-	return vfs.server.Unmount()
+	vfs.logStats()
+
+	err := vfs.server.Unmount()
+	if err != nil {
+		return err
+	}
+	vfs.server = nil
+	return nil
+}
+
+func (vfs *VFS) startOP(pathFn func() string, op string) {
+	if !vfs.logFUSEPerFileStats {
+		return
+	}
+
+	path := pathFn()
+	vfs.mu.Lock()
+	defer vfs.mu.Unlock()
+	stats, ok := vfs.perFileStats[path]
+	if !ok {
+		stats = make(perOpStats)
+		vfs.perFileStats[path] = stats
+	}
+	stats[op]++
+}
+
+func (vfs *VFS) getattr(inode uint64) (*vfspb.Attrs, error) {
+	attrs, ok := vfs.inodeCache.getCachedAttrs(inode)
+
+	if !ok {
+		rsp, err := vfs.vfsClient.GetAttr(vfs.getRPCContext(), &vfspb.GetAttrRequest{Id: inode})
+		if err != nil {
+			return nil, err
+		}
+		attrs = rsp.GetAttrs()
+		vfs.inodeCache.cacheAttrs(inode, attrs)
+	} else {
+		if vfs.verbose {
+			log.CtxInfof(vfs.getRPCContext(), "using cached attributes for inode %d", inode)
+		}
+	}
+
+	return attrs, nil
+}
+
+func (vfs *VFS) NewInode(ctx context.Context, ops fs.InodeEmbedder, id fs.StableAttr) *fs.Inode {
+	node := vfs.root.NewInode(ctx, ops, id)
+	vfs.mu.Lock()
+	p := node.Path(nil)
+	if en, ok := vfs.nodesByInodeID[node.StableAttr().Ino]; ok {
+		log.CtxWarningf(vfs.rpcCtx, "replacing inode %d (%q) with %q", node.StableAttr().Ino, en.Path(nil), p)
+	} else {
+		if vfs.verbose {
+			log.CtxDebugf(vfs.rpcCtx, "register inode %d with path %q", node.StableAttr().Ino, p)
+		}
+	}
+	vfs.nodesByInodeID[node.StableAttr().Ino] = node
+	vfs.mu.Unlock()
+	return node
+}
+
+func (vfs *VFS) GetInode(inodeID uint64) (*fs.Inode, error) {
+	vfs.mu.Lock()
+	defer vfs.mu.Unlock()
+	inode, ok := vfs.nodesByInodeID[inodeID]
+	if !ok {
+		return nil, status.NotFoundErrorf("inode %d not found", inodeID)
+	}
+	return inode, nil
 }
 
 type Node struct {
 	fs.Inode
 
 	vfs       *VFS
-	parent    *Node
 	immutable bool
 
 	mu            sync.Mutex
-	cachedAttrs   *vfspb.Attrs
 	symlinkTarget string
 }
 
@@ -264,9 +482,7 @@ func (n *Node) relativePath() string {
 }
 
 func (n *Node) resetCachedAttrs() {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	n.cachedAttrs = nil
+	n.vfs.inodeCache.removeCachedAttrs(n.StableAttr().Ino)
 }
 
 type remoteFile struct {
@@ -304,7 +520,152 @@ func rpcErrToSyscallErrno(rpcErr error) syscall.Errno {
 	return syscall.EIO
 }
 
+func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (node *fs.Inode, errno syscall.Errno) {
+	if n.vfs.verbose {
+		fp := filepath.Join(n.relativePath(), name)
+		log.CtxDebugf(n.vfs.rpcCtx, "Lookup %q", fp)
+		defer func() {
+			if errno == 0 {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Lookup %q: %s", fp, attrDebugString(node, &out.Attr))
+			} else {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Lookup %q: %s", fp, errno)
+			}
+		}()
+	}
+	req := &vfspb.LookupRequest{
+		ParentId: n.StableAttr().Ino,
+		Name:     name,
+	}
+	rsp, err := n.vfs.vfsClient.Lookup(n.vfs.getRPCContext(), req)
+	if err != nil {
+		return nil, rpcErrToSyscallErrno(err)
+	}
+
+	n.vfs.inodeCache.cacheAttrs(rsp.Id, rsp.Attrs)
+	// getAttr takes care of refreshing the attributes if there are currently
+	// any open file handles.
+	// For performance reasons, Lookup does not refresh attributes on every call as it's
+	// a very frequently performed operation. If a file has been modified
+	// but not yet closed it may return stale attributes. We defer to getAttr to trigger
+	// a refresh if necessary as it already handles this case for the GetAttr call.
+	attrs, err := n.vfs.getattr(rsp.Id)
+	if err != nil {
+		return nil, rpcErrToSyscallErrno(err)
+	}
+	fillFuseAttr(&out.Attr, attrs)
+
+	if en := n.GetChild(name); en != nil {
+		return en, 0
+	}
+	child := &Node{
+		vfs:           n.vfs,
+		symlinkTarget: rsp.SymlinkTarget,
+	}
+	node = n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: rsp.Mode, Ino: rsp.Id})
+	if !n.AddChild(name, node, false) {
+		log.CtxWarningf(n.vfs.getRPCContext(), "could not add child %q to %q", name, n.relativePath())
+		return nil, syscall.EIO
+	}
+	return node, 0
+}
+
+// Forget is called whenever the kernel loses knowledge about an inode, which
+// can happen because the inode is removed or because the kernel removes cached
+// data due to memory pressure. In the latter case, the kernel will send a
+// lookup request if the inode is needed again.
+func (n *Node) Forget() {
+	if n.vfs.verbose {
+		log.CtxDebugf(n.vfs.getRPCContext(), "Forget %q ino %d", n.relativePath(), n.StableAttr().Ino)
+	}
+	n.vfs.mu.Lock()
+	delete(n.vfs.nodesByInodeID, n.StableAttr().Ino)
+	n.vfs.mu.Unlock()
+}
+
+type dirHandle struct {
+	vfs      *VFS
+	node     *Node
+	children []*vfspb.Node
+	pos      int
+}
+
+func (d *dirHandle) Readdirent(ctx context.Context) (dirEntry *fuse.DirEntry, errno syscall.Errno) {
+	d.node.startOP("Readdirent")
+	if d.vfs.verbose {
+		log.CtxDebugf(d.vfs.rpcCtx, "Readdirent %q", d.node.relativePath())
+		defer func() {
+			if errno == 0 {
+				if dirEntry == nil {
+					log.CtxDebugf(d.vfs.getRPCContext(), "Readdirent %q: end of directory", d.node.relativePath())
+				} else {
+					log.CtxDebugf(d.vfs.getRPCContext(), "Readdirent %q: %s ino %d mode %s", d.node.relativePath(), dirEntry.Name, dirEntry.Ino, modeDebugString(dirEntry.Mode))
+				}
+			} else {
+				log.CtxDebugf(d.vfs.getRPCContext(), "Readdirent %q: %s", d.node.relativePath(), errno)
+			}
+		}()
+	}
+	if d.pos == -1 {
+		rsp, err := d.vfs.vfsClient.GetDirectoryContents(d.vfs.rpcCtx, &vfspb.GetDirectoryContentsRequest{
+			Id: d.node.StableAttr().Ino,
+		})
+		if err != nil {
+			return nil, rpcErrToSyscallErrno(err)
+		}
+		d.children = rsp.Nodes
+		d.pos = 0
+	}
+
+	if d.pos >= len(d.children) {
+		return nil, 0
+	}
+	node := d.children[d.pos]
+	d.pos++
+	return &fuse.DirEntry{
+		Mode: node.Mode,
+		Name: node.Name,
+		Ino:  node.Id,
+	}, 0
+}
+
+func (d *dirHandle) Fsyncdir(ctx context.Context, flags uint32) syscall.Errno {
+	return 0
+}
+
+func (n *Node) OpendirHandle(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
+	n.startOP("OpendirHandle")
+	if n.vfs.verbose {
+		log.CtxDebugf(n.vfs.rpcCtx, "OpendirHandle %q", n.relativePath())
+	}
+
+	// FOPEN_CACHE_DIR allows kernel to cache directory contents to avoid
+	// redundant readdir calls to the fuse filesystem.
+	// If FOPEN_KEEP_CACHE is not specified, the kernel drops cached data
+	// for the inode before performing the readdir operation.
+	// N.B. If FOPEN_CACHE_DIR is set, go-fuse implicitly enables
+	// FOPEN_KEEP_CACHE even though it's valid to want to omit it.
+	fuseFlags := uint32(fuse.FOPEN_KEEP_CACHE | fuse.FOPEN_CACHE_DIR)
+
+	return &dirHandle{vfs: n.vfs, node: n, pos: -1}, fuseFlags, 0
+}
+
+func (f *remoteFile) startOP(op string) {
+	f.node.vfs.startOP(func() string { return f.path }, op)
+}
+
+func (f *remoteFile) PassthroughFd() (int, bool) {
+	f.startOP("PassthroughFd")
+	if f.node.vfs.verbose {
+		log.CtxDebugf(f.node.vfs.rpcCtx, "PassthroughFd %q", f.path)
+	}
+	return int(f.id), true
+}
+
 func (f *remoteFile) Allocate(ctx context.Context, off uint64, size uint64, mode uint32) syscall.Errno {
+	f.startOP("Allocate")
+	if f.node.vfs.verbose {
+		log.CtxDebugf(f.node.vfs.rpcCtx, "Allocate %q", f.path)
+	}
 	f.node.resetCachedAttrs()
 	allocReq := &vfspb.AllocateRequest{
 		HandleId: f.id,
@@ -319,9 +680,10 @@ func (f *remoteFile) Allocate(ctx context.Context, off uint64, size uint64, mode
 }
 
 func (f *remoteFile) Flush(ctx context.Context) syscall.Errno {
+	f.startOP("Flush")
 	if f.node.vfs.verbose {
 		f.mu.Lock()
-		log.Debugf("[%s] Flush %q, read %s (%d RPCs), wrote %s (%d RPCs)", f.node.vfs.taskID(), f.path, units.HumanSize(float64(f.readBytes)), f.readRPCs, units.HumanSize(float64(f.wroteBytes)), f.writeRPCs)
+		log.CtxDebugf(f.node.vfs.rpcCtx, "Flush %q (ino %d), read %s (%d RPCs), wrote %s (%d RPCs)", f.path, f.node.StableAttr().Ino, units.HumanSize(float64(f.readBytes)), f.readRPCs, units.HumanSize(float64(f.wroteBytes)), f.writeRPCs)
 		f.mu.Unlock()
 	}
 
@@ -332,21 +694,31 @@ func (f *remoteFile) Flush(ctx context.Context) syscall.Errno {
 }
 
 func (f *remoteFile) Fsync(ctx context.Context, flags uint32) syscall.Errno {
+	f.startOP("Fsync")
+	if f.node.vfs.verbose {
+		log.CtxDebugf(f.node.vfs.rpcCtx, "Fsync %q", f.path)
+	}
 	if _, err := f.vfsClient.Fsync(f.ctx, &vfspb.FsyncRequest{HandleId: f.id}); err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
 	return fs.OK
 }
 
+func (f *remoteFile) Fsyncdir(ctx context.Context, flags uint32) syscall.Errno {
+	return fs.OK
+}
+
 func (f *remoteFile) Release(ctx context.Context) syscall.Errno {
+	f.startOP("Release")
 	if f.node.vfs.verbose {
 		f.mu.Lock()
-		log.Debugf("[%s] Release %q, read %s (%d RPCs), wrote %s (%d RPCs)", f.node.vfs.taskID(), f.path, units.HumanSize(float64(f.readBytes)), f.readRPCs, units.HumanSize(float64(f.wroteBytes)), f.writeRPCs)
+		log.CtxDebugf(f.node.vfs.rpcCtx, "Release %q (ino %d) handle ID %d, read %s (%d RPCs), wrote %s (%d RPCs)", f.path, f.node.StableAttr().Ino, f.id, units.HumanSize(float64(f.readBytes)), f.readRPCs, units.HumanSize(float64(f.wroteBytes)), f.writeRPCs)
 		f.mu.Unlock()
 	}
 	if _, err := f.vfsClient.Release(f.ctx, &vfspb.ReleaseRequest{HandleId: f.id}); err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
+	f.node.vfs.inodeCache.released(f.node.StableAttr().Ino)
 	return fs.OK
 }
 
@@ -399,12 +771,13 @@ func (r *remoteFileReader) Done() {
 }
 
 func (f *remoteFile) Read(ctx context.Context, buf []byte, off int64) (res fuse.ReadResult, errno syscall.Errno) {
+	f.startOP("Read")
 	res = &remoteFileReader{f: f, offset: off, numBytes: len(buf)}
 	return
 }
 
 func (f *remoteFile) Write(ctx context.Context, data []byte, off int64) (uint32, syscall.Errno) {
-	f.node.resetCachedAttrs()
+	f.startOP("Write")
 	writeReq := &vfspb.WriteRequest{
 		HandleId: f.id,
 		Data:     data,
@@ -421,27 +794,56 @@ func (f *remoteFile) Write(ctx context.Context, data []byte, off int64) (uint32,
 	return rsp.GetNumBytes(), 0
 }
 
-func openRemoteFile(ctx context.Context, vfsClient vfspb.FileSystemClient, path string, flags uint32, mode uint32, node *Node) (*remoteFile, error) {
-	req := &vfspb.OpenRequest{
-		Path:  path,
-		Flags: flags,
-		Mode:  mode,
+func (f *remoteFile) Lseek(ctx context.Context, off uint64, whence uint32) (uint64, syscall.Errno) {
+	f.startOP("Lseek")
+	writeReq := &vfspb.LseekRequest{
+		HandleId: f.id,
+		Offset:   off,
+		Whence:   whence,
 	}
-	rsp, err := vfsClient.Open(ctx, req)
+	rsp, err := f.vfsClient.Lseek(f.ctx, writeReq)
 	if err != nil {
-		return nil, rpcErrToSyscallErrno(err)
+		return 0, rpcErrToSyscallErrno(err)
 	}
-	return &remoteFile{
-		ctx:       ctx,
-		vfsClient: vfsClient,
-		path:      path,
-		id:        rsp.GetHandleId(),
-		node:      node,
-		data:      rsp.GetData(),
-	}, nil
+	return rsp.GetOffset(), 0
+}
+
+func (n *Node) startOP(op string) {
+	n.vfs.startOP(func() string { return n.relativePath() }, op)
+}
+
+func describeOpenFlags(flags uint32) string {
+	var textFlags []string
+	if int(flags)&os.O_WRONLY != 0 {
+		textFlags = append(textFlags, "O_WRONLY")
+	}
+	if int(flags)&os.O_RDONLY != 0 {
+		textFlags = append(textFlags, "O_RDONLY")
+	}
+	if int(flags)&os.O_RDWR != 0 {
+		textFlags = append(textFlags, "O_RDWR")
+	}
+	if int(flags)&os.O_APPEND != 0 {
+		textFlags = append(textFlags, "O_APPEND")
+	}
+	if int(flags)&os.O_CREATE != 0 {
+		textFlags = append(textFlags, "O_CREATE")
+	}
+	if int(flags)&os.O_TRUNC != 0 {
+		textFlags = append(textFlags, "O_TRUNC")
+	}
+	if int(flags)&os.O_EXCL != 0 {
+		textFlags = append(textFlags, "O_EXCL")
+	}
+	if int(flags)&os.O_SYNC != 0 {
+		textFlags = append(textFlags, "O_SYNC")
+	}
+	return strings.Join(textFlags, ",")
 }
 
 func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+	n.startOP("Open")
+
 	// Don't allow writes to input files.
 	if n.immutable && (int(flags)&(os.O_WRONLY|os.O_RDWR)) != 0 {
 		log.Warningf("[%s] Denied attempt to write to immutable file %q", n.vfs.taskID(), n.relativePath())
@@ -449,39 +851,109 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	}
 
 	if n.vfs.verbose {
-		log.Debugf("[%s] Open %q", n.vfs.taskID(), n.relativePath())
+		log.CtxDebugf(n.vfs.rpcCtx, "Open %q (ino %d) with flags %q", n.relativePath(), n.StableAttr().Ino, describeOpenFlags(flags))
+		defer func() {
+			if errno == 0 {
+				log.CtxDebugf(n.vfs.rpcCtx, "Open %q: OK", n.relativePath())
+			} else {
+				log.CtxDebugf(n.vfs.rpcCtx, "Open %q: %s", n.relativePath(), errno)
+			}
+		}()
 	}
 
-	rf, err := openRemoteFile(n.vfs.getRPCContext(), n.vfs.vfsClient, n.relativePath(), flags, 0, n)
+	req := &vfspb.OpenRequest{
+		Id:    n.StableAttr().Ino,
+		Flags: flags,
+	}
+	rsp, err := n.vfs.vfsClient.Open(ctx, req)
 	if err != nil {
+		if n.vfs.verbose {
+			log.CtxInfof(n.vfs.getRPCContext(), "Open %q failed: %s", n.relativePath(), err)
+		}
 		return nil, 0, rpcErrToSyscallErrno(err)
 	}
-	return rf, 0, 0
+	n.vfs.inodeCache.opened(n.StableAttr().Ino)
+	return &remoteFile{
+		ctx:       ctx,
+		vfsClient: n.vfs.vfsClient,
+		path:      n.relativePath(),
+		id:        rsp.GetHandleId(),
+		node:      n,
+		data:      rsp.GetData(),
+	}, 0, 0
+
 }
 
 func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (node *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+	n.startOP("Create")
+
 	if n.vfs.verbose {
-		log.Debugf("[%s] Create %q", n.vfs.taskID(), filepath.Join(n.relativePath(), name))
+		log.CtxDebugf(n.vfs.rpcCtx, "Create %q", filepath.Join(n.relativePath(), name))
 	}
 
-	child := &Node{vfs: n.vfs, parent: n}
-	inode := n.vfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG})
-	if !n.AddChild(name, inode, false) {
-		log.Warningf("[%s] Could not add child %q to %q, already exists", n.vfs.taskID(), name, n.relativePath())
-		return nil, nil, 0, syscall.EIO
-	}
+	child := &Node{vfs: n.vfs}
 
-	rf, err := openRemoteFile(n.vfs.getRPCContext(), n.vfs.vfsClient, filepath.Join(n.relativePath(), name), flags, mode, child)
+	req := &vfspb.CreateRequest{
+		ParentId: n.StableAttr().Ino,
+		Name:     name,
+		Flags:    flags,
+		Mode:     mode,
+	}
+	rsp, err := n.vfs.vfsClient.Create(ctx, req)
 	if err != nil {
 		return nil, nil, 0, rpcErrToSyscallErrno(err)
 	}
+	n.vfs.inodeCache.opened(rsp.GetId())
+
+	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG, Ino: rsp.GetId()})
+
+	rf := &remoteFile{
+		ctx:       ctx,
+		vfsClient: n.vfs.vfsClient,
+		path:      filepath.Join(n.relativePath(), name),
+		id:        rsp.GetHandleId(),
+		node:      child,
+	}
 
 	out.Mode = mode
+	out.Nlink = 1
 
 	return inode, rf, 0, 0
 }
 
+func (n *Node) Mknod(ctx context.Context, name string, mode uint32, dev uint32, out *fuse.EntryOut) (node *fs.Inode, errno syscall.Errno) {
+	if n.vfs.verbose {
+		newPath := filepath.Join(n.relativePath(), name)
+		log.CtxDebugf(n.vfs.rpcCtx, "Mknod %q mode %s dev %d", newPath, modeDebugString(mode), dev)
+		defer func() {
+			if errno == 0 {
+				log.CtxDebugf(n.vfs.rpcCtx, "Mknod %q: %s", newPath, attrDebugString(node, &out.Attr))
+			} else {
+				log.CtxDebugf(n.vfs.rpcCtx, "Mknod %q: %s", newPath, errno)
+			}
+		}()
+	}
+
+	rsp, err := n.vfs.vfsClient.Mknod(n.vfs.getRPCContext(), &vfspb.MknodRequest{
+		ParentId: n.StableAttr().Ino,
+		Name:     name,
+		Mode:     mode,
+		Dev:      dev,
+	})
+	if err != nil {
+		return nil, rpcErrToSyscallErrno(err)
+	}
+
+	fillFuseAttr(&out.Attr, rsp.GetAttrs())
+
+	child := &Node{vfs: n.vfs}
+	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: mode, Ino: rsp.GetId()})
+
+	return inode, 0
+}
+
 func (n *Node) CopyFileRange(ctx context.Context, fhIn fs.FileHandle, offIn uint64, out *fs.Inode, fhOut fs.FileHandle, offOut uint64, len uint64, flags uint64) (uint32, syscall.Errno) {
+	n.startOP("CopyFileRange")
 	n.resetCachedAttrs()
 
 	rf, ok := fhIn.(*remoteFile)
@@ -495,7 +967,7 @@ func (n *Node) CopyFileRange(ctx context.Context, fhIn fs.FileHandle, offIn uint
 	}
 
 	if n.vfs.verbose {
-		log.Debugf("[%s] CopyFileRange %q => %q", n.vfs.taskID(), rf.path, wf.path)
+		log.CtxDebugf(n.vfs.rpcCtx, "CopyFileRange %q => %q", rf.path, wf.path)
 	}
 
 	rsp, err := n.vfs.vfsClient.CopyFileRange(n.vfs.getRPCContext(), &vfspb.CopyFileRangeRequest{
@@ -512,50 +984,32 @@ func (n *Node) CopyFileRange(ctx context.Context, fhIn fs.FileHandle, offIn uint
 	return rsp.GetNumBytesCopied(), fs.OK
 }
 
-func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedder, newName string, flags uint32) syscall.Errno {
+func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedder, newName string, flags uint32) (errno syscall.Errno) {
+	n.startOP("Rename")
 	newParentNode, ok := newParent.EmbeddedInode().Operations().(*Node)
 	if !ok {
 		log.Warningf("[%s] Parent is not a *Node", n.vfs.taskID())
 		return syscall.EINVAL
 	}
 	if n.vfs.verbose {
-		log.Debugf("[%s] Rename %q => %q", n.vfs.taskID(), filepath.Join(n.relativePath(), name), filepath.Join(newParentNode.relativePath(), newName))
-	}
-
-	existingSrcINode := n.GetChild(name)
-	if existingSrcINode == nil {
-		log.Warningf("[%s] Child %q not found in %q", n.vfs.taskID(), name, n.relativePath())
-		return syscall.EINVAL
-	}
-	existingSrcNode, ok := existingSrcINode.Operations().(*Node)
-	if !ok {
-		log.Warningf("[%s] Source is not a *Node", n.vfs.taskID())
-		return syscall.EINVAL
-	}
-	if existingSrcNode.immutable {
-		log.Warningf("[%s] Denied attempt to rename immutable file %q", n.vfs.taskID(), filepath.Join(n.relativePath(), name))
-		return syscall.EPERM
-	}
-
-	// TODO(vadim): don't allow directory rename to affect input files
-
-	existingTargetNode := newParent.EmbeddedInode().GetChild(newName)
-	if existingTargetNode != nil {
-		existingNode, ok := existingTargetNode.Operations().(*Node)
-		if !ok {
-			log.Warningf("[%s] Existing target is not a *Node", n.vfs.taskID())
-			return syscall.EINVAL
-		}
-		// Don't allow a rename to overwrite an input file.
-		if existingNode.immutable {
-			log.Warningf("[%s] Denied attempt to rename over immutable file %q", n.vfs.taskID(), existingNode.relativePath())
-			return syscall.EPERM
-		}
+		oldPath := filepath.Join(n.relativePath(), name)
+		newPath := filepath.Join(newParentNode.relativePath(), newName)
+		log.CtxDebugf(n.vfs.getRPCContext(), "Rename %q => %q (flags %x)", oldPath, newPath, flags)
+		defer func() {
+			if errno == 0 {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Rename %q => %q: OK", oldPath, newPath)
+			} else {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Rename %q => %q: %s", oldPath, newPath, errno)
+			}
+		}()
 	}
 
 	_, err := n.vfs.vfsClient.Rename(n.vfs.getRPCContext(), &vfspb.RenameRequest{
-		OldPath: filepath.Join(n.relativePath(), name),
-		NewPath: filepath.Join(newParent.EmbeddedInode().Path(nil), newName),
+		OldParentId: n.StableAttr().Ino,
+		OldName:     name,
+		NewParentId: newParent.EmbeddedInode().StableAttr().Ino,
+		NewName:     newName,
+		Flags:       flags,
 	})
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
@@ -564,34 +1018,82 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 	return fs.OK
 }
 
-func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+func fillFuseAttr(out *fuse.Attr, attr *vfspb.Attrs) {
+	out.Size = uint64(attr.GetSize())
+	out.Mode = attr.GetPerm()
+	out.Nlink = attr.GetNlink()
+
+	out.Mtime = attr.MtimeNanos / 1e9
+	out.Mtimensec = uint32(attr.MtimeNanos % 1e9)
+
+	out.Atime = attr.AtimeNanos / 1e9
+	out.Atimensec = uint32(attr.AtimeNanos % 1e9)
+
+	out.Blocks = uint64(attr.Blocks)
+	out.Blksize = uint32(attr.BlockSize)
+}
+
+func attrDebugString(n *fs.Inode, attr *fuse.Attr) string {
+	return fmt.Sprintf("ino %d size %d mode %s num links %d", n.StableAttr().Ino, attr.Size, modeDebugString(attr.Mode), attr.Nlink)
+}
+
+func modeDebugString(mode uint32) string {
+	typ := "<UNKNOWN %d>"
+	switch mode & unix.S_IFMT {
+	case unix.S_IFBLK:
+		typ = "S_IFBLK"
+	case unix.S_IFCHR:
+		typ = "S_IFCHR"
+	case unix.S_IFIFO:
+		typ = "S_IFIFO"
+	case unix.S_IFREG:
+		typ = "S_IFREG"
+	case unix.S_IFSOCK:
+		typ = "S_IFSOCK"
+	case unix.S_IFDIR:
+		typ = "S_IFDIR"
+	default:
+		typ = fmt.Sprintf("<UNKNOWN TYPE %d>", mode&unix.S_IFMT)
+	}
+
+	return fmt.Sprintf("%s %#o", typ, mode & ^uint32(unix.S_IFMT))
+}
+
+func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) (errno syscall.Errno) {
+	n.startOP("Getattr")
 	if n.vfs.verbose {
-		log.Debugf("[%s] Getattr %q", n.vfs.taskID(), n.relativePath())
+		log.CtxDebugf(n.vfs.getRPCContext(), "Getattr %q", n.relativePath())
+		defer func() {
+			if errno == 0 {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Getattr %q: %s", n.relativePath(), attrDebugString(&n.Inode, &out.Attr))
+			} else {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Getattr %q: %s", n.relativePath(), errno)
+			}
+		}()
 	}
 
-	n.mu.Lock()
-	attrs := n.cachedAttrs
-	n.mu.Unlock()
-
-	if attrs == nil {
-		rsp, err := n.vfs.vfsClient.GetAttr(n.vfs.getRPCContext(), &vfspb.GetAttrRequest{Path: n.relativePath()})
-		if err != nil {
-			return rpcErrToSyscallErrno(err)
-		}
-		attrs = rsp.GetAttrs()
-		n.mu.Lock()
-		n.cachedAttrs = rsp.GetAttrs()
-		n.mu.Unlock()
+	attrs, err := n.vfs.getattr(n.StableAttr().Ino)
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
 	}
-	out.Size = uint64(attrs.GetSize())
-	out.Mode = attrs.GetPerm()
-	out.Nlink = attrs.GetNlink()
+	fillFuseAttr(&out.Attr, attrs)
 	return fs.OK
 }
 
+func (n *Node) setattr(req *vfspb.SetAttrRequest) (*vfspb.Attrs, error) {
+	rsp, err := n.vfs.vfsClient.SetAttr(n.vfs.getRPCContext(), req)
+	if err != nil {
+		return nil, err
+	}
+
+	n.vfs.inodeCache.cacheAttrs(n.StableAttr().Ino, rsp.GetAttrs())
+	return rsp.Attrs, nil
+}
+
 func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
+	n.startOP("Setattr")
 	if n.vfs.verbose {
-		log.Debugf("[%s] Setattr %q", n.vfs.taskID(), n.relativePath())
+		log.CtxDebugf(n.vfs.rpcCtx, "Setattr %q", n.relativePath())
 	}
 
 	// Do not allow modifying attributes of input files.
@@ -601,7 +1103,7 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 	}
 
 	req := &vfspb.SetAttrRequest{
-		Path: n.relativePath(),
+		Id: n.StableAttr().Ino,
 	}
 	if m, ok := in.GetMode(); ok {
 		req.SetPerms = &vfspb.SetAttrRequest_SetPerms{Perms: m}
@@ -609,47 +1111,142 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 	if s, ok := in.GetSize(); ok {
 		req.SetSize = &vfspb.SetAttrRequest_SetSize{Size: int64(s)}
 	}
+	if mt, ok := in.GetMTime(); ok {
+		req.SetMtime = &vfspb.SetAttrRequest_SetMTime{MtimeNanos: uint64(mt.UnixNano())}
+	}
+	if at, ok := in.GetATime(); ok {
+		req.SetAtime = &vfspb.SetAttrRequest_SetATime{AtimeNanos: uint64(at.UnixNano())}
+	}
 
-	rsp, err := n.vfs.vfsClient.SetAttr(n.vfs.getRPCContext(), req)
+	attr, err := n.setattr(req)
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
-
-	n.mu.Lock()
-	n.cachedAttrs = rsp.GetAttrs()
-	n.mu.Unlock()
-
-	out.Size = uint64(rsp.GetAttrs().GetSize())
-	out.Mode = rsp.GetAttrs().GetPerm()
-
+	fillFuseAttr(&out.Attr, attr)
 	return fs.OK
 }
 
-func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+func (n *Node) Getxattr(ctx context.Context, attr string, dest []byte) (uint32, syscall.Errno) {
+	n.startOP("Getxattr")
 	if n.vfs.verbose {
-		log.Debugf("Mkdir %q", filepath.Join(n.relativePath(), name))
+		log.CtxDebugf(n.vfs.rpcCtx, "Getxattr %q", n.relativePath())
 	}
 
-	path := filepath.Join(n.relativePath(), name)
-	_, err := n.vfs.vfsClient.Mkdir(n.vfs.getRPCContext(), &vfspb.MkdirRequest{Path: path, Perms: mode})
+	attrs, err := n.vfs.getattr(n.StableAttr().Ino)
+	if err != nil {
+		return 0, rpcErrToSyscallErrno(err)
+	}
+
+	noCopy := len(dest) == 0
+	for _, xa := range attrs.Extended {
+		if xa.Name == attr {
+			if noCopy {
+				return uint32(len(xa.Value) + 1), fs.OK
+			}
+			if len(dest) < len(xa.Value)+1 {
+				return 0, syscall.ERANGE
+			}
+			n := copy(dest, xa.Value)
+			dest[n] = 0
+			return uint32(n + 1), 0
+		}
+	}
+
+	return 0, syscall.ENODATA
+}
+
+func (n *Node) Listxattr(ctx context.Context, dest []byte) (uint32, syscall.Errno) {
+	attrs, err := n.vfs.getattr(n.StableAttr().Ino)
+	if err != nil {
+		return 0, rpcErrToSyscallErrno(err)
+	}
+
+	size := 0
+	noCopy := len(dest) == 0
+	for _, xa := range attrs.Extended {
+		size += len(xa.Name) + 1
+		if noCopy {
+			continue
+		}
+		if len(dest) < len(xa.Name)+1 {
+			return 0, syscall.ERANGE
+		}
+		n := copy(dest, xa.Name)
+		dest[n] = 0
+		dest = dest[n+1:]
+	}
+
+	return uint32(size), fs.OK
+}
+
+func (n *Node) Setxattr(ctx context.Context, attr string, data []byte, flags uint32) syscall.Errno {
+	n.startOP("Setxattr")
+	if n.vfs.verbose {
+		log.CtxDebugf(n.vfs.rpcCtx, "Setxattr %q", n.relativePath())
+	}
+
+	req := &vfspb.SetAttrRequest{
+		Id: n.StableAttr().Ino,
+		SetExtended: &vfspb.SetAttrRequest_SetExtendedAttr{
+			Name:  attr,
+			Value: data,
+			Flags: flags,
+		},
+	}
+
+	_, err := n.setattr(req)
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	return 0
+}
+
+func (n *Node) Removexattr(ctx context.Context, attr string) syscall.Errno {
+	req := &vfspb.SetAttrRequest{
+		Id: n.StableAttr().Ino,
+		RemoveExtended: &vfspb.SetAttrRequest_RemoveExtendedAttr{
+			Name: attr,
+		},
+	}
+
+	_, err := n.setattr(req)
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	return 0
+}
+
+func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (_ *fs.Inode, errno syscall.Errno) {
+	n.startOP("Mkdir")
+	if n.vfs.verbose {
+		newPath := filepath.Join(n.relativePath(), name)
+		log.CtxDebugf(ctx, "Mkdir %q", newPath)
+		defer func() {
+			if errno == 0 {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Mkdir %q: %s", newPath, attrDebugString(&n.Inode, &out.Attr))
+			} else {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Mkdir %q: %s", newPath, errno)
+			}
+		}()
+	}
+
+	rsp, err := n.vfs.vfsClient.Mkdir(n.vfs.getRPCContext(), &vfspb.MkdirRequest{ParentId: n.StableAttr().Ino, Name: name, Perms: mode})
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}
 
-	child := &Node{vfs: n.vfs, parent: n}
-	inode := n.vfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR})
-	if !n.AddChild(name, inode, false) {
-		log.Warningf("[%s] Mkdir could not add child %q to %q, already exists", n.vfs.taskID(), name, n.relativePath())
-		return nil, syscall.EIO
-	}
+	child := &Node{vfs: n.vfs}
+	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR, Ino: rsp.Id})
+	fillFuseAttr(&out.Attr, rsp.Attrs)
 	return inode, 0
 }
 
 func (n *Node) Rmdir(ctx context.Context, name string) syscall.Errno {
+	n.startOP("Rmdir")
 	if n.vfs.verbose {
-		log.Debugf("[%s] Rmdir %q", n.vfs.taskID(), filepath.Join(n.relativePath(), name))
+		log.CtxDebugf(n.vfs.rpcCtx, "Rmdir %q", filepath.Join(n.relativePath(), name))
 	}
-	_, err := n.vfs.vfsClient.Rmdir(n.vfs.getRPCContext(), &vfspb.RmdirRequest{Path: filepath.Join(n.relativePath(), name)})
+	_, err := n.vfs.vfsClient.Rmdir(n.vfs.getRPCContext(), &vfspb.RmdirRequest{ParentId: n.StableAttr().Ino, Name: name})
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
@@ -657,8 +1254,9 @@ func (n *Node) Rmdir(ctx context.Context, name string) syscall.Errno {
 }
 
 func (n *Node) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+	n.startOP("Readdir")
 	if n.vfs.verbose {
-		log.Debugf("[%s] Readdir %q", n.vfs.taskID(), n.relativePath())
+		log.CtxDebugf(n.vfs.rpcCtx, "Readdir %q", n.relativePath())
 	}
 	// The default implementation in the fuse library has a bug that can return entries in a different order across
 	// multiple readdir calls. This can cause filesystem users to get incorrect directory listings.
@@ -683,85 +1281,91 @@ func (n *Node) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 }
 
 func (n *Node) Link(ctx context.Context, target fs.InodeEmbedder, name string, out *fuse.EntryOut) (node *fs.Inode, errno syscall.Errno) {
+	n.startOP("Link")
 	targetNode, ok := target.EmbeddedInode().Operations().(*Node)
 	if !ok {
 		log.Warningf("[%s] Existing node is not a *Node", n.vfs.taskID())
 		return nil, syscall.EINVAL
 	}
 	if n.vfs.verbose {
-		log.Debugf("[%s] Link %q -> %q", n.vfs.taskID(), targetNode.relativePath(), name)
+		newPath := filepath.Join(n.relativePath(), name)
+		log.CtxDebugf(n.vfs.rpcCtx, "Link %q -> %q", newPath, targetNode.relativePath())
+		defer func() {
+			if errno == 0 {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Link %q -> %q: %s", newPath, targetNode.relativePath(), attrDebugString(node, &out.Attr))
+			} else {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Link %q -> %q: %s", newPath, targetNode.relativePath(), errno)
+			}
+		}()
 	}
 
-	reqTarget := targetNode.relativePath()
-	reqTarget = strings.TrimPrefix(reqTarget, n.vfs.mountDir)
-
 	req := &vfspb.LinkRequest{
-		Path:   filepath.Join(n.relativePath(), name),
-		Target: reqTarget,
+		ParentId: n.StableAttr().Ino,
+		Name:     name,
+		TargetId: target.EmbeddedInode().StableAttr().Ino,
 	}
 	res, err := n.vfs.vfsClient.Link(n.vfs.getRPCContext(), req)
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}
 
-	child := &Node{vfs: n.vfs, parent: n}
-	inode := n.vfs.root.NewPersistentInode(ctx, child, fs.StableAttr{
+	n.vfs.inodeCache.removeCachedAttrs(targetNode.StableAttr().Ino)
+
+	child := &Node{vfs: n.vfs}
+	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{
 		Mode: fuse.S_IFREG,
 		Ino:  target.EmbeddedInode().StableAttr().Ino,
 	})
-	if !n.AddChild(name, inode, false) {
-		log.Warningf("[%s] Link could not add child %q to %q, already exists", n.vfs.taskID(), name, n.relativePath())
-		return nil, syscall.EIO
-	}
-
 	out.Attr.FromStat(attrsToStat(res.GetAttrs()))
 	return inode, 0
 }
 
 func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.EntryOut) (node *fs.Inode, errno syscall.Errno) {
-	src := filepath.Join(n.relativePath(), name)
+	n.startOP("Symlink")
 	if n.vfs.verbose {
-		log.Debugf("[%s] Symlink %q -> %q", n.vfs.taskID(), src, target)
+		src := filepath.Join(n.relativePath(), name)
+		log.CtxDebugf(n.vfs.rpcCtx, "Symlink %q -> %q", src, target)
 	}
-
-	path := filepath.Join(n.relativePath(), name)
 
 	reqTarget := target
-	if strings.HasPrefix(target, n.vfs.mountDir) {
-		reqTarget = strings.TrimPrefix(target, n.vfs.mountDir)
+	if after, ok := strings.CutPrefix(target, n.vfs.mountDir); ok {
+		reqTarget = after
 	}
 
-	_, err := n.vfs.vfsClient.Symlink(n.vfs.getRPCContext(), &vfspb.SymlinkRequest{Path: path, Target: reqTarget})
+	rsp, err := n.vfs.vfsClient.Symlink(n.vfs.getRPCContext(), &vfspb.SymlinkRequest{ParentId: n.StableAttr().Ino, Name: name, Target: reqTarget})
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}
 
-	child := &Node{vfs: n.vfs, parent: n, symlinkTarget: target}
-	inode := n.vfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFLNK})
-	if !n.AddChild(name, inode, false) {
-		log.Warningf("[%s] Symlink could not add child %q to %q, already exists", n.vfs.taskID(), name, n.relativePath())
-		return nil, syscall.EIO
-	}
-
+	child := &Node{vfs: n.vfs, symlinkTarget: target}
+	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFLNK, Ino: rsp.GetId()})
 	return inode, 0
 }
 
 func (n *Node) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
+	n.startOP("Readlink")
 	if n.vfs.verbose {
-		log.Debugf("[%s] Readlink %q", n.vfs.taskID(), n.relativePath())
+		log.CtxDebugf(n.vfs.rpcCtx, "Readlink %q", n.relativePath())
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.symlinkTarget != "" {
+		if n.vfs.verbose {
+			log.CtxDebugf(n.vfs.rpcCtx, "Readlink %q returning %q", n.relativePath(), n.symlinkTarget)
+		}
 		return []byte(n.symlinkTarget), 0
+	}
+	if n.vfs.verbose {
+		log.CtxDebugf(n.vfs.rpcCtx, "Readlink %q returning invalid", n.relativePath())
 	}
 	return nil, syscall.EINVAL
 }
 
 func (n *Node) Unlink(ctx context.Context, name string) syscall.Errno {
+	n.startOP("Unlink")
 	relPath := filepath.Join(n.relativePath(), name)
 	if n.vfs.verbose {
-		log.Debugf("[%s] Unlink %q", n.vfs.taskID(), relPath)
+		log.CtxDebugf(n.vfs.rpcCtx, "Unlink %q", relPath)
 	}
 	existingTargetNode := n.GetChild(name)
 	if existingTargetNode == nil {
@@ -780,10 +1384,12 @@ func (n *Node) Unlink(ctx context.Context, name string) syscall.Errno {
 		return syscall.EPERM
 	}
 
-	_, err := n.vfs.vfsClient.Unlink(n.vfs.getRPCContext(), &vfspb.UnlinkRequest{Path: relPath})
+	_, err := n.vfs.vfsClient.Unlink(n.vfs.getRPCContext(), &vfspb.UnlinkRequest{ParentId: n.StableAttr().Ino, Name: name})
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
+
+	n.vfs.inodeCache.removeCachedAttrs(existingTargetNode.StableAttr().Ino)
 
 	n.mu.Lock()
 	if existingNode.symlinkTarget != "" {
@@ -799,6 +1405,10 @@ func (n *Node) Getlk(ctx context.Context, f fs.FileHandle, owner uint64, lk *fus
 	if !ok {
 		log.Warningf("file handle is not a *remoteFile")
 		return syscall.EBADF
+	}
+	n.startOP("Getlk")
+	if n.vfs.verbose {
+		log.CtxDebugf(n.vfs.rpcCtx, "Getlk %q", n.relativePath())
 	}
 	req := &vfspb.GetLkRequest{
 		HandleId: rf.id,
@@ -824,6 +1434,10 @@ func (n *Node) Setlk(ctx context.Context, f fs.FileHandle, owner uint64, lk *fus
 		log.Warningf("file handle is not a *remoteFile")
 		return syscall.EBADF
 	}
+	n.startOP("Setlk")
+	if n.vfs.verbose {
+		log.CtxDebugf(n.vfs.rpcCtx, "Setlk %q", n.relativePath())
+	}
 	req := &vfspb.SetLkRequest{
 		HandleId: rf.id,
 		Owner:    owner,
@@ -842,6 +1456,10 @@ func (n *Node) Setlkw(ctx context.Context, f fs.FileHandle, owner uint64, lk *fu
 	if !ok {
 		log.Warningf("file handle is not a *remoteFile")
 		return syscall.EBADF
+	}
+	n.startOP("Setlkw")
+	if n.vfs.verbose {
+		log.CtxDebugf(n.vfs.rpcCtx, "Setlkw %q", n.relativePath())
 	}
 	req := &vfspb.SetLkRequest{
 		HandleId: rf.id,
@@ -863,4 +1481,17 @@ func fileLockToProto(lk *fuse.FileLock) *vfspb.FileLock {
 		Typ:   lk.Typ,
 		Pid:   lk.Pid,
 	}
+}
+
+func (n *Node) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.Errno {
+	rsp, err := n.vfs.vfsClient.Statfs(n.vfs.getRPCContext(), &vfspb.StatfsRequest{})
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	out.Bsize = uint32(rsp.BlockSize)
+	out.Blocks = rsp.TotalBlocks
+	out.Bavail = rsp.BlocksAvailable
+	out.Bfree = rsp.BlocksFree
+	out.NameLen = 255
+	return fs.OK
 }

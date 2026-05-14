@@ -21,7 +21,7 @@ go_library(
         "//server/util/urlutil",
         "//server/util/ziputil",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
-        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//:grpc",
     ],
 )
 
@@ -45,6 +45,6 @@ go_test(
         "//server/util/proto",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@io_bazel_rules_go//go/runfiles:go_default_library",
+        "@io_bazel_rules_go//go/runfiles",
     ],
 )

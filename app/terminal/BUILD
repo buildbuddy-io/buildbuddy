@@ -8,23 +8,23 @@ ts_library(
     name = "terminal",
     srcs = ["terminal.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-window",
+        "//:node_modules/lucide-react",
+        "//:node_modules/memoize-one",
+        "//:node_modules/react",
+        "//:node_modules/react-virtualized-auto-sizer",
+        "//:node_modules/react-window",
+        "//:node_modules/tslib",
+        "//app/capabilities",
         "//app/components/input",
         "//app/components/spinner",
-        "//app/errors:error_service",
         "//app/router",
+        "//app/terminal:copy",
         "//app/terminal:row",
         "//app/terminal:text",
         "//app/util:math",
         "//app/util:scroller",
-        "@npm//@types/react",
-        "@npm//@types/react-virtualized-auto-sizer",
-        "@npm//@types/react-window",
-        "@npm//lucide-react",
-        "@npm//memoize-one",
-        "@npm//react",
-        "@npm//react-virtualized-auto-sizer",
-        "@npm//react-window",
-        "@npm//tslib",
     ],
 )
 
@@ -34,23 +34,38 @@ ts_jasmine_node_test(
     deps = [":terminal"],
 )
 
+ts_jasmine_node_test(
+    name = "terminal_copy_test",
+    srcs = ["terminal_copy_test.ts"],
+    deps = [":copy"],
+)
+
+ts_library(
+    name = "copy",
+    srcs = ["copy.ts"],
+    deps = [
+        "//app/terminal:text",
+        "//app/util:clipboard",
+    ],
+)
+
 ts_library(
     name = "ansi",
     srcs = ["ansi.tsx"],
-    deps = ["@npm//tslib"],
+    deps = ["//:node_modules/tslib"],
 )
 
 ts_library(
     name = "row",
     srcs = ["row.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-window",
+        "//:node_modules/react",
+        "//:node_modules/react-window",
+        "//:node_modules/tslib",
         "//app/router",
         "//app/terminal:text",
-        "@npm//@types/react",
-        "@npm//@types/react-window",
-        "@npm//react",
-        "@npm//react-window",
-        "@npm//tslib",
     ],
 )
 
@@ -58,8 +73,8 @@ ts_library(
     name = "text",
     srcs = ["text.tsx"],
     deps = [
+        "//:node_modules/memoize-one",
+        "//:node_modules/tslib",
         "//app/terminal:ansi",
-        "@npm//memoize-one",
-        "@npm//tslib",
     ],
 )

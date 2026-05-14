@@ -1,9 +1,9 @@
-import React, { useState } from "react";
-import styles from "./hero.module.css";
-import common from "../../css/common.module.css";
 import Image from "@theme/IdealImage";
-import { copyToClipboard } from "../../util/clipboard";
 import { Copy } from "lucide-react";
+import React, { useState } from "react";
+import common from "../../css/common.module.css";
+import { copyToClipboard } from "../../util/clipboard";
+import styles from "./hero.module.css";
 
 function Component(props) {
   let [copied, setCopied] = useState(0);
@@ -26,8 +26,8 @@ function Component(props) {
           <div className={common.subtitle}>
             {props.subtitle || (
               <>
-                BuildBuddy provides enterprise features for Bazel — the open source build system that allows you to
-                build and test software 10x faster.
+                BuildBuddy is the developer productivity platform built for Bazel — the open source build system that
+                allows you to build and test software 10x faster.
               </>
             )}
           </div>

@@ -13,9 +13,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmysql"
@@ -27,7 +29,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
@@ -73,33 +74,55 @@ auth:
   enable_anonymous_usage: true
 remote_execution:
    enable_remote_exec: true
+http:
+   client:
+      allow_localhost: true
 `
-
-var lis *bufconn.Listener
-
-func init() {
-	vtprotocodec.Register()
-}
 
 // RegisterLocalGRPCServer registers a local gRPC server to the environment and
 // returns the server.
 //
 // Register services to the server, then call LocalGRPCConn to get a connection
 // to the returned server.
-func RegisterLocalGRPCServer(te *real_environment.RealEnv) (*grpc.Server, func()) {
+func RegisterLocalGRPCServer(t testing.TB, te *real_environment.RealEnv) (*grpc.Server, func(), *bufconn.Listener) {
 	if te.GetGRPCServer() != nil {
 		log.Fatal("GRPCServer is already registered")
 	}
 	lis := bufconn.Listen(1024 * 1024)
 	srv, run := GRPCServer(te, lis)
-	te.SetLocalBufconnListener(lis)
 	te.SetGRPCServer(srv)
-	return srv, run
+	t.Cleanup(srv.Stop)
+
+	return srv, run, lis
 }
 
-func LocalGRPCConn(ctx context.Context, te *real_environment.RealEnv, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+// RegisterLocalInternalGRPCServer registers a local, internal gRPC server to
+// the environment and returns the server.
+//
+// Register services to the server, then call LocalInternalGRPCConn to get a
+// connection to the returned server.
+func RegisterLocalInternalGRPCServer(t testing.TB, te *real_environment.RealEnv) (*grpc.Server, func(), *bufconn.Listener) {
+	if te.GetInternalGRPCServer() != nil {
+		log.Fatal("Internal GRPCServer is already registered")
+	}
+	lis := bufconn.Listen(1024 * 1024)
+	srv, run := GRPCServer(te, lis)
+	te.SetInternalGRPCServer(srv)
+	t.Cleanup(srv.Stop)
+	return srv, run, lis
+}
+
+func LocalGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	return localGRPCConn(ctx, lis, opts...)
+}
+
+func LocalInternalGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	return localGRPCConn(ctx, lis, opts...)
+}
+
+func localGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
 	bufDialer := func(context.Context, string) (net.Conn, error) {
-		return te.GetLocalBufconnListener().Dial()
+		return lis.Dial()
 	}
 
 	dialOptions := grpc_client.CommonGRPCClientOptions()
@@ -113,14 +136,55 @@ func LocalGRPCConn(ctx context.Context, te *real_environment.RealEnv, opts ...gr
 func GRPCServer(env environment.Env, lis net.Listener) (*grpc.Server, func()) {
 	srv := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
 	runFunc := func() {
-		if err := srv.Serve(lis); err != nil {
+		if err := srv.Serve(lis); err != nil && err != grpc.ErrServerStopped {
 			log.Fatal(err.Error())
 		}
 	}
 	return srv, runFunc
 }
 
-func GetTestEnv(t testing.TB) *real_environment.RealEnv {
+func setupDBHandle(t testing.TB, te environment.Env, testRootDir string) (interfaces.DBHandle, error) {
+	switch *databaseType {
+	case "sqlite":
+		flags.Set(t, "database.data_source", fmt.Sprintf("sqlite3://%s", filepath.Join(testRootDir, "test.db")))
+	case "mysql":
+		flags.Set(t, "database.data_source", testmysql.GetOrStart(t, *reuseServer))
+	case "postgres":
+		flags.Set(t, "database.data_source", testpostgres.GetOrStart(t, *reuseServer))
+	default:
+		t.Fatalf("Unsupported db type: %s", *databaseType)
+	}
+	return db.GetConfiguredDatabase(context.Background(), te)
+}
+
+type TestEnvOption interface {
+	accumulate(TestEnvOption)
+}
+
+type dbHandleOption struct {
+	dbh interfaces.DBHandle
+}
+
+func (o *dbHandleOption) accumulate(opt TestEnvOption) {
+	if opt, ok := opt.(*dbHandleOption); ok {
+		o.dbh = opt.dbh
+	}
+}
+
+func WithDBHandle(dbh interfaces.DBHandle) TestEnvOption {
+	return &dbHandleOption{dbh: dbh}
+}
+
+func GetTestEnv(t testing.TB, opts ...TestEnvOption) *real_environment.RealEnv {
+	dbHandleOpt := &dbHandleOption{}
+	for _, opt := range opts {
+		switch opt := opt.(type) {
+		case *dbHandleOption:
+			dbHandleOpt.accumulate(opt)
+		default:
+			t.Fatalf("Unhandled TestEnvOption type: %T", opt)
+		}
+	}
 	flags.PopulateFlagsFromData(t, testConfigData)
 	testRootDir := testfs.MakeTempDir(t)
 	if flag.Lookup("storage.disk.root_directory") != nil {
@@ -137,6 +201,10 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 	}
 
 	healthChecker := healthcheck.NewHealthChecker("test")
+	t.Cleanup(func() {
+		healthChecker.Shutdown()
+		healthChecker.WaitForGracefulShutdown()
+	})
 	te := real_environment.NewRealEnv(healthChecker)
 	c, err := memory_cache.NewMemoryCache(1000 * 1000 * 1000 /* 1GB */)
 	if err != nil {
@@ -145,37 +213,36 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 	te.SetCache(c)
 	byte_stream_client.RegisterPooledBytestreamClient(te)
 
-	switch *databaseType {
-	case "sqlite":
-		flags.Set(t, "database.data_source", fmt.Sprintf("sqlite3://%s", filepath.Join(testRootDir, "test.db")))
-	case "mysql":
-		flags.Set(t, "database.data_source", testmysql.GetOrStart(t, *reuseServer))
-	case "postgres":
-		flags.Set(t, "database.data_source", testpostgres.GetOrStart(t, *reuseServer))
-	default:
-		t.Fatalf("Unsupported db type: %s", *databaseType)
-	}
-	dbHandle, err := db.GetConfiguredDatabase(context.Background(), te)
-	if err != nil {
-		t.Fatal(err)
+	dbHandle := dbHandleOpt.dbh
+	if dbHandle == nil {
+		var err error
+		dbHandle, err = setupDBHandle(t, te, testRootDir)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	te.SetDBHandle(dbHandle)
+	t.Cleanup(func() {
+		if err := dbHandle.Close(); err != nil {
+			t.Fatalf("Error closing database handle: %s", err)
+		}
+	})
 	te.SetInvocationDB(invocationdb.NewInvocationDB(te, dbHandle))
 
 	if *useClickHouse {
 		flags.Set(t, "olap_database.data_source", testclickhouse.GetOrStart(t, *reuseServer))
 		err := clickhouse.Register(te)
 		if err != nil {
-			log.Fatalf("Error configuring ClickHouse: %s", err)
+			t.Fatalf("Error configuring ClickHouse: %s", err)
 		}
 	}
-	bs, err := blobstore.GetConfiguredBlobstore(te)
-	if err != nil {
-		log.Fatalf("Error configuring blobstore: %s", err)
+	if err := blobstore.Register(te); err != nil {
+		t.Fatalf("Error configuring blobstore: %s", err)
 	}
-	te.SetBlobstore(bs)
 	te.SetAuthenticator(&nullauth.NullAuthenticator{})
 	require.NoError(t, buildbuddy_server.Register(te))
+
+	hit_tracker.Register(te)
 
 	return te
 }

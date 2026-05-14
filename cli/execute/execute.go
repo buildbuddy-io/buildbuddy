@@ -2,11 +2,16 @@ package execute
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/execution"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/cli/markdown"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -17,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -24,10 +30,11 @@ import (
 )
 
 var flags = flag.NewFlagSet("execute", flag.ContinueOnError)
+var Flags = flags
 
 // Bazel-equivalent flags.
 var (
-	target         = flags.String("remote_executor", "grpcs://remote.buildbuddy.io", "Remote execution service target.")
+	target         = flags.String("remote_executor", login.DefaultApiTarget, "Remote execution service target.")
 	instanceName   = flags.String("remote_instance_name", "", "Value to pass as an instance_name in the remote execution API.")
 	digestFunction = flags.String("digest_function", "sha256", "Digest function used for content-addressable storage. Can be `\"sha256\" or \"blake3\"`.")
 	invocationID   = flags.String("invocation_id", "", "If set, set this value as the tool_invocation_id in RequestMetadata.")
@@ -38,11 +45,17 @@ var (
 
 // Flags specific to `bb execute`.
 var (
-	inputRoot = flags.String("input_root", "", "Input root directory. By default, the action will have no inputs.")
+	inputRoot       = flags.String("input_root", "", "Input root directory. By default, the action will have no inputs. Incompatible with --input_root_digest.")
+	inputRootDigest = flags.String("input_root_digest", "", "Digest of the input root directory. This is useful to re-run an existing action. Users can also use `bb download` to fetch the input tree locally. Incompatible with --input_root.")
+	outputPaths     = flag.New(flags, "output_path", []string{}, "Path to an expected output file or directory. The path should be relative to the workspace root. This flag can be specified more than once.")
+	output          = flags.String("output", "stdio", "Output format: `stdio` to print command stdout/stderr, `id` to print only execution ID, `json` to print execution response and logs as JSON, or `markdown` (or `md`) to print a markdown summary.")
+	cacheRead       = flags.Bool("cache_read", false, "If true, allow action cache lookup before execution (`skip_cache_lookup=false`).")
+	cacheWrite      = flags.Bool("cache_write", false, "If true, allow successful executions to be written to the action cache (`do_not_cache=false`).")
 	// Note: bazel has remote_default_exec_properties but it has somewhat
 	// confusing semantics, so we call this "exec_properties" to avoid
 	// confusion.
-	execProperties = flag.New(flags, "exec_properties", []string{}, "Platform exec property, as a `NAME=VALUE` pair. Can be specified more than once.")
+	execProperties   = flag.New(flags, "exec_properties", []string{}, "Platform exec property, as a `NAME=VALUE` pair. Can be specified more than once.")
+	responseJSONFile = flags.String("response_json_file", "", "If set, write the JSON-serialized ExecuteResponse to this path.")
 )
 
 const (
@@ -60,6 +73,9 @@ Example of running a simple bash command:
 
 Example of running a bash command with runner recycling:
   $ bb execute --exec_properties=recycle-runner=true -- bash -c 'echo "Runner uptime:" $(uptime)'
+
+Example of allowing action cache reads and writes:
+  $ bb execute --cache_read --cache_write -- bash -c 'echo "Hello again!"'
 `
 )
 
@@ -84,6 +100,13 @@ func HandleExecute(args []string) (int, error) {
 		log.Print("error: must provide arg separator '--' followed by command")
 		log.Print(usage)
 		return 1, nil
+	}
+	*output = strings.ToLower(*output)
+	if *output == "md" {
+		*output = "markdown"
+	}
+	if *output != "stdio" && *output != "id" && *output != "json" && *output != "markdown" {
+		return -1, fmt.Errorf("invalid --output %q (allowed values: stdio, id, json, markdown, md)", *output)
 	}
 	if err := execute(cmdArgs); err != nil {
 		return -1, err
@@ -117,6 +140,7 @@ func execute(cmdArgs []string) error {
 	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
+	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
 
 	environ, err := rexec.MakeEnv(*actionEnv...)
 	if err != nil {
@@ -130,8 +154,9 @@ func execute(cmdArgs []string) error {
 		Arguments:            cmdArgs,
 		EnvironmentVariables: environ,
 		Platform:             platform,
+		OutputPaths:          *outputPaths,
 	}
-	action := &repb.Action{}
+	action := &repb.Action{DoNotCache: !*cacheWrite}
 	if *timeout > 0 {
 		action.Timeout = durationpb.New(*timeout)
 	}
@@ -144,44 +169,127 @@ func execute(cmdArgs []string) error {
 	start := time.Now()
 	stageStart := start
 	log.Debugf("Preparing action for %s", cmd)
+	if *inputRootDigest != "" && *inputRoot != "" {
+		return fmt.Errorf("cannot set both --input_root and --input_root_digest; please use one or the other")
+	}
+	if *inputRootDigest != "" {
+		ird := *inputRootDigest
+		if !strings.HasPrefix(ird, "/blobs/") {
+			ird = fmt.Sprintf("/blobs/%s", ird)
+		}
+		rn, err := digest.ParseDownloadResourceName(ird)
+		if err != nil {
+			return fmt.Errorf("parse input root digest: %w", err)
+		}
+		log.Debugf("Using input root digest %q", ird)
+		action.InputRootDigest = rn.GetDigest()
+	}
 	arn, err := rexec.Prepare(ctx, env, *instanceName, df, action, cmd, *inputRoot)
 	if err != nil {
 		return err
 	}
 	log.Debugf("Uploaded inputs in %s", time.Since(stageStart))
-	actionStr, err := digest.ResourceNameFromProto(arn).DownloadString()
-	if err != nil {
-		log.Debugf("Failed to compute action resource name: %s", err)
+	acrn, err := digest.CASResourceNameFromProto(arn)
+	if err == nil {
+		log.Debugf("Action resource name: %s", acrn.DownloadString())
 	} else {
-		log.Debugf("Action resource name: %s", actionStr)
+		log.Debugf("Failed to compute action resource name: %s", err)
 	}
 	stageStart = time.Now()
 	log.Debug("Starting /Execute request")
-	stream, err := rexec.Start(ctx, env, arn)
+	stream, err := rexec.Start(ctx, env, arn, rexec.WithSkipCacheLookup(!*cacheRead))
 	if err != nil {
 		return err
 	}
 	log.Debugf("Waiting for execution to complete")
-	response, err := rexec.Wait(stream)
-	if err != nil {
-		return err
+	var rsp *rexec.Response
+	var executionErr error
+	for {
+		msg, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if msg.Err != nil {
+			// Keep track of execution errors so we can still render available
+			// response logs for structured output modes.
+			executionErr = msg.Err
+		}
+		// Log execution state
+		progress := &repb.ExecutionProgress{}
+		ok, _ := rexec.FindFirstAuxiliaryMetadata(msg.ExecuteOperationMetadata.GetPartialExecutionMetadata(), progress)
+		if ok && progress.GetExecutionState() != 0 {
+			log.Debugf(
+				"Remote: %s @ %s",
+				repb.ExecutionProgress_ExecutionState_name[int32(progress.GetExecutionState())],
+				progress.GetTimestamp().AsTime(),
+			)
+		} else {
+			log.Debugf("Remote: %s", repb.ExecutionStage_Value_name[int32(msg.ExecuteOperationMetadata.GetStage())])
+		}
+		if msg.Done {
+			rsp = msg
+			break
+		}
 	}
-	if response.Err != nil {
-		// We failed to execute.
-		return response.Err
+	// Defensive guard: we should only exit the loop on a Done message, which
+	// always sets rsp. Keep this check to avoid nil dereference if that
+	// invariant is ever broken by future changes.
+	if rsp == nil {
+		return fmt.Errorf("execute stream ended before completion")
 	}
 	log.Debugf("Execution completed in %s", time.Since(stageStart))
-	stageStart = time.Now()
-	log.Debugf("Downloading result")
-	res, err := rexec.GetResult(ctx, env, *instanceName, df, response.ExecuteResponse.GetResult())
-	if err != nil {
-		return status.WrapError(err, "execution failed")
+	if executionErr != nil && *output == "stdio" {
+		return executionErr
 	}
-	log.Debugf("Downloaded results in %s", time.Since(stageStart))
+	var logs *rexec.ExecutionLogs
+	if *output == "json" || *output == "markdown" {
+		logs, err = rexec.GetExecutionLogs(ctx, env.GetByteStreamClient(), *instanceName, df, rsp.ExecuteResponse)
+		if err != nil {
+			log.Warnf("Could not fetch all execution logs: %s", err)
+		}
+	}
+	switch *output {
+	case "id":
+		if _, err := fmt.Fprintln(os.Stdout, rsp.GetName()); err != nil {
+			return err
+		}
+	case "json":
+		if err := execution.WriteJSONOutput(os.Stdout, rsp.GetName(), rsp.ExecuteResponse, logs); err != nil {
+			return fmt.Errorf("write json output: %w", err)
+		}
+	case "markdown":
+		markdownWriter := markdown.Writer(os.Stdout, nil)
+		if err := execution.WriteMarkdownWithDetails(markdownWriter, rsp.GetName(), rsp.ExecuteResponse, logs); err != nil {
+			return err
+		}
+	case "stdio":
+		stageStart = time.Now()
+		log.Debugf("Downloading result")
+		res, err := rexec.GetResult(ctx, env, *instanceName, df, rsp.ExecuteResponse.GetResult())
+		if err != nil {
+			return status.WrapError(err, "execution failed")
+		}
+		log.Debugf("Downloaded results in %s", time.Since(stageStart))
+
+		os.Stdout.Write(res.Stdout)
+		os.Stderr.Write(res.Stderr)
+	default:
+		return fmt.Errorf("invalid --output %q", *output)
+	}
 	log.Debugf("End-to-end execution time: %s", time.Since(start))
 
-	os.Stdout.Write(res.Stdout)
-	os.Stderr.Write(res.Stderr)
+	if *responseJSONFile != "" {
+		b, err := protojson.Marshal(rsp.ExecuteResponse)
+		if err != nil {
+			return fmt.Errorf("marshal response JSON: %w", err)
+		}
+		if err := os.WriteFile(*responseJSONFile, b, 0644); err != nil {
+			return fmt.Errorf("write response JSON file: %w", err)
+		}
+	}
+	if executionErr != nil {
+		return executionErr
+	}
 
 	return nil
 }

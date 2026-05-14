@@ -8,6 +8,8 @@ The BuildBuddy API let's you programmatically obtain information about your Baze
 
 Requests can be made via JSON or using Protobuf. The examples below are using the JSON API. For a full overview of the service, you can view the [service definition](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/service.proto) or the [individual protos](https://github.com/buildbuddy-io/buildbuddy/tree/master/proto/api/v1).
 
+If you're configuring a coding agent or MCP client, see the [BuildBuddy MCP Server docs](enterprise-mcp.md).
+
 ## GetInvocation
 
 The `GetInvocation` endpoint allows you to fetch invocations associated with a commit SHA or invocation ID. View full [Invocation proto](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/invocation.proto).
@@ -70,6 +72,19 @@ Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the invocation ID `c6b2b6de-c
 message GetInvocationRequest {
   // The selector defining which invocations(s) to retrieve.
   InvocationSelector selector = 1;
+
+  // If true, includes additional build metadata.
+  bool include_metadata = 2;
+
+  // If true, include artifacts attached to the invocation.
+  bool include_artifacts = 4;
+
+  // If true, include build tool logs, such as the timing profile and compact
+  // execution log if available.
+  bool include_build_tool_logs = 6;
+
+  // If true, include child invocations (if this invocation was a workflow).
+  bool include_child_invocations = 5;
 
   // The next_page_token value returned from a previous request, if any.
   string page_token = 3;
@@ -184,12 +199,38 @@ message Invocation {
   // https://github.com/bazelbuild/bazel/blob/b3602eb14cf27494a0a754bc215ec2b94d13d89b/src/main/java/com/google/devtools/build/lib/util/ExitCode.java#L42-L72
   // Ex: "INTERRUPTED".
   string bazel_exit_code = 23;
+
+  // Any artifacts that were attached to this invocation.
+  // Only included if include_artifacts = true.
+  repeated File artifacts = 24;
+
+  // Build tool logs, such as timing profiles and compact execution logs. Only
+  // included if include_build_tool_logs = true.
+  repeated File build_tool_logs = 27;
+
+  // The state of the build event stream for the invocation.
+  InvocationStatus invocationStatus = 25;
+
+  // Any invocations spawned during this invocation. Only included if
+  // include_child_invocations = true.
+  repeated Id child_invocations = 26;
 }
 
 // Key value pair containing invocation metadata.
 message InvocationMetadata {
   string key = 1;
   string value = 2;
+}
+
+// InvocationStatus represents the state of the build event stream.
+enum InvocationStatus {
+  UNKNOWN_INVOCATION_STATUS = 0;
+  // The build is complete and the Finished BES event has been processed.
+  COMPLETE_INVOCATION_STATUS = 1;
+  // The build is still in progress, and the stream is still being processed.
+  PARTIAL_INVOCATION_STATUS = 2;
+  // The stream was broken.
+  DISCONNECTED_INVOCATION_STATUS = 3;
 }
 ```
 
@@ -287,6 +328,122 @@ message Log {
   string contents = 3;
 }
 ```
+
+## GetAuditLog
+
+The `GetAuditLog` endpoint provides a stable, paginated API for exporting organization audit logs. View full [Audit Log proto](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/audit_log.proto).
+
+### Endpoint
+
+```
+https://app.buildbuddy.io/api/v1/GetAuditLog
+```
+
+### Service
+
+```protobuf
+// Retrieves a page of audit log entries.
+rpc GetAuditLog(GetAuditLogRequest) returns (GetAuditLogResponse);
+```
+
+### Access Requirements
+
+- Use an **Org API key** of type **Audit log reader key** (recommended) or **Org admin key**.
+- Set `request_context.group_id` to retrieve logs for a different organization that the caller is authorized to access.
+- If the key does not meet the access requirements, the request returns `PermissionDenied`.
+
+### Example cURL request
+
+```bash
+curl -d '{
+  "selector": {
+    "start_time": "2026-02-01T00:00:00Z",
+    "end_time": "2026-02-02T00:00:00Z"
+  },
+  "page_size": 500
+}' \
+  -H 'x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY' \
+  -H 'Content-Type: application/json' \
+  https://app.buildbuddy.io/api/v1/GetAuditLog
+```
+
+### Example cURL response
+
+```json
+{
+  "entry": [
+    {
+      "eventTime": "2026-02-01T03:45:21.123456Z",
+      "action": "UPDATE",
+      "resource": {
+        "type": "GROUP",
+        "id": "GR1234567890"
+      }
+    }
+  ],
+  "nextPageToken": "eyJzdGFydF90aW1lX3VzZWMiOjE3MzgzNjgwMDAwMDAwMDAsImVuZF90aW1lX3VzZWMiOjE3Mzg0NTQ0MDAwMDAwMDAsImV2ZW50X3RpbWVfdXNlYyI6MTczODM3MTkyMTIzNDU2LCJhdWRpdF9sb2dfaWQiOiJBTDE4ODQ3Mzk5Mjg0OTkzMiJ9"
+}
+```
+
+### GetAuditLogRequest
+
+```protobuf
+// Request passed into GetAuditLog.
+message GetAuditLogRequest {
+  // Optional selector used to constrain results.
+  AuditLogSelector selector = 1;
+
+  // Opaque cursor returned by a previous request, if any.
+  string page_token = 2;
+
+  // Maximum number of entries to return in this page.
+  // If unset or less than 1, a server default is used.
+  // Values greater than 1000 are capped at 1000.
+  int32 page_size = 3;
+
+  // Optional request context.
+  // Set group_id to query a different organization when the caller is
+  // authorized to access it.
+  context.RequestContext request_context = 4;
+}
+```
+
+### AuditLogSelector
+
+```protobuf
+// The selector used to specify which audit logs to return.
+message AuditLogSelector {
+  // Optional inclusive lower bound for event time.
+  google.protobuf.Timestamp start_time = 1;
+
+  // Optional exclusive upper bound for event time.
+  google.protobuf.Timestamp end_time = 2;
+}
+```
+
+### GetAuditLogResponse
+
+```protobuf
+// Response from calling GetAuditLog.
+message GetAuditLogResponse {
+  // Audit log entries matching the request. Entry payload fields may evolve
+  // over time (new fields may be added and old fields may be removed), so
+  // clients should tolerate unknown/missing fields.
+  repeated auditlog.Entry entry = 1;
+
+  // Cursor to retrieve the next page, or empty if there are no more results.
+  string next_page_token = 2;
+}
+```
+
+### Polling Recommendations
+
+- Treat `next_page_token` as opaque. Do not parse it.
+- Keep `start_time` / `end_time` fixed while paginating through one window. If
+  `end_time` is omitted on the first page, the server pins it into the returned
+  cursor.
+- Resume by passing the returned `next_page_token` until it is empty.
+- For continuous export, query bounded windows (for example every minute) and checkpoint the last successful window end.
 
 ## GetTarget
 
@@ -496,7 +653,7 @@ Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the invocation ID `c6b2b6de-c
          "file":[
             {
                "name":"enterprise/app/style.css",
-               "uri":"bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy-internal/ci/blobs/e21b1e3411792e17e698be879a3548527d620c65953986c96d5a81f933e776aa/68837",
+               "uri":"bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy/ci/blobs/e21b1e3411792e17e698be879a3548527d620c65953986c96d5a81f933e776aa/68837",
                "hash":"e21b1e3411792e17e698be879a3548527d620c65953986c96d5a81f933e776aa",
                "sizeBytes":68837
             }
@@ -512,7 +669,7 @@ Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the invocation ID `c6b2b6de-c
          "file":[
             {
                "name":"vet_/vet",
-               "uri":"bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy-internal/ci/blobs/915edf6aca4bd4eac3e4602641b0633a7aaf038d62d5ae087884a2d8acf0926a/7029420",
+               "uri":"bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy/ci/blobs/915edf6aca4bd4eac3e4602641b0633a7aaf038d62d5ae087884a2d8acf0926a/7029420",
                "hash":"915edf6aca4bd4eac3e4602641b0633a7aaf038d62d5ae087884a2d8acf0926a",
                "sizeBytes":7029420,
             }
@@ -528,7 +685,7 @@ Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the invocation ID `c6b2b6de-c
          "file":[
             {
                "name":"test.log",
-               "uri":"bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy-internal/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216",
+               "uri":"bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216",
                "hash":"09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888",
                "sizeBytes":216
             }
@@ -585,6 +742,10 @@ message ActionSelector {
   // Optional: The Action ID.
   // If set, only the action with this action id will be returned.
   string action_id = 4;
+
+  // Optional: The Target label.
+  // If set, only the action with this target label will be returned.
+  string target_label = 5;
 }
 ```
 
@@ -614,6 +775,21 @@ message Action {
 
   // A list of file references for action level files.
   repeated File file = 2;
+
+  // The label of the target that generated this action.
+  string target_label = 3;
+
+  // The test shard this action represents.
+  // Only populated for test actions.
+  int64 shard = 4;
+
+  // The test run this action represents.
+  // Only populated for test actions.
+  int64 run = 5;
+
+  // The test attempt this action represents.
+  // Only populated for test actions.
+  int64 attempt = 6;
 }
 ```
 
@@ -639,13 +815,13 @@ rpc GetFile(GetFileRequest) returns (stream GetFileResponse);
 ### Example cURL request
 
 ```bash
-curl -d '{"uri":"bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy-internal/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216"}' \
+curl -d '{"uri":"bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216"}' \
   -H 'x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY' \
   -H 'Content-Type: application/json' \
   https://app.buildbuddy.io/api/v1/GetFile
 ```
 
-Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the file uri `bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy-internal/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216` with your own values.
+Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the file uri `bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216` with your own values.
 
 ### Example cURL response
 
@@ -698,6 +874,10 @@ message File {
   string uri = 2;
   string hash = 3;
   int64 size_bytes = 4;
+
+  // Inline file contents, if present in the build event stream. In JSON
+  // responses, this is base64-encoded.
+  bytes contents = 5;
 }
 ```
 
@@ -722,13 +902,13 @@ rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
 ### Example cURL request
 
 ```bash
-curl -d '{"uri":"bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy-internal/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216"}' \
+curl -d '{"uri":"bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216"}' \
   -H 'x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY' \
   -H 'Content-Type: application/json' \
   https://app.buildbuddy.io/api/v1/DeleteFile
 ```
 
-Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the file uri `bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy-internal/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216` with your own values.
+Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the file uri `bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216` with your own values.
 
 ### DeleteFileRequest
 
@@ -767,7 +947,7 @@ message DeleteFileResponse {}
 
 ## ExecuteWorkflow
 
-The `ExecuteWorkflow` endpoint lets you trigger a Buildbuddy Workflow for the given repository and branch.
+The `ExecuteWorkflow` endpoint lets you trigger a Buildbuddy Workflow for the given repository and branch/commit.
 
 Note: Github App authentication is required. The API does not support running legacy workflows. See
 https://www.buildbuddy.io/docs/workflows-setup/ for more information on how to setup workflows with
@@ -788,11 +968,24 @@ rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecuteWorkflowResponse);
 ### Example cURL request
 
 ```bash
+# Execute workflow on commit abc123 on branch cool-feature with env vars set
 curl -d '{
   "repo_url": "https://github.com/buildbuddy-io/buildbuddy-ci-playground",
-  "ref": "main",
-  "action_names": ["Build and test (Mac M1)"],
+  "branch": "cool-feature",
+  "commit_sha": "abc123",
+  "action_names": ["Test"],
   "env": {"USE_BAZEL_VERSION": "6.4.0"}
+}' \
+-H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
+-H 'Content-Type: application/json' \
+https://app.buildbuddy.io/api/v1/ExecuteWorkflow
+
+# Example populating `branch` and `commit_sha` from a Github Actions workflow
+curl -d '{
+  "repo_url": "https://github.com/buildbuddy-io/buildbuddy-ci-playground",
+  "branch": "${{ github.ref_name }}",
+  "commit_sha": "${{ github.sha }}",
+  "action_names": ["Test"],
 }' \
 -H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
 -H 'Content-Type: application/json' \
@@ -806,9 +999,12 @@ message ExecuteWorkflowRequest {
   // URL of the repo the workflow is running for
   // Ex. "https://github.com/some-user/acme"
   string repo_url = 1;
-  // Reference for where the workflow should be run (currently only branch names
-  // are supported) Ex. "cool-feature" or "main"
-  string ref = 2;
+  // Git refs at which the workflow should be run (at least one of `branch` or
+  // `commit_sha` must be set). If only `branch` is set, will run from the tip
+  // of the branch. If only `commit_sha` is set, reporting will not contain the
+  // branch name.
+  string branch = 8;
+  string commit_sha = 9;
 
   // OPTIONAL FIELDS
 
@@ -831,6 +1027,10 @@ message ExecuteWorkflowRequest {
   // overrides will take precedence. Otherwise all env vars set in
   // buildbuddy.yaml will still apply.
   map<string, string> env = 7;
+
+  // By default, the scheduler will automatically retry transient errors.
+  // For non-idempotent workloads, set to true to disable this behavior.
+  bool disable_retry = 10;
 }
 ```
 
@@ -855,5 +1055,140 @@ message ExecuteWorkflowResponse {
   // A list of the actions executed by the API, or actions started if async is
   // true.
   repeated ActionStatus action_statuses = 1;
+}
+```
+
+## Run
+
+The `Run` endpoint lets you run a command on a remote runner, which is hosted on
+a remote executor.
+
+### Endpoint
+
+```
+https://app.buildbuddy.io/api/v1/Run
+```
+
+### Service
+
+```protobuf
+rpc Run(RunRequest) returns (RunResponse);
+```
+
+### Example cURL requests
+
+```bash
+# Run commands in a git repository
+curl -d '{
+    "repo": "git@github.com:buildbuddy-io/buildbuddy.git",
+    "branch":"main",
+    "steps": [{"run": "bazel test //..."}]
+}' \
+-H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
+-H 'Content-Type: application/json' \
+https://app.buildbuddy.io/api/v1/Run
+```
+
+```bash
+# Run commands in an empty directory (no git repo)
+curl -d '{
+    "steps": [{"run": "echo hello world"}]
+}' \
+-H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
+-H 'Content-Type: application/json' \
+https://app.buildbuddy.io/api/v1/Run
+```
+
+### RunRequest
+
+```protobuf
+message RunRequest {
+  // URL of the repo the remote workspace should be initialized for.
+  // Ex. "https://github.com/some-user/acme"
+  // If not provided, commands will run in an empty directory.
+  string repo = 1;
+
+  // Git refs to configure the remote git workspace. At least one of `branch` or
+  // `commit_sha` must be set when `repo` is provided. If only `branch` is set,
+  // will run from the tip of the branch. If only `commit_sha` is set, reporting
+  // will not contain the branch name.
+  string branch = 2;
+  string commit_sha = 3;
+
+  // Any local patches that should be applied to the repo before
+  // running the command.
+  // Patches will be applied using "git apply" in the root directory of the
+  // repository.
+  // In JSON requests (e.g. curl request body), this field should be specified
+  // as a list of base64-encoded strings.
+  repeated bytes patches = 11;
+
+  // Bash commands to run, in order.
+  // If a step fails, subsequent steps are not run.
+  // Ex. [{"run": "bazel build :server"}, {"run": "echo \"Hello World\""}]
+  repeated Step steps = 4;
+
+  // Environment variables to set in the runner env.
+  map<string, string> env = 5;
+
+  // Platform properties to apply to the runner.
+  // Ex. {"OSFamily":"linux", "Arch":"amd64"}
+  map<string, string> platform_properties = 6;
+
+  // Remote headers to be applied to the execution request for the remote
+  // runner.
+  //
+  // Can be used to set platform properties containing secrets.
+  // Ex. ["x-buildbuddy-platform.secret-env-overrides=SECRET_NAME=SECRET_VALUE"]
+  repeated string remote_headers = 10;
+
+  // Max time before run should be canceled.
+  // Ex. "15s", "2h"
+  string timeout = 7;
+
+  // Specifies what to wait until before returning a RunResponse.
+  // Default is value is STARTED which waits for the invocation to
+  // be started but not necessarily completed.
+  WaitCondition wait_until = 13;
+
+  // Whether to use github credentials configured on the executor.
+  //
+  // By default, we require https for git operations and generate short-lived
+  // access tokens using our github app installation.
+  // If GitHub SSH access is already configured on the runners, set this
+  // to true to skip doing that and use the configured auth.
+  //
+  // This is only supported for bare runners.
+  bool use_system_git_credentials = 9;
+
+  // Whether to skip the automatic GitHub setup steps on the remote runner.
+  bool skip_auto_checkout = 12;
+}
+
+message Step {
+  string run = 1;
+}
+
+enum WaitCondition {
+  // Unknown wait condition.
+  UNKNOWN_CONDITION = 0;
+
+  // Wait for the run request to be queued.
+  QUEUED = 1;
+
+  // Wait until the invocation has started.
+  STARTED = 2;
+
+  // Wait for the invocation to complete.
+  COMPLETED = 3;
+}
+```
+
+### RunResponse
+
+```protobuf
+message RunResponse {
+  // The invocation ID of the remote run.
+  string invocation_id = 1;
 }
 ```

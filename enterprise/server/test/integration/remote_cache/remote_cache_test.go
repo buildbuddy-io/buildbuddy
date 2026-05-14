@@ -18,20 +18,20 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
 
 var (
 	workspaceContents = map[string]string{
-		"WORKSPACE": `workspace(name = "integration_test")`,
-		"BUILD":     `genrule(name = "hello_txt", outs = ["hello.txt"], cmd_bash = "echo 'Hello world' > $@")`,
+		"BUILD": `genrule(name = "hello_txt", outs = ["hello.txt"], cmd_bash = "echo 'Hello world' > $@")`,
 	}
 )
 
 func TestBuild_RemoteCacheFlags_Anonymous_SecondBuildIsCached(t *testing.T) {
 	app := buildbuddy_enterprise.Run(t)
 	ctx := context.Background()
-	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
+	ws := testbazel.MakeTempModule(t, workspaceContents)
 	buildFlags := []string{"//:hello.txt"}
 	buildFlags = append(buildFlags, app.BESBazelFlags()...)
 	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
@@ -47,7 +47,6 @@ func TestBuild_RemoteCacheFlags_Anonymous_SecondBuildIsCached(t *testing.T) {
 
 	// Clear the local cache so we can try for a remote cache hit.
 	testbazel.Clean(ctx, t, ws)
-
 	result = testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
 
 	assert.NoError(t, result.Error)
@@ -59,7 +58,7 @@ func TestBuild_RemoteCacheFlags_Anonymous_SecondBuildIsCached(t *testing.T) {
 }
 
 func TestBuild_RemoteCacheFlags_ReadWriteApiKey_SecondBuildIsCached(t *testing.T) {
-	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
+	ws := testbazel.MakeTempModule(t, workspaceContents)
 	// Run the app with an API key we control so that we can authorize using it.
 	app := buildbuddy_enterprise.Run(t)
 	webClient := buildbuddy_enterprise.LoginAsDefaultSelfAuthUser(t, app)
@@ -67,8 +66,7 @@ func TestBuild_RemoteCacheFlags_ReadWriteApiKey_SecondBuildIsCached(t *testing.T
 	rsp := &akpb.CreateApiKeyResponse{}
 	err := webClient.RPC("CreateApiKey", &akpb.CreateApiKeyRequest{
 		RequestContext: webClient.RequestContext,
-		GroupId:        webClient.RequestContext.GroupId,
-		Capability:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
+		Capability:     []cappb.Capability{cappb.Capability_CACHE_WRITE},
 	}, rsp)
 	require.NoError(t, err)
 	readWriteKey := rsp.ApiKey.Value
@@ -99,15 +97,14 @@ func TestBuild_RemoteCacheFlags_ReadWriteApiKey_SecondBuildIsCached(t *testing.T
 }
 
 func TestBuild_RemoteCacheFlags_ReadOnlyApiKey_SecondBuildIsNotCached(t *testing.T) {
-	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
+	ws := testbazel.MakeTempModule(t, workspaceContents)
 	app := buildbuddy_enterprise.Run(t)
 	webClient := buildbuddy_enterprise.LoginAsDefaultSelfAuthUser(t, app)
 	rsp := &akpb.CreateApiKeyResponse{}
 	// Create a new read-only key
 	err := webClient.RPC("CreateApiKey", &akpb.CreateApiKeyRequest{
 		RequestContext: webClient.RequestContext,
-		GroupId:        webClient.RequestContext.GroupId,
-		Capability:     []akpb.ApiKey_Capability{},
+		Capability:     []cappb.Capability{},
 	}, rsp)
 	require.NoError(t, err)
 	readOnlyKey := rsp.ApiKey.Value
@@ -138,15 +135,14 @@ func TestBuild_RemoteCacheFlags_ReadOnlyApiKey_SecondBuildIsNotCached(t *testing
 }
 
 func TestBuild_RemoteCacheFlags_CasOnlyApiKey_SecondBuildIsNotCached(t *testing.T) {
-	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
+	ws := testbazel.MakeTempModule(t, workspaceContents)
 	app := buildbuddy_enterprise.Run(t)
 	webClient := buildbuddy_enterprise.LoginAsDefaultSelfAuthUser(t, app)
 	rsp := &akpb.CreateApiKeyResponse{}
 	// Create a new CAS-only key
 	err := webClient.RPC("CreateApiKey", &akpb.CreateApiKeyRequest{
 		RequestContext: webClient.RequestContext,
-		GroupId:        webClient.RequestContext.GroupId,
-		Capability:     []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
+		Capability:     []cappb.Capability{cappb.Capability_CAS_WRITE},
 	}, rsp)
 	require.NoError(t, err)
 	readOnlyKey := rsp.ApiKey.Value
@@ -179,7 +175,7 @@ func TestBuild_RemoteCacheFlags_CasOnlyApiKey_SecondBuildIsNotCached(t *testing.
 func TestBuild_RemoteCacheFlags_NoAuthConfigured_SecondBuildIsCached(t *testing.T) {
 	app := buildbuddy_enterprise.RunWithConfig(t, buildbuddy_enterprise.DefaultAppConfig(t), buildbuddy_enterprise.NoAuthConfig)
 	ctx := context.Background()
-	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
+	ws := testbazel.MakeTempModule(t, workspaceContents)
 	buildFlags := []string{"//:hello.txt"}
 	buildFlags = append(buildFlags, app.BESBazelFlags()...)
 	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
@@ -210,7 +206,7 @@ func TestBuild_RemoteCacheFlags_Compression_SecondBuildIsCached(t *testing.T) {
 	app := buildbuddy_enterprise.RunWithConfig(
 		t, buildbuddy_enterprise.DefaultAppConfig(t), buildbuddy_enterprise.NoAuthConfig, "--cache.zstd_transcoding_enabled=true")
 	ctx := context.Background()
-	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
+	ws := testbazel.MakeTempModule(t, workspaceContents)
 	buildFlags := []string{"//:hello.txt", "--experimental_remote_cache_compression"}
 	buildFlags = append(buildFlags, app.BESBazelFlags()...)
 	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
@@ -244,7 +240,7 @@ func TestBuild_RemoteCache_ScoreCard(t *testing.T) {
 		"--cache_stats_finalization_delay=0")
 	bbService := app.BuildBuddyServiceClient(t)
 	ctx := context.Background()
-	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
+	ws := testbazel.MakeTempModule(t, workspaceContents)
 	iid := newUUID(t)
 	buildFlags := []string{"//:hello.txt", "--invocation_id=" + iid}
 	buildFlags = append(buildFlags, app.BESBazelFlags()...)
@@ -299,7 +295,7 @@ func TestBuild_RemoteCache_ScoreCard(t *testing.T) {
 func TestBuild_RemoteCache_RejectsInvalidAPIKeys(t *testing.T) {
 	app := buildbuddy_enterprise.Run(t, "--auth.enable_anonymous_usage=true")
 	ctx := context.Background()
-	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
+	ws := testbazel.MakeTempModule(t, workspaceContents)
 
 	{
 		// explicit empty API key; should fail

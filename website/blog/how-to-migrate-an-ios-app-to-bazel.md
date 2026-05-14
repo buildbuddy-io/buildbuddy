@@ -2,11 +2,8 @@
 slug: how-to-migrate-an-ios-app-to-bazel
 title: "How to migrate an iOS app to Bazel"
 description: "Wondering how to migrate your Apple-based project to Bazel? Whether it's iOS, macOS, watchOS, tvOS, or visionOS, this guide is for you."
-author: Brentley Jones
-author_title: "Developer Evangelist @ BuildBuddy"
+authors: brentley
 date: 2024-03-13:08:00:00
-author_url: https://brentleyjones.com
-author_image_url: https://avatars.githubusercontent.com/u/158658?v=4
 image: /img/ios_bazel.png
 tags: [bazel]
 ---
@@ -1109,6 +1106,7 @@ There are pros and cons to using the disk cache:
   - A history of being buggy
 
 [^blob]: A "blob" is an [REAPI][reapi] term for artifacts that are stored in a cache.
+
 [^disk-cache-max-size]: [Bazel issue #5139](https://github.com/bazelbuild/bazel/issues/5139).
 
 With those in mind,

@@ -1,7 +1,7 @@
 import React from "react";
 import common from "../../css/common.module.css";
 import styles from "../../pages/contact.module.css";
-import message from "../../util/message";
+import { sendJobApplicationMessage } from "../../util/message";
 
 let form = {
   firstName: React.createRef<HTMLInputElement>(),
@@ -45,7 +45,7 @@ function sendMessage() {
     return;
   }
 
-  message(
+  sendJobApplicationMessage(
     `New Job Application!\nURL: ${window.location.href}\nName: ${form.firstName.current.value} ${form.lastName.current.value}\nEmail: ${form.email.current.value}\nPhone: ${form.phone.current.value}\nLinkedIn: ${form.linkedin.current.value}\nGithub: ${form.github.current.value}\nBlurb: ${form.blurb.current.value}`
   );
 

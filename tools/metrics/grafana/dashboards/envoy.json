@@ -1,0 +1,2388 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 3,
+      "panels": [],
+      "title": "Overview",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(container_memory_usage_bytes{region=\"${region}\", namespace=\"projectcontour\", container=\"envoy\"}) by (pod)",
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum(container_spec_memory_limit_bytes{region=\"${region}\", namespace=\"projectcontour\", container=\"envoy\"}) by (pod)",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "{{pod}} limit",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Memory usage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(container_cpu_usage_seconds_total{region=\"${region}\", namespace=\"projectcontour\", container=\"envoy\"}[1m])) by (pod)",
+          "legendFormat": "{{label_name}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum(container_spec_cpu_quota{region=\"${region}\", namespace=\"projectcontour\", container=\"envoy\"}) by (pod) / sum(container_spec_cpu_period{region=\"us-sjc\", namespace=\"projectcontour\", container=\"envoy\"}) by (pod)",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "{{pod}} limit",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "CPU usage",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "id": 6,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 11
+          },
+          "id": 12,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_xx{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (envoy_response_code_class)\n",
+              "legendFormat": "{{envoy_response_code_class}}xx",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Aggregate QPS",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 11
+          },
+          "id": 11,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_xx{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "QPS by pod",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "ms"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 19
+          },
+          "id": 13,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "histogram_quantile(0.95, sum(rate(envoy_cluster_upstream_rq_time_bucket{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (le))",
+              "legendFormat": "95p",
+              "range": true,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "histogram_quantile(0.99, sum(rate(envoy_cluster_upstream_rq_time_bucket{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (le))",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "99p",
+              "range": true,
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "histogram_quantile(0.50, sum(rate(envoy_cluster_upstream_rq_time_bucket{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (le))",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "50p",
+              "range": true,
+              "refId": "C"
+            }
+          ],
+          "title": "Aggregate request latency",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 19
+          },
+          "id": 15,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(envoy_cluster_circuit_breakers_default_cx_open{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m]) by (pod_name)",
+              "legendFormat": "default_cx_open {{pod_name}}",
+              "range": true,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(envoy_cluster_circuit_breakers_default_cx_pool_open{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m]) by (pod_name)",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "default_cx_pool_open {{pod_name}}",
+              "range": true,
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(envoy_cluster_circuit_breakers_default_rq_open{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m]) by (pod_name)",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "default_rq_open {{pod_name}}",
+              "range": true,
+              "refId": "C"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(envoy_cluster_circuit_breakers_default_rq_pending_open{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m]) by (pod_name)",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "default_rq_pending_open {{pod_name}}",
+              "range": true,
+              "refId": "D"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(envoy_cluster_circuit_breakers_default_rq_retry_open{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m]) by (pod_name)",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "default_rq_retry_open {{pod_name}}",
+              "range": true,
+              "refId": "E"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(envoy_cluster_circuit_breakers_high_cx_open{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m]) by (pod_name)",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "high_cx_open {{pod_name}}",
+              "range": true,
+              "refId": "F"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(envoy_cluster_circuit_breakers_high_cx_pool_open{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m]) by (pod_name)",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "high_cx_pool_open {{pod_name}}",
+              "range": true,
+              "refId": "G"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(envoy_cluster_circuit_breakers_high_rq_open{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m]) by (pod_name)",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "high_rq_open {{pod_name}}",
+              "range": true,
+              "refId": "H"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(envoy_cluster_circuit_breakers_high_rq_pending_open{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m]) by (pod_name)",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "high_rq_pending_open {{pod_name}}",
+              "range": true,
+              "refId": "I"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(envoy_cluster_circuit_breakers_high_rq_retry_open{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m]) by (pod_name)",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "high_rq_retry_open {{pod_name}}",
+              "range": true,
+              "refId": "J"
+            }
+          ],
+          "title": "Circuit breakers",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 27
+          },
+          "id": 18,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_flow_control_backed_up_total{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)",
+              "legendFormat": "backed_up {{pod_name}}",
+              "range": true,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_flow_control_drained_total{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "drained {{pod_name}}",
+              "range": true,
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_flow_control_paused_reading_total{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "paused_reading {{pod_name}}",
+              "range": true,
+              "refId": "C"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_flow_control_resumed_reading_total{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "resumed_reading {{pod_name}}",
+              "range": true,
+              "refId": "D"
+            }
+          ],
+          "title": "Flow control",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 27
+          },
+          "id": 14,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_maintenance_mode{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "rq_maintenance_mode {{pod_name}}",
+              "range": true,
+              "refId": "C"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_max_duration_reached{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "rq_max_duration_reached {{pod_name}}",
+              "range": true,
+              "refId": "D"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_pending_failure_eject{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "rq_pending_failure_eject {{pod_name}}",
+              "range": true,
+              "refId": "E"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_pending_overflow{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "rq_pending_overflow {{pod_name}}",
+              "range": true,
+              "refId": "F"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_pending_total{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "rq_pending_total {{pod_name}}",
+              "range": true,
+              "refId": "G"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_per_try_idle_timeout{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "rq_per_try_idle_timeout {{pod_name}}",
+              "range": true,
+              "refId": "H"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_per_try_timeout{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "rq_per_try_timeout {{pod_name}}",
+              "range": true,
+              "refId": "I"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_retry{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "rq_retry {{pod_name}}",
+              "range": true,
+              "refId": "J"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_retry_backoff_exponential{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "rq_retry_backoff_exponential {{pod_name}}",
+              "range": true,
+              "refId": "K"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_retry_backoff_ratelimited{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "rq_retry_backoff_ratelimited {{pod_name}}",
+              "range": true,
+              "refId": "L"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_retry_limit_exceeded{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "rq_retry_limit_exceeded {{pod_name}}",
+              "range": true,
+              "refId": "M"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_retry_overflow{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "rq_retry_overflow {{pod_name}}",
+              "range": true,
+              "refId": "N"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_retry_success{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "rq_retry_success {{pod_name}}",
+              "range": true,
+              "refId": "O"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_timeout{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "rq_timeout {{pod_name}}",
+              "range": true,
+              "refId": "P"
+            }
+          ],
+          "title": "Upstream events",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "binBps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 35
+          },
+          "id": 8,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_rx_bytes_total{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "{{pod_name}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Throughput (received from backends)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "binBps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 35
+          },
+          "id": 9,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_tx_bytes_total{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "{{pod_name}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Throughput (sent to backends)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 43
+          },
+          "id": 16,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(envoy_cluster_upstream_cx_rx_bytes_buffered{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m]) by (pod_name)",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Bytes buffered from backend",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 43
+          },
+          "id": 17,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(envoy_cluster_upstream_cx_tx_bytes_buffered{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m]) by (pod_name)",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Bytes buffered to backend",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 51
+          },
+          "id": 5,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_http2_dropped_headers_with_underscores{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)",
+              "legendFormat": "dropped_headers_with_underscores {{pod_name}}",
+              "range": true,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_http2_goaway_sent{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "goaway_sent {{pod_name}}",
+              "range": true,
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_http2_header_overflow{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "header_overflow {{pod_name}}",
+              "range": true,
+              "refId": "C"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_http2_headers_cb_no_stream{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "headers_cb_no_stream {{pod_name}}",
+              "range": true,
+              "refId": "D"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_http2_inbound_empty_frames_flood{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "inbound_empty_frames_flood {{pod_name}}",
+              "range": true,
+              "refId": "E"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_http2_inbound_priority_frames_flood{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "inbound_priority_frames_flood {{pod_name}}",
+              "range": true,
+              "refId": "F"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_http2_inbound_window_update_frames_flood{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "inbound_window_update_frames_flood {{pod_name}}",
+              "range": true,
+              "refId": "G"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_http2_keepalive_timeout{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "keepalive_timeout {{pod_name}}",
+              "range": true,
+              "refId": "H"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_http2_metadata_empty_frames{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "metadata_empty_frames {{pod_name}}",
+              "range": true,
+              "refId": "I"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_http2_outbound_control_flood{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "outbound_control_flood {{pod_name}}",
+              "range": true,
+              "refId": "J"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_http2_outbound_flood{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "outbound_flood {{pod_name}}",
+              "range": true,
+              "refId": "K"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_http2_requests_rejected_with_underscores_in_headers{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "requests_rejected_with_underscores_in_headers {{pod_name}}",
+              "range": true,
+              "refId": "L"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_http2_rx_messaging_error{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "rx_messaging_error {{pod_name}}",
+              "range": true,
+              "refId": "M"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_http2_stream_refused_errors{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "stream_refused_errors {{pod_name}}",
+              "range": true,
+              "refId": "O"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_http2_trailers{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "trailers {{pod_name}}",
+              "range": true,
+              "refId": "P"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_http2_tx_flush_timeout{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "tx_flush_timeout {{pod_name}}",
+              "range": true,
+              "refId": "Q"
+            }
+          ],
+          "title": "HTTP/2 events",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 51
+          },
+          "id": 10,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_http1_total{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)",
+              "legendFormat": "http/1 {{pod_name}}",
+              "range": true,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_http2_total{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "http/2 {{pod_name}}",
+              "range": true,
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_http3_total{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "http/3 {{pod_name}}",
+              "range": true,
+              "refId": "C"
+            }
+          ],
+          "title": "New backend connections",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 59
+          },
+          "id": 7,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_close_notify{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "legendFormat": "cx_close_notify {{pod_name}}",
+              "range": true,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_connect_attempts_exceeded{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "cx_connect_attempts_exceeded {{pod_name}}",
+              "range": true,
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_connect_fail{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "cx_connect_fail {{pod_name}}",
+              "range": true,
+              "refId": "C"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_connect_timeout{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "cx_connect_timeout {{pod_name}}",
+              "range": true,
+              "refId": "D"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_connect_with_0_rtt{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "cx_connect_with_0_rtt {{pod_name}}",
+              "range": true,
+              "refId": "E"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_destroy{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "cx_destroy {{pod_name}}",
+              "range": true,
+              "refId": "F"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_destroy_local{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "cx_destroy_local {{pod_name}}",
+              "range": true,
+              "refId": "G"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_destroy_local_with_active_rq{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "cx_destroy_local_with_active_rq {{pod_name}}",
+              "range": true,
+              "refId": "H"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_destroy_remote{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "cx_destroy_remote {{pod_name}}",
+              "range": true,
+              "refId": "I"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_destroy_remote_with_active_rq{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "cx_destroy_remote_with_active_rq {{pod_name}}",
+              "range": true,
+              "refId": "J"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_destroy_with_active_rq{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "cx_destroy_with_active_rq {{pod_name}}",
+              "range": true,
+              "refId": "K"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_idle_timeout{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "cx_idle_timeout {{pod_name}}",
+              "range": true,
+              "refId": "L"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_max_duration_reached{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "cx_max_duration_reached {{pod_name}}",
+              "range": true,
+              "refId": "M"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_max_requests{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "cx_max_requests {{pod_name}}",
+              "range": true,
+              "refId": "N"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_none_healthy{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "cx_none_healthy {{pod_name}}",
+              "range": true,
+              "refId": "O"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_overflow{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "cx_overflow {{pod_name}}",
+              "range": true,
+              "refId": "P"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_pool_overflow{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "cx_pool_overflow {{pod_name}}",
+              "range": true,
+              "refId": "Q"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_cx_protocol_error{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "cx_protocol_error {{pod_name}}",
+              "range": true,
+              "refId": "R"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_internal_redirect_failed_total{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "internal_redirect_failed_total {{pod_name}}",
+              "range": true,
+              "refId": "W"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_internal_redirect_succeeded_total{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "internal_redirect_succeeded_total {{pod_name}}",
+              "range": true,
+              "refId": "X"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_0rtt{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "rq_0rtt {{pod_name}}",
+              "range": true,
+              "refId": "Y"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_cancelled{region=\"${region}\", envoy_cluster_name=\"${cluster}\", namespace=\"projectcontour\"}[1m])) by (pod_name)\n",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "rq_cancelled {{pod_name}}",
+              "range": true,
+              "refId": "Z"
+            }
+          ],
+          "title": "Cluster events",
+          "type": "timeseries"
+        }
+      ],
+      "repeat": "cluster",
+      "title": "Cluster ${cluster}",
+      "type": "row"
+    }
+  ],
+  "preload": false,
+  "refresh": "1m",
+  "schemaVersion": 41,
+  "tags": [
+    "file:envoy.json"
+  ],
+  "templating": {
+    "list": [
+      {
+        "allowCustomValue": false,
+        "current": {
+          "text": "us-sjc",
+          "value": "us-sjc"
+        },
+        "definition": "label_values(envoy_server_initialization_time_ms_count,region)",
+        "name": "region",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(envoy_server_initialization_time_ms_count,region)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allowCustomValue": false,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "definition": "label_values(envoy_cluster_upstream_rq,envoy_cluster_name)",
+        "includeAll": true,
+        "name": "cluster",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(envoy_cluster_upstream_rq,envoy_cluster_name)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Envoy",
+  "uid": "ff2mq9capnvgge"
+}

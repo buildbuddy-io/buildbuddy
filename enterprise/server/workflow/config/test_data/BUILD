@@ -10,6 +10,7 @@ go_library(
     srcs = ["test_data.go"],
     embedsrcs = [
         "basic.yaml",
+        "yaml_with_run_block.yaml",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config/test_data",
 )

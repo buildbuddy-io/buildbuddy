@@ -1,4 +1,4 @@
-import { readProfile } from "./trace_events";
+import { TraceEvent, buildTimeSeries, readProfile } from "./trace_events";
 
 // NOTE: in the following profile data, whitespace is significant (unlike regular JSON):
 // - The `"traceEvents":[` list opening has to end with a newline
@@ -50,6 +50,22 @@ function readableStreamFromString(value: string): ReadableStream<Uint8Array> {
   return stream;
 }
 
+function makeTraceEvent(overrides: Partial<TraceEvent> & Pick<TraceEvent, "name">): TraceEvent {
+  return {
+    pid: 1,
+    tid: 1,
+    ts: 0,
+    ph: "C",
+    cat: "",
+    dur: 0,
+    tdur: 0,
+    tts: 0,
+    out: "",
+    args: {},
+    ...overrides,
+  };
+}
+
 describe("parseProfile", () => {
   it("should parse a complete profile", async () => {
     const stream = readableStreamFromString(COMPLETE_PROFILE);
@@ -69,5 +85,45 @@ describe("parseProfile", () => {
     });
     expect(profile.traceEvents.length).toBe(7);
     expect(numBytesRead).toBe(INCOMPLETE_PROFILE.length);
+  });
+});
+
+describe("buildTimeSeries", () => {
+  it("renders unknown counter series with a single numeric arg", () => {
+    const timelines = buildTimeSeries([
+      makeTraceEvent({ name: "Future metric", ts: 20, args: { queue_depth: 2 } }),
+      makeTraceEvent({ name: "Future metric", ts: 10, args: { queue_depth: 1 } }),
+    ]);
+
+    expect(timelines.map((series) => series.name)).toEqual(["Future metric"]);
+    expect(timelines[0].events.map((event) => event.value)).toEqual([1, 2]);
+  });
+
+  it("renders one lane per numeric arg for unknown counter series", () => {
+    const timelines = buildTimeSeries([
+      makeTraceEvent({ name: "Future metric", ts: 10, args: { beta: 2 } }),
+      makeTraceEvent({ name: "Future metric", ts: 20, args: { alpha: 0, beta: 3 } }),
+    ]);
+
+    expect(timelines.map((series) => series.name)).toEqual(["Future metric: alpha", "Future metric: beta"]);
+    expect(timelines[0].events.map((event) => event.value)).toEqual([0]);
+    expect(timelines[1].events.map((event) => event.value)).toEqual([2, 3]);
+  });
+
+  it("ignores non-counter events with numeric args", () => {
+    const timelines = buildTimeSeries([
+      makeTraceEvent({ name: "thread_sort_index", ph: "M", args: { sort_index: 1 } }),
+    ]);
+
+    expect(timelines).toEqual([]);
+  });
+
+  it("keeps known series ordered ahead of inferred series", () => {
+    const timelines = buildTimeSeries([
+      makeTraceEvent({ name: "Future metric", ts: 10, args: { value: 1 } }),
+      makeTraceEvent({ name: "CPU usage (Bazel)", ts: 5, args: { cpu: 0.5 } }),
+    ]);
+
+    expect(timelines.map((series) => series.name)).toEqual(["CPU usage (Bazel)", "Future metric"]);
   });
 });

@@ -8,25 +8,34 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/rs/zerolog"
 
 	"github.com/hashicorp/memberlist"
 	"github.com/hashicorp/serf/serf"
 )
 
 var (
-	listenAddr = flag.String("gossip.listen_addr", "", "The address to listen for gossip traffic on. Ex. 'localhost:1991'")
-	join       = flag.Slice("gossip.join", []string{}, "The nodes to join/gossip with. Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
-	nodeName   = flag.String("gossip.node_name", "", "The gossip node's name. If empty will default to host_id.'")
-	secretKey  = flag.String("gossip.secret_key", "", "The value should be either 16, 24, or 32 bytes.")
+	listenAddr     = flag.String("gossip.listen_addr", "", "The address to listen for gossip traffic on. Ex. 'localhost:1991'")
+	join           = flag.Slice("gossip.join", []string{}, "The nodes to join/gossip with. Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
+	secretKey      = flag.String("gossip.secret_key", "", "The value should be either 16, 24, or 32 bytes.")
+	retransmitMult = flag.Int("gossip.retransmit_mult", 0, "The retransmit multiplier for a failed broadcast over gossip. If zero, use the default value")
+	logLevel       = flag.String("gossip.log_level", "", "The desired log level for the gossip package. If empty, this flag will be ignored and app.log_level will be applied. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug', ''}")
+)
+
+var (
+	// Logs that are not that useful.
+	excludedWarningLog = []string{
+		"serf: received old query registry_query_event from time",
+		"serf: reply for non-running query",
+		"serf: received old event",
+		"serf: received old query",
+	}
 )
 
 // A GossipManager will listen (on `advertiseAddress`), connect to `seeds`,
@@ -139,41 +148,42 @@ func formatMember(m serf.Member) string {
 }
 
 func (gm *GossipManager) Statusz(ctx context.Context) string {
-	buf := "<pre>"
+	var buf strings.Builder
+	buf.WriteString("<pre>")
 	thisNode := gm.LocalMember()
-	buf += fmt.Sprintf("Node: %+v\n", formatMember(thisNode))
+	buf.WriteString(fmt.Sprintf("Node: %+v\n", formatMember(thisNode)))
 
-	buf += "Tags:\n"
+	buf.WriteString("Tags:\n")
 	tagStrings := make([]string, len(gm.getTags()))
 	for tagKey, tagValue := range gm.getTags() {
 		tagStrings = append(tagStrings, fmt.Sprintf("\t%q => %q\n", tagKey, tagValue))
 	}
 	sort.Strings(tagStrings)
 	for _, tagString := range tagStrings {
-		buf += tagString
+		buf.WriteString(tagString)
 	}
 
-	buf += "Peers:\n"
+	buf.WriteString("Peers:\n")
 	peers := gm.Members()
 	sort.Slice(peers, func(i, j int) bool { return peers[i].Name < peers[j].Name })
 	for _, peerMember := range peers {
 		if peerMember.Name == thisNode.Name {
 			continue
 		}
-		buf += fmt.Sprintf("\t%s\n", formatMember(peerMember))
+		buf.WriteString(fmt.Sprintf("\t%s\n", formatMember(peerMember)))
 	}
 
-	buf += "Stats:\n"
+	buf.WriteString("Stats:\n")
 	var statStrings []string
 	for k, v := range gm.serfInstance.Stats() {
 		statStrings = append(statStrings, fmt.Sprintf("\t%s: %s\n", k, v))
 	}
 	sort.Strings(statStrings)
 	for _, statString := range statStrings {
-		buf += statString
+		buf.WriteString(statString)
 	}
-	buf += "</pre>"
-	return buf
+	buf.WriteString("</pre>")
+	return buf.String()
 }
 
 // Adapt our log writer into one that is compatible with
@@ -187,42 +197,40 @@ func (lw *logWriter) Write(d []byte) (int, error) {
 	// Gossip logs are very verbose and there is
 	// very little useful info in DEBUG/INFO level logs.
 	if strings.Contains(s, "[DEBUG]") {
-		log.Debug(s)
+		lw.Logger.Debug(s)
 	} else if strings.Contains(s, "[INFO]") {
-		log.Info(s)
+		// Excludes "EventMemberUpdate", because it's verbose and not that useful.
+		if strings.Contains(s, "EventMemberUpdate") {
+			return 0, nil
+		}
+		lw.Logger.Info(s)
 	} else {
-		log.Warning(s)
+		for _, excluded := range excludedWarningLog {
+			if strings.Contains(s, excluded) {
+				return 0, nil
+			}
+
+		}
+		lw.Logger.Warning(s)
 	}
 
 	return len(d), nil
 }
 
-func Register(env *real_environment.RealEnv) error {
-	if *listenAddr == "" {
-		return nil
-	}
-	if len(*join) == 0 {
-		return status.FailedPreconditionError("Gossip listen address specified but no join target set")
-	}
-	name := *nodeName
-	if name == "" {
-		name = hostid.GetFailsafeHostID("")
-	}
-
-	// Initialize a gossip manager, which will contact other nodes
-	// and exchange information.
-	gossipManager, err := New(name, *listenAddr, *join)
-	if err != nil {
-		return err
-	}
-	env.SetGossipService(gossipManager)
-	return nil
+func New(nodeName string) (*GossipManager, error) {
+	return NewWithArgs(nodeName, *listenAddr, *join)
 }
 
-func New(nodeName, listenAddress string, join []string) (*GossipManager, error) {
-	log.Infof("Starting GossipManager on %q", listenAddress)
-
+func NewWithArgs(nodeName, listenAddress string, join []string) (*GossipManager, error) {
 	subLog := log.NamedSubLogger(fmt.Sprintf("GossipManager(%s)", nodeName))
+	if *logLevel != "" {
+		if l, err := zerolog.ParseLevel(*logLevel); err != nil {
+			return nil, err
+		} else {
+			subLog = subLog.Level(l)
+		}
+	}
+	log.Infof("Starting GossipManager on %q", listenAddress)
 
 	bindAddr, bindPort, err := network.ParseAddress(listenAddress)
 	if err != nil {
@@ -231,6 +239,9 @@ func New(nodeName, listenAddress string, join []string) (*GossipManager, error) 
 	memberlistConfig := memberlist.DefaultLANConfig()
 	memberlistConfig.BindAddr = bindAddr
 	memberlistConfig.BindPort = bindPort
+	if mult := *retransmitMult; mult != 0 {
+		memberlistConfig.RetransmitMult = mult
+	}
 	memberlistConfig.LogOutput = &logWriter{subLog}
 	if *secretKey != "" {
 		memberlistConfig.SecretKey = []byte(*secretKey)

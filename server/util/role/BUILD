@@ -6,7 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/role",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:api_key_go_proto",
+        "//proto:capability_go_proto",
         "//proto:group_go_proto",
         "//server/util/status",
     ],

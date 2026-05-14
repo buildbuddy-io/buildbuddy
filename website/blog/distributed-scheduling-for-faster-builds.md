@@ -2,11 +2,8 @@
 slug: distributed-scheduling-for-faster-builds
 title: Distributed Scheduling for Faster Builds
 description: The distributed scheduler that powers BuildBuddy remote execution
-author: Tyler Williams
-author_title: "Co-founder @ BuildBuddy"
+authors: tyler
 date: 2022-04-07:08:00:00
-author_url: https://www.linkedin.com/in/tyler-williams-80480519b/
-author_image_url: https://avatars.githubusercontent.com/u/141737?v=4
 image: /img/distributed-scheduling.png
 tags: [engineering, go, sparrow, scheduler]
 ---

@@ -5,6 +5,7 @@ go_library(
     srcs = ["posting.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/posting",
     visibility = ["//visibility:public"],
+    deps = ["@com_github_roaringbitmap_roaring//roaring64"],
 )
 
 go_test(
@@ -13,5 +14,6 @@ go_test(
     deps = [
         ":posting",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )

@@ -3,28 +3,30 @@
 package main
 
 import (
-	"context"
+	"crypto/rand"
 	"flag"
 	"fmt"
-	"math/rand"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
+	mrand "math/rand/v2"
+
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 var (
-	bazelBinary = flag.String("bazel_binary", "", "Path to bazel binary")
-	bazelArgs   = flag.String("bazel_args", "", "Space separated list of args to pass to Bazel")
-	proberName  = flag.String("prober_name", "", "Short, human-readable name of this prober. This name must be a valid bazel package name (only '.', '@', '-', '_' and alphanumeric characters allowed).")
+	bazelBinary         = flag.String("bazel_binary", "bazel", "Path to bazel binary")
+	bazelArgs           = flag.String("bazel_args", "", "Space separated list of args to pass to Bazel")
+	bazelStartupOptions = flag.String("bazel_startup_options", "", "Space separated list of Bazel startup options to pass (appear before the command)")
+	proberName          = flag.String("prober_name", "", "Short, human-readable name of this prober. This name must be a valid bazel package name (only '.', '@', '-', '_' and alphanumeric characters allowed).")
 
 	numTargets         = flag.Int("num_targets", 10, "Number targets to generate")
 	numInputsPerTarget = flag.Int("num_inputs_per_target", 10, "Number of inputs each generated target will have")
 	inputSizeBytes     = flag.Int("input_size_bytes", 100_000, "Size of each input file")
+	tags               = flag.String("tags", "", "Comma-separated list of tags to pass to Bazel via --build_metadata=TAGS=...")
 )
 
 // createEchoRule creates a target that generates an action that echoes the contents of each input file to a separate
@@ -39,7 +41,8 @@ func createEchoRule(targetName string, inputs, outputs []string) (string, error)
 		srcs = append(srcs, `"`+input+`"`)
 		outs = append(outs, `"`+outputs[i]+`"`)
 	}
-
+	// Disable affinity routing by adding a random salt to platform properties.
+	salt := mrand.Uint64()
 	return fmt.Sprintf(`
 genrule(
       name = "%s",
@@ -54,8 +57,9 @@ genrule(
 			/bin/cat "$$src" > "$$out"
 		  done
       """,
+	  exec_properties = {"salt": "%d"},
 )
-`, targetName, strings.Join(srcs, ","), strings.Join(outs, ",")), nil
+`, targetName, strings.Join(srcs, ","), strings.Join(outs, ","), salt), nil
 }
 
 func createWorkspace(dir string, numTargets, numInputsPerTarget, inputSizeBytes int) error {
@@ -123,14 +127,36 @@ func runProbe() error {
 		return status.UnknownErrorf("Could not populate workspace: %s", err)
 	}
 
-	args := []string{"//" + *proberName + ":all"}
+	args := []string{
+		// Use a temporary output base to avoid caching results from previous
+		// runs.
+		"--output_base=" + filepath.Join(workspaceDir, "bazel-output-base"),
+		// Since we're only using the workspace once, don't keep the bazel
+		// server alive.
+		"--max_idle_secs=5",
+	}
+	if *bazelStartupOptions != "" {
+		startupArgs := strings.Split(*bazelStartupOptions, " ")
+		args = append(args, startupArgs...)
+	}
+	args = append(args,
+		"build",
+		"//"+*proberName+":all",
+	)
 	if *bazelArgs != "" {
 		extraArgs := strings.Split(*bazelArgs, " ")
 		args = append(args, extraArgs...)
 	}
-	res := bazel.Invoke(context.Background(), *bazelBinary, workspaceDir, "build", args...)
-	if res.Error != nil {
-		return status.UnknownErrorf("Bazel did not exit successfully: %s", res.Error)
+	trimmedTags := strings.TrimSpace(*tags)
+	if trimmedTags != "" {
+		args = append(args, "--build_metadata=TAGS="+trimmedTags)
+	}
+	cmd := exec.Command(*bazelBinary, args...)
+	cmd.Dir = workspaceDir
+	cmd.Stdout = log.Writer("[bazel] ")
+	cmd.Stderr = log.Writer("[bazel] ")
+	if err := cmd.Run(); err != nil {
+		return status.UnknownErrorf("bazel command failed: %s", err)
 	}
 	return nil
 }
@@ -140,8 +166,6 @@ func main() {
 	if *bazelBinary == "" {
 		log.Fatalf("--bazel_binary is required")
 	}
-
-	rand.Seed(time.Now().UnixNano())
 
 	err := runProbe()
 	if err != nil {

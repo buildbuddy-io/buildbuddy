@@ -7,14 +7,16 @@ go_library(
     srcs = ["task_leaser.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_leaser",
     deps = [
+        "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//server/environment",
+        "//server/interfaces",
         "//server/util/authutil",
         "//server/util/flag",
         "//server/util/log",
+        "//server/util/proto",
         "//server/util/retry",
         "//server/util/status",
-        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
     ],
 )

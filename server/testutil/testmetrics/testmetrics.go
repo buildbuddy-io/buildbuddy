@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	dto "github.com/prometheus/client_model/go"
@@ -40,6 +41,30 @@ func CounterValue(t testing.TB, metric prometheus.Counter) float64 {
 	return m.Counter.GetValue()
 }
 
+func CounterValueForLabels(t testing.TB, metric *prometheus.CounterVec, labels prometheus.Labels) float64 {
+	m := &dto.Metric{}
+	err := metric.With(labels).Write(m)
+	require.NoError(t, err)
+	return m.Counter.GetValue()
+}
+
+type CounterVecValue struct {
+	Labels map[string]string
+	Value  float64
+}
+
+func CounterValues(t testing.TB, metric *prometheus.CounterVec) []CounterVecValue {
+	metrics := collectAll(t, metric)
+	out := make([]CounterVecValue, 0, len(metrics))
+	for _, m := range metrics {
+		out = append(out, CounterVecValue{
+			Labels: labelMap(m.GetLabel()),
+			Value:  m.Counter.GetValue(),
+		})
+	}
+	return out
+}
+
 type HistogramValues struct {
 	// Metric label values.
 	Labels map[string]string
@@ -65,6 +90,32 @@ func HistogramVecValues(t testing.TB, metric *prometheus.HistogramVec) []Histogr
 		})
 	}
 	return out
+}
+
+// AssertHistogramSamples asserts that the given histogram metric recorded the
+// expected samples.
+func AssertHistogramSamples(t testing.TB, metric *prometheus.HistogramVec, samples ...float64) {
+	metrics := collectAll(t, metric)
+	require.Len(t, metrics, 1, "expected exactly one histogram series")
+	histogram := metrics[0].GetHistogram()
+	require.NotNil(t, histogram, "expected a histogram metric")
+
+	if !assert.Equalf(t, uint64(len(samples)), *histogram.SampleCount, "sample count mismatch") {
+		return
+	}
+
+	slices.Sort(samples)
+	sampleIdx := 0
+	cumulativeCount := 0
+	for _, bucket := range histogram.Bucket {
+		for sampleIdx < len(samples) && samples[sampleIdx] <= *bucket.UpperBound {
+			cumulativeCount++
+			sampleIdx++
+		}
+		if !assert.Equalf(t, uint64(cumulativeCount), *bucket.CumulativeCount, "cumulative count mismatch for bucket %v", bucket) {
+			break
+		}
+	}
 }
 
 func labelMap(pairs []*dto.LabelPair) map[string]string {

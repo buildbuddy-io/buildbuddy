@@ -1,31 +1,384 @@
+//go:build linux && !android
+
 package cgroup
 
 import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
 
 const (
 	// Standard path where cgroupfs is expected to be mounted.
-	cgroupfsPath = "/sys/fs/cgroup"
+	RootPath = "/sys/fs/cgroup"
 
 	// Placeholder value representing the container ID in cgroup path templates.
 	cidPlaceholder = "{{.ContainerID}}"
 )
+
+var (
+	// ErrV1NotSupported is returned when a function does not support cgroup V1.
+	ErrV1NotSupported = fmt.Errorf("cgroup v1 is not supported")
+)
+
+// GetCurrent returns the cgroup of which the current process is a member.
+//
+// The returned path is relative to the cgroupfs root. For example, if the
+// current process is part of "/sys/fs/cgroup/foo", this returns "foo".
+func GetCurrent() (string, error) {
+	b, err := os.ReadFile("/proc/self/cgroup")
+	if err != nil {
+		return "", fmt.Errorf("read cgroup from procfs: %w", err)
+	}
+	s := strings.TrimRight(string(b), "\n")
+	if s == "" {
+		return "", nil
+	}
+	lines := strings.Split(s, "\n")
+	// In cgroup v1, a process can be a member of multiple cgroup hierarchies.
+	if len(lines) > 1 {
+		return "", ErrV1NotSupported
+	}
+	parts := strings.Split(lines[0], ":")
+	if len(parts) < 3 {
+		return "", fmt.Errorf("invalid /proc/self/cgroup value %q", err)
+	}
+	if controllers := parts[1]; controllers != "" {
+		return "", ErrV1NotSupported
+	}
+	// re-join in case the path itself contains ":"
+	path := strings.Join(parts[2:], ":")
+	// Strip leading "/"
+	path = strings.TrimPrefix(path, string(os.PathSeparator))
+	return path, nil
+}
+
+// Setup configures the cgroup at the given path with the given settings.
+// Any settings for cgroup controllers that aren't enabled are ignored.
+// IO limits are applied to the given block device, if specified.
+func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice *block_io.Device) error {
+	m, err := settingsMap(s, blockDevice)
+	if err != nil {
+		return err
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	enabledControllers, err := EnabledControllers(path)
+	if err != nil {
+		return fmt.Errorf("read enabled controllers: %w", err)
+	}
+	for name, value := range m {
+		controller, _, _ := strings.Cut(name, ".")
+		if !enabledControllers[controller] {
+			// Attempt to enable the controller if it's not already enabled.
+			if err := EnableController(path, controller); err != nil {
+				log.CtxWarningf(ctx, "Failed to enable cgroup controller %q for cgroup %q: %s", controller, path, err)
+				continue
+			}
+			enabledControllers[controller] = true
+		}
+		settingFilePath := filepath.Join(path, name)
+		if err := os.WriteFile(settingFilePath, []byte(value), 0); err != nil {
+			logSetupPermissionDeniedDiagnostics(ctx, path, name, value, err)
+			return fmt.Errorf("write %q to cgroup file %q: %w", value, name, err)
+		}
+	}
+	return nil
+}
+
+func logSetupPermissionDeniedDiagnostics(ctx context.Context, path, settingName, settingValue string, writeErr error) {
+	if !errors.Is(writeErr, fs.ErrPermission) && !errors.Is(writeErr, syscall.EPERM) && !errors.Is(writeErr, syscall.EACCES) {
+		return
+	}
+	settingPath := filepath.Join(path, settingName)
+	parent := ParentPath(path)
+	grandparent := ParentPath(parent)
+	currentCgroup, currentCgroupErr := GetCurrent()
+	currentCgroupInfo := currentCgroup
+	if currentCgroupErr != nil {
+		currentCgroupInfo = fmt.Sprintf("<%s>", currentCgroupErr)
+	}
+
+	fields := []string{
+		fmt.Sprintf("setting=%q", settingName),
+		fmt.Sprintf("value=%q", settingValue),
+		fmt.Sprintf("file=%q", settingPath),
+		fmt.Sprintf("path=%q", path),
+		fmt.Sprintf("parent=%q", parent),
+		fmt.Sprintf("grandparent=%q", grandparent),
+		fmt.Sprintf("uid=%d euid=%d gid=%d egid=%d", os.Getuid(), os.Geteuid(), os.Getgid(), os.Getegid()),
+		fmt.Sprintf("self_cgroup=%q", currentCgroupInfo),
+		describePath(path),
+		describePath(parent),
+		describePath(grandparent),
+		describeFile(settingPath),
+		describeCgroupFiles(path),
+		describeCgroupFiles(parent),
+		describeCgroupFiles(grandparent),
+	}
+
+	log.CtxWarningf(ctx, "cgroup write permission diagnostics: %s", strings.Join(fields, " | "))
+}
+
+func describePath(path string) string {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return fmt.Sprintf("stat(%q):<%s>", path, err)
+	}
+	stat, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Sprintf("stat(%q):mode=%s", path, fi.Mode().String())
+	}
+	return fmt.Sprintf("stat(%q):mode=%s uid=%d gid=%d", path, fi.Mode().String(), stat.Uid, stat.Gid)
+}
+
+func describeFile(path string) string {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return fmt.Sprintf("file(%q):<%s>", path, err)
+	}
+	stat, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Sprintf("file(%q):mode=%s", path, fi.Mode().String())
+	}
+	return fmt.Sprintf("file(%q):mode=%s uid=%d gid=%d", path, fi.Mode().String(), stat.Uid, stat.Gid)
+}
+
+func describeCgroupFiles(path string) string {
+	files := []string{"cgroup.type", "cgroup.controllers", "cgroup.subtree_control", "cgroup.procs"}
+	var parts []string
+	for _, name := range files {
+		value, err := readTrimmedCgroupValue(filepath.Join(path, name))
+		if err != nil {
+			parts = append(parts, fmt.Sprintf("%s:<%s>", name, err))
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s:%q", name, value))
+	}
+	return fmt.Sprintf("cgroup(%q){%s}", path, strings.Join(parts, ", "))
+}
+
+func readTrimmedCgroupValue(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	s := strings.TrimSpace(string(b))
+	if len(s) > 200 {
+		s = s[:200] + "...(truncated)"
+	}
+	return s, nil
+}
+
+// EnabledControllers returns the controllers enabled for the cgroup at the
+// given absolute path.
+func EnabledControllers(path string) (map[string]bool, error) {
+	b, err := os.ReadFile(filepath.Join(path, "cgroup.controllers"))
+	if err != nil {
+		return nil, err
+	}
+	fields := strings.Fields(string(b))
+	enabled := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		enabled[f] = true
+	}
+	return enabled, nil
+}
+
+// EnableController enables the given controller for the cgroup at the given
+// path. It recursively enables the controller for all ancestor cgroups as
+// needed. Note that this will fail if any non-root ancestors have processes in
+// them, since non-root cgroups cannot have child cgroups if they have
+// processes.
+func EnableController(path string, controller string) error {
+	path = filepath.Clean(path)
+	log.Debugf("Enabling cgroup controller %q for %q", controller, path)
+	// Stack of cgroup paths to enable the controller for.
+	var stack []string
+	for {
+		enabled, err := EnabledControllers(path)
+		if err != nil {
+			return fmt.Errorf("read enabled controllers for %q: %w", path, err)
+		}
+		if enabled[controller] {
+			break
+		}
+		path = ParentPath(path)
+		stack = append(stack, path)
+		if path == RootPath {
+			break
+		}
+	}
+	for i := len(stack) - 1; i >= 0; i-- {
+		log.Infof("Enabling cgroup subtree controller %q for %q", controller, stack[i])
+		if err := WriteSubtreeControl(stack[i], map[string]bool{controller: true}); err != nil {
+			return fmt.Errorf("write subtree control for %q: %w", stack[i], err)
+		}
+	}
+	return nil
+}
+
+// ParentPath returns the parent cgroup path for the given cgroup path.
+func ParentPath(path string) string {
+	path = filepath.Clean(path)
+	if path == RootPath {
+		return RootPath
+	}
+	return filepath.Dir(path)
+}
+
+// WriteSubtreeControl writes to the "cgroup.subtree_control" file under the
+// given cgroup absolute path. For each map entry in settings, the key indicates
+// the controller name, and the value sets the controller's enabled status.
+// Controllers not present in the map are unaffected.
+func WriteSubtreeControl(path string, settings map[string]bool) error {
+	strs := make([]string, 0, len(settings))
+	for controller, enabled := range settings {
+		var statusPrefix string
+		if enabled {
+			statusPrefix = "+"
+		} else {
+			statusPrefix = "-"
+		}
+		strs = append(strs, statusPrefix+controller)
+	}
+	b := []byte(strings.Join(strs, " "))
+	return os.WriteFile(filepath.Join(path, "cgroup.subtree_control"), b, 0)
+}
+
+// DelegateControllers reads the currently enabled controllers for the given
+// cgroup absolute path and makes those controllers available to child cgroups
+// by writing to the "cgroup.subtree_control" file.
+func DelegateControllers(path string) error {
+	controllers, err := EnabledControllers(path)
+	if err != nil {
+		return fmt.Errorf("read enabled controllers for %q: %w", path, err)
+	}
+	if err := WriteSubtreeControl(path, controllers); err != nil {
+		return fmt.Errorf("write cgroup.subtree_control for %q: %w", path, err)
+	}
+	return nil
+}
+
+func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[string]string, error) {
+	m := map[string]string{}
+	if s == nil {
+		return m, nil
+	}
+	if s.CpuWeight != nil {
+		m["cpu.weight"] = strconv.Itoa(int(s.GetCpuWeight()))
+	}
+	if s.CpuQuotaLimitUsec == nil {
+		if s.CpuQuotaPeriodUsec != nil {
+			return nil, fmt.Errorf("cannot set CPU period without also setting quota")
+		}
+	} else {
+		if s.CpuQuotaPeriodUsec == nil {
+			// Keep current or default period (100ms) but update quota.
+			m["cpu.max"] = strconv.Itoa(int(s.GetCpuQuotaLimitUsec()))
+		} else {
+			m["cpu.max"] = fmt.Sprintf("%d %d", s.GetCpuQuotaLimitUsec(), s.GetCpuQuotaPeriodUsec())
+		}
+	}
+	if s.CpuMaxBurstUsec != nil {
+		m["cpu.max.burst"] = strconv.Itoa(int(s.GetCpuMaxBurstUsec()))
+	}
+	if s.CpuUclampMin != nil {
+		m["cpu.uclamp.min"] = fmtPercent(s.GetCpuUclampMin())
+	}
+	if s.CpuUclampMax != nil {
+		m["cpu.uclamp.max"] = fmtPercent(s.GetCpuUclampMax())
+	}
+	if s.PidsMax != nil {
+		m["pids.max"] = strconv.Itoa(int(s.GetPidsMax()))
+	}
+	if s.MemoryThrottleLimitBytes != nil {
+		m["memory.high"] = strconv.Itoa(int(s.GetMemoryThrottleLimitBytes()))
+	}
+	if s.MemoryLimitBytes != nil {
+		m["memory.max"] = strconv.Itoa(int(s.GetMemoryLimitBytes()))
+	}
+	if s.MemorySoftGuaranteeBytes != nil {
+		m["memory.low"] = strconv.Itoa(int(s.GetMemorySoftGuaranteeBytes()))
+	}
+	if s.MemoryMinimumBytes != nil {
+		m["memory.min"] = strconv.Itoa(int(s.GetMemoryMinimumBytes()))
+	}
+	if s.MemoryOomGroup != nil {
+		m["memory.oom.group"] = fmtBool(s.GetMemoryOomGroup())
+	}
+	if s.SwapThrottleLimitBytes != nil {
+		m["memory.swap.high"] = strconv.Itoa(int(s.GetSwapThrottleLimitBytes()))
+	}
+	if s.SwapLimitBytes != nil {
+		m["memory.swap.max"] = strconv.Itoa(int(s.GetSwapLimitBytes()))
+	}
+	if blockDevice != nil {
+		if s.BlockIoLatencyTargetUsec != nil {
+			m["io.latency"] = fmt.Sprintf("%d:%d target=%d", blockDevice.Maj, blockDevice.Min, s.GetBlockIoLatencyTargetUsec())
+		}
+		if s.BlockIoWeight != nil {
+			m["io.weight"] = fmt.Sprintf("%d:%d %d", blockDevice.Maj, blockDevice.Min, s.GetBlockIoWeight())
+		}
+		var limitFields []string
+		limits := s.GetBlockIoLimit()
+		if limits != nil {
+			if limits.Riops != nil {
+				limitFields = append(limitFields, fmt.Sprintf("riops=%d", limits.GetRiops()))
+			}
+			if limits.Wiops != nil {
+				limitFields = append(limitFields, fmt.Sprintf("wiops=%d", limits.GetWiops()))
+			}
+			if limits.Rbps != nil {
+				limitFields = append(limitFields, fmt.Sprintf("rbps=%d", limits.GetRbps()))
+			}
+			if limits.Wbps != nil {
+				limitFields = append(limitFields, fmt.Sprintf("wbps=%d", limits.GetWbps()))
+			}
+		}
+		if len(limitFields) > 0 {
+			m["io.max"] = fmt.Sprintf("%d:%d %s", blockDevice.Maj, blockDevice.Min, strings.Join(limitFields, " "))
+		}
+	}
+	if len(s.GetCpusetCpus()) > 0 {
+		m["cpuset.cpus"] = cpuset.Format(s.GetCpusetCpus()...)
+	}
+	if s.NumaNode != nil {
+		m["cpuset.mems"] = cpuset.Format(s.GetNumaNode())
+	}
+	return m, nil
+}
+
+func fmtBool(v bool) string {
+	if v {
+		return "1"
+	}
+	return "0"
+}
+
+func fmtPercent(v float32) string {
+	return fmt.Sprintf("%.2f", v)
+}
 
 // Paths holds cgroup path templates that map a container ID to their cgroupfs
 // file paths.
@@ -33,70 +386,169 @@ const (
 // A single instance should be shared across all containers of the same
 // isolation type, since the first call to Stats() walks the cgroupfs tree in
 // order to discover the cgroup path locations.
+//
+// This struct supports both v1 and v2. If only v2 support is required and the
+// full cgroup path is known, consider calling Stats() directly, passing in
+// the cgroup v2 path.
 type Paths struct {
 	mu sync.RWMutex
 
-	// MemoryTemplate is the path template for the cgroupfs file containing
-	// current memory usage.
-	MemoryTemplate string
-	// CPUPathTemplate is the path template for the cgroupsfs file containing
-	// cumulative CPU usage.
-	CPUTemplate string
-}
+	// V2DirTemplate is the unified cgroupfs dir template (cgroup v2 only).
+	V2DirTemplate string
 
-func (p *Paths) Stats(ctx context.Context, cid string) (*repb.UsageStats, error) {
-	if err := p.find(ctx, cid); err != nil {
-		return nil, err
-	}
+	// V1CPUTemplate is the CPU usage path template (cgroup v1 only).
+	V1CPUTemplate string
 
-	memUsagePath := strings.ReplaceAll(p.MemoryTemplate, cidPlaceholder, cid)
-	cpuUsagePath := strings.ReplaceAll(p.CPUTemplate, cidPlaceholder, cid)
-
-	memUsageBytes, err := readInt64FromFile(memUsagePath)
-	if err != nil {
-		return nil, err
-	}
-	var cpuNanos int64
-	switch p.CgroupVersion() {
-	case 1:
-		// cgroup v1: /cpuacct.usage file contains just the CPU usage in ns.
-		cpuNanos, err = readInt64FromFile(cpuUsagePath)
-		if err != nil {
-			return nil, err
-		}
-	case 2:
-		// cgroup v2: /cpu.stat file contains a line like "usage_usec <N>" It
-		// contains other lines like user_usec, system_usec etc. but we just
-		// report the total for now.
-		cpuMicros, err := readCgroupInt64Field(cpuUsagePath, "usage_usec")
-		if err != nil {
-			return nil, err
-		}
-		cpuNanos = cpuMicros * 1e3
-	default:
-		return nil, status.FailedPreconditionErrorf("invalid cgroup version %d", p.CgroupVersion())
-	}
-	return &repb.UsageStats{
-		MemoryBytes: memUsageBytes,
-		CpuNanos:    cpuNanos,
-	}, nil
+	// V1MemoryTemplate is the memory usage path template (cgroup v1 only).
+	V1MemoryTemplate string
 }
 
 func (p *Paths) CgroupVersion() int {
-	if p.CPUTemplate == "" || p.MemoryTemplate == "" {
-		// Not fully initialized.
-		return 0
-	} else if strings.HasSuffix(p.CPUTemplate, "/cpuacct.usage") {
+	if p.V1CPUTemplate != "" {
 		return 1
-	} else {
+	}
+	if p.V2DirTemplate != "" {
 		return 2
 	}
+	return 0 // unknown
+}
+
+// Stats returns cgroup stats for the cgroup matching the given name. If
+// blockDevice is non-nil, IO stats are included for the device, otherwise IO
+// stats are not reported.
+func (p *Paths) Stats(ctx context.Context, name string, blockDevice *block_io.Device) (*repb.UsageStats, error) {
+	if err := p.find(ctx, name); err != nil {
+		return nil, err
+	}
+
+	if p.CgroupVersion() == 1 {
+		return p.v1Stats(ctx, name)
+	}
+
+	// cgroup v2 has all cgroup files under a single dir.
+	dir := strings.ReplaceAll(p.V2DirTemplate, cidPlaceholder, name)
+
+	return Stats(ctx, dir, blockDevice)
+}
+
+// ReadMemoryEvents reads the "memory.events" file under the given cgroup
+// directory and returns the counter values as a map. The directory should be an
+// absolute path, including the /sys/fs/cgroup prefix.
+func ReadMemoryEvents(dir string) (map[string]int64, error) {
+	return readAllInt64Fields(filepath.Join(dir, "memory.events"))
+}
+
+// ReadMemoryCurrent reads the "memory.current" file under the given cgroup
+// directory and returns the current memory usage in bytes. The directory should
+// be an absolute path, including the /sys/fs/cgroup prefix.
+func ReadMemoryCurrent(dir string) (int64, error) {
+	return readInt64FromFile(filepath.Join(dir, "memory.current"))
+}
+
+// ReadPidsEvents reads the "pids.events" file under the given cgroup
+// directory and returns the counter values as a map. The directory should be an
+// absolute path, including the /sys/fs/cgroup prefix.
+func ReadPidsEvents(dir string) (map[string]int64, error) {
+	return readAllInt64Fields(filepath.Join(dir, "pids.events"))
+}
+
+// Stats reads all stats from the given cgroup2 directory. The directory should
+// be an absolute path, including the /sys/fs/cgroup prefix.
+func Stats(ctx context.Context, dir string, blockDevice *block_io.Device) (*repb.UsageStats, error) {
+	// Read CPU usage.
+	// cpu.stat file contains a line like "usage_usec <N>"
+	// It contains other lines like user_usec, system_usec etc. but we just
+	// report the total for now.
+	cpuUsagePath := filepath.Join(dir, "cpu.stat")
+	cpuMicros, err := readCgroupInt64Field(cpuUsagePath, "usage_usec")
+	if err != nil {
+		return nil, err
+	}
+
+	// Read memory usage
+	memoryBytes, err := ReadMemoryCurrent(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	// Read IO stats for the given block device
+	var ioStats *repb.CgroupIOStats
+	if blockDevice != nil {
+		ioStatPath := filepath.Join(dir, "io.stat")
+		stats, err := readIOStatFile(ioStatPath)
+		if err != nil {
+			return nil, err
+		}
+		// Find the stats for the block device we care about
+		// NOTE: we may not actually find stats if no IO has happened yet!
+		for _, stat := range stats {
+			if stat.Maj == blockDevice.Maj && stat.Min == blockDevice.Min {
+				ioStats = stat
+				break
+			}
+		}
+	}
+
+	// Read PSI metrics.
+	// Note that PSI may not be supported in all environments,
+	// so ignore NotExist errors.
+
+	cpuPressurePath := filepath.Join(dir, "cpu.pressure")
+	cpuPressure, err := readPSIFile(cpuPressurePath)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	memPressurePath := filepath.Join(dir, "memory.pressure")
+	memPressure, err := readPSIFile(memPressurePath)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	ioPressurePath := filepath.Join(dir, "io.pressure")
+	ioPressure, err := readPSIFile(ioPressurePath)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	return &repb.UsageStats{
+		CpuNanos:       cpuMicros * 1e3,
+		MemoryBytes:    memoryBytes,
+		CgroupIoStats:  ioStats,
+		CpuPressure:    cpuPressure,
+		MemoryPressure: memPressure,
+		IoPressure:     ioPressure,
+	}, nil
+}
+
+func (p *Paths) v1Stats(ctx context.Context, cid string) (*repb.UsageStats, error) {
+	// cpuacct.usage file contains just the CPU usage in ns.
+	cpuUsagePath := strings.ReplaceAll(p.V1CPUTemplate, cidPlaceholder, cid)
+	cpuNanos, err := readInt64FromFile(cpuUsagePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// memory.usage_in_bytes file contains the current memory usage.
+	memUsagePath := strings.ReplaceAll(p.V1MemoryTemplate, cidPlaceholder, cid)
+	memoryBytes, err := readInt64FromFile(memUsagePath)
+	if err != nil {
+		return nil, err
+	}
+
+	return &repb.UsageStats{
+		CpuNanos:    cpuNanos,
+		MemoryBytes: memoryBytes,
+	}, nil
 }
 
 // find locates cgroup path templates. For this to work, the container must be
 // started (i.e. `podman create` does not set up the cgroups; `podman start`
 // does). We use this walking approach because the logic for figuring out the
 // actual cgroup paths depends on the system setup and is pretty complicated.
+//
+// TODO: get rid of this lookup. Going forward, we're only supporting cgroup2
+// and expect it to be mounted at /sys/fs/cgroup.
 func (p *Paths) find(ctx context.Context, cid string) error {
 	// If already initialized, do nothing.
 	p.mu.RLock()
@@ -115,9 +567,8 @@ func (p *Paths) find(ctx context.Context, cid string) error {
 		return nil
 	}
 	start := time.Now()
-	// Sentinel error value to short-circuit the walk
-	stop := fmt.Errorf("stop walk")
-	err := filepath.WalkDir(cgroupfsPath, func(path string, dir fs.DirEntry, err error) error {
+	var v2DirTemplate, v1CPUTemplate, v1MemoryTemplate string
+	err := filepath.WalkDir(RootPath, func(path string, dir fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -127,27 +578,38 @@ func (p *Paths) find(ctx context.Context, cid string) error {
 		if !strings.Contains(path, cid) {
 			return nil
 		}
-		if strings.HasSuffix(path, "/memory.usage_in_bytes") || strings.HasSuffix(path, "/memory.current") {
-			p.MemoryTemplate = strings.ReplaceAll(path, cid, cidPlaceholder)
-		} else if strings.HasSuffix(path, "/cpu.stat") || strings.HasSuffix(path, "/cpuacct.usage") {
-			p.CPUTemplate = strings.ReplaceAll(path, cid, cidPlaceholder)
-		}
-		if p.MemoryTemplate != "" && p.CPUTemplate != "" {
-			return stop
+		basename := filepath.Base(path)
+		if basename == "memory.current" {
+			dir := filepath.Dir(path)
+			v2DirTemplate = strings.ReplaceAll(dir, cid, cidPlaceholder)
+		} else if basename == "cpuacct.usage" {
+			v1CPUTemplate = strings.ReplaceAll(path, cid, cidPlaceholder)
+		} else if basename == "memory.usage_in_bytes" {
+			v1MemoryTemplate = strings.ReplaceAll(path, cid, cidPlaceholder)
 		}
 		return nil
 	})
-	if err != nil && err != stop {
+	if err != nil {
 		return err
 	}
-	if p.MemoryTemplate == "" {
-		return status.InternalErrorf("failed to locate memory cgroup file under %s", cgroupfsPath)
+
+	// Prioritize cgroup v1 paths. In a "hybrid" setup (both v1 and v2 mounted),
+	// some v2 paths will be set up, but might be missing certain files like
+	// memory.current, and the cpu.stat file will be missing some information.
+	if v1CPUTemplate != "" && v1MemoryTemplate != "" {
+		p.V1CPUTemplate = v1CPUTemplate
+		p.V1MemoryTemplate = v1MemoryTemplate
+		log.CtxInfof(ctx, "Initialized cgroup v1 paths: duration=%s, cpu=%s, mem=%s", time.Since(start), v1CPUTemplate, v1MemoryTemplate)
+		return nil
 	}
-	if p.CPUTemplate == "" {
-		return status.InternalErrorf("failed to locate CPU cgroup file under %s", cgroupfsPath)
+
+	if v2DirTemplate != "" {
+		p.V2DirTemplate = v2DirTemplate
+		log.CtxInfof(ctx, "Initialized cgroup v2 paths: duration=%s, template=%s", time.Since(start), v2DirTemplate)
+		return nil
 	}
-	log.CtxInfof(ctx, "Initialized cgroup path templates (%s): mem=%s, cpu=%s", time.Since(start), p.MemoryTemplate, p.CPUTemplate)
-	return nil
+
+	return status.InternalErrorf("failed to locate cgroup under %s", RootPath)
 }
 
 // readInt64FromFile reads a file expected to contain a single int64.
@@ -183,4 +645,171 @@ func readCgroupInt64Field(path, fieldName string) (int64, error) {
 		return val, nil
 	}
 	return 0, status.NotFoundErrorf("could not find field %q in %s", fieldName, path)
+}
+
+// readAllInt64Fields reads a cgroupfs file containing a list of lines like
+// "<name> <int64_value>" and returns the mapping of names to values.
+func readAllInt64Fields(path string) (map[string]int64, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(b))
+	m := map[string]int64{}
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) != 2 {
+			return nil, fmt.Errorf("malformed cgroup file contents: line %q does not match '<name> <int64_value>' format", scanner.Text())
+		}
+		val, err := strconv.ParseInt(fields[1], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("malformed cgroup file contents: line %q does not match '<name> <int64_value>' format", scanner.Text())
+		}
+		m[fields[0]] = val
+	}
+	return m, nil
+}
+
+func readPSIFile(path string) (*repb.PSI, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return readPSI(f)
+}
+
+// Parses PSI (Pressure Stall Information) metrics output.
+func readPSI(r io.Reader) (*repb.PSI, error) {
+	psi := &repb.PSI{}
+	s := bufio.NewScanner(r)
+	for s.Scan() {
+		line := strings.TrimSpace(s.Text())
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) != 5 {
+			return nil, fmt.Errorf("malformed PSI line %q (5 fields expected)", line)
+		}
+		m := &repb.PSI_Metrics{}
+		// Parse (some|full)
+		switch fields[0] {
+		case "some":
+			psi.Some = m
+		case "full":
+			psi.Full = m
+		default:
+			return nil, fmt.Errorf("unexpected string %q at field 0", fields[0])
+		}
+		// Parse avgs
+		var avgs [3]float32
+		for i := 0; i < len(avgs); i++ {
+			field := fields[i+1]
+			name, rawValue, ok := strings.Cut(field, "=")
+			if !ok {
+				return nil, fmt.Errorf("malformed avg field %q", field)
+			}
+			value, err := strconv.ParseFloat(rawValue, 32)
+			if err != nil {
+				return nil, fmt.Errorf("malformed avg value field %q", field)
+			}
+			switch name {
+			case "avg10":
+				m.Avg10 = float32(value)
+			case "avg60":
+				m.Avg60 = float32(value)
+			case "avg300":
+				m.Avg300 = float32(value)
+			default:
+				return nil, fmt.Errorf("unexpected field name %q", name)
+			}
+		}
+		// Parse total
+		field := fields[4]
+		name, rawValue, ok := strings.Cut(field, "=")
+		if !ok {
+			return nil, fmt.Errorf("malformed total field %q", field)
+		}
+		total, err := strconv.ParseInt(rawValue, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("malformed total field %q", field)
+		}
+		if name != "total" {
+			return nil, fmt.Errorf("unexpected field name %q", name)
+		}
+		m.Total = int64(total)
+	}
+	if s.Err() != nil {
+		return nil, fmt.Errorf("read: %w", s.Err())
+	}
+	return psi, nil
+}
+
+// readIOStatFile reads the cgroup "io.stat" file from the given path.
+func readIOStatFile(path string) ([]*repb.CgroupIOStats, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return readIOStat(f)
+}
+
+func readIOStat(r io.Reader) ([]*repb.CgroupIOStats, error) {
+	var stats []*repb.CgroupIOStats
+	s := bufio.NewScanner(r)
+	for s.Scan() {
+		line := strings.TrimSpace(s.Text())
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			return nil, fmt.Errorf("fields unexpectedly empty")
+		}
+		devStr := fields[0]
+		if devStr == "(unknown)" {
+			// TODO(bduffany): figure out what these "(unknown)" devices are
+			continue
+		}
+		major, minor, err := block_io.ParseMajMin(devStr)
+		if err != nil {
+			return nil, fmt.Errorf("parse block device: %w", err)
+		}
+		stat := &repb.CgroupIOStats{
+			Maj: int64(major),
+			Min: int64(minor),
+		}
+		for _, entry := range fields[1:] {
+			name, valStr, ok := strings.Cut(entry, "=")
+			if !ok {
+				return nil, fmt.Errorf("malformed counter entry")
+			}
+			val, err := strconv.Atoi(valStr)
+			if err != nil {
+				return nil, fmt.Errorf("malformed counter value")
+			}
+			switch name {
+			case "rbytes":
+				stat.Rbytes = int64(val)
+			case "wbytes":
+				stat.Wbytes = int64(val)
+			case "rios":
+				stat.Rios = int64(val)
+			case "wios":
+				stat.Wios = int64(val)
+			case "dbytes":
+				stat.Dbytes = int64(val)
+			case "dios":
+				stat.Dios = int64(val)
+			default:
+			}
+		}
+		stats = append(stats, stat)
+	}
+	if s.Err() != nil {
+		return nil, fmt.Errorf("read: %w", s.Err())
+	}
+	return stats, nil
 }

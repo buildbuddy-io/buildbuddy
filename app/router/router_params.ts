@@ -19,6 +19,9 @@ export const TAG_PARAM_NAME = "tag";
 export const MINIMUM_DURATION_PARAM_NAME = "min-dur";
 export const MAXIMUM_DURATION_PARAM_NAME = "max-dur";
 
+export const DIMENSION_PARAM_NAME = "d";
+export const GENERIC_FILTER_PARAM_NAME = "sq";
+
 // Sort params for the global filter.
 export const SORT_BY_PARAM_NAME = "sort-by";
 export const SORT_ORDER_PARAM_NAME = "sort-order";
@@ -42,6 +45,8 @@ export const GLOBAL_FILTER_PARAM_NAMES = [
   TAG_PARAM_NAME,
   MINIMUM_DURATION_PARAM_NAME,
   MAXIMUM_DURATION_PARAM_NAME,
+
+  GENERIC_FILTER_PARAM_NAME,
 ];
 
 export const GLOBAL_SORT_PARAM_NAMES = [SORT_BY_PARAM_NAME, SORT_ORDER_PARAM_NAME];

@@ -113,6 +113,10 @@ func (s *SecretService) ListSecrets(ctx context.Context, req *skpb.ListSecretsRe
 	return rsp, nil
 }
 
+// UpdateSecret updates the secret with the given name associated with the group
+// the user is authenticated as, creating it if it does not exist. It returns,
+// in order, the response proto, whether the secret was newly created or not,
+// and any error encountered.
 func (s *SecretService) UpdateSecret(ctx context.Context, req *skpb.UpdateSecretRequest) (*skpb.UpdateSecretResponse, bool, error) {
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -218,7 +222,7 @@ func (s *SecretService) DeleteSecret(ctx context.Context, req *skpb.DeleteSecret
 	return &skpb.DeleteSecretResponse{}, nil
 }
 
-func (s *SecretService) GetSecretEnvVars(ctx context.Context, groupID string) ([]*repb.Command_EnvironmentVariable, error) {
+func (s *SecretService) GetSecretEnvVars(ctx context.Context, groupID string, secretNames ...string) ([]*repb.Command_EnvironmentVariable, error) {
 	if err := authutil.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
 		return nil, err
 	}
@@ -244,9 +248,19 @@ func (s *SecretService) GetSecretEnvVars(ctx context.Context, groupID string) ([
 		return []*repb.Command_EnvironmentVariable{}, nil
 	}
 
+	nameFilter := make(map[string]struct{}, len(secretNames))
+	for _, name := range secretNames {
+		nameFilter[name] = struct{}{}
+	}
+
 	names := make([]string, 0, len(rsp.GetSecret()))
 	encValues := make([]string, 0, len(rsp.GetSecret()))
 	for _, nameAndEncValue := range rsp.GetSecret() {
+		if len(nameFilter) > 0 {
+			if _, ok := nameFilter[nameAndEncValue.GetName()]; !ok {
+				continue
+			}
+		}
 		names = append(names, nameAndEncValue.GetName())
 		encValues = append(encValues, nameAndEncValue.GetValue())
 	}

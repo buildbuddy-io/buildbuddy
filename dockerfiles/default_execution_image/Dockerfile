@@ -1,7 +1,12 @@
 FROM gcr.io/cloud-marketplace/google/rbe-ubuntu16-04@sha256:5464e3e83dc656fc6e4eae6a01f5c2645f1f7e95854b3802b85e86484132d90e
 
 RUN apt-get update && apt-get install -y rpm build-essential && apt-get clean && rm -rf /var/lib/apt/lists/*
-RUN curl -Lo /usr/local/bin/bazelisk https://github.com/bazelbuild/bazelisk/releases/download/v1.7.4/bazelisk-linux-amd64 && chmod +x /usr/local/bin/bazelisk && /usr/local/bin/bazelisk
+RUN curl -Lo /usr/local/bin/bazelisk https://github.com/bazelbuild/bazelisk/releases/download/v1.7.4/bazelisk-linux-amd64 && \
+  chmod +x /usr/local/bin/bazelisk
+
+# Bazel 8.3.0 or newer requires a newer libc and libstdc++
+# and won't be able to run on Ubuntu 16.04
+RUN USE_BAZEL_VERSION=8.2.0 /usr/local/bin/bazelisk
 
 # Install docker.
 # Note: Some apt utils depend on /usr/bin/python3 being symlinked to python3.5, but the

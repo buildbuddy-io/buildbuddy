@@ -7,13 +7,17 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/go-redis/redis/v8"
+	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
 
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
+	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -61,15 +65,18 @@ type Env interface {
 	GetSplashPrinter() interfaces.SplashPrinter
 	GetActionCacheClient() repb.ActionCacheClient
 	GetByteStreamClient() bspb.ByteStreamClient
+	GetLocalByteStreamClient() bspb.ByteStreamClient
 	GetPooledByteStreamClient() interfaces.PooledByteStreamClient
 	GetSchedulerClient() scpb.SchedulerClient
 	GetCapabilitiesClient() repb.CapabilitiesClient
 	GetRemoteExecutionClient() repb.ExecutionClient
 	GetContentAddressableStorageClient() repb.ContentAddressableStorageClient
+	GetLocalContentAddressableStorageClient() repb.ContentAddressableStorageClient
 	GetAPIService() interfaces.ApiService
 	GetFileCache() interfaces.FileCache
 	GetRemoteExecutionService() interfaces.RemoteExecutionService
 	GetSchedulerService() interfaces.SchedulerService
+	GetCacheRoutingService() interfaces.CacheRoutingService
 	GetTaskRouter() interfaces.TaskRouter
 	GetTaskSizer() interfaces.TaskSizer
 	GetDefaultRedisClient() redis.UniversalClient
@@ -79,7 +86,8 @@ type Env interface {
 	GetKeyValStore() interfaces.KeyValStore
 	GetRepoDownloader() interfaces.RepoDownloader
 	GetWorkflowService() interfaces.WorkflowService
-	GetGitHubApp() interfaces.GitHubApp
+	GetWorkspaceService() interfaces.WorkspaceService
+	GetGitHubAppService() interfaces.GitHubAppService
 	GetRunnerService() interfaces.RunnerService
 	GetGitProviders() interfaces.GitProviders
 	GetUsageService() interfaces.UsageService
@@ -91,11 +99,18 @@ type Env interface {
 	GetInternalHTTPMux() interfaces.HttpServeMux
 	GetListenAddr() string
 	GetBuildBuddyServer() interfaces.BuildBuddyServer
+	GetBuildBuddyServiceClient() bbspb.BuildBuddyServiceClient
 	GetSSLService() interfaces.SSLService
 	GetBuildEventServer() pepb.PublishBuildEventServer
+	GetGitHubStatusService() interfaces.GitHubStatusService
+	GetLocalCASServer() repb.ContentAddressableStorageServer
 	GetCASServer() repb.ContentAddressableStorageServer
+	GetLocalByteStreamServer() interfaces.ByteStreamServer
 	GetByteStreamServer() bspb.ByteStreamServer
+	GetLocalActionCacheServer() repb.ActionCacheServer
 	GetActionCacheServer() repb.ActionCacheServer
+	GetCacheClient() cspb.CacheClient
+	GetLocalCacheClient() cspb.CacheClient
 	GetPushServer() rapb.PushServer
 	GetFetchServer() rapb.FetchServer
 	GetCapabilitiesServer() repb.CapabilitiesServer
@@ -109,18 +124,27 @@ type Env interface {
 	GetExecutionCollector() interfaces.ExecutionCollector
 	GetSuggestionService() interfaces.SuggestionService
 	GetCrypter() interfaces.Crypter
-	GetSociArtifactStoreServer() socipb.SociArtifactStoreServer
 	GetSingleFlightDeduper() interfaces.SingleFlightDeduper
 	GetPromQuerier() interfaces.PromQuerier
 	GetAuditLogger() interfaces.AuditLogger
+	GetIPRulesEnforcer() interfaces.IPRulesEnforcer
 	GetIPRulesService() interfaces.IPRulesService
 	GetClientIdentityService() interfaces.ClientIdentityService
 	GetImageCacheAuthenticator() interfaces.ImageCacheAuthenticator
 	GetServerNotificationService() interfaces.ServerNotificationService
 	GetGCPService() interfaces.GCPService
+	GetMCPService() interfaces.MCPService
 	GetSCIMService() interfaces.SCIMService
-	GetGossipService() interfaces.GossipService
 	GetCommandRunner() interfaces.CommandRunner
 	GetCodesearchService() interfaces.CodesearchService
 	GetSnapshotService() interfaces.SnapshotService
+	GetAuthService() interfaces.AuthService
+	GetRegistryService() interfaces.RegistryService
+	GetPubSub() interfaces.PubSub
+	GetClock() clockwork.Clock
+	GetCPULeaser() interfaces.CPULeaser
+	GetHitTrackerFactory() interfaces.HitTrackerFactory
+	GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer
+	GetExperimentFlagProvider() interfaces.ExperimentFlagProvider
+	GetOCIFetcherClient() ofpb.OCIFetcherClient
 }

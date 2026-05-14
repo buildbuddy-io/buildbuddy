@@ -1,9 +1,10 @@
 import {
   CheckCircle,
+  Circle,
   Clock,
-  Github,
   GitBranch,
   GitCommit,
+  Github,
   HardDrive,
   HelpCircle,
   LayoutGrid,
@@ -12,15 +13,15 @@ import {
   User,
   Wrench,
   XCircle,
-  Circle,
 } from "lucide-react";
 import React from "react";
+import { invocation_status } from "../../proto/invocation_status_ts_proto";
+import { invocation } from "../../proto/invocation_ts_proto";
+import Link from "../components/link/link";
 import format from "../format/format";
 import router from "../router/router";
-import Link from "../components/link/link";
-import { invocation } from "../../proto/invocation_ts_proto";
-import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { exitCode } from "../util/exit_codes";
+import InvocationCompareButton from "./invocation_compare_button";
 
 const durationRefreshIntervalMillis = 3000;
 
@@ -112,6 +113,20 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
   }
 
   getStatusClass() {
+    if (this.hasRunStatus()) {
+      switch (this.props.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return "card-success";
+        case invocation_status.OverallStatus.FAILURE:
+          return "card-failure";
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return "card-in-progress";
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return "card-disconnected";
+        default:
+      }
+    }
+
     if (this.isInProgress()) {
       return "card-in-progress";
     }
@@ -128,6 +143,20 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
   }
 
   renderStatusIcon() {
+    if (this.hasRunStatus()) {
+      switch (this.props.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return <CheckCircle className="icon green" />;
+        case invocation_status.OverallStatus.FAILURE:
+          return <XCircle className="icon red" />;
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return <PlayCircle className="icon blue" />;
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return <HelpCircle className="icon" />;
+        default:
+      }
+    }
+
     if (this.isInProgress()) {
       return <PlayCircle className="icon blue" />;
     }
@@ -180,9 +209,8 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
         : "Disconnected build";
     }
 
-    return `${this.props.invocation.user || "Unknown user"}'s ${this.props.invocation.command} ${format.truncateList(
-      this.props.invocation.pattern
-    )}`;
+    const userPrefix = this.props.invocation.user ? `${this.props.invocation.user}'s ` : "";
+    return userPrefix + `${this.props.invocation.command} ${format.truncateList(this.props.invocation.pattern)}`;
   }
 
   getDuration() {
@@ -191,6 +219,18 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
     }
 
     return format.durationUsec(this.props.invocation.durationUsec);
+  }
+
+  hasRunStatus(): boolean {
+    switch (this.props.invocation.runStatus) {
+      case invocation_status.OverallStatus.SUCCESS:
+      case invocation_status.OverallStatus.FAILURE:
+      case invocation_status.OverallStatus.IN_PROGRESS:
+      case invocation_status.OverallStatus.DISCONNECTED:
+        return true;
+      default:
+        return false;
+    }
   }
 
   render() {
@@ -219,6 +259,9 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
             <div className="title">{this.getTitle()}</div>
             {roleLabel && <div className={`role-badge ${this.props.invocation.role}`}>{roleLabel}</div>}
             <div className="subtitle">{format.formatTimestampUsec(this.props.invocation.createdAtUsec)}</div>
+            {!this.props.hover && (
+              <InvocationCompareButton mini={true} invocationId={this.props.invocation.invocationId} />
+            )}
           </div>
           <div className="details">
             {!this.props.hover && (

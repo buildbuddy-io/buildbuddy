@@ -1,11 +1,11 @@
-import React from "react";
-import clsx from "clsx";
-import { MDXProvider } from "@mdx-js/react";
-import Translate, { translate } from "@docusaurus/Translate";
 import Link from "@docusaurus/Link";
-import MDXComponents from "@theme/MDXComponents";
 import { PageMetadata } from "@docusaurus/theme-common";
+import Translate, { translate } from "@docusaurus/Translate";
+import { MDXProvider } from "@mdx-js/react";
 import type { Props } from "@theme/BlogPostItem";
+import MDXComponents from "@theme/MDXComponents";
+import clsx from "clsx";
+import React from "react";
 
 import styles from "./styles.module.css";
 
@@ -75,11 +75,11 @@ const MONTHS = [
 function BlogPostItem(props: Props): JSX.Element {
   const { children, frontMatter, metadata, truncated, isBlogPostPage = false } = props;
   const { date, permalink, tags, readingTime } = metadata;
-  const { author, title, subtitle, image, keywords } = frontMatter;
+  const { title, subtitle, image, keywords } = frontMatter;
 
-  const authorURL = frontMatter.author_url || frontMatter.authorURL;
-  const authorTitle = frontMatter.author_title || frontMatter.authorTitle;
-  const authorImageURL = frontMatter.author_image_url || frontMatter.authorImageURL;
+  // TODO: support multiple authors
+  const author = metadata.authors[0];
+  const { name, title: authorTitle, url, imageURL } = author;
 
   const renderPostHeader = () => {
     const TitleHeading = isBlogPostPage ? "h1" : "h2";
@@ -99,16 +99,16 @@ function BlogPostItem(props: Props): JSX.Element {
         <div className="margin-vert--md">
           <div className={styles.heading}>
             <div className={styles.headingPhoto}>
-              {authorImageURL && (
-                <Link className={`avatar__photo-link avatar__photo ${styles.avatarImage}`} href={authorURL}>
-                  <img src={authorImageURL} alt={author} />
+              {imageURL && (
+                <Link className={`avatar__photo-link avatar__photo ${styles.avatarImage}`} href={imageURL}>
+                  <img src={imageURL} alt={author} />
                 </Link>
               )}
             </div>
             <div className={styles.headingDetails}>
               <span>
-                <Link className={styles.authorName} href={authorURL}>
-                  {author}
+                <Link className={styles.authorName} href={url}>
+                  {name}
                 </Link>
                 {", "}
                 <span className={styles.authorTitle}>{authorTitle}</span>

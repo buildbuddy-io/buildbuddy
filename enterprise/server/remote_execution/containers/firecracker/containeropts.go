@@ -1,9 +1,11 @@
 package firecracker
 
 import (
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
+	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
-	dockerclient "github.com/docker/docker/client"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
 
 type ContainerOpts struct {
@@ -12,18 +14,19 @@ type ContainerOpts struct {
 	// properties and possibly executor-level properties/configuration that is
 	// applied to all tasks.
 	//
-	// This is not required if SavedState is specified, since the configuration
-	// is stored along with the state.
+	// This is not required if SnapshotKey is specified, since the configuration
+	// is stored in the snapshot.
 	VMConfiguration *fcpb.VMConfiguration
+
+	// OverrideSnapshotKey is an optional snapshot key to resume from, which
+	// overrides the snapshot key that is normally computed from task platform
+	// properties. If it is not found in cache, then an error will be returned
+	// when attempting to create the VM.
+	OverrideSnapshotKey *fcpb.SnapshotKey
 
 	// ExecutorConfig contains executor-level configuration, such as firecracker
 	// and jailer paths / versioning info. This is required.
 	ExecutorConfig *ExecutorConfig
-
-	// Saved state pointing to the snapshot manifest in filecache. When set,
-	// the VMConfiguration will be loaded from the snapshot manifest rather than
-	// the VMConfiguration field.
-	SavedState *rnpb.FirecrackerState
 
 	// The OCI container image. ex "alpine:latest".
 	ContainerImage string
@@ -31,15 +34,33 @@ type ContainerOpts struct {
 	// The "USER[:GROUP]" spec to run commands as (optional).
 	User string
 
-	// DockerClient can optionally be specified to pull container images via
-	// Docker. This is useful for de-duping in-flight image pull operations and
-	// making use of the local Docker cache for images. If not specified, images
-	// will be pulled directly by skopeo and no image pull de-duping will be
-	// performed.
-	DockerClient *dockerclient.Client
-
 	// The action directory with inputs / outputs.
 	ActionWorkingDirectory string
+
+	// CgroupParent is the parent cgroup path relative to the cgroup root.
+	CgroupParent string
+
+	// CgroupSettings are settings applied to cgroup in which jailer executes.
+	CgroupSettings *scpb.CgroupSettings
+
+	// BlockDevice sets the block device for restricting IO via cgroup. Note
+	// that the firecracker cgroup does not affect IO for virtual block devices
+	// (VBD) or memory snapshots (UFFD) since the server for these devices runs
+	// in the executor process.
+	BlockDevice *block_io.Device
+
+	// NetworkPool is an optional network pool which allows reusing networks
+	// across multiple VM instances.
+	NetworkPool *networking.VMNetworkPool
+
+	// MarshalledDNSOverrides is an optional field to overrides DNS responses
+	// in the guest. It is the marshalled form of []*networking.DNSOverride
+	MarshalledDNSOverrides string
+
+	// HostResolvConf is the contents of the host's /etc/resolv.conf, passed
+	// to the VM via MMDS so it uses the same DNS configuration. Empty if the
+	// file could not be read; goinit falls back to hardcoded nameservers.
+	HostResolvConf string
 
 	// Optional flags -- these will default to sane values.
 	// They are here primarily for debugging and running
@@ -49,4 +70,8 @@ type ContainerOpts struct {
 	// allowing for multiple locally-started VMs to avoid using
 	// conflicting network interfaces.
 	ForceVMIdx int
+
+	// UseOCIFetcher enables using the OCI fetcher service for pulling container
+	// images instead of pulling directly from the registry.
+	UseOCIFetcher bool
 }

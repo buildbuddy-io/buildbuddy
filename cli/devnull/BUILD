@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "devnull",
     srcs = ["devnull.go"],
@@ -9,5 +11,3 @@ go_library(
         "//server/interfaces",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

@@ -6,7 +6,10 @@ import { TimeDelta } from "./time_delta";
 export class AnimationLoop {
   private dt = new TimeDelta();
 
-  constructor(private callback: (dt: number) => void, private enabled_ = false) {
+  constructor(
+    private callback: (dt: number) => void,
+    private enabled_ = false
+  ) {
     if (enabled_) {
       this.start();
     }
@@ -38,5 +41,9 @@ export class AnimationLoop {
   stop() {
     this.enabled_ = false;
     this.dt.reset();
+  }
+
+  isRunning() {
+    return this.enabled_;
   }
 }

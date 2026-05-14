@@ -1,6 +1,6 @@
 import React from "react";
-import router from "../router/router";
 import { FilterInput } from "../components/filter_input/filter_input";
+import router from "../router/router";
 
 interface Props {
   tab: string;
@@ -37,6 +37,12 @@ export default class InvocationFilterComponent extends React.Component<Props, St
       case "executionFilter":
         params = { executionFilter: value };
         break;
+      case "spawnFilter":
+        params = { spawnFilter: value };
+        break;
+      case "fileFilter":
+        params = { fileFilter: value };
+        break;
     }
     this.setState({ value: value });
 
@@ -56,6 +62,10 @@ export default class InvocationFilterComponent extends React.Component<Props, St
         return "executionFilter";
       case "#targets":
         return "targetFilter";
+      case "#spawns":
+        return "spawnFilter";
+      case "#files":
+        return "fileFilter";
       default:
         return "";
     }

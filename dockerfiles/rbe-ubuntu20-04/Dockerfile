@@ -1,4 +1,4 @@
-FROM marketplace.gcr.io/google/ubuntu2004@sha256:9e3ead2510253310bd5b44d254ab810c8f37b19a35716379220fa72b38e8c818
+FROM marketplace.gcr.io/google/ubuntu2004@sha256:41fb71b783c7aa640c991f27c09e81df4d85e7d0e4f746d4f480120a10081b06
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -32,6 +32,11 @@ RUN apt-get update && \
 # Misc. utils
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+      software-properties-common \
+      && \
+    add-apt-repository ppa:git-core/ppa && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
       ed \
       curl \
       file \
@@ -42,6 +47,7 @@ RUN apt-get update && \
       netcat-traditional \
       wget \
       zip \
+      zipmerge \
       && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -83,6 +89,16 @@ RUN apt-get update && \
       && \
     apt-get remove -y gnupg && \
     apt-get autoremove -y && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# en_US.UTF-8 locale
+#
+# Bazel forces the locale to be en_US.UTF-8 (not C.UTF-8) for Java actions.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      locales \
+      && \
+    locale-gen en_US.UTF-8 && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Alias `python` to `python2` to be compatible with the Ubuntu 16.04 RBE image.

@@ -3,16 +3,20 @@ package accumulator
 import (
 	"context"
 	"net/url"
+	"regexp"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 const (
@@ -21,10 +25,14 @@ const (
 	disableCommitStatusReportingFieldName = "disableCommitStatusReporting"
 	disableTargetTrackingFieldName        = "disableTargetTracking"
 
-	// The maximum number of important files and artifacts to possibly copy
+	// The maximum number of important TestRunner artifacts to possibly copy
 	// from cache -> blobstore. If more than this number are present, they
 	// will be dropped.
-	maxPersistableArtifacts = 1000
+	maxPersistableTestArtifacts = 1000
+
+	// If codesearch is enabled, and an invocation contains a single file with the
+	// following name, attempt to ingest this kythe sstable file in codesearch.
+	KytheOutputName = "kythe_serving.sst"
 )
 
 var (
@@ -32,6 +40,7 @@ var (
 		"DISABLE_COMMIT_STATUS_REPORTING": disableCommitStatusReportingFieldName,
 		"DISABLE_TARGET_TRACKING":         disableTargetTrackingFieldName,
 	}
+	bytestreamURIPattern = regexp.MustCompile(`^bytestream://.*/blobs/([a-z0-9]{64})/\d+$`)
 )
 
 type Accumulator interface {
@@ -42,6 +51,12 @@ type Accumulator interface {
 	// not present.
 	Invocation() *inpb.Invocation
 
+	// MetadataIsLoaded returns whether all expected invocation-level metadata
+	// events have been received. It's generally not safe to call the other
+	// methods such as Pattern() or WorkflowID() without first checking whether
+	// metadata is loaded.
+	MetadataIsLoaded() bool
+
 	StartTime() time.Time
 	DisableCommitStatusReporting() bool
 	DisableTargetTracking() bool
@@ -49,8 +64,6 @@ type Accumulator interface {
 	ActionName() string
 	Pattern() string
 
-	WorkspaceIsLoaded() bool
-	BuildMetadataIsLoaded() bool
 	BuildFinished() bool
 }
 
@@ -64,16 +77,18 @@ type Accumulator interface {
 // memory for the life of the stream, so it should not save every single event
 // in full (that data lives in blobstore).
 type BEValues struct {
-	valuesMap                      map[string]string
-	sawWorkspaceStatusEvent        bool
-	sawBuildMetadataEvent          bool
-	sawFinishedEvent               bool
-	buildStartTime                 time.Time
-	buildToolLogURIs               []*url.URL
-	profileName                    string
-	hasBytestreamTestActionOutputs bool
+	valuesMap                 map[string]string
+	unprocessedMetadataEvents map[string]struct{}
+	sawStartedEvent           bool
+	sawFinishedEvent          bool
+	buildStartTime            time.Time
+	buildToolLogURIs          []*url.URL
+	outputFilesMap            map[string]*build_event_stream.File
+	kytheSSTableResourceName  *rspb.ResourceName
+	profileName               string
 
-	testOutputURIs []*url.URL
+	failedTestOutputURIs []*url.URL
+	passedTestOutputURIs []*url.URL
 	// TODO(bduffany): Migrate all parser functionality directly into the
 	// accumulator. The parser is a separate entity only for historical reasons.
 	parser *event_parser.StreamingEventParser
@@ -81,8 +96,10 @@ type BEValues struct {
 
 func NewBEValues(invocation *inpb.Invocation) *BEValues {
 	return &BEValues{
-		valuesMap: make(map[string]string, 0),
-		parser:    event_parser.NewStreamingEventParser(invocation),
+		valuesMap:                 make(map[string]string, 0),
+		unprocessedMetadataEvents: make(map[string]struct{}, 0),
+		outputFilesMap:            make(map[string]*build_event_stream.File),
+		parser:                    event_parser.NewStreamingEventParser(invocation),
 	}
 }
 
@@ -90,25 +107,67 @@ func (v *BEValues) Invocation() *inpb.Invocation {
 	return v.parser.GetInvocation()
 }
 
+func (v *BEValues) maybeExtractOutputFile(files ...*build_event_stream.File) {
+	for _, file := range files {
+		if file.GetName() == "" {
+			continue
+		}
+		if m := bytestreamURIPattern.FindStringSubmatch(file.GetUri()); len(m) >= 1 {
+			digestHash := m[1]
+			v.outputFilesMap[digestHash] = proto.Clone(file).(*build_event_stream.File)
+		}
+		// Special case: check for kythe output files.
+		if file.GetName() == KytheOutputName {
+			uri, err := url.Parse(file.GetUri())
+			if err != nil {
+				continue
+			}
+			rn, err := digest.ParseDownloadResourceName(uri.Path)
+			if err != nil {
+				continue
+			}
+			v.kytheSSTableResourceName = rn.ToProto()
+		}
+	}
+}
+
 func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 	if err := v.parser.ParseEvent(event); err != nil {
 		return err
 	}
 
+	// Update the set of metadata events that we're still expecting.
+	if IsMetadataEvent(event.GetId()) {
+		delete(v.unprocessedMetadataEvents, event.GetId().String())
+	}
+
 	switch p := event.Payload.(type) {
+	case *build_event_stream.BuildEvent_NamedSetOfFiles:
+		v.maybeExtractOutputFile(p.NamedSetOfFiles.GetFiles()...)
+	case *build_event_stream.BuildEvent_TestSummary:
+		v.maybeExtractOutputFile(p.TestSummary.GetPassed()...)
+		v.maybeExtractOutputFile(p.TestSummary.GetFailed()...)
+	case *build_event_stream.BuildEvent_RunTargetAnalyzed:
+		v.maybeExtractOutputFile(p.RunTargetAnalyzed.GetRunfiles()...)
+	case *build_event_stream.BuildEvent_Action:
+		v.maybeExtractOutputFile(p.Action.GetStdout())
+		v.maybeExtractOutputFile(p.Action.GetStderr())
+		v.maybeExtractOutputFile(p.Action.GetPrimaryOutput())
+		v.maybeExtractOutputFile(p.Action.GetActionMetadataLogs()...)
+	case *build_event_stream.BuildEvent_Completed:
+		v.maybeExtractOutputFile(p.Completed.GetImportantOutput()...)
+		v.maybeExtractOutputFile(p.Completed.GetDirectoryOutput()...)
 	case *build_event_stream.BuildEvent_Started:
 		v.handleStartedEvent(event)
 	case *build_event_stream.BuildEvent_BuildMetadata:
 		v.populateWorkspaceInfoFromBuildMetadata(p.BuildMetadata)
-		v.sawBuildMetadataEvent = true
-	case *build_event_stream.BuildEvent_WorkspaceStatus:
-		v.sawWorkspaceStatusEvent = true
 	case *build_event_stream.BuildEvent_WorkflowConfigured:
 		v.handleWorkflowConfigured(p.WorkflowConfigured)
 	case *build_event_stream.BuildEvent_Finished:
 		v.sawFinishedEvent = true
 	case *build_event_stream.BuildEvent_BuildToolLogs:
-		for _, toolLog := range p.BuildToolLogs.Log {
+		v.maybeExtractOutputFile(p.BuildToolLogs.GetLog()...)
+		for _, toolLog := range p.BuildToolLogs.GetLog() {
 			if uri := toolLog.GetUri(); uri != "" {
 				if url, err := url.Parse(uri); err != nil {
 					log.Warningf("Error parsing uri from BuildToolLogs: %s", uri)
@@ -118,26 +177,42 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 			}
 		}
 	case *build_event_stream.BuildEvent_TestResult:
-		for _, f := range p.TestResult.TestActionOutput {
+		v.maybeExtractOutputFile(p.TestResult.GetTestActionOutput()...)
+		for _, f := range p.TestResult.GetTestActionOutput() {
 			u, err := url.Parse(f.GetUri())
 			if err != nil {
 				log.Warningf("Error parsing uri from TestResult: %s", f.GetUri())
 				continue
 			}
-			if u.Scheme == "bytestream" {
-				v.hasBytestreamTestActionOutputs = true
-
-				// To protect our backends from thrashing -- stop
-				// copying outputs if there are way too many. This can
-				// happen if a ruleset is buggy.
-				if len(v.testOutputURIs) >= maxPersistableArtifacts {
-					continue
+			if u.Scheme != "bytestream" {
+				continue
+			}
+			if p.TestResult.GetStatus() == build_event_stream.TestStatus_PASSED {
+				if len(v.passedTestOutputURIs) < maxPersistableTestArtifacts {
+					v.passedTestOutputURIs = append(v.passedTestOutputURIs, u)
 				}
-				v.testOutputURIs = append(v.testOutputURIs, u)
+				continue
+			}
+			if len(v.failedTestOutputURIs) < maxPersistableTestArtifacts {
+				v.failedTestOutputURIs = append(v.failedTestOutputURIs, u)
 			}
 		}
 	}
 	return nil
+}
+
+// SetExpectedMetadataEvents sets the list of metadata event IDs that are
+// expected in this build.
+func (v *BEValues) SetExpectedMetadataEvents(events []*build_event_stream.BuildEventId) {
+	for _, childEventID := range events {
+		if IsMetadataEvent(childEventID) {
+			v.unprocessedMetadataEvents[childEventID.String()] = struct{}{}
+		}
+	}
+}
+
+func (v *BEValues) MetadataIsLoaded() bool {
+	return v.sawStartedEvent && len(v.unprocessedMetadataEvents) == 0
 }
 
 func (v *BEValues) Finalize(ctx context.Context) {
@@ -149,6 +224,14 @@ func (v *BEValues) Finalize(ctx context.Context) {
 }
 func (v *BEValues) StartTime() time.Time {
 	return v.buildStartTime
+}
+
+func (v *BEValues) OutputFiles() map[string]*build_event_stream.File {
+	return v.outputFilesMap
+}
+
+func (v *BEValues) KytheSSTableResourceName() *rspb.ResourceName {
+	return v.kytheSSTableResourceName
 }
 
 func (v *BEValues) DisableCommitStatusReporting() bool {
@@ -171,14 +254,6 @@ func (v *BEValues) ActionName() string {
 	return v.getStringValue(actionNameFieldName)
 }
 
-func (v *BEValues) WorkspaceIsLoaded() bool {
-	return v.sawWorkspaceStatusEvent
-}
-
-func (v *BEValues) BuildMetadataIsLoaded() bool {
-	return v.sawBuildMetadataEvent
-}
-
 func (v *BEValues) BuildFinished() bool {
 	return v.sawFinishedEvent
 }
@@ -187,12 +262,12 @@ func (v *BEValues) BuildToolLogURIs() []*url.URL {
 	return v.buildToolLogURIs
 }
 
-func (v *BEValues) HasBytestreamTestActionOutputs() bool {
-	return v.hasBytestreamTestActionOutputs
+func (v *BEValues) PassedTestOutputURIs() []*url.URL {
+	return v.passedTestOutputURIs
 }
 
-func (v *BEValues) TestOutputURIs() []*url.URL {
-	return v.testOutputURIs
+func (v *BEValues) FailedTestOutputURIs() []*url.URL {
+	return v.failedTestOutputURIs
 }
 
 func (v *BEValues) getStringValue(fieldName string) string {
@@ -217,6 +292,7 @@ func (v *BEValues) getBoolValue(fieldName string) bool {
 }
 
 func (v *BEValues) handleStartedEvent(event *build_event_stream.BuildEvent) {
+	v.sawStartedEvent = true
 	v.buildStartTime = timeutil.GetTimeWithFallback(event.GetStarted().GetStartTime(), event.GetStarted().GetStartTimeMillis())
 }
 
@@ -233,26 +309,39 @@ func (v *BEValues) handleWorkflowConfigured(wfc *build_event_stream.WorkflowConf
 	v.setStringValue(actionNameFieldName, wfc.GetActionName())
 }
 
+// IsMetadataEvent returns true for events containing invocation-level metadata,
+// like repo, commit SHA, etc.
+func IsMetadataEvent(eventID *build_event_stream.BuildEventId) bool {
+	switch eventID.GetId().(type) {
+	case *build_event_stream.BuildEventId_OptionsParsed:
+		return true
+	case *build_event_stream.BuildEventId_WorkspaceStatus:
+		return true
+	case *build_event_stream.BuildEventId_BuildMetadata:
+		return true
+	case *build_event_stream.BuildEventId_StructuredCommandLine:
+		return true
+	case *build_event_stream.BuildEventId_UnstructuredCommandLine:
+		return true
+	case *build_event_stream.BuildEventId_WorkflowConfigured:
+		return true
+	default:
+		return false
+	}
+}
+
 // IsImportantEvent returns true for events that are non-skippable.
 // Events are usually not skipped, but when processing extra-large invocations,
 // non-important events may be dropped to conserve resources.
 func IsImportantEvent(event *build_event_stream.BuildEvent) bool {
+	// All events that contain invocation-level metadata are important.
+	if IsMetadataEvent(event.GetId()) {
+		return true
+	}
 	switch event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
 		return true
-	case *build_event_stream.BuildEvent_OptionsParsed:
-		return true
-	case *build_event_stream.BuildEvent_BuildMetadata:
-		return true
 	case *build_event_stream.BuildEvent_BuildToolLogs:
-		return true
-	case *build_event_stream.BuildEvent_WorkspaceStatus:
-		return true
-	case *build_event_stream.BuildEvent_WorkflowConfigured:
-		return true
-	case *build_event_stream.BuildEvent_StructuredCommandLine:
-		return true
-	case *build_event_stream.BuildEvent_UnstructuredCommandLine:
 		return true
 	case *build_event_stream.BuildEvent_Finished:
 		return true

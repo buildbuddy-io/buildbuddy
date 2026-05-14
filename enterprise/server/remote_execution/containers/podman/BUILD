@@ -7,14 +7,12 @@ go_library(
     srcs = ["podman.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman",
     deps = [
+        "//enterprise/server/remote_execution/block_io",
         "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
-        "//enterprise/server/remote_execution/platform",
-        "//enterprise/server/remote_execution/soci_store",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
-        "//proto:runner_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
@@ -27,6 +25,7 @@ go_library(
         "//server/util/log",
         "//server/util/lru",
         "//server/util/networking",
+        "//server/util/platform",
         "//server/util/random",
         "//server/util/retry",
         "//server/util/status",
@@ -41,13 +40,14 @@ go_test(
     srcs = ["podman_test.go"],
     deps = [
         ":podman",
+        "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/docker",
-        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/util/platform",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",
@@ -78,15 +78,26 @@ genrule(
         SRCS=($(SRCS))
         PODMAN_ARCHIVE=$${SRCS[0]}
         REGISTRIES_CONF=$${SRCS[1]}
-        tar --extract --file="$$PODMAN_ARCHIVE" --strip-components=1 --directory="$$TMPDIR"
+        tar --extract --file="$$PODMAN_ARCHIVE" --strip-components=1 --directory="$$TMPDIR" --no-same-owner
 
         # Remove README.md (not needed)
         rm "$$TMPDIR/README.md"
+
+        # Remove container runtimes that are included in podman-static
+        # release, since we provision the container runtime separately.
+        rm "$$TMPDIR/usr/local/bin/crun"
+        rm "$$TMPDIR/usr/local/bin/runc"
 
         # Replace /etc/containers/registries.conf with our custom config.
         rm "$$TMPDIR/etc/containers/registries.conf"
         cp "$$REGISTRIES_CONF" "$$TMPDIR/etc/containers/registries.conf"
 
-        tar --create --gzip --file="$@" --directory="$$TMPDIR" .
+        tar --create --gzip --file="$@" --directory="$$TMPDIR" --mtime='1970-01-01 00:00:00' .
     """,
+    exec_compatible_with = [
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
 )

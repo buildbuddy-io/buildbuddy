@@ -3,8 +3,11 @@ package clickhouse
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"syscall"
@@ -14,7 +17,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/gormutil"
@@ -36,24 +41,39 @@ const (
 	gormRecordOpStartTimeCallbackKey = "bb_clickhouse:record_op_start_time"
 	gormRecordMetricsCallbackKey     = "bb_clickhouse:record_metrics"
 	gormQueryNameKey                 = "bb_clickhouse:query_name"
+
+	// How long to wait for a single invocation batch insert to complete
+	// before timing out and logging an error.
+	invocationBatchInsertTimeout = 1 * time.Minute
 )
 
 var (
-	dataSource      = flag.String("olap_database.data_source", "", "The clickhouse database to connect to, specified a a connection string", flag.Secret)
-	maxOpenConns    = flag.Int("olap_database.max_open_conns", 0, "The maximum number of open connections to maintain to the db")
-	maxIdleConns    = flag.Int("olap_database.max_idle_conns", 0, "The maximum number of idle connections to maintain to the db")
-	connMaxLifetime = flag.Duration("olap_database.conn_max_lifetime", 0, "The maximum lifetime of a connection to clickhouse")
+	dataSource         = flag.String("olap_database.data_source", "", "The clickhouse database to connect to, specified a a connection string", flag.Secret)
+	maxOpenConns       = flag.Int("olap_database.max_open_conns", 0, "The maximum number of open connections to maintain to the db")
+	maxIdleConns       = flag.Int("olap_database.max_idle_conns", 0, "The maximum number of idle connections to maintain to the db")
+	connMaxLifetime    = flag.Duration("olap_database.conn_max_lifetime", 0, "The maximum lifetime of a connection to clickhouse")
+	slowQueryThreshold = flag.Duration("olap_database.slow_query_threshold", 1*time.Second, "OLAP queries longer than this duration will be logged with a 'Slow SQL' warning.")
 
 	autoMigrateDB             = flag.Bool("olap_database.auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
 	printSchemaChangesAndExit = flag.Bool("olap_database.print_schema_changes_and_exit", false, "If set, print schema changes from auto-migration, then exit the program.")
+
+	invocationBatchInsertInterval = flag.Duration("olap_database.invocation_batch_insert_interval", 1*time.Second, "The interval at which to insert invocation batches into clickhouse")
+	asyncInsert                   = flag.Bool("olap_database.async_insert", false, "If true, use async inserts for clickhouse. This will disable invocation_batch_insert_interval")
 )
 
 type DBHandle struct {
 	db *gorm.DB
+
+	shutdown     chan struct{}
+	invocationCh chan *schema.Invocation
 }
 
 func (dbh *DBHandle) GORM(ctx context.Context, name string) *gorm.DB {
 	return dbh.db.WithContext(ctx).Set(gormQueryNameKey, name)
+}
+
+func (dbh *DBHandle) DialectName() string {
+	return dbh.db.Name()
 }
 
 func (dbh *DBHandle) NowFunc() time.Time {
@@ -64,6 +84,52 @@ func (dbh *DBHandle) DB(ctx context.Context) *gorm.DB {
 	return dbh.db.WithContext(ctx)
 }
 
+func (dbh *DBHandle) startInvocationBatchInserter(interval time.Duration) func() {
+	ctx := context.Background()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		var batch []*schema.Invocation
+		for shutdown := false; !shutdown; {
+			select {
+			case item := <-dbh.invocationCh:
+				// Add item to batch
+				batch = append(batch, item)
+				continue
+			case <-dbh.shutdown:
+				// Flush the final batch then exit the loop.
+				shutdown = true
+			case <-ticker.C:
+			}
+			// Flush batch
+			if len(batch) == 0 {
+				continue
+			}
+			(func() {
+				ctx, cancel := context.WithTimeout(ctx, invocationBatchInsertTimeout)
+				defer cancel()
+				if err := dbh.insertWithRetrier(ctx, (&schema.Invocation{}).TableName(), len(batch), batch); err != nil {
+					log.CtxErrorf(ctx, "Failed to insert invocation batch (n=%d): %s", len(batch), err)
+				} else {
+					log.CtxInfof(ctx, "Inserted invocation batch (n=%d)", len(batch))
+				}
+			})()
+			// reuse slice
+			clear(batch)
+			batch = batch[:0]
+		}
+	}()
+	return func() {
+		close(dbh.shutdown)
+		<-done
+	}
+}
+
 type query struct {
 	db   *gorm.DB
 	ctx  context.Context
@@ -71,11 +137,11 @@ type query struct {
 }
 
 func (q *query) Create(val interface{}) error {
-	return status.UnimplementedError("not supported for clickhouse")
+	return status.UnimplementedError("Create is not supported for clickhouse")
 }
 
 func (q *query) Update(val interface{}) error {
-	return status.UnimplementedError("not supported for clickhouse")
+	return status.UnimplementedError("Update is not supported for clickhouse")
 }
 
 type rawQuery struct {
@@ -155,18 +221,80 @@ func isTimeout(err error) bool {
 	return strings.Contains(err.Error(), "i/o timeout")
 }
 
-func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numEntries int, value interface{}) error {
+// InsertOpt is a functional option for configuring insert behavior.
+type InsertOpt func(*insertOpts)
+
+type insertOpts struct {
+	asyncBusyTimeoutMinMs int
+	asyncBusyTimeoutMaxMs int
+}
+
+func defaultInsertOpts() *insertOpts {
+	return &insertOpts{
+		asyncBusyTimeoutMinMs: 10,
+		asyncBusyTimeoutMaxMs: 200,
+	}
+}
+
+func (o *insertOpts) apply(opts ...InsertOpt) {
+	for _, fn := range opts {
+		fn(o)
+	}
+}
+
+// withAsyncBusyTimeout sets the async insert busy timeout range.
+// Higher values buffer more rows per part, reducing part creation rate.
+func withAsyncBusyTimeout(minMs, maxMs int) InsertOpt {
+	return func(o *insertOpts) {
+		o.asyncBusyTimeoutMinMs = minMs
+		o.asyncBusyTimeoutMaxMs = maxMs
+	}
+}
+
+func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numEntries int, value interface{}, opts ...InsertOpt) error {
+	o := defaultInsertOpts()
+	o.apply(opts...)
 	retrier := retry.DefaultWithContext(ctx)
 	var lastError error
+	if *asyncInsert {
+		// Useful links about async inserts in ClickHouse:
+		// https://clickhouse.com/docs/optimize/asynchronous-inserts
+		// https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse
+		// https://altinity.com/blog/using-async-inserts-for-peak-data-loading-rates-in-clickhouse
+		// https://clickhouse.com/docs/integrations/go#async-insert-1
+		ctx = clickhouse.Context(
+			ctx,
+			clickhouse.WithAsync(true),
+			clickhouse.WithSettings(map[string]any{
+				// These two should be implied by WithAsync(true), but if we
+				// want to set other settings below, we need to set them here.
+				// WithAsync(true) should be unnecessary when setting these, but
+				// the clickhouse-go code takes a slightly different path if
+				// it's used.
+				"async_insert":          1,
+				"wait_for_async_insert": 1,
+
+				"async_insert_deduplicate":         1,
+				"wait_for_async_insert_timeout":    30, // In seconds. Default is 120.
+				"async_insert_busy_timeout_min_ms": o.asyncBusyTimeoutMinMs,
+				"async_insert_busy_timeout_max_ms": o.asyncBusyTimeoutMaxMs,
+			}),
+		)
+	}
+	queryName := fmt.Sprintf("INSERT INTO '%v'", tableName)
 	for retrier.Next() {
-		res := h.DB(ctx).Create(value)
+		res := h.GORM(ctx, queryName).Create(value)
 		lastError = res.Error
-		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) || isTimeout(res.Error) {
+		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) || isTimeout(res.Error) || errors.Is(res.Error, driver.ErrBadConn) {
 			// Retry since it's an transient error.
 			log.CtxWarningf(ctx, "attempt (n=%d) to clickhouse table %q failed: %s", retrier.AttemptNumber(), tableName, res.Error)
 			continue
 		}
 		break
+	}
+	if ctx.Err() != nil && lastError == nil {
+		// We didn't even attempt to write because ctx expired.
+		lastError = ctx.Err()
 	}
 	statusLabel := "ok"
 	if lastError != nil {
@@ -185,21 +313,75 @@ func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numE
 
 func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
 	inv := schema.ToInvocationFromPrimaryDB(ti)
+	if *invocationBatchInsertInterval > 0 && !*asyncInsert {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case h.invocationCh <- inv:
+			// Accepted by batch inserter.
+			return nil
+		case <-h.shutdown:
+			// Batch inserter was stopped due to shutdown. Flush synchronously.
+		}
+	}
 	if err := h.insertWithRetrier(ctx, inv.TableName(), 1, inv); err != nil {
 		return status.UnavailableErrorf("failed to insert invocation (invocation_id = %q), err: %s", ti.InvocationID, err)
 	}
 	return nil
 }
 
-func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schema.Execution {
-	return &schema.Execution{
-		GroupID:                            in.GetGroupId(),
-		UpdatedAtUsec:                      in.GetUpdatedAtUsec(),
+// FillExecutionResourceFieldsFromExecutionID populates the split columns
+// (InstanceName, ExecutionUUID, Compressor, DigestFunction, ActionDigestHash,
+// ActionDigestSize) on out by parsing executionID. Returns
+// InvalidArgumentError when executionID is empty or unparseable.
+func FillExecutionResourceFieldsFromExecutionID(out *schema.Execution, executionID string) error {
+	if executionID == "" {
+		return status.InvalidArgumentError("execution ID is empty")
+	}
+
+	rn, executionUUID, err := digest.ParseUploadResourceNameWithUUID(executionID)
+	if err != nil {
+		return status.InvalidArgumentErrorf("parse execution ID %q: %s", executionID, err)
+	}
+	d := rn.GetDigest()
+	digestBytes, err := hex.DecodeString(d.GetHash())
+	if err != nil {
+		return status.InvalidArgumentErrorf("decode action digest for execution %q: %s", executionID, err)
+	}
+	sizeBytes := d.GetSizeBytes()
+	if sizeBytes < 0 || sizeBytes > math.MaxUint32 {
+		return status.InvalidArgumentErrorf("action digest size out of range for execution %q: %d", executionID, sizeBytes)
+	}
+
+	out.InstanceName = rn.GetInstanceName()
+	out.ExecutionUUID = executionUUID
+	out.Compressor = digest.CompressorSegment(rn.GetCompressor())
+	out.DigestFunction = digest.DigestFunctionSegment(rn.GetDigestFunction())
+	out.ActionDigestHash = string(digestBytes)
+	out.ActionDigestSize = uint32(sizeBytes)
+	return nil
+}
+
+// ExecutionFromProto converts the proto representation of an OLAP execution to
+// the OLAP table representation.
+// TODO: move to enterprise/server/util/execution, which has similar conversion
+// logic.
+func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*schema.Execution, error) {
+	out := &schema.Execution{
+		GroupID:       in.GetGroupId(),
+		UpdatedAtUsec: in.GetUpdatedAtUsec(),
+		// ExecutionID is no longer read on the OLAP path, but we keep
+		// dual-writing it so the column stays populated in case we need
+		// to roll back the read migration.
 		ExecutionID:                        in.GetExecutionId(),
 		InvocationUUID:                     in.GetInvocationUuid(),
 		CreatedAtUsec:                      in.GetCreatedAtUsec(),
 		UserID:                             in.GetUserId(),
 		Worker:                             in.GetWorker(),
+		ExecutorHostname:                   in.GetExecutorHostname(),
+		ClientIP:                           in.GetClientIp(),
+		SelfHosted:                         in.GetSelfHosted(),
+		Region:                             in.GetRegion(),
 		Stage:                              in.GetStage(),
 		FileDownloadCount:                  in.GetFileDownloadCount(),
 		FileDownloadSizeBytes:              in.GetFileDownloadSizeBytes(),
@@ -209,8 +391,33 @@ func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schem
 		FileUploadDurationUsec:             in.GetFileUploadDurationUsec(),
 		PeakMemoryBytes:                    in.GetPeakMemoryBytes(),
 		CPUNanos:                           in.GetCpuNanos(),
+		DiskBytesRead:                      in.GetDiskBytesRead(),
+		DiskBytesWritten:                   in.GetDiskBytesWritten(),
+		DiskReadOperations:                 in.GetDiskReadOperations(),
+		DiskWriteOperations:                in.GetDiskWriteOperations(),
+		NetworkBytesSent:                   in.GetNetworkBytesSent(),
+		NetworkBytesReceived:               in.GetNetworkBytesReceived(),
+		NetworkPacketsSent:                 in.GetNetworkPacketsSent(),
+		NetworkPacketsReceived:             in.GetNetworkPacketsReceived(),
+		CPUPressureSomeStallUsec:           in.GetCpuPressureSomeStallUsec(),
+		CPUPressureFullStallUsec:           in.GetCpuPressureFullStallUsec(),
+		MemoryPressureSomeStallUsec:        in.GetMemoryPressureSomeStallUsec(),
+		MemoryPressureFullStallUsec:        in.GetMemoryPressureFullStallUsec(),
+		IOPressureSomeStallUsec:            in.GetIoPressureSomeStallUsec(),
+		IOPressureFullStallUsec:            in.GetIoPressureFullStallUsec(),
 		EstimatedMemoryBytes:               in.GetEstimatedMemoryBytes(),
 		EstimatedMilliCPU:                  in.GetEstimatedMilliCpu(),
+		EstimatedFreeDiskBytes:             in.GetEstimatedFreeDiskBytes(),
+		RequestedComputeUnits:              in.GetRequestedComputeUnits(),
+		RequestedMemoryBytes:               in.GetRequestedMemoryBytes(),
+		RequestedMilliCPU:                  in.GetRequestedMilliCpu(),
+		RequestedFreeDiskBytes:             in.GetRequestedFreeDiskBytes(),
+		PreviousMeasuredMemoryBytes:        in.GetPreviousMeasuredMemoryBytes(),
+		PreviousMeasuredMilliCPU:           in.GetPreviousMeasuredMilliCpu(),
+		PreviousMeasuredFreeDiskBytes:      in.GetPreviousMeasuredFreeDiskBytes(),
+		PredictedMemoryBytes:               in.GetPredictedMemoryBytes(),
+		PredictedMilliCPU:                  in.GetPredictedMilliCpu(),
+		PredictedFreeDiskBytes:             in.GetPredictedFreeDiskBytes(),
 		QueuedTimestampUsec:                in.GetQueuedTimestampUsec(),
 		WorkerStartTimestampUsec:           in.GetWorkerStartTimestampUsec(),
 		WorkerCompletedTimestampUsec:       in.GetWorkerCompletedTimestampUsec(),
@@ -221,7 +428,16 @@ func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schem
 		OutputUploadStartTimestampUsec:     in.GetOutputUploadStartTimestampUsec(),
 		OutputUploadCompletedTimestampUsec: in.GetOutputUploadCompletedTimestampUsec(),
 		StatusCode:                         in.GetStatusCode(),
+		StatusMessage:                      in.GetStatusMessage(),
+		OutputPath:                         in.GetOutputPath(),
 		ExitCode:                           in.GetExitCode(),
+		CachedResult:                       in.GetCachedResult(),
+		DoNotCache:                         in.GetDoNotCache(),
+		SkipCacheLookup:                    in.GetSkipCacheLookup(),
+		RequestedIsolationType:             in.GetRequestedIsolationType(),
+		EffectiveIsolationType:             in.GetEffectiveIsolationType(),
+		RequestedTimeoutUsec:               in.GetRequestedTimeoutUsec(),
+		EffectiveTimeoutUsec:               in.GetEffectiveTimeoutUsec(),
 		InvocationLinkType:                 int8(in.GetInvocationLinkType()),
 		User:                               inv.GetUser(),
 		Host:                               inv.GetHost(),
@@ -234,15 +450,38 @@ func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schem
 		Success:                            inv.GetSuccess(),
 		InvocationStatus:                   inv.GetInvocationStatus(),
 		Tags:                               invocation_format.ConvertDBTagsToOLAP(inv.GetTags()),
+		TargetLabel:                        in.GetTargetLabel(),
+		ActionMnemonic:                     in.GetActionMnemonic(),
+		Experiments:                        in.GetExperiments(),
+		CommandSnippet:                     in.GetCommandSnippet(),
+		RunnerTaskNumber:                   in.GetRunnerTaskNumber(),
+		RunnerID:                           in.GetRunnerId(),
+		PlatformHash:                       in.GetPlatformHash(),
+		PersistentWorkerKey:                in.GetPersistentWorkerKey(),
+		RequestedPool:                      in.GetRequestedPool(),
+		EffectivePool:                      in.GetEffectivePool(),
 	}
+
+	if err := FillExecutionResourceFieldsFromExecutionID(out, in.GetExecutionId()); err != nil {
+		return out, err
+	}
+	return out, nil
 }
 
 func (h *DBHandle) FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error {
 	entries := make([]*schema.Execution, 0, len(executions))
 	for _, e := range executions {
-		entries = append(entries, buildExecution(e, inv))
+		entry, err := ExecutionFromProto(e, inv)
+		if err != nil {
+			alert.CtxUnexpectedEvent(ctx, "clickhouse_malformed_execution_id", "invocation %q: %s", inv.GetInvocationId(), err)
+			continue
+		}
+		entries = append(entries, entry)
 	}
 	num := len(entries)
+	if num == 0 {
+		return nil
+	}
 	if err := h.insertWithRetrier(ctx, (&schema.Execution{}).TableName(), num, &entries); err != nil {
 		return status.UnavailableErrorf("failed to insert %d execution(s) for invocation (invocation_id = %q), err: %s", num, inv.GetInvocationId(), err)
 	}
@@ -254,8 +493,19 @@ func (h *DBHandle) FlushTestTargetStatuses(ctx context.Context, entries []*schem
 	if num == 0 {
 		return nil
 	}
-	if err := h.insertWithRetrier(ctx, (&schema.TestTargetStatus{}).TableName(), num, &entries); err != nil {
+	if err := h.insertWithRetrier(ctx, (&schema.TestTargetStatus{}).TableName(), num, &entries, withAsyncBusyTimeout(2000, 5000)); err != nil {
 		return status.UnavailableErrorf("failed to insert %d test target statuses for invocation (invocation_uuid = %q), err: %s", num, entries[0].InvocationUUID, err)
+	}
+	return nil
+}
+
+func (h *DBHandle) FlushUsages(ctx context.Context, entries []*schema.RawUsage) error {
+	num := len(entries)
+	if num == 0 {
+		return nil
+	}
+	if err := h.insertWithRetrier(ctx, (&schema.RawUsage{}).TableName(), num, &entries); err != nil {
+		return status.UnavailableErrorf("failed to insert %d usage records, err: %s", num, err)
 	}
 	return nil
 }
@@ -290,6 +540,7 @@ func recordMetricsAfterFn(db *gorm.DB) {
 	// Ignore "record not found" errors as they don't generally indicate a
 	// problem with the server.
 	if db.Error != nil && !errors.Is(db.Error, gorm.ErrRecordNotFound) {
+		labels[metrics.StatusHumanReadableLabel] = status.MetricsLabel(db.Error)
 		metrics.ClickhouseQueryErrorCount.With(labels).Inc()
 	}
 }
@@ -328,6 +579,10 @@ func Register(env *real_environment.RealEnv) error {
 	if err != nil {
 		return status.InternalErrorf("failed to open gorm clickhouse db: %s", err)
 	}
+	db.Logger = &gormutil.Logger{
+		SlowThreshold: *slowQueryThreshold,
+		LogLevel:      logger.Warn,
+	}
 	gormutil.InstrumentMetrics(db, gormRecordOpStartTimeCallbackKey, recordMetricsBeforeFn, gormRecordMetricsCallbackKey, recordMetricsAfterFn)
 	if *autoMigrateDB || *printSchemaChangesAndExit {
 		sqlStrings := make([]string, 0)
@@ -350,9 +605,21 @@ func Register(env *real_environment.RealEnv) error {
 	}
 
 	dbh := &DBHandle{
-		db: db,
+		db:           db,
+		shutdown:     make(chan struct{}),
+		invocationCh: make(chan *schema.Invocation),
+	}
+	if *invocationBatchInsertInterval > 0 && !*asyncInsert {
+		stop := dbh.startInvocationBatchInserter(*invocationBatchInsertInterval)
+		if hc := env.GetHealthChecker(); hc != nil {
+			env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+				stop()
+				return nil
+			})
+		}
 	}
 
 	env.SetOLAPDBHandle(dbh)
+	log.Info("Successfully configured OLAP database.")
 	return nil
 }

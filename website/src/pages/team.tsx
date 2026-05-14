@@ -1,9 +1,9 @@
-import React from "react";
+import Image from "@theme/IdealImage";
 import Layout from "@theme/Layout";
+import { Github, Linkedin, Mail, Twitter } from "lucide-react";
+import React from "react";
 import common from "../css/common.module.css";
 import styles from "./team.module.css";
-import Image from "@theme/IdealImage";
-import { Github, Linkedin, Mail, Twitter } from "lucide-react";
 
 const teamMembers = [
   {
@@ -122,6 +122,42 @@ const teamMembers = [
       "Previously Software Engineer at Code Intelligence. Maintainer of Bazel's rules_go and gazelle. Studied Mathematics and Computer Science at The University of Bonn.",
     image: "fabian.jpg",
   },
+  {
+    name: "Vanja Pejovic",
+    email: "vanja@buildbuddy.io",
+    github: "vanja-p",
+    linkedin: "vanja-pejovic",
+    blurb:
+      "Previously Senior Software Engineer at Google — 12 years. Worked on Google's internal remote build execution service. Studied Computer Science at Rutgers.",
+    image: "vanja.jpg",
+  },
+  {
+    name: "Dan Stowell",
+    email: "dan@buildbuddy.io",
+    github: "dan-stowell",
+    linkedin: "dstowell",
+    blurb:
+      "Previously Director of Engineering at Vercel, Head of Engineering at Replit, and Principal Engineer at Spotify. Studied Computer Science at Cornell & Brown.",
+    image: "dan.jpg",
+  },
+  {
+    name: "Tyler French",
+    email: "tfrench@buildbuddy.io",
+    github: "tyler-french",
+    linkedin: "tylerdfrench",
+    blurb:
+      "Previously Senior Software Engineer at Uber. Maintains Bazel's rules_go and gazelle. Studied Electrical Engineering at Georgia Tech.",
+    image: "tfrench.jpg",
+  },
+  {
+    name: "Keith Smiley",
+    email: "keith@buildbuddy.io",
+    github: "keith",
+    linkedin: "keith-smiley-6811872a1",
+    blurb:
+      "Previously Senior Staff Software Engineer at Modular. Maintainer of Bazel's iOS support, creator of the Mobile Native Foundation & contributor to LLVM.",
+    image: "keith.png",
+  },
 ];
 
 const emeriti = [
@@ -199,7 +235,11 @@ function Team() {
               </div>
             ))}
           </div>
+        </div>
+        <div className={common.container}>
           <h2 className={styles.title}>Emeriti</h2>
+        </div>
+        <div className={common.container}>
           <div className={styles.team}>
             {shuffle(emeriti).map((emeritus) => (
               <div className={styles.teamMember} key={emeritus.name}>

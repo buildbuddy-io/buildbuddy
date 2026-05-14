@@ -3,15 +3,19 @@ package execution_server_test
 import (
 	"context"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -21,23 +25,43 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
+	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
+	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	gstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
+)
+
+const (
+	sharedPoolGroupID     = "GR000"
+	selfHostedPoolGroupID = "GR123"
 )
 
 type schedulerServerMock struct {
@@ -45,14 +69,34 @@ type schedulerServerMock struct {
 
 	canceledCount int
 	scheduleReqs  []*scpb.ScheduleTaskRequest
+	scheduleErr   error
 }
 
-func (s *schedulerServerMock) GetPoolInfo(context.Context, string, string, string, bool) (*interfaces.PoolInfo, error) {
-	return &interfaces.PoolInfo{}, nil
+func (s *schedulerServerMock) GetPoolInfo(_ context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType platform.PoolType) (*interfaces.PoolInfo, error) {
+	groupID := sharedPoolGroupID
+	if poolType == platform.PoolTypeSelfHosted {
+		groupID = selfHostedPoolGroupID
+	}
+
+	effectivePool := requestedPool
+	if effectivePool == "" {
+		effectivePool = "default-pool"
+	}
+	return &interfaces.PoolInfo{
+		GroupID:      groupID,
+		IsSelfHosted: poolType == platform.PoolTypeSelfHosted,
+		Name:         effectivePool,
+	}, nil
+}
+func (s *schedulerServerMock) GetSharedExecutorPoolGroupID() string {
+	return sharedPoolGroupID
 }
 
 func (s *schedulerServerMock) ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error) {
 	s.scheduleReqs = append(s.scheduleReqs, req)
+	if s.scheduleErr != nil {
+		return nil, s.scheduleErr
+	}
 	return &scpb.ScheduleTaskResponse{}, nil
 }
 
@@ -61,13 +105,16 @@ func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bo
 	return true, nil
 }
 
-func setupEnv(t *testing.T) *testenv.TestEnv {
+func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
 	env := testenv.GetTestEnv(t)
 
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
-	redisTarget := testredis.Start(t).Target
-	rdb := redis.NewClient(redisutil.TargetToOptions(redisTarget))
+	r := testredis.Start(t)
+	rdb := redis.NewClient(redisutil.TargetToOptions(r.Target))
+	env.SetDefaultRedisClient(r.Client())
+	err := redis_execution_collector.Register(env)
+	require.NoError(t, err)
 	env.SetRemoteExecutionRedisClient(rdb)
 	env.SetRemoteExecutionRedisPubSubClient(rdb)
 
@@ -76,16 +123,20 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 
 	tasksize.Register(env)
 
+	_, run, lis := testenv.RegisterLocalGRPCServer(t, env)
+	testcache.Setup(t, env, lis)
+
 	s, err := execution_server.NewExecutionServer(env)
 	require.NoError(t, err)
 	env.SetRemoteExecutionService(s)
+	env.SetUsageTracker(testusage.NewTracker())
 
-	_, run := testenv.RegisterLocalGRPCServer(env)
-	testcache.Setup(t, env)
 	repb.RegisterExecutionServer(env.GetGRPCServer(), env.GetRemoteExecutionService())
 	go run()
 
-	return env
+	conn, err := testenv.LocalGRPCConn(env.GetServerContext(), lis)
+	require.NoError(t, err)
+	return env, conn, r
 }
 
 func createExecution(ctx context.Context, t *testing.T, db interfaces.DB, execution *tables.Execution) {
@@ -100,8 +151,13 @@ func getExecutions(t *testing.T, env environment.Env) []*tables.Execution {
 	return out
 }
 
+func createInvocation(ctx context.Context, t *testing.T, db interfaces.DB, inv *tables.Invocation) {
+	err := db.NewQuery(ctx, "create_invocation").Create(inv)
+	require.NoError(t, err)
+}
+
 func TestDispatch(t *testing.T) {
-	env := setupEnv(t)
+	env, _, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -113,14 +169,17 @@ func TestDispatch(t *testing.T) {
 	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
 
-	arn := uploadEmptyAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256)
+	action := &repb.Action{}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
 	ad := arn.GetDigest()
 
 	// note: AttachUserPrefix is normally done by Execute(), which wraps
 	// Dispatch().
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, env)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 	require.NoError(t, err)
-	taskID, err := s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad})
+	taskID := arn.NewUploadString()
+	require.NoError(t, err)
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, taskID)
 	require.NoError(t, err)
 
 	rn, err := digest.ParseUploadResourceName(taskID)
@@ -143,16 +202,365 @@ func TestDispatch(t *testing.T) {
 	assert.Equal(t, iid, task.GetRequestMetadata().GetToolInvocationId(), "invocation ID should be passed along")
 }
 
-func TestCancel(t *testing.T) {
-	env := setupEnv(t)
+func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
+	env, _, _ := setupEnv(t)
+
+	tmp := testfs.MakeTempDir(t)
+	offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "cache.chunking_enabled": {
+      "state": "ENABLED",
+      "variants": {
+        "on": true
+      },
+      "defaultVariant": "on"
+    },
+    "executor.upload_outputs_chunked": {
+      "state": "ENABLED",
+      "variants": {
+        "on": true
+      },
+      "defaultVariant": "on"
+    },
+    "cache.chunking_max_write_size_bytes": {
+      "state": "ENABLED",
+      "variants": {
+        "limited": 123456789
+      },
+      "defaultVariant": "limited"
+    }
+  }
+}
+`)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
+	openfeature.SetProviderAndWait(provider)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
-	// Create Execution rows to be canceled
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: iid,
+	})
+	ctx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	action := &repb.Action{}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString())
+	require.NoError(t, err)
+
+	sched := env.GetSchedulerService().(*schedulerServerMock)
+	require.Equal(t, 1, len(sched.scheduleReqs))
+	task := &repb.ExecutionTask{}
+	err = proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task)
+	require.NoError(t, err)
+	require.Contains(t, task.GetExperiments(), "executor.upload_outputs_chunked")
+	require.Equal(t, int64(123456789), task.GetFastCdc_2020Params().GetBuildbuddyMaxChunkedWriteSizeBytes())
+}
+
+func TestDispatch_RecordsClientIP(t *testing.T) {
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+	env, _, _ := setupEnv(t)
+	ctx := context.Background()
+	s := env.GetRemoteExecutionService()
+
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	const testClientIP = "192.168.1.100"
+
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: iid,
+	})
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	ctx = context.WithValue(ctx, clientip.ContextKey, testClientIP)
+
+	action := &repb.Action{}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+	ad := arn.GetDigest()
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	taskID := arn.NewUploadString()
+	require.NoError(t, err)
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, taskID)
+	require.NoError(t, err)
+
+	exec, err := env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
+	require.NoError(t, err)
+	assert.Equal(t, testClientIP, exec.GetClientIp())
+}
+
+func TestDispatch_WorkingDirectoryValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		wd      string
+		wantErr bool
+	}{
+		{name: "empty", wd: "", wantErr: false},
+		{name: "valid_subdir", wd: "src/main", wantErr: false},
+		{name: "path_traversal", wd: "../escape", wantErr: true},
+		{name: "nested_path_traversal", wd: "a/../../escape", wantErr: true},
+		{name: "absolute_path", wd: "/etc/passwd", wantErr: true},
+		{name: "dot_dot_only", wd: "..", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, _, _ := setupEnv(t)
+			ctx := context.Background()
+			s := env.GetRemoteExecutionService()
+
+			ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+				ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+				ToolInvocationId: "10243d8a-a329-4f46-abfb-bfbceed12baa",
+			})
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+
+			action := &repb.Action{}
+			cmd := &repb.Command{
+				Arguments:        []string{"test"},
+				WorkingDirectory: tc.wd,
+			}
+			arn := uploadActionWithCommand(ctx, t, env, "", repb.DigestFunction_SHA256, action, cmd)
+			ad := arn.GetDigest()
+
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			taskID := arn.NewUploadString()
+			err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, taskID)
+
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
+	env, _, _ := setupEnv(t)
+
+	tmp := testfs.MakeTempDir(t)
+	offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "remote_execution.task_size_overrides": {
+      "state": "ENABLED",
+      "variants": {
+        "test": {
+          "EstimatedMemory": "30GB"
+        },
+        "default": {}
+      },
+      "defaultVariant": "default",
+      "targeting": {
+        "if": [
+          { "==": [ { "var": "EstimatedComputeUnits" }, 8.0 ] },
+          "test"
+        ]
+      }
+    }
+  }
+}
+`)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
+	openfeature.SetProviderAndWait(provider)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	ctx := context.Background()
+	s := env.GetRemoteExecutionService()
+
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: iid,
+	})
+	ctx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	action := &repb.Action{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{
+					Name:  "EstimatedComputeUnits",
+					Value: "8",
+				},
+			},
+		},
+	}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+	ad := arn.GetDigest()
+
+	// note: AttachUserPrefix is normally done by Execute(), which wraps
+	// Dispatch().
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, "12345678")
+	require.NoError(t, err)
+
+	sched := env.GetSchedulerService().(*schedulerServerMock)
+	require.Equal(t, 1, len(sched.scheduleReqs))
+	b := sched.scheduleReqs[0].SerializedTask
+	task := &repb.ExecutionTask{}
+	err = proto.Unmarshal(b, task)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(&repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{
+				Name:  "EstimatedMemory",
+				Value: "30GB",
+			},
+		},
+	}, task.GetPlatformOverrides(), protocmp.Transform()))
+}
+
+func TestDispatch_ContainerImageRewriteExperiment(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		containerImage        string
+		wantContainerImage    string
+		wantExperimentVariant string
+	}{
+		{
+			name:                  "matching prefix is rewritten",
+			containerImage:        "docker://gcr.io/flame-public/rbe-ubuntu:latest",
+			wantContainerImage:    "docker://buildbuddy.bbcr.io/public/rbe-ubuntu:latest",
+			wantExperimentVariant: "bbcr",
+		},
+		{
+			name:                  "non-matching prefix is not rewritten",
+			containerImage:        "docker://us-docker.pkg.dev/other/image:latest",
+			wantContainerImage:    "",
+			wantExperimentVariant: "bbcr",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, _, _ := setupEnv(t)
+
+			tmp := testfs.MakeTempDir(t)
+			offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "remote_execution.container_image_rewrite": {
+      "state": "ENABLED",
+      "variants": {
+        "bbcr": {
+          "prefix": "gcr.io/flame-public/",
+          "replacement": "buildbuddy.bbcr.io/public/"
+        },
+        "default": {}
+      },
+      "defaultVariant": "default",
+      "targeting": {
+        "if": [
+          true,
+          "bbcr"
+        ]
+      }
+    }
+  }
+}
+`)
+			provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+			require.NoError(t, err)
+			openfeature.SetProviderAndWait(provider)
+			fp, err := experiments.NewFlagProvider("test")
+			require.NoError(t, err)
+			env.SetExperimentFlagProvider(fp)
+
+			ctx := context.Background()
+			s := env.GetRemoteExecutionService()
+
+			const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+			ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+				ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+				ToolInvocationId: iid,
+			})
+			ctx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+
+			action := &repb.Action{
+				Platform: &repb.Platform{
+					Properties: []*repb.Platform_Property{
+						{
+							Name:  "container-image",
+							Value: tc.containerImage,
+						},
+					},
+				},
+			}
+			arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+			ad := arn.GetDigest()
+
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, "12345678")
+			require.NoError(t, err)
+
+			sched := env.GetSchedulerService().(*schedulerServerMock)
+			require.Equal(t, 1, len(sched.scheduleReqs))
+			b := sched.scheduleReqs[0].SerializedTask
+			task := &repb.ExecutionTask{}
+			err = proto.Unmarshal(b, task)
+			require.NoError(t, err)
+
+			// Check that the container image override is present (or absent).
+			var imageOverride string
+			for _, p := range task.GetPlatformOverrides().GetProperties() {
+				if p.GetName() == "container-image" {
+					imageOverride = p.GetValue()
+				}
+			}
+			assert.Equal(t, tc.wantContainerImage, imageOverride)
+
+			// Check experiment tracking.
+			if tc.wantExperimentVariant != "" {
+				assert.Contains(t, task.GetExperiments(), "remote_execution.container_image_rewrite:"+tc.wantExperimentVariant)
+			} else {
+				for _, exp := range task.GetExperiments() {
+					assert.False(t, strings.HasPrefix(exp, "remote_execution.container_image_rewrite:"), "unexpected experiment entry: %s", exp)
+				}
+			}
+		})
+	}
+}
+
+func TestCancel(t *testing.T) {
+	env, _, _ := setupEnv(t)
+	ctx := context.Background()
+	s := env.GetRemoteExecutionService()
+
 	testUUID, err := uuid.NewRandom()
 	require.NoError(t, err)
 	testInvocationID := testUUID.String()
 
+	inv := &tables.Invocation{
+		InvocationID:     testInvocationID,
+		Attempt:          3, // Test it works for non-first attempts
+		InvocationStatus: int64(invocation_status.InvocationStatus_PARTIAL_INVOCATION_STATUS),
+		Perms:            perms.OTHERS_READ,
+	}
+	createInvocation(ctx, t, env.GetDBHandle(), inv)
+
+	// Create Execution rows to be canceled
 	executionID := "blobs/1111111111111111111111111111111111111111111111111111111111111111/100"
 	execution := &tables.Execution{
 		ExecutionID:  executionID,
@@ -166,18 +574,32 @@ func TestCancel(t *testing.T) {
 
 	schedulerMock := env.GetSchedulerService().(*schedulerServerMock)
 	require.Equal(t, 1, schedulerMock.canceledCount)
+
+	inv, err = env.GetInvocationDB().LookupInvocation(ctx, testInvocationID)
+	require.NoError(t, err)
+	require.Equal(t, int64(invocation_status.InvocationStatus_DISCONNECTED_INVOCATION_STATUS), inv.InvocationStatus)
+	// Check that non-status related fields were not affected on the invocation
+	require.Equal(t, int32(perms.OTHERS_READ), inv.Perms)
 }
 
 func TestCancel_SkipCompletedExecution(t *testing.T) {
-	env := setupEnv(t)
+	env, _, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
-	// Create Execution rows to be canceled
 	testUUID, err := uuid.NewRandom()
 	require.NoError(t, err)
 	testInvocationID := testUUID.String()
 
+	inv := &tables.Invocation{
+		InvocationID:     testInvocationID,
+		Attempt:          0,
+		InvocationStatus: int64(invocation_status.InvocationStatus_PARTIAL_INVOCATION_STATUS),
+		Perms:            perms.OTHERS_READ,
+	}
+	createInvocation(ctx, t, env.GetDBHandle(), inv)
+
+	// Create Execution rows to be canceled
 	executionID1 := "blobs/1111111111111111111111111111111111111111111111111111111111111111/100"
 	executionID2 := "blobs/2111111111111111111111111111111111111111111111111111111111111111/100"
 	completeExecution := &tables.Execution{
@@ -201,15 +623,23 @@ func TestCancel_SkipCompletedExecution(t *testing.T) {
 }
 
 func TestCancel_MultipleExecutions(t *testing.T) {
-	env := setupEnv(t)
+	env, _, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
-	// Create Execution rows to be canceled
 	testUUID, err := uuid.NewRandom()
 	require.NoError(t, err)
 	testInvocationID := testUUID.String()
 
+	inv := &tables.Invocation{
+		InvocationID:     testInvocationID,
+		Attempt:          3,
+		InvocationStatus: int64(invocation_status.InvocationStatus_PARTIAL_INVOCATION_STATUS),
+		Perms:            perms.OTHERS_READ,
+	}
+	createInvocation(ctx, t, env.GetDBHandle(), inv)
+
+	// Create Execution rows to be canceled
 	executionID1 := "blobs/1111111111111111111111111111111111111111111111111111111111111111/100"
 	executionID2 := "blobs/2111111111111111111111111111111111111111111111111111111111111111/100"
 	executionID3 := "blobs/3111111111111111111111111111111111111111111111111111111111111111/100"
@@ -239,20 +669,177 @@ func TestCancel_MultipleExecutions(t *testing.T) {
 	require.Equal(t, 2, schedulerMock.canceledCount)
 }
 
-func TestExecuteAndPublishOperation(t *testing.T) {
+func TestCancel_InvocationAlreadyCompleted(t *testing.T) {
+	env, _, _ := setupEnv(t)
 	ctx := context.Background()
-	env := setupEnv(t)
-	conn, err := testenv.LocalGRPCConn(ctx, env)
+	s := env.GetRemoteExecutionService()
+
+	testUUID, err := uuid.NewRandom()
 	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	// Create Execution rows to be canceled
+	executionID := "blobs/1111111111111111111111111111111111111111111111111111111111111111/100"
+	execution := &tables.Execution{
+		ExecutionID:  executionID,
+		InvocationID: testInvocationID,
+		Stage:        int64(repb.ExecutionStage_EXECUTING),
+	}
+	createExecution(ctx, t, env.GetDBHandle(), execution)
+
+	// Simulate a race condition where the invocation is marked as completed
+	// while the executions are being canceled.
+	inv := &tables.Invocation{
+		InvocationID:     testInvocationID,
+		Attempt:          3,
+		InvocationStatus: int64(invocation_status.InvocationStatus_COMPLETE_INVOCATION_STATUS),
+		Perms:            perms.OTHERS_READ,
+	}
+	createInvocation(ctx, t, env.GetDBHandle(), inv)
+
+	err = s.Cancel(ctx, testInvocationID)
+	require.NoError(t, err)
+
+	schedulerMock := env.GetSchedulerService().(*schedulerServerMock)
+	require.Equal(t, 1, schedulerMock.canceledCount)
+
+	inv, err = env.GetInvocationDB().LookupInvocation(ctx, testInvocationID)
+	require.NoError(t, err)
+	// Check that we don't overwrite the completed status if it occurred before.
+	require.Equal(t, int64(invocation_status.InvocationStatus_COMPLETE_INVOCATION_STATUS), inv.InvocationStatus)
+}
+
+func TestExecuteAndPublishOperation(t *testing.T) {
+	durationUsec := (5 * time.Second).Microseconds()
+	for _, test := range []publishTest{
+		{
+			name:                   "SharedExecutors",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+		},
+		{
+			name:                   "SelfHostedExecutors",
+			platformOverrides:      map[string]string{"use-self-hosted-executors": "true"},
+			expectedSelfHosted:     true,
+			expectedExecutionUsage: tables.UsageCounts{SelfHostedLinuxExecutionDurationUsec: durationUsec},
+		},
+		{
+			name:                   "CachedResult",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			cachedResult:           true,
+		},
+		{
+			name:                   "DoNotCache",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			doNotCache:             true,
+		},
+		{
+			name:                   "FailedAction",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			exitCode:               42,
+		},
+		{
+			name:                   "FailedExecution",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			status:                 status.AbortedError("foo"),
+		},
+		{
+			name:                   "PublishMoreMetadata",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			publishMoreMetadata:    true,
+		},
+		{
+			name:                   "PublishMoreMetadata_PrimaryDBAndRedisDoubleWrite",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			publishMoreMetadata:    true,
+			flagOverrides: map[string]any{
+				"remote_execution.write_execution_progress_state_to_redis": true,
+				"remote_execution.write_executions_to_primary_db":          true,
+			},
+		},
+		{
+			name:                   "PublishMoreMetadata_NoPrimaryDB_RedisOnly",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			publishMoreMetadata:    true,
+			flagOverrides: map[string]any{
+				"remote_execution.write_execution_progress_state_to_redis": true,
+				"remote_execution.write_executions_to_primary_db":          false,
+			},
+		},
+		{
+			name:                   "RedisRestart",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			redisRestart:           true,
+		},
+		{
+			name:                   "DefaultPool",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			useDefaultPool:         true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			testExecuteAndPublishOperation(t, test)
+		})
+	}
+}
+
+type publishTest struct {
+	name                     string
+	platformOverrides        map[string]string
+	flagOverrides            map[string]any
+	expectedSelfHosted       bool
+	expectedExecutionUsage   tables.UsageCounts
+	cachedResult, doNotCache bool
+	status                   error
+	exitCode                 int32
+	publishMoreMetadata      bool
+	redisRestart             bool
+	useDefaultPool           bool
+}
+
+func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
+	ctx := context.Background()
+	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+	for k, v := range test.flagOverrides {
+		flags.Set(t, k, v)
+	}
+	env, conn, r := setupEnv(t)
 	client := repb.NewExecutionClient(conn)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
 
 	const instanceName = "test-instance"
 	const invocationID = "93383cc1-5d6c-4ad1-a321-8ee87c2f6816"
 	const digestFunction = repb.DigestFunction_SHA256
 
 	// Schedule execution
-	arn := uploadEmptyAction(ctx, t, env, instanceName, digestFunction)
-	executionClient, err := client.Execute(ctx, &repb.ExecuteRequest{
+	clientCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: invocationID,
+		TargetId:         "//some:test",
+		ActionMnemonic:   "TestRunner",
+	})
+	require.NoError(t, err)
+	for k, v := range test.platformOverrides {
+		clientCtx = metadata.AppendToOutgoingContext(clientCtx, "x-buildbuddy-platform."+k, v)
+	}
+	platformProperties := []*repb.Platform_Property{
+		{Name: "EstimatedComputeUnits", Value: "2.5"},
+		{Name: "EstimatedFreeDiskBytes", Value: "1000"},
+		{Name: "EstimatedCPU", Value: "1.5"},
+		{Name: "EstimatedMemory", Value: "2000"},
+		{Name: "workload-isolation-type", Value: "oci"},
+	}
+	if !test.useDefaultPool {
+		platformProperties = append(platformProperties, &repb.Platform_Property{Name: "pool", Value: "test-pool"})
+	}
+	arn := uploadAction(clientCtx, t, env, instanceName, digestFunction, &repb.Action{
+		Timeout:    &durationpb.Duration{Seconds: 10},
+		DoNotCache: test.doNotCache,
+		Platform:   &repb.Platform{Properties: platformProperties},
+	})
+	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
 		InstanceName:   arn.GetInstanceName(),
 		ActionDigest:   arn.GetDigest(),
 		DigestFunction: arn.GetDigestFunction(),
@@ -268,23 +855,112 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 
 	// Simulate execution: set up a PublishOperation stream and publish an
 	// ExecuteResponse to it.
-	ctx, err = bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
-		ToolInvocationId: invocationID,
-	})
+	executorCtx := metadata.AppendToOutgoingContext(clientCtx, usageutil.ClientHeaderName, "executor")
+	executorCtx = metadata.AppendToOutgoingContext(executorCtx, "x-buildbuddy-executor-region", "test-region")
 	require.NoError(t, err)
-	stream, err := client.PublishOperation(ctx)
+	stream, err := client.PublishOperation(executorCtx)
 	require.NoError(t, err)
 	queuedTime := time.Unix(100, 0)
+	workerStartTime := queuedTime.Add(1 * time.Second)
+	workerEndTime := workerStartTime.Add(5 * time.Second)
+	aux := &espb.ExecutionAuxiliaryMetadata{PlatformOverrides: &repb.Platform{}}
+	for k, v := range test.platformOverrides {
+		aux.PlatformOverrides.Properties = append(
+			aux.PlatformOverrides.Properties,
+			&repb.Platform_Property{Name: k, Value: v},
+		)
+	}
+
+	if test.redisRestart {
+		r.Restart()
+	}
+
+	executorGroupID := sharedPoolGroupID
+	if test.expectedSelfHosted {
+		executorGroupID = selfHostedPoolGroupID
+	}
+
+	usageStats := &repb.UsageStats{}
+	if test.publishMoreMetadata {
+		aux.IsolationType = "firecracker"
+		aux.Timeout = &durationpb.Duration{Seconds: 11}
+		aux.ExecuteRequest = &repb.ExecuteRequest{
+			SkipCacheLookup: true, // This is only used for writing to clickhouse
+			ExecutionPolicy: &repb.ExecutionPolicy{Priority: 999},
+		}
+		effectivePool := "test-pool"
+		if test.useDefaultPool {
+			effectivePool = "default-pool"
+		}
+		aux.SchedulingMetadata = &scpb.SchedulingMetadata{
+			TaskSize: &scpb.TaskSize{EstimatedFreeDiskBytes: 1001},
+			MeasuredTaskSize: &scpb.TaskSize{
+				EstimatedMemoryBytes:   2001,
+				EstimatedMilliCpu:      2002,
+				EstimatedFreeDiskBytes: 2003,
+			},
+			PredictedTaskSize: &scpb.TaskSize{
+				EstimatedMemoryBytes:   3001,
+				EstimatedMilliCpu:      3002,
+				EstimatedFreeDiskBytes: 3003,
+			},
+			ExecutorGroupId: executorGroupID,
+			Pool:            effectivePool,
+		}
+		usageStats.Timeline = &repb.UsageTimeline{
+			StartTime: tspb.New(workerStartTime),
+		}
+		usageStats.NetworkStats = &repb.NetworkStats{
+			BytesSent:       1000,
+			PacketsSent:     3000,
+			BytesReceived:   2000,
+			PacketsReceived: 4000,
+		}
+		usageStats.CpuPressure = &repb.PSI{
+			Some: &repb.PSI_Metrics{Total: 1010},
+			Full: &repb.PSI_Metrics{Total: 2010},
+		}
+		usageStats.MemoryPressure = &repb.PSI{
+			Some: &repb.PSI_Metrics{Total: 1020},
+			Full: &repb.PSI_Metrics{Total: 2020},
+		}
+		usageStats.IoPressure = &repb.PSI{
+			Some: &repb.PSI_Metrics{Total: 1030},
+			Full: &repb.PSI_Metrics{Total: 2030},
+		}
+	} else {
+		effectivePool := "test-pool"
+		if test.useDefaultPool {
+			effectivePool = "default-pool"
+		}
+		aux.SchedulingMetadata = &scpb.SchedulingMetadata{
+			ExecutorGroupId: executorGroupID,
+			Pool:            effectivePool,
+		}
+	}
+	auxAny, err := anypb.New(aux)
+	require.NoError(t, err)
 	actionResult := &repb.ActionResult{
-		ExitCode:  42,
+		ExitCode:  test.exitCode,
 		StderrRaw: []byte("test-stderr"),
 		ExecutionMetadata: &repb.ExecutedActionMetadata{
-			QueuedTimestamp: tspb.New(queuedTime),
+			QueuedTimestamp:          tspb.New(queuedTime),
+			WorkerStartTimestamp:     tspb.New(workerStartTime),
+			WorkerCompletedTimestamp: tspb.New(workerEndTime),
+			AuxiliaryMetadata:        []*anypb.Any{auxAny},
+			DoNotCache:               test.doNotCache,
+			UsageStats:               usageStats,
 		},
 	}
+	expectedExecuteResponse := &repb.ExecuteResponse{
+		CachedResult: test.cachedResult,
+		Result:       actionResult,
+		Status:       gstatus.Convert(test.status).Proto(),
+	}
 	op, err = operation.Assemble(
-		repb.ExecutionStage_COMPLETED, taskID, arn,
-		operation.ExecuteResponseWithResult(actionResult, nil),
+		taskID,
+		operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()),
+		expectedExecuteResponse,
 	)
 	require.NoError(t, err)
 	err = stream.Send(op)
@@ -292,11 +968,12 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 	_, err = stream.CloseAndRecv()
 	require.NoError(t, err)
 
+	trimmedExecuteResponse := expectedExecuteResponse.CloneVT()
+	trimmedExecuteResponse.GetResult().GetExecutionMetadata().AuxiliaryMetadata = nil
+	trimmedExecuteResponse.GetResult().GetExecutionMetadata().GetUsageStats().Timeline = nil
+
 	// Wait for the execute response to be streamed back on our initial
 	// /Execute stream.
-	expectedExecuteResponse := &repb.ExecuteResponse{
-		Result: actionResult,
-	}
 	var executeResponse *repb.ExecuteResponse
 	for {
 		op, err = executionClient.Recv()
@@ -310,18 +987,125 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 		}
 		executeResponse = operation.ExtractExecuteResponse(op)
 	}
-	assert.Empty(t, cmp.Diff(expectedExecuteResponse, executeResponse, protocmp.Transform()))
+	assert.Empty(t, cmp.Diff(trimmedExecuteResponse, executeResponse, protocmp.Transform()))
+
+	// Check that the action cache contains the right entry, if any.
+	arn.ToProto().CacheType = rspb.CacheType_AC
+	arnAC, err := arn.CheckAC()
+	require.NoError(t, err)
+	cachedActionResult, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), arnAC)
+	if !test.doNotCache && test.exitCode == 0 && test.status == nil && !test.cachedResult {
+		require.NoError(t, err)
+		// Trim the aux metadata before comparing
+		cachedActionResult.GetExecutionMetadata().AuxiliaryMetadata = nil
+		assert.Empty(t, cmp.Diff(trimmedExecuteResponse.GetResult(), cachedActionResult, protocmp.Transform()))
+	} else {
+		require.Equal(t, codes.NotFound, gstatus.Code(err), "Error should be NotFound, but is %v", err)
+	}
 
 	// Should also be able to fetch the ExecuteResponse from cache. See field
-	// comment on Execution.exeute_response_digest for notes on serialization
+	// comment on Execution.execute_response_digest for notes on serialization
 	// format.
-	cachedExecuteResponse, err := execution.GetCachedExecuteResponse(ctx, env, taskID)
+	cachedExecuteResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), taskID)
 	require.NoError(t, err)
 	assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
+
+	// Should also have recorded usage.
+	ut := env.GetUsageTracker().(*testusage.Tracker)
+	var foundExecutorUsage *testusage.Total
+	for _, u := range ut.Totals() {
+		if u.Labels.Client == "executor" {
+			foundExecutorUsage = &u
+			break
+		}
+	}
+	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
+	assert.Equal(t, "group1", foundExecutorUsage.GroupID)
+	assert.Equal(t, test.expectedExecutionUsage.LinuxExecutionDurationUsec, foundExecutorUsage.Counts.LinuxExecutionDurationUsec)
+	assert.Equal(t, test.expectedExecutionUsage.SelfHostedLinuxExecutionDurationUsec, foundExecutorUsage.Counts.SelfHostedLinuxExecutionDurationUsec)
+
+	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
+	require.NoError(t, err)
+
+	if test.redisRestart {
+		assert.Equal(t, 0, len(collectedExecutions))
+		return
+	}
+
+	// Check that we recorded the executions
+	assert.Equal(t, 1, len(collectedExecutions))
+	expectedExecution := &repb.StoredExecution{
+		ExecutionId:                  taskID,
+		GroupId:                      "group1",
+		UserId:                       "user1",
+		InvocationLinkType:           1,
+		InvocationUuid:               strings.ReplaceAll(invocationID, "-", ""),
+		Stage:                        4,
+		StatusCode:                   int32(gstatus.Code(test.status)),
+		StatusMessage:                gstatus.Convert(test.status).Proto().GetMessage(),
+		ExitCode:                     test.exitCode,
+		DoNotCache:                   test.doNotCache,
+		CachedResult:                 test.cachedResult,
+		RequestedComputeUnits:        2.5,
+		RequestedFreeDiskBytes:       1000,
+		RequestedMemoryBytes:         2000,
+		RequestedMilliCpu:            1500,
+		RequestedIsolationType:       "oci",
+		RequestedTimeoutUsec:         10000000,
+		TargetLabel:                  "//some:test",
+		ActionMnemonic:               "TestRunner",
+		SelfHosted:                   test.expectedSelfHosted,
+		Region:                       "test-region",
+		CommandSnippet:               "test",
+		OutputPath:                   "bazel-out/k8-fastbuild/bin/some/test",
+		QueuedTimestampUsec:          queuedTime.UnixMicro(),
+		WorkerStartTimestampUsec:     workerStartTime.UnixMicro(),
+		WorkerCompletedTimestampUsec: workerEndTime.UnixMicro(),
+	}
+	if test.useDefaultPool {
+		expectedExecution.RequestedPool = ""
+		expectedExecution.EffectivePool = "default-pool"
+	} else {
+		expectedExecution.RequestedPool = "test-pool"
+		expectedExecution.EffectivePool = "test-pool"
+	}
+	if test.publishMoreMetadata {
+		expectedExecution.ExecutionPriority = 999
+		expectedExecution.SkipCacheLookup = true
+		expectedExecution.EstimatedFreeDiskBytes = 1001
+		expectedExecution.PreviousMeasuredMemoryBytes = 2001
+		expectedExecution.PreviousMeasuredMilliCpu = 2002
+		expectedExecution.PreviousMeasuredFreeDiskBytes = 2003
+		expectedExecution.PredictedMemoryBytes = 3001
+		expectedExecution.PredictedMilliCpu = 3002
+		expectedExecution.PredictedFreeDiskBytes = 3003
+		expectedExecution.EffectiveIsolationType = "firecracker"
+		expectedExecution.EffectiveTimeoutUsec = 11000000
+		expectedExecution.NetworkBytesSent = 1000
+		expectedExecution.NetworkBytesReceived = 2000
+		expectedExecution.NetworkPacketsSent = 3000
+		expectedExecution.NetworkPacketsReceived = 4000
+		expectedExecution.CpuPressureSomeStallUsec = 1010
+		expectedExecution.CpuPressureFullStallUsec = 2010
+		expectedExecution.MemoryPressureSomeStallUsec = 1020
+		expectedExecution.MemoryPressureFullStallUsec = 2020
+		expectedExecution.IoPressureSomeStallUsec = 1030
+		expectedExecution.IoPressureFullStallUsec = 2030
+	}
+	diff := cmp.Diff(
+		expectedExecution,
+		collectedExecutions[0],
+		protocmp.Transform(),
+		protocmp.IgnoreFields(
+			&repb.StoredExecution{},
+			"created_at_usec",
+			"updated_at_usec",
+		))
+	assert.Emptyf(t, diff, "Recorded execution didn't match the expected one: %s", expectedExecution)
 }
 
 func TestMarkFailed(t *testing.T) {
-	env := setupEnv(t)
+	env, _, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -355,7 +1139,7 @@ func TestMarkFailed(t *testing.T) {
 	assert.Equal(t, executionID, ex.ExecutionID)
 
 	// ExecuteResponse should be cached after marking failed
-	executeResponse, err := execution.GetCachedExecuteResponse(ctx, env, executionID)
+	executeResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), executionID)
 	require.NoError(t, err)
 	assert.Equal(t, "It didn't work", executeResponse.GetStatus().GetMessage())
 
@@ -364,23 +1148,334 @@ func TestMarkFailed(t *testing.T) {
 
 	require.Equal(t, int64(repb.ExecutionStage_COMPLETED), ex.Stage)
 
-	err = s.MarkExecutionFailed(ctx, "blobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/1", status.InternalError("It didn't work"))
+	err = s.MarkExecutionFailed(ctx, "uploads/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/blobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/1", status.InternalError("It didn't work"))
 	require.True(t, status.IsNotFoundError(err), "error should be NotFoundError, but was %s", err)
-
 }
 
-func uploadEmptyAction(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value) *digest.ResourceName {
-	cmd := &repb.Command{Arguments: []string{"test"}}
+func TestDispatchFailure_MarksExecutionFailed(t *testing.T) {
+	env, conn, _ := setupEnv(t)
+	ctx := context.Background()
+
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	env.SetSecretService(nil)
+
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: iid,
+	})
+
+	action := &repb.Action{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "include-secrets", Value: "true"},
+		}},
+	}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+	ad := arn.GetDigest()
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	client := repb.NewExecutionClient(conn)
+	stream, err := client.Execute(ctx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   ad,
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+
+	_, err = stream.Recv()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Secrets requested but secret service not available")
+
+	rows := getExecutions(t, env)
+	require.Equal(t, 1, len(rows))
+	require.Equal(t, int64(repb.ExecutionStage_COMPLETED), rows[0].Stage)
+
+	executeResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), rows[0].ExecutionID)
+	require.NoError(t, err)
+	require.Contains(t, executeResponse.GetStatus().GetMessage(), "Secrets requested but secret service not available")
+}
+
+func TestDispatch_RedisAvailabilityMonitoring_CleansUpChannelOnScheduleFailure(t *testing.T) {
+	flags.Set(t, "remote_execution.enable_redis_availability_monitoring", true)
+	env, _, redisHandle := setupEnv(t)
+	scheduler := env.GetSchedulerService().(*schedulerServerMock)
+	scheduler.scheduleErr = status.UnavailableError("scheduler unavailable")
+
+	ctx := context.Background()
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: iid,
+	})
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	action := &repb.Action{}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+	ad := arn.GetDigest()
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	taskID := arn.NewUploadString()
+
+	s := env.GetRemoteExecutionService()
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, taskID)
+	require.Error(t, err, "Dispatch should propagate the scheduler error")
+	require.True(t, status.IsUnavailableError(err), "expected UNAVAILABLE error, got %s", err)
+
+	// The monitored channel should be deleted on error.
+	require.Equal(t, 0, redisHandle.KeyCount("monitoredPubSub/*"),
+		"monitored pubsub channel should be deleted after scheduling failure")
+}
+
+func TestInvocationLink_EmptyInvocationID(t *testing.T) {
+	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	env, conn, _ := setupEnv(t)
+	client := repb.NewExecutionClient(conn)
+	redis := testredis.Start(t)
+	env.SetDefaultRedisClient(redis.Client())
+	redis_execution_collector.Register(env)
+
+	// Start an execution with an empty invocation ID.
+	clientCtx := context.Background()
+	instanceName := ""
+	digestFunction := repb.DigestFunction_SHA256
+	arn := uploadAction(clientCtx, t, env, instanceName, digestFunction, &repb.Action{})
+	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+
+	// Wait for the execution to be accepted by the server.
+	rsp, err := executionClient.Recv()
+	require.NoError(t, err)
+
+	// No invocation links should be recorded.
+	invocationLinks, err := env.GetExecutionCollector().GetExecutionInvocationLinks(clientCtx, rsp.GetName())
+	require.NoError(t, err)
+	require.Empty(t, invocationLinks)
+
+	err = executionClient.CloseSend()
+	require.NoError(t, err)
+}
+
+func uploadAction(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value, action *repb.Action) *digest.CASResourceName {
+	cmd := &repb.Command{
+		Arguments:   []string{"test"},
+		OutputFiles: []string{"bazel-out/k8-fastbuild/bin/some/test"},
+	}
 	cd, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, cmd)
 	require.NoError(t, err)
-	action := &repb.Action{CommandDigest: cd}
+	action.CommandDigest = cd
 	ad, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, action)
 	require.NoError(t, err)
-	return digest.NewResourceName(ad, instanceName, rspb.CacheType_CAS, df)
+	return digest.NewCASResourceName(ad, instanceName, df)
+}
+
+func uploadActionWithCommand(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value, action *repb.Action, cmd *repb.Command) *digest.CASResourceName {
+	cd, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, cmd)
+	require.NoError(t, err)
+	action.CommandDigest = cd
+	ad, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, action)
+	require.NoError(t, err)
+	return digest.NewCASResourceName(ad, instanceName, df)
 }
 
 func withIncomingMetadata(t *testing.T, ctx context.Context, rmd *repb.RequestMetadata) context.Context {
 	b, err := proto.Marshal(rmd)
 	require.NoError(t, err)
 	return metadata.NewIncomingContext(ctx, metadata.Pairs(bazel_request.RequestMetadataKey, string(b)))
+}
+
+func makeAuxAny(t *testing.T, props []*repb.Platform_Property) *anypb.Any {
+	auxMd := &espb.ExecutionAuxiliaryMetadata{
+		PlatformOverrides: &repb.Platform{
+			Properties: props,
+		},
+	}
+	auxAny, err := anypb.New(auxMd)
+	require.NoError(t, err)
+	return auxAny
+}
+
+func TestRedactCachedExecuteResponse(t *testing.T) {
+	for _, test := range []struct {
+		name                      string
+		response                  *repb.ExecuteResponse
+		inputProperties           []*repb.Platform_Property
+		expectedAuxiliaryMetadata []*anypb.Any
+	}{
+		{
+			name:     "nil response",
+			response: nil,
+		},
+		{
+			name:     "no execution metadata",
+			response: &repb.ExecuteResponse{},
+		},
+		{
+			name: "no auxiliary metadata",
+			response: &repb.ExecuteResponse{
+				Result: &repb.ActionResult{
+					ExecutionMetadata: &repb.ExecutedActionMetadata{},
+				},
+			},
+		},
+		{
+			name: "redacts password property",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "container-registry-password", Value: "secret123"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "container-registry-password", Value: "<REDACTED>"},
+				}),
+			},
+		},
+		{
+			name: "redacts username property",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "container-registry-username", Value: "admin"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "container-registry-username", Value: "<REDACTED>"},
+				}),
+			},
+		},
+		{
+			name: "redacts env-overrides property",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "env-overrides", Value: "SECRET_KEY=abc123"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "env-overrides", Value: "<REDACTED>"},
+				}),
+			},
+		},
+		{
+			name: "redacts secret-env-overrides property",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "secret-env-overrides", Value: "SECRET_KEY=abc123"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "secret-env-overrides", Value: "<REDACTED>"},
+				}),
+			},
+		},
+		{
+			name: "case insensitive redaction",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "PASSWORD", Value: "secret1"},
+				{Name: "UserName", Value: "admin"},
+				{Name: "ENV-OVERRIDES", Value: "KEY=val"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "PASSWORD", Value: "<REDACTED>"},
+					{Name: "UserName", Value: "<REDACTED>"},
+					{Name: "ENV-OVERRIDES", Value: "<REDACTED>"},
+				}),
+			},
+		},
+		{
+			name: "preserves non-sensitive properties",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "pool", Value: "default"},
+				{Name: "workload-isolation-type", Value: "firecracker"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "pool", Value: "default"},
+					{Name: "workload-isolation-type", Value: "firecracker"},
+				}),
+			},
+		},
+		{
+			name: "mixed properties",
+			inputProperties: []*repb.Platform_Property{
+				{Name: "pool", Value: "default"},
+				{Name: "container-registry-password", Value: "secret"},
+				{Name: "container-registry-username", Value: "admin"},
+				{Name: "workload-isolation-type", Value: "firecracker"},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "pool", Value: "default"},
+					{Name: "container-registry-password", Value: "<REDACTED>"},
+					{Name: "container-registry-username", Value: "<REDACTED>"},
+					{Name: "workload-isolation-type", Value: "firecracker"},
+				}),
+			},
+		},
+		{
+			name: "redacts multiple auxiliary metadata entries",
+			response: &repb.ExecuteResponse{
+				Result: &repb.ActionResult{
+					ExecutionMetadata: &repb.ExecutedActionMetadata{
+						AuxiliaryMetadata: []*anypb.Any{
+							makeAuxAny(t, []*repb.Platform_Property{
+								{Name: "container-registry-password", Value: "secret1"},
+							}),
+							makeAuxAny(t, []*repb.Platform_Property{
+								{Name: "container-registry-password", Value: "secret2"},
+							}),
+						},
+					},
+				},
+			},
+			expectedAuxiliaryMetadata: []*anypb.Any{
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "container-registry-password", Value: "<REDACTED>"},
+				}),
+				makeAuxAny(t, []*repb.Platform_Property{
+					{Name: "container-registry-password", Value: "<REDACTED>"},
+				}),
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			var rsp *repb.ExecuteResponse
+
+			if test.response != nil {
+				rsp = test.response
+			} else if test.inputProperties != nil {
+				auxMd := &espb.ExecutionAuxiliaryMetadata{
+					PlatformOverrides: &repb.Platform{
+						Properties: test.inputProperties,
+					},
+				}
+				auxAny, err := anypb.New(auxMd)
+				require.NoError(t, err)
+				rsp = &repb.ExecuteResponse{
+					Result: &repb.ActionResult{
+						ExecutionMetadata: &repb.ExecutedActionMetadata{
+							AuxiliaryMetadata: []*anypb.Any{auxAny},
+						},
+					},
+				}
+			}
+
+			execution_server.RedactCachedExecuteResponse(ctx, rsp)
+
+			if test.expectedAuxiliaryMetadata != nil {
+				require.Empty(t, cmp.Diff(
+					test.expectedAuxiliaryMetadata,
+					rsp.GetResult().GetExecutionMetadata().GetAuxiliaryMetadata(),
+					protocmp.Transform(),
+				))
+			}
+		})
+	}
 }

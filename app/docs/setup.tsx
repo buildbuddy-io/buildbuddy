@@ -1,10 +1,7 @@
 import React from "react";
-import { bazel_config } from "../../proto/bazel_config_ts_proto";
-import error_service from "../errors/error_service";
-import capabilities from "../capabilities/capabilities";
-import rpcService from "../service/rpc_service";
-import SetupCodeComponent from "./setup_code";
 import { User } from "../auth/user";
+import capabilities from "../capabilities/capabilities";
+import SetupCodeComponent from "./setup_code";
 
 interface Props {
   user?: User;
@@ -12,7 +9,6 @@ interface Props {
 
 interface State {
   menuExpanded: boolean;
-  bazelConfigResponse?: bazel_config.GetBazelConfigResponse;
 }
 
 export default class SetupComponent extends React.Component<Props> {
@@ -21,19 +17,7 @@ export default class SetupComponent extends React.Component<Props> {
   };
 
   componentWillMount() {
-    document.title = `Setup | BuildBuddy`;
-
-    let request = new bazel_config.GetBazelConfigRequest();
-    request.host = window.location.host;
-    request.protocol = window.location.protocol;
-    request.includeCertificate = true;
-    rpcService.service
-      .getBazelConfig(request)
-      .then((response: bazel_config.GetBazelConfigResponse) => {
-        console.log(response);
-        this.setState({ bazelConfigResponse: response });
-      })
-      .catch((e) => error_service.handleError(e));
+    document.title = `Quickstart | BuildBuddy`;
   }
 
   render() {
@@ -50,9 +34,7 @@ export default class SetupComponent extends React.Component<Props> {
           If you don't have a <b>.bazelrc</b> file - create one in the same directory as your Bazel <b>WORKSPACE</b>{" "}
           file.
           <h2>1. Configure your .bazelrc</h2>
-          {this.state.bazelConfigResponse && (
-            <SetupCodeComponent bazelConfigResponse={this.state.bazelConfigResponse} />
-          )}
+          <SetupCodeComponent />
           <h2>2. Verify your installation</h2>
           Once you've added those lines to your <b>.bazelrc</b>, kick off a bazel build.
           <br />
@@ -99,8 +81,18 @@ export default class SetupComponent extends React.Component<Props> {
           Visit our <a href="https://www.buildbuddy.io/docs/introduction">documentation</a> for more information on
           setting up, configuring, and using BuildBuddy.
           <h2>Get in touch!</h2>
-          Join our <a href="https://community.buildbuddy.io">Slack channel</a> or email us at{" "}
-          <a href="mailto:hello@buildbuddy.io">hello@buildbuddy.io</a> if you have any questions or feature requests!
+          {capabilities.config.communityLinksEnabled ? (
+            <>
+              Join our <a href="https://community.buildbuddy.io">Slack channel</a> or email us at{" "}
+              <a href="mailto:hello@buildbuddy.io">hello@buildbuddy.io</a> if you have any questions or feature
+              requests!
+            </>
+          ) : (
+            <>
+              Email us at <a href="mailto:hello@buildbuddy.io">hello@buildbuddy.io</a> if you have any questions or
+              feature requests!
+            </>
+          )}
         </div>
       </div>
     );

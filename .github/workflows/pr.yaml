@@ -12,12 +12,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
 
-      - name: Build
-        run: |
-          bazelisk build --config=untrusted-ci //...
+      - name: Setup Bazel Go module cache
+        uses: ./.github/actions/setup-bazel-go-mod-cache
 
       - name: Test
         run: |
-          bazelisk test --config=untrusted-ci //...
+          bazelisk test \
+            --config=untrusted-ci \
+            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+            //...

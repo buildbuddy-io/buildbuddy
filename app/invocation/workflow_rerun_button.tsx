@@ -1,28 +1,28 @@
+import Long from "long";
+import { ChevronDown, RefreshCw } from "lucide-react";
 import React from "react";
-import { build } from "../../proto/remote_execution_ts_proto";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
+import { firecracker } from "../../proto/firecracker_ts_proto";
+import { build } from "../../proto/remote_execution_ts_proto";
 import { workflow } from "../../proto/workflow_ts_proto";
+import { User } from "../auth/user";
 import Button, { OutlinedButton } from "../components/button/button";
 import { OutlinedButtonGroup } from "../components/button/button_group";
-import Modal from "../components/modal/modal";
 import Dialog, {
-  DialogHeader,
-  DialogTitle,
   DialogBody,
   DialogFooter,
   DialogFooterButtons,
+  DialogHeader,
+  DialogTitle,
 } from "../components/dialog/dialog";
 import Menu, { MenuItem } from "../components/menu/menu";
+import Modal from "../components/modal/modal";
 import Popup, { PopupContainer } from "../components/popup/popup";
+import Spinner from "../components/spinner/spinner";
 import errorService from "../errors/error_service";
 import router from "../router/router";
 import rpcService, { CancelablePromise } from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
-import Spinner from "../components/spinner/spinner";
-import { ChevronDown, RefreshCw } from "lucide-react";
-import Long from "long";
-import { User } from "../auth/user";
-import { firecracker } from "../../proto/firecracker_ts_proto";
 
 export interface WorkflowRerunButtonProps {
   model: InvocationModel;
@@ -70,31 +70,55 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
 
     const configuredEvent = this.props.model.workflowConfigured;
 
+    let workflowExecution: execution_stats.Execution;
+    try {
+      workflowExecution = await this.getWorkflowExecution();
+    } catch (e) {
+      errorService.handleError(`Retry failed: ${e}`);
+      this.setState({ isLoading: false });
+      return;
+    }
+
     if (clean) {
       try {
-        await this.invalidateSnapshot();
+        await this.invalidateSnapshot(workflowExecution);
       } catch (e) {
-        errorService.handleError(`Failed to invalidate snapshot: ${e}`);
+        errorService.handleError(`Failed to invalidate snapshot: ${e}.
+        To work around this, you can invalidate snapshots for ALL workflows by
+        clicking "Invalidate all workflow VM snapshots" in the 3-dot menu on the Workflows page`);
         this.setState({ isLoading: false });
         return;
       }
     }
 
+    const req = new workflow.ExecuteWorkflowRequest({
+      workflowId: configuredEvent.workflowId,
+      actionNames: [configuredEvent.actionName],
+      pushedRepoUrl: configuredEvent.pushedRepoUrl,
+      pushedBranch: configuredEvent.pushedBranch,
+      commitSha: configuredEvent.commitSha,
+      targetRepoUrl: configuredEvent.targetRepoUrl,
+      targetBranch: configuredEvent.targetBranch,
+      visibility: this.props.model.buildMetadataMap.get("VISIBILITY") || "",
+      pullRequestNumber: Long.fromString(this.props.model.buildMetadataMap.get("PULL_REQUEST_NUMBER") || "0"),
+      async: true,
+    });
+
+    // If the workflow was executed by API, env vars could've been overwritten,
+    // so we need to fetch them from the workflow action.
+    if (configuredEvent.actionTriggerEvent == "manual_dispatch") {
+      try {
+        req.env = await this.getEnvVarsForWorkflow(workflowExecution!);
+      } catch (e) {
+        // If the action has expired, return an error.
+        this.setState({ isLoading: false });
+        errorService.handleError(`Failed to rerun manually dispatched execution: ${e}.`);
+        return;
+      }
+    }
+
     this.inFlightRpc = rpcService.service
-      .executeWorkflow(
-        new workflow.ExecuteWorkflowRequest({
-          workflowId: configuredEvent.workflowId,
-          actionNames: [configuredEvent.actionName],
-          pushedRepoUrl: configuredEvent.pushedRepoUrl,
-          pushedBranch: configuredEvent.pushedBranch,
-          commitSha: configuredEvent.commitSha,
-          targetRepoUrl: configuredEvent.targetRepoUrl,
-          targetBranch: configuredEvent.targetBranch,
-          visibility: this.props.model.buildMetadataMap.get("VISIBILITY") || "",
-          pullRequestNumber: Long.fromString(this.props.model.buildMetadataMap.get("PULL_REQUEST_NUMBER") || "0"),
-          async: true,
-        })
-      )
+      .executeWorkflow(req)
       .then((response) => {
         let invocationId = "";
         let errorMsg = `Failed to execute action ${configuredEvent.actionName}.`;
@@ -120,47 +144,50 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
       .finally(() => this.setState({ isLoading: false }));
   }
 
-  private async invalidateSnapshot() {
-    // Get the execution for the workflow run (ci_runner).
-    const executionRequest = new execution_stats.GetExecutionRequest();
-    executionRequest.executionLookup = new execution_stats.ExecutionLookup();
-    executionRequest.executionLookup.invocationId = this.props.model.getInvocationId();
-    const executionResponse = await rpcService.service.getExecution(executionRequest);
-
-    if (executionResponse.execution.length != 1) {
-      throw new Error(`expected 1 workflow execution, got ${executionResponse.execution.length}`);
+  private async getEnvVarsForWorkflow(workflowExecution: execution_stats.Execution): Promise<Record<string, string>> {
+    if (!workflowExecution.actionDigest) {
+      throw new Error(`empty workflow execution action digest`);
     }
-    const workflowExecution = executionResponse!.execution[0];
-    if (!workflowExecution.commandSnippet.startsWith("buildbuddy_ci_runner")) {
-      throw new Error(`expected workflow execution, got ${workflowExecution.commandSnippet}`);
+    const actionUrl = this.props.model.getBytestreamURL(workflowExecution.actionDigest!);
+    const actionContents = await rpcService.fetchBytestreamFile(
+      actionUrl,
+      this.props.model.getInvocationId(),
+      "arraybuffer"
+    );
+    const action = build.bazel.remote.execution.v2.Action.decode(new Uint8Array(actionContents));
+    const cmd = await this.fetchCommand(action);
+    const envVars: Record<string, string> = {};
+    cmd.environmentVariables.forEach((env) => {
+      envVars[env.name] = env.value;
+    });
+    return envVars;
+  }
+
+  private async fetchCommand(
+    action: build.bazel.remote.execution.v2.Action
+  ): Promise<build.bazel.remote.execution.v2.Command> {
+    if (!action.commandDigest) {
+      throw new Error(`no command digest for action ${action.commandDigest}`);
     }
 
-    const executeResponseDigest = workflowExecution.executeResponseDigest;
-    if (executeResponseDigest === null || executeResponseDigest === undefined) {
-      throw new Error(`empty workflow execute response digest`);
-    }
+    let commandURL = this.props.model.getBytestreamURL(action.commandDigest);
+    const contents = await rpcService.fetchBytestreamFile(
+      commandURL,
+      this.props.model.getInvocationId(),
+      "arraybuffer"
+    );
+    return build.bazel.remote.execution.v2.Command.decode(new Uint8Array(contents));
+  }
 
-    // Get the execute response, which contains the snapshot key.
-    const executeResponseUrl = this.props.model.getActionCacheURL(executeResponseDigest);
-    const executeResponseBuffer = await rpcService
-      .fetchBytestreamFile(executeResponseUrl, this.props.model.getInvocationId(), "arraybuffer")
-      .catch((e) => {
-        throw new Error(
-          `workflow execute response does not exist in the cache. Try invalidating from a more recent workflow run`
-        );
-      });
-
-    const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(executeResponseBuffer));
-    // ExecuteResponse is encoded in ActionResult.stdout_raw field. See
-    // proto field docs on `Execution.execute_response_digest`.
-    const executeResponseBytes = actionResult.stdoutRaw;
-    const executeResponse = build.bazel.remote.execution.v2.ExecuteResponse.decode(executeResponseBytes);
-
+  private async invalidateSnapshot(workflowExecution: execution_stats.Execution) {
+    const executeResponse = await this.getWorkflowExecuteResponse(workflowExecution);
     // Vm metadata is stored in the auxiliary metadata field of the execution metadata.
     const auxiliaryMetadata = executeResponse.result?.executionMetadata?.auxiliaryMetadata;
     if (!auxiliaryMetadata || auxiliaryMetadata.length == 0) {
-      throw new Error("empty snapshot key in execute response");
+      await this.invalidateAllSnapshots();
+      return;
     }
+
     let snapshotKey: firecracker.SnapshotKey | null | undefined;
     for (const metadata of auxiliaryMetadata) {
       if (metadata.typeUrl === "type.googleapis.com/firecracker.VMMetadata") {
@@ -170,7 +197,8 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
       }
     }
     if (snapshotKey === null || snapshotKey === undefined) {
-      throw new Error("empty snapshot key in execute response");
+      await this.invalidateAllSnapshots();
+      return;
     }
 
     rpcService.service.invalidateSnapshot(
@@ -178,6 +206,54 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
         snapshotKey: snapshotKey,
       })
     );
+  }
+
+  // invalidateAllSnapshots invalidates snapshots for all workflows for the given
+  // repo URL by bumping the instance name.
+  // While this is heavy handed, only invalidating the snapshot for the current
+  // workflow is only supported for firecracker. All other workloads (i.e. for
+  // Mac workflows or workflows on self-hosted executors that don't use firecracker
+  // and don't have a snapshot key in the execute response) must use this approach.
+  private async invalidateAllSnapshots() {
+    const repoUrl = this.props.model.workflowConfigured?.pushedRepoUrl;
+    return rpcService.service.invalidateAllSnapshotsForRepo(
+      new workflow.InvalidateAllSnapshotsForRepoRequest({ repoUrl })
+    );
+  }
+
+  // getWorkflowExecution returns the execution for the workflow run (ci_runner).
+  private async getWorkflowExecution(): Promise<execution_stats.Execution> {
+    const executionRequest = new execution_stats.GetExecutionRequest();
+    executionRequest.executionLookup = new execution_stats.ExecutionLookup();
+    executionRequest.executionLookup.invocationId = this.props.model.getInvocationId();
+    const executionResponse = await rpcService.service.getExecution(executionRequest);
+
+    if (executionResponse.execution.length != 1) {
+      throw new Error(`expected 1 workflow execution, got ${executionResponse.execution.length}`);
+    }
+    return executionResponse!.execution[0];
+  }
+
+  private async getWorkflowExecuteResponse(
+    workflowExecution: execution_stats.Execution
+  ): Promise<build.bazel.remote.execution.v2.ExecuteResponse> {
+    const executeResponseDigest = workflowExecution.executeResponseDigest;
+    if (executeResponseDigest === null || executeResponseDigest === undefined) {
+      throw new Error(`empty workflow execute response digest`);
+    }
+
+    const executeResponseUrl = this.props.model.getActionCacheURL(executeResponseDigest);
+    const executeResponseBuffer = await rpcService
+      .fetchBytestreamFile(executeResponseUrl, this.props.model.getInvocationId(), "arraybuffer")
+      .catch((e) => {
+        throw new Error(`failed to fetch workflow execution response: ${e}`);
+      });
+
+    const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(executeResponseBuffer));
+    // ExecuteResponse is encoded in ActionResult.stdout_raw field. See
+    // proto field docs on `Execution.execute_response_digest`.
+    const executeResponseBytes = actionResult.stdoutRaw;
+    return build.bazel.remote.execution.v2.ExecuteResponse.decode(executeResponseBytes);
   }
 
   componentWillUnmount() {
@@ -209,6 +285,12 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
           </OutlinedButtonGroup>
           <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)} anchor="right">
             <Menu>
+              {/*TODO(Maggie): Add a separate button to invalidate runners for all workflows
+              for cases where invalidating a single snapshot is invalid.
+              Make the behavior more explicit with the button name:
+              `Clear cached runners for this Workflow and re-run `
+              `Clear cached runners for all Workflows and re-run`
+              */}
               <MenuItem onClick={this.onOpenDialog.bind(this)}>Re-run from clean workspace</MenuItem>
             </Menu>
           </Popup>

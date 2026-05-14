@@ -15,30 +15,20 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
 
-      - name: Mount Bazel cache
-        uses: actions/cache@v1
-        with:
-          path: "/home/runner/repo-cache/"
-          key: repo-cache
-
-      - name: Build
-        run: |
-          bazelisk build \
-              --config=ci \
-              --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
-              //...
+      - name: Setup Bazel Go module cache
+        uses: ./.github/actions/setup-bazel-go-mod-cache
 
       - name: Test
         run: |
           bazelisk test \
-              --config=ci \
-              --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
-              //...
+            --config=ci \
+            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+            //...
 
       - name: Slack
-        uses: 8398a7/action-slack@v3
+        uses: 8398a7/action-slack@77eaa4f1c608a7d68b38af4e3f739dcd8cba273e # v3
         with:
           status: ${{ job.status }}
           fields: all

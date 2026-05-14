@@ -15,6 +15,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	// EmptyDir is a representation of an empty directory for use in functions
+	// that represent filesystem contents as a map.
+	//
+	// Example:
+	//	testfs.WriteAllFileContents(t, dest, map[string]string{
+	//		"greeting.txt": "Hello world",
+	//		"emptydir": testfs.EmptyDir,
+	//	})
+	EmptyDir = "<empty directory>"
+)
+
 // RunfilePath returns the path to the given bazel runfile.
 func RunfilePath(t testing.TB, path string) string {
 	path, err := runfiles.Rlocation(path)
@@ -45,7 +57,21 @@ func MakeTempDir(t testing.TB) string {
 		assert.FailNow(t, "failed to create temp dir", err)
 	}
 	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil && !os.IsNotExist(err) {
+		// Use mktempdir to get a new tempdir name to move our dir to before we
+		// remove it. This prevents a race condition where something else could
+		// write a file to the directory as we're removing it, preventing the
+		// removal of the directory. If something tries and fails to write a file
+		// to a temp directory during test cleanup, we don't really care.
+		newDir, err := os.MkdirTemp(os.Getenv("TEST_TMPDIR"), "buildbuddy-test-*")
+		if err != nil {
+			assert.FailNow(t, "failed to clean up temp dir", err)
+		}
+		// Move the old directory into the new directory.
+		if err := os.Rename(tmpDir, path.Join(newDir, path.Base(tmpDir))); err != nil && !os.IsNotExist(err) {
+			assert.FailNow(t, "failed to clean up temp dir", err)
+		}
+		// Remove the new directory containing the old directory.
+		if err := os.RemoveAll(newDir); err != nil && !os.IsNotExist(err) {
 			assert.FailNow(t, "failed to clean up temp dir", err)
 		}
 	})
@@ -127,10 +153,25 @@ func MakeExecutable(t testing.TB, rootDir string, path string) {
 	require.NoError(t, err)
 }
 
+func WriteFile(t testing.TB, rootDir, path, content string) string {
+	fullPath := filepath.Join(rootDir, path)
+	err := os.MkdirAll(filepath.Dir(fullPath), 0755)
+	require.NoError(t, err)
+	err = os.WriteFile(fullPath, []byte(content), 0644)
+	require.NoError(t, err)
+	return fullPath
+}
+
 func WriteAllFileContents(t testing.TB, rootDir string, contents map[string]string) {
 	for relPath, content := range contents {
 		path := filepath.Join(rootDir, relPath)
-		if err := os.MkdirAll(filepath.Dir(path), 0777); err != nil {
+		if content == EmptyDir {
+			if err := os.MkdirAll(path, 0755); err != nil {
+				assert.FailNow(t, "failed to create empty dir", err)
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 			assert.FailNow(t, "failed to create parent dir for file", err)
 		}
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
@@ -175,9 +216,9 @@ func Exists(t testing.TB, rootDir, path string) bool {
 }
 
 // AssertExactFileContents checks that the given mapping exactly represents the
-// files in rootDir. The mapping is keyed by path relative to rootDir.
-// Empty dirs and non-regular files (e.g. symlinks) are ignored in the
-// comparison.
+// contents of rootDir. The mapping is keyed by path relative to rootDir.
+// Symlinks are ignored. Empty directories must be listed in the given map
+// using EmptyDir as the map value.
 func AssertExactFileContents(t testing.TB, rootDir string, contents map[string]string) {
 	expectedFilePaths := []string{}
 	for k := range contents {
@@ -185,16 +226,36 @@ func AssertExactFileContents(t testing.TB, rootDir string, contents map[string]s
 	}
 	actualFilePaths := []string{}
 	err := filepath.WalkDir(rootDir, func(path string, entry fs.DirEntry, err error) error {
-		require.NoError(t, err)
-		if !entry.Type().IsRegular() {
+		if !entry.Type().IsRegular() && !entry.IsDir() {
+			// Ignore symlinks and special files for now.
 			return nil
 		}
+
+		var actualContent string
+
+		if entry.IsDir() {
+			children, err := os.ReadDir(path)
+			require.NoError(t, err)
+			// Skip nonempty dirs - they don't need explicit <empty> entries
+			// since they have children.
+			if len(children) > 0 {
+				return nil
+			}
+			actualContent = EmptyDir
+		} else {
+			b, err := os.ReadFile(path)
+			require.NoError(t, err)
+			actualContent = string(b)
+		}
+
+		require.NoError(t, err)
 		relPath := strings.TrimPrefix(path, rootDir+string(os.PathSeparator))
+		// Always use forward slashes for paths.
+		relPath = strings.ReplaceAll(relPath, string(os.PathSeparator), "/")
 		actualFilePaths = append(actualFilePaths, relPath)
 		if content, ok := contents[relPath]; ok {
-			actualContent, err := os.ReadFile(path)
 			require.NoError(t, err)
-			assert.Equalf(t, content, string(actualContent), "unexpected contents in %s", relPath)
+			assert.Equalf(t, content, string(actualContent), "unexpected contents at %s", relPath)
 		}
 		return nil
 	})

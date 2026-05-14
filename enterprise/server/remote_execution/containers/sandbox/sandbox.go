@@ -10,17 +10,17 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
 const (
@@ -265,9 +265,13 @@ type Options struct {
 
 type Provider struct{}
 
-func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.ScheduledTask, _ *rnpb.RunnerState, _ string) (container.CommandContainer, error) {
+func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	network, err := platform.GetEffectiveDockerNetwork(args.Props.Network, args.Props.DockerNetwork)
+	if err != nil {
+		return nil, err
+	}
 	opts := &Options{
-		Network: props.DockerNetwork,
+		Network: network,
 	}
 	return New(opts), nil
 }
@@ -310,7 +314,7 @@ func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, wo
 
 	sandboxCmd := command.CloneVT()
 	sandboxCmd.Arguments = append([]string{sandboxExecBinary, "-f", sandboxConfigPath}, command.Arguments...)
-	result = commandutil.Run(ctx, sandboxCmd, workDir, nil /*=statsListener*/, stdio)
+	result = commandutil.Run(ctx, sandboxCmd, filepath.Join(workDir, command.GetWorkingDirectory()), nil /*=statsListener*/, stdio)
 	return result
 }
 
@@ -331,6 +335,10 @@ func (c *sandbox) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces
 	return c.runCmdInSandbox(ctx, cmd, c.WorkDir, stdio)
 }
 
+func (c *sandbox) Signal(ctx context.Context, sig syscall.Signal) error {
+	return status.UnimplementedError("not implemented")
+}
+
 func (c *sandbox) IsImageCached(ctx context.Context) (bool, error)            { return false, nil }
 func (c *sandbox) PullImage(ctx context.Context, creds oci.Credentials) error { return nil }
 func (c *sandbox) Start(ctx context.Context) error                            { return nil }
@@ -339,7 +347,4 @@ func (c *sandbox) Pause(ctx context.Context) error                            { 
 func (c *sandbox) Unpause(ctx context.Context) error                          { return nil }
 func (c *sandbox) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	return nil, nil
-}
-func (c *sandbox) State(ctx context.Context) (*rnpb.ContainerState, error) {
-	return nil, status.UnimplementedError("not implemented")
 }

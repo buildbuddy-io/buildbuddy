@@ -24,7 +24,7 @@ ts_jasmine_node_test(
     srcs = ["async_test.ts"],
     deps = [
         ":async",
-        "@npm//tslib",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -46,12 +46,16 @@ ts_library(
 ts_library(
     name = "errors",
     srcs = ["errors.ts"],
+    deps = [
+        "//proto:grpc_code_ts_proto",
+        "//proto:grpc_status_ts_proto",
+    ],
 )
 
 ts_library(
     name = "git",
     srcs = ["git.ts"],
-    deps = ["@npm//tslib"],
+    deps = ["//:node_modules/tslib"],
 )
 
 ts_jasmine_node_test(
@@ -90,10 +94,11 @@ ts_library(
     name = "proto",
     srcs = ["proto.ts"],
     deps = [
+        "//:node_modules/@types/long",
+        "//:node_modules/long",
+        "//:node_modules/protobufjs",
         "//proto:duration_ts_proto",
         "//proto:timestamp_ts_proto",
-        "@npm//@types/long",
-        "@npm//long",
     ],
 )
 
@@ -126,8 +131,18 @@ ts_library(
     name = "react",
     srcs = ["react.tsx"],
     deps = [
-        "@npm//@types/react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "react_test",
+    srcs = ["react_test.tsx"],
+    deps = [
+        ":react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -135,12 +150,12 @@ ts_library(
     name = "cache",
     srcs = ["cache.tsx"],
     deps = [
+        "//:node_modules/@types/long",
+        "//:node_modules/long",
+        "//:node_modules/tslib",
         "//proto:build_event_stream_ts_proto",
         "//proto:remote_execution_ts_proto",
         "//proto:resource_ts_proto",
-        "@npm//@types/long",
-        "@npm//long",
-        "@npm//tslib",
     ],
 )
 
@@ -149,6 +164,91 @@ ts_jasmine_node_test(
     srcs = ["cache_test.ts"],
     deps = [
         ":cache",
-        "@npm//tslib",
+        "//:node_modules/tslib",
     ],
+)
+
+ts_library(
+    name = "get_tree",
+    srcs = ["get_tree.ts"],
+    deps = [
+        "//:node_modules/tslib",
+        "//app/service:rpc_service",
+        "//app/util:async",
+        "//app/util:rpc",
+        "//proto:cache_ts_proto",
+        "//proto:remote_execution_ts_proto",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "get_tree_test",
+    srcs = ["get_tree_test.ts"],
+    deps = [
+        ":errors",
+        ":get_tree",
+        "//:node_modules/long",
+        "//:node_modules/tslib",
+        "//proto:cache_ts_proto",
+        "//proto:remote_execution_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "rpc",
+    srcs = ["rpc.ts"],
+    deps = [
+        "//app/service:rpc_service",
+        "//app/util:errors",
+        "//proto:grpc_code_ts_proto",
+        "//proto:grpc_error_details_ts_proto",
+        "//proto:grpc_status_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "remote_runner",
+    srcs = ["remote_runner.tsx"],
+    deps = [
+        "//:node_modules/tslib",
+        "//app/errors:error_service",
+        "//app/invocation:invocation_model",
+        "//app/service:rpc_service",
+        "//proto:git_ts_proto",
+        "//proto:github_ts_proto",
+        "//proto:remote_execution_ts_proto",
+        "//proto:runner_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "github",
+    srcs = ["github.tsx"],
+)
+
+ts_library(
+    name = "diff",
+    srcs = ["diff.tsx"],
+    deps = [
+        "//:node_modules/@types/diff-match-patch",
+        "//:node_modules/@types/react",
+        "//:node_modules/diff-match-patch",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "shlex",
+    srcs = ["shlex.ts"],
+)
+
+ts_jasmine_node_test(
+    name = "shlex_test",
+    srcs = ["shlex_test.ts"],
+    deps = ["//app/util:shlex"],
+)
+
+ts_library(
+    name = "file_types",
+    srcs = ["file_types.ts"],
 )

@@ -1,12 +1,13 @@
+import { ArrowDownCircle, FileCode } from "lucide-react";
 import React from "react";
-import InvocationModel from "./invocation_model";
-import rpcService, { CancelablePromise } from "../service/rpc_service";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { target } from "../../proto/target_ts_proto";
-import { ArrowDownCircle, FileCode } from "lucide-react";
-import TargetGroupCard from "./invocation_target_group_card";
-import format from "../format/format";
 import DigestComponent from "../components/digest/digest";
+import { TextLink } from "../components/link/link";
+import format from "../format/format";
+import rpcService, { CancelablePromise } from "../service/rpc_service";
+import InvocationModel from "./invocation_model";
+import TargetGroupCard from "./invocation_target_group_card";
 
 interface Props {
   model: InvocationModel;
@@ -79,12 +80,17 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
       if (!artifactListingGroup) return null;
 
       if (this.state.searchLoading) {
-        return <div className="loading" />;
+        return <div className="loading loading-slim invocation-tab-loading" />;
       }
 
       const group = this.state.searchResponse?.targetGroups[0] ?? artifactListingGroup;
       return (
-        <TargetGroupCard invocationId={this.props.model.getInvocationId()} group={group} filter={this.props.filter} />
+        <TargetGroupCard
+          invocationId={this.props.model.getInvocationId()}
+          repo={this.props.model.getRepo()}
+          group={group}
+          filter={this.props.filter}
+        />
       );
     }
 
@@ -139,14 +145,15 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                 <div className="artifact-list">
                   {target.outputs.map((output) => (
                     <div className="artifact-line">
-                      <a
+                      <TextLink
+                        plain
                         href={rpcService.getBytestreamUrl(output.uri, this.props.model.getInvocationId(), {
                           filename: output.name,
                         })}
                         className="artifact-name"
                         onClick={this.handleArtifactClicked.bind(this, output.uri, output.name)}>
                         {output.name}
-                      </a>
+                      </TextLink>
                       {output.uri?.startsWith("bytestream://") && (
                         <a
                           className="artifact-view"

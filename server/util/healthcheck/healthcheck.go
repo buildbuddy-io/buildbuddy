@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/pprof"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -18,17 +19,20 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/buildbuddy-io/buildbuddy/server/util/watchdog"
+	"github.com/mattn/go-isatty"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
-	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
+	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 var (
 	maxShutdownDuration           = flag.Duration("max_shutdown_duration", 25*time.Second, "Time to wait for shutdown")
-	shutdownLameduckDuration      = flag.Duration("shutdown_lameduck_duration", 0, "If set, the server will be marked unready but not run shutdown functions until this period passes.")
+	shutdownLameduckDuration      = flag.Duration("shutdown_lameduck_duration", 0, "If set, the app will be marked unready but not run shutdown functions until this period passes.")
 	logGoroutineProfileOnShutdown = flag.Bool("log_goroutine_profile_on_shutdown", false, "Whether to log all goroutine stack traces on shutdown.")
 	reportNotReady                = flag.Bool("report_not_ready", false, "If set to true, the app will always report as being unready.")
+	maxUnreadyDuration            = flag.Duration("max_unready_duration", 0, "If > 0, the app will terminate if it does not become ready after this long")
 )
 
 const (
@@ -53,6 +57,7 @@ type HealthChecker struct {
 	shutdownFuncs []interfaces.CheckerFunc
 	readyToServe  bool
 	shuttingDown  bool
+	watchdogTimer *watchdog.Timer
 }
 
 func NewHealthChecker(serverType string) *HealthChecker {
@@ -65,24 +70,27 @@ func NewHealthChecker(serverType string) *HealthChecker {
 		checkersMu:    sync.Mutex{},
 		checkers:      make(map[string]interfaces.Checker, 0),
 		lastStatus:    make([]*serviceStatus, 0),
+		watchdogTimer: watchdog.New(*maxUnreadyDuration),
 	}
-	sigTerm := make(chan os.Signal, 1)
-	go func() {
-		<-sigTerm
-		hc.Shutdown()
-	}()
-	signal.Notify(sigTerm, os.Interrupt, syscall.SIGTERM)
+
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+	go hc.handleSignals(signalChan)
+
 	go hc.handleShutdownFuncs()
 	go func() {
+		ticker := time.NewTicker(healthCheckPeriod)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-hc.quit:
 				return
-			case <-time.After(healthCheckPeriod):
+			case <-ticker.C:
 				hc.runHealthChecks(context.Background())
 			}
 		}
 	}()
+	statusz.AddSection("watchdog", "Watchdog Timer", hc.watchdogTimer)
 	statusz.AddSection("healthcheck", "Backend service health checks", &hc)
 	return &hc
 }
@@ -90,16 +98,52 @@ func NewHealthChecker(serverType string) *HealthChecker {
 func (h *HealthChecker) Statusz(ctx context.Context) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	buf := `<table style="width: 150px;"><tr><th>Name</th><th>Status</th></tr>`
+	var buf strings.Builder
+	buf.WriteString(`<table style="width: 150px;"><tr><th>Name</th><th>Status</th></tr>`)
 	for _, serviceStatus := range h.lastStatus {
 		statusString := "OK"
 		if serviceStatus.Error != nil {
 			statusString = serviceStatus.Error.Error()
 		}
-		buf += fmt.Sprintf("<tr><td>%s</td><td>%s</td></tr>", serviceStatus.Name, statusString)
+		buf.WriteString(fmt.Sprintf("<tr><td>%s</td><td>%s</td></tr>", serviceStatus.Name, statusString))
 	}
-	buf += "</table>"
-	return buf
+	buf.WriteString("</table>")
+	return buf.String()
+}
+
+func (h *HealthChecker) handleSignals(signalChan <-chan os.Signal) {
+	// When running in a terminal, the ^C character echoed back to the user
+	// messes up the log output a bit. So, print a newline every time we get
+	// a signal to make the output a little cleaner.
+	isTTY := isatty.IsTerminal(uintptr(os.Stderr.Fd()))
+	sig := <-signalChan
+	if isTTY {
+		fmt.Println()
+	}
+	log.Infof("Caught %s signal; starting graceful shutdown (hard-stopping in %s)", sig, *maxShutdownDuration)
+	hardStopTime := time.Now().Add(*maxShutdownDuration)
+	h.Shutdown()
+	numSignalsReceived := 1
+	for sig := range signalChan {
+		numSignalsReceived++
+		// If we're running in a TTY and we keep getting SIGINT/SIGTERM, the
+		// user is probably mashing Ctrl+C and really wants to kill the server.
+		// After 3 signals, exit immediately. Before then, report the current
+		// status so the user knows we got their request but are just still
+		// shutting down.
+		if isTTY {
+			fmt.Println()
+			if numSignalsReceived >= 3 {
+				log.Fatalf("Caught %s signal; third shutdown request; exiting immediately.", sig)
+			}
+		}
+		d := time.Until(hardStopTime)
+		if d > 0 {
+			log.Infof("Caught %s signal; still shutting down; will hard-stop in %s", sig, d)
+		} else {
+			log.Warningf("Caught %s signal; still waiting for server handlers to finish after hard-stop %s ago.", sig, -d)
+		}
+	}
 }
 
 func (h *HealthChecker) handleShutdownFuncs() {
@@ -110,9 +154,6 @@ func (h *HealthChecker) handleShutdownFuncs() {
 	h.shuttingDown = true
 	h.mu.Unlock()
 
-	// We use fmt here and below because this code is called from the
-	// signal handler and log.Printf can be a little wonky.
-	fmt.Printf("Caught interrupt signal; shutting down...\n")
 	ctx, cancel := context.WithTimeout(context.Background(), *maxShutdownDuration)
 	defer cancel()
 
@@ -127,17 +168,17 @@ func (h *HealthChecker) handleShutdownFuncs() {
 		f := fn
 		eg.Go(func() error {
 			if err := f(egCtx); err != nil {
-				fmt.Printf("Error gracefully shutting down: %s\n", err)
+				log.CtxErrorf(ctx, "Error gracefully shutting down: %s", err)
 			}
 			return nil
 		})
 	}
 	eg.Wait()
 	if err := ctx.Err(); err != nil {
-		fmt.Printf("MaxShutdownDuration exceeded. Non-graceful exit.\n")
+		log.CtxErrorf(ctx, "MaxShutdownDuration exceeded. Non-graceful exit.")
 	}
 	time.Sleep(10 * time.Millisecond)
-	fmt.Printf("Server %q stopped.\n", h.serverType)
+	log.Infof("Server %q stopped.", h.serverType)
 	close(h.done)
 }
 
@@ -223,6 +264,16 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 		h.readyToServe = newReadinessState
 		h.lastStatus = statusData
 	}
+	if h.readyToServe {
+		h.watchdogTimer.Reset()
+	} else {
+		if !h.watchdogTimer.Live() {
+			log.Warningf("Watchdog timer expired; triggering shutdown!")
+			go func() {
+				h.Shutdown()
+			}()
+		}
+	}
 	h.mu.Unlock()
 
 	if newReadinessState != previousReadinessState {
@@ -297,6 +348,10 @@ func (h *HealthChecker) Check(ctx context.Context, req *hlpb.HealthCheckRequest)
 		rsp.Status = hlpb.HealthCheckResponse_UNKNOWN
 	}
 	return rsp, nil
+}
+
+func (h *HealthChecker) List(ctx context.Context, req *hlpb.HealthListRequest) (*hlpb.HealthListResponse, error) {
+	return nil, status.UnimplementedError("List not implemented")
 }
 
 func (h *HealthChecker) Watch(req *hlpb.HealthCheckRequest, stream hlpb.Health_WatchServer) error {

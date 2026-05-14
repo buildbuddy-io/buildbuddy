@@ -1,23 +1,34 @@
 const fs = require("fs");
 
 // Keep these in sync with /tsconfig.json
+// Keep sorted
 const configDirs = [
-  "bazel-out/k8-opt/bin",
+  "bazel-out/darwin-fastbuild/bin",
+  "bazel-out/darwin-opt/bin",
+  "bazel-out/darwin_arm64-fastbuild/bin",
+  "bazel-out/darwin_arm64-opt/bin",
+  "bazel-out/darwin_x86_64-fastbuild/bin",
+  "bazel-out/darwin_x86_64-opt/bin",
   "bazel-out/k8-fastbuild/bin",
+  "bazel-out/k8-opt/bin",
+  "bazel-out/linux_arm64_musl-fastbuild/bin",
+  "bazel-out/linux_arm64_musl-opt/bin",
   "bazel-out/linux_x86_64-fastbuild/bin",
   "bazel-out/linux_x86_64-opt/bin",
-  "bazel-out/darwin-opt/bin",
-  "bazel-out/darwin-fastbuild/bin",
-  "bazel-out/darwin_x86_64-opt/bin",
-  "bazel-out/darwin_x86_64-fastbuild/bin",
-  "bazel-out/darwin_arm64-opt/bin",
-  "bazel-out/darwin_arm64-fastbuild/bin",
-  "bazel-out/macos_x86_64-opt/bin",
-  "bazel-out/macos_x86_64-fastbuild/bin",
-  "bazel-out/macos_arm64-opt/bin",
-  "bazel-out/macos_arm64-fastbuild/bin",
-  "bazel-out/local_config_platform-opt/bin",
+  "bazel-out/linux_x86_64_musl-fastbuild/bin",
+  "bazel-out/linux_x86_64_musl-opt/bin",
   "bazel-out/local_config_platform-fastbuild/bin",
+  "bazel-out/local_config_platform-opt/bin",
+  "bazel-out/macos_arm64-fastbuild/bin",
+  "bazel-out/macos_arm64-opt/bin",
+  "bazel-out/macos_x86_64-fastbuild/bin",
+  "bazel-out/macos_x86_64-opt/bin",
+  "bazel-out/platform_linux-fastbuild/bin",
+  "bazel-out/platform_linux-opt/bin",
+  "bazel-out/platform_linux_arm64-fastbuild/bin",
+  "bazel-out/platform_linux_arm64-opt/bin",
+  "bazel-out/platform_linux_x86_64-fastbuild/bin",
+  "bazel-out/platform_linux_x86_64-opt/bin",
 ];
 
 /**
@@ -64,6 +75,29 @@ const bazelBinPlugin = function (context, options) {
   };
 };
 
+// Guard analytics globals so route transitions don't crash when analytics scripts
+// are blocked or unavailable (for example, ad blockers in local/dev environments).
+const analyticsShimPlugin = function () {
+  return {
+    name: "docusaurus-analytics-shim-plugin",
+    injectHtmlTags() {
+      return {
+        headTags: [
+          {
+            tagName: "script",
+            innerHTML: `
+              window.ga = window.ga || function() { (window.ga.q = window.ga.q || []).push(arguments); };
+              window.ga.l = window.ga.l || +new Date();
+              window.dataLayer = window.dataLayer || [];
+              window.gtag = window.gtag || function() { window.dataLayer.push(arguments); };
+            `,
+          },
+        ],
+      };
+    },
+  };
+};
+
 import { themes as prismThemes } from "prism-react-renderer";
 
 module.exports = {
@@ -75,6 +109,7 @@ module.exports = {
   favicon: "img/favicon_black.svg",
   organizationName: "buildbuddy-io",
   projectName: "buildbuddy",
+  onBrokenAnchors: "throw",
   themeConfig: {
     metadata: [
       {
@@ -180,9 +215,8 @@ module.exports = {
           position: "left",
           type: "dropdown",
           items: [
-            { label: "Blog", href: "/blog" },
-            { label: "GitHub", href: "https://github.com/buildbuddy-io/buildbuddy" },
-            { label: "Community", href: "http://community.buildbuddy.io/" },
+            { label: "GitHub", to: "https://github.com/buildbuddy-io/buildbuddy" },
+            { label: "Community", to: "http://community.buildbuddy.io/" },
             { label: "Security", href: "/security" },
             { label: "Plugins", href: "/plugins" },
             { label: "Team", href: "/team" },
@@ -202,25 +236,31 @@ module.exports = {
           position: "left",
         },
         {
+          label: "Blog",
+          href: "/blog/",
+          target: "_self",
+          position: "left",
+        },
+        {
+          label: "Changelog",
+          href: "/changelog/",
+          target: "_self",
+          position: "left",
+        },
+        {
           href: "/pricing",
           target: "_self",
           label: "Pricing",
           position: "left",
         },
         {
-          href: "/contact",
-          target: "_self",
-          label: "Contact",
-          position: "right",
-        },
-        {
-          href: "https://app.buildbuddy.io/",
+          to: "https://app.buildbuddy.io/",
           target: "_self",
           label: "Login",
           position: "right",
         },
         {
-          href: "https://app.buildbuddy.io/",
+          to: "https://app.buildbuddy.io/",
           target: "_self",
           label: "Sign up",
           position: "right",
@@ -268,12 +308,12 @@ module.exports = {
             },
             {
               label: "Get Started",
-              href: "https://app.buildbuddy.io",
+              to: "https://app.buildbuddy.io",
               target: "_self",
             },
             {
               label: "Login",
-              href: "https://app.buildbuddy.io/",
+              to: "https://app.buildbuddy.io/",
               target: "_self",
             },
           ],
@@ -289,11 +329,6 @@ module.exports = {
             {
               label: "Pricing",
               href: "/pricing",
-              target: "_self",
-            },
-            {
-              label: "Blog",
-              href: "/blog/",
               target: "_self",
             },
             {
@@ -333,7 +368,7 @@ module.exports = {
             },
             {
               label: "Report an Issue",
-              href: "https://github.com/buildbuddy-io/buildbuddy/issues/new",
+              to: "https://github.com/buildbuddy-io/buildbuddy/issues/new",
             },
             {
               label: "Privacy Policy",
@@ -352,19 +387,19 @@ module.exports = {
           items: [
             {
               label: "Slack",
-              href: "http://community.buildbuddy.io/",
+              to: "http://community.buildbuddy.io/",
             },
             {
               label: "Twitter",
-              href: "https://twitter.com/buildbuddy_io",
+              to: "https://twitter.com/buildbuddy",
             },
             {
               label: "LinkedIn",
-              href: "http://linkedin.com/company/buildbuddy",
+              to: "http://linkedin.com/company/buildbuddy",
             },
             {
               label: "GitHub",
-              href: "https://github.com/buildbuddy-io",
+              to: "https://github.com/buildbuddy-io",
             },
           ],
         },
@@ -389,6 +424,7 @@ module.exports = {
           postsPerPage: 12,
           showReadingTime: true,
           blogSidebarCount: 10,
+          authorsMapPath: "../blog/authors.yaml",
           editUrl: "https://github.com/buildbuddy-io/buildbuddy/edit/master/website/",
           blogPostComponent: "../theme/BlogPostPage",
           blogListComponent: "../theme/BlogListPage",
@@ -426,6 +462,22 @@ module.exports = {
       },
     ],
     [
+      "@docusaurus/plugin-content-blog",
+      {
+        id: "changelog",
+        routeBasePath: "changelog",
+        path: "changelog",
+        postsPerPage: 25,
+        showReadingTime: false,
+        blogSidebarCount: 0,
+        authorsMapPath: "../blog/authors.yaml",
+        blogListComponent: "../theme/ChangelogListPage",
+        blogTagsPostsComponent: "../theme/FilteredChangelogListPage",
+        blogPostComponent: "../theme/ChangelogPostPage",
+        editUrl: "https://github.com/buildbuddy-io/buildbuddy/edit/master/website/changelog/",
+      },
+    ],
+    [
       "@docusaurus/plugin-client-redirects",
       {
         redirects: [
@@ -440,6 +492,7 @@ module.exports = {
         ],
       },
     ],
+    analyticsShimPlugin,
     bazelBinPlugin,
   ],
 };

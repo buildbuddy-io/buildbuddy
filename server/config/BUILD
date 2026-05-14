@@ -10,7 +10,6 @@ go_library(
         "//server/util/flag",
         "//server/util/flagutil",
         "//server/util/flagutil/common",
-        "//server/util/flagutil/types",
         "//server/util/flagutil/yaml",
         "//server/util/log",
         "//server/util/status",

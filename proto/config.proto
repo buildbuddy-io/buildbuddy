@@ -6,6 +6,11 @@ message FrontendConfig {
   // The version of this buildbuddy instance.
   string version = 1;
 
+  // The hash of the static content being served to the client.  This is
+  // sometimes more specific than version (if, for example, we need to
+  // cherrypick a point fix).
+  string app_bundle_hash = 54;
+
   // The issuers configured by the backend.
   repeated string configured_issuers = 2;
 
@@ -153,6 +158,61 @@ message FrontendConfig {
 
   // Enables reader/writer roles in the UI.
   bool reader_writer_roles_enabled = 51;
+
+  // Whether to stream invocation logs.
+  bool invocation_log_streaming_enabled = 52;
+
+  // Enables fancy features for seeing recent flakes by target.
+  bool target_flakes_ui_enabled = 53;
+
+  // Enables v2 of the code editor that stores state on server rather than
+  // locally.
+  bool code_editor_v2_enabled = 55;
+
+  // Whether remote bazel buttons are enabled in the UI.
+  bool bazel_buttons_enabled = 56;
+
+  // The Content Security Policy nonce to use for inline <style> elements.
+  string csp_nonce = 57;
+
+  // Whether the community links is enabled in the UI.
+  bool community_links_enabled = 58;
+
+  // If set, the login page will default to using this slug.
+  string default_login_slug = 59;
+
+  // IF set, the BuildBuddy logo will flip on hover.
+  bool flip_logo_on_hover = 60;
+
+  // Whether the read-only BuildBuddy GitHub app is enabled.
+  bool read_only_github_app_enabled = 61;
+
+  bool targets_page_enabled = 62;
+
+  bool user_lists_ui_enabled = 63;
+
+  // Whether action result origin metadata is recorded and can be displayed.
+  bool action_result_origin_enabled = 64;
+
+  // Whether dark mode UI is enabled.
+  bool dark_mode_enabled = 65;
+
+  // Whether API key values can be retrieved after they are created.
+  // If false, API key metadata should still be accessible, but values should
+  // be omitted from read APIs.
+  // If this field is absent, clients should treat it as true.
+  optional bool api_key_value_readback_enabled = 66;
+
+  // Whether organization membership requests via the /join flow are enabled.
+  // If this field is absent, clients should treat membership requests as
+  // enabled.
+  optional bool group_membership_requests_enabled = 67;
+
+  // Whether usage alerts are enabled.
+  bool usage_alerts_enabled = 68;
+
+  // Maximum timing profile size that the UI will load.
+  int64 timing_profile_max_size_bytes = 69;
 }
 
 message Region {
@@ -162,4 +222,7 @@ message Region {
   // The http endpoint of the regional server, including https://.
   // Ex: "https://app.buildbuddy.io"
   string server = 2;
+
+  // The subdomains contained by this region.
+  string subdomains = 3;
 }

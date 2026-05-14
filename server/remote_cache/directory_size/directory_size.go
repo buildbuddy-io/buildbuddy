@@ -69,14 +69,20 @@ func (dsc *directorySizeCounter) Add(dir *repb.Directory) error {
 	if err != nil {
 		return err
 	}
+
+	dsc.AddDirWithDigest(dirDigest, dir)
+	return nil
+}
+
+func (dsc *directorySizeCounter) AddDirWithDigest(dirDigest *repb.Digest, dir *repb.Directory) {
 	digestString := dirDigest.GetHash()
 	if _, ok := dsc.totalSize[digestString]; ok {
 		// We already finished computing this directory's size.
-		return nil
+		return
 	}
 	if _, ok := dsc.pendingSize[digestString]; ok {
 		// We're already in the process of computing this directory's size.
-		return nil
+		return
 	}
 
 	// We haven't seen this digest before, so start tracking it.
@@ -90,13 +96,18 @@ func (dsc *directorySizeCounter) Add(dir *repb.Directory) error {
 	// If this directory has no subdirectories, we're already done.
 	if len(dir.GetDirectories()) == 0 {
 		dsc.finish(digestString)
-		return nil
+		return
 	}
 
 	dsc.pendingChildren[digestString] = make(map[string]struct{})
 
 	for _, d := range dir.GetDirectories() {
 		dsc.childCount[digestString] = dsc.childCount[digestString] + 1
+		// No extra size needs to be counted for empty directories.
+		if digest.IsEmptyHash(d.GetDigest(), dsc.digestFunction) {
+			continue
+		}
+
 		subdirDigest := d.GetDigest().GetHash()
 		// If we've already found the child directory's size, count it
 		// and move on.
@@ -120,7 +131,10 @@ func (dsc *directorySizeCounter) Add(dir *repb.Directory) error {
 	if len(dsc.pendingChildren[digestString]) == 0 {
 		dsc.finish(digestString)
 	}
-	return nil
+}
+
+func (dsc *directorySizeCounter) GetChildCount(digest string) int64 {
+	return dsc.childCount[digest]
 }
 
 // Completes the computation of a subtree's size and recursively computes the

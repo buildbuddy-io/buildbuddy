@@ -23,13 +23,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/encoding/prototext"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 )
 
 var (
-	enableTargetTracking                   = flag.Bool("app.enable_target_tracking", false, "Cloud-Only")
+	enableTargetTracking                   = flag.Bool("app.enable_target_tracking", false, "If enabled, store test target statuses in the database. Note: it's highly recommended to also configure an OLAP database when using this flag.")
 	writeTestTargetStatusesToOLAPDBEnabled = flag.Bool("app.enable_write_test_target_statuses_to_olap_db", false, "If enabled, test target statuses will be flushed to OLAP DB")
 )
 
@@ -51,12 +50,14 @@ const (
 
 type target struct {
 	label          string
+	aspect         string
 	ruleType       string
 	firstStartTime time.Time
 	totalDuration  time.Duration
 	state          targetState
 	id             int64
 	overallStatus  build_event_stream.TestStatus
+	cached         bool
 	targetType     cmpb.TargetType
 	testSize       build_event_stream.TestSize
 	buildSuccess   bool
@@ -67,10 +68,11 @@ func md5Int64(text string) int64 {
 	return int64(binary.BigEndian.Uint64(hash[:8]))
 }
 
-func newTarget(label string) *target {
+func newTarget(label string, aspect string) *target {
 	return &target{
-		label: label,
-		state: targetStateExpanded,
+		label:  label,
+		aspect: aspect,
+		state:  targetStateExpanded,
 	}
 }
 
@@ -97,6 +99,7 @@ func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 		}
 		t.state = targetStateCompleted
 	case *build_event_stream.BuildEvent_TestResult:
+		t.cached = p.TestResult.GetCachedLocally() || p.TestResult.GetExecutionInfo().GetCachedRemotely()
 		t.state = targetStateResult
 	case *build_event_stream.BuildEvent_TestSummary:
 		ts := p.TestSummary
@@ -111,9 +114,30 @@ func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 	}
 }
 
-func protoID(beid *build_event_stream.BuildEventId) string {
-	out, _ := (&prototext.MarshalOptions{Multiline: false}).Marshal(beid)
-	return string(out)
+const targetIdSeparator string = "|"
+
+func getTargetIdWithAspectFromEventId(beid *build_event_stream.BuildEventId) string {
+	switch beid.Id.(type) {
+	case *build_event_stream.BuildEventId_TargetConfigured:
+		if aspect := beid.GetTargetConfigured().GetAspect(); aspect != "" {
+			return beid.GetTargetConfigured().GetLabel() + targetIdSeparator + aspect
+		} else {
+			return beid.GetTargetConfigured().GetLabel()
+		}
+	case *build_event_stream.BuildEventId_TargetCompleted:
+		if aspect := beid.GetTargetCompleted().GetAspect(); aspect != "" {
+			return beid.GetTargetCompleted().GetLabel() + targetIdSeparator + aspect
+		} else {
+			return beid.GetTargetCompleted().GetLabel()
+		}
+	case *build_event_stream.BuildEventId_TestResult:
+		// Aspects can't fire TestResult events.
+		return beid.GetTestResult().GetLabel()
+	case *build_event_stream.BuildEventId_TestSummary:
+		// Aspects can't fire TestSummary events.
+		return beid.GetTestSummary().GetLabel()
+	}
+	return ""
 }
 
 func targetTypeFromRuleType(ruleType string) cmpb.TargetType {
@@ -138,7 +162,6 @@ type TargetTracker struct {
 	env                   environment.Env
 	buildEventAccumulator accumulator.Accumulator
 	targets               map[string]*target
-	openClosures          map[string]targetClosure
 	errGroup              *errgroup.Group
 }
 
@@ -147,24 +170,30 @@ func NewTargetTracker(env environment.Env, buildEventAccumulator accumulator.Acc
 		env:                   env,
 		buildEventAccumulator: buildEventAccumulator,
 		targets:               make(map[string]*target, 0),
-		openClosures:          make(map[string]targetClosure, 0),
 	}
 }
 
 func (t *TargetTracker) handleEvent(event *build_event_stream.BuildEvent) {
-	id := protoID(event.GetId())
-	openClosure, ok := t.openClosures[id]
-	if !ok {
+	id := getTargetIdWithAspectFromEventId(event.GetId())
+	if id == "" {
 		return
 	}
-	delete(t.openClosures, id)
-	openClosure(event)
-	for _, child := range event.GetChildren() {
-		t.openClosures[protoID(child)] = openClosure
+	target, ok := t.targets[id]
+	if !ok {
+		// TODO(jdhollen): bazel doesn't include a separate targetConfigured
+		// event id for each aspect in the expanded event, so it's possible
+		// to receive targetConfigured and targetCompleted events for
+		// previously-unannounced target+aspect pairs.  If we ever want to
+		// track aspects, we'll need to add them to t.targets here.
+		return
 	}
+	target.updateFromEvent(event)
 }
 
 func isTest(t *target) bool {
+	if t.aspect != "" {
+		return false
+	}
 	if t.testSize != build_event_stream.TestSize_UNKNOWN {
 		return true
 	}
@@ -208,6 +237,9 @@ func (t *TargetTracker) writeTestTargets(ctx context.Context, permissions *perms
 	newTargets := make([]*tables.Target, 0)
 	updatedTargets := make([]*tables.Target, 0)
 	for label, target := range t.targets {
+		if target.aspect != "" {
+			continue
+		}
 		if target.targetType != cmpb.TargetType_TEST {
 			continue
 		}
@@ -266,6 +298,7 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context, permissions
 			TargetType:     int32(target.targetType),
 			TestSize:       int32(target.testSize),
 			Status:         int32(target.overallStatus),
+			Cached:         target.cached,
 			StartTimeUsec:  target.firstStartTime.UnixMicro(),
 			DurationUsec:   target.totalDuration.Microseconds(),
 		})
@@ -336,6 +369,7 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 			TargetType:     int32(target.targetType),
 			TestSize:       int32(target.testSize),
 			Status:         int32(target.overallStatus),
+			Cached:         target.cached,
 			StartTimeUsec:  testStartTimeUsec,
 			DurationUsec:   target.totalDuration.Microseconds(),
 			BranchName:     t.buildEventAccumulator.Invocation().GetBranchName(),
@@ -364,7 +398,7 @@ func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_e
 	case *build_event_stream.BuildEvent_Configured:
 		t.handleEvent(event)
 	case *build_event_stream.BuildEvent_WorkspaceStatus:
-		t.handleWorkspaceStatusEvent(ctx, event)
+		t.handleWorkspaceStatusEvent(ctx)
 	case *build_event_stream.BuildEvent_Completed:
 		t.handleEvent(event)
 	case *build_event_stream.BuildEvent_TestResult:
@@ -376,8 +410,7 @@ func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_e
 	}
 
 	if event.GetLastMessage() {
-		// Handle last message
-		t.handleLastEvent(ctx, event)
+		t.handleLastEvent(ctx)
 	}
 }
 
@@ -387,13 +420,17 @@ func (t *TargetTracker) handleExpandedEvent(event *build_event_stream.BuildEvent
 	// and each target will "listen" for followup events on the specified ID.
 	for _, child := range event.GetChildren() {
 		label := child.GetTargetConfigured().GetLabel()
-		childTarget := newTarget(label)
-		t.targets[label] = childTarget
-		t.openClosures[protoID(child)] = childTarget.updateFromEvent
+		aspect := child.GetTargetConfigured().GetAspect()
+		if label == "" {
+			continue
+		}
+		id := getTargetIdWithAspectFromEventId(child)
+		childTarget := newTarget(label, aspect)
+		t.targets[id] = childTarget
 	}
 }
 
-func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context) {
 	ctx = log.EnrichContext(ctx, log.InvocationIDKey, t.invocationID())
 	if !t.testTargetsInAtLeastState(targetStateConfigured) {
 		// This should not happen, but it seems it can happen with certain targets.
@@ -424,7 +461,7 @@ func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context, event *b
 	t.errGroup.Go(func() error { return t.writeTestTargets(gctx, permissions) })
 }
 
-func (t *TargetTracker) handleLastEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+func (t *TargetTracker) handleLastEvent(ctx context.Context) {
 	ctx = log.EnrichContext(ctx, log.InvocationIDKey, t.invocationID())
 	if !isTestCommand(t.buildEventAccumulator.Invocation().GetCommand()) {
 		log.Debugf("Not tracking targets statuses for %q because it's not a test", t.invocationID())
@@ -495,16 +532,13 @@ func updateTargets(ctx context.Context, env environment.Env, targets []*tables.T
 		return status.FailedPreconditionError("database not configured")
 	}
 	for _, t := range targets {
-		// TODO(zoey): Could make this one query
-		var existing tables.Target
-		if err := env.GetDBHandle().GORM(ctx, "target_tracker_get_target").Where(
-			"target_id = ?", t.TargetID).First(&existing).Error; err != nil {
-			return err
+		result := env.GetDBHandle().GORM(ctx, "target_tracker_update_target").Where(
+			"target_id = ?", t.TargetID).Updates(t)
+		if result.Error != nil {
+			return result.Error
 		}
-		err := env.GetDBHandle().GORM(ctx, "target_tracker_update_target").Model(&existing).Where(
-			"target_id = ?", t.TargetID).Updates(t).Error
-		if err != nil {
-			return err
+		if result.RowsAffected == 0 {
+			return status.NotFoundErrorf("Failed to update target, no target exists with target_id %d", t.TargetID)
 		}
 	}
 	return nil
@@ -560,18 +594,19 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 		valueArgs := []interface{}{}
 		for _, t := range chunk {
 			nowUsec := time.Now().UnixMicro()
-			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?)")
+			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 			valueArgs = append(valueArgs, t.TargetID)
 			valueArgs = append(valueArgs, t.InvocationUUID)
 			valueArgs = append(valueArgs, t.TargetType)
 			valueArgs = append(valueArgs, t.TestSize)
 			valueArgs = append(valueArgs, t.Status)
+			valueArgs = append(valueArgs, t.Cached)
 			valueArgs = append(valueArgs, t.StartTimeUsec)
 			valueArgs = append(valueArgs, t.DurationUsec)
 			valueArgs = append(valueArgs, nowUsec)
 			valueArgs = append(valueArgs, nowUsec)
 		}
-		stmt := fmt.Sprintf(`INSERT INTO "TargetStatuses" (target_id, invocation_uuid, target_type, test_size, status, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s`, strings.Join(valueStrings, ","))
+		stmt := fmt.Sprintf(`INSERT INTO "TargetStatuses" (target_id, invocation_uuid, target_type, test_size, status, cached, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s`, strings.Join(valueStrings, ","))
 		err := env.GetDBHandle().NewQuery(ctx, "target_tracker_insert_target_statuses").Raw(stmt, valueArgs...).Exec().Error
 		if err != nil {
 			return err

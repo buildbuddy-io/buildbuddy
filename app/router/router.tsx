@@ -1,10 +1,10 @@
+import { capability } from "../../proto/capability_ts_proto";
+import { user as user_proto } from "../../proto/user_ts_proto";
 import { User } from "../auth/user";
 import capabilities from "../capabilities/capabilities";
-import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 import format from "../format/format";
 import rpc_service from "../service/rpc_service";
-import { user as user_proto } from "../../proto/user_ts_proto";
-import { grp } from "../../proto/group_ts_proto";
+import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 
 import {
   END_DATE_PARAM_NAME,
@@ -56,6 +56,9 @@ class Router {
     shortcuts.registerSequence([KeyCombo.g, KeyCombo.g], () => {
       this.navigateToSettings();
     });
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.s], () => {
+      this.navigateToTargets();
+    });
 
     this.redirectIfNecessary();
   }
@@ -82,7 +85,8 @@ class Router {
       this.user.selectedGroupAccess != user_proto.SelectedGroup.Access.ALLOWED &&
       // A user may have access to an invocation w/o having access to group.
       !path.startsWith(Path.invocationPath) &&
-      !path.startsWith(Path.joinOrgPath) &&
+      !path.startsWith(Path.profilePath) &&
+      !(capabilities.config.groupMembershipRequestsEnabled && path.startsWith(Path.joinOrgPath)) &&
       !path.startsWith(Path.orgAccessDeniedPath)
     ) {
       const params = new URLSearchParams({
@@ -227,6 +231,10 @@ class Router {
     this.navigateTo(Path.settingsPath);
   }
 
+  navigateToTargets() {
+    this.navigateTo(Path.targetsPath);
+  }
+
   navigateToTrends() {
     this.navigateTo(Path.trendsPath);
   }
@@ -245,6 +253,14 @@ class Router {
 
   navigateToInvocation(invocationId: string) {
     this.navigateTo(Path.invocationPath + invocationId);
+  }
+
+  navigateToUserList(userListID: string) {
+    this.navigateTo(Path.settingsOrgUserListsPath + "/" + userListID);
+  }
+
+  navigateToUserLists() {
+    this.navigateTo(Path.settingsOrgUserListsPath);
   }
 
   getInvocationUrl(invocationId: string) {
@@ -332,6 +348,43 @@ class Router {
     return { a, b };
   }
 
+  getActionDetailsForCompare(path: string) {
+    const idsComponent = this.getLastPathComponent(path, Path.compareActionsPath);
+    if (!idsComponent) {
+      return null;
+    }
+    // Format: invocationA:actionA...invocationB:actionB
+    // Action digests can contain slashes, so we need to be careful with splitting
+    const [left, right] = idsComponent.split("...");
+    if (!left || !right) {
+      return null;
+    }
+
+    // Find the first colon to separate invocation ID from action digest
+    const colonIndexA = left.indexOf(":");
+    const colonIndexB = right.indexOf(":");
+
+    if (colonIndexA === -1 || colonIndexB === -1) {
+      return null;
+    }
+
+    const invocationA = left.substring(0, colonIndexA);
+    const actionA = left.substring(colonIndexA + 1);
+    const invocationB = right.substring(0, colonIndexB);
+    const actionB = right.substring(colonIndexB + 1);
+
+    if (!invocationA || !actionA || !invocationB || !actionB) {
+      return null;
+    }
+
+    return {
+      invocationA,
+      actionA: decodeURIComponent(actionA),
+      invocationB,
+      actionB: decodeURIComponent(actionB),
+    };
+  }
+
   getHistoryUser(path: string) {
     return this.getLastPathComponent(path, Path.userHistoryPath);
   }
@@ -380,13 +433,16 @@ class Router {
     return capabilities.usage && Boolean(user?.canCall("getUsage"));
   }
 
-  canAccessWorkflowsPage(user?: User) {
-    const workflowsAdmin = capabilities.workflows && Boolean(user?.canCall("createWorkflow"));
-    const workflowsUser =
-      capabilities.workflows &&
-      capabilities.config.workflowHistoryEnabled &&
-      Boolean(user?.canCall("getWorkflowHistory"));
-    return workflowsAdmin || workflowsUser;
+  canAccessUsageAlertingPage(user?: User) {
+    return (
+      this.canAccessUsagePage(user) &&
+      capabilities.config.usageAlertsEnabled &&
+      Boolean(user?.canCall("getUsageAlertingRules"))
+    );
+  }
+
+  canAccessWorkflowsPage() {
+    return capabilities.config.workflowsEnabled;
   }
 
   canAccessOrgDetailsPage(user?: User) {
@@ -402,7 +458,7 @@ class Router {
       return false;
     }
 
-    if (user?.selectedGroup.role == grp.Group.Role.ADMIN_ROLE) {
+    if (user?.selectedGroup.capabilities.includes(capability.Capability.ORG_ADMIN)) {
       return true;
     }
 
@@ -457,10 +513,13 @@ class Router {
    * current page.
    */
   rerouteIfNecessary(user?: User) {
-    const fallbackPath = this.getFallbackPath(user);
-    if (fallbackPath === null) return;
+    const fallback = this.getFallback(user);
+    if (fallback === null) return;
 
-    const newUrl = getModifiedUrl({ path: fallbackPath });
+    const newUrl = getModifiedUrl({
+      path: fallback.pathname,
+      query: Object.fromEntries(fallback.searchParams.entries()),
+    });
     window.history.replaceState({}, "", newUrl);
   }
 
@@ -470,40 +529,46 @@ class Router {
     this.rerouteIfNecessary(user);
   }
 
-  private getFallbackPath(user?: User): string | null {
+  private getFallback(user?: User): URL | null {
     // Require the user to create an org if they are logged in but not part of
-    // an org.
+    // an org. Set the return_url param so that they are redirected back to the
+    // desired URL once they've created an org.
     if (user && !user.groups?.length) {
-      return Path.createOrgPath;
+      const url = new URL(Path.createOrgPath, window.location.href);
+      url.search = new URLSearchParams({ return_url: originRelativeHref() }).toString();
+      return url;
     }
 
     const newUrl = this.checkGroupAccess();
     if (newUrl) {
-      return newUrl;
+      return new URL(newUrl, window.location.href);
     }
 
     const path = window.location.pathname;
     if (path === Path.orgAccessDeniedPath) {
-      return Path.home;
+      return new URL(Path.home, window.location.href);
     }
     if (path === Path.executorsPath && !this.canAccessExecutorsPage(user)) {
-      return Path.home;
+      return new URL(Path.home, window.location.href);
     }
-    if (path === Path.workflowsPath && !this.canAccessWorkflowsPage(user)) {
-      return Path.home;
+    if (path === Path.workflowsPath && !this.canAccessWorkflowsPage()) {
+      return new URL(Path.home, window.location.href);
     }
-    if (path === Path.usagePath && !this.canAccessUsagePage(user)) {
-      return Path.home;
+    if (path.startsWith(Path.usagePath) && !this.canAccessUsagePage(user)) {
+      return new URL(Path.home, window.location.href);
+    }
+    if (path.startsWith(Path.usageAlertingPath) && !this.canAccessUsageAlertingPage(user)) {
+      return new URL(Path.usagePath, window.location.href);
     }
 
     if (path === Path.settingsOrgDetailsPath && !this.canAccessOrgDetailsPage(user)) {
-      return Path.settingsPath;
+      return new URL(Path.settingsPath, window.location.href);
     }
     if (path === Path.settingsOrgMembersPath && !this.canAccessOrgMembersPage(user)) {
-      return Path.settingsPath;
+      return new URL(Path.settingsPath, window.location.href);
     }
     if (path === Path.settingsOrgGitHubLinkPath && !this.canAccessOrgGitHubLinkPage(user)) {
-      return Path.settingsPath;
+      return new URL(Path.settingsPath, window.location.href);
     }
 
     return null;
@@ -520,7 +585,7 @@ const GITHUB_REPO_URL_PATTERN = new RegExp(
   `${GITHUB_URL_PREFIX}/${PATH_SEGMENT_PATTERN}/${PATH_SEGMENT_PATTERN}${OPTIONAL_DOTGIT_SUFFIX}`
 );
 
-function getRepoUrlPathParam(repo: string): string {
+export function getRepoUrlPathParam(repo: string): string {
   if (repo.match(GITHUB_REPO_URL_PATTERN)) {
     return format.formatGitUrl(repo);
   }
@@ -528,9 +593,12 @@ function getRepoUrlPathParam(repo: string): string {
 }
 
 function getQueryString(params: Record<string, string>) {
-  return new URLSearchParams(
-    Object.fromEntries(Object.entries(params).filter(([_, value]) => Boolean(value)))
-  ).toString();
+  return (
+    new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([_, value]) => Boolean(value))))
+      .toString()
+      // %-encode periods since Slack doesn't treat trailing periods as part of the URL.
+      .replaceAll(".", "%2E")
+  );
 }
 
 function getModifiedUrl({ query, path }: { query?: Record<string, string>; path?: string }) {
@@ -548,7 +616,9 @@ function getModifiedUrl({ query, path }: { query?: Record<string, string>; path?
 
 export class Path {
   static home = "/";
+  static profilePath = "/profile";
   static comparePath = "/compare/";
+  static compareActionsPath = "/action/compare/";
   static invocationPath = "/invocation/";
   static userHistoryPath = "/history/user/";
   static hostHistoryPath = "/history/host/";
@@ -559,6 +629,7 @@ export class Path {
   static settingsPath = "/settings/";
   static settingsOrgDetailsPath = "/settings/org/details";
   static settingsOrgMembersPath = "/settings/org/members";
+  static settingsOrgUserListsPath = "/settings/org/user-lists";
   static settingsOrgGitHubLinkPath = "/settings/org/github";
   static joinOrgPath = "/join";
   static createOrgPath = "/org/create";
@@ -566,6 +637,7 @@ export class Path {
   static orgAccessDeniedPath = "/org/access-denied";
   static trendsPath = "/trends/";
   static usagePath = "/usage/";
+  static usageAlertingPath = "/usage/alerting";
   static auditLogsPath = "/audit-logs/";
   static executorsPath = "/executors/";
   static tapPath = "/tests/";
@@ -573,7 +645,10 @@ export class Path {
   static codePath = "/code/";
   static reviewsPath = "/reviews/";
   static codesearchPath = "/search/";
+  static targetsPath = "/targets/";
 }
+
+export type TrendsChartId = "builds" | "duration" | "cache" | "cas" | "savings" | "build_time";
 
 /** Returns the longest path value in `Path` matching the given URL path. */
 function getMatchedPath(urlPath: string): string | null {
@@ -599,6 +674,7 @@ function getUnavailableMessage(matchedPath: string) {
     case Path.codePath:
     case Path.settingsPath:
     case Path.trendsPath:
+    case Path.targetsPath:
     case Path.executorsPath:
     case Path.tapPath:
     case Path.userHistoryPath:
@@ -611,6 +687,14 @@ function getUnavailableMessage(matchedPath: string) {
     default:
       return "";
   }
+}
+
+/**
+ * Returns `window.location.href` relative to `window.origin`.
+ * This includes any pathname, search, and hash that are present.
+ */
+function originRelativeHref(): string {
+  return window.location.href.substring(window.location.origin.length);
 }
 
 export default new Router();

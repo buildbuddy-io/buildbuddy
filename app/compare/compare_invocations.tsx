@@ -1,18 +1,22 @@
-import DiffMatchPatch from "diff-match-patch";
-import { ArrowLeft, Sliders, XCircle } from "lucide-react";
+import { GitCompare, XCircle } from "lucide-react";
 import React from "react";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
+import alert_service from "../alert/alert_service";
 import { User } from "../auth/auth_service";
+import Button from "../components/button/button";
 import CheckboxButton from "../components/button/checkbox_button";
-import router from "../router/router";
+import InvocationModel from "../invocation/invocation_model";
 import rpcService from "../service/rpc_service";
+import { renderComparisonFacets } from "../util/diff";
 import { BuildBuddyError } from "../util/errors";
-import DiffChunk, { DiffChunkData } from "./diff_chunk";
-import { prepareForDiff, PreProcessingOptions } from "./diff_preprocessing";
-import { OutlinedLinkButton } from "../components/button/link_button";
+import { triggerRemoteRun } from "../util/remote_runner";
+import CompareExecutionLogFilesComponent from "./compare_execution_log_files";
+import CompareExecutionLogSpawnsComponent from "./compare_execution_log_spawns";
 
 export interface CompareInvocationsComponentProps {
   user?: User;
+  tab: string;
   search: URLSearchParams;
   invocationAId: string;
   invocationBId: string;
@@ -20,43 +24,111 @@ export interface CompareInvocationsComponentProps {
 
 type Status = "INIT" | "LOADING" | "LOADED" | "ERROR";
 
-type Diff = DiffChunkData[];
-
 interface State {
   status?: Status;
   error?: string | null;
-  invocationA?: invocation.Invocation;
-  invocationB?: invocation.Invocation;
-  diff?: Diff | null;
+
+  modelA?: InvocationModel;
+  modelB?: InvocationModel;
+
   showChangesOnly: boolean;
+  isRunningExplain: boolean;
 }
 
 const INITIAL_STATE: State = {
   status: "INIT",
   error: null,
-  showChangesOnly: true,
+  showChangesOnly: false,
+  isRunningExplain: false,
 };
 
-const DEFAULT_PREPROCESSING_OPTIONS: PreProcessingOptions = {
-  sortEvents: true,
-  hideTimingData: true,
-  hideInvocationIds: true,
-  hideUuids: true,
-  hideProgress: true,
-};
-
+const FACETS = [
+  {
+    name: "Invocation ID",
+    facet: (i?: InvocationModel) => i?.getInvocationId(),
+    link: (i?: InvocationModel) => `/invocation/${i?.getInvocationId()}`,
+  },
+  { name: "Command", facet: (i?: InvocationModel) => i?.getCommand() },
+  { name: "Pattern", facet: (i?: InvocationModel) => i?.getPattern() },
+  { name: "Exit code", facet: (i?: InvocationModel) => i?.invocation.bazelExitCode.toLowerCase() },
+  { name: "Start date", facet: (i?: InvocationModel) => i?.getFormattedStartedDate() },
+  { name: "Duration", facet: (i?: InvocationModel) => i?.getHumanReadableDuration() },
+  { name: "Host", facet: (i?: InvocationModel) => i?.getHost() },
+  { name: "Tool", facet: (i?: InvocationModel) => i?.getTool() },
+  { name: "Mode", facet: (i?: InvocationModel) => i?.getMode() },
+  { name: "CPU", facet: (i?: InvocationModel) => i?.getCPU() },
+  { name: "Cache", facet: (i?: InvocationModel) => i?.getCache() },
+  { name: "Remote execution", facet: (i?: InvocationModel) => i?.getRBE() },
+  {
+    name: "Compression",
+    facet: (i?: InvocationModel) => (i?.isCacheCompressionEnabled() ? "Enabled" : "Disabled"),
+  },
+  { name: "Digest function", facet: (i?: InvocationModel) => i?.optionsMap.get("digest_function")?.toLowerCase() },
+  { name: "Pull request", facet: (i?: InvocationModel) => `${i?.getPullRequestNumber()}` },
+  { name: "Instance name", facet: (i?: InvocationModel) => i?.getRemoteInstanceName() || "<default>" },
+  { name: "Forked repo URL", facet: (i?: InvocationModel) => i?.getForkRepoURL() },
+  { name: "Repo URL", facet: (i?: InvocationModel) => i?.getRepo() },
+  { name: "Commit SHA", facet: (i?: InvocationModel) => i?.getCommit() },
+  { name: "Branch", facet: (i?: InvocationModel) => i?.getBranchName() },
+  { name: "Role", facet: (i?: InvocationModel) => i?.getRole() },
+  { name: "Status", facet: (i?: InvocationModel) => i?.getStatus() },
+  {
+    name: "Tags",
+    facet: (i?: InvocationModel) =>
+      i
+        ?.getTags()
+        .map((t) => t.name)
+        .join("\n"),
+  },
+  { name: "Fetch count", facet: (i?: InvocationModel) => `${i?.getFetchURLs().length}` },
+  {
+    name: "Explicit command line",
+    facet: (i?: InvocationModel) => i?.getExplicitCommandLineOptions().join("\n"),
+    type: "flag",
+  },
+  {
+    name: "Full command line",
+    facet: (i?: InvocationModel) => i?.getEffectiveCommandLineOptions().join("\n"),
+    type: "flag",
+  },
+  {
+    name: "Explicit startup options",
+    facet: (i?: InvocationModel) => i?.getExplicitStartupOptions().join("\n"),
+    type: "flag",
+  },
+  {
+    name: "Full startup options",
+    facet: (i?: InvocationModel) => i?.getEffectiveStartupOptions().join("\n"),
+    type: "flag",
+  },
+  {
+    name: "Invocation policy",
+    facet: (i?: InvocationModel) => i?.optionsParsed?.invocationPolicy?.flagPolicies.join("\n"),
+  },
+  { name: "Attempt count", facet: (i?: InvocationModel) => `${i?.getAttempt()}` },
+  { name: "Target count", facet: (i?: InvocationModel) => `${i?.getTargetConfiguredCount()}` },
+  { name: "Success count", facet: (i?: InvocationModel) => `${i?.getBuiltCount()}` },
+  { name: "Build failure count", facet: (i?: InvocationModel) => `${i?.getFailedToBuildCount()}` },
+  { name: "Failure count", facet: (i?: InvocationModel) => `${i?.getFailedCount()}` },
+  { name: "Flaky count", facet: (i?: InvocationModel) => `${i?.getFlakyCount()}` },
+  { name: "Tool tag", facet: (i?: InvocationModel) => i?.getToolTag() },
+  { name: "GKE Cluster", facet: (i?: InvocationModel) => i?.getGKECluster() },
+  { name: "GKE Project", facet: (i?: InvocationModel) => i?.getGKEProject() },
+  { name: "Buildkite URL", facet: (i?: InvocationModel) => i?.getBuildkiteUrl() },
+  { name: "GitHub Actions URL", facet: (i?: InvocationModel) => i?.getGithubActionsUrl() },
+  {
+    name: "Cache writes",
+    facet: (i?: InvocationModel) => (i?.hasCacheWriteCapability() ? "Allowed" : "Not allowed"),
+  },
+];
 export default class CompareInvocationsComponent extends React.Component<CompareInvocationsComponentProps, State> {
   state: State = INITIAL_STATE;
-
-  private preProcessingOptions: PreProcessingOptions = this.getPreProcessingOptions();
 
   componentDidMount() {
     this.fetchInvocations();
   }
 
   componentDidUpdate(prevProps: CompareInvocationsComponentProps) {
-    this.preProcessingOptions = this.getPreProcessingOptions();
-
     if (
       prevProps.user !== this.props.user ||
       prevProps.invocationAId !== this.props.invocationAId ||
@@ -64,13 +136,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
     ) {
       this.setState(INITIAL_STATE);
       this.fetchInvocations();
-    } else if (prevProps.search !== this.props.search) {
-      this.computeDiff(this.state.invocationA, this.state.invocationB);
     }
-  }
-
-  private getPreProcessingOptions(): PreProcessingOptions {
-    return optionsFromSearch(this.props.search?.toString() || "");
   }
 
   private async fetchInvocations() {
@@ -97,28 +163,10 @@ export default class CompareInvocationsComponent extends React.Component<Compare
       return;
     }
 
-    // Typescript knows you can throw `undefined`, and I know we won't do that.
-    this.computeDiff(invocationA!, invocationB!);
-  }
-
-  private computeDiff(invocationA?: invocation.Invocation, invocationB?: invocation.Invocation) {
-    if (this.state.error) return;
-
-    const textA = JSON.stringify(prepareForDiff(invocationA, this.preProcessingOptions), null, 2);
-    const textB = JSON.stringify(prepareForDiff(invocationB, this.preProcessingOptions), null, 2);
-
-    const lineDiffs = computeLineDiffs(textA, textB);
-
-    const diff = lineDiffs.map(([op, data]) => ({
-      marker: op,
-      lines: data.trimEnd().split("\n"),
-    }));
-
     this.setState({
       status: "LOADED",
-      invocationA,
-      invocationB,
-      diff,
+      modelA: new InvocationModel(invocationA!),
+      modelB: new InvocationModel(invocationB!),
       error: null,
     });
   }
@@ -138,109 +186,151 @@ export default class CompareInvocationsComponent extends React.Component<Compare
     this.setState({ showChangesOnly: !this.state.showChangesOnly });
   }
 
-  private onClickPreProcessingOption(e: React.ChangeEvent<HTMLInputElement>) {
-    const { name, checked } = e.target;
-    const preProcessingOptions = { ...this.preProcessingOptions, [name]: checked };
-    router.replaceParams(optionsToQueryParams(preProcessingOptions));
-  }
-
-  private renderPreProcessingOption(optionKey: keyof PreProcessingOptions, label: string) {
-    return (
-      <CheckboxButton
-        name={optionKey}
-        checked={this.preProcessingOptions[optionKey]}
-        onChange={this.onClickPreProcessingOption.bind(this)}>
-        {label}
-      </CheckboxButton>
+  private hasExecLog(invocation: InvocationModel): boolean {
+    return Boolean(
+      invocation.buildToolLogs?.log.some(
+        (log: build_event_stream.File) =>
+          log.name == "execution_log.binpb.zst" && log.uri && Boolean(log.uri.startsWith("bytestream://"))
+      )
     );
   }
 
+  private async onClickRunExplain() {
+    const { modelA, modelB } = this.state;
+    if (!modelA || !modelB) return;
+
+    this.setState({ isRunningExplain: true });
+
+    try {
+      // Check if either invocation has a repo URL
+      if (!this.hasExecLog(modelA) || !this.hasExecLog(modelB)) {
+        alert_service.error(
+          "Both invocations must have a compact execution log to run bb explain. Re-run the invocations with the `--execution_log_compact_file=` flag enabled."
+        );
+        return;
+      }
+
+      const command = `
+curl -fsSL https://install.buildbuddy.io | bash
+output=$(bb explain --old ${modelB.getInvocationId()} --new ${modelA.getInvocationId()} --target ${modelA.getCacheAddress()} --verbose)
+if [ -z "$output" ]; then
+    echo "There are no differences between the compact execution logs of the two invocations."
+else
+  printf "%s\\n" "$output"
+fi
+`;
+
+      let platformProps = new Map([["EstimatedComputeUnits", "3"]]);
+      triggerRemoteRun(modelA, command, false /*autoOpenChild*/, platformProps, ["--skip_auto_checkout=true"]);
+    } catch (error) {
+      console.error("Error running bb explain:", error);
+      alert_service.error("Failed to run bb explain: " + error);
+    } finally {
+      this.setState({ isRunningExplain: false });
+    }
+  }
+
   render() {
-    const { status, error, diff } = this.state;
+    const { status, error } = this.state;
 
     if (status === "LOADING" || status === "INIT") {
       return <div className="loading" />;
     }
 
-    // TODO: Display a structured diff
+    if (status == "ERROR") {
+      return (
+        <div className="compare-invocations container">
+          <div className="error-container">
+            <XCircle className="icon red" />
+            <div>{error}</div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="compare-invocations">
         <div className="shelf nopadding-dense">
           <header className="container header">
-            <h2 className="heading">Comparing invocations</h2>
-            <div className="invocation-tags">
-              <InvocationIdTag prefix="base" id={this.props.invocationAId} />
-              <ArrowLeft className="compare-arrow" />
-              <InvocationIdTag prefix="compare" id={this.props.invocationBId} />
+            <h2 className="title">Comparing invocations</h2>
+            <div className="header-buttons">
+              <Button
+                className="bb-explain-button"
+                onClick={this.onClickRunExplain.bind(this)}
+                disabled={this.state.isRunningExplain}>
+                <GitCompare className="icon" />
+                {this.state.isRunningExplain ? "Running..." : "Run bb explain"}
+              </Button>
+              {this.props.tab != "#file" && this.props.tab != "#spawn" && (
+                <CheckboxButton
+                  className="show-changes-only-button"
+                  onChange={this.onClickShowChangesOnly.bind(this)}
+                  checked={this.state.showChangesOnly}>
+                  Show changes only
+                </CheckboxButton>
+              )}
             </div>
-            {diff && (
-              <CheckboxButton
-                className="show-changes-only-button"
-                onChange={this.onClickShowChangesOnly.bind(this)}
-                checked={this.state.showChangesOnly}>
-                Show changes only
-              </CheckboxButton>
-            )}
           </header>
-        </div>
-        {diff && (
-          <div className="container preprocessing-options">
-            <Sliders />
-            <div className="preprocessing-options-list">
-              {this.renderPreProcessingOption("sortEvents", "Sort events")}
-              {this.renderPreProcessingOption("hideTimingData", "Hide timing data")}
-              {this.renderPreProcessingOption("hideProgress", "Hide progress")}
-              {this.renderPreProcessingOption("hideInvocationIds", "Hide invocation IDs")}
-              {this.renderPreProcessingOption("hideUuids", "Hide Bazel-generated UUIDs")}
+          <div className="container">
+            <div className="tabs">
+              <a href="#" className={`tab ${!this.props.tab ? "selected" : ""}`}>
+                Details
+              </a>
+              <a href="#flag" className={`tab ${this.props.tab == "#flag" ? "selected" : ""}`}>
+                Flags
+              </a>
+              <a href="#file" className={`tab ${this.props.tab == "#file" ? "selected" : ""}`}>
+                Files
+              </a>
+              <a href="#spawn" className={`tab ${this.props.tab == "#spawn" ? "selected" : ""}`}>
+                Spawns
+              </a>
             </div>
           </div>
-        )}
-        <div className="container">
-          {error && (
-            <div className="error-container">
-              <XCircle className="icon red" />
-              <div>{error}</div>
-            </div>
-          )}
-          {diff && (
-            <pre className="diff-container">
-              {diff.map((chunk: DiffChunkData, index: number) => (
-                <DiffChunk key={index} chunk={chunk} defaultExpanded={!this.state.showChangesOnly} />
-              ))}
-            </pre>
-          )}
         </div>
+        <div className="compare-table">
+          {renderComparisonFacets(FACETS, this.state.modelA, this.state.modelB, {
+            showChangesOnly: this.state.showChangesOnly,
+            filterType: this.props.tab?.substring(1),
+          })}
+        </div>
+        {this.props.tab == "#file" && (
+          <div className="container">
+            {(!this.state.modelA?.getIsExecutionLogEnabled() || !this.state.modelB?.getIsExecutionLogEnabled()) && (
+              <div>
+                In order to compare files, both invocation must have the execution log enabled with the
+                `--execution_log_compact_file=` flag.
+              </div>
+            )}
+            {this.state.modelA?.getIsExecutionLogEnabled() && this.state.modelB?.getIsExecutionLogEnabled() && (
+              <CompareExecutionLogFilesComponent
+                modelA={this.state.modelA}
+                modelB={this.state.modelB}
+                search={this.props.search}
+                filter={""}
+              />
+            )}
+          </div>
+        )}
+        {this.props.tab == "#spawn" && (
+          <div className="container">
+            {(!this.state.modelA?.getIsExecutionLogEnabled() || !this.state.modelB?.getIsExecutionLogEnabled()) && (
+              <div>
+                In order to compare spawns, both invocation must have the execution log enabled with the
+                `--execution_log_compact_file=` flag.
+              </div>
+            )}
+            {this.state.modelA?.getIsExecutionLogEnabled() && this.state.modelB?.getIsExecutionLogEnabled() && (
+              <CompareExecutionLogSpawnsComponent
+                modelA={this.state.modelA}
+                modelB={this.state.modelB}
+                search={this.props.search}
+                filter={""}
+              />
+            )}
+          </div>
+        )}
       </div>
     );
   }
-}
-
-function InvocationIdTag({ prefix, id }: { prefix: string; id: string }) {
-  const href = `/invocation/${id}`;
-  return (
-    <OutlinedLinkButton className="invocation-id-tag" href={href}>
-      <div className="invocation-id-tag-prefix">{prefix}:</div> <div className="invocation-id-tag-id">{id}</div>
-    </OutlinedLinkButton>
-  );
-}
-
-function optionsToQueryParams(options: PreProcessingOptions): Record<string, string> {
-  return Object.fromEntries(Object.entries(options).map(([key, value]) => [key, String(value)]));
-}
-
-function optionsFromSearch(search: string): PreProcessingOptions {
-  const params = new URLSearchParams(search);
-  return {
-    ...DEFAULT_PREPROCESSING_OPTIONS,
-    ...Object.fromEntries([...params.entries()].map(([key, value]) => [key, value === "true"])),
-  };
-}
-
-const dmp = new DiffMatchPatch.diff_match_patch();
-
-function computeLineDiffs(text1: string, text2: string) {
-  const { chars1, chars2, lineArray } = dmp.diff_linesToChars_(text1, text2);
-  const diffs = dmp.diff_main(chars1, chars2, false);
-  dmp.diff_charsToLines_(diffs, lineArray);
-  return diffs;
 }

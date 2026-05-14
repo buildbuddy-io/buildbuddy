@@ -13,14 +13,21 @@ go_library(
     ],
     deps = [
         "//enterprise/server/remote_execution/commandutil",
+        "//enterprise/server/util/vsock",
         "//proto:remote_execution_go_proto",
         "//proto:vmexec_go_proto",
         "//server/remote_cache/digest",
+        "//server/util/healthcheck",
         "//server/util/log",
+        "//server/util/networking",
+        "//server/util/retry",
         "//server/util/status",
         "@com_github_elastic_gosigar//:gosigar",
+        "@com_github_miekg_dns//:dns",
         "@com_github_tklauser_go_sysconf//:go-sysconf",
         "@com_github_vishvananda_netlink//:netlink",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_google_grpc//status",
         "@org_golang_x_sys//unix",
     ],
@@ -29,7 +36,11 @@ go_library(
 go_test(
     name = "vmexec_test",
     srcs = ["vmexec_test.go"],
-    flaky = True,
+    exec_properties = {
+        # Run in a firecracker VM since this test runs sync() and we don't want
+        # to cause unnecessary IO on the host machine.
+        "test.workload-isolation-type": "firecracker",
+    },
     deps = [
         ":vmexec",
         "//enterprise/server/remote_execution/commandutil",
@@ -42,6 +53,6 @@ go_test(
         "//server/util/status",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//:grpc",
     ],
 )

@@ -6,13 +6,12 @@ ts_library(
     name = "format",
     srcs = ["format.tsx"],
     deps = [
+        "//:node_modules/@types/long",
+        "//:node_modules/date-fns",
+        "//:node_modules/long",
+        "//:node_modules/moment",
         "//app/util:proto",
         "//proto:duration_ts_proto",
-        "@npm//@types/long",
-        "@npm//@types/moment",
-        "@npm//date-fns",
-        "@npm//long",
-        "@npm//moment",
     ],
 )
 
@@ -21,8 +20,8 @@ ts_jasmine_node_test(
     srcs = ["format_test.ts"],
     deps = [
         ":format",
-        "@npm//@types/long",
-        "@npm//long",
-        "@npm//tslib",
+        "//:node_modules/@types/long",
+        "//:node_modules/long",
+        "//:node_modules/tslib",
     ],
 )

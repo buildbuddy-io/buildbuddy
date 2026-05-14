@@ -8,8 +8,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/setup",
     deps = [
         "//cli/arg",
+        "//cli/flaghistory",
         "//cli/login",
-        "//cli/parser",
         "//cli/plugin",
         "//cli/sidecar",
         "//cli/tooltag",

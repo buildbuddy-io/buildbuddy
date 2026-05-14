@@ -12,10 +12,14 @@ import (
 )
 
 var (
-	defaultRedisTarget          = flag.String("app.default_redis_target", "", "A Redis target for storing remote shared state. To ease migration, the redis target from the remote execution config will be used if this value is not specified.", flag.Secret)
-	defaultRedisShards          = flag.Slice("app.default_sharded_redis.shards", []string{}, "Ordered list of Redis shard addresses.")
-	defaultShardedRedisUsername = flag.String("app.default_sharded_redis.username", "", "Redis username")
-	defaultShardedRedisPassword = flag.String("app.default_sharded_redis.password", "", "Redis password", flag.Secret)
+	defaultRedisTarget               = flag.String("app.default_redis_target", "", "A Redis target for storing remote shared state. To ease migration, the redis target from the remote execution config will be used if this value is not specified.", flag.Secret)
+	defaultRedisShards               = flag.Slice("app.default_sharded_redis.shards", []string{}, "Ordered list of Redis shard addresses.")
+	defaultRedisDefaultEnabledShards = flag.Slice("app.default_sharded_redis.default_enabled_shards", []string{}, "Ordered list of Redis shard addresses to enable. Other shards must be enabled via experiment. If empty, all shards in default_sharded_redis.shards will be enabled.")
+	defaultShardedRedisUsername      = flag.String("app.default_sharded_redis.username", "", "Redis username")
+	defaultShardedRedisPassword      = flag.String("app.default_sharded_redis.password", "", "Redis password", flag.Secret)
+
+	// TODO: add default_enabled_shards for the clients below (to support
+	// migration)
 
 	// Cache Redis
 	// TODO: We need to deprecate one of the redis targets here or distinguish them
@@ -32,14 +36,24 @@ var (
 	remoteExecShardedRedisPassword = flag.String("remote_execution.sharded_redis.password", "", "Redis password", flag.Secret)
 )
 
+const (
+	// Experiment name that configures the enabled shards for the default
+	// sharded redis client. Can evaluate to either a null/empty object or an
+	// object that unmarshals to [redisutil.MigrationExperimentConfig].
+	defaultShardedRedisMigrationExperimentName = "app.default_sharded_redis.migration"
+)
+
 type ShardedRedisConfig struct {
 	Shards   []string `yaml:"shards" usage:"Ordered list of Redis shard addresses."`
 	Username string   `yaml:"username" usage:"Redis username"`
 	Password string   `yaml:"password" usage:"Redis password" config:"secret"`
 }
 
-func defaultRedisClientOptsNoFallback() *redisutil.Opts {
+func defaultRedisClientOptsNoFallback(env *real_environment.RealEnv) *redisutil.Opts {
 	if opts := redisutil.ShardsToOpts(*defaultRedisShards, *defaultShardedRedisUsername, *defaultShardedRedisPassword); opts != nil {
+		if fp := env.GetExperimentFlagProvider(); fp != nil && len(*defaultRedisDefaultEnabledShards) > 0 {
+			opts.MigrationConfig = redisutil.NewMigrationConfig(fp, opts.Addrs, *defaultRedisDefaultEnabledShards, defaultShardedRedisMigrationExperimentName)
+		}
 		return opts
 	}
 	return redisutil.TargetToOpts(*defaultRedisTarget)
@@ -66,8 +80,8 @@ func remoteExecutionRedisClientOptsNoFallback() *redisutil.Opts {
 	return redisutil.TargetToOpts(*remoteExecRedisTarget)
 }
 
-func DefaultRedisClientOpts() *redisutil.Opts {
-	if cfg := defaultRedisClientOptsNoFallback(); cfg != nil {
+func defaultRedisClientOpts(env *real_environment.RealEnv) *redisutil.Opts {
+	if cfg := defaultRedisClientOptsNoFallback(env); cfg != nil {
 		return cfg
 	}
 
@@ -84,12 +98,12 @@ func CacheRedisClientOpts() *redisutil.Opts {
 	return cacheRedisClientOptsNoFallback()
 }
 
-func RemoteExecutionRedisClientOpts() *redisutil.Opts {
+func RemoteExecutionRedisClientOpts(env *real_environment.RealEnv) *redisutil.Opts {
 	if cfg := remoteExecutionRedisClientOptsNoFallback(); cfg != nil {
 		return cfg
 	}
 
-	if cfg := defaultRedisClientOptsNoFallback(); cfg != nil {
+	if cfg := defaultRedisClientOptsNoFallback(env); cfg != nil {
 		return cfg
 	}
 
@@ -97,7 +111,7 @@ func RemoteExecutionRedisClientOpts() *redisutil.Opts {
 }
 
 func RegisterRemoteExecutionRedisClient(env *real_environment.RealEnv) error {
-	opts := RemoteExecutionRedisClientOpts()
+	opts := RemoteExecutionRedisClientOpts(env)
 	if opts == nil {
 		return nil
 	}
@@ -110,7 +124,7 @@ func RegisterRemoteExecutionRedisClient(env *real_environment.RealEnv) error {
 }
 
 func RegisterDefault(env *real_environment.RealEnv) error {
-	opts := DefaultRedisClientOpts()
+	opts := defaultRedisClientOpts(env)
 	if opts == nil {
 		return nil
 	}

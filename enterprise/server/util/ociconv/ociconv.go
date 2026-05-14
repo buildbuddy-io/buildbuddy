@@ -1,27 +1,34 @@
 package ociconv
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"sort"
+	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"golang.org/x/sync/singleflight"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"golang.org/x/sys/unix"
 
-	dockerclient "github.com/docker/docker/client"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 const (
@@ -29,23 +36,20 @@ const (
 
 	// Minimum timeout used for background Firecracker disk image conversion.
 	imageConversionTimeout = 15 * time.Minute
+
+	// Shared images namespace in the filecache. On disk this will appear as
+	// "_SHARED_ext4_images" under the filecache dir.
+	fileCacheSharedImagesNamespace = "ext4_images"
 )
 
 var (
-	isRoot bool
+	isRoot = os.Getuid() == 0
 
 	// Single-flight group used to dedupe firecracker image conversions.
-	conversionGroup singleflight.Group
-)
+	conversionGroup singleflight.Group[string, string]
 
-func init() {
-	u, err := user.Current()
-	if err != nil {
-		log.Warningf("could not determine current user: %s", err)
-	} else {
-		isRoot = u.Uid == "0"
-	}
-}
+	localCacheStoreExt4Images = flag.Bool("executor.local_cache_store_ext4_images", false, "If true, store converted Firecracker ext4 images in filecache instead of cacheRoot/images/ext4.")
+)
 
 func hashFile(filename string) (string, error) {
 	f, err := os.Open(filename)
@@ -57,16 +61,50 @@ func hashFile(filename string) (string, error) {
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// CachedDiskImagePath looks for an existing cached disk image and returns the
-// path to it, if it exists. It returns "" (with no error) if the disk image
-// does not exist and no other errors occurred while looking for the image.
-func CachedDiskImagePath(ctx context.Context, workspaceDir, containerImage string) (string, error) {
-	hashedContainerName := hash.String(containerImage)
-	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
-	files, err := os.ReadDir(containerImagesPath)
+// sharedFileCacheContext returns a context that stores executor-local ext4
+// images under a shared filecache directory.
+func sharedFileCacheContext(ctx context.Context, fileCache interfaces.FileCache) context.Context {
+	return fileCache.WithSharedDirectory(ctx, fileCacheSharedImagesNamespace)
+}
+
+func diskImageFileCacheKey(containerImage string) string {
+	// Match the legacy cacheRoot/images/ext4/<hash(containerImage)> layout so
+	// startup migration can reuse the existing directory name as the filecache
+	// key.
+	return hash.String(containerImage)
+}
+
+func diskImageFileNodeFromKey(key string) *repb.FileNode {
+	return &repb.FileNode{
+		Digest: &repb.Digest{
+			Hash:      key,
+			SizeBytes: 1, // Arbitrary: filecache lookups key off the digest hash.
+		},
+	}
+}
+
+func diskImageFileNode(containerImage string) *repb.FileNode {
+	return diskImageFileNodeFromKey(diskImageFileCacheKey(containerImage))
+}
+
+// getDiskImagesPath returns the parent directory where legacy disk images are
+// stored for a given image ref. There may be multiple images associated with
+// the same ref if the ref does not include a content digest (e.g. ":latest"
+// tag).
+func getDiskImagesPath(cacheRoot, containerImage string) string {
+	return filepath.Join(cacheRoot, "images", "ext4", diskImageFileCacheKey(containerImage))
+}
+
+func legacyDiskImagesRoot(cacheRoot string) string {
+	return filepath.Join(cacheRoot, "images", "ext4")
+}
+
+func legacyCachedDiskImagePathForKey(ctx context.Context, cacheRoot, cacheKey string) (string, error) {
+	diskImagesPath := filepath.Join(legacyDiskImagesRoot(cacheRoot), cacheKey)
+	files, err := os.ReadDir(diskImagesPath)
 	if os.IsNotExist(err) {
 		return "", nil
 	}
@@ -87,7 +125,7 @@ func CachedDiskImagePath(ctx context.Context, workspaceDir, containerImage strin
 		}
 		return iUnix < jUnix
 	})
-	diskImagePath := filepath.Join(containerImagesPath, files[len(files)-1].Name(), diskImageFileName)
+	diskImagePath := filepath.Join(diskImagesPath, files[len(files)-1].Name(), diskImageFileName)
 	exists, err := disk.FileExists(ctx, diskImagePath)
 	if err != nil {
 		return "", err
@@ -95,204 +133,226 @@ func CachedDiskImagePath(ctx context.Context, workspaceDir, containerImage strin
 	if !exists {
 		return "", nil
 	}
-	log.Debugf("Found existing %q disk image at path %q", containerImage, diskImagePath)
+	log.CtxDebugf(ctx, "Found existing disk image for cache key %q at path %q", cacheKey, diskImagePath)
 	return diskImagePath, nil
 }
 
-// CreateDiskImage pulls the image from the container registry and exports an
-// ext4 disk image based on the container image to the configured cache
-// directory.
+func legacyCachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) (string, error) {
+	return legacyCachedDiskImagePathForKey(ctx, cacheRoot, diskImageFileCacheKey(containerImage))
+}
+
+// MigrateImagesToFileCache scans the legacy images/ext4 tree and migrates the
+// newest image for each cached container image ref into filecache.
+func MigrateImagesToFileCache(ctx context.Context, fileCache interfaces.FileCache, cacheRoot string) error {
+	if !*localCacheStoreExt4Images || fileCache == nil {
+		return nil
+	}
+	entries, err := os.ReadDir(legacyDiskImagesRoot(cacheRoot))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read legacy disk images root: %w", err)
+	}
+
+	sharedCtx := sharedFileCacheContext(ctx, fileCache)
+
+	var migratedCount int
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		cacheKey := entry.Name()
+		legacyPath, err := legacyCachedDiskImagePathForKey(ctx, cacheRoot, cacheKey)
+		if err != nil {
+			return fmt.Errorf("find legacy disk image for %q: %w", cacheKey, err)
+		}
+		if legacyPath == "" {
+			continue
+		}
+		node := diskImageFileNodeFromKey(cacheKey)
+		if fileCache.ContainsFile(sharedCtx, node) {
+			continue
+		}
+		if err := fileCache.AddFile(sharedCtx, node, legacyPath); err != nil {
+			return fmt.Errorf("add legacy disk image %q to filecache: %w", legacyPath, err)
+		}
+		log.Infof("Migrated legacy ext4 image with cache key %q from %q to filecache", cacheKey, legacyPath)
+		migratedCount++
+	}
+	if migratedCount > 0 {
+		log.Infof("Migrated %d legacy ext4 image(s) to filecache", migratedCount)
+	}
+	if err := os.RemoveAll(legacyDiskImagesRoot(cacheRoot)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove legacy disk images root: %w", err)
+	}
+	return nil
+}
+
+// LinkCachedImage links a cached OCI ext4 image.
+// If outputPath is non-empty, the cached image is hardlinked there.
 //
-// If dockerClient is non-nil, then Docker will be used to pull and export
-// the image. This ensures that image pulls are de-duped and that image layers
-// which are already in the local Docker cache can be reused.
+// IMPORTANT: Callers are responsible for authorizing access to the image.
+func LinkCachedImage(ctx context.Context, fileCache interfaces.FileCache, cacheRoot, containerImage, outputPath string) error {
+	if *localCacheStoreExt4Images {
+		sharedCtx := sharedFileCacheContext(ctx, fileCache)
+		node := diskImageFileNode(containerImage)
+		if ok := fileCache.FastLinkFile(sharedCtx, node, outputPath); ok {
+			log.CtxDebugf(ctx, "Linked cached %q disk image to %q", containerImage, outputPath)
+			return nil
+		}
+		// TODO: FastLinkFile can fail for reasons other than NotFound, so we
+		// return "Unknown" here. Since we control FastLinkFile, we should
+		// instead have it return (ok, err) and wrap the actual error.
+		return status.UnknownErrorf("failed to link image %q from local cache", containerImage)
+	}
+	legacyPath, err := legacyCachedDiskImagePath(ctx, cacheRoot, containerImage)
+	if err != nil {
+		return status.WrapError(err, "get legacy cached disk image path")
+	}
+	if legacyPath == "" {
+		return status.NotFoundErrorf("image %q not found in local cache", containerImage)
+	}
+	if err := os.Link(legacyPath, outputPath); err != nil {
+		return status.WrapError(err, "link container image")
+	}
+	log.CtxDebugf(ctx, "Linked cached %q legacy disk image to %q", containerImage, outputPath)
+	return nil
+}
+
+// IsImageCached checks whether an ext4 image is present in filecache (if
+// enabled) or the legacy ext4 cache dir (if filecache is not enabled).
+func IsImageCached(ctx context.Context, fileCache interfaces.FileCache, cacheRoot, containerImage string) (bool, error) {
+	if *localCacheStoreExt4Images {
+		sharedCtx := sharedFileCacheContext(ctx, fileCache)
+		node := diskImageFileNode(containerImage)
+		return fileCache.ContainsFile(sharedCtx, node), nil
+	}
+	legacyPath, err := legacyCachedDiskImagePath(ctx, cacheRoot, containerImage)
+	if err != nil {
+		return false, err
+	}
+	return legacyPath != "", nil
+}
+
+// CreateDiskImage pulls the image from the container registry, converts it to
+// ext4 format, stores it in the configured cache directory, and hardlinks the
+// cached image to outputPath.
 //
-// If the image is already cached, the image is not re-downloaded from the
-// registry, but the credentials are still authenticated with the remote
-// registry to ensure that the image can be accessed. The path to the disk image
-// is returned.
-func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
-	existingPath, err := CachedDiskImagePath(ctx, workspaceDir, containerImage)
+// This function does NOT re-authenticate with the registry if the image is
+// already cached. Instead, the caller is responsible for doing so if needed.
+func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache interfaces.FileCache, cacheRoot, containerImage string, creds oci.Credentials, useOCIFetcher bool, outputPath string) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	// Note: creds are included in the singleflight key here, so it looks like
+	// we might be doing unnecessary concurrent pulls for the same image. In
+	// practice however, container.PullImageIfNecessary only allows one
+	// concurrent pull per image ref, so this should be fine.
+	conversionOpKeyParts := []string{cacheRoot, containerImage, creds.Username, creds.Password}
+	if *localCacheStoreExt4Images {
+		// Dedupe image conversion operations since they are disk IO-heavy.
+		conversionOpKeyParts = append([]string{cacheRoot, fileCache.TempDir()}, conversionOpKeyParts[1:]...)
+	} else {
+		conversionOpKeyParts = append([]string{"legacy"}, conversionOpKeyParts...)
+	}
+	_, _, err := conversionGroup.Do(ctx, hash.Strings(conversionOpKeyParts...), func(ctx context.Context) (string, error) {
+		ctx, cancel := context.WithTimeout(ctx, imageConversionTimeout)
+		defer cancel()
+
+		// Re-check the cache here so we can avoid duplicate conversion work if
+		// another caller populated the cache after the caller's initial lookup.
+		cached, err := IsImageCached(ctx, fileCache, cacheRoot, containerImage)
+		if err != nil {
+			return "", err
+		}
+		if cached {
+			return "", nil
+		}
+
+		// NOTE: If more params are added to this func, be sure to update
+		// conversionOpKeyParts above (if applicable).
+		out, err := createExt4Image(ctx, resolver, fileCache, cacheRoot, containerImage, creds, useOCIFetcher)
+		if err != nil {
+			return "", status.WrapErrorf(err, "convert %q from OCI to EXT4 format", containerImage)
+		}
+		return out, nil
+	})
+	if err != nil {
+		return err
+	}
+	// Note: there is a potential race condition here: createExt4Image just
+	// fetched the image into filecache, but there is a short window where it
+	// could potentially get evicted. Since we just pulled, this normally
+	// shouldn't happen unless the filecache is under heavy eviction pressure,
+	// which most likely means it's too small.
+	if err := LinkCachedImage(ctx, fileCache, cacheRoot, containerImage, outputPath); err != nil {
+		return status.WrapError(err, "failed to link cached image")
+	}
+	return nil
+}
+
+func createExt4Image(ctx context.Context, resolver *oci.Resolver, fileCache interfaces.FileCache, cacheRoot, containerImage string, creds oci.Credentials, useOCIFetcher bool) (string, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+	tmpImagePath, err := convertContainerToExt4FS(ctx, resolver, cacheRoot, containerImage, creds, useOCIFetcher)
 	if err != nil {
 		return "", err
 	}
-	if existingPath != "" {
-		// Image is cached. Authenticate with the remote registry to be sure
-		// the credentials are valid.
-
-		inspectArgs := []string{"inspect", "--raw", fmt.Sprintf("docker://%s", containerImage)}
-		if !creds.IsEmpty() {
-			inspectArgs = append(inspectArgs, "--creds", creds.String())
-		}
-		cmd := exec.CommandContext(ctx, "skopeo", inspectArgs...)
-		b, err := cmd.CombinedOutput()
+	if !*localCacheStoreExt4Images || fileCache == nil {
+		imageHash, err := hashFile(tmpImagePath)
 		if err != nil {
-			// We don't know whether an authentication error occurred unless we do
-			// brittle parsing of the command output. So for now just return
-			// UnavailableError which is the "least common denominator" of errors.
-			return "", status.UnavailableErrorf(
-				"Failed to authenticate with container registry for image %q: %s: %s",
-				containerImage, err, string(b),
-			)
+			return "", err
 		}
-
-		return existingPath, nil
+		containerImageHome := filepath.Join(getDiskImagesPath(cacheRoot, containerImage), imageHash)
+		if err := disk.EnsureDirectoryExists(containerImageHome); err != nil {
+			return "", err
+		}
+		containerImagePath := filepath.Join(containerImageHome, diskImageFileName)
+		if err := os.Rename(tmpImagePath, containerImagePath); err != nil {
+			return "", err
+		}
+		log.CtxDebugf(ctx, "generated rootfs at %q", containerImagePath)
+		return containerImagePath, nil
 	}
+	defer func() {
+		if err := os.Remove(tmpImagePath); err != nil && !os.IsNotExist(err) {
+			log.CtxWarningf(ctx, "Delete temp disk image %q: %s", tmpImagePath, err)
+		}
+	}()
+	sharedCtx := sharedFileCacheContext(ctx, fileCache)
+	if err := fileCache.AddFile(sharedCtx, diskImageFileNode(containerImage), tmpImagePath); err != nil {
+		return "", fmt.Errorf("add disk image to filecache: %w", err)
+	}
+	return "", nil
+}
 
+// convertContainerToExt4FS generates an ext4 filesystem image from an OCI
+// container image reference.
+func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, workspaceDir, containerImage string, creds oci.Credentials, useOCIFetcher bool) (string, error) {
 	log.CtxInfof(ctx, "Downloading image %s and converting to ext4 format", containerImage)
 	start := time.Now()
-	defer func() {
-		log.CtxInfof(ctx, "Converted %s to ext4 format in %s", containerImage, time.Since(start))
-	}()
 
-	// Dedupe image conversion operations, which are disk IO-heavy. Note, we
-	// convert the image in the background so that one client's ctx timeout does
-	// not affect other clients. We do apply a timeout to the background
-	// conversion though to prevent it from running forever.
-	conversionOpKey := hash.Strings(
-		workspaceDir, containerImage, creds.Username, creds.Password,
-	)
-	resultChan := conversionGroup.DoChan(conversionOpKey, func() (interface{}, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), imageConversionTimeout)
-		defer cancel()
-		// NOTE: If more params are added to this func, be sure to update
-		// conversionOpKey above (if applicable).
-		return createExt4Image(ctx, dockerClient, workspaceDir, containerImage, creds)
-	})
-
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case res := <-resultChan:
-		if res.Err != nil {
-			return "", res.Err
-		}
-		if res.Shared {
-			log.CtxInfof(ctx, "De-duped firecracker disk image conversion for %s", containerImage)
-		}
-		return res.Val.(string), nil
-	}
-}
-
-func createExt4Image(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
-	hashedContainerName := hash.String(containerImage)
-	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
-
-	// container not found -- write one!
-	tmpImagePath, err := convertContainerToExt4FS(ctx, dockerClient, workspaceDir, containerImage, creds)
+	img, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds, useOCIFetcher)
 	if err != nil {
 		return "", err
 	}
-	imageHash, err := hashFile(tmpImagePath)
+	rc := mutate.Extract(img)
+	defer rc.Close()
+
+	tempUnpackDir, err := os.MkdirTemp(workspaceDir, "unpack-*")
 	if err != nil {
-		return "", err
+		return "", status.UnavailableErrorf("error creating temp unpack dir: %s", err)
 	}
-	containerImageHome := filepath.Join(containerImagesPath, imageHash)
-	if err := disk.EnsureDirectoryExists(containerImageHome); err != nil {
-		return "", err
-	}
-	containerImagePath := filepath.Join(containerImageHome, diskImageFileName)
-	if err := os.Rename(tmpImagePath, containerImagePath); err != nil {
-		return "", err
-	}
-	log.Debugf("generated rootfs at %q", containerImagePath)
-	return containerImagePath, nil
-}
+	defer os.RemoveAll(tempUnpackDir)
 
-// convertContainerToExt4FS uses system tools to generate an ext4 filesystem
-// image from an OCI container image reference.
-// NB: We use modern tools (not docker), that do not require root access. This
-// allows this binary to convert images even when not running as root.
-func convertContainerToExt4FS(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
-	// Make a temp directory to work in. Delete it when this fuction returns.
-	rootUnpackDir, err := os.MkdirTemp(workspaceDir, "container-unpack-*")
-	if err != nil {
-		return "", err
-	}
-	defer os.RemoveAll(rootUnpackDir)
-
-	// Make a directory to download the OCI image to.
-	ociImageDir := filepath.Join(rootUnpackDir, "image")
-	if err := disk.EnsureDirectoryExists(ociImageDir); err != nil {
-		return "", err
-	}
-
-	// In CLI-form, the commands below do this:
-	//
-	// docker pull alpine:latest
-	// docker save alpine:latest --output /tmp/image_unpack/docker_image.tar
-	// skopeo copy docker-archive:/tmp/image_unpack/docker_image.tar oci:/tmp/image_unpack/oci_image:latest
-	// umoci unpack --rootless --image /tmp/image_unpack/oci_image /tmp/image_unpack/bundle
-	//
-	// If docker is not available then we use skopeo to pull the image, like so:
-	//
-	// skopeo copy docker://alpine:latest oci:/tmp/image_unpack/oci_image:latest
-	//
-	// After running these commands, /tmp/image_unpack/bundle/rootfs/ has the
-	// unpacked image contents.
-	//
-	// The reason we use docker pull instead of directly copying with skopeo is
-	// that docker handles de-duping for us, and we can make use of existing
-	// cached image layers.
-	//
-	// Also note that we use an intermediate `docker save` rather than using the
-	// `docker-daemon:` protocol to export the image directly, due to
-	// https://github.com/containers/image/issues/1049
-	srcRef := fmt.Sprintf("docker://%s", containerImage)
-	if dockerClient != nil {
-		log.Debugf("Pulling: %s", containerImage)
-		if err := docker.PullImage(ctx, dockerClient, containerImage, creds); err != nil {
-			return "", err
-		}
-		log.Debugf("Exporting image from docker daemon: %s", containerImage)
-		dockerImgPath := filepath.Join(rootUnpackDir, "docker_image.tar")
-		if err := docker.SaveImage(ctx, dockerClient, containerImage, dockerImgPath); err != nil {
-			return "", err
-		}
-		log.Debugf("Converting to OCI image: %s", containerImage)
-		srcRef = fmt.Sprintf("docker-archive:%s", dockerImgPath)
-	} else {
-		log.Debugf("Downloading image and converting to OCI format: %s", containerImage)
-	}
-	ociOutputRef := fmt.Sprintf("oci:%s:latest", ociImageDir)
-	skopeoArgs := []string{"copy", srcRef, ociOutputRef}
-	if srcCreds := creds.String(); srcCreds != "" {
-		skopeoArgs = append(skopeoArgs, "--src-creds", srcCreds)
-	}
-	if out, err := exec.CommandContext(ctx, "skopeo", skopeoArgs...).CombinedOutput(); err != nil {
-		return "", status.InternalErrorf("skopeo copy error: %q: %s", string(out), err)
-	}
-
-	log.Debugf("Unpacking OCI image: %s", containerImage)
-	// Make a directory to unpack the bundle to.
-	rootFSDir := filepath.Join(rootUnpackDir, "rootfs")
-	if err := disk.EnsureDirectoryExists(rootFSDir); err != nil {
-		return "", err
-	}
-	// Note, the "--rootless" flag causes all unpacked files to be owned by the
-	// current uid, regardless of their original owner in the source OCI image.
-	// This lets us avoid "permission denied" errors when unpacking, but
-	// unfortunately since we're messing with the owner uid, it can cause
-	// permissions errors when the image is actually used. For example,
-	// "/home/foo" will be owned by uid 0 if the executor is root, and non-root
-	// users in the resulting VM won't even be able to write to their own home
-	// dir.
-	//
-	// So, we only set --rootless here if we have to, in order to avoid
-	// permissions errors when unpacking. But do note that this messes with file
-	// permissions in the resulting image, e.g. "/" could be owned by a non-root
-	// user which is typically not correct and may cause unexpected issues.
-	//
-	// TODO: Find another way to convert OCI -> ext4 so that we don't get
-	// incorrect permissions when the executor is not running as root.
-	cmd := exec.CommandContext(
-		ctx,
-		"umoci", "raw", "unpack",
-		fmt.Sprintf("--rootless=%v", !isRoot),
-		"--image", ociImageDir,
-		rootFSDir)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return "", status.InternalErrorf("umoci unpack error: %q: %s", string(out), err)
+	cmd := exec.CommandContext(ctx, "tar", "--extract", "--directory", tempUnpackDir)
+	var stderr bytes.Buffer
+	cmd.Stdin = rc
+	cmd.Stderr = &stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Run(); err != nil {
+		return "", status.UnavailableErrorf("download and extract layer tarball: %s: %q", err, stderr.String())
 	}
 
 	// Take the rootfs and write it into an ext4 image.
@@ -302,9 +362,99 @@ func convertContainerToExt4FS(ctx context.Context, dockerClient *dockerclient.Cl
 	}
 	defer f.Close()
 	imageFile := f.Name()
-	if err := ext4.DirectoryToImageAutoSize(ctx, rootFSDir, imageFile); err != nil {
+	if err := ext4.DirectoryToImageAutoSize(ctx, tempUnpackDir, imageFile); err != nil {
 		return "", err
 	}
-	log.Debugf("Wrote container %q to image file: %q", containerImage, imageFile)
+	log.CtxInfof(ctx, "Converted %s to ext4 format in %s", containerImage, time.Since(start))
 	return imageFile, nil
+}
+
+// OverlayfsLayerToTarball converts an extracted overlayfs layer to an
+// uncompressed OCI image layer tarball, writing the tarball content to the
+// given writer.
+//
+// Note that this does not perfectly reconstruct the original layer tarball. For
+// example, it does not preserve hardlinks, and will instead copy each file.
+func OverlayfsLayerToTarball(ctx context.Context, w io.Writer, layerDir string) error {
+	const fileWhiteoutPrefix = ".wh."
+	const dirWhiteoutChildFileName = ".wh..wh..opq"
+
+	tw := tar.NewWriter(w)
+	err := filepath.Walk(layerDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relpath, err := filepath.Rel(layerDir, path)
+		if err != nil {
+			return err
+		}
+
+		header, err := tar.FileInfoHeader(info, "" /*=linkname*/)
+		if err != nil {
+			return fmt.Errorf("failed to create tar header for %s: %w", path, err)
+		}
+		header.Name = relpath
+
+		if info.Mode().IsRegular() {
+			if err := tw.WriteHeader(header); err != nil {
+				return fmt.Errorf("write header for %s: %w", relpath, err)
+			}
+			f, err := os.Open(path)
+			if err != nil {
+				return fmt.Errorf("open file %s: %w", relpath, err)
+			}
+			defer f.Close()
+			if _, err := io.Copy(tw, f); err != nil {
+				return fmt.Errorf("copy file %s: %w", relpath, err)
+			}
+		} else if info.Mode().IsDir() {
+			rawXattr := make([]byte, 4)
+			sz, err := unix.Getxattr(path, "trusted.overlay.opaque", rawXattr)
+			if err == nil && sz >= 0 && string(rawXattr[:sz]) == "y" {
+				tw.WriteHeader(&tar.Header{
+					Name: filepath.Join(relpath, dirWhiteoutChildFileName),
+					Mode: 0644,
+					Size: 0,
+				})
+				return nil
+			} else {
+				if err := tw.WriteHeader(header); err != nil {
+					return fmt.Errorf("write header for %s: %w", relpath, err)
+				}
+			}
+		} else if info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return fmt.Errorf("readlink %s: %w", relpath, err)
+			}
+			header.Linkname = target
+			if err := tw.WriteHeader(header); err != nil {
+				return fmt.Errorf("write header for %s: %w", relpath, err)
+			}
+		} else if info.Mode()&os.ModeCharDevice != 0 {
+			// Char devices with device number 0 are represented as whiteout
+			// (deletion) markers in the tarball, by prefixing the file name
+			// with ".wh."
+			if info.Sys().(*syscall.Stat_t).Rdev == 0 {
+				base := filepath.Base(relpath)
+				if err := tw.WriteHeader(&tar.Header{
+					Name: filepath.Join(filepath.Dir(relpath), fileWhiteoutPrefix+base),
+					Mode: 0644,
+					Size: 0,
+				}); err != nil {
+					return fmt.Errorf("write header for %s: %w", relpath, err)
+				}
+				return nil
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("walk layer dir: %w", err)
+	}
+	if err := tw.Close(); err != nil {
+		return fmt.Errorf("flush tar writer: %w", err)
+	}
+	return nil
 }

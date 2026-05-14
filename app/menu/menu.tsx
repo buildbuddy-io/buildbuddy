@@ -1,9 +1,9 @@
+import { Menu } from "lucide-react";
 import React from "react";
 import authService, { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
-import router, { Path } from "../router/router";
 import UserPreferences from "../preferences/preferences";
-import { Menu } from "lucide-react";
+import router from "../router/router";
 
 interface Props {
   children?: any;
@@ -53,16 +53,10 @@ export default class MenuComponent extends React.Component<Props, State> {
     this.dismissMenu();
   }
 
-  private gitHubLinkUrl(): string {
-    const params = new URLSearchParams({
-      group_id: this.props.user?.selectedGroup.id || "",
-      user_id: this.props.user?.displayUser.userId?.id || "",
-      redirect_url: window.location.href,
-    });
-    return `/auth/github/link/?${params}`;
-  }
-
   render() {
+    const isDarkMode = this.props.preferences?.darkModeEnabled;
+    const useDarkLogo = this.props.light && !isDarkMode;
+
     return (
       <div>
         {this.state.menuExpanded && (
@@ -73,7 +67,7 @@ export default class MenuComponent extends React.Component<Props, State> {
             <div>
               <a href="/">
                 <div className="title">
-                  <img src={this.props.light ? "/image/logo_dark.svg" : "/image/logo_white.svg"} />
+                  <img src={useDarkLogo ? "/image/logo_dark.svg" : "/image/logo_white.svg"} />
                 </div>
               </a>
             </div>
@@ -115,19 +109,13 @@ export default class MenuComponent extends React.Component<Props, State> {
                   <li onClick={this.dismissMenu.bind(this)}>
                     <a href="mailto:hello@buildbuddy.io">Contact us</a>
                   </li>
-                  <li onClick={this.dismissMenu.bind(this)}>
-                    <a target="_blank" href="https://community.buildbuddy.io">
-                      BuildBuddy Slack
-                    </a>
-                  </li>
-                  {capabilities.auth &&
-                    capabilities.github &&
-                    this.props.user &&
-                    !this.props.user.selectedGroup.githubLinked && (
-                      <li onClick={this.dismissMenu.bind(this)}>
-                        <a href={this.gitHubLinkUrl()}>Link GitHub Account</a>
-                      </li>
-                    )}
+                  {capabilities.config.communityLinksEnabled && (
+                    <li onClick={this.dismissMenu.bind(this)}>
+                      <a target="_blank" href="https://community.buildbuddy.io">
+                        BuildBuddy Slack
+                      </a>
+                    </li>
+                  )}
                   {capabilities.auth && !this.props.user && <li onClick={this.handleLoginClicked.bind(this)}>Login</li>}
                   {capabilities.auth && this.props.user && (
                     <li onClick={this.handleLogoutClicked.bind(this)}>Logout</li>

@@ -9,7 +9,6 @@ go_library(
         "//server/interfaces",
         "//server/util/background",
         "//server/util/status",
-        "//server/util/timeutil",
     ],
 )
 
@@ -22,5 +21,7 @@ go_test(
         "//server/testutil/mockstore",
         "//server/util/status",
         "@com_github_google_go_cmp//cmp",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )

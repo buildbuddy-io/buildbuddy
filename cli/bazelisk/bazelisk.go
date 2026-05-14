@@ -1,7 +1,6 @@
 package bazelisk
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	goLog "log"
@@ -9,12 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 
 	"github.com/bazelbuild/bazelisk/config"
 	"github.com/bazelbuild/bazelisk/core"
 	"github.com/bazelbuild/bazelisk/repositories"
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 )
@@ -41,96 +38,42 @@ func Run(args []string, opts *RunOpts) (exitCode int, err error) {
 	if err := setBazelVersion(); err != nil {
 		return -1, fmt.Errorf("failed to set bazel version: %s", err)
 	}
-	gcs := &repositories.GCSRepo{}
-	bazeliskConf := core.MakeDefaultConfig()
-	gitHub := repositories.CreateGitHubRepo(bazeliskConf.Get("BAZELISK_GITHUB_TOKEN"))
-	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
-	repos := core.CreateRepositories(gcs, gcs, gitHub, gcs, gcs, true)
+	repos := createRepositories(core.MakeDefaultConfig())
 
-	if opts.Stdout != nil {
-		close, err := redirectStdio(opts.Stdout, &os.Stdout)
-		if err != nil {
-			return -1, err
-		}
-		defer close()
-	}
-	if opts.Stderr != nil {
-		close, err := redirectStdio(opts.Stderr, &os.Stderr)
-		if err != nil {
-			return -1, err
-		}
-		defer close()
-
-		// Prevent Bazelisk `log.Printf` call to write directly to stderr
-		oldWriter := goLog.Writer()
-		goLog.SetOutput(opts.Stderr)
-		defer goLog.SetOutput(oldWriter)
-	}
-	return core.RunBazelisk(args, repos)
-}
-
-func BazelInfo(requestInfos []string) (map[string]string, error) {
-	bazelArgs := append([]string{"info"}, requestInfos...)
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-	opts := &RunOpts{
-		Stdout: stdout,
-		Stderr: stderr,
-	}
-	_, err := Run(bazelArgs, opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to run `bazel info`: %w %s", err, stderr.String())
-	}
-
-	result := make(map[string]string, len(requestInfos))
-	lines := strings.Split(stdout.String(), "\n")
-	for _, line := range lines {
-		halves := strings.Split(line, ": ")
-		for _, info := range requestInfos {
-			if halves[0] == info {
-				result[info] = halves[1]
-				break
+	if opts.Stdout != nil || opts.Stderr != nil {
+		var errRedirect **os.File
+		if opts.Stdout == opts.Stderr {
+			errRedirect = &os.Stderr
+			close, err := redirectStdio(opts.Stdout, &os.Stdout, errRedirect)
+			if err != nil {
+				return -1, err
+			}
+			defer close()
+		} else {
+			if opts.Stdout != nil {
+				close, err := redirectStdio(opts.Stdout, &os.Stdout)
+				if err != nil {
+					return -1, err
+				}
+				defer close()
+			}
+			if opts.Stderr != nil {
+				errRedirect = &os.Stderr
+				close, err := redirectStdio(opts.Stderr, errRedirect)
+				if err != nil {
+					return -1, err
+				}
+				defer close()
 			}
 		}
+		if errRedirect != nil {
+			// Prevent Bazelisk `log.Printf` call to write directly to stderr
+			oldWriter := goLog.Writer()
+			goLog.SetOutput(*errRedirect)
+			defer goLog.SetOutput(oldWriter)
+		}
 	}
-
-	return result, nil
-}
-
-// ConfigureRunScript adds `--script_path` to a bazel run command so that we can
-// invoke the build and the run separately.
-func ConfigureRunScript(args []string) (newArgs []string, scriptPath string, err error) {
-	if arg.GetCommand(args) != "run" {
-		return args, "", nil
-	}
-	// If --script_path is already set, don't create a run script ourselves,
-	// since the caller probably has the intention to invoke it on their own.
-	existingScript := arg.Get(args, "script_path")
-	if existingScript != "" {
-		return args, "", nil
-	}
-	script, err := os.CreateTemp("", "bb-run-*")
-	if err != nil {
-		return nil, "", err
-	}
-	defer script.Close()
-	scriptPath = script.Name()
-	args = append(args, "--script_path="+scriptPath)
-	return args, scriptPath, nil
-}
-
-func InvokeRunScript(path string) (exitCode int, err error) {
-	if err := os.Chmod(path, 0o755); err != nil {
-		return -1, err
-	}
-	// TODO: Exec() replaces the current process, so it prevents us from running
-	// post-run hooks (if we decide those will be supported). If we want to use
-	// exec.Command() here instead of exec(), then we might need to manually
-	// forward signals from the parent file watcher process.
-	if err := syscall.Exec(path, nil, os.Environ()); err != nil {
-		return -1, err
-	}
-	panic("unreachable")
+	return core.RunBazelisk(args, repos)
 }
 
 // IsInvokedByBazelisk returns whether the CLI was invoked by bazelisk itself.
@@ -164,8 +107,7 @@ func makePipeWriter(w io.Writer) (pw *os.File, closeFunc func(), err error) {
 
 // Redirects either os.Stdout or os.Stderr to the given writer. Calling the
 // returned close function stops redirection.
-func redirectStdio(w io.Writer, stdio **os.File) (close func(), err error) {
-	original := *stdio
+func redirectStdio(w io.Writer, stdio ...**os.File) (close func(), err error) {
 	var closePipe func()
 	f, ok := w.(*os.File)
 	if !ok {
@@ -176,21 +118,28 @@ func redirectStdio(w io.Writer, stdio **os.File) (close func(), err error) {
 		closePipe = c
 		f = pw
 	}
-	*stdio = f
+	original := make([]*os.File, len(stdio))
+	for i := range stdio {
+		original[i] = *stdio[i]
+		*stdio[i] = f
+	}
 	close = func() {
+		for i := range stdio {
+			*stdio[i] = original[i]
+		}
 		if closePipe != nil {
 			closePipe()
 		}
-		*stdio = original
 	}
 	return close, nil
 }
 
 func createRepositories(bazeliskConf config.Config) *core.Repositories {
 	gcs := &repositories.GCSRepo{}
-	gitHub := repositories.CreateGitHubRepo(bazeliskConf.Get("BAZELISK_GITHUB_TOKEN"))
-	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
-	return core.CreateRepositories(gcs, gcs, gitHub, gcs, gcs, true)
+	config := core.MakeDefaultConfig()
+	gitHub := repositories.CreateGitHubRepo(config.Get("BAZELISK_GITHUB_TOKEN"))
+	// Fetch LTS releases & candidates, rolling releases and Bazel-at-commits from GCS, forks from GitHub.
+	return core.CreateRepositories(gcs, gitHub, gcs, gcs, true)
 }
 
 func getBazeliskHome(bazeliskConf config.Config) (string, error) {

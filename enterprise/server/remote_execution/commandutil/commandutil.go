@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
@@ -16,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ps "github.com/mitchellh/go-ps"
 )
@@ -36,12 +38,50 @@ var (
 	ErrSIGKILL = status.UnavailableErrorf("command was terminated by SIGKILL, likely due to executor shutdown or OOM")
 
 	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
+	StdOutErrMaxSize          = flag.Uint64("executor.stdouterr_max_size_bytes", 0, "The maximum size of stdout/stderr for each action, in bytes. If the size of stdout/stderr exceeds this limit, the command will fail with a RESOURCE_EXHAUSTED error. If set to 0, no limit is enforced.")
 )
 
 var (
 	// Regexp matching a string consisting solely of digits (0-9).
 	allDigits = regexp.MustCompile(`^\d+$`)
 )
+
+func LimitStdOutErrWriter(w io.Writer) io.Writer {
+	if *StdOutErrMaxSize == 0 {
+		return w
+	}
+	return &limitWriter{w: w, limit: *StdOutErrMaxSize}
+}
+
+// limitWriter limits the number of bytes written to it.
+// It returns a ResourceExhausted error if a write occurs that would exceed the limit.
+// Before returning a ResourceExhausted error, it writes as many bytes as possible before the limit would be reached.
+type limitWriter struct {
+	w     io.Writer
+	limit uint64
+
+	n uint64
+}
+
+func (lw *limitWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 || lw.limit == 0 {
+		return lw.w.Write(p)
+	}
+	pSize := uint64(len(p))
+	totalRequested := lw.n + pSize
+	if lw.n >= lw.limit {
+		// n could have been increased from a previous write and reached limit
+		return 0, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, lw.limit)
+	}
+
+	writeSize := min(pSize, lw.limit-lw.n)
+	n, err := lw.w.Write(p[:writeSize])
+	lw.n += uint64(n)
+	if err == nil && writeSize < pSize {
+		return n, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, lw.limit)
+	}
+	return n, err
+}
 
 func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
 	if stdio == nil {
@@ -120,6 +160,42 @@ func (_ CommandRunner) Run(ctx context.Context, command *repb.Command, workDir s
 // will be returned in CommandResult.Stats. Note that enabling stats incurs some
 // overhead, so a nil callback should be used if stats aren't needed.
 func Run(ctx context.Context, command *repb.Command, workDir string, statsListener procstats.Listener, stdio *interfaces.Stdio) *interfaces.CommandResult {
+	return RunWithOpts(ctx, command, &RunOpts{
+		Dir:           workDir,
+		StatsListener: statsListener,
+		Stdio:         stdio,
+	})
+}
+
+type RunOpts struct {
+	// Dir is the working dir for the command.
+	Dir string
+
+	// StatsListener is a callback to handle command stats while it is
+	// executing. If non-nil, stats will be enabled and the callback will be
+	// invoked each time stats are measured. In addition, the last recorded
+	// stats will be returned in CommandResult.Stats.
+	//
+	// NOTE: enabling stats incurs some overhead, so a nil callback should be
+	// used if stats aren't needed.
+	StatsListener procstats.Listener
+
+	// Stdio defines how stdin/stdout/stderr should be handled.
+	// If Stdout/Stderr are provided, command output will not be buffered,
+	// and will instead *only* be written to those writers.
+	Stdio *interfaces.Stdio
+
+	// Signal is an optional channel that can be used to send signals to the
+	// process once started.
+	Signal chan syscall.Signal
+}
+
+// Run a command, retrying "text file busy" errors and killing the process tree
+// when the context is cancelled.
+func RunWithOpts(ctx context.Context, command *repb.Command, opts *RunOpts) *interfaces.CommandResult {
+	if opts == nil {
+		opts = &RunOpts{}
+	}
 	var cmd *exec.Cmd
 	var stdoutBuf, stderrBuf *bytes.Buffer
 	var stats *repb.UsageStats
@@ -127,11 +203,11 @@ func Run(ctx context.Context, command *repb.Command, workDir string, statsListen
 	err := RetryIfTextFileBusy(func() error {
 		// Create a new command on each attempt since commands can only be run once.
 		var err error
-		cmd, stdoutBuf, stderrBuf, err = constructExecCommand(command, workDir, stdio)
+		cmd, stdoutBuf, stderrBuf, err = constructExecCommand(command, opts.Dir, opts.Stdio)
 		if err != nil {
 			return err
 		}
-		stats, err = RunWithProcessTreeCleanup(ctx, cmd, statsListener)
+		stats, err = RunWithProcessTreeCleanup(ctx, cmd, opts)
 		return err
 	})
 
@@ -201,30 +277,62 @@ func (p *process) monitor(statsListener procstats.Listener) chan *repb.UsageStat
 //
 // For an example command that can be passed to this func, see
 // constructExecCommand.
-//
-// If statsListener is non-nil, stats will be enabled and the callback will be
-// invoked each time stats are measured. In addition, the stats returned will
-// be non-nil. Note that enabling stats incurs some overhead, so a nil callback
-// should be used if stats aren't needed.
-func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, statsListener procstats.Listener) (*repb.UsageStats, error) {
+func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, opts *RunOpts) (*repb.UsageStats, error) {
+	if opts == nil {
+		opts = &RunOpts{}
+	}
+
 	p, err := startNewProcess(ctx, cmd)
 	if err != nil {
 		return nil, err
 	}
-	statsCh := p.monitor(statsListener)
+	statsCh := p.monitor(opts.StatsListener)
+
+	if opts.Signal != nil {
+		go forwardSignals(ctx, p, opts.Signal)
+	}
 
 	rusage, err := p.wait()
 	stats := <-statsCh
-	// If rusage reports higher CPU usage than what the stats poller reported,
-	// use that as the measured CPU. The poller doesn't know exactly when the
-	// process will exit, so it will miss some usage towards the end. Note,
-	// ideally we'd just use rusage in 100% of cases, but unlike the poller,
-	// rusage doesn't account for child processes and can sometimes underreport.
-	if stats != nil && rusage != nil {
-		rusageCPUMicros := rusage.GetUserCpuTimeUsec() + rusage.GetSysCpuTimeUsec()
-		stats.CpuNanos = max(stats.CpuNanos, rusageCPUMicros*1e3)
+	if rusage != nil {
+		// If process tree monitoring was not requested, then the stats returned
+		// by the channel will be nil. At least return the top-level process
+		// rusage.
+		if stats == nil {
+			stats = &repb.UsageStats{
+				CpuNanos:        rusageCPUNanos(rusage),
+				PeakMemoryBytes: rusage.GetMaxResidentSetSizeBytes(),
+			}
+		} else {
+			// If rusage reports higher CPU usage than what the stats poller
+			// reported, use that as the measured CPU. The poller doesn't know
+			// exactly when the process will exit, so it will miss some usage
+			// towards the end. Note, ideally we'd just use rusage in 100% of
+			// cases, but unlike the poller, rusage doesn't account for child
+			// processes and can sometimes underreport.
+			stats.CpuNanos = max(stats.CpuNanos, rusageCPUNanos(rusage))
+		}
 	}
 	return stats, err
+}
+
+func forwardSignals(ctx context.Context, process *process, ch <-chan syscall.Signal) {
+	for {
+		select {
+		case s := <-ch:
+			log.CtxDebugf(ctx, "Sending signal %d (%s) to pid %d", s, s, process.cmd.Process.Pid)
+			if err := process.signal(s); err != nil {
+				log.CtxWarningf(ctx, "Failed to send signal %q: %s", s, err)
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// Returns the total CPU time in nanoseconds from the given rusage measurement.
+func rusageCPUNanos(rusage *espb.Rusage) int64 {
+	return (rusage.GetUserCpuTimeUsec() + rusage.GetSysCpuTimeUsec()) * 1e3
 }
 
 // ChildPids returns all *direct* child pids of a process identified by pid.
@@ -295,11 +403,14 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 	// imply that SIGKILL was received.
 
 	if exitCode == KilledExitCode {
+		if ctx.Err() == context.Canceled {
+			return exitCode, status.CanceledErrorf("command was canceled: %s", err.Error())
+		}
 		if dl, ok := ctx.Deadline(); ok && time.Now().After(dl) {
-			return exitCode, status.DeadlineExceededErrorf("Command timed out: %s", err.Error())
+			return exitCode, status.DeadlineExceededErrorf("command timed out: %s", err.Error())
 		}
 		// If the command didn't time out, it was probably killed by the kernel due to OOM.
-		return exitCode, status.ResourceExhaustedErrorf("Command was killed: %s", err.Error())
+		return exitCode, status.ResourceExhaustedErrorf("command was killed: %s", err.Error())
 	}
 
 	return exitCode, nil
@@ -313,4 +424,22 @@ func EnvStringList(command *repb.Command) []string {
 		env = append(env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
 	return env
+}
+
+// EnvProto returns the REAPI proto representation of the given env string list
+// (NAME=VALUE pairs). It returns an error if any string in the list does not
+// contain "=".
+func EnvProto(env []string) ([]*repb.Command_EnvironmentVariable, error) {
+	out := make([]*repb.Command_EnvironmentVariable, 0, len(env))
+	for _, pair := range env {
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) != 2 {
+			return nil, status.InvalidArgumentErrorf("invalid environment variable %q (expected NAME=VALUE)", pair)
+		}
+		out = append(out, &repb.Command_EnvironmentVariable{
+			Name:  parts[0],
+			Value: parts[1],
+		})
+	}
+	return out, nil
 }

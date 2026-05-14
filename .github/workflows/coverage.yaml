@@ -1,0 +1,37 @@
+name: Coverage
+
+on:
+  workflow_dispatch: # Manually
+  schedule:
+    - cron: "0 0 * * *" # Daily
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
+
+      - name: Setup Bazel Go module cache
+        uses: ./.github/actions/setup-bazel-go-mod-cache
+
+      - name: Coverage
+        run: |
+          bazelisk coverage \
+              --config=ci \
+              --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+              --experimental_split_coverage_postprocessing \
+              --experimental_fetch_all_coverage_outputs \
+              -- \
+              //... \
+              -//server/util/fastcopy:fastcopy_test # This test runs on an image that does not have gcov installed
+
+      - name: Slack
+        uses: 8398a7/action-slack@77eaa4f1c608a7d68b38af4e3f739dcd8cba273e # v3
+        with:
+          status: ${{ job.status }}
+          fields: all
+        env:
+          GITHUB_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_CI_WEBHOOK_URL }}
+        if: always()

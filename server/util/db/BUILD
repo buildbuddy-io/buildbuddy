@@ -9,6 +9,10 @@ go_library(
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/db",
     visibility = ["//visibility:public"],
+    x_defs = {
+        # Avoid a conflict with the regular sqlite3 driver.
+        "github.com/ncruces/go-sqlite3/driver.driverName": "sqlite3-wasm",
+    },
     deps = [
         "//aws_rds_certs:bundle",
         "//server/environment",
@@ -29,6 +33,8 @@ go_library(
         "@com_github_jackc_pgx_v5//pgconn",
         "@com_github_jackc_pgx_v5//stdlib",
         "@com_github_mattn_go_sqlite3//:go-sqlite3",
+        "@com_github_ncruces_go_sqlite3//driver",
+        "@com_github_ncruces_go_sqlite3//embed",
         "@com_github_prometheus_client_golang//prometheus",
         "@io_gorm_driver_mysql//:mysql",
         "@io_gorm_driver_postgres//:postgres",
@@ -36,7 +42,6 @@ go_library(
         "@io_gorm_gorm//:gorm",
         "@io_gorm_gorm//logger",
         "@io_gorm_gorm//schema",
-        "@io_gorm_gorm//utils",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel//codes",
         "@io_opentelemetry_go_otel_trace//:trace",

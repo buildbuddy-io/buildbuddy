@@ -1,11 +1,11 @@
 import React from "react";
 
+import Link from "@docusaurus/Link";
 import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
+import type { Props } from "@theme/BlogListPage";
+import BlogListPaginator from "@theme/BlogListPaginator";
 import Layout from "@theme/Layout";
 import BlogPostItem from "../BlogPostItem";
-import BlogListPaginator from "@theme/BlogListPaginator";
-import type { Props } from "@theme/BlogListPage";
-import Link from "@docusaurus/Link";
 
 function BlogListPage(props: Props): JSX.Element {
   const { metadata, items, sidebar } = props;

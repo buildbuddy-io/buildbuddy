@@ -10,20 +10,20 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
-func NewNullAuthenticator(anonymousUsageEnabled bool, adminGroupID string) *NullAuthenticator {
+// Create these once so they don't show up in benchmarks that use null auth
+var (
+	anonymouseUserError = authutil.AnonymousUserError("Auth not implemented")
+	unimplementedError  = status.UnimplementedError("Auth not implemented")
+)
+
+func NewNullAuthenticator(anonymousUsageEnabled bool) *NullAuthenticator {
 	return &NullAuthenticator{
-		adminGroupID:           adminGroupID,
 		anonymousUsageDisabled: !anonymousUsageEnabled,
 	}
 }
 
 type NullAuthenticator struct {
-	adminGroupID           string
 	anonymousUsageDisabled bool
-}
-
-func (a *NullAuthenticator) AdminGroupID() string {
-	return a.adminGroupID
 }
 
 func (a *NullAuthenticator) AnonymousUsageEnabled(ctx context.Context) bool {
@@ -47,7 +47,7 @@ func (a *NullAuthenticator) AuthenticatedGRPCContext(ctx context.Context) contex
 }
 
 func (a *NullAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
-	return nil, authutil.AnonymousUserError("Auth not implemented")
+	return nil, anonymouseUserError
 }
 
 func (a *NullAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
@@ -55,19 +55,15 @@ func (a *NullAuthenticator) FillUser(ctx context.Context, user *tables.User) err
 }
 
 func (a *NullAuthenticator) Login(w http.ResponseWriter, r *http.Request) error {
-	return status.UnimplementedError("Auth not implemented")
+	return unimplementedError
 }
 
 func (a *NullAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error {
-	return status.UnimplementedError("Auth not implemented")
+	return unimplementedError
 }
 
 func (a *NullAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error {
-	return status.UnimplementedError("Auth not implemented")
-}
-
-func (a *NullAuthenticator) ParseAPIKeyFromString(input string) (string, error) {
-	return "", nil
+	return unimplementedError
 }
 
 func (a *NullAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {

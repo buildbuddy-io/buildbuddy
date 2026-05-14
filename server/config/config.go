@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -43,11 +42,11 @@ func expandStringValue(value string) (string, error) {
 	ctx := context.Background()
 	var expandErr error
 	expandedValue := os.Expand(value, func(s string) string {
-		if strings.HasPrefix(s, externalSecretPrefix) {
+		if after, ok := strings.CutPrefix(s, externalSecretPrefix); ok {
 			if SecretProvider == nil {
 				expandErr = status.UnavailableError("config references an external secret but no secret provider is available")
 			} else {
-				name := strings.TrimPrefix(s, externalSecretPrefix)
+				name := after
 				secret, err := SecretProvider.GetSecret(ctx, name)
 				if err != nil {
 					expandErr = status.UnavailableErrorf("could not retrieve config secret %q: %s", name, err)
@@ -63,21 +62,22 @@ func expandStringValue(value string) (string, error) {
 	return expandedValue, nil
 }
 
-// LoadFromFile parses the flags and loads the config from a string.
+func expandFlagValues() error {
+	var lastErr error
+	common.DefaultFlagSet.VisitAll(func(f *flag.Flag) {
+		if err := flagutil.Expand(f.Value, expandStringValue); err != nil {
+			lastErr = fmt.Errorf("could not expand flag %q: %s", f.Name, err)
+		}
+	})
+	return lastErr
+}
+
+// LoadFromData parses the flags and loads the config from a string.
 func LoadFromData(data string) error {
 	if err := flagyaml.PopulateFlagsFromData(data); err != nil {
 		return err
 	}
-	var lastErr error
-	common.DefaultFlagSet.VisitAll(func(f *flag.Flag) {
-		if err := types.Expand(f.Value, expandStringValue); err != nil {
-			lastErr = err
-		}
-	})
-	if lastErr != nil {
-		return lastErr
-	}
-	return nil
+	return expandFlagValues()
 }
 
 // LoadFromFile parses the flags and loads the config file specified by
@@ -94,6 +94,12 @@ func LoadFromFile(configFile string) error {
 func Load() error {
 	configFile := Path()
 
+	// If config_file is explicitly set to an empty string, don't attempt to
+	// load the file.
+	if configFile == "" {
+		return expandFlagValues()
+	}
+
 	log.Infof("Reading buildbuddy config from '%s'", configFile)
 
 	_, err := os.Stat(configFile)
@@ -101,7 +107,8 @@ func Load() error {
 	// If the file does not exist then skip it.
 	if os.IsNotExist(err) {
 		log.Warningf("No config file found at %s.", configFile)
-		return nil
+		// Expand secrets in flags even if config wasn't loaded from file.
+		return expandFlagValues()
 	}
 
 	return LoadFromFile(configFile)

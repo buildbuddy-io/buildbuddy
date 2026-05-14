@@ -1,18 +1,30 @@
 module.exports = {
   someSidebar: {
-    "Getting Started": ["introduction", "cloud", "on-prem", "contributing"],
+    "Getting Started": [
+      "introduction",
+      "quickstart",
+      { type: "link", label: "Changelog", href: "/changelog" },
+      "contributing",
+    ],
     Guides: ["guides", "guide-auth", "guide-metadata"],
     Cache: ["cache-encryption-keys"],
     "Remote Build Execution": [
       "remote-build-execution",
       "rbe-setup",
       "rbe-platforms",
+      "rbe-container-image-caching",
       "secrets",
       "rbe-microvms",
       "rbe-github-actions",
       "rbe-pools",
     ],
-    "Workflows (CI)": ["workflows-introduction", "workflows-setup", "workflows-config"],
+    "Remote Runners (CI)": [
+      "remote-runner-introduction",
+      "remote-runner-features",
+      "workflows-setup",
+      "workflows-config",
+      "remote-bazel",
+    ],
     CLI: ["cli", "cli-plugins"],
     Troubleshooting: ["troubleshooting", "troubleshooting-rbe", "troubleshooting-slow-upload"],
     Enterprise: [
@@ -23,6 +35,7 @@ module.exports = {
       "enterprise-rbe",
       "enterprise-mac-rbe",
       "enterprise-api",
+      "enterprise-mcp",
     ],
     Monitoring: ["prometheus-metrics-on-prem", "prometheus-metrics-for-cloud"],
     Architecture: [
@@ -40,6 +53,7 @@ module.exports = {
       "config-samples",
       "config-app",
       "config-database",
+      "config-olap-database",
       "config-storage",
       "config-cache",
       "config-github",

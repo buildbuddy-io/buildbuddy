@@ -1,12 +1,11 @@
-import React from "react";
-import InvocationModel from "./invocation_model";
 import { Copy, Info } from "lucide-react";
-import { copyToClipboard } from "../util/clipboard";
-import alert_service from "../alert/alert_service";
+import React from "react";
 import { command_line } from "../../proto/command_line_ts_proto";
-import shlex from "shlex";
+import alert_service from "../alert/alert_service";
 import Banner from "../components/banner/banner";
 import format from "../format/format";
+import { copyToClipboard } from "../util/clipboard";
+import InvocationModel from "./invocation_model";
 
 interface Props {
   model: InvocationModel;
@@ -35,62 +34,12 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
     alert_service.success("Command line copied to clipboard!");
   }
 
-  // Wraps arguments containing spaces in the provided command-line in
-  // quotation marks so they work when copied and pasted. The input
-  // command-line is passed in as an array with one entry per piece. For
-  // example, this command:
-  //   "bazel build --output_filter='argument with spaces' //..."
-  // is passed into this function as:
-  //   ["bazel", "build", "--output_filter=argument with spaces"," "//..."],
-  // and this will be returned:
-  //   ["bazel", "build", "--output_filter='argument with spaces'"," "//..."],
-  quote(pieces: string[]) {
-    return pieces
-      .map((value) => {
-        if (value.includes("=")) {
-          // shlex.quote everything after the first '=' so that arguments like:
-          // --flag="  = = = '' \"" are properly quoted.
-          let parts: string[] = value.split("=");
-          return parts[0] + "=" + shlex.quote(parts.slice(1).join("="));
-        }
-        return value;
-      })
-      .join(" ");
-  }
-
-  hasPatternFile() {
-    return Boolean(this.props.model.optionsMap.get("target_pattern_file"));
-  }
-
-  bazelCommandAndPatternWithOptions(options: string[]) {
-    let patterns: string[] = [];
-    if (!this.hasPatternFile()) {
-      patterns = this.props.model.expanded?.id?.pattern?.pattern || [];
-    }
-    return this.quote(
-      ["bazel", this.props.model.started?.command ?? "", ...patterns, ...(options || [])].filter((value) => value)
-    );
-  }
-
-  explicitCommandLine() {
-    // We allow overriding EXPLICIT_COMMAND_LINE to enable tools that wrap bazel
-    // to append bazel args but still preserve the appearance of the original
-    // command line. The effective command line can still be used to see the
-    // effective configuration used by bazel.
-    const overrideJSON = this.props.model.buildMetadataMap.get("EXPLICIT_COMMAND_LINE");
-    if (overrideJSON) {
-      try {
-        return this.quote(JSON.parse(overrideJSON));
-      } catch (_) {
-        // Invalid JSON; fall back to showing BES event.
-      }
-    }
-
-    return this.bazelCommandAndPatternWithOptions(this.props.model.optionsParsed?.explicitCmdLine ?? []);
-  }
-
   render() {
     const isBazelInvocation = this.props.model.isBazelInvocation();
+
+    const cumulativeMetrics = this.props.model.buildMetrics?.cumulativeMetrics;
+    const numAnalyses = cumulativeMetrics?.numAnalyses ?? 0;
+    const numBuilds = cumulativeMetrics?.numBuilds ?? 0;
 
     return (
       <div className="card">
@@ -134,13 +83,25 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
               <div>{this.props.model.getTiming()}</div>
             </div>
             <div className="invocation-section">
-              <div className="invocation-section-title">User</div>
-              <div>{this.props.model.getUser(false)}</div>
+              <div className="invocation-section-title">CPU time</div>
+              <div>
+                {format.formatWithCommas(+(this.props.model.buildMetrics?.timingMetrics?.cpuTimeInMs || 0) / 1000)}{" "}
+                cpu-seconds
+              </div>
             </div>
-            <div className="invocation-section">
-              <div className="invocation-section-title">Host name</div>
-              <div>{this.props.model.getHost()}</div>
-            </div>
+
+            {this.props.model.getUser() ? (
+              <div className="invocation-section">
+                <div className="invocation-section-title">User</div>
+                <div>{this.props.model.getUser()}</div>
+              </div>
+            ) : null}
+            {this.props.model.getHost() ? (
+              <div className="invocation-section">
+                <div className="invocation-section-title">Host name</div>
+                <div>{this.props.model.getHost()}</div>
+              </div>
+            ) : null}
             <div className="invocation-section">
               <div className="invocation-section-title">Tool</div>
               <div>{this.props.model.getTool()}</div>
@@ -181,24 +142,37 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                     )}
                   </div>
                 </div>
-                <div className="invocation-section">
-                  <div className="invocation-section-title">Actions</div>
-                  <div>
-                    {format.formatWithCommas(this.props.model.buildMetrics?.actionSummary?.actionsExecuted)} actions
-                    {!!this.props.model.buildMetrics?.actionSummary?.actionsCreated && (
-                      <span>
-                        {" "}
-                        ({format.formatWithCommas(this.props.model.buildMetrics?.actionSummary.actionsCreated)} created)
-                      </span>
-                    )}
+                {Boolean(this.props.model.buildMetrics?.actionSummary) && (
+                  <div className="invocation-section">
+                    <div className="invocation-section-title">Actions</div>
+                    <div>
+                      {format.formatWithCommas(this.props.model.buildMetrics?.actionSummary?.actionsExecuted)} actions
+                      {!!this.props.model.buildMetrics?.actionSummary?.actionsCreated && (
+                        <span>
+                          {" "}
+                          ({format.formatWithCommas(this.props.model.buildMetrics?.actionSummary?.actionsCreated)}{" "}
+                          created)
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="invocation-section">
-                  <div className="invocation-section-title">Packages</div>
-                  <div>
-                    {format.formatWithCommas(this.props.model.buildMetrics?.packageMetrics?.packagesLoaded)} packages
+                )}
+                {Boolean(this.props.model.buildMetrics?.packageMetrics) && (
+                  <div className="invocation-section">
+                    <div className="invocation-section-title">Packages</div>
+                    <div>
+                      {format.formatWithCommas(this.props.model.buildMetrics?.packageMetrics?.packagesLoaded)} packages
+                    </div>
                   </div>
-                </div>
+                )}
+                {cumulativeMetrics && (
+                  <div className="invocation-section">
+                    <div className="invocation-section-title">Analysis Cache Age</div>
+                    <div>
+                      {`${numAnalyses} ${numAnalyses === 1 ? "analysis" : "analyses"}, ${numBuilds} ${numBuilds === 1 ? "build" : "builds"}`}
+                    </div>
+                  </div>
+                )}
               </>
             )}
 
@@ -287,14 +261,14 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                     explicit command line{" "}
                     <Copy
                       className="copy-icon"
-                      onClick={this.handleCopyClicked.bind(this, this.explicitCommandLine())}
+                      onClick={this.handleCopyClicked.bind(this, this.props.model.explicitCommandLine())}
                     />
                   </div>
-                  {this.props.model.invocation.patternsTruncated && !this.hasPatternFile() && (
+                  {this.props.model.invocation.patternsTruncated && !this.props.model.hasPatternFile() && (
                     <Banner type="warning">Patterns have been truncated due to size limitations.</Banner>
                   )}
                   <div className="invocation-section">
-                    <code className="wrap">{this.explicitCommandLine()}</code>
+                    <code className="wrap">{this.props.model.explicitCommandLine()}</code>
                   </div>
                 </div>
 
@@ -303,19 +277,14 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                     effective command line{" "}
                     <Copy
                       className="copy-icon"
-                      onClick={this.handleCopyClicked.bind(
-                        this,
-                        `${this.bazelCommandAndPatternWithOptions(this.props.model.optionsParsed?.cmdLine ?? [])}`
-                      )}
+                      onClick={this.handleCopyClicked.bind(this, this.props.model.effectiveCommandLine())}
                     />
                   </div>
-                  {this.props.model.invocation.patternsTruncated && !this.hasPatternFile() && (
+                  {this.props.model.invocation.patternsTruncated && !this.props.model.hasPatternFile() && (
                     <Banner type="warning">Patterns have been truncated due to size limitations.</Banner>
                   )}
                   <div className="invocation-section">
-                    <code className="wrap">
-                      {this.bazelCommandAndPatternWithOptions(this.props.model.optionsParsed?.cmdLine ?? [])}
-                    </code>
+                    <code className="wrap">{this.props.model.effectiveCommandLine()}</code>
                   </div>
                 </div>
               </>

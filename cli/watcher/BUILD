@@ -1,17 +1,14 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "watcher",
     srcs = ["watcher.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/watcher",
     deps = [
-        "//cli/arg",
         "//cli/log",
         "//cli/workspace",
-        "//server/util/status",
         "@com_github_bduffany_godemon//:godemon",
-        "@com_github_google_shlex//:shlex",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

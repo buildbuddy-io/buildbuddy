@@ -48,7 +48,7 @@ $ helm install --name my-release buildbuddy/buildbuddy-enterprise
 ```
 
 The command deploys BuildBuddy on the Kubernetes cluster in the default configuration. The [configuration](#configuration)
-section lists the parameters that can be configured during installation.
+section provides examples of parameters that can be configured during installation.
 
 ## Uninstalling the Chart
 
@@ -81,6 +81,8 @@ You can then check this configuration in to your source repository, or manually 
 ```bash
 $ kubectl apply -f buildbuddy-deploy.yaml
 ```
+
+## Configuration
 
 ### Example configurations
 

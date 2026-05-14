@@ -3,12 +3,14 @@ package firecracker
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"io/fs"
 	"math"
+	"math/rand/v2"
 	"net"
 	"os"
 	"os/exec"
@@ -16,6 +18,8 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -25,16 +29,17 @@ import (
 
 	"github.com/armon/circbuf"
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/uffd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
@@ -44,48 +49,61 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
-	"github.com/google/uuid"
+	"github.com/klauspost/cpuid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
 	vmsupport_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/vmsupport"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
-	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
-	dockerclient "github.com/docker/docker/client"
 	fcclient "github.com/firecracker-microvm/firecracker-go-sdk"
 	fcmodels "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
+	hlpb "google.golang.org/grpc/health/grpc_health_v1"
+	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
-var firecrackerMountWorkspaceFile = flag.Bool("executor.firecracker_mount_workspace_file", false, "Enables mounting workspace filesystem to improve performance of copying action outputs.")
-var firecrackerCgroupVersion = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
-var debugStreamVMLogs = flag.Bool("executor.firecracker_debug_stream_vm_logs", false, "Stream firecracker VM logs to the terminal.")
-var debugTerminal = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
-var enableVBD = flag.Bool("executor.firecracker_enable_vbd", false, "Enables the FUSE-based virtual block device interface for block devices.")
-var EnableRootfs = flag.Bool("executor.firecracker_enable_merged_rootfs", false, "Merges the containerfs and scratchfs into a single rootfs, removing the need to use overlayfs for the guest's root filesystem. Requires NBD to also be enabled.")
-var enableUFFD = flag.Bool("executor.firecracker_enable_uffd", false, "Enables userfaultfd for firecracker VMs.")
-var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
-var workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
-var healthCheckInterval = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
-var healthCheckTimeout = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
-var overprivisionCPUs = flag.Int("executor.firecracker_overprivision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine.")
+var (
+	firecrackerCgroupVersion              = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
+	debugStreamVMLogs                     = flag.Bool("executor.firecracker_debug_stream_vm_logs", false, "Stream firecracker VM logs to the terminal.")
+	debugTerminal                         = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
+	dieOnFirecrackerFailure               = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
+	workspaceDiskSlackSpaceMB             = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
+	healthCheckInterval                   = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
+	healthCheckTimeout                    = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
+	overprovisionCPUs                     = flag.Int("executor.firecracker_overprovision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine. Set to -1 to allow all VMs to use max CPU.")
+	initOnAllocAndFree                    = flag.Bool("executor.firecracker_init_on_alloc_and_free", false, "Set init_on_alloc=1 and init_on_free=1 in firecracker vms")
+	netPoolSize                           = flag.Int("executor.firecracker_network_pool_size", 0, "Limit on the number of networks to be reused between VMs. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
+	firecrackerVMDockerMirrors            = flag.Slice("executor.firecracker_vm_docker_mirrors", []string{}, "Registry mirror hosts (and ports) for public Docker images. Only used if InitDockerd is set to true.")
+	firecrackerVMDockerInsecureRegistries = flag.Slice("executor.firecracker_vm_docker_insecure_registries", []string{}, "Tell Docker to communicate over HTTP with these URLs. Only used if InitDockerd is set to true.")
+	firecrackerVMResolvConfPath           = flag.String("executor.firecracker_vm_resolv_conf", "", "Path to a resolv.conf file to use inside firecracker VMs. If empty, VMs use default nameservers (8.8.8.8, 8.8.4.4, 1.1.1.1).")
+	enableLinux6_1                        = flag.Bool("executor.firecracker_enable_linux_6_1", false, "Enable the 6.1 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
+	enablePCI                             = flag.Bool("executor.firecracker_enable_pci", true, "Enable PCI for firecracker VMs. Should only be enabled if firecracker version is v1.14.4+.", flag.Internal)
+	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
-var forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
-var disableWorkspaceSync = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
+	exportSnapshotToCOW = flag.Bool("executor.firecracker_export_snapshot_to_cow", true, "Export Firecracker memory snapshots directly to a VBD-backed COWStore instead of a temporary file on disk that is later converted to a COWStore.", flag.Internal)
+
+	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
+	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
+	debugDisableCgroup      = flag.Bool("debug_disable_cgroup", false, "Disable firecracker cgroup setup.")
+)
 
 //go:embed guest_api_hash.sha256
 var GuestAPIHash string
@@ -106,7 +124,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "10"
+	GuestAPIVersion = "19"
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
@@ -132,6 +150,7 @@ const (
 
 	fullSnapshotType = "Full"
 	diffSnapshotType = "Diff"
+	noSnapshotType   = "None"
 
 	mergeDiffSnapshotConcurrency = 4
 	// Firecracker writes changed blocks in 4Kb blocks.
@@ -139,7 +158,7 @@ const (
 
 	// Size of machine log tail to retain in memory so that we can parse logs for
 	// errors.
-	vmLogTailBufSize = 1024 * 12 // 12 KB
+	vmLogTailBufSize = 1024 * 128 // 128 KB
 	// File name of the VM logs in CommandResult.AuxiliaryLogs
 	vmLogTailFileName = "vm_log_tail.txt"
 	// Log prefix used by goinit when logging fatal errors.
@@ -149,6 +168,9 @@ const (
 	// Example:
 	//	"{chrootPath}/workspacefs.vbd/file"
 	vbdMountDirSuffix = ".vbd"
+
+	// Name of the empty file used as a placeholder for the workspace drive.
+	emptyFileName = "empty.bin"
 
 	// The workspacefs image name and drive ID.
 	workspaceFSName  = "workspacefs.ext4"
@@ -204,17 +226,54 @@ const (
 
 	// How long to allow for the VM to be finalized (paused, outputs copied, etc.)
 	finalizationTimeout = 10 * time.Second
+
+	// Firecracker does not allow VMs over a certain size.
+	// See MAX_SUPPORTED_VCPUS in firecracker repo.
+	firecrackerMaxCPU = 32
+
+	// The max amount of time we'll wait for the balloon to expand to the target size.
+	maxUpdateBalloonDuration = 30 * time.Second
+
+	// Special file that actions can create in the workspace directory to
+	// invalidate the snapshot the action was run in. This can be written
+	// if the action detects that the snapshot was corrupted upon startup.
+	invalidateSnapshotMarkerFile = ".BUILDBUDDY_INVALIDATE_SNAPSHOT"
 )
 
 var (
-	masqueradingOnce sync.Once
-	masqueradingErr  error
-
 	vmIdx   int
 	vmIdxMu sync.Mutex
 
-	fatalErrPattern = regexp.MustCompile(`\b` + fatalInitLogPrefix + `(.*)`)
+	fatalErrPattern             = regexp.MustCompile(`\b` + fatalInitLogPrefix + `(.*)`)
+	slowInterruptWarningPattern = regexp.MustCompile(`hrtimer: interrupt took \d+ ns`)
 )
+
+// Derives the desired Firecracker NetworkMode from the provided network and
+// init-dockerd platform properties enum.
+func networkMode(network string, initDockerd bool) (fcpb.NetworkMode, error) {
+	if network == "external" || network == "" {
+		return fcpb.NetworkMode_NETWORK_MODE_EXTERNAL, nil
+	}
+	if network == "off" {
+		if initDockerd {
+			return fcpb.NetworkMode_NETWORK_MODE_LOCAL, nil
+		}
+		return fcpb.NetworkMode_NETWORK_MODE_OFF, nil
+	}
+	return fcpb.NetworkMode_NETWORK_MODE_UNSPECIFIED, status.InvalidArgumentErrorf("unsupported network option %q", network)
+}
+
+// networkingEnabled returns true if the VM has any networking capability.
+func networkingEnabled(mode fcpb.NetworkMode) bool {
+	// UNSPECIFIED defaults to EXTERNAL for backward compatibility.
+	return mode != fcpb.NetworkMode_NETWORK_MODE_OFF
+}
+
+// externalNetworkingEnabled returns true if the VM can access external networks.
+func externalNetworkingEnabled(mode fcpb.NetworkMode) bool {
+	// UNSPECIFIED defaults to EXTERNAL for backward compatibility.
+	return mode == fcpb.NetworkMode_NETWORK_MODE_UNSPECIFIED || mode == fcpb.NetworkMode_NETWORK_MODE_EXTERNAL
+}
 
 func init() {
 	// Configure firecracker request timeout (default: 500ms).
@@ -282,7 +341,7 @@ func putFileIntoDir(ctx context.Context, fsys fs.FS, fileName, destDir string, m
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
 	}
-	fileHash := fmt.Sprintf("%x", h.Sum(nil))
+	fileHash := hex.EncodeToString(h.Sum(nil))
 	fileHome := filepath.Join(destDir, "executor", fileHash)
 	if err := disk.EnsureDirectoryExists(fileHome); err != nil {
 		return "", err
@@ -339,21 +398,27 @@ func checkIfFilesExist(targetDir string, files ...string) bool {
 // startup and applies to all VMs created by the executor.
 type ExecutorConfig struct {
 	JailerRoot string
+	CacheRoot  string
 
 	InitrdImagePath       string
-	KernelImagePath       string
+	GuestKernelImagePath  string
 	FirecrackerBinaryPath string
 	JailerBinaryPath      string
 
-	KernelVersion      string
+	GuestKernelVersion string
+	HostKernelVersion  string
 	FirecrackerVersion string
 	GuestAPIVersion    string
+
+	GuestKernelImagePath6_1 string
+	GuestKernelVersion6_1   string
 }
 
 var (
 	// set by x_defs in BUILD file
-	initrdRunfilePath  string
-	vmlinuxRunfilePath string
+	initrdRunfilePath     string
+	vmlinuxRunfilePath    string
+	vmlinux6_1RunfilePath string
 )
 
 // GetExecutorConfig computes the ExecutorConfig for this executor instance.
@@ -363,122 +428,227 @@ var (
 // path needs to be short. Specifically, a full sock path will look like:
 // /tmp/firecracker/217d4de0-4b28-401b-891b-18e087718ad1/root/run/fc.sock
 // everything after "/tmp" is 65 characters, so 38 are left for the jailerRoot.
-func GetExecutorConfig(ctx context.Context, buildRootDir string) (*ExecutorConfig, error) {
+func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (*ExecutorConfig, error) {
 	bundle := vmsupport_bundle.Get()
 	initrdRunfileLocation, err := runfiles.Rlocation(initrdRunfilePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get initrd runfile path: %w", err)
 	}
 	initrdPath, err := putFileIntoDir(ctx, bundle, initrdRunfileLocation, buildRootDir, 0755)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("put initrd into build root dir: %w", err)
 	}
-	vmlinuxRunfileLocation, err := runfiles.Rlocation(vmlinuxRunfilePath)
-	if err != nil {
-		return nil, err
+
+	var guestKernelPath6_1 string
+	var guestKernelDigest6_1 *repb.Digest
+	// TODO: build a 6.1 kernel for arm64, then remove this conditional.
+	if vmlinux6_1RunfilePath != "" {
+		vmlinuxRunfileLocation6_1, err := runfiles.Rlocation(vmlinux6_1RunfilePath)
+		if err != nil {
+			return nil, fmt.Errorf("get vmlinux 6.1 runfile path: %w", err)
+		}
+		p, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation6_1, buildRootDir, 0755)
+		if err != nil {
+			return nil, fmt.Errorf("put vmlinux 6.1 into build root dir: %w", err)
+		}
+		guestKernelPath6_1 = p
+		d, err := digest.ComputeForFile(guestKernelPath6_1, repb.DigestFunction_SHA256)
+		if err != nil {
+			return nil, fmt.Errorf("compute digest for vmlinux 6.1: %w", err)
+		}
+		guestKernelDigest6_1 = d
 	}
-	kernelPath, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation, buildRootDir, 0755)
+	vmlinuxRunfileLocation5_15, err := runfiles.Rlocation(vmlinuxRunfilePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get vmlinux 5.15 runfile path: %w", err)
+	}
+	guestKernelPath5_15, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation5_15, buildRootDir, 0755)
+	if err != nil {
+		return nil, fmt.Errorf("put vmlinux 5.15 into build root dir: %w", err)
 	}
 	// TODO: when running as root, these should come from the bundle instead of
 	// $PATH, since we don't need to rely on the user having configured special
 	// perms on these binaries.
 	firecrackerPath, err := exec.LookPath("firecracker")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("look up firecracker in PATH: %w", err)
 	}
 	jailerPath, err := exec.LookPath("jailer")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("look up jailer in PATH: %w", err)
 	}
-	kernelDigest, err := digest.ComputeForFile(kernelPath, repb.DigestFunction_SHA256)
+	guestKernelDigest5_15, err := digest.ComputeForFile(guestKernelPath5_15, repb.DigestFunction_SHA256)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("compute digest for vmlinux 5.15: %w", err)
 	}
 	firecrackerDigest, err := digest.ComputeForFile(firecrackerPath, repb.DigestFunction_SHA256)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("compute digest for firecracker: %w", err)
+	}
+	hostKernelVersion, err := getHostKernelVersion()
+	if err != nil {
+		return nil, fmt.Errorf("get host kernel version: %w", err)
+	}
+	guestKernelImagePath := guestKernelPath5_15
+	guestKernelVersion := guestKernelDigest5_15.GetHash()
+	if *enableLinux6_1 {
+		guestKernelImagePath = guestKernelPath6_1
+		guestKernelVersion = guestKernelDigest6_1.GetHash()
 	}
 	return &ExecutorConfig{
 		// For now just use the build root dir as the jailer root dir, since
 		// these are guaranteed to be on the same FS.
-		JailerRoot:            buildRootDir,
-		InitrdImagePath:       initrdPath,
-		KernelImagePath:       kernelPath,
-		FirecrackerBinaryPath: firecrackerPath,
-		JailerBinaryPath:      jailerPath,
-		KernelVersion:         kernelDigest.GetHash(),
-		FirecrackerVersion:    firecrackerDigest.GetHash(),
-		GuestAPIVersion:       GuestAPIVersion,
+		JailerRoot:              buildRootDir,
+		CacheRoot:               cacheRootDir,
+		InitrdImagePath:         initrdPath,
+		GuestKernelImagePath:    guestKernelImagePath,
+		FirecrackerBinaryPath:   firecrackerPath,
+		JailerBinaryPath:        jailerPath,
+		GuestKernelVersion:      guestKernelVersion,
+		HostKernelVersion:       hostKernelVersion,
+		FirecrackerVersion:      firecrackerDigest.GetHash(),
+		GuestAPIVersion:         GuestAPIVersion,
+		GuestKernelImagePath6_1: guestKernelPath6_1,
+		GuestKernelVersion6_1:   guestKernelDigest6_1.GetHash(),
 	}, nil
 }
 
-type Provider struct {
-	env            environment.Env
-	dockerClient   *dockerclient.Client
-	executorConfig *ExecutorConfig
+func getHostKernelVersion() (string, error) {
+	var uts unix.Utsname
+	if err := unix.Uname(&uts); err != nil {
+		return "", err
+	}
+	return unix.ByteSliceToString(uts.Release[:]), nil
 }
 
-func NewProvider(env environment.Env, hostBuildRoot string) (*Provider, error) {
-	// Best effort trying to initialize the docker client. If it fails, we'll
-	// simply fall back to use skopeo to download and cache container images.
-	client, err := docker.NewClient()
-	if err != nil {
-		client = nil
-	}
+type Provider struct {
+	env                    environment.Env
+	executorConfig         *ExecutorConfig
+	networkPool            *networking.VMNetworkPool
+	marshalledDNSOverrides string
+	hostResolvConf         string
+}
 
-	executorConfig, err := GetExecutorConfig(env.GetServerContext(), hostBuildRoot)
+func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, error) {
+	executorConfig, err := GetExecutorConfig(env.GetServerContext(), buildRoot, cacheRoot)
 	if err != nil {
 		return nil, err
 	}
 
+	if err := ext4.EnsureDependencies(); err != nil {
+		return nil, status.WrapError(err, "verify ext4 tooling")
+	}
+
+	if _, err := os.Stat("/dev/kvm"); err != nil {
+		return nil, status.WrapError(err, "Firecracker isolation requires kvm")
+	}
+
+	// Enable masquerading on the host once on startup.
+	if err := networking.EnableMasquerading(env.GetServerContext()); err != nil {
+		return nil, status.WrapError(err, "enable masquerading")
+	}
+
+	var networkPool *networking.VMNetworkPool
+	if *netPoolSize != 0 {
+		networkPool = networking.NewVMNetworkPool(*netPoolSize)
+		env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
+	}
+
+	dns, err := parseDNSOverrides()
+	if err != nil {
+		return nil, err
+	}
+
+	var hostResolvConf string
+	if *firecrackerVMResolvConfPath != "" {
+		b, err := os.ReadFile(*firecrackerVMResolvConfPath)
+		if err != nil {
+			return nil, status.WrapErrorf(err, "read resolv.conf %s", *firecrackerVMResolvConfPath)
+		}
+		hostResolvConf = string(b)
+	}
 	return &Provider{
-		env:            env,
-		dockerClient:   client,
-		executorConfig: executorConfig,
+		env:                    env,
+		executorConfig:         executorConfig,
+		networkPool:            networkPool,
+		marshalledDNSOverrides: dns,
+		hostResolvConf:         hostResolvConf,
 	}, nil
 }
 
-func (p *Provider) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (container.CommandContainer, error) {
+func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
 	var vmConfig *fcpb.VMConfiguration
-	savedState := state.GetContainerState().GetFirecrackerState()
-	if savedState == nil {
-		sizeEstimate := task.GetSchedulingMetadata().GetTaskSize()
-		numCPUs := int64(max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000))
-		numCPUs += int64(*overprivisionCPUs)
-		numCPUs = min(numCPUs, int64(runtime.NumCPU()))
-		vmConfig = &fcpb.VMConfiguration{
-			NumCpus:           numCPUs,
-			MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
-			ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
-			EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(task.GetExecutionTask(), "debug-enable-vm-logs")),
-			EnableNetworking:  true,
-			InitDockerd:       props.InitDockerd,
-			EnableDockerdTcp:  props.EnableDockerdTCP,
-		}
-		vmConfig.BootArgs = getBootArgs(vmConfig)
-	} else if *snaputil.EnableLocalSnapshotSharing {
-		// When local snapshot sharing is enabled, reject old-style persisted
-		// snapshots, since these aren't shareable (i.e. COW-formatted).
-		return nil, status.UnavailableError("ignoring persisted snapshot; this functionality has been replaced by local snapshot sharing")
+	sizeEstimate := args.Task.GetSchedulingMetadata().GetTaskSize()
+	numCPUs := int64(max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000))
+	op := *overprovisionCPUs
+	if op == -1 {
+		numCPUs = int64(runtime.NumCPU())
 	} else {
-		vmConfig = state.GetContainerState().GetFirecrackerState().GetVmConfiguration()
+		numCPUs = min(numCPUs+int64(op), int64(runtime.NumCPU()))
 	}
+	if numCPUs > firecrackerMaxCPU {
+		numCPUs = firecrackerMaxCPU
+	}
+
+	networkMode, err := networkMode(args.Props.Network, args.Props.InitDockerd)
+	if err != nil {
+		return nil, err
+	}
+	vmConfig = &fcpb.VMConfiguration{
+		NumCpus:           numCPUs,
+		MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
+		ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
+		EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
+		NetworkMode:       networkMode,
+		InitDockerd:       args.Props.InitDockerd,
+		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
+		HostCpuid:         getCPUID(),
+		EnableVfs:         args.Props.EnableVFS,
+		Ipv6Enabled:       args.Props.NetworkEnableIPv6,
+		EnablePci:         *enablePCI,
+	}
+	vmConfig.BootArgs = getBootArgs(vmConfig)
 	opts := ContainerOpts{
 		VMConfiguration:        vmConfig,
-		SavedState:             savedState,
-		ContainerImage:         props.ContainerImage,
-		User:                   props.DockerUser,
-		DockerClient:           p.dockerClient,
-		ActionWorkingDirectory: workingDir,
+		ContainerImage:         args.Props.ContainerImage,
+		User:                   args.Props.DockerUser,
+		ActionWorkingDirectory: args.WorkDir,
+		CgroupParent:           args.CgroupParent,
+		CgroupSettings:         args.Task.GetSchedulingMetadata().GetCgroupSettings(),
+		BlockDevice:            args.BlockDevice,
+		OverrideSnapshotKey:    args.Props.OverrideSnapshotKey,
 		ExecutorConfig:         p.executorConfig,
+		NetworkPool:            p.networkPool,
+		MarshalledDNSOverrides: p.marshalledDNSOverrides,
+		HostResolvConf:         p.hostResolvConf,
+		UseOCIFetcher:          args.Props.UseOCIFetcher,
 	}
-	c, err := NewContainer(ctx, p.env, task.GetExecutionTask(), opts)
+	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
 	if err != nil {
 		return nil, err
 	}
 	return c, nil
+}
+
+// parseDNSOverrides validates the `dnsOverrides` flag and marshalls it to a string.
+func parseDNSOverrides() (string, error) {
+	if len(*dnsOverrides) == 0 {
+		return "", nil
+	}
+	for _, o := range *dnsOverrides {
+		if o.HostnameToOverride == "" {
+			return "", status.InvalidArgumentErrorf("invalid empty dns override %+v", o)
+		}
+		// Ensure hostnames end with '.' so they are not resolved as relative names.
+		if !strings.HasSuffix(o.HostnameToOverride, ".") {
+			return "", status.InvalidArgumentErrorf("hostname_to_override %s should end with a '.'", o.HostnameToOverride)
+		}
+	}
+	marshalledOverrides, err := json.Marshal(*dnsOverrides)
+	if err != nil {
+		return "", status.WrapError(err, "marshall dns overrides")
+	}
+	return string(marshalledOverrides), nil
 }
 
 // FirecrackerContainer executes commands inside of a firecracker VM.
@@ -497,8 +667,8 @@ type FirecrackerContainer struct {
 	rmOnce *sync.Once
 	rmErr  error
 
-	// Whether networking has been set up (and needs to be cleaned up).
-	isNetworkSetup bool
+	networkPool *networking.VMNetworkPool
+	network     *networking.VMNetwork
 
 	// Whether the VM was recycled.
 	recycled bool
@@ -510,6 +680,7 @@ type FirecrackerContainer struct {
 	snapshotKeySet          *fcpb.SnapshotKeySet
 	createFromSnapshot      bool
 	supportsRemoteSnapshots bool
+	recyclingEnabled        bool
 
 	// If set, the snapshot used to load the VM
 	snapshot *snaploader.Snapshot
@@ -521,52 +692,61 @@ type FirecrackerContainer struct {
 	//
 	// This can be used to understand the total time it takes to execute a task,
 	// including VM startup time
-	currentTaskInitTimeUsec int64
+	currentTaskInitTime time.Time
 
-	executorConfig *ExecutorConfig
-	// dockerClient is used to optimize image pulls by reusing image layers from
-	// the Docker cache as well as deduping multiple requests for the same image.
-	dockerClient *dockerclient.Client
+	executorConfig         *ExecutorConfig
+	marshalledDNSOverrides string
+	hostResolvConf         string
 
 	// when VFS is enabled, this contains the layout for the next execution
 	fsLayout  *container.FileSystemLayout
 	vfsServer *vfs_server.Server
 
-	scratchStore   *copy_on_write.COWStore
-	scratchVBD     *vbd.FS
-	rootStore      *copy_on_write.COWStore
-	rootVBD        *vbd.FS
-	workspaceStore *copy_on_write.COWStore
-	workspaceVBD   *vbd.FS
+	scratchStore            *copy_on_write.COWStore
+	scratchVBD              *vbd.FS
+	rootStore               *copy_on_write.COWStore
+	rootVBD                 *vbd.FS
+	memorySnapshotExportVBD *vbd.FS
 
 	uffdHandler *uffd.Handler
 	memoryStore *copy_on_write.COWStore
 
-	jailerRoot         string            // the root dir the jailer will work in
-	machine            *fcclient.Machine // the firecracker machine object.
-	vmLog              *VMLog
-	env                environment.Env
-	mountWorkspaceFile bool
+	jailerRoot     string               // the root dir the jailer will work in
+	cgroupParent   string               // parent cgroup path (root-relative)
+	cgroupSettings *scpb.CgroupSettings // jailer cgroup settings
+	blockDevice    *block_io.Device     // block device for cgroup IO settings
+	machine        *fcclient.Machine    // the firecracker machine object.
+	vmLog          *VMLog
+	env            environment.Env
+	resolver       *oci.Resolver
 
-	cleanupVethPair func(context.Context) error
-	vmCtx           context.Context
+	vmCtx context.Context
 	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
 	// already been stopped manually.
 	cancelVmCtx context.CancelCauseFunc
+
+	// releaseCPUs returns any CPUs that were leased for running the VM with.
+	releaseCPUs func()
+
+	vmExec struct {
+		conn *grpc.ClientConn
+		err  error
+	}
+
+	useOCIFetcher bool
 }
 
 var _ container.VM = (*FirecrackerContainer)(nil)
 
 func NewContainer(ctx context.Context, env environment.Env, task *repb.ExecutionTask, opts ContainerOpts) (*FirecrackerContainer, error) {
-	if *snaputil.EnableLocalSnapshotSharing && !(*enableVBD && *enableUFFD) {
-		return nil, status.FailedPreconditionError("executor configuration error: local snapshot sharing requires VBD and UFFD to be enabled")
-	}
-	if *EnableRootfs && !*enableVBD {
-		return nil, status.FailedPreconditionError("executor configuration error: merged rootfs requires VBD to be enabled")
-	}
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 
 	if opts.VMConfiguration == nil {
 		return nil, status.InvalidArgumentError("missing VMConfiguration")
+	}
+	if opts.VMConfiguration.InitDockerd && !networkingEnabled(opts.VMConfiguration.NetworkMode) {
+		return nil, status.FailedPreconditionError("InitDockerd set to true but NetworkMode set to OFF. Networking must be enabled to pass dockerd configuration over MMDS.")
 	}
 
 	vmLog, err := NewVMLog(vmLogTailBufSize)
@@ -588,23 +768,42 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		return nil, err
 	}
 
-	c := &FirecrackerContainer{
-		vmConfig:           opts.VMConfiguration.CloneVT(),
-		executorConfig:     opts.ExecutorConfig,
-		jailerRoot:         opts.ExecutorConfig.JailerRoot,
-		dockerClient:       opts.DockerClient,
-		containerImage:     opts.ContainerImage,
-		user:               opts.User,
-		actionWorkingDir:   opts.ActionWorkingDirectory,
-		env:                env,
-		task:               task,
-		loader:             loader,
-		vmLog:              vmLog,
-		mountWorkspaceFile: *firecrackerMountWorkspaceFile,
-		cancelVmCtx:        func(err error) {},
+	resolver, err := oci.NewResolver(env)
+	if err != nil {
+		return nil, err
 	}
 
-	c.vmConfig.KernelVersion = c.executorConfig.KernelVersion
+	c := &FirecrackerContainer{
+		vmConfig:               opts.VMConfiguration.CloneVT(),
+		executorConfig:         opts.ExecutorConfig,
+		marshalledDNSOverrides: opts.MarshalledDNSOverrides,
+		hostResolvConf:         opts.HostResolvConf,
+		jailerRoot:             opts.ExecutorConfig.JailerRoot,
+		containerImage:         opts.ContainerImage,
+		user:                   opts.User,
+		actionWorkingDir:       opts.ActionWorkingDirectory,
+		cgroupParent:           opts.CgroupParent,
+		networkPool:            opts.NetworkPool,
+		cgroupSettings:         &scpb.CgroupSettings{},
+		blockDevice:            opts.BlockDevice,
+		env:                    env,
+		resolver:               resolver,
+		task:                   task,
+		loader:                 loader,
+		vmLog:                  vmLog,
+		cancelVmCtx:            func(err error) {},
+		useOCIFetcher:          opts.UseOCIFetcher,
+	}
+
+	if opts.CgroupSettings != nil {
+		c.cgroupSettings = opts.CgroupSettings
+	}
+
+	c.vmConfig.GuestKernelVersion = c.executorConfig.GuestKernelVersion
+	if c.shouldUpgradeGuestKernel() {
+		c.vmConfig.GuestKernelVersion = c.executorConfig.GuestKernelVersion6_1
+	}
+	c.vmConfig.HostKernelVersion = c.executorConfig.HostKernelVersion
 	c.vmConfig.FirecrackerVersion = c.executorConfig.FirecrackerVersion
 	c.vmConfig.GuestApiVersion = c.executorConfig.GuestAPIVersion
 
@@ -612,9 +811,14 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		c.vmIdx = opts.ForceVMIdx
 	}
 
-	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (platform.IsCICommand(task.GetCommand()) || *forceRemoteSnapshotting)
+	isCICommand := platform.IsCICommand(task.GetCommand(), platform.GetProto(task.GetAction(), task.GetCommand()))
+	isDevboxCommand := strings.HasPrefix(task.GetExecuteRequest().GetInstanceName(), snaputil.DevboxPartitionPrefix)
+	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (isCICommand || isDevboxCommand || *forceRemoteSnapshotting)
+	if span.IsRecording() {
+		span.SetAttributes(attribute.Bool("supports_remote_snapshots", c.supportsRemoteSnapshots))
+	}
 
-	if opts.SavedState == nil {
+	if opts.OverrideSnapshotKey == nil {
 		c.vmConfig.DebugMode = *debugTerminal
 
 		if err := c.newID(ctx); err != nil {
@@ -625,10 +829,8 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 			return nil, err
 		}
 
-		// TODO(Maggie): Once local snapshot sharing is stable, remove runner ID
-		// from the snapshot key
 		runnerID := c.id
-		if *snaputil.EnableLocalSnapshotSharing {
+		if snaputil.IsChunkedSnapshotSharingEnabled() {
 			runnerID = ""
 		}
 		c.snapshotKeySet, err = loader.SnapshotKeySet(ctx, task, cd.GetHash(), runnerID)
@@ -638,28 +840,41 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		// If recycling is enabled and a snapshot exists, then when calling
 		// Create(), load the snapshot instead of creating a new VM.
 
-		recyclingEnabled := platform.IsTrue(platform.FindValue(task.GetCommand().GetPlatform(), platform.RecycleRunnerPropertyName))
-		if recyclingEnabled && *snaputil.EnableLocalSnapshotSharing {
-			snap, err := loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
-			c.createFromSnapshot = (err == nil)
+		recyclingEnabled := platform.IsRecyclingEnabled(task)
+		c.recyclingEnabled = recyclingEnabled
+		if recyclingEnabled && snaputil.IsChunkedSnapshotSharingEnabled() {
+			readPolicy, err := snapshotReadPolicy(task)
+			if err != nil {
+				return nil, err
+			}
+			snap, err := loader.GetSnapshot(ctx, c.snapshotKeySet, &snaploader.GetSnapshotOptions{
+				SupportsRemoteChunks:   c.supportsRemoteSnapshots,
+				SupportsRemoteManifest: c.supportsRemoteSnapshots,
+				ReadPolicy:             readPolicy,
+			})
+			c.createFromSnapshot = err == nil
 			label := ""
 			if err != nil {
 				label = metrics.MissStatusLabel
 				log.CtxInfof(ctx, "Failed to get VM snapshot for keyset %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.SnapshotKeySet(), c.supportsRemoteSnapshots), err)
 			} else {
 				label = metrics.HitStatusLabel
-				log.CtxInfof(ctx, "Found snapshot for key %s", snaploader.KeyDebugString(ctx, c.env, snap.GetKey(), c.supportsRemoteSnapshots))
+				log.CtxInfof(ctx, "Found snapshot %s", snaploader.SnapshotDebugString(ctx, c.env, snap))
 			}
 			metrics.RecycleRunnerRequests.With(prometheus.Labels{
 				metrics.RecycleRunnerRequestStatusLabel: label,
 			}).Inc()
 		}
 	} else {
-		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.SavedState.GetSnapshotKey()}
-
-		// TODO(bduffany): add version info to snapshots. For example, if a
-		// breaking change is made to the vmexec API, the executor should not
-		// attempt to connect to snapshots that were created before the change.
+		if !snaputil.IsChunkedSnapshotSharingEnabled() {
+			return nil, status.InvalidArgumentError("chunked snapshot sharing must be enabled to provide an override snapshot key")
+		}
+		writeSnapshotID := uuid.New()
+		writeKey := opts.OverrideSnapshotKey.CloneVT()
+		writeKey.SnapshotId = writeSnapshotID
+		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.OverrideSnapshotKey, WriteKey: writeKey}
+		c.createFromSnapshot = true
+		c.recyclingEnabled = true
 	}
 
 	return c, nil
@@ -670,6 +885,13 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapshotStore *copy_on_write.COWStore, diffSnapshotPath string, concurrency int, bufSize int) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+
+	metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+		metrics.Stage: "merge_diff_snapshot",
+	}).Inc()
+	defer metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+		metrics.Stage: "merge_diff_snapshot",
+	}).Dec()
 
 	var out io.WriterAt
 	var storeChunkSizeBytes int64
@@ -808,58 +1030,25 @@ func alignToMultiple(n int64, multiple int64) int64 {
 }
 
 func (c *FirecrackerContainer) SnapshotKeySet() *fcpb.SnapshotKeySet {
-	return c.snapshotKeySet.CloneVT()
+	return c.snapshotKeySet
 }
 
 func (c *FirecrackerContainer) SnapshotID() string {
 	return c.snapshotID
 }
 
-// State returns the container state to be persisted to disk so that this
-// container can be reconstructed from the state on disk after an executor
-// restart.
-func (c *FirecrackerContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
-	if *snaputil.EnableLocalSnapshotSharing {
-		// When local snapshot sharing is enabled, don't bother explicitly
-		// persisting container state across reboots. Instead we can
-		// deterministically match tasks to cached snapshots just based on the
-		// task's snapshot key.
-		return nil, status.UnimplementedError("not implemented")
-	}
-
-	state := &rnpb.ContainerState{
-		IsolationType: string(platform.FirecrackerContainerType),
-		FirecrackerState: &rnpb.FirecrackerState{
-			VmConfiguration: c.vmConfig,
-			SnapshotKey:     c.snapshotKeySet.GetBranchKey(),
-		},
-	}
-	return state, nil
-}
-
 func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
 	if c.machine == nil {
 		return status.InternalError("failed to pause VM: machine is not started")
 	}
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 
 	if err := c.machine.PauseVM(ctx); err != nil {
 		log.CtxErrorf(ctx, "Error pausing VM: %s", err)
 		return err
 	}
-	// Now that we've paused the VM, it's a good time to Sync the NBD backing
-	// files. This is particularly important when the files are backed with an
-	// mmap. The File backing the mmap may differ from the in-memory contents
-	// until we explicitly call msync.
-	if c.workspaceStore != nil {
-		if err := c.workspaceStore.Sync(); err != nil {
-			return status.WrapError(err, "failed to sync workspace device store")
-		}
-	}
-	if c.scratchStore != nil {
-		if err := c.scratchStore.Sync(); err != nil {
-			return status.WrapError(err, "failed to sync scratchfs device store")
-		}
-	}
+
 	return nil
 }
 
@@ -872,12 +1061,21 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		log.CtxDebugf(ctx, "SaveSnapshot took %s", time.Since(start))
 	}()
 
-	baseMemSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
+	if c.snapshotKeySet.GetWriteKey() == nil {
+		return status.InvalidArgumentErrorf("write key required to save snapshot")
+	}
+
+	snapshotSharingEnabled := snaputil.IsChunkedSnapshotSharingEnabled()
 	memSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.memSnapshotName)
 
-	if snapshotDetails.snapshotType == diffSnapshotType {
+	if snapshotDetails.snapshotType == diffSnapshotType && !*exportSnapshotToCOW {
+		baseMemSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
 		mergeStart := time.Now()
-		if err := MergeDiffSnapshot(ctx, baseMemSnapshotPath, c.memoryStore, memSnapshotPath, mergeDiffSnapshotConcurrency, mergeDiffSnapshotBlockSize); err != nil {
+		concurrency := mergeDiffSnapshotConcurrency
+		if *snaputil.ThrottleSnapshotWrites {
+			concurrency = 1
+		}
+		if err := MergeDiffSnapshot(ctx, baseMemSnapshotPath, c.memoryStore, memSnapshotPath, concurrency, mergeDiffSnapshotBlockSize); err != nil {
 			return status.UnknownErrorf("merge diff snapshot failed: %s", err)
 		}
 		log.CtxDebugf(ctx, "VMM merge diff snapshot took %s", time.Since(mergeStart))
@@ -885,12 +1083,18 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		memSnapshotPath = baseMemSnapshotPath
 	}
 
-	// If we're creating a snapshot for the first time, create a COWStore from
-	// the initial full snapshot. (If we have a diff snapshot, then we already
-	// updated the memoryStore in mergeDiffSnapshot above).
-	if *enableUFFD && c.memoryStore == nil {
+	// If exportSnapshotToCOW=true, the COWStore should've been populated
+	// as firecracker wrote the snapshot.
+	//
+	// Otherwise, for full snapshots, we need to convert the snapshot file on disk to a COWStore.
+	// For diff snapshots, we updated the COWStore in mergeDiffSnapshot above,
+	if snapshotSharingEnabled && c.memoryStore == nil {
 		memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
-		memoryStore, err := c.convertToCOW(ctx, memSnapshotPath, memChunkDir)
+		concurrency := snaputil.ConvertToCOWConcurrency
+		if *snaputil.ThrottleSnapshotWrites {
+			concurrency = 1
+		}
+		memoryStore, err := c.convertToCOW(ctx, memSnapshotPath, memChunkDir, concurrency)
 		if err != nil {
 			return status.WrapError(err, "convert memory snapshot to COWStore")
 		}
@@ -898,42 +1102,55 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	}
 
 	vmd := c.getVMMetadata().CloneVT()
+	vmd.SavedSnapshotVersionNumber++
 	vmd.LastExecutedTask = c.getVMTask()
-	opts := &snaploader.CacheSnapshotOptions{
-		VMMetadata:          vmd,
-		VMConfiguration:     c.vmConfig,
-		VMStateSnapshotPath: filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
-		KernelImagePath:     c.executorConfig.KernelImagePath,
-		InitrdImagePath:     c.executorConfig.InitrdImagePath,
-		ChunkedFiles:        map[string]*copy_on_write.COWStore{},
-		Recycled:            c.recycled,
-		Remote:              c.supportsRemoteSnapshots,
+
+	if *log.LogLevel == "debug" {
+		encoded, err := json.Marshal(vmd)
+		if err == nil {
+			log.CtxDebugf(ctx, "Caching snapshot with VM metadata: %s", string(encoded))
+		} else {
+			log.CtxDebugf(ctx, "Error marshalling VM metadata: %s", err)
+		}
 	}
-	if *enableVBD {
+
+	// We always use a local manifest if it exists, so only write one if
+	// we don't want to prioritize reading a remote manifest.
+	readPolicy, err := snapshotReadPolicy(c.task)
+	if err != nil {
+		return err
+	}
+	writeManifestLocally := snapshotDetails.saveLocalSnapshot && (!snapshotDetails.saveRemoteSnapshot ||
+		readPolicy != platform.AlwaysReadNewestSnapshot)
+
+	opts := &snaploader.CacheSnapshotOptions{
+		VMMetadata:            vmd,
+		VMConfiguration:       c.vmConfig,
+		VMStateSnapshotPath:   filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
+		KernelImagePath:       c.executorConfig.GuestKernelImagePath,
+		InitrdImagePath:       c.executorConfig.InitrdImagePath,
+		ChunkedFiles:          map[string]*copy_on_write.COWStore{},
+		Recycled:              c.recycled,
+		CacheSnapshotRemotely: snapshotDetails.saveRemoteSnapshot,
+		CacheSnapshotLocally:  snapshotDetails.saveLocalSnapshot,
+		WriteManifestLocally:  writeManifestLocally,
+	}
+	if snapshotSharingEnabled {
 		if c.rootStore != nil {
 			opts.ChunkedFiles[rootDriveID] = c.rootStore
 		} else {
 			opts.ContainerFSPath = filepath.Join(c.getChroot(), containerFSName)
 			opts.ChunkedFiles[scratchDriveID] = c.scratchStore
 		}
-		opts.ChunkedFiles[workspaceDriveID] = c.workspaceStore
+		opts.ChunkedFiles[memoryChunkDirName] = c.memoryStore
 	} else {
 		opts.ContainerFSPath = filepath.Join(c.getChroot(), containerFSName)
 		opts.ScratchFSPath = filepath.Join(c.getChroot(), scratchFSName)
-		opts.WorkspaceFSPath = filepath.Join(c.getChroot(), workspaceFSName)
-	}
-	if *enableUFFD {
-		opts.ChunkedFiles[memoryChunkDirName] = c.memoryStore
-	} else {
 		opts.MemSnapshotPath = memSnapshotPath
 	}
 
 	snaploaderStart := time.Now()
-	// Note: we only update the snapshot corresponding to the pushed git branch.
-	// We do not update the snapshot for any fallback key(s) that we may have
-	// read from, i.e. ones corresponding to the PR's base branch or the repo's
-	// default branch.
-	if err := c.loader.CacheSnapshot(ctx, c.snapshotKeySet.GetBranchKey(), opts); err != nil {
+	if err := c.loader.CacheSnapshot(ctx, c.snapshotKeySet.GetWriteKey(), opts); err != nil {
 		return status.WrapError(err, "add snapshot to cache")
 	}
 	log.CtxDebugf(ctx, "snaploader.CacheSnapshot took %s", time.Since(snaploaderStart))
@@ -944,9 +1161,10 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 func (c *FirecrackerContainer) getVMMetadata() *fcpb.VMMetadata {
 	if c.snapshot == nil || c.snapshot.GetVMMetadata() == nil {
 		return &fcpb.VMMetadata{
-			VmId:        c.id,
-			SnapshotId:  c.snapshotID,
-			SnapshotKey: c.SnapshotKeySet().BranchKey,
+			VmId:             c.id,
+			SnapshotId:       c.snapshotID,
+			SnapshotKey:      c.SnapshotKeySet().GetBranchKey(),
+			CreatedTimestamp: tspb.New(c.currentTaskInitTime),
 		}
 	}
 	return c.snapshot.GetVMMetadata()
@@ -960,7 +1178,109 @@ func (c *FirecrackerContainer) getVMTask() *fcpb.VMMetadata_VMTask {
 		ActionDigest:          c.task.GetExecuteRequest().GetActionDigest(),
 		ExecuteResponseDigest: d,
 		SnapshotId:            c.snapshotID, // Unique ID pertaining to this execution run
+		CompletedTimestamp:    tspb.Now(),
 	}
+}
+
+func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) bool {
+	if !c.supportsRemoteSnapshots || !c.recyclingEnabled {
+		return false
+	}
+
+	remoteSavePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
+
+	if remoteSavePolicy == platform.AlwaysSaveSnapshot {
+		return true
+	}
+
+	// We want to more frequently save the default snapshot, because it is used as a fallback for
+	// runs on other branches, so we want it to stay relatively up-to-date.
+	if snaploader.IsLikelyDefaultSnapshot(c.SnapshotKeySet(), c.task) {
+		// Limit how often we write snapshots on the default branch.
+		manifest, _, err := c.loader.FetchRemoteManifest(ctx, c.SnapshotKeySet().GetWriteKey())
+		if err != nil {
+			log.CtxInfof(ctx, "Failed to fetch remote manifest for key %+v - writing a remote snapshot: %s", c.SnapshotKeySet().GetWriteKey(), err)
+			return true
+		}
+		snapshotLastSavedTime := manifest.GetVmMetadata().GetLastExecutedTask().GetCompletedTimestamp()
+		if snapshotLastSavedTime == nil {
+			log.CtxErrorf(ctx, "Snapshot metadata missing completion timestamp for key %+v - writing a remote snapshot", c.SnapshotKeySet().GetWriteKey())
+			return true
+		}
+		minWriteDuration := snapshotWriteInterval(ctx, c.task)
+		if time.Since(snapshotLastSavedTime.AsTime()) > minWriteDuration {
+			log.CtxInfof(ctx, "Should write remote snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+			return true
+		}
+		log.CtxDebugf(ctx, "Skipping remote snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+		return false
+	}
+
+	if remoteSavePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
+		return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetWriteKey())
+	}
+
+	// By default, savePolicy=OnlySaveNonDefaultSnapshotIfNoneAvailable
+	return !c.hasRemoteSnapshot(ctx, c.loader)
+}
+
+func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool {
+	if !*snaputil.EnableLocalSnapshotSharing || !c.recyclingEnabled {
+		return false
+	}
+	// For RBE actions, we don't save another snapshot if one already exists.
+	if c.createFromSnapshot && !platform.IsCICommand(c.task.GetCommand(), platform.GetProto(c.task.GetAction(), c.task.GetCommand())) {
+		return false
+	}
+
+	// We don't have a separate platform property for local snapshot save policy, so we use the remote snapshot save policy,
+	// as it should be a good proxy for the user's intent on snapshot behavior.
+	savePolicy := platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName)
+
+	if savePolicy == platform.AlwaysSaveSnapshot {
+		return true
+	}
+
+	// We want to more frequently save the default snapshot, because it is used as a fallback for
+	// runs on other branches, so we want it to stay relatively up-to-date.
+	if snaploader.IsLikelyDefaultSnapshot(c.SnapshotKeySet(), c.task) {
+		// Limit how often we write snapshots on the default branch.
+		manifest, err := c.loader.GetLocalManifest(ctx, c.SnapshotKeySet().GetWriteKey(), c.supportsRemoteSnapshots)
+		if err != nil {
+			log.CtxInfof(ctx, "Failed to get local manifest for key %+v - writing a local snapshot: %s", c.SnapshotKeySet().GetWriteKey(), err)
+			return true
+		}
+		snapshotLastSavedTime := manifest.GetVmMetadata().GetLastExecutedTask().GetCompletedTimestamp()
+		if snapshotLastSavedTime == nil {
+			log.CtxErrorf(ctx, "Snapshot metadata missing completion timestamp for key %+v - writing a local snapshot", c.SnapshotKeySet().GetWriteKey())
+			return true
+		}
+		minWriteDuration := snapshotWriteInterval(ctx, c.task)
+		if time.Since(snapshotLastSavedTime.AsTime()) > minWriteDuration {
+			log.CtxInfof(ctx, "Should write local snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+			return true
+		}
+		log.CtxDebugf(ctx, "Skipping local snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+		return false
+	}
+
+	// By default (applies if save policy is unset or invalid) or if
+	// savePolicy=OnlySaveFirstNonDefaultSnapshot, only save a snapshot if one for the primary key
+	// doesn't already exist.
+	return !c.hasLocalSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetWriteKey())
+}
+
+func snapshotWriteInterval(ctx context.Context, task *repb.ExecutionTask) time.Duration {
+	interval := platform.FindEffectiveValue(task, platform.MinTimeBetweenSnapshotWritesPropertyName)
+	if interval == "" {
+		return snaputil.DefaultSnapshotWriteInterval
+	}
+	d, err := time.ParseDuration(interval)
+	if err != nil {
+		log.CtxErrorf(ctx, "Invalid snapshot write interval %s - using default: %s", interval, err)
+		return snaputil.DefaultSnapshotWriteInterval
+	}
+	return d
 }
 
 // LoadSnapshot loads a VM snapshot from the given snapshot digest and resumes
@@ -977,7 +1297,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	c.rmOnce = &sync.Once{}
 	c.rmErr = nil
 
-	vmCtx, cancelVmCtx := context.WithCancelCause(background.ToBackground(ctx))
+	vmCtx, cancelVmCtx := context.WithCancelCause(context.WithoutCancel(ctx))
 	c.vmCtx = vmCtx
 	c.cancelVmCtx = cancelVmCtx
 
@@ -985,55 +1305,50 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return err
 	}
 
-	var netNS string
-	if c.vmConfig.EnableNetworking {
-		netNS = networking.NetNamespacePath(c.id)
-	}
-
-	cgroupVersion, err := getCgroupVersion()
-	if err != nil {
-		return err
-	}
-
-	// We start firecracker with this reduced config because we will load a
-	// snapshot that is already configured.
-	cfg := fcclient.Config{
-		SocketPath:        firecrackerSocketPath,
-		NetNS:             netNS,
-		Seccomp:           fcclient.SeccompConfig{Enabled: true},
-		DisableValidation: true,
-		JailerCfg: &fcclient.JailerConfig{
-			JailerBinary:   c.executorConfig.JailerBinaryPath,
-			ChrootBaseDir:  c.jailerRoot,
-			ID:             c.id,
-			UID:            fcclient.Int(unix.Geteuid()),
-			GID:            fcclient.Int(unix.Getegid()),
-			NumaNode:       fcclient.Int(0), // TODO(tylerw): randomize this?
-			ExecFile:       c.executorConfig.FirecrackerBinaryPath,
-			ChrootStrategy: fcclient.NewNaiveChrootStrategy(""),
-			Stdout:         c.vmLogWriter(),
-			Stderr:         c.vmLogWriter(),
-			CgroupVersion:  cgroupVersion,
-		},
-		Snapshot: fcclient.SnapshotConfig{
-			EnableDiffSnapshots: true,
-			ResumeVM:            true,
-		},
-		ForwardSignals: make([]os.Signal, 0),
+	if err := c.setupCgroup(ctx); err != nil {
+		return status.UnavailableErrorf("setup cgroup: %s", err)
 	}
 
 	if err := c.setupNetworking(ctx); err != nil {
 		return err
 	}
 
+	var netnsPath string
+	if c.network != nil {
+		netnsPath = c.network.NamespacePath()
+	}
+
+	// We start firecracker with this reduced config because we will load a
+	// snapshot that is already configured.
+	jailerCfg, err := c.getJailerConfig(ctx, "" /*=kernelImagePath*/)
+	if err != nil {
+		return status.WrapError(err, "get jailer config")
+	}
+	cfg := fcclient.Config{
+		SocketPath:        firecrackerSocketPath,
+		NetNS:             netnsPath,
+		Seccomp:           fcclient.SeccompConfig{Enabled: true},
+		DisableValidation: true,
+		JailerCfg:         jailerCfg,
+		Snapshot: fcclient.SnapshotConfig{
+			EnableDiffSnapshots: true,
+			ResumeVM:            true,
+		},
+		ForwardSignals: make([]os.Signal, 0),
+	}
+	if c.vmConfig.GetEnablePci() {
+		cfg.FirecrackerArgs = []string{"--enable-pci"}
+	}
+
 	if err := c.setupVFSServer(ctx); err != nil {
 		return err
 	}
 
+	snapshotSharingEnabled := snaputil.IsChunkedSnapshotSharingEnabled()
 	var snapOpt fcclient.Opt
-	if *enableUFFD {
-		uffdType := fcclient.MemoryBackendType(fcmodels.MemoryBackendBackendTypeUffd)
-		snapOpt = fcclient.WithSnapshot(uffdSockName, vmStateSnapshotName, uffdType)
+	if snapshotSharingEnabled {
+		uffdType := fcclient.WithMemoryBackend(fcmodels.MemoryBackendBackendTypeUffd, uffdSockName)
+		snapOpt = fcclient.WithSnapshot("" /*=memFilePath*/, vmStateSnapshotName, uffdType)
 	} else {
 		snapOpt = fcclient.WithSnapshot(fullMemSnapshotName, vmStateSnapshotName)
 	}
@@ -1050,25 +1365,58 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
-	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
+	readPolicy, err := snapshotReadPolicy(c.task)
 	if err != nil {
-		return status.WrapError(err, "failed to get snapshot")
+		return err
 	}
+	maxFallbackAgeStr := platform.FindEffectiveValue(c.task, platform.MaxStaleFallbackSnapshotAgePropertyName)
+	maxFallbackAge := snaputil.DefaultMaxStaleFallbackSnapshotAge
+	if maxFallbackAgeStr != "" {
+		d, err := time.ParseDuration(maxFallbackAgeStr)
+		if err != nil {
+			return status.InvalidArgumentErrorf("invalid max fallback snapshot age %s: %s", maxFallbackAgeStr, err)
+		}
+		maxFallbackAge = d
+	}
+	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, &snaploader.GetSnapshotOptions{
+		SupportsRemoteChunks:        c.supportsRemoteSnapshots,
+		SupportsRemoteManifest:      c.supportsRemoteSnapshots,
+		ReadPolicy:                  readPolicy,
+		MaxStaleFallbackSnapshotAge: maxFallbackAge,
+	})
+	if err != nil {
+		return error_util.SnapshotNotFoundError(fmt.Sprintf("failed to get snapshot %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.snapshotKeySet, c.supportsRemoteSnapshots), err))
+	}
+
+	metrics.SnapshotSourceCount.With(prometheus.Labels{
+		metrics.ChunkSource: snap.GetManifestFetchSource().String(),
+	}).Inc()
 
 	// Set unique per-run identifier on the vm metadata so this exact snapshot
 	// run can be identified
 	if snap.GetVMMetadata() == nil {
+		log.CtxWarningf(ctx, "No VM metadata found in snapshot")
 		md := &fcpb.VMMetadata{
 			VmId:        c.id,
 			SnapshotKey: c.SnapshotKeySet().BranchKey,
 		}
 		snap.SetVMMetadata(md)
+	} else if snap.GetVMMetadata().GetLastExecutedTask() == nil {
+		log.CtxWarningf(ctx, "No last executed task found in snapshot metadata")
 	}
 	snap.GetVMMetadata().SnapshotId = c.snapshotID
 	c.snapshot = snap
 
 	if err := os.MkdirAll(c.getChroot(), 0777); err != nil {
-		return err
+		return status.UnavailableErrorf("make chroot dir: %s", err)
+	}
+
+	// Write the workspace drive placeholder file. Firecracker will expect this
+	// file to exist since we stubbed out the workspace drive with this
+	// placeholder file just before saving the snapshot, so the snapshot will
+	// include a reference to this file.
+	if err := os.WriteFile(filepath.Join(c.getChroot(), emptyFileName), nil, 0644); err != nil {
+		return status.UnavailableErrorf("write empty file: %s", err)
 	}
 
 	// Use vmCtx for COWs since IO may be done outside of the task ctx.
@@ -1076,7 +1424,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if err != nil {
 		return status.WrapError(err, "failed to unpack snapshot")
 	}
-	if len(unpacked.ChunkedFiles) > 0 && !(*enableVBD || *enableUFFD) {
+	if len(unpacked.ChunkedFiles) > 0 && !snapshotSharingEnabled {
 		return status.InternalError("copy_on_write support is disabled but snapshot contains chunked files")
 	}
 	for name, cow := range unpacked.ChunkedFiles {
@@ -1085,8 +1433,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 			c.rootStore = cow
 		case scratchDriveID:
 			c.scratchStore = cow
-		case workspaceDriveID:
-			c.workspaceStore = cow
 		case memoryChunkDirName:
 			c.memoryStore = cow
 		default:
@@ -1117,7 +1463,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		if cause := context.Cause(ctx); cause != nil {
 			return cause
 		}
-		return status.UnavailableErrorf("failed to start machine: %s", err)
+		return status.UnavailableErrorf("start machine: %s. vmlog: %s", err, c.vmLog.Tail())
 	}
 	c.machine = machine
 
@@ -1127,21 +1473,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		}
 		return status.UnavailableErrorf("error resuming VM: %s", err)
 	}
-
-	conn, err := c.dialVMExecServer(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	execClient := vmxpb.NewExecClient(conn)
-	_, err = execClient.Initialize(ctx, &vmxpb.InitializeRequest{
-		UnixTimestampNanoseconds: time.Now().UnixNano(),
-		ClearArpCache:            true,
-	})
-	if err != nil {
-		return status.WrapError(err, "Failed to initialize firecracker VM exec client")
-	}
+	c.createFromSnapshot = true
 
 	return nil
 }
@@ -1153,11 +1485,11 @@ func (c *FirecrackerContainer) initScratchImage(ctx context.Context, path string
 	if err := ext4.MakeEmptyImage(ctx, path, scratchDiskSizeBytes); err != nil {
 		return err
 	}
-	if !*enableVBD {
+	if !snaputil.IsChunkedSnapshotSharingEnabled() {
 		return nil
 	}
 	chunkDir := filepath.Join(filepath.Dir(path), scratchDriveID)
-	cow, err := c.convertToCOW(ctx, path, chunkDir)
+	cow, err := c.convertToCOW(ctx, path, chunkDir, snaputil.ConvertToCOWConcurrency)
 	if err != nil {
 		return err
 	}
@@ -1208,64 +1540,50 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	if c.workspaceStore != nil {
-		return status.InternalError("workspace image is already created")
-	}
-
 	// The existing workspace disk may still be mounted in the VM, so we unlink
 	// it then create a new file rather than overwriting the existing file
 	// to avoid corruption.
 	if err := os.RemoveAll(ext4ImagePath); err != nil {
 		return status.WrapError(err, "failed to delete existing workspace disk image")
 	}
-	pageSize := int64(os.Getpagesize())
-	if workspaceDir == "" {
-		imageSize := alignToMultiple(ext4.MinDiskImageSizeBytes, pageSize)
-		if err := ext4.MakeEmptyImage(ctx, ext4ImagePath, imageSize); err != nil {
-			return err
-		}
-	} else {
-		workspaceSizeBytes, err := ext4.DiskSizeBytes(ctx, workspaceDir)
-		if err != nil {
-			return err
-		}
-		workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + *workspaceDiskSlackSpaceMB*1e6
-		workspaceDiskSizeBytes = alignToMultiple(workspaceDiskSizeBytes, int64(os.Getpagesize()))
-		if err := ext4.DirectoryToImage(ctx, workspaceDir, ext4ImagePath, workspaceDiskSizeBytes); err != nil {
-			return status.WrapError(err, "failed to convert workspace dir to ext4 image")
-		}
-	}
-	if !*enableVBD {
-		return nil
-	}
-	// Remove existing workspace chunk dir if it exists.
-	chunkDir := filepath.Join(filepath.Dir(ext4ImagePath), workspaceDriveID)
-	if err := os.RemoveAll(chunkDir); err != nil {
-		return err
-	}
-	cow, err := c.convertToCOW(ctx, ext4ImagePath, chunkDir)
+	workspaceSizeBytes, err := ext4.DiskSizeBytes(ctx, workspaceDir)
 	if err != nil {
 		return err
 	}
-	c.workspaceStore = cow
+	workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + *workspaceDiskSlackSpaceMB*1e6
+	workspaceDiskSizeBytes = alignToMultiple(workspaceDiskSizeBytes, int64(os.Getpagesize()))
+	if err := ext4.DirectoryToImage(ctx, workspaceDir, ext4ImagePath, workspaceDiskSizeBytes); err != nil {
+		return status.WrapError(err, "failed to convert workspace dir to ext4 image")
+	}
 	return nil
 }
 
-func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunkDir string) (*copy_on_write.COWStore, error) {
+func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunkDir string, concurrency int) (*copy_on_write.COWStore, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+		metrics.Stage: "convert_to_cow",
+	}).Inc()
+	defer metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+		metrics.Stage: "convert_to_cow",
+	}).Dec()
+
 	start := time.Now()
 	if err := os.Mkdir(chunkDir, 0755); err != nil {
 		return nil, status.WrapError(err, "make chunk dir")
 	}
 	// Use vmCtx for the COW since IO may be done outside of the task ctx.
-	cow, err := copy_on_write.ConvertFileToCOW(c.vmCtx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.supportsRemoteSnapshots)
+	cow, err := copy_on_write.ConvertFileToCOW(c.vmCtx, c.env, filePath, cowChunkSizeBytes(), chunkDir, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.supportsRemoteSnapshots, concurrency)
 	if err != nil {
 		return nil, status.WrapError(err, "convert file to COW")
 	}
 	// Original non-chunked file is no longer needed.
-	if err := os.RemoveAll(filePath); err != nil {
-		cow.Close()
-		return nil, err
-	}
+	go func() {
+		if err := os.Remove(filePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.CtxWarningf(ctx, "Failed to delete COWStore source %q: %s", filePath, err)
+		}
+	}()
 	size, _ := cow.SizeBytes()
 	log.CtxInfof(ctx, "COWStore conversion for %q (%d MB) completed in %s", filepath.Base(chunkDir), size/1e6, time.Since(start))
 	return cow, nil
@@ -1275,42 +1593,43 @@ func cowChunkSizeBytes() int64 {
 	return int64(os.Getpagesize() * cowChunkSizeInPages)
 }
 
-// hotSwapWorkspace unmounts the workspace drive from a running firecracker
-// container, updates the workspace block device to an ext4 image pointed to
-// by chrootRelativeImagePath, and re-mounts the drive.
-func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient vmxpb.ExecClient) error {
+// updateWorkspaceDriveToEmptyFile updates the workspace device to point to an
+// empty file, which is located at /empty.bin relative to the chroot dir.
+//
+// This lets us avoid saving the workspace contents as part of the VM snapshot,
+// which would be wasteful - the workspace contents aren't needed for the next
+// action to be executed in the VM, because we create a clean workspace for each
+// action.
+//
+// Note that the guest should not mount this file, since it is not a valid ext4
+// filesystem.
+func (c *FirecrackerContainer) updateWorkspaceDriveToEmptyFile(ctx context.Context) error {
+	chrootRelativePath := emptyFileName
+	fullPath := filepath.Join(c.getChroot(), emptyFileName)
+	if err := os.WriteFile(fullPath, nil, 0644); err != nil {
+		return status.UnavailableErrorf("write file: %s", err)
+	}
+	if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativePath); err != nil {
+		return status.UnavailableErrorf("update guest drive: %s", err)
+	}
+	return nil
+}
+
+// createAndAttachWorkspace creates a new disk image from the given working
+// directory, updates the workspace drive attached to the VM, and mounts the
+// workspace contents in the guest.
+//
+// The workspace drive must not be mounted in the guest when calling this
+// function.
+//
+// This is intended to be called just before Exec, so that the inputs to the
+// executed action will be made available to the VM.
+func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	if _, err := c.unmountWorkspace(ctx, execClient); err != nil {
-		return status.WrapError(err, "failed to unmount workspace")
-	}
-
-	if *enableVBD {
-		// Stub out the workspace drive with an empty file so that firecracker
-		// releases any open file handles on the VBD. We can't unmount the FUSE
-		// FS while there are open file handles.
-		//
-		// TODO(bduffany): have the guest download files from the host to avoid
-		// this awkwardness.
-		const emptyFileName = "empty.ext4"
-		if err := os.WriteFile(filepath.Join(c.getChroot(), emptyFileName), nil, 0644); err != nil {
-			return status.UnavailableErrorf("failed to create empty workspace file")
-		}
-		if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, emptyFileName); err != nil {
-			return status.UnavailableErrorf("failed to stub out workspace drive: %s", err)
-		}
-		if c.workspaceVBD != nil {
-			err := c.workspaceVBD.Unmount(ctx)
-			c.workspaceVBD = nil
-			if err != nil {
-				return status.WrapError(err, "unmount workspace vbd")
-			}
-		}
-		if c.workspaceStore != nil {
-			c.workspaceStore.Close()
-			c.workspaceStore = nil
-		}
+	if *disableWorkspaceSync {
+		return nil
 	}
 
 	workspaceExt4Path := filepath.Join(c.getChroot(), workspaceFSName)
@@ -1318,29 +1637,29 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 		return status.WrapError(err, "failed to create workspace image")
 	}
 
-	if *enableVBD {
-		d, err := vbd.New(c.workspaceStore)
-		if err != nil {
-			return err
-		}
-		mountPath := filepath.Join(c.getChroot(), workspaceDriveID+vbdMountDirSuffix)
-		if err := d.Mount(c.vmCtx, mountPath); err != nil {
-			return status.WrapError(err, "mount workspace VBD")
-		}
-		c.workspaceVBD = d
+	conn, err := c.vmExecConn(ctx)
+	if err != nil {
+		return err
 	}
+	execClient := vmxpb.NewExecClient(conn)
 
+	// UpdateGuestDrive can only be called after the VM boots (https://github.com/firecracker-microvm/firecracker/blob/c862760999f15d27034098a53a4d5bee3fba829d/src/firecracker/swagger/firecracker.yaml#L256-L260)
+	// The only way to tell if the VM booted seems to be monitoring its stdout.
+	// Instead we'll just wait for the vm exec server to start above, which
+	// happens after boot.
 	chrootRelativeImagePath := workspaceFSName
-	if *enableVBD {
-		chrootRelativeImagePath = filepath.Join(workspaceDriveID+vbdMountDirSuffix, vbd.FileName)
-	}
 	if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativeImagePath); err != nil {
 		return status.UnavailableErrorf("error updating workspace drive attached to snapshot: %s", err)
 	}
 
 	if err := c.mountWorkspace(ctx, execClient); err != nil {
+		// Translate deadline-exceeded to unavailable so the caller retries.
+		if status.IsDeadlineExceededError(err) {
+			return status.UnavailableErrorf("failed to remount workspace after update: %v", err)
+		}
 		return status.WrapError(err, "failed to remount workspace after update")
 	}
+
 	return nil
 }
 
@@ -1359,18 +1678,13 @@ func nonCmdExit(ctx context.Context, err error) *interfaces.CommandResult {
 func (c *FirecrackerContainer) newID(ctx context.Context) error {
 	vmIdxMu.Lock()
 	defer vmIdxMu.Unlock()
-	u1, err := uuid.NewRandom()
-	if err != nil {
-		return err
-	}
-	u2, err := uuid.NewRandom()
-	if err != nil {
-		return err
-	}
+	uuid1 := uuid.New()
+	uuid2 := uuid.New()
+
 	vmIdx += 1
-	log.CtxDebugf(ctx, "Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, u1.String(), vmIdx)
-	c.id = u1.String()
-	c.snapshotID = u2.String()
+	log.CtxDebugf(ctx, "Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, uuid1, vmIdx)
+	c.id = uuid1
+	c.snapshotID = uuid2
 	c.vmIdx = vmIdx
 
 	if vmIdx > maxVMSPerHost {
@@ -1392,10 +1706,8 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 	kernelArgs := []string{
 		"ro",
 		"console=ttyS0",
-		"noapic",
 		"reboot=k",
 		"panic=1",
-		"pci=off",
 		"nomodules=1",
 		"random.trust_cpu=on",
 		"i8042.noaux",
@@ -1403,17 +1715,20 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 		"i8042.nopnp",
 		"i8042.dumbkbd",
 		"tsc=reliable",
-		"ipv6.disable=1",
-		// Disabling the LAPIC TSC-Deadline feature works around an
-		// issue where processes occasionally freeze up after being resumed from
-		// snapshot.
-		// TODO(https://github.com/firecracker-microvm/firecracker/issues/4099 &
-		//  https://github.com/buildbuddy-io/buildbuddy-internal/issues/3255):
-		// remove this workaround.
-		"lapic=notscdeadline",
 	}
-	if vmConfig.EnableNetworking {
+	if !vmConfig.GetIpv6Enabled() {
+		kernelArgs = append(kernelArgs, "ipv6.disable=1")
+	}
+	if networkingEnabled(vmConfig.NetworkMode) {
 		kernelArgs = append(kernelArgs, machineIPBootArgs)
+	}
+
+	if !vmConfig.EnablePci {
+		kernelArgs = append(kernelArgs, "pci=off")
+	}
+
+	if *initOnAllocAndFree {
+		kernelArgs = append(kernelArgs, "init_on_alloc=1", "init_on_free=1")
 	}
 
 	var initArgs []string
@@ -1423,7 +1738,7 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 	if vmConfig.EnableLogging {
 		initArgs = append(initArgs, "-enable_logging")
 	}
-	if vmConfig.EnableNetworking {
+	if networkingEnabled(vmConfig.NetworkMode) {
 		initArgs = append(initArgs, "-set_default_route")
 	}
 	if vmConfig.InitDockerd {
@@ -1432,13 +1747,12 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 	if vmConfig.EnableDockerdTcp {
 		initArgs = append(initArgs, "-enable_dockerd_tcp")
 	}
-	if *EnableRootfs {
+	if snaputil.IsChunkedSnapshotSharingEnabled() {
 		initArgs = append(initArgs, "-enable_rootfs")
 	}
-	if platform.VFSEnabled() {
+	if vmConfig.EnableVfs {
 		initArgs = append(initArgs, "-enable_vfs")
 	}
-
 	return strings.Join(append(initArgs, kernelArgs...), " ")
 }
 
@@ -1447,23 +1761,27 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 // they will be hardlinked to the chroot when starting the machine (see
 // NaiveChrootStrategy).
 func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerFS, scratchFS, workspaceFS string) (*fcclient.Config, error) {
-	var netNS string
-	if c.vmConfig.EnableNetworking {
-		netNS = networking.NetNamespacePath(c.id)
-	}
-	cgroupVersion, err := getCgroupVersion()
-	if err != nil {
-		return nil, err
+	var netnsPath string
+	if c.network != nil {
+		netnsPath = c.network.NamespacePath()
 	}
 	bootArgs := getBootArgs(c.vmConfig)
+	guestKernelPath := c.executorConfig.GuestKernelImagePath
+	if c.shouldUpgradeGuestKernel() {
+		guestKernelPath = c.executorConfig.GuestKernelImagePath6_1
+	}
+	jailerCfg, err := c.getJailerConfig(ctx, c.executorConfig.GuestKernelImagePath)
+	if err != nil {
+		return nil, status.WrapError(err, "get jailer config")
+	}
 	cfg := &fcclient.Config{
 		VMID:            c.id,
 		SocketPath:      firecrackerSocketPath,
-		KernelImagePath: c.executorConfig.KernelImagePath,
+		KernelImagePath: guestKernelPath,
 		InitrdPath:      c.executorConfig.InitrdImagePath,
 		KernelArgs:      bootArgs,
 		ForwardSignals:  make([]os.Signal, 0),
-		NetNS:           netNS,
+		NetNS:           netnsPath,
 		Seccomp:         fcclient.SeccompConfig{Enabled: true},
 		// Note: ordering in this list determines the device lettering
 		// (/dev/vda, /dev/vdb, /dev/vdc, ...)
@@ -1471,27 +1789,15 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 		VsockDevices: []fcclient.VsockDevice{
 			{Path: firecrackerVSockPath},
 		},
-		JailerCfg: &fcclient.JailerConfig{
-			JailerBinary:   c.executorConfig.JailerBinaryPath,
-			ChrootBaseDir:  c.jailerRoot,
-			ID:             c.id,
-			UID:            fcclient.Int(unix.Geteuid()),
-			GID:            fcclient.Int(unix.Getegid()),
-			NumaNode:       fcclient.Int(0), // TODO(tylerw): randomize this?
-			ExecFile:       c.executorConfig.FirecrackerBinaryPath,
-			ChrootStrategy: fcclient.NewNaiveChrootStrategy(c.executorConfig.KernelImagePath),
-			Stdout:         c.vmLogWriter(),
-			Stderr:         c.vmLogWriter(),
-			CgroupVersion:  cgroupVersion,
-		},
+		JailerCfg: jailerCfg,
 		MachineCfg: fcmodels.MachineConfiguration{
 			VcpuCount:       fcclient.Int64(c.vmConfig.NumCpus),
 			MemSizeMib:      fcclient.Int64(c.vmConfig.MemSizeMb),
 			Smt:             fcclient.Bool(false),
-			TrackDirtyPages: true,
+			TrackDirtyPages: fcclient.Bool(true),
 		},
 	}
-	if *EnableRootfs {
+	if snaputil.IsChunkedSnapshotSharingEnabled() {
 		cfg.Drives = append(cfg.Drives, fcmodels.Drive{
 			DriveID:      fcclient.String(rootDriveID),
 			PathOnHost:   &rootFS,
@@ -1522,22 +1828,63 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 		},
 	}...)
 
-	if c.vmConfig.EnableNetworking {
+	if networkingEnabled(c.vmConfig.NetworkMode) {
 		cfg.NetworkInterfaces = []fcclient.NetworkInterface{
 			{
 				StaticConfiguration: &fcclient.StaticNetworkConfiguration{
 					HostDevName: tapDeviceName,
 					MacAddress:  tapDeviceMac,
 				},
+				AllowMMDS: true,
 			},
 		}
 	}
-	cfg.JailerCfg.Stdout = c.vmLogWriter()
-	cfg.JailerCfg.Stderr = c.vmLogWriter()
 	if *debugTerminal {
 		cfg.JailerCfg.Stdin = os.Stdin
 	}
 	return cfg, nil
+}
+
+func (c *FirecrackerContainer) cgroupPath() string {
+	return filepath.Join("/sys/fs/cgroup", c.cgroupParent, c.id)
+}
+
+func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImagePath string) (*fcclient.JailerConfig, error) {
+	cgroupVersion, err := getCgroupVersion()
+	if err != nil {
+		return nil, status.WrapError(err, "get cgroup version")
+	}
+
+	numaNode := 0
+	if c.cgroupSettings.NumaNode != nil {
+		numaNode = int(c.cgroupSettings.GetNumaNode())
+	}
+	return &fcclient.JailerConfig{
+		JailerBinary:   c.executorConfig.JailerBinaryPath,
+		ChrootBaseDir:  c.jailerRoot,
+		ID:             c.id,
+		UID:            fcclient.Int(unix.Geteuid()),
+		GID:            fcclient.Int(unix.Getegid()),
+		NumaNode:       fcclient.Int(numaNode),
+		ExecFile:       c.executorConfig.FirecrackerBinaryPath,
+		ChrootStrategy: fcclient.NewNaiveChrootStrategy(kernelImagePath),
+		Stdout:         c.vmLogWriter(),
+		Stderr:         c.vmLogWriter(),
+		CgroupVersion:  cgroupVersion,
+		// We normally set cpuset.cpus in cgroup.Setup(), but the go
+		// SDK clobbers our setting when applying the NUMA node setting.
+		// Override this manually for now.
+		CgroupArgs: []string{
+			fmt.Sprintf("cpuset.cpus=%s", cpuset.Format(c.cgroupSettings.GetCpusetCpus()...)),
+			fmt.Sprintf("cpuset.mems=%d", numaNode),
+		},
+		// The jailer computes the full cgroup path by appending three path
+		// components:
+		// 1. The cgroup FS root: "/sys/fs/cgroup"
+		// 2. This ParentCgroup setting
+		// 3. The ID setting
+		ParentCgroup: fcclient.String(c.cgroupParent),
+	}, nil
 }
 
 func (c *FirecrackerContainer) vmLogWriter() io.Writer {
@@ -1547,108 +1894,18 @@ func (c *FirecrackerContainer) vmLogWriter() io.Writer {
 	return c.vmLog
 }
 
-type loopMount struct {
-	loopControlFD *os.File
-	imageFD       *os.File
-	loopDevIdx    int
-	loopFD        *os.File
-	mountDir      string
-}
-
-func (m *loopMount) Unmount() {
-	if m.mountDir != "" {
-		if err := syscall.Unmount(m.mountDir, 0); err != nil {
-			alert.UnexpectedEvent("firecracker_could_not_unmount_loop_device", err.Error())
-		}
-		m.mountDir = ""
-	}
-	if m.loopDevIdx >= 0 && m.loopControlFD != nil {
-		err := unix.IoctlSetInt(int(m.loopControlFD.Fd()), unix.LOOP_CTL_REMOVE, m.loopDevIdx)
-		if err != nil {
-			alert.UnexpectedEvent("firecracker_could_not_release_loop_device", err.Error())
-		}
-		m.loopDevIdx = -1
-	}
-	if m.loopFD != nil {
-		m.loopFD.Close()
-		m.loopFD = nil
-	}
-	if m.imageFD != nil {
-		m.imageFD.Close()
-		m.imageFD = nil
-	}
-	if m.loopControlFD != nil {
-		m.loopControlFD.Close()
-		m.loopControlFD = nil
-	}
-}
-
-func mountExt4ImageUsingLoopDevice(imagePath string, mountTarget string) (lm *loopMount, retErr error) {
-	loopControlFD, err := os.Open("/dev/loop-control")
-	if err != nil {
-		return nil, err
-	}
-	defer loopControlFD.Close()
-
-	m := &loopMount{loopDevIdx: -1}
-	defer func() {
-		if retErr != nil {
-			m.Unmount()
-		}
-	}()
-
-	imageFD, err := os.Open(imagePath)
-	if err != nil {
-		return nil, err
-	}
-	m.imageFD = imageFD
-
-	loopDevIdx, err := unix.IoctlRetInt(int(loopControlFD.Fd()), unix.LOOP_CTL_GET_FREE)
-	if err != nil {
-		return nil, status.UnknownErrorf("could not allocate loop device: %s", err)
-	}
-	m.loopDevIdx = loopDevIdx
-
-	loopDevicePath := fmt.Sprintf("/dev/loop%d", loopDevIdx)
-	loopFD, err := os.OpenFile(loopDevicePath, os.O_RDWR, 0)
-	if err != nil {
-		return nil, err
-	}
-	m.loopFD = loopFD
-
-	if err := unix.IoctlSetInt(int(loopFD.Fd()), unix.LOOP_SET_FD, int(imageFD.Fd())); err != nil {
-		return nil, status.UnknownErrorf("could not set loop device FD: %s", err)
-	}
-
-	if err := syscall.Mount(loopDevicePath, mountTarget, "ext4", unix.MS_RDONLY, "norecovery"); err != nil {
-		return nil, err
-	}
-	m.mountDir = mountTarget
-	return m, nil
-}
-
 // copyOutputsToWorkspace copies output files from the workspace filesystem
-// image to the local filesystem workdir. It will not overwrite existing files
-// and it will skip copying rootfs-overlay files. Callers should ensure that
-// data has already been synced to the workspace filesystem and the VM has
-// been paused before calling this.
+// image to the local filesystem workdir. It does not overwrite existing files.
+//
+// Callers should ensure that the workspace block device is not mounted in the
+// guest before calling this. If the workspace is still mounted, then some of
+// the blocks may not be synchronized with the kernel's in-memory state,
+// resulting in the file potentially containing invalid contents.
 func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
 	workspaceExt4Path := filepath.Join(c.getChroot(), workspaceFSName)
-
-	if *enableVBD {
-		// Reassemble the workspace chunks into a single file.
-		// TODO(bduffany): figure out how to avoid doing this work, e.g. by
-		// mounting the workspace disk as a local NBD on the host.
-		// For now, this approach is acceptable because firecracker workspaces
-		// are typically small or empty (e.g. workflows run in $HOME rather than
-		// the workspace dir).
-		if err := c.workspaceStore.WriteFile(workspaceExt4Path); err != nil {
-			return err
-		}
-	}
 
 	start := time.Now()
 	defer func() {
@@ -1667,26 +1924,14 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	}
 	defer os.RemoveAll(wsDir) // clean up
 
-	if c.mountWorkspaceFile {
-		m, err := mountExt4ImageUsingLoopDevice(workspaceExt4Path, wsDir)
-		if err != nil {
-			log.CtxWarningf(ctx, "could not mount ext4 image: %s", err)
-			return err
-		}
-		defer m.Unmount()
-	} else {
-		if err := ext4.ImageToDirectory(ctx, workspaceExt4Path, wsDir); err != nil {
-			return err
-		}
+	outputPaths := workspacePathsToExtract(c.task)
+	if err := ext4.ImageToDirectory(ctx, workspaceExt4Path, wsDir, outputPaths); err != nil {
+		return err
 	}
 
 	walkErr := fs.WalkDir(os.DirFS(wsDir), ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
-		}
-		// Skip filesystem layerfs write-layer files.
-		if strings.HasPrefix(path, "bbvmroot/") || strings.HasPrefix(path, "bbvmwork/") {
-			return nil
 		}
 		targetLocation := filepath.Join(c.actionWorkingDir, path)
 		alreadyExists, err := disk.FileExists(ctx, targetLocation)
@@ -1705,43 +1950,30 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 }
 
 func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
-	if !c.vmConfig.EnableNetworking {
+	if !networkingEnabled(c.vmConfig.NetworkMode) {
 		return nil
 	}
-	c.isNetworkSetup = true
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	// Setup masquerading on the host if it isn't already.
-	masqueradingOnce.Do(func() {
-		masqueradingErr = networking.EnableMasquerading(ctx)
-	})
-	if masqueradingErr != nil {
-		return masqueradingErr
-	}
+	externalNetworking := externalNetworkingEnabled(c.vmConfig.NetworkMode)
 
-	if err := networking.CreateNetNamespace(ctx, c.id); err != nil {
-		if strings.Contains(err.Error(), "File exists") {
-			// Don't fail if we failed to cleanup the networking on a previous run
-			log.Warningf("Networking cleanup failure. Net namespace already exists: %s", err)
-		} else {
-			return err
+	// Pooled networks have external network access enabled. Only use them if
+	// that's the VM's configured state.
+	// TODO: add a pool for 'network=false' (if this bottlenecks).
+	if c.networkPool != nil && externalNetworking {
+		if network := c.networkPool.Get(ctx); network != nil {
+			c.network = network
+			return nil
 		}
 	}
-	if err := networking.CreateTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
-		return err
-	}
-	if err := networking.ConfigureTapInNamespace(ctx, c.id, tapDeviceName, tapAddr); err != nil {
-		return err
-	}
-	if err := networking.BringUpTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
-		return err
-	}
-	cleanupVethPair, err := networking.SetupVethPair(ctx, c.id, vmIP, c.vmIdx)
+
+	network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP, externalNetworking)
 	if err != nil {
-		return err
+		return status.UnavailableErrorf("create VM network: %s", err)
 	}
-	c.cleanupVethPair = cleanupVethPair
+	c.network = network
+
 	return nil
 }
 
@@ -1772,11 +2004,11 @@ func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context) error {
 }
 
 func (c *FirecrackerContainer) setupVBDMounts(ctx context.Context) error {
-	if !*enableVBD {
+	if !snaputil.IsChunkedSnapshotSharingEnabled() {
 		return nil
 	}
 
-	ctx, span := tracing.StartSpan(ctx) // nolint:SA4006
+	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	start := time.Now()
 	defer func() {
@@ -1809,11 +2041,6 @@ func (c *FirecrackerContainer) setupVBDMounts(ctx context.Context) error {
 	} else {
 		c.scratchVBD = d
 	}
-	if d, err := setup(workspaceDriveID, c.workspaceStore); err != nil {
-		return err
-	} else {
-		c.workspaceVBD = d
-	}
 	return nil
 }
 
@@ -1831,7 +2058,11 @@ func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 	if err := os.MkdirAll(filepath.Dir(vsockServerPath), 0755); err != nil {
 		return err
 	}
-	c.vfsServer = vfs_server.New(c.env, c.actionWorkingDir)
+	vfsSrv, err := vfs_server.New(c.env, c.actionWorkingDir)
+	if err != nil {
+		return err
+	}
+	c.vfsServer = vfsSrv
 	lis, err := net.Listen("unix", vsockServerPath)
 	if err != nil {
 		return err
@@ -1843,35 +2074,30 @@ func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 }
 
 func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
-	if !c.isNetworkSetup {
+	if c.network == nil {
 		return nil
 	}
-	c.isNetworkSetup = false
+	network := c.network
+	c.network = nil
 
-	// Even if the context was canceled, extend the life of the context for
-	// cleanup
-	ctx, cancel := background.ExtendContextForFinalization(ctx, time.Second*1)
+	// Even if the context was canceled, allow a little bit of extra time to
+	// clean up networking. If we fail to clean up networking, then the IP
+	// address will remain locked and won't be usable by other VMs in the
+	// future.
+	ctx, cancel := background.ExtendContextForFinalization(ctx, 5*time.Second)
 	defer cancel()
 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	// These cleanup functions should not depend on each other, so try cleaning
-	// up everything and return the last error if there is one.
-	var lastErr error
-	if c.cleanupVethPair != nil {
-		if err := c.cleanupVethPair(ctx); err != nil {
-			log.Warningf("Networking cleanup failure. CleanupVethPair for vm id %s failed with: %s", c.id, err)
-			lastErr = err
+	if c.networkPool != nil {
+		if ok := c.networkPool.Add(ctx, network); ok {
+			return nil
 		}
+		log.CtxInfof(ctx, "Failed to add network to pool - cleaning up network.")
 	}
-	// TODO: move namespace creation into the veth pair networking setup, and
-	// clean it up as part of cleanupVethPair above.
-	if err := networking.RemoveNetNamespace(ctx, c.id); err != nil {
-		log.Warningf("Networking cleanup failure. RemoveNetNamespace for vm id %s failed with: %s", c.id, err)
-		lastErr = err
-	}
-	return lastErr
+
+	return network.Cleanup(ctx)
 }
 
 func (c *FirecrackerContainer) SetTaskFileSystemLayout(fsLayout *container.FileSystemLayout) {
@@ -1900,7 +2126,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 	// there's no need to Create the machine.
 	if c.machine == nil {
 		log.CtxInfof(ctx, "Pulling image %q", c.containerImage)
-		if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.containerImage); err != nil {
+		if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.containerImage, c.useOCIFetcher); err != nil {
 			return nonCmdExit(ctx, err)
 		}
 
@@ -1946,39 +2172,52 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	createTime := time.Since(start)
 	log.CtxDebugf(ctx, "Create took %s", createTime)
 
-	c.observeStageDuration("init", createTime.Microseconds())
+	c.observeStageDuration("create", createTime)
 	return err
 }
 
+func withMetadata(metadata interface{}) fcclient.Opt {
+	return func(m *fcclient.Machine) {
+		// Set metadata during init, before the VM instance is created,
+		// since goinit expects metadata to be available on startup.
+		m.Handlers.FcInit = m.Handlers.FcInit.AppendAfter(fcclient.ConfigMmdsHandlerName, fcclient.NewSetMetadataHandler(metadata))
+	}
+}
+
 func (c *FirecrackerContainer) create(ctx context.Context) error {
-	c.currentTaskInitTimeUsec = time.Now().UnixMicro()
+	c.currentTaskInitTime = time.Now()
 	c.rmOnce = &sync.Once{}
 	c.rmErr = nil
 
-	vmCtx, cancel := context.WithCancelCause(background.ToBackground(ctx))
+	vmCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	c.vmCtx = vmCtx
 	c.cancelVmCtx = cancel
 
 	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
 		return status.InternalErrorf("failed to create chroot dir: %s", err)
 	}
-	log.Debugf("Created chroot dir %s", c.getChroot())
+	log.CtxInfof(ctx, "Created chroot dir %q", c.getChroot())
 
 	containerFSPath := filepath.Join(c.getChroot(), containerFSName)
 	rootFSPath := filepath.Join(c.getChroot(), rootFSName)
 	scratchFSPath := filepath.Join(c.getChroot(), scratchFSName)
-	workspaceFSPath := filepath.Join(c.getChroot(), workspaceFSName)
+	workspacePlaceholderPath := filepath.Join(c.getChroot(), emptyFileName)
 
-	// Hardlink the ext4 image to the chroot at containerFSPath.
-	imageExt4Path, err := ociconv.CachedDiskImagePath(ctx, c.jailerRoot, c.containerImage)
-	if err != nil {
-		return status.UnavailableErrorf("disk image is unavailable: %s", err)
-	}
-	if err := os.Link(imageExt4Path, containerFSPath); err != nil {
-		return err
+	// Hardlink the ext4 image to the chroot at containerFSPath, if we haven't
+	// already. Normally it will only exist if we got a cache miss and had to
+	// call PullImage; otherwise we expect to find it in cache.
+	if exists, err := disk.FileExists(ctx, containerFSPath); err != nil {
+		return status.UnavailableErrorf("check containerfs exists: %s", err)
+	} else if !exists {
+		err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, containerFSPath)
+		if err != nil {
+			return status.UnavailableErrorf("link cached image: %s", err)
+		}
 	}
 
-	if *EnableRootfs {
+	if snaputil.IsChunkedSnapshotSharingEnabled() {
+		rootFSPath = filepath.Join(c.getChroot(), rootDriveID+vbdMountDirSuffix, vbd.FileName)
+		scratchFSPath = filepath.Join(c.getChroot(), scratchDriveID+vbdMountDirSuffix, vbd.FileName)
 		if err := c.initRootfsStore(ctx); err != nil {
 			return status.WrapError(err, "create root image")
 		}
@@ -1987,24 +2226,22 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 			return status.WrapError(err, "create initial scratch image")
 		}
 	}
-	// Create an empty workspace image initially; the real workspace will be
-	// hot-swapped just before running each command in order to ensure that the
-	// workspace contents are up to date.
-	if err := c.createWorkspaceImage(ctx, "" /*=workspaceDir*/, workspaceFSPath); err != nil {
-		return err
+
+	// Create the workspace drive placeholder contents.
+	if err := os.WriteFile(workspacePlaceholderPath, nil, 0644); err != nil {
+		return status.UnavailableErrorf("write workspace placeholder file: %s", err)
 	}
 
-	if *enableVBD {
-		rootFSPath = filepath.Join(c.getChroot(), rootDriveID+vbdMountDirSuffix, vbd.FileName)
-		scratchFSPath = filepath.Join(c.getChroot(), scratchDriveID+vbdMountDirSuffix, vbd.FileName)
-		workspaceFSPath = filepath.Join(c.getChroot(), workspaceDriveID+vbdMountDirSuffix, vbd.FileName)
-	}
-	fcCfg, err := c.getConfig(ctx, rootFSPath, containerFSPath, scratchFSPath, workspaceFSPath)
-	if err != nil {
-		return err
+	if err := c.setupCgroup(ctx); err != nil {
+		return status.UnavailableErrorf("setup cgroup: %s", err)
 	}
 
 	if err := c.setupNetworking(ctx); err != nil {
+		return err
+	}
+
+	fcCfg, err := c.getConfig(ctx, rootFSPath, containerFSPath, scratchFSPath, workspacePlaceholderPath)
+	if err != nil {
 		return err
 	}
 
@@ -2020,9 +2257,38 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		fcclient.WithLogger(getLogrusLogger()),
 	}
 
+	// The /init script unconditionally checks for this key if networking is
+	// enabled and will fail if it isn't set, so make sure to always set it,
+	// even if it's empty.
+	metadata := map[string]string{}
+	if networkingEnabled(c.vmConfig.NetworkMode) {
+		metadata["dns_overrides"] = c.marshalledDNSOverrides
+	}
+	// Pass the host's resolv.conf to the VM so it can use the same DNS
+	// configuration. goinit will fall back to default nameservers if unavailable.
+	metadata["resolv_conf"] = c.hostResolvConf
+
+	if c.vmConfig.InitDockerd {
+		dockerDaemonConfig, err := getDockerDaemonConfig()
+		if err != nil {
+			return status.UnavailableErrorf("get Docker daemon config: %s", err)
+		}
+		metadata["dockerd_daemon_json"] = string(dockerDaemonConfig)
+	}
+	if len(metadata) > 0 {
+		machineOpts = append(machineOpts, withMetadata(metadata))
+	}
+	if c.isBalloonEnabled() {
+		balloon := fcclient.NewCreateBalloonHandler(1, true, 1)
+		machineOpts = append(machineOpts,
+			func(m *fcclient.Machine) {
+				m.Handlers.FcInit = m.Handlers.FcInit.AppendAfter(fcclient.CreateMachineHandlerName, balloon)
+			})
+	}
+
 	m, err := fcclient.NewMachine(vmCtx, *fcCfg, machineOpts...)
 	if err != nil {
-		return status.InternalErrorf("Failed creating machine: %s", err)
+		return status.UnavailableErrorf("create machine: %s", err)
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(m)).FieldByName("cmd")).FieldByName("Args"))
 
@@ -2033,13 +2299,28 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		return m.Start(vmCtx)
 	})()
 	if err != nil {
-		return status.InternalErrorf("Failed starting machine: %s", err)
+		return status.UnavailableErrorf("start machine: %s. vmlog: %s", err, c.vmLog.Tail())
 	}
 	c.machine = m
 	return nil
 }
 
-func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn *grpc.ClientConn, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (_ *interfaces.CommandResult, healthy bool) {
+func getDockerDaemonConfig() ([]byte, error) {
+	config := map[string][]string{}
+	if len(*firecrackerVMDockerMirrors) > 0 {
+		config["registry-mirrors"] = *firecrackerVMDockerMirrors
+	}
+	if len(*firecrackerVMDockerInsecureRegistries) > 0 {
+		config["insecure-registries"] = *firecrackerVMDockerInsecureRegistries
+	}
+	configJSON, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return configJSON, nil
+}
+
+func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn *grpc.ClientConn, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (_ *interfaces.CommandResult, healthy bool) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -2060,15 +2341,8 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn 
 	client := vmxpb.NewExecClient(conn)
 	health := hlpb.NewHealthClient(conn)
 
-	defer container.Metrics.Unregister(c)
-	var lastObservedStatsMutex sync.Mutex
-	var lastObservedStats *repb.UsageStats
-	statsListener := func(stats *repb.UsageStats) {
-		container.Metrics.Observe(c, stats)
-		lastObservedStatsMutex.Lock()
-		lastObservedStats = stats
-		lastObservedStatsMutex.Unlock()
-	}
+	var statsMu sync.Mutex
+	var lastGuestStats *repb.UsageStats
 
 	resultCh := make(chan *interfaces.CommandResult, 1)
 	healthCheckErrCh := make(chan error, 1)
@@ -2076,9 +2350,23 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn 
 	defer cancel()
 	go func() {
 		log.CtxDebug(ctx, "Starting Execute stream.")
+		statsListener := func(stats *repb.UsageStats) {
+			statsMu.Lock()
+			defer statsMu.Unlock()
+			lastGuestStats = stats
+		}
 		res := vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio)
 		resultCh <- res
 	}()
+	// While we're executing the task in the VM, also track cgroup stats on the
+	// host. Some stats such as disk capacity are better tracked in the guest;
+	// other stats such as CPU pressure stalling are better tracked on the
+	// host.
+	hostCgroupStats := &container.UsageStats{}
+	cancelCgroupPoll := hostCgroupStats.TrackExecution(ctx, func(ctx context.Context) (*repb.UsageStats, error) {
+		return cgroup.Stats(ctx, c.cgroupPath(), nil /*=blockDevice*/)
+	})
+
 	go func() {
 		for {
 			select {
@@ -2098,14 +2386,47 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn 
 	}()
 	select {
 	case res := <-resultCh:
+		cancelCgroupPoll()
+		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), res.UsageStats)
+		c.fillNetStats(ctx, res.UsageStats)
 		return res, true
 	case err := <-healthCheckErrCh:
+		cancelCgroupPoll()
 		res := commandutil.ErrorResult(status.UnavailableErrorf("VM health check failed (possibly crashed?): %s", err))
-		lastObservedStatsMutex.Lock()
-		res.UsageStats = lastObservedStats
-		lastObservedStatsMutex.Unlock()
+		statsMu.Lock()
+		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), lastGuestStats)
+		c.fillNetStats(ctx, res.UsageStats)
+		statsMu.Unlock()
 		return res, false
 	}
+}
+
+func (c *FirecrackerContainer) fillNetStats(ctx context.Context, usageStats *repb.UsageStats) {
+	if c.network == nil {
+		return
+	}
+	netStats, err := c.network.Stats(ctx)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to get network stats: %s", err)
+		return
+	}
+	usageStats.NetworkStats = netStats
+}
+
+func (c *FirecrackerContainer) vmExecConn(ctx context.Context) (*grpc.ClientConn, error) {
+	if c.vmExec.conn == nil && c.vmExec.err == nil {
+		c.vmExec.conn, c.vmExec.err = c.dialVMExecServer(ctx)
+	}
+	return c.vmExec.conn, c.vmExec.err
+}
+
+func (c *FirecrackerContainer) closeVMExecConn(ctx context.Context) {
+	if c.vmExec.conn != nil {
+		if err := c.vmExec.conn.Close(); err != nil {
+			log.CtxErrorf(ctx, "Failed to close vm exec connection: %s", err)
+		}
+	}
+	c.vmExec.conn, c.vmExec.err = nil, nil
 }
 
 func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.ClientConn, error) {
@@ -2114,7 +2435,9 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 
 	start := time.Now()
 	defer func() {
-		metrics.FirecrackerExecDialDurationUsec.Observe(float64(time.Since(start).Microseconds()))
+		metrics.FirecrackerExecDialDurationUsec.With(prometheus.Labels{
+			metrics.CreatedFromSnapshot: strconv.FormatBool(c.createFromSnapshot),
+		}).Observe(float64(time.Since(start).Microseconds()))
 	}()
 
 	ctx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
@@ -2123,49 +2446,26 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
 	conn, err := vsock.SimpleGRPCDial(ctx, vsockPath, vsock.VMExecPort)
 	if err != nil {
+		tail := string(c.vmLog.Tail())
 		if err := context.Cause(ctx); err != nil {
 			// If the context was cancelled for any reason (timed out or VM
 			// crashed), check the VM logs which might have more relevant crash
 			// info, otherwise return the context error.
-			if err := c.parseFatalInitError(); err != nil {
+			if err := parseFatalInitError(tail); err != nil {
 				return nil, err
 			}
 			// Intentionally not returning DeadlineExceededError here since it
 			// is not a Bazel-retryable error, but this particular timeout
 			// should be retryable.
-			return nil, status.UnavailableErrorf("failed to connect to VM: %s", err)
+			return nil, status.UnavailableErrorf("failed to connect to VM: %s. vmlog: %s", err, tail)
 		}
-		return nil, status.UnavailableErrorf("failed to connect to VM: %s", err)
+		return nil, status.UnavailableErrorf("failed to connect to VM: %s. vmlog: %s", err, tail)
 	}
 	return conn, nil
 }
 
 func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
-	ctx, span := tracing.StartSpan(ctx)
-	defer span.End()
-
-	p, err := vfs_server.NewCASLazyFileProvider(c.env, ctx, c.fsLayout.RemoteInstanceName, c.fsLayout.DigestFunction, c.fsLayout.Inputs)
-	if err != nil {
-		return nil, err
-	}
-	if err := c.vfsServer.Prepare(p); err != nil {
-		return nil, err
-	}
-
-	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
-	defer cancel()
-
-	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
-	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMVFSPort)
-	if err != nil {
-		return nil, err
-	}
-	client := vmfspb.NewFileSystemClient(conn)
-	rsp, err := client.Prepare(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	return rsp, err
+	return nil, status.UnimplementedErrorf("VFS support not available for firecracker")
 }
 
 // monitorVMContext returns a context that is cancelled if the VM exits. The
@@ -2204,10 +2504,17 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	ctx, cancel := c.monitorVMContext(ctx)
 	defer cancel()
 
+	stage := "init"
 	result := &interfaces.CommandResult{ExitCode: commandutil.NoExitCode}
 	defer func() {
+		ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
+		defer cancel()
+
 		// Attach VM metadata to the result
 		result.VMMetadata = c.getVMMetadata()
+		// Include whether the snapshot will be saved, so it can be displayed in the UI.
+		result.VMMetadata.SavedLocalSnapshot = c.shouldSaveLocalSnapshot(ctx)
+		result.VMMetadata.SavedRemoteSnapshot = c.shouldSaveRemoteSnapshot(ctx)
 
 		// Attach VM logs to the result
 		if result.AuxiliaryLogs == nil {
@@ -2218,13 +2525,14 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		execDuration := time.Since(start)
 		log.CtxDebugf(ctx, "Exec took %s", execDuration)
 
-		timeSinceContainerInit := time.Since(time.UnixMicro(c.currentTaskInitTimeUsec))
-		c.observeStageDuration("task_lifecycle", timeSinceContainerInit.Microseconds())
-		c.observeStageDuration("exec", execDuration.Microseconds())
+		timeSinceContainerInit := time.Since(c.currentTaskInitTime)
+		c.observeStageDuration("task_lifecycle", timeSinceContainerInit)
+		c.observeStageDuration("exec", execDuration)
+		c.emitCOWAndUFFDMetrics(stage) // Emit metrics for the current stage, even if it failed.
 	}()
 
 	if c.fsLayout == nil {
-		if err := c.syncWorkspace(ctx); err != nil {
+		if err := c.createAndAttachWorkspace(ctx); err != nil {
 			result.Error = status.WrapError(err, "failed to sync workspace")
 			return result
 		}
@@ -2236,54 +2544,77 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			return result
 		}
 	}
+	if c.createFromSnapshot {
+		err := c.resetGuestState(ctx, result)
+		if err != nil {
+			result.Error = status.WrapError(err, "Failed to initialize firecracker VM exec client")
+			return result
+		}
+	}
 
-	workDir := "/workspace/"
+	guestWorkspaceMountDir := "/workspace/"
 	if c.fsLayout != nil {
-		workDir = guestVFSMountDir
+		guestWorkspaceMountDir = guestVFSMountDir
 	}
 
 	defer func() {
-		// TODO(bduffany): Figure out a good way to surface this in the command result.
+		// Once the execution is complete, look for certain interesting errors
+		// in the VM logs and log them as warnings.
+		logTail := string(c.vmLog.Tail())
+		// Logs end with "\r\n"; convert these to universal line endings.
+		logTail = strings.ReplaceAll(logTail, "\r\n", "\n")
+
 		if result.Error != nil {
-			if !status.IsDeadlineExceededError(result.Error) {
-				log.CtxWarningf(ctx, "Execution error occurred. VM logs: %s", string(c.vmLog.Tail()))
+			if !status.IsDeadlineExceededError(result.Error) && !status.IsCanceledError(result.Error) {
+				log.CtxWarningf(ctx, "Execution error occurred: %s. VM logs: %s", result.Error, string(c.vmLog.Tail()))
 			}
-		} else if err := c.parseOOMError(); err != nil {
+		} else if err := c.parseOOMError(logTail); err != nil {
+			// TODO(bduffany): maybe fail the whole command if we see an OOM
+			// in the kernel logs, and the command failed?
 			log.CtxWarningf(ctx, "OOM error occurred during task execution: %s", err)
 		}
-		if err := c.parseSegFault(result); err != nil {
+		if err := c.parseSegFault(logTail, result); err != nil {
 			log.CtxWarningf(ctx, "Segfault occurred during task execution (recycled=%v) : %s", c.recycled, err)
+		}
+		// Slow hrtimer interrupts can happen during periods of high contention
+		// and may help explain action failures - surface these in the executor
+		// logs.
+		if warning := slowInterruptWarningPattern.FindString(logTail); warning != "" {
+			log.CtxWarningf(ctx, "Slow interrupt warning reported in kernel logs: %q", warning)
 		}
 	}()
 
-	// Emit metrics to track time spent preparing VM to execute a command
-	if c.memoryStore != nil {
-		c.memoryStore.EmitUsageMetrics("init")
-	}
-	if c.uffdHandler != nil {
-		c.uffdHandler.EmitSummaryMetrics("init")
-	}
-	if c.rootStore != nil {
-		c.rootStore.EmitUsageMetrics("init")
-	}
-	if c.workspaceStore != nil {
-		c.workspaceStore.EmitUsageMetrics("init")
-	}
-
-	// TODO(bduffany): Reuse connection from Unpause(), if applicable
-	conn, err := c.dialVMExecServer(ctx)
+	conn, err := c.vmExecConn(ctx)
 	if err != nil {
 		return commandutil.ErrorResult(status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err))
 	}
-	defer conn.Close()
+	// Emit metrics to track time spent preparing VM to execute a command
+	c.emitCOWAndUFFDMetrics(stage)
 
-	result, vmHealthy := c.SendExecRequestToGuest(ctx, conn, cmd, workDir, stdio)
+	// Deflate the balloon so the execution has access to full memory.
+	//
+	// Updating the balloon must happen after the balloon has been activated
+	// during VM boot. Wait for the VM exec server to start above, which happens
+	// after boot.
+	if c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
+		stage = "update_balloon"
+		if _, err := c.updateBalloon(ctx, 0); err != nil {
+			result.Error = status.WrapError(err, "deflate balloon")
+			return result
+		}
+		c.emitCOWAndUFFDMetrics(stage)
+	}
+
+	stage = "exec"
+	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, filepath.Join(guestWorkspaceMountDir, cmd.GetWorkingDirectory()), stdio)
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
 
 	// If FUSE is enabled then outputs are already in the workspace.
 	if c.fsLayout == nil && !*disableWorkspaceSync {
+		c.emitCOWAndUFFDMetrics(stage)
+		stage = "copy_workspace_outputs"
 		// Unmount the workspace and pause the VM before syncing to ensure that
 		// the guest's FS cache is flushed to the backing file on the host and
 		// that no concurrent operations can occur while we're reading the
@@ -2293,7 +2624,6 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		// make it a hard failure if we fail to unmount or if the workspace disk
 		// is still busy after unmounting.
 		client := vmxpb.NewExecClient(conn)
-		var unmounted bool
 
 		// If the healthcheck failed then the vmexec server has probably crashed
 		// and unmounting will most likely not work - skip unmounting, but still
@@ -2303,7 +2633,6 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 				log.CtxWarningf(ctx, "Failed to unmount workspace - not recycling VM")
 				result.DoNotRecycle = true
 			} else {
-				unmounted = true
 				if rsp.GetBusy() {
 					// Do not recycle the VM if the workspace device is still busy after
 					// unmounting.
@@ -2320,31 +2649,55 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			result.Error = status.WrapError(err, "failed to copy action outputs from VM workspace")
 			return result
 		}
-		// Resume the VM and remount the workspace now that we're done copying.
 		if err := c.machine.ResumeVM(ctx); err != nil {
 			result.Error = status.UnavailableErrorf("error resuming VM after copying workspace outputs: %s", err)
 			return result
-		}
-		if unmounted {
-			if err := c.mountWorkspace(ctx, client); err != nil {
-				result.Error = status.WrapErrorf(err, "copy action outputs: re-mount workspace")
-				return result
-			}
 		}
 	}
 
 	return result
 }
 
+func (c *FirecrackerContainer) emitCOWAndUFFDMetrics(stage string) {
+	if c.memoryStore != nil {
+		c.memoryStore.EmitUsageMetrics(stage)
+	}
+	if c.uffdHandler != nil {
+		c.uffdHandler.EmitSummaryMetrics(stage)
+	}
+	if c.rootStore != nil {
+		c.rootStore.EmitUsageMetrics(stage)
+	}
+}
+
+func (c *FirecrackerContainer) resetGuestState(ctx context.Context, result *interfaces.CommandResult) error {
+	conn, err := c.vmExecConn(ctx)
+	if err != nil {
+		return err
+	}
+
+	execClient := vmxpb.NewExecClient(conn)
+	_, err = execClient.Initialize(ctx, &vmxpb.InitializeRequest{
+		UnixTimestampNanoseconds: time.Now().UnixNano(),
+		ClearArpCache:            true,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *FirecrackerContainer) Signal(ctx context.Context, sig syscall.Signal) error {
+	// TODO: forward the signal as a message on any currently running vmexec
+	// stream.
+	return status.UnimplementedError("not implemented")
+}
+
 func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	diskImagePath, err := ociconv.CachedDiskImagePath(ctx, c.jailerRoot, c.containerImage)
-	if err != nil {
-		return false, err
-	}
-	return diskImagePath != "", nil
+	return ociconv.IsImageCached(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage)
 }
 
 // PullImage pulls the container image from the remote. It always
@@ -2358,7 +2711,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 
 	// If we're creating from a snapshot, we don't need to pull the base image
 	// since the rootfs image contains our full desired disk contents.
-	if c.createFromSnapshot && *EnableRootfs {
+	if c.createFromSnapshot {
 		return nil
 	}
 
@@ -2367,10 +2720,29 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 
 	start := time.Now()
 	defer func() {
+		c.observeStageDuration("pull_image", time.Since(start))
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
-	_, err := ociconv.CreateDiskImage(ctx, c.dockerClient, c.jailerRoot, c.containerImage, creds)
+	if err := c.resolver.AuthenticateWithRegistry(ctx, c.containerImage, oci.RuntimePlatform(), creds); err != nil {
+		return status.WrapError(err, "authenticate with registry")
+	}
+
+	containerFSPath := filepath.Join(c.getChroot(), containerFSName)
+
+	// We normally don't expect the containerFSPath to already exist at this
+	// point, but handle this case gracefully anyway.
+	exists, err := disk.FileExists(ctx, containerFSPath)
+	if err != nil {
+		return status.UnavailableErrorf("stat container FS path: %s", err)
+	} else if exists {
+		return nil
+	}
+
+	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
+		return status.UnavailableErrorf("create chroot dir: %s", err)
+	}
+	err = ociconv.CreateDiskImage(ctx, c.resolver, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, creds, c.useOCIFetcher, containerFSPath)
 	if err != nil {
 		return err
 	}
@@ -2386,6 +2758,7 @@ func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 
 	start := time.Now()
 	defer func() {
+		c.observeStageDuration("remove", time.Since(start))
 		log.CtxDebugf(ctx, "Remove took %s", time.Since(start))
 	}()
 
@@ -2404,6 +2777,8 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	// Make sure we don't get stuck for too long trying to remove.
 	ctx, cancel := context.WithTimeout(ctx, finalizationTimeout)
 	defer cancel()
+
+	c.closeVMExecConn(ctx)
 
 	defer c.cancelVmCtx(fmt.Errorf("VM removed"))
 
@@ -2427,14 +2802,9 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.vfsServer = nil
 	}
 
-	if err := c.unmountAllVBDs(ctx); err != nil {
+	if err := c.unmountAllVBDs(ctx, true /*fromRemove*/); err != nil {
 		// Don't log the err - unmountAllVBDs logs it internally.
 		lastErr = err
-	}
-
-	if c.workspaceStore != nil {
-		c.workspaceStore.Close()
-		c.workspaceStore = nil
 	}
 	if c.scratchStore != nil {
 		c.scratchStore.Close()
@@ -2446,49 +2816,96 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	}
 
 	if c.uffdHandler != nil {
-		if err := c.uffdHandler.Stop(); err != nil {
-			log.CtxErrorf(ctx, "Error stopping uffd handler: %s", err)
+		if err := c.stopUffdHandler(ctx); err != nil {
 			lastErr = err
 		}
-		c.uffdHandler = nil
 	}
 	if c.memoryStore != nil {
-		c.memoryStore.Close()
-		c.memoryStore = nil
+		c.closeMemoryStore(ctx)
 	}
+
+	exists, err := disk.FileExists(ctx, filepath.Join(c.actionWorkingDir, invalidateSnapshotMarkerFile))
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to check existence of %s: %s", invalidateSnapshotMarkerFile, err)
+	} else if exists {
+		log.CtxInfof(ctx, "Action created %s file in workspace root; invalidating snapshot for key %v", invalidateSnapshotMarkerFile, c.SnapshotKeySet().GetBranchKey())
+		_, err = snaploader.NewSnapshotService(c.env).InvalidateSnapshot(ctx, c.SnapshotKeySet().GetBranchKey())
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to invalidate snapshot despite existence of %s: %s", invalidateSnapshotMarkerFile, err)
+		}
+	}
+
 	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
-		log.CtxErrorf(ctx, "Error removing chroot: %s", err)
+		log.CtxErrorf(ctx, "Error removing chroot %q: %s", c.getChroot(), err)
 		lastErr = err
+	} else {
+		log.CtxInfof(ctx, "Removed chroot %q", c.getChroot())
+	}
+
+	if c.releaseCPUs != nil {
+		c.releaseCPUs()
 	}
 	return lastErr
+}
+
+func (c *FirecrackerContainer) closeMemoryStore(ctx context.Context) {
+	_, span := tracing.StartSpan(ctx)
+	defer span.End()
+	c.memoryStore.Close()
+	c.memoryStore = nil
+}
+
+func (c *FirecrackerContainer) stopUffdHandler(ctx context.Context) error {
+	_, span := tracing.StartSpan(ctx)
+	defer span.End()
+	if err := c.uffdHandler.Stop(); err != nil {
+		log.CtxErrorf(ctx, "Error stopping uffd handler: %s", err)
+		return err
+	}
+	c.uffdHandler = nil
+	return nil
 }
 
 // Unmounts any mounted VBD filesystems.
 // If this func returns a nil error, then the VBD filesystems were successfully
 // unmounted and the backing COWStores can no longer be accessed using
 // VBD file handles.
-func (c *FirecrackerContainer) unmountAllVBDs(ctx context.Context) error {
+func (c *FirecrackerContainer) unmountAllVBDs(ctx context.Context, fromRemove bool) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	var lastErr error
-	if c.workspaceVBD != nil {
-		if err := c.workspaceVBD.Unmount(ctx); err != nil {
-			log.CtxErrorf(ctx, "Failed to unmount workspace VBD: %s", err)
-			lastErr = err
+	logErr := func(name string, err error) {
+		format := "Failed to unmount VBD %q"
+		if ctx.Err() != nil {
+			format += " before the context was canceled - it may still be unmounted in the background, or there may be a goroutine leak"
 		}
-		c.workspaceVBD = nil
+		format += ": %s"
+		if fromRemove {
+			log.CtxErrorf(ctx, format, name, err)
+		} else {
+			log.CtxWarningf(ctx, format, name, err)
+		}
 	}
 	if c.scratchVBD != nil {
 		if err := c.scratchVBD.Unmount(ctx); err != nil {
-			log.CtxErrorf(ctx, "Failed to unmount scratch VBD: %s", err)
+			logErr("scratch", err)
 			lastErr = err
 		}
 		c.scratchVBD = nil
 	}
 	if c.rootVBD != nil {
 		if err := c.rootVBD.Unmount(ctx); err != nil {
-			log.CtxErrorf(ctx, "Failed to unmount root VBD: %s", err)
+			logErr("root", err)
 			lastErr = err
 		}
 		c.rootVBD = nil
+	}
+	if c.memorySnapshotExportVBD != nil {
+		if err := c.memorySnapshotExportVBD.Unmount(ctx); err != nil {
+			logErr("memory", err)
+			lastErr = err
+		}
+		c.memorySnapshotExportVBD = nil
 	}
 	return lastErr
 }
@@ -2509,6 +2926,14 @@ func (c *FirecrackerContainer) stopMachine(ctx context.Context) error {
 		return status.WrapError(err, "wait for firecracker to exit")
 	}
 	c.machine = nil
+
+	// Once the VM exits, delete the cgroup.
+	// Jailer docs say that this cleanup must be handled by us:
+	// https://github.com/firecracker-microvm/firecracker/blob/main/docs/jailer.md#observations
+	if err := os.Remove(c.cgroupPath()); err != nil && !os.IsNotExist(err) {
+		log.CtxWarningf(ctx, "Failed to remove jailer cgroup: %s", err)
+	}
+
 	return nil
 }
 
@@ -2529,10 +2954,16 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	start := time.Now()
 	err := c.pause(ctx)
 
+	if c.releaseCPUs != nil {
+		c.releaseCPUs()
+	}
+	// Close after pause(), because it may use the connection.
+	c.closeVMExecConn(ctx)
+
 	pauseTime := time.Since(start)
 	log.CtxDebugf(ctx, "Pause took %s", pauseTime)
 
-	c.observeStageDuration("pause", pauseTime.Microseconds())
+	c.observeStageDuration("pause", pauseTime)
 	return err
 }
 
@@ -2544,20 +2975,38 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	snapDetails, err := c.snapshotDetails(ctx)
 	if err != nil {
+		return status.WrapError(err, "prepare snapshot details")
+	}
+
+	shouldSaveSnapshot := snapDetails.saveRemoteSnapshot || snapDetails.saveLocalSnapshot
+
+	if shouldSaveSnapshot && c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
+		if err := c.reclaimMemoryWithBalloon(ctx); err != nil {
+			return status.WrapErrorf(err, "reclaiming memory with the balloon failed, not saving snapshot for key %v", c.SnapshotKeySet().GetWriteKey())
+		}
+	}
+
+	// Before taking a snapshot, set the workspace drive to point to an empty
+	// file, so that we don't have to persist the workspace contents.
+	if shouldSaveSnapshot {
+		if err := c.updateWorkspaceDriveToEmptyFile(ctx); err != nil {
+			return status.WrapError(err, "update workspace drive to empty file")
+		}
+	}
+
+	if err := c.pauseVM(ctx); err != nil {
 		return err
 	}
 
-	if err = c.pauseVM(ctx); err != nil {
-		return err
-	}
+	if shouldSaveSnapshot {
+		// If an older snapshot is present -- nuke it since we're writing a new one.
+		if err := c.cleanupOldSnapshots(ctx, snapDetails); err != nil {
+			return err
+		}
 
-	// If an older snapshot is present -- nuke it since we're writing a new one.
-	if err = c.cleanupOldSnapshots(snapDetails); err != nil {
-		return err
-	}
-
-	if err = c.createSnapshot(ctx, snapDetails); err != nil {
-		return err
+		if err := c.createSnapshot(ctx, snapDetails); err != nil {
+			return err
+		}
 	}
 
 	// Stop the VM, UFFD page fault handler, and VBD servers to ensure nothing
@@ -2571,50 +3020,343 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		}
 		c.uffdHandler = nil
 	}
-	if err := c.unmountAllVBDs(ctx); err != nil {
+
+	// Note: If the unmount fails, we will retry in `c.Remove`.
+	if err := c.unmountAllVBDs(ctx, false /*fromRemove*/); err != nil {
 		return status.WrapError(err, "unmount vbds")
 	}
 
-	if err = c.saveSnapshot(ctx, snapDetails); err != nil {
-		return err
+	if shouldSaveSnapshot {
+		if err := c.saveSnapshot(ctx, snapDetails); err != nil {
+			if err := c.emitChunkedSnapshotMetrics(ctx); err != nil {
+				log.CtxWarningf(ctx, "Failed to emit snapshot metrics: %s", err)
+			}
+			return err
+		}
+	}
+
+	if err := c.emitChunkedSnapshotMetrics(ctx); err != nil {
+		log.CtxWarningf(ctx, "Failed to emit snapshot metrics: %s", err)
 	}
 
 	// Finish cleaning up VM resources
-	if err = c.Remove(ctx); err != nil {
+	if err := c.Remove(ctx); err != nil {
 		return err
 	}
 
 	return nil
 }
 
+func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context) error {
+	if !snaputil.IsChunkedSnapshotSharingEnabled() {
+		return nil
+	}
+
+	chunkedStores := make(map[string]*copy_on_write.COWStore, 0)
+	if c.rootStore != nil {
+		chunkedStores[rootDriveID] = c.rootStore
+	}
+	if c.scratchStore != nil {
+		chunkedStores[scratchDriveID] = c.scratchStore
+	}
+	if c.memoryStore != nil {
+		chunkedStores[memoryChunkDirName] = c.memoryStore
+	}
+
+	for name, store := range chunkedStores {
+		chunks := store.SortedChunks()
+		chunkSourceCounter := make(map[snaputil.ChunkSource]int, 0)
+		bytesReadPerSource := make(map[snaputil.ChunkSource]int64, 0)
+		var dirtyBytes, dirtyChunkCount int64
+		for _, chunk := range chunks {
+			chunkSrc := chunk.Source()
+			chunkSourceCounter[chunkSrc]++
+
+			chunkSize, err := chunk.SizeBytes()
+			if err != nil {
+				return status.WrapError(err, "chunk size")
+			}
+
+			bytesReadPerSource[chunkSrc] += chunkSize
+			dirty := store.Dirty(chunk.Offset)
+			if dirty {
+				dirtyBytes += chunkSize
+				dirtyChunkCount++
+			}
+		}
+
+		var chunkSrcLog strings.Builder
+		for chunkSrc, count := range chunkSourceCounter {
+			sourceLabel := snaputil.ChunkSourceLabel(chunkSrc)
+			bytesRead := bytesReadPerSource[chunkSrc]
+			metrics.COWSnapshotChunkSourceRatio.With(prometheus.Labels{
+				metrics.FileName:    name,
+				metrics.ChunkSource: sourceLabel,
+			}).Observe(float64(count) / float64(len(chunks)))
+			metrics.COWSnapshotBytesRead.With(prometheus.Labels{
+				metrics.FileName:    name,
+				metrics.ChunkSource: sourceLabel,
+			}).Add(float64(bytesReadPerSource[chunkSrc]))
+			chunkSrcLog.WriteString(fmt.Sprintf(", %d MB read from %s", bytesRead/(1024*1024), sourceLabel))
+		}
+
+		metrics.COWSnapshotDirtyChunkRatio.With(prometheus.Labels{
+			metrics.FileName: name,
+		}).Observe(float64(dirtyChunkCount) / float64(len(chunks)))
+		metrics.COWSnapshotDirtyBytes.With(prometheus.Labels{
+			metrics.FileName: name,
+		}).Add(float64(dirtyBytes))
+
+		log.CtxDebugf(ctx, "For chunked %s snapshot, %d MB (%d chunks) were dirty%s", name, dirtyBytes/(1024*1024), dirtyChunkCount, chunkSrcLog.String())
+	}
+	return nil
+}
+
+// reclaimMemoryWithBalloon attempts to decrease memory snapshot size by expanding
+// the memory balloon to 80% of available memory.
+func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+		metrics.Stage: "balloon_memory_reclaim",
+	}).Inc()
+	defer metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+		metrics.Stage: "balloon_memory_reclaim",
+	}).Dec()
+
+	conn, err := c.vmExecConn(ctx)
+	if err != nil {
+		return status.InternalErrorf("failed to dial VM exec port: %s", err)
+	}
+	// TODO(Maggie): Don't depend on sh existing within the container image
+	client := vmxpb.NewExecClient(conn)
+	// Read available memory in the guest to determine the target balloon size.
+	// /proc/meminfo reports amounts in KiB, and we're converting to MiB.
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", "awk '/MemAvailable/ {print $2 / 1024}' /proc/meminfo"},
+	}
+	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", "0:0", nil /* statsListener*/, &interfaces.Stdio{})
+	if res.Error != nil {
+		return res.Error
+	}
+
+	availableMemMB, err := strconv.ParseFloat(strings.TrimSpace(string(res.Stdout)), 32)
+	if err != nil {
+		return status.WrapErrorf(err, "failed to parse available memory %s", string(res.Stdout))
+	}
+	balloonTargetMB := int64(float64(availableMemMB) * .8)
+	if _, err := c.updateBalloon(ctx, balloonTargetMB); err != nil {
+		return status.WrapError(err, "inflate balloon")
+	}
+	balloonSizeMB, err := c.updateBalloon(ctx, 0)
+	if err != nil {
+		return status.WrapError(err, "deflate balloon")
+	} else if balloonSizeMB > int64(float64(availableMemMB)*0.2) {
+		// If the balloon was unable to deflate, something is likely broken in the VM and the runner shouldn't
+		// be reused, or workloads will have less memory than expected.
+		return fmt.Errorf("failed to deflate balloon, stalled at %d MB. vmlog: %s", balloonSizeMB, c.vmLog.Tail())
+	}
+	return nil
+}
+
+// Best effort update the balloon to the target size.
+func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib int64) (int64, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	start := time.Now()
+	err := c.machine.UpdateBalloon(ctx, targetSizeMib)
+	if err != nil {
+		return 0, err
+	}
+
+	var currentBalloonSize int64
+	defer func() {
+		log.CtxInfof(ctx, "Update balloon to %d MB (target %d MB) took %s", currentBalloonSize, targetSizeMib, time.Since(start).String())
+	}()
+
+	// Wait for the balloon to reach its target size.
+	pollInterval := 1 * time.Second
+	slowCount := 0
+	for {
+		stats, err := c.machine.GetBalloonStats(ctx)
+		if err != nil {
+			return 0, err
+		}
+		lastBalloonSize := currentBalloonSize
+		currentBalloonSize = *stats.ActualMib
+		if currentBalloonSize == targetSizeMib {
+			return currentBalloonSize, nil
+		} else if time.Since(start) >= maxUpdateBalloonDuration {
+			return currentBalloonSize, nil
+		}
+
+		if math.Abs(float64(currentBalloonSize-lastBalloonSize)) < 100 {
+			slowCount++
+			if slowCount == 5 {
+				// If the rate of inflation is consistently slow or stops, just stop early.
+				// Give the balloon a second chance in case there is resource contention
+				// that temporarily slows the balloon inflation.
+				return currentBalloonSize, nil
+			}
+		} else {
+			slowCount = 0
+		}
+
+		select {
+		case <-ctx.Done():
+			return currentBalloonSize, nil
+		case <-time.After(pollInterval):
+		}
+	}
+}
+
+func pointer[T any](val T) *T {
+	return &val
+}
+
+func toInt32s(in []int) []int32 {
+	out := make([]int32, len(in))
+	for i, l := range in {
+		out[i] = int32(l)
+	}
+	return out
+}
+
 type snapshotDetails struct {
 	snapshotType        string
 	memSnapshotName     string
 	vmStateSnapshotName string
+	saveRemoteSnapshot  bool
+	saveLocalSnapshot   bool
+}
+
+// Firecracker exports snapshots sequentially, so we should limit the number of chunks mmapped at a time
+// because they won't be accessed again.
+// We use the same concurrency as with snapshot writes (plus a little buffer) because that's the max number of chunks we expect to be
+// accessed at a time.
+func (c *FirecrackerContainer) snapshotWriteMaxMmappedChunks() int64 {
+	snapshotWriteConcurrency := int64(math.Max(snaputil.WriteSnapshotChunkConcurrency, float64(c.vmConfig.GetNumCpus())))
+	return snapshotWriteConcurrency + 4
 }
 
 func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDetails, error) {
-	if c.recycled {
+	saveRemoteSnapshot := c.shouldSaveRemoteSnapshot(ctx)
+	saveLocalSnapshot := c.shouldSaveLocalSnapshot(ctx)
+
+	if c.supportsRemoteSnapshots && !saveRemoteSnapshot {
+		log.CtxInfof(ctx, "Not saving remote snapshot under policy %q", platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName))
+	}
+	if !saveLocalSnapshot {
+		log.CtxInfof(ctx, "Not saving local snapshot under policy %q", platform.FindEffectiveValue(c.task, platform.SnapshotSavePolicyPropertyName))
+	}
+
+	if !saveRemoteSnapshot && !saveLocalSnapshot {
 		return &snapshotDetails{
-			snapshotType:        diffSnapshotType,
-			memSnapshotName:     diffMemSnapshotName,
-			vmStateSnapshotName: vmStateSnapshotName,
+			snapshotType:        noSnapshotType,
+			memSnapshotName:     "",
+			vmStateSnapshotName: "",
+			saveRemoteSnapshot:  false,
+			saveLocalSnapshot:   false,
 		}, nil
 	}
+
+	snapshotType := fullSnapshotType
+	memSnapshotName := fullMemSnapshotName
+	if c.recycled {
+		snapshotType = diffSnapshotType
+		memSnapshotName = diffMemSnapshotName
+	}
+
+	if *exportSnapshotToCOW {
+		if !snaputil.IsChunkedSnapshotSharingEnabled() {
+			return nil, status.InvalidArgumentErrorf("exportSnapshotToCOW is only supported when chunked snapshot sharing is enabled")
+		}
+
+		// If the full snapshot should be exported straight to a COWStore, create it here.
+		// For diff snapshots, we'll use the existing memoryStore.
+		if snapshotType == fullSnapshotType {
+			memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
+			if err := os.Mkdir(memChunkDir, 0755); err != nil {
+				return nil, status.WrapError(err, "make memory chunk dir")
+			}
+			memorySizeBytes := c.vmConfig.GetMemSizeMb() * 1024 * 1024
+			if memorySizeBytes <= 0 {
+				return nil, status.InternalErrorf("invalid memory snapshot size %d bytes", memorySizeBytes)
+			}
+
+			memoryStore, err := copy_on_write.NewCOWStore(c.vmCtx, c.env, memoryChunkDirName, nil, copy_on_write.COWOptions{
+				ChunkSizeBytes:     cowChunkSizeBytes(),
+				TotalSizeBytes:     memorySizeBytes,
+				DataDir:            memChunkDir,
+				RemoteInstanceName: c.snapshotKeySet.GetBranchKey().GetInstanceName(),
+				RemoteEnabled:      c.supportsRemoteSnapshots,
+				MaxMmappedChunks:   c.snapshotWriteMaxMmappedChunks(),
+			})
+			if err != nil {
+				return nil, status.WrapError(err, "create memory COWStore")
+			}
+			c.memoryStore = memoryStore
+		}
+
+		if c.memoryStore == nil {
+			return nil, status.InternalErrorf("memory store not created when exporting snapshot to COW")
+		}
+
+		// Create a FUSE-backed VBD for the memory snapshot so that we can capture writes
+		// as it's being exported by firecracker and write them directly to the COWStore.
+		d, err := vbd.New(c.memoryStore)
+		if err != nil {
+			return nil, status.WrapError(err, "create memory snapshot VBD")
+		}
+		relVBDPath := memSnapshotName + vbdMountDirSuffix
+		mountPath := filepath.Join(c.getChroot(), relVBDPath)
+		if err := d.Mount(c.vmCtx, mountPath); err != nil {
+			return nil, status.WrapError(err, "mount memory snapshot VBD")
+		}
+
+		memSnapshotName = filepath.Join(relVBDPath, vbd.FileName)
+		c.memorySnapshotExportVBD = d
+		log.CtxDebugf(ctx, "Mounted memory snapshot VBD to %s", mountPath)
+	}
+
 	return &snapshotDetails{
-		snapshotType:        fullSnapshotType,
-		memSnapshotName:     fullMemSnapshotName,
+		snapshotType:        snapshotType,
+		memSnapshotName:     memSnapshotName,
 		vmStateSnapshotName: vmStateSnapshotName,
+		saveRemoteSnapshot:  saveRemoteSnapshot,
+		saveLocalSnapshot:   saveLocalSnapshot,
 	}, nil
 }
 
 func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetails *snapshotDetails) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+		metrics.Stage: "create_snapshot",
+	}).Inc()
+	defer metrics.SnapshotSaveWorkloadsExecuting.With(prometheus.Labels{
+		metrics.Stage: "create_snapshot",
+	}).Dec()
+
+	if *exportSnapshotToCOW && c.memoryStore != nil && snapshotDetails.snapshotType == diffSnapshotType {
+		// By default, mmapped chunks are managed by the executor-wide shared LRU.
+		//
+		// When exporting the diff snapshot, we should limit the number of chunks mmapped at a time.
+		// Snapshots are exported sequentially, so we don't want recently touched chunks to stay mmapped longer than necessary.
+		if err := c.memoryStore.LimitMmappedChunks(c.snapshotWriteMaxMmappedChunks()); err != nil {
+			return status.WrapError(err, "set limited LRU for diff snapshot export")
+		}
+	}
+
 	machineStart := time.Now()
 	snapshotTypeOpt := func(params *operations.CreateSnapshotParams) {
 		params.Body.SnapshotType = snapshotDetails.snapshotType
 	}
 	if err := c.machine.CreateSnapshot(ctx, snapshotDetails.memSnapshotName, snapshotDetails.vmStateSnapshotName, snapshotTypeOpt); err != nil {
-		log.CtxErrorf(ctx, "Error creating snapshot: %s", err)
+		log.CtxErrorf(ctx, "Error creating %s snapshot after %v: %s", snapshotDetails.snapshotType, time.Since(machineStart), err)
 		return err
 	}
 
@@ -2622,15 +3364,42 @@ func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetai
 	return nil
 }
 
-func (c *FirecrackerContainer) cleanupOldSnapshots(snapshotDetails *snapshotDetails) error {
+func (c *FirecrackerContainer) cleanupOldSnapshots(ctx context.Context, snapshotDetails *snapshotDetails) error {
+	_, span := tracing.StartSpan(ctx)
+	defer span.End()
 	memSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.memSnapshotName)
 	vmStateSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName)
 
-	if err := disk.RemoveIfExists(memSnapshotPath); err != nil {
-		return status.WrapError(err, "failed to remove existing memory snapshot")
+	// If exporting the snapshot to a COWstore, the mem snapshot path points to a mounted VBD.
+	// Don't remove that, or the export will fail.
+	if c.memorySnapshotExportVBD == nil {
+		if err := disk.RemoveIfExists(memSnapshotPath); err != nil {
+			return status.WrapError(err, "failed to remove existing memory snapshot")
+		}
 	}
 	if err := disk.RemoveIfExists(vmStateSnapshotPath); err != nil {
 		return status.WrapError(err, "failed to remove existing VM state snapshot")
+	}
+	return nil
+}
+
+func (c *FirecrackerContainer) setupCgroup(ctx context.Context) error {
+	// Lease CPUs for task execution, and set cleanup function.
+	leaseID := uuid.New()
+	numaNode, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.vmConfig.NumCpus*1000, leaseID, cpuset.WithNoOverhead())
+	log.CtxInfof(ctx, "Lease %s granted %+v cpus on numa node: %d", leaseID, leasedCPUs, numaNode)
+	c.releaseCPUs = cleanupFunc
+	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
+	c.cgroupSettings.NumaNode = pointer(int32(numaNode))
+
+	if *debugDisableCgroup {
+		return nil
+	}
+	if err := os.MkdirAll(c.cgroupPath(), 0755); err != nil {
+		return status.UnavailableErrorf("create cgroup: %s", err)
+	}
+	if err := cgroup.Setup(ctx, c.cgroupPath(), c.cgroupSettings, c.blockDevice); err != nil {
+		return status.UnavailableErrorf("setup cgroup: %s", err)
 	}
 	return nil
 }
@@ -2645,40 +3414,18 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 
 	unpauseTime := time.Since(start)
 	log.CtxDebugf(ctx, "Unpause took %s", unpauseTime)
-
-	c.observeStageDuration("init", unpauseTime.Microseconds())
+	c.observeStageDuration("unpause", unpauseTime)
 	return err
 }
 
 func (c *FirecrackerContainer) unpause(ctx context.Context) error {
 	c.recycled = true
-	c.currentTaskInitTimeUsec = time.Now().UnixMicro()
+	c.currentTaskInitTime = time.Now()
 
 	log.CtxInfof(ctx, "Unpausing VM")
 
 	// Don't hot-swap the workspace into the VM since we haven't yet downloaded inputs.
 	return c.LoadSnapshot(ctx)
-}
-
-// syncWorkspace creates a new disk image from the given working directory
-// and hot-swaps the currently mounted workspace drive in the guest.
-//
-// This is intended to be called just before Exec, so that the inputs to
-// the executed action will be made available to the VM.
-func (c *FirecrackerContainer) syncWorkspace(ctx context.Context) error {
-	if *disableWorkspaceSync {
-		return nil
-	}
-
-	// TODO(bduffany): reuse the connection created in Unpause(), if applicable
-	conn, err := c.dialVMExecServer(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	execClient := vmxpb.NewExecClient(conn)
-
-	return c.hotSwapWorkspace(ctx, execClient)
 }
 
 func (c *FirecrackerContainer) mountWorkspace(ctx context.Context, client vmxpb.ExecClient) error {
@@ -2715,15 +3462,14 @@ func (c *FirecrackerContainer) Stats(ctx context.Context) (*repb.UsageStats, err
 // parseFatalInitError looks for a fatal error logged by the init binary, and
 // returns an InternalError with the fatal error message if one is found;
 // otherwise it returns nil.
-func (c *FirecrackerContainer) parseFatalInitError() error {
-	tail := string(c.vmLog.Tail())
+func parseFatalInitError(tail string) error {
 	if !strings.Contains(tail, fatalInitLogPrefix) {
 		return nil
 	}
 	// Logs contain "\r\n"; convert these to universal line endings.
 	tail = strings.ReplaceAll(tail, "\r\n", "\n")
-	lines := strings.Split(tail, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(tail, "\n")
+	for line := range lines {
 		if m := fatalErrPattern.FindStringSubmatch(line); len(m) >= 1 {
 			return status.UnavailableErrorf("Firecracker VM crashed: %s", m[1])
 		}
@@ -2733,49 +3479,95 @@ func (c *FirecrackerContainer) parseFatalInitError() error {
 
 // parseOOMError looks for oom-kill entries in the kernel logs and returns an
 // error if found.
-func (c *FirecrackerContainer) parseOOMError() error {
-	tail := string(c.vmLog.Tail())
-	if !strings.Contains(tail, "oom-kill:") {
+func (c *FirecrackerContainer) parseOOMError(logTail string) error {
+	if !strings.Contains(logTail, "oom-kill:") {
 		return nil
 	}
-	// Logs contain "\r\n"; convert these to universal line endings.
-	tail = strings.ReplaceAll(tail, "\r\n", "\n")
-	lines := strings.Split(tail, "\n")
-	oomLines := ""
+	lines := strings.Split(logTail, "\n")
+	var oomLines strings.Builder
 	for _, line := range lines {
 		if strings.Contains(line, "oom-kill:") || strings.Contains(line, "Out of memory: Killed process") {
-			oomLines += line + "\n"
+			oomLines.WriteString(line + "\n")
 		}
 	}
-	return status.ResourceExhaustedErrorf("some processes ran out of memory, and were killed:\n%s", oomLines)
+	return status.ResourceExhaustedErrorf("some processes ran out of memory, and were killed:\n%s", oomLines.String())
 }
 
 // parseSegFault looks for segfaults in the kernel logs and returns an error if found.
-func (c *FirecrackerContainer) parseSegFault(cmdResult *interfaces.CommandResult) error {
+func (c *FirecrackerContainer) parseSegFault(logTail string, cmdResult *interfaces.CommandResult) error {
 	if !strings.Contains(string(cmdResult.Stderr), "SIGSEGV") {
 		return nil
 	}
-	tail := string(c.vmLog.Tail())
-	// Logs contain "\r\n"; convert these to universal line endings.
-	tail = strings.ReplaceAll(tail, "\r\n", "\n")
-	return status.UnavailableErrorf("process hit a segfault:\n%s", tail)
+	return status.UnavailableErrorf("process hit a segfault:\n%s", logTail)
 }
 
-func (c *FirecrackerContainer) observeStageDuration(taskStage string, durationUsec int64) {
+func (c *FirecrackerContainer) observeStageDuration(taskStage string, d time.Duration) {
 	metrics.FirecrackerStageDurationUsec.With(prometheus.Labels{
 		metrics.Stage: taskStage,
-	}).Observe(float64(durationUsec))
+	}).Observe(float64(d.Microseconds()))
 }
 
 func (c *FirecrackerContainer) SnapshotDebugString(ctx context.Context) string {
 	if c.snapshot == nil {
 		return ""
 	}
-	return snaploader.KeyDebugString(ctx, c.env, c.snapshot.GetKey(), c.supportsRemoteSnapshots)
+	return snaploader.SnapshotDebugString(ctx, c.env, c.snapshot)
 }
 
 func (c *FirecrackerContainer) VMConfig() *fcpb.VMConfiguration {
 	return c.vmConfig
+}
+
+func (c *FirecrackerContainer) isBalloonEnabled() bool {
+	// The balloon is intended to reduce memory snapshot size. If recycling is not
+	// enabled and we don't plan to generate a snapshot, don't enable it.
+	// Also disable the balloon for firecracker actions with local-only-snapshot-sharing
+	// (i.e. not workflows), as there seems to be negative performance implications.
+	return *snaputil.EnableBalloon && c.recyclingEnabled && c.supportsRemoteSnapshots
+}
+
+// machineHasBalloon returns whether a balloon was initialized in a machine.
+// The balloon must be initialized at the time of machine creation (i.e. it can't
+// be initialized in a resumed VM, if the original VM didn't have one).
+func (c *FirecrackerContainer) machineHasBalloon(ctx context.Context) bool {
+	if c.machine == nil {
+		return false
+	}
+	_, err := c.machine.GetBalloonConfig(ctx)
+	return err == nil
+}
+
+// hasRemoteSnapshot returns whether a remote snapshot exists for any
+// valid snapshot keys, including fallback keys.
+func (c *FirecrackerContainer) hasRemoteSnapshot(ctx context.Context, loader *snaploader.FileCacheLoader) bool {
+	if !c.supportsRemoteSnapshots {
+		return false
+	}
+
+	// We intentionally check the write key here and not the branch key. They only
+	// differ for merge queue runs, where the write key is rewritten to the default
+	// branch. Merge queue snapshots are never written under the
+	// gh-readonly-queue/... ref, so checking the branch key would always miss and
+	// incorrectly make us think no remote snapshot exists yet.
+	allKeys := []*fcpb.SnapshotKey{c.SnapshotKeySet().GetWriteKey()}
+	allKeys = append(allKeys, c.SnapshotKeySet().GetFallbackKeys()...)
+
+	for _, k := range allKeys {
+		if hasSnapshot := c.hasRemoteSnapshotForKey(ctx, loader, k); hasSnapshot {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, loader *snaploader.FileCacheLoader, key *fcpb.SnapshotKey) bool {
+	_, _, err := loader.FetchRemoteManifest(ctx, key)
+	return err == nil
+}
+func (c *FirecrackerContainer) hasLocalSnapshotForKey(ctx context.Context, loader *snaploader.FileCacheLoader, key *fcpb.SnapshotKey) bool {
+	_, err := loader.GetLocalManifest(ctx, key, c.supportsRemoteSnapshots)
+	return err == nil
 }
 
 func isExitErrorSIGTERM(err error) bool {
@@ -2819,4 +3611,107 @@ func (log *VMLog) Tail() []byte {
 	out := make([]byte, len(b))
 	copy(out, b)
 	return out
+}
+
+func getCPUID() *fcpb.CPUID {
+	return &fcpb.CPUID{
+		VendorId: int64(cpuid.CPU.VendorID),
+		Family:   int64(cpuid.CPU.Family),
+		// Don't include the model number, so that different models can share snapshots.
+	}
+}
+
+func getRandomNUMANode() (int, error) {
+	b, err := os.ReadFile("/sys/devices/system/node/online")
+	if err != nil {
+		return 0, err
+	}
+	s := strings.TrimSpace(string(b))
+	if s == "" {
+		return 0, fmt.Errorf("unexpected empty file")
+	}
+
+	// Parse file contents
+	// Example: "0-1,3" is parsed as []int{0, 1, 3}
+	var nodes []int
+	nodeRanges := strings.SplitSeq(s, ",")
+	for r := range nodeRanges {
+		startStr, endStr, _ := strings.Cut(r, "-")
+		start, err := strconv.Atoi(startStr)
+		if err != nil {
+			return 0, fmt.Errorf("malformed file contents")
+		}
+		end := start
+		if endStr != "" {
+			n, err := strconv.Atoi(endStr)
+			if err != nil {
+				return 0, fmt.Errorf("malformed file contents")
+			}
+			if n < start {
+				return 0, fmt.Errorf("malformed file contents")
+			}
+			end = n
+		}
+		for node := start; node <= end; node++ {
+			nodes = append(nodes, node)
+		}
+	}
+
+	return nodes[rand.IntN(len(nodes))], nil
+}
+
+func combineHostAndGuestStats(host, guest *repb.UsageStats) *repb.UsageStats {
+	stats := host.CloneVT()
+	// The guest exports some disk usage stats which we can't easily track on
+	// the host without introspection into the ext4 metadata blocks - just
+	// continue to get these from the guest for now.
+	stats.PeakFileSystemUsage = guest.GetPeakFileSystemUsage()
+	// Host memory usage stats might be confusing to the user, because the
+	// firecracker process might hold some extra memory that isn't visible to
+	// the guest. Use guest stats for memory usage too, for now.
+	stats.MemoryBytes = guest.GetMemoryBytes()
+	stats.PeakMemoryBytes = guest.GetPeakMemoryBytes()
+	return stats
+}
+
+// Returns the paths relative to the workspace root that should be copied back
+// to the action workspace directory after execution has completed.
+//
+// For performance reasons, we only extract the action's declared outputs,
+// unless the action is running with preserve-workspace=true.
+func workspacePathsToExtract(task *repb.ExecutionTask) []string {
+	if platform.IsTrue(platform.FindEffectiveValue(task, platform.PreserveWorkspacePropertyName)) {
+		return []string{"/"}
+	}
+
+	// Special files
+	// TODO: declare this list as a constant somewhere?
+	paths := []string{
+		".BUILDBUDDY_DO_NOT_RECYCLE",
+		".BUILDBUDDY_INVALIDATE_SNAPSHOT",
+	}
+
+	// Declared paths
+	paths = append(paths, task.GetCommand().GetOutputDirectories()...)
+	paths = append(paths, task.GetCommand().GetOutputFiles()...)
+	paths = append(paths, task.GetCommand().GetOutputPaths()...)
+
+	return paths
+}
+
+func (c *FirecrackerContainer) shouldUpgradeGuestKernel() bool {
+	return c.executorConfig.GuestKernelImagePath6_1 != "" && slices.Contains(c.task.Experiments, "upgrade-fc-guest-kernel")
+}
+
+func snapshotReadPolicy(task *repb.ExecutionTask) (string, error) {
+	policy := platform.FindEffectiveValue(task, platform.SnapshotReadPolicyPropertyName)
+	switch policy {
+	case "":
+		// By default, prefer local snapshots.
+		return platform.ReadLocalSnapshotFirst, nil
+	case platform.ReadLocalSnapshotOnly, platform.ReadLocalSnapshotFirst, platform.AlwaysReadNewestSnapshot:
+		return policy, nil
+	default:
+		return "", status.InvalidArgumentErrorf("invalid snapshot read policy %s", policy)
+	}
 }

@@ -4,11 +4,8 @@ title: Bazel's Remote Caching and Remote Execution Explained
 description: A nuts and bolts
   (or rather actions and spawns 😄)
   overview of Bazel's remote caching and remote execution capabilities.
-author: Brentley Jones
-author_title: "Developer Evangelist @ BuildBuddy"
+authors: brentley
 date: 2022-03-16:12:00:00
-author_url: https://brentleyjones.com
-author_image_url: https://avatars.githubusercontent.com/u/158658?v=4
 image: /img/bazel_remote_explained.png
 tags: [bazel]
 ---
@@ -257,7 +254,7 @@ it can result in slower builds.
 
 ### Flags
 
-<a id="remote_executor-flag"></a>
+#### `--remote_executor` {#remote_executor-flag}
 
 Setting the [`--remote_executor`][remote_executor] flag causes Bazel to connect via gRPC(S) or UNIX sockets to a remote executor.
 If `--remote_cache` isn't set,
@@ -270,7 +267,7 @@ Some actions might need to target a specific subset of executors,
 possibly because they need certain hardware or software,
 and they can do that with [platform properties][platform-properties].
 
-<a id="remote_default_exec_properties-flag"></a>
+#### `--remote_default_exec_properties` {#remote_default_exec_properties-flag}
 
 Platform properties can be set globally with the [`--remote_default_exec_properties`][remote_default_exec_properties] flag,
 but only if they aren't set at the [platform][platform-exec_properties] or [target][target-exec_properties] level.
@@ -283,7 +280,7 @@ in order to be able to reuse the cached action results.
 Some remote execution implementations allow setting global platform properties with [`--remote_exec_header`](#remote_exec_header-flag) flags,
 as a way to prevent these cache misses.
 
-<a id="remote_timeout-flag"></a>
+#### `--remote_timeout` {#remote_timeout-flag}
 
 The [`--remote_timeout`][remote_timeout] flag controls how long Bazel will wait for a remote cache operation to complete.
 While the timeout doesn't apply to the `Execution.Execute` call[^7],
@@ -292,7 +289,7 @@ and the default value for this flag
 (60 seconds)
 might not be long enough.
 
-<a id="remote_retires-flag"></a>
+#### `--remote_retries` {#remote_retries-flag}
 
 The [`--remote_retries`][remote_retries] flag controls how many times Bazel will retry a remote operation on a transient error,
 such as a timeout.
@@ -302,7 +299,7 @@ you might want to increase it to a much larger value.
 Bazel uses an exponential backoff for retries,
 but currently caps the delay at 5 seconds between calls.
 
-<a id="remote_exec_header-flag"></a>
+#### `--remote_exec_header` {#remote_exec_header-flag}
 
 The [`--remote_exec_header`][remote_exec_header] flag causes Bazel to send extra headers in requests to the remote executor.
 Multiple headers can be passed by specifying the flag multiple times.
@@ -335,7 +332,7 @@ can result in slower builds due to clumping of downloads,
 doesn't allow specifying that other outputs should be downloaded,
 etc.
 Though,
-similar to [dynamic scheduling](#dynamic-scheduling),
+similar to [dynamic execution](#dynamic-execution),
 if used properly BwtB can result in faster builds.
 Just don't apply it blindly.
 
@@ -406,6 +403,7 @@ It behaves the same way as [`--remote_header`][remote_header].
     or test logs.
 
 [^9]: Available in [Bazel 5.0](https://github.com/bazelbuild/bazel/commit/bfc24139d93f8643686d91596ba347df2e01966a).
+
 [^10]: Available in [Bazel 5.0](https://github.com/bazelbuild/bazel/commit/ef42d1365d0f508d3d817997b5049639a72100ab).
 
 ## That's it, for now

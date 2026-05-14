@@ -1,0 +1,36 @@
+diff --git a/cmd/gazelle/BUILD.bazel b/cmd/gazelle/BUILD.bazel
+--- a/cmd/gazelle/BUILD.bazel
++++ b/cmd/gazelle/BUILD.bazel
+@@ -1,6 +1,8 @@
+ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+ load("//:def.bzl", "DEFAULT_LANGUAGES", "gazelle_binary")
+ 
++exports_files(srcs = glob(["*.go"]))
++
+ gazelle_binary(
+     name = "gazelle",
+     languages = DEFAULT_LANGUAGES,
+diff --git a/cmd/gazelle/gazelle.go b/cmd/gazelle/gazelle.go
+--- a/cmd/gazelle/main.go
++++ b/cmd/gazelle/main.go
+@@ -56,6 +56,10 @@ func (cmd command) String() string {
+ }
+ 
+ func main() {
++        Run()
++}
++
++func Run() {
+ 	log.SetPrefix("gazelle: ")
+ 	log.SetFlags(0) // don't print timestamps
+ 
+diff --git a/internal/module/BUILD.bazel b/internal/module/BUILD.bazel
+--- a/internal/module/BUILD.bazel
++++ b/internal/module/BUILD.bazel
+@@ -4,5 +4,5 @@ go_library(
+     name = "module",
+     srcs = ["module.go"],
+     importpath = "github.com/bazelbuild/bazel-gazelle/internal/module",
+-    visibility = ["//:__subpackages__"],
++    visibility = ["//visibility:public"],
+     deps = [

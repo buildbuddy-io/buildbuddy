@@ -8,9 +8,14 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger",
     deps = [
         "//server/interfaces",
+        "//server/metrics",
         "//server/remote_cache/digest",
+        "//server/util/alert",
         "//server/util/log",
         "//server/util/prefix",
+        "//server/util/retry",
+        "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",
+        "@com_github_prometheus_client_golang//prometheus",
     ],
 )

@@ -1,22 +1,22 @@
-import React from "react";
+import Long from "long";
 import moment from "moment";
-import * as format from "../../../app/format/format";
-import rpcService from "../../../app/service/rpc_service";
+import React from "react";
+import { Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
+import capabilities from "../../../app/capabilities/capabilities";
+import * as format from "../../../app/format/format";
+import router, { Path } from "../../../app/router/router";
+import rpcService from "../../../app/service/rpc_service";
+import * as proto from "../../../app/util/proto";
 import { stats } from "../../../proto/stats_ts_proto";
-import TrendsChartComponent, { ChartColor } from "./trends_chart";
+import FilterComponent from "../filter/filter";
+import { getEndDate, getProtoFilterParams } from "../filter/filter_util";
 import CacheChartComponent from "./cache_chart";
+import { computeTimeKeys, getAverage, getTotal } from "./common";
+import DrilldownPageComponent from "./drilldown_page";
 import PercentilesChartComponent from "./percentile_chart";
 import TrendsSummaryCard from "./summary_card";
-import { Subscription } from "rxjs";
-import FilterComponent from "../filter/filter";
-import capabilities from "../../../app/capabilities/capabilities";
-import { getProtoFilterParams, getEndDate } from "../filter/filter_util";
-import router, { Path } from "../../../app/router/router";
-import * as proto from "../../../app/util/proto";
-import DrilldownPageComponent from "./drilldown_page";
-import { computeTimeKeys } from "./common";
-import Long from "long";
+import TrendsChartComponent, { ChartColor } from "./trends_chart";
 
 const BITS_PER_BYTE = 8;
 
@@ -57,7 +57,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
   subscription?: Subscription;
 
   componentWillMount() {
-    document.title = `Trends | BuildBuddy`;
     this.fetchStats();
 
     this.subscription = rpcService.events.subscribe({
@@ -65,11 +64,16 @@ export default class TrendsComponent extends React.Component<Props, State> {
     });
   }
 
+  componentDidMount() {
+    this.updateDocumentTitle();
+  }
+
   componentWillUnmount() {
     this.subscription?.unsubscribe();
   }
 
   componentDidUpdate(prevProps: Props) {
+    this.updateDocumentTitle();
     if (
       this.showingDrilldown(this.props.tab) !== this.showingDrilldown(prevProps.tab) ||
       this.props.search.toString() != prevProps.search.toString()
@@ -115,6 +119,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
     if (filterParams.tags) request.query.tags = filterParams.tags;
     if (filterParams.status) request.query.status = filterParams.status;
 
+    request.query.dimensionFilter = filterParams.dimensionFilters ?? [];
+    request.query.genericFilters = filterParams.genericFilters ?? [];
+
     request.query.updatedBefore = filterParams.updatedBefore;
     request.query.updatedAfter = filterParams.updatedAfter;
 
@@ -153,10 +160,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
       request.query.pattern = pattern;
     }
 
-    this.setState({ loading: true });
-    if (capabilities.config.trendsRangeSelectionEnabled) {
-      this.setState({ timeKeys: [] });
-    }
+    this.setState({ loading: true, timeKeys: [] });
     rpcService.service.getTrend(request).then((response) => {
       console.log(response);
       const timeToStatMap = new Map<number, stats.ITrendStat>();
@@ -202,6 +206,14 @@ export default class TrendsComponent extends React.Component<Props, State> {
 
   getExecutionStat(timestampMillis: number): stats.IExecutionStat {
     return this.state.timeToExecutionStatMap.get(timestampMillis) || {};
+  }
+
+  getStats() {
+    return this.state.timeKeys.map((tsMillis) => this.getStat(tsMillis));
+  }
+
+  getExecutionStats() {
+    return this.state.timeKeys.map((tsMillis) => this.getExecutionStat(tsMillis));
   }
 
   formatLongDate(timestampMillis: number) {
@@ -262,39 +274,29 @@ export default class TrendsComponent extends React.Component<Props, State> {
     return (capabilities.config.trendsHeatmapEnabled || false) && tab === "#drilldown";
   }
 
+  private getPageTitle() {
+    return this.showingDrilldown(this.props.tab) ? "Drilldown" : "Trends";
+  }
+
+  private updateDocumentTitle() {
+    document.title = `${this.getPageTitle()} | BuildBuddy`;
+  }
+
   render() {
+    const pageTitle = this.getPageTitle();
     return (
       <div className="trends">
         <div className="container">
           <div className="trends-header">
-            <div className="trends-title">Trends</div>
+            <div className="trends-title">{pageTitle}</div>
             <FilterComponent search={this.props.search} />
           </div>
-          {capabilities.config.trendsHeatmapEnabled && (
-            <div className="tabs">
-              <div
-                onClick={() => this.updateSelectedTab("charts")}
-                className={`tab ${this.getSelectedTab() == "charts" ? "selected" : ""}`}>
-                Charts
-              </div>
-              <div
-                onClick={() => this.updateSelectedTab("drilldown")}
-                className={`tab ${this.getSelectedTab() == "drilldown" ? "selected" : ""}`}>
-                Drilldown
-              </div>
-            </div>
-          )}
           {this.showingDrilldown(this.props.tab) && (
             <DrilldownPageComponent user={this.props.user} search={this.props.search}></DrilldownPageComponent>
           )}
-          {capabilities.config.trendsRangeSelectionEnabled && (
-            <div className="sticky-loading-overlay">
-              {!this.showingDrilldown(this.props.tab) && this.state.loading && <div className="loading"></div>}
-            </div>
-          )}
-          {!capabilities.config.trendsRangeSelectionEnabled &&
-            !this.showingDrilldown(this.props.tab) &&
-            this.state.loading && <div className="loading"></div>}
+          <div className="sticky-loading-overlay">
+            {!this.showingDrilldown(this.props.tab) && this.state.loading && <div className="loading"></div>}
+          </div>
           {!this.showingDrilldown(this.props.tab) && (
             <>
               {capabilities.config.trendsSummaryEnabled && this.state.currentSummary && (
@@ -309,7 +311,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
-                    name: "failed builds",
+                    name: `failed builds (${format.count(
+                      getTotal(this.getStats(), (stat) => +(stat.failedBuilds ?? 0))
+                    )})`,
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).failedBuilds ?? 0),
                     formatHoverValue: (value) => (value || 0) + " failed builds",
                     onClick: this.onBarClicked.bind(this, "", ""),
@@ -317,7 +321,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     color: ChartColor.RED,
                   },
                   {
-                    name: "successful builds",
+                    name: `successful builds (${format.count(
+                      getTotal(this.getStats(), (stat) => +(stat.successfulBuilds ?? 0))
+                    )})`,
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).successfulBuilds ?? 0),
                     formatHoverValue: (value) => (value || 0) + " successful builds",
                     onClick: this.onBarClicked.bind(this, "", ""),
@@ -325,7 +331,12 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     color: ChartColor.GREEN,
                   },
                   {
-                    name: "average build duration",
+                    name: `average build duration (${format.durationUsec(
+                      getAverage(
+                        this.getStats().filter((stat) => stat.completedInvocationCount),
+                        (stat) => +(stat.totalBuildTimeUsec ?? 0) / +(stat.completedInvocationCount ?? 0)
+                      )
+                    )})`,
                     extractValue: (tsMillis) => {
                       let stat = this.getStat(tsMillis);
                       return (
@@ -349,9 +360,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 formatXAxisLabel={this.formatShortDate.bind(this)}
                 formatHoverXAxisLabel={this.formatLongDate.bind(this)}
                 ticks={this.state.ticks}
-                onZoomSelection={
-                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
-                }
+                onZoomSelection={this.onChartZoomed.bind(this, "")}
               />
               {this.state.enableInvocationPercentileCharts && (
                 <PercentilesChartComponent
@@ -367,11 +376,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   extractP95={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP95 ?? 0) * SECONDS_PER_MICROSECOND}
                   extractP99={(tsMillis) => +(this.getStat(tsMillis).buildTimeUsecP99 ?? 0) * SECONDS_PER_MICROSECOND}
                   onColumnClicked={this.onBarClicked.bind(this, "", "duration")}
-                  onZoomSelection={
-                    capabilities.config.trendsRangeSelectionEnabled
-                      ? this.onChartZoomed.bind(this, "duration")
-                      : undefined
-                  }
+                  onZoomSelection={this.onChartZoomed.bind(this, "duration")}
                 />
               )}
               {!this.state.enableInvocationPercentileCharts && (
@@ -403,11 +408,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatXAxisLabel={this.formatShortDate.bind(this)}
                   formatHoverXAxisLabel={this.formatLongDate.bind(this)}
                   ticks={this.state.ticks}
-                  onZoomSelection={
-                    capabilities.config.trendsRangeSelectionEnabled
-                      ? this.onChartZoomed.bind(this, "duration")
-                      : undefined
-                  }
+                  onZoomSelection={this.onChartZoomed.bind(this, "duration")}
                 />
               )}
 
@@ -419,24 +420,36 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 ticks={this.state.ticks}
                 formatHoverLabel={this.formatLongDate.bind(this)}
                 extractHits={(tsMillis) => +(this.getStat(tsMillis).actionCacheHits ?? 0)}
+                totalHits={getTotal(this.getStats(), (stat) => +(stat.actionCacheHits ?? 0))}
                 secondaryBarName="misses"
                 extractSecondary={(tsMillis) => +(this.getStat(tsMillis).actionCacheMisses ?? 0)}
-                onZoomSelection={
-                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
+                totalSecondary={getTotal(this.getStats(), (stat) => +(stat.actionCacheMisses ?? 0))}
+                totalHitPercentage={
+                  getTotal(this.getStats(), (stat) => +(stat.actionCacheHits ?? 0)) /
+                    getTotal(
+                      this.getStats(),
+                      (stat) => +(stat.actionCacheHits ?? 0) + +(stat.actionCacheMisses ?? 0)
+                    ) || 0
                 }
+                onZoomSelection={this.onChartZoomed.bind(this, "")}
               />
               <CacheChartComponent
                 title="Content Addressable Store"
+                id="cas"
                 data={this.state.timeKeys}
                 extractLabel={this.formatShortDate.bind(this)}
                 ticks={this.state.ticks}
                 formatHoverLabel={this.formatLongDate.bind(this)}
                 extractHits={(tsMillis) => +(this.getStat(tsMillis).casCacheHits ?? 0)}
+                totalHits={getTotal(this.getStats(), (stat) => +(stat.casCacheHits ?? 0))}
                 secondaryBarName="writes"
                 extractSecondary={(tsMillis) => +(this.getStat(tsMillis).casCacheUploads ?? 0)}
-                onZoomSelection={
-                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
+                totalSecondary={getTotal(this.getStats(), (stat) => +(stat.casCacheUploads ?? 0))}
+                totalHitPercentage={
+                  getTotal(this.getStats(), (stat) => +(stat.casCacheHits ?? 0)) /
+                    getTotal(this.getStats(), (stat) => +(stat.casCacheHits ?? 0) + +(stat.casCacheUploads ?? 0)) || 0
                 }
+                onZoomSelection={this.onChartZoomed.bind(this, "")}
               />
 
               <TrendsChartComponent
@@ -444,7 +457,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
-                    name: "total download size",
+                    name: `total download size (${format.bytes(
+                      getTotal(this.getStats(), (stat) => +(stat.totalDownloadSizeBytes ?? 0))
+                    )})`,
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).totalDownloadSizeBytes ?? 0),
                     formatHoverValue: (value) => `${format.bytes(value || 0)} downloaded`,
                   },
@@ -469,9 +484,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 formatXAxisLabel={this.formatShortDate.bind(this)}
                 formatHoverXAxisLabel={this.formatLongDate.bind(this)}
                 ticks={this.state.ticks}
-                onZoomSelection={
-                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
-                }
+                onZoomSelection={this.onChartZoomed.bind(this, "")}
               />
 
               <TrendsChartComponent
@@ -479,7 +492,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
-                    name: "total upload size",
+                    name: `total upload size (${format.bytes(
+                      getTotal(this.getStats(), (stat) => +(stat.totalUploadSizeBytes ?? 0))
+                    )})`,
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).totalUploadSizeBytes ?? 0),
                     formatHoverValue: (value) => `${format.bytes(value || 0)} uploaded`,
                   },
@@ -504,9 +519,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 formatXAxisLabel={this.formatShortDate.bind(this)}
                 formatHoverXAxisLabel={this.formatLongDate.bind(this)}
                 ticks={this.state.ticks}
-                onZoomSelection={
-                  capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
-                }
+                onZoomSelection={this.onChartZoomed.bind(this, "")}
               />
 
               {capabilities.config.trendsSummaryEnabled && (
@@ -529,9 +542,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatXAxisLabel={this.formatShortDate.bind(this)}
                   formatHoverXAxisLabel={this.formatLongDate.bind(this)}
                   ticks={this.state.ticks}
-                  onZoomSelection={
-                    capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
-                  }
+                  onZoomSelection={this.onChartZoomed.bind(this, "")}
                 />
               )}
               <TrendsChartComponent
@@ -634,9 +645,12 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   <TrendsChartComponent
                     title="Remote Execution Build Time (minutes)"
                     data={this.state.timeKeys}
+                    id="build_time"
                     dataSeries={[
                       {
-                        name: "build time (minutes)",
+                        name: `build time, minutes (${format.durationUsec(
+                          getTotal(this.getExecutionStats(), (stat) => +(stat.totalBuildTimeUsec ?? 0))
+                        )})`,
                         extractValue: (tsMillis) =>
                           +(+(this.getExecutionStat(tsMillis).totalBuildTimeUsec ?? 0) / 60e6).toPrecision(3),
                         formatHoverValue: (value) => `${format.count(value || 0)} minutes of build time`,
@@ -649,9 +663,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     formatXAxisLabel={this.formatShortDate.bind(this)}
                     formatHoverXAxisLabel={this.formatLongDate.bind(this)}
                     ticks={this.state.ticks}
-                    onZoomSelection={
-                      capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
-                    }
+                    onZoomSelection={this.onChartZoomed.bind(this, "")}
                   />
                   <PercentilesChartComponent
                     title="Remote Execution Queue Duration"
@@ -674,9 +686,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     extractP99={(tsMillis) =>
                       +(this.getExecutionStat(tsMillis).queueDurationUsecP99 ?? 0) * SECONDS_PER_MICROSECOND
                     }
-                    onZoomSelection={
-                      capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
-                    }
+                    onZoomSelection={this.onChartZoomed.bind(this, "")}
                   />
                 </>
               )}

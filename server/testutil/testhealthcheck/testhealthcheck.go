@@ -7,7 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
+	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 type TestingHealthChecker struct{}
@@ -38,6 +38,10 @@ func (t *TestingHealthChecker) Check(ctx context.Context, req *hlpb.HealthCheckR
 	return &hlpb.HealthCheckResponse{
 		Status: hlpb.HealthCheckResponse_SERVING,
 	}, nil
+}
+
+func (t *TestingHealthChecker) List(ctx context.Context, req *hlpb.HealthListRequest) (*hlpb.HealthListResponse, error) {
+	return nil, status.UnimplementedError("List not implemented")
 }
 
 func (t *TestingHealthChecker) Watch(req *hlpb.HealthCheckRequest, stream hlpb.Health_WatchServer) error {

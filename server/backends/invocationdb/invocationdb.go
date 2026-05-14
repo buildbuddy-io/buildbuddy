@@ -3,14 +3,15 @@ package invocationdb
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -19,7 +20,9 @@ import (
 	"gorm.io/gorm/clause"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -92,10 +95,10 @@ func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocati
 		return false, err
 	}
 
-	caps, err := capabilities.ForAuthenticatedUser(ctx, d.env)
+	caps, err := capabilities.ForAuthenticatedUser(ctx, d.env.GetAuthenticator())
 	if err != nil {
 		// Set empty capabilities by default
-		caps = []akpb.ApiKey_Capability{}
+		caps = []cappb.Capability{}
 	}
 
 	ti.UserID = permissions.UserID
@@ -108,20 +111,19 @@ func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocati
 // UpdateInvocation updates an existing invocation with the given
 // id and attempt number. It returns whether a row was updated.
 func (d *InvocationDB) UpdateInvocation(ctx context.Context, ti *tables.Invocation) (bool, error) {
-	updated := false
-	var err error
-	for r := retry.DefaultWithContext(ctx); r.Next(); {
-		result := d.h.GORM(ctx, "invocationdb_update_invocation").Where(
-			"invocation_id = ? AND attempt = ?", ti.InvocationID, ti.Attempt).Updates(ti)
-		updated = result.RowsAffected > 0
-		err := result.Error
-		if d.h.IsDeadlockError(err) {
-			log.Warningf("Encountered deadlock when attempting to update invocation table for invocation %s, attempt %d of %d", ti.InvocationID, r.AttemptNumber(), r.MaxAttempts())
-			continue
+	return retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (bool, error) {
+		result := d.h.GORM(ctx, "invocationdb_update_invocation").Where("invocation_id = ? AND attempt = ?", ti.InvocationID, ti.Attempt).Updates(ti)
+		updated := result.RowsAffected > 0
+
+		if err := result.Error; d.h.IsDeadlockError(err) {
+			return updated, status.UnavailableErrorf("update invocation %s: deadlock: %s", ti.InvocationID, err)
+		} else if err != nil {
+			// Don't retry non-deadlock errors.
+			return updated, retry.NonRetryableError(err)
+		} else {
+			return updated, nil
 		}
-		break
-	}
-	return updated, err
+	})
 }
 
 func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string, acl *aclpb.ACL) error {
@@ -175,6 +177,24 @@ func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string
 		}
 	}
 	return ti, nil
+}
+
+func (d *InvocationDB) LookupChildInvocations(ctx context.Context, parentRunID string) ([]string, error) {
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rq := d.h.NewQuery(ctx, "invocationdb_get_child_invocations").Raw(
+		`SELECT invocation_id FROM "Invocations" WHERE parent_run_id = ? AND group_id = ? ORDER BY created_at_usec`, parentRunID, u.GetGroupID())
+	iids := make([]string, 0)
+	err = db.ScanEach(rq, func(ctx context.Context, inv *tables.Invocation) error {
+		iids = append(iids, inv.InvocationID)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return iids, nil
 }
 
 func (d *InvocationDB) LookupGroupFromInvocation(ctx context.Context, invocationID string) (*tables.Group, error) {
@@ -236,18 +256,35 @@ func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string
 }
 
 func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
-	var in tables.Invocation
-	// TODO(zoey): could make this one query
-	if err := d.h.NewQuery(ctx, "invocationdb_get_invocation_for_delete").Raw(
-		`SELECT user_id, group_id, perms FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(&in); err != nil {
+	if authenticatedUser == nil {
+		return status.InvalidArgumentError("authenticatedUser cannot be nil.")
+	}
+	u := *authenticatedUser
+
+	qb := query_builder.NewQuery(`DELETE FROM "Invocations"`)
+	qb.AddWhereClause("invocation_id = ?", invocationID)
+	if err := perms.AddPermissionsCheckToQuery(ctx, d.env, qb); err != nil {
 		return err
 	}
-	acl := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
-	if err := perms.AuthorizeWrite(authenticatedUser, acl); err != nil {
-		return err
-	}
+	q, args := qb.Build()
+
 	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		return d.deleteInvocation(ctx, tx, invocationID)
+		result := tx.NewQuery(ctx, "invocationdb_delete_invocation_with_perms_check").Raw(q, args...).Exec()
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return status.NotFoundErrorf("No invocation with id %s exists that user %s has write permissions on.", invocationID, u.GetUserID())
+		}
+		if err := tx.NewQuery(ctx, "invocationdb_delete_executions").Raw(
+			`DELETE FROM "Executions" WHERE invocation_id = ?`, invocationID).Exec().Error; err != nil {
+			return err
+		}
+		if err := tx.NewQuery(ctx, "invocationdb_delete_execution_links").Raw(
+			`DELETE FROM "InvocationExecutions" WHERE invocation_id = ?`, invocationID).Exec().Error; err != nil {
+			return err
+		}
+		return nil
 	})
 }
 
@@ -269,4 +306,67 @@ func (d *InvocationDB) deleteInvocation(ctx context.Context, tx interfaces.DB, i
 
 func (d *InvocationDB) SetNowFunc(now func() time.Time) {
 	d.h.SetNowFunc(now)
+}
+
+func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
+	out := &inpb.Invocation{}
+	out.InvocationId = i.InvocationID // Required.
+	out.Success = i.Success
+	out.User = i.User
+	out.DurationUsec = i.DurationUsec
+	out.Host = i.Host
+	out.RepoUrl = i.RepoURL
+	out.BranchName = i.BranchName
+	out.CommitSha = i.CommitSHA
+	out.Role = i.Role
+	out.Command = i.Command
+	if i.Pattern != "" {
+		out.Pattern = strings.Split(i.Pattern, ", ")
+	}
+	out.ActionCount = i.ActionCount
+	// BlobID is not present in output client proto.
+	out.InvocationStatus = inspb.InvocationStatus(i.InvocationStatus)
+	out.CreatedAtUsec = i.Model.CreatedAtUsec
+	out.UpdatedAtUsec = i.Model.UpdatedAtUsec
+	if i.Perms&perms.OTHERS_READ > 0 {
+		out.ReadPermission = inpb.InvocationPermission_PUBLIC
+	} else {
+		out.ReadPermission = inpb.InvocationPermission_GROUP
+	}
+	out.CreatedWithCapabilities = capabilities.FromInt(i.CreatedWithCapabilities)
+	out.Acl = perms.ToACLProto(&uidpb.UserId{Id: i.UserID}, i.GroupID, i.Perms)
+	out.CacheStats = &capb.CacheStats{
+		ActionCacheHits:                   i.ActionCacheHits,
+		ActionCacheMisses:                 i.ActionCacheMisses,
+		ActionCacheUploads:                i.ActionCacheUploads,
+		CasCacheHits:                      i.CasCacheHits,
+		CasCacheMisses:                    i.CasCacheMisses,
+		CasCacheUploads:                   i.CasCacheUploads,
+		TotalDownloadSizeBytes:            i.TotalDownloadSizeBytes,
+		TotalDownloadTransferredSizeBytes: i.TotalDownloadTransferredSizeBytes,
+		TotalUploadSizeBytes:              i.TotalUploadSizeBytes,
+		TotalUploadTransferredSizeBytes:   i.TotalUploadTransferredSizeBytes,
+		TotalDownloadUsec:                 i.TotalDownloadUsec,
+		TotalUploadUsec:                   i.TotalUploadUsec,
+		TotalCachedActionExecUsec:         i.TotalCachedActionExecUsec,
+		TotalUncachedActionExecUsec:       i.TotalUncachedActionExecUsec,
+		DownloadThroughputBytesPerSecond:  i.DownloadThroughputBytesPerSecond,
+		UploadThroughputBytesPerSecond:    i.UploadThroughputBytesPerSecond,
+	}
+	out.LastChunkId = i.LastChunkId
+	if i.LastChunkId != "" {
+		out.HasChunkedEventLogs = true
+	}
+	out.Attempt = i.Attempt
+	out.BazelExitCode = i.BazelExitCode
+	out.DownloadOutputsOption = inpb.DownloadOutputsOption(i.DownloadOutputsOption)
+	out.RemoteExecutionEnabled = i.RemoteExecutionEnabled
+	out.UploadLocalResultsEnabled = i.UploadLocalResultsEnabled
+	// Don't bother with validation here; just give the user whatever the DB
+	// claims the tags are.
+	out.Tags, _ = invocation_format.SplitAndTrimAndDedupeTags(i.Tags, false)
+	out.ParentRunId = i.ParentRunID
+	out.RunId = i.RunID
+	out.RunStatus = inspb.OverallStatus(i.RunStatus)
+	return out
 }

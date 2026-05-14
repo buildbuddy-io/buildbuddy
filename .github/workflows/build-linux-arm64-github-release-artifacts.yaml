@@ -25,31 +25,15 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04-16cpu-arm64
+    runs-on: ubuntu-22.04-16cpu-arm64-arm-limited
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
         with:
           ref: ${{ inputs.release_branch }}
           # We need to fetch git tags to obtain the latest version tag to report
           # the version of the running binary.
           fetch-depth: 0
-
-      # GitHub's arm64 runners do not have the same pre-installed software as
-      # the amd64 runners so we have to install a few things here.
-      - name: Install bazelisk
-        run: |
-          curl -L --output /tmp/bazelisk https://github.com/bazelbuild/bazelisk/releases/download/v1.17.0/bazelisk-linux-arm64
-          chmod +x /tmp/bazelisk
-          sudo mv /tmp/bazelisk /usr/bin/bazelisk
-
-      - name: Install GitHub CLI
-        run: |
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
-          && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
-          && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-          && sudo apt update \
-          && sudo apt install gh -y
 
       - name: Build and Upload Artifacts
         env:

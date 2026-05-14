@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/bzlmod"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
@@ -21,6 +20,7 @@ import (
 
 var (
 	flags = flag.NewFlagSet("add", flag.ContinueOnError)
+	Flags = flags
 	usage = `
 usage: bb ` + flags.Name() + ` rules_go
 
@@ -30,7 +30,7 @@ Adds the given dependency to your WORKSPACE file.
 	footerTemplate = "###### End auto-generated section for %s ######"
 
 	headerRegex = regexp.MustCompile(`##### Begin auto-generated section for \[https://registry\.build/(.+?)@(.+?)\]`)
-	moduleRegex = regexp.MustCompile(`bazel_dep\(name = "([^"]+?)", version = "([^"]+?)"\)`)
+	moduleRegex = regexp.MustCompile(`bazel_dep\(name = "([^"]+?)", version = "([^"]+?)".*?\)`)
 )
 
 const (
@@ -276,12 +276,7 @@ func showPicker(modules []Disambiguation) (string, error) {
 }
 
 func openOrCreateWorkspaceFile() (*os.File, error) {
-	bzlmodEnabled, err := bzlmod.Enabled()
-	if err != nil {
-		return nil, err
-	}
-
-	workspacePath, basename, err := workspace.CreateWorkspaceIfNotExists(bzlmodEnabled)
+	workspacePath, basename, err := workspace.CreateModuleIfNotExists()
 	if err != nil {
 		return nil, err
 	}

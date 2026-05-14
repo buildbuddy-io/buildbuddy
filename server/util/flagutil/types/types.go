@@ -20,6 +20,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types/autoflags/tags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gopkg.in/yaml.v3"
@@ -185,7 +186,7 @@ func (f *JSONSliceFlag[T]) Expand(mapping func(string) (string, error)) error {
 	return f.Set(string(exp))
 }
 
-func (f *JSONSliceFlag[T]) AppendSlice(slice any) error {
+func (f *JSONSliceFlag[T]) Accumulate(slice any) error {
 	v := (reflect.Value)(*f)
 	if _, ok := slice.(T); !ok {
 		return status.FailedPreconditionErrorf("Cannot append value %v of type %T to flag of type %s.", slice, slice, v.Type().Elem())
@@ -247,11 +248,133 @@ func (f *JSONStructFlag[T]) Set(values string) error {
 	return nil
 }
 
+func (f *JSONStructFlag[T]) Expand(mapping func(string) (string, error)) error {
+	var ov any
+	if err := json.Unmarshal([]byte(f.String()), &ov); err != nil {
+		return err
+	}
+	nv, err := expandValue(ov, mapping)
+	if err != nil {
+		return err
+	}
+	exp, err := json.Marshal(nv)
+	if err != nil {
+		return err
+	}
+	return f.Set(string(exp))
+}
+
 func (f *JSONStructFlag[T]) AliasedType() reflect.Type {
 	return reflect.TypeOf((*T)(nil))
 }
 
 func (f *JSONStructFlag[T]) Struct() T {
+	return *(reflect.Value)(*f).Interface().(*T)
+}
+
+type JSONMapFlag[T any] reflect.Value
+
+func NewJSONMapFlag[T any](value *T) *JSONMapFlag[T] {
+	v := (JSONMapFlag[T])(reflect.ValueOf(value))
+	return &v
+}
+
+func JSONMap[T any](flagset *flag.FlagSet, name string, defaultValue T, usage string) *T {
+	value := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
+	JSONMapVar(flagset, value, name, defaultValue, usage)
+	return value
+}
+
+func JSONMapVar[T any](flagset *flag.FlagSet, value *T, name string, defaultValue T, usage string) {
+	src := reflect.ValueOf(defaultValue)
+	if src.Kind() != reflect.Map {
+		log.Fatalf("JSONMapVar called for flag %s with non-map value %v of type %T.", name, defaultValue, defaultValue)
+	}
+	v := reflect.ValueOf(value)
+	// Copy the default into a fresh map so the flag's storage isn't aliased
+	// with the caller's default — subsequent Set/Merge calls must not
+	// mutate the caller's map.
+	m := reflect.MakeMapWithSize(reflect.TypeOf((*T)(nil)).Elem(), src.Len())
+	if !src.IsNil() {
+		iter := src.MapRange()
+		for iter.Next() {
+			m.SetMapIndex(iter.Key(), iter.Value())
+		}
+	}
+	v.Elem().Set(m)
+	flagset.Var((*JSONMapFlag[T])(&v), name, usage)
+}
+
+func (f *JSONMapFlag[T]) String() string {
+	if !(*reflect.Value)(f).IsValid() || (*reflect.Value)(f).IsNil() {
+		return "{}"
+	}
+	b, err := json.Marshal((*reflect.Value)(f).Interface())
+	if err != nil {
+		alert.UnexpectedEvent("config_cannot_marshal_map", "err: %s", err)
+		return "{}"
+	}
+	return string(b)
+}
+
+// Set merges the decoded JSON map into the existing map value (later-wins on
+// key conflicts), mirroring the append semantics of JSONSliceFlag.Set.
+func (f *JSONMapFlag[T]) Set(values string) error {
+	v := (reflect.Value)(*f).Elem()
+	dst := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
+	if err := json.Unmarshal([]byte(values), dst); err != nil {
+		return err
+	}
+	if v.IsNil() {
+		v.Set(reflect.MakeMap(v.Type()))
+	}
+	src := reflect.ValueOf(*dst)
+	iter := src.MapRange()
+	for iter.Next() {
+		v.SetMapIndex(iter.Key(), iter.Value())
+	}
+	return nil
+}
+
+// Accumulate merges the entries of the passed map into the flag's map value
+// (later-wins on key conflicts), satisfying the Accumulable interface.
+func (f *JSONMapFlag[T]) Accumulate(m any) error {
+	v := (reflect.Value)(*f)
+	if _, ok := m.(T); !ok {
+		return status.FailedPreconditionErrorf("Cannot append value %v of type %T to flag of type %s.", m, m, v.Type().Elem())
+	}
+	if v.Elem().IsNil() {
+		v.Elem().Set(reflect.MakeMap(v.Elem().Type()))
+	}
+	src := reflect.ValueOf(m)
+	iter := src.MapRange()
+	for iter.Next() {
+		v.Elem().SetMapIndex(iter.Key(), iter.Value())
+	}
+	return nil
+}
+
+func (f *JSONMapFlag[T]) Expand(mapping func(string) (string, error)) error {
+	var ov any
+	if err := json.Unmarshal([]byte(f.String()), &ov); err != nil {
+		return err
+	}
+	nv, err := expandValue(ov, mapping)
+	if err != nil {
+		return err
+	}
+	exp, err := json.Marshal(nv)
+	if err != nil {
+		return err
+	}
+	return f.Set(string(exp))
+}
+
+func (f *JSONMapFlag[T]) AliasedType() reflect.Type {
+	return reflect.TypeOf((*T)(nil))
+}
+
+func (f *JSONMapFlag[T]) Map() T {
 	return *(reflect.Value)(*f).Interface().(*T)
 }
 
@@ -285,7 +408,7 @@ func (f *StringSliceFlag) Set(values string) error {
 	if values == "" {
 		return nil
 	}
-	for _, val := range strings.Split(values, ",") {
+	for val := range strings.SplitSeq(values, ",") {
 		*f = append(*f, val)
 	}
 	return nil
@@ -302,7 +425,7 @@ func (f *StringSliceFlag) Expand(mapping func(string) (string, error)) error {
 	return nil
 }
 
-func (f *StringSliceFlag) AppendSlice(slice any) error {
+func (f *StringSliceFlag) Accumulate(slice any) error {
 	s, ok := slice.([]string)
 	if !ok {
 		return status.FailedPreconditionErrorf("Cannot append value %v of type %T to flag of type []string.", slice, slice)
@@ -375,69 +498,41 @@ func (f *URLFlag) YAMLTypeString() string {
 	return "URL"
 }
 
-type FlagAlias[T any] struct {
-	name    string
-	flagset *flag.FlagSet
-}
-
 // Alias defines a new name or names for the existing flag at the passed name
 // and returns a pointer to the data backing it. If no new names are passed,
 // Alias simply returns said pointer without creating any new alias flags.
 func Alias[T any](flagset *flag.FlagSet, name string, newNames ...string) *T {
-	f := &FlagAlias[T]{
-		name:    name,
-		flagset: flagset,
-	}
-	var flg *flag.Flag
-	for aliaser, ok := common.IsNameAliasing(f), true; ok; aliaser, ok = flg.Value.(common.IsNameAliasing) {
-		if flg = flagset.Lookup(aliaser.AliasedName()); flg == nil || flg.Value == nil {
-			log.Fatalf("Error aliasing flag %s as %s: flag %s does not exist.", name, strings.Join(newNames, ", "), aliaser.AliasedName())
+	switch v := any((*T)(nil)).(type) {
+	case *bool:
+		return tags.Tag[T, flag.Value](flagset, name, tags.AliasTag(newNames...))
+	case *time.Duration:
+		return tags.Tag[T, flag.Value](flagset, name, tags.AliasTag(newNames...))
+	case *float64:
+		return tags.Tag[T, flag.Value](flagset, name, tags.AliasTag(newNames...))
+	case *int:
+		return tags.Tag[T, flag.Value](flagset, name, tags.AliasTag(newNames...))
+	case *int64:
+		return tags.Tag[T, flag.Value](flagset, name, tags.AliasTag(newNames...))
+	case *uint:
+		return tags.Tag[T, flag.Value](flagset, name, tags.AliasTag(newNames...))
+	case *uint64:
+		return tags.Tag[T, flag.Value](flagset, name, tags.AliasTag(newNames...))
+	case *string:
+		return tags.Tag[T, flag.Value](flagset, name, tags.AliasTag(newNames...))
+	case *[]string:
+		return tags.Tag[T, *StringSliceFlag](flagset, name, tags.AliasTag(newNames...))
+	case *url.URL:
+		return tags.Tag[T, *URLFlag](flagset, name, tags.AliasTag(newNames...))
+	default:
+		if reflect.TypeOf(v).Elem().Kind() == reflect.Slice {
+			return tags.Tag[T, *JSONSliceFlag[T]](flagset, name, tags.AliasTag(newNames...))
 		}
+		if reflect.TypeOf(v).Elem().Kind() == reflect.Struct {
+			return tags.Tag[T, *JSONStructFlag[T]](flagset, name, tags.AliasTag(newNames...))
+		}
+		log.Fatalf("Alias was called from flag registry for flag %s with unrecognized parameterized type %T.", name, common.Zero[T]())
 	}
-	converted, err := common.ConvertFlagValue(flg.Value)
-	if err != nil {
-		log.Fatalf("Error aliasing flag %s as %s: %v", name, strings.Join(newNames, ", "), err)
-	}
-	value, ok := converted.(*T)
-	if !ok {
-		log.Fatalf("Error aliasing flag %s as %s: Failed to assert flag %s of type %T as type %T.", name, strings.Join(newNames, ", "), flg.Name, flg.Value, (*T)(nil))
-	}
-	for _, newName := range newNames {
-		flagset.Var(f, newName, "Alias for "+name)
-	}
-	return value
-}
-
-func (f *FlagAlias[T]) Set(value string) error {
-	return f.flagset.Set(f.name, value)
-}
-
-func (f *FlagAlias[T]) String() string {
-	if f.name == "" && f.WrappedValue() == nil {
-		return fmt.Sprint(common.Zero[T]())
-	}
-	return f.WrappedValue().String()
-}
-
-func (f *FlagAlias[T]) AliasedName() string {
-	return f.name
-}
-
-func (f *FlagAlias[T]) WrappedValue() flag.Value {
-	if f.flagset == nil {
-		return nil
-	}
-	flg := f.flagset.Lookup(f.name)
-	if flg == nil {
-		return nil
-	}
-	return flg.Value
-}
-
-type DeprecatedFlag[T any] struct {
-	flag.Value
-	name          string
-	MigrationPlan string
+	return nil
 }
 
 // DeprecatedVar takes a flag.Value (which can be obtained for primitive types
@@ -449,7 +544,7 @@ type DeprecatedFlag[T any] struct {
 // var foo = flag.String("foo", "foo default value", "Use the specified foo.")
 //
 // You would redefine the flag as deprecated like this:
-// var foo = DeprecatedVar[string](
+// var foo = DeprecatedVar[string, flag.Value](
 //
 //	NewPrimitiveFlag("foo default value"),
 //	"foo",
@@ -457,10 +552,10 @@ type DeprecatedFlag[T any] struct {
 //	"All of our foos were destroyed in a fire, please specify a bar instead.",
 //
 // )
-func DeprecatedVar[T any](flagset *flag.FlagSet, value flag.Value, name string, usage, migrationPlan string) *T {
+func DeprecatedVar[T any, FV flag.Value](flagset *flag.FlagSet, value FV, name string, usage, migrationPlan string) *T {
 	flagset.Var(value, name, usage)
-	Deprecate[T](flagset, name, migrationPlan)
-	converted, err := common.ConvertFlagValue(value)
+	Deprecate[T, FV](flagset, name, migrationPlan)
+	converted, err := common.ConvertFlagValue(flagset.Lookup(name).Value)
 	if err != nil {
 		log.Fatalf("Error creating deprecated flag %s: %v", name, err)
 	}
@@ -474,98 +569,10 @@ func DeprecatedVar[T any](flagset *flag.FlagSet, value flag.Value, name string, 
 // Deprecate deprecates an existing flag by name; generally this should be
 // called in an init func. While simpler to use than DeprecatedVar, it does
 // decouple the flag declaration from the flag deprecation.
-func Deprecate[T any](flagset *flag.FlagSet, name, migrationPlan string) {
-	flg := flagset.Lookup(name)
-	converted, err := common.ConvertFlagValue(flg.Value)
-	if err != nil {
-		log.Fatalf("Error creating deprecated flag %s: %v", name, err)
-	} else if _, ok := converted.(*T); !ok {
-		log.Fatalf("Error creating deprecated flag %s: could not coerce flag of type %T to type %T.", name, converted, (*T)(nil))
-	}
-	flg.Value = &DeprecatedFlag[T]{
-		Value:         flg.Value,
-		name:          flg.Name,
-		MigrationPlan: migrationPlan,
-	}
-	flg.Usage = flg.Usage + " **DEPRECATED** " + migrationPlan
+func Deprecate[T any, FV flag.Value](flagset *flag.FlagSet, name, migrationPlan string) {
+	tags.Tag[T, FV](flagset, name, tags.DeprecatedTag(migrationPlan))
 }
 
-func (d *DeprecatedFlag[T]) Set(value string) error {
-	log.Warningf("Flag \"%s\" was set on the command line but has been deprecated: %s", d.name, d.MigrationPlan)
-	return d.Value.Set(value)
-}
-
-func (d *DeprecatedFlag[T]) WrappedValue() flag.Value {
-	return d.Value
-}
-
-func (d *DeprecatedFlag[T]) SetValueForFlagNameHook() {
-	log.Warningf("Flag \"%s\" was set programmatically by name but has been deprecated: %s", d.name, d.MigrationPlan)
-}
-
-func (d *DeprecatedFlag[T]) YAMLSetValueHook() {
-	log.Warningf("Flag \"%s\" was set through the YAML config but has been deprecated: %s", d.name, d.MigrationPlan)
-}
-
-func (d *DeprecatedFlag[T]) String() string {
-	if d.Value == nil {
-		return fmt.Sprint(common.Zero[T]())
-	}
-	return d.Value.String()
-}
-
-func (d *DeprecatedFlag[T]) Expand(mapping func(string) (string, error)) error {
-	return Expand(d.Value, mapping)
-}
-
-type SecretFlag[T any] struct {
-	flag.Value
-}
-
-func Secret[T any](flagset *flag.FlagSet, name string) {
-	flg := flagset.Lookup(name)
-	converted, err := common.ConvertFlagValue(flg.Value)
-	if err != nil {
-		log.Fatalf("Error creating secret flag %s: %v", name, err)
-	} else if _, ok := converted.(*T); !ok {
-		log.Fatalf("Error creating secret flag %s: could not coerce flag of type %T to type %T.", name, converted, (*T)(nil))
-	}
-	flg.Value = &SecretFlag[T]{flg.Value}
-}
-
-func (s *SecretFlag[T]) WrappedValue() flag.Value {
-	return s.Value
-}
-
-func (s *SecretFlag[T]) IsSecret() bool {
-	return true
-}
-
-func (s *SecretFlag[T]) String() string {
-	if s.Value == nil {
-		return fmt.Sprint(common.Zero[T]())
-	}
-	return s.Value.String()
-}
-
-func (s *SecretFlag[T]) Expand(mapping func(string) (string, error)) error {
-	return Expand(s.Value, mapping)
-}
-
-// Expand updates the flag value to replace any placeholders in format ${FOO}
-// with the content of calling the mapper function with the placeholder name.
-func Expand(v flag.Value, mapper func(string) (string, error)) error {
-	// If the flag type wants to handle expansion, let it.
-	if r, ok := v.(common.Expandable); ok {
-		if err := r.Expand(mapper); err != nil {
-			return err
-		}
-		return nil
-	}
-	// Otherwise, expand directly using String/Set.
-	exp, err := mapper(v.String())
-	if err != nil {
-		return err
-	}
-	return v.Set(exp)
+func Secret[T any, FV flag.Value](flagset *flag.FlagSet, name string) {
+	tags.Tag[T, FV](flagset, name, tags.SecretTag)
 }

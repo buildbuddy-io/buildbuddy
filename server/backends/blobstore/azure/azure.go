@@ -100,6 +100,8 @@ func (z *AzureBlobStore) createContainerIfNotExists(ctx context.Context) error {
 }
 
 func (z *AzureBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
+	start := time.Now()
+	_, spn := tracing.StartSpan(ctx)
 	blobURL := z.containerURL.NewBlockBlobURL(blobName)
 	response, err := blobURL.Download(ctx, 0 /*=offset*/, azblob.CountToEnd, azblob.BlobAccessConditions{}, false /*=rangeGetContentMD5*/, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
@@ -109,16 +111,14 @@ func (z *AzureBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte,
 		return nil, err
 	}
 
-	start := time.Now()
 	readCloser := response.Body(azblob.RetryReaderOptions{})
 	defer readCloser.Close()
-	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	b, err := io.ReadAll(readCloser)
 	spn.End()
 	if err != nil {
 		return nil, err
 	}
-	util.RecordReadMetrics(azureLabel, start, b, err)
+	util.RecordReadMetrics(azureLabel, start, len(b), err)
 	return util.Decompress(b, err)
 }
 
@@ -149,9 +149,12 @@ func (z *AzureBlobStore) DeleteBlob(ctx context.Context, blobName string) error 
 
 func (z *AzureBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
 	blobURL := z.containerURL.NewBlockBlobURL(blobName)
+	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	if _, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{}); err != nil {
+	_, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{})
+	util.RecordExistsMetrics(azureLabel, start, err)
+	if err != nil {
 		if z.isAzureError(err, azblob.ServiceCodeBlobNotFound) {
 			return false, nil
 		}
@@ -183,7 +186,7 @@ func (z *AzureBlobStore) Writer(ctx context.Context, blobName string) (interface
 
 	zw := util.NewCompressWriter(pw)
 	cwc := ioutil.NewCustomCommitWriteCloser(zw)
-	cwc.CommitFn = func(int64) error {
+	cwc.SetCommitFn(func(int64) error {
 		if compresserCloseErr := zw.Close(); compresserCloseErr != nil {
 			cancel() // Don't try to finish the commit op if Close() failed.
 			if pipeCloseErr := pw.Close(); pipeCloseErr != nil {
@@ -197,10 +200,10 @@ func (z *AzureBlobStore) Writer(ctx context.Context, blobName string) (interface
 			return writerCloseErr
 		}
 		return <-errch
-	}
-	cwc.CloseFn = func() error {
+	})
+	cwc.SetCloseFn(func() error {
 		cancel()
 		return nil
-	}
+	})
 	return cwc, nil
 }

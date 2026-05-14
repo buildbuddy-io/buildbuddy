@@ -37,6 +37,7 @@ var (
 	invocationSummaryAvailableUsec = flag.Int64("app.invocation_summary_available_usec", 0, "The timstamp when the invocation summary is available in the DB")
 	tagsInDrilldowns               = flag.Bool("app.fetch_tags_drilldown_data", true, "If enabled, DrilldownType_TAG_DRILLDOWN_TYPE can be returned in GetStatDrilldownRequests")
 	finerTimeBuckets               = flag.Bool("app.finer_time_buckets", false, "If enabled, split trends and drilldowns into smaller time buckets when the user has a smaller date range selected.")
+	targetTrendsEnabled            = flag.Bool("app.enable_target_trends", true, "Enables GetTargetTrends, which returns execution data aggregated by Bazel target.")
 )
 
 type InvocationStatService struct {
@@ -56,7 +57,7 @@ func NewInvocationStatService(env environment.Env, dbh interfaces.DBHandle, olap
 func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggType inpb.AggType) (string, error) {
 	switch aggType {
 	case inpb.AggType_USER_AGGREGATION_TYPE:
-		return "user", nil
+		return "\"user\"", nil
 	case inpb.AggType_HOSTNAME_AGGREGATION_TYPE:
 		return "host", nil
 	case inpb.AggType_GROUP_ID_AGGREGATION_TYPE:
@@ -264,7 +265,7 @@ func (i *InvocationStatService) getTrendBasicQuery(tq *stpb.TrendQuery, timeSett
 	    SUM(CASE WHEN invocation_status <> 1 THEN 1 ELSE 0 END) as other_builds,
 	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,
 	    SUM(CASE WHEN duration_usec > 0 THEN 1 ELSE 0 END) as completed_invocation_count,
-	    COUNT(DISTINCT user) as user_count,
+	    COUNT(DISTINCT "user") as user_count,
 	    COUNT(DISTINCT commit_sha) as commit_count,
 	    COUNT(DISTINCT host) as host_count,
 	    COUNT(DISTINCT repo_url) as repo_count,
@@ -324,10 +325,10 @@ func (i *InvocationStatService) flattenTrendsQuery(innerQuery string) string {
 	FROM (` + innerQuery + ")"
 }
 
-func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) error {
+func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, includeExecutionDimensionFilters bool, reqCtx *ctxpb.RequestContext) error {
 
 	if user := tq.GetUser(); user != "" {
-		q.AddWhereClause("user = ?", user)
+		q.AddWhereClause("\"user\" = ?", user)
 	}
 
 	if host := tq.GetHost(); host != "" {
@@ -397,11 +398,38 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 	}
 
 	for _, f := range tq.GetFilter() {
-		str, args, err := filter.GenerateFilterStringAndArgs(f, "")
+		str, args, err := filter.GenerateFilterStringAndArgs(f)
 		if err != nil {
 			return err
 		}
 		q.AddWhereClause(str, args...)
+	}
+	for _, f := range tq.GetDimensionFilter() {
+		if !includeExecutionDimensionFilters && f.GetDimension().Execution != nil {
+			continue
+		}
+		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f)
+		if err != nil {
+			return err
+		}
+		q.AddWhereClause(str, args...)
+	}
+	queryObjects := sfpb.ObjectTypes_INVOCATION_OBJECTS
+	if includeExecutionDimensionFilters {
+		queryObjects = sfpb.ObjectTypes_EXECUTION_OBJECTS
+	}
+
+	dialectName := i.dbh.DialectName()
+	if i.isOLAPDBEnabled() {
+		dialectName = i.olapdbh.DialectName()
+	}
+
+	for _, f := range tq.GetGenericFilters() {
+		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, queryObjects, dialectName)
+		if err != nil {
+			return err
+		}
+		q.AddWhereClause(s, a...)
 	}
 
 	q.AddWhereClause(`group_id = ?`, reqCtx.GetGroupId())
@@ -432,7 +460,7 @@ func (i *InvocationStatService) getInvocationSummary(ctx context.Context, req *s
     `)
 
 	reqCtx := req.GetRequestContext()
-	if err := i.addWhereClauses(q, req.GetQuery(), reqCtx); err != nil {
+	if err := i.addWhereClauses(q, req.GetQuery(), false, reqCtx); err != nil {
 		return nil, err
 	}
 	qStr, qArgs := q.Build()
@@ -448,7 +476,7 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 	reqCtx := req.GetRequestContext()
 
 	q := query_builder.NewQueryWithArgs(i.getTrendBasicQuery(req.GetQuery(), timeSettings, reqCtx.GetTimezoneOffsetMinutes()))
-	if err := i.addWhereClauses(q, req.GetQuery(), reqCtx); err != nil {
+	if err := i.addWhereClauses(q, req.GetQuery(), false, reqCtx); err != nil {
 		return nil, err
 	}
 	if i.finerTimeBucketsEnabled() {
@@ -485,16 +513,16 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 func (i *InvocationStatService) getExecutionTrendQuery(timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) (string, []interface{}) {
 	if !i.finerTimeBucketsEnabled() {
 		return fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
-		quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles,
-		SUM(COALESCE(worker_completed_timestamp_usec - worker_start_timestamp_usec, 0)) as total_build_time_usec
+		quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec AND queued_timestamp_usec > 0, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles,
+		SUM(GREATEST(COALESCE(worker_completed_timestamp_usec - worker_start_timestamp_usec, 0), 0)) as total_build_time_usec
 		FROM "Executions"`, make([]interface{}, 0)
 	}
 
 	bucketStr, bucketArgs := i.olapdbh.BucketFromUsecTimestamp("updated_at_usec", timeSettings.location, timeSettings.interval.ClickhouseInterval())
 
 	return fmt.Sprintf("SELECT %s as bucket_start_time_micros,", bucketStr) + `
-	quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles,
-	SUM(COALESCE(worker_completed_timestamp_usec - worker_start_timestamp_usec, 0)) as total_build_time_usec
+	quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec AND queued_timestamp_usec > 0, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles,
+	SUM(GREATEST(COALESCE(worker_completed_timestamp_usec - worker_start_timestamp_usec, 0), 0)) as total_build_time_usec
 	FROM "Executions"
 	`, bucketArgs
 }
@@ -532,7 +560,7 @@ func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb
 	reqCtx := req.GetRequestContext()
 
 	q := query_builder.NewQueryWithArgs(i.getExecutionTrendQuery(timeSettings, reqCtx.GetTimezoneOffsetMinutes()))
-	if err := i.addWhereClauses(q, req.GetQuery(), req.GetRequestContext()); err != nil {
+	if err := i.addWhereClauses(q, req.GetQuery(), true, req.GetRequestContext()); err != nil {
 		return nil, err
 	}
 	if *finerTimeBuckets {
@@ -853,7 +881,7 @@ func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table s
 
 func (i *InvocationStatService) getWhereClauseForHeatmapQuery(m *sfpb.Metric, q *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) (string, []interface{}, error) {
 	placeholderQuery := query_builder.NewQuery("")
-	if err := i.addWhereClauses(placeholderQuery, q, reqCtx); err != nil {
+	if err := i.addWhereClauses(placeholderQuery, q, m.Execution != nil, reqCtx); err != nil {
 		return "", nil, err
 	}
 	if m.GetInvocation() == sfpb.InvocationMetricType_DURATION_USEC_INVOCATION_METRIC {
@@ -876,8 +904,11 @@ type QueryAndBuckets = struct {
 // indicate a no-error state with no results--in this case we should return an
 // empty response.
 func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, req *stpb.GetStatHeatmapRequest) (*QueryAndBuckets, error) {
+	if req.GetMetric() == nil {
+		return nil, status.InvalidArgumentError("Missing metric for heatmap request.")
+	}
 	table := getTableForMetric(req.GetMetric())
-	metric, err := filter.MetricToDbField(req.GetMetric(), "")
+	metric, err := filter.MetricToDbField(req.GetMetric())
 	if err != nil {
 		return nil, err
 	}
@@ -991,7 +1022,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	}
 
 	if user := req.GetQuery().GetUser(); user != "" {
-		q.AddWhereClause("user = ?", user)
+		q.AddWhereClause("\"user\" = ?", user)
 	}
 
 	if host := req.GetQuery().GetHost(); host != "" {
@@ -999,6 +1030,10 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	}
 
 	if repoURL := req.GetQuery().GetRepoUrl(); repoURL != "" {
+		// Attempt normalization, and if it succeeds, use the normalized URL.
+		if u, err := git.NormalizeRepoURL(repoURL); err == nil {
+			repoURL = u.String()
+		}
 		q.AddWhereClause("repo_url = ?", repoURL)
 	}
 
@@ -1043,12 +1078,43 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		q.AddWhereClause("updated_at_usec < ?", end.AsTime().UnixMicro())
 	}
 
+	if minDuration := req.GetQuery().GetMinimumDuration().AsDuration(); minDuration > 0 {
+		q.AddWhereClause(`duration_usec >= ?`, minDuration.Microseconds())
+	}
+	if maxDuration := req.GetQuery().GetMaximumDuration().AsDuration(); maxDuration > 0 {
+		q.AddWhereClause(`duration_usec <= ?`, maxDuration.Microseconds())
+	}
+
 	for _, f := range req.GetQuery().GetFilter() {
-		str, args, err := filter.GenerateFilterStringAndArgs(f, "")
+		str, args, err := filter.GenerateFilterStringAndArgs(f)
 		if err != nil {
 			return nil, err
 		}
 		q.AddWhereClause(str, args...)
+	}
+	for _, f := range req.GetQuery().GetDimensionFilter() {
+		if f.GetDimension().Invocation == nil {
+			continue
+		}
+		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f)
+		if err != nil {
+			return nil, err
+		}
+		q.AddWhereClause(str, args...)
+	}
+	var dbh interfaces.DB
+	if i.isOLAPDBEnabled() {
+		dbh = i.olapdbh
+	} else {
+		dbh = i.dbh
+	}
+
+	for _, f := range req.GetQuery().GetGenericFilters() {
+		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, sfpb.ObjectTypes_INVOCATION_OBJECTS, dbh.DialectName())
+		if err != nil {
+			return nil, err
+		}
+		q.AddWhereClause(s, a...)
 	}
 
 	statusClauses := toStatusClauses(req.GetQuery().GetStatus())
@@ -1063,12 +1129,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	q.SetLimit(int64(limit))
 
 	qStr, qArgs := q.Build()
-	var dbh interfaces.DB
-	if i.isOLAPDBEnabled() {
-		dbh = i.olapdbh
-	} else {
-		dbh = i.dbh
-	}
+
 	rq := dbh.NewQuery(ctx, "invocation_stat_service_get_stats").Raw(qStr, qArgs...)
 
 	rsp := &inpb.GetInvocationStatResponse{}
@@ -1091,8 +1152,14 @@ func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilld
 			queryFields[i] = "NULL as gorm_" + f
 		} else if col == "tag" {
 			queryFields[i] = "arrayJoin(tags) as gorm_tag"
+		} else if col == "exit_code" {
+			queryFields[i] = "toString(exit_code) as gorm_exit_code"
 		} else {
-			queryFields[i] = f + " as gorm_" + f
+			columnName := f
+			if columnName == "user" {
+				columnName = "\"user\""
+			}
+			queryFields[i] = columnName + " as gorm_" + f
 		}
 	}
 	nulledOutFieldList := strings.Join(queryFields, ", ")
@@ -1113,23 +1180,27 @@ func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilld
 			nulledOutFieldList, drilldown, drilldown, table, where), args
 	}
 	col = "gorm_" + col
+	groupByCol := col
+	if col == "gorm_exit_code" {
+		groupByCol = "toString(exit_code)" // column aliases can't be used in GROUP BY
+	}
 
 	return fmt.Sprintf(`
 		(SELECT %s, 1 AS totals_first, count(*) AS total, countIf(%s) AS selection,
 			countIf(not(%s)) AS inverse
 		FROM "%s" %s
 		GROUP BY %s ORDER BY selection DESCENDING, total DESCENDING LIMIT 25)`,
-		nulledOutFieldList, drilldown, drilldown, table, where, col), args
+		nulledOutFieldList, drilldown, drilldown, table, where, groupByCol), args
 }
 
 func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{}, error) {
 	if len(filters) == 0 {
-		return "", nil, status.InvalidArgumentError("Empty filter for drilldown.")
+		return "FALSE", []interface{}{}, nil
 	}
 	var result []string
 	var resultArgs []interface{}
 	for _, f := range filters[:] {
-		str, args, err := filter.GenerateFilterStringAndArgs(f, "")
+		str, args, err := filter.GenerateFilterStringAndArgs(f)
 		if err != nil {
 			return "", nil, err
 		}
@@ -1143,16 +1214,20 @@ func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{},
 // are able to upgrade to clickhouse 22.6 or later.  The release date for 22.8
 // from Altinity is supposed to be 2023-02-15.
 func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb.GetStatDrilldownRequest) (string, []interface{}, error) {
+	if req.GetDrilldownMetric() == nil {
+		return "", nil, status.InvalidArgumentError("Missing metric for drilldown request.")
+	}
 	drilldownFields := []string{"user", "host", "pattern", "repo_url", "branch_name", "commit_sha"}
 	if *tagsInDrilldowns {
 		drilldownFields = append(drilldownFields, "tag")
 	}
-	if req.GetDrilldownMetric().Execution != nil {
-		drilldownFields = append(drilldownFields, "worker")
+	executionDrilldownFields := []string{"worker", "target_label", "action_mnemonic", "effective_pool", "exit_code"}
+	if req.GetDrilldownMetric().GetExecution() != sfpb.ExecutionMetricType_UNKNOWN_EXECUTION_METRIC {
+		drilldownFields = append(drilldownFields, executionDrilldownFields...)
 	}
 	placeholderQuery := query_builder.NewQuery("")
 
-	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), req.GetRequestContext()); err != nil {
+	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), req.GetDrilldownMetric().GetExecution() != sfpb.ExecutionMetricType_UNKNOWN_EXECUTION_METRIC, req.GetRequestContext()); err != nil {
 		return "", nil, err
 	}
 
@@ -1183,30 +1258,119 @@ func addOutputChartEntry(m map[stpb.DrilldownType]*stpb.DrilldownChart, dm map[s
 		chart = &stpb.DrilldownChart{}
 		chart.DrilldownType = ddType
 		m[ddType] = chart
-		dm[ddType] = -math.MaxFloat64
+		dm[ddType] = 0
 	}
-	dm[ddType] = math.Max(dm[ddType], math.Abs(float64(selection)/float64(totalInSelection)-float64(inverse)/float64(totalInBase)))
+	if totalInSelection != 0 && totalInBase != 0 {
+		dm[ddType] = math.Max(dm[ddType], math.Abs(float64(selection)/float64(totalInSelection)-float64(inverse)/float64(totalInBase)))
+	}
 	chart.Entry = append(chart.Entry, &stpb.DrilldownEntry{Label: *label, BaseValue: inverse, SelectionValue: selection})
 }
 
 func sortDrilldownChartKeys(dm map[stpb.DrilldownType]float64) *[]stpb.DrilldownType {
 	type pair struct {
-		a stpb.DrilldownType
-		v float64
+		ddType stpb.DrilldownType
+		value  float64
 	}
 	slice := make([]pair, 0)
-	for k, v := range dm {
-		slice = append(slice, pair{k, v})
+	for ddType, value := range dm {
+		slice = append(slice, pair{ddType, value})
 	}
-	sort.SliceStable(slice, func(a, b int) bool {
-		return slice[a].v >= slice[b].v
+	sort.Slice(slice, func(i, j int) bool {
+		// Sort by value, breaking ties by drilldown type.
+		if slice[i].value == slice[j].value {
+			return slice[i].ddType < slice[j].ddType
+		}
+		return slice[i].value >= slice[j].value
 	})
 
 	result := make([]stpb.DrilldownType, len(slice))
-	for v, i := range slice {
-		result[v] = i.a
+	for i, pair := range slice {
+		result[i] = pair.ddType
 	}
 	return &result
+}
+
+func getAggregationFnString(a stpb.TargetAggregation) string {
+	switch a {
+	case stpb.TargetAggregation_SUM_TARGET_AGGREGATION:
+		return "sum"
+	case stpb.TargetAggregation_AVG_TARGET_AGGREGATION:
+		return "avg"
+	case stpb.TargetAggregation_MAX_TARGET_AGGREGATION:
+		return "max"
+	case stpb.TargetAggregation_MIN_TARGET_AGGREGATION:
+		return "min"
+	case stpb.TargetAggregation_P50_TARGET_AGGREGATION:
+		return "quantile(0.5)"
+	case stpb.TargetAggregation_P90_TARGET_AGGREGATION:
+		return "quantile(0.9)"
+	case stpb.TargetAggregation_P99_TARGET_AGGREGATION:
+		return "quantile(0.99)"
+	default:
+		return "sum"
+	}
+}
+
+func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.GetTargetTrendsRequest) (*stpb.GetTargetTrendsResponse, error) {
+	if !*targetTrendsEnabled {
+		return nil, status.UnimplementedError("GetTargetTrends RPC is disabled.")
+	}
+	if !i.isOLAPDBEnabled() {
+		return nil, status.UnimplementedError("Target trends require using an OLAP DB, but none is configured.")
+	}
+	if err := authutil.AuthorizeGroupAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
+		return nil, err
+	}
+
+	// Normalize repo URL before we use it in any queries.
+	if repoURL := req.GetQuery().GetRepoUrl(); repoURL != "" {
+		repoURL, err := git.NormalizeRepoURL(repoURL)
+		if err == nil {
+			req = req.CloneVT()
+			req.Query.RepoUrl = repoURL.String()
+		}
+	}
+
+	metric, err := filter.ExecutionMetricToDbField(req.GetMetric())
+	if err != nil {
+		return nil, err
+	}
+
+	// Merged actions appear in ClickHouse as multiple rows with the same
+	// execution_uuid, but a different invocation_uuid. This inner query
+	// dedupes by execution_uuid and takes the highest value (though all rows
+	// should have the same value).
+	innerQ := query_builder.NewQuery(fmt.Sprintf(`
+		SELECT target_label, MAX(%s) as v
+		FROM "Executions"`, metric))
+
+	// Add where clauses from the trend query, including execution dimension filters
+	if err := i.addWhereClauses(innerQ, req.GetQuery(), true, req.GetRequestContext()); err != nil {
+		return nil, err
+	}
+
+	innerQ.AddWhereClause("cached_result = FALSE")
+	innerQ.AddWhereClause("target_label != ''")
+	innerQ.SetGroupBy("target_label, execution_uuid")
+
+	innerQStr, innerQArgs := innerQ.Build()
+
+	q := query_builder.NewQueryWithArgs(fmt.Sprintf(`
+		SELECT target_label as target, toInt64(%s(v)) as value
+		FROM ( %s )`, getAggregationFnString(req.GetAgg()), innerQStr), innerQArgs)
+	q.SetGroupBy("target_label")
+	q.SetOrderBy("value", false) // Descending order
+	q.SetLimit(1000)             // Reasonable limit to avoid overwhelming the response
+
+	qStr, qArgs := q.Build()
+	rq := i.olapdbh.NewQuery(ctx, "invocation_stat_service_target_trends").Raw(qStr, qArgs...)
+
+	targetStats, err := db.ScanAll(rq, &stpb.TargetStats{})
+	if err != nil {
+		return nil, err
+	}
+
+	return &stpb.GetTargetTrendsResponse{TargetStats: targetStats}, nil
 }
 
 func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.GetStatDrilldownRequest) (*stpb.GetStatDrilldownResponse, error) {
@@ -1233,16 +1397,20 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 	m := make(map[stpb.DrilldownType]*stpb.DrilldownChart)
 	dm := make(map[stpb.DrilldownType]float64)
 	type queryOut struct {
-		GormUser       *string
-		GormHost       *string
-		GormRepoURL    *string
-		GormBranchName *string
-		GormCommitSHA  *string
-		GormPattern    *string
-		GormWorker     *string
-		GormTag        *string
-		Selection      int64
-		Inverse        int64
+		GormUser           *string
+		GormHost           *string
+		GormRepoURL        *string
+		GormBranchName     *string
+		GormCommitSHA      *string
+		GormPattern        *string
+		GormWorker         *string
+		GormTag            *string
+		GormTargetLabel    *string
+		GormActionMnemonic *string
+		GormEffectivePool  *string
+		GormExitCode       *string
+		Selection          int64
+		Inverse            int64
 	}
 
 	firstRow := true
@@ -1271,6 +1439,14 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 			addOutputChartEntry(m, dm, stpb.DrilldownType_PATTERN_DRILLDOWN_TYPE, stat.GormPattern, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormWorker != nil {
 			addOutputChartEntry(m, dm, stpb.DrilldownType_WORKER_DRILLDOWN_TYPE, stat.GormWorker, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormTargetLabel != nil {
+			addOutputChartEntry(m, dm, stpb.DrilldownType_TARGET_LABEL_DRILLDOWN_TYPE, stat.GormTargetLabel, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormActionMnemonic != nil {
+			addOutputChartEntry(m, dm, stpb.DrilldownType_ACTION_MNEMONIC_DRILLDOWN_TYPE, stat.GormActionMnemonic, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormEffectivePool != nil {
+			addOutputChartEntry(m, dm, stpb.DrilldownType_EFFECTIVE_POOL_DRILLDOWN_TYPE, stat.GormEffectivePool, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormExitCode != nil {
+			addOutputChartEntry(m, dm, stpb.DrilldownType_EXIT_CODE_DRILLDOWN_TYPE, stat.GormExitCode, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormTag != nil {
 			addOutputChartEntry(m, dm, stpb.DrilldownType_TAG_DRILLDOWN_TYPE, stat.GormTag, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else {

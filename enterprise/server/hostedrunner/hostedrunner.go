@@ -2,40 +2,55 @@ package hostedrunner
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 	"io"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/remote_exec_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
-	"golang.org/x/exp/slices"
-	"google.golang.org/genproto/googleapis/longrunning"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"gopkg.in/yaml.v2"
 
-	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gstatus "google.golang.org/grpc/status"
 )
 
-const DefaultRunnerContainerImage = "docker://" + platform.Ubuntu20_04WorkflowsImage
+const (
+	DefaultRunnerContainerImage = "docker://" + platform.Ubuntu20_04WorkflowsImage
+
+	// Non-root user that has been pre-provisioned in workflow images.
+	// This is used by default.
+	nonRootUser = "buildbuddy"
+	rootUser    = "root"
+
+	timeoutGracePeriod = 10 * time.Second
+)
 
 type runnerService struct {
 	env              environment.Env
@@ -50,16 +65,49 @@ func New(env environment.Env) (*runnerService, error) {
 
 // checkPreconditions verifies the RunRequest is not missing any required params.
 func (r *runnerService) checkPreconditions(req *rnpb.RunRequest) error {
-	if req.GetGitRepo().GetRepoUrl() == "" {
-		return status.InvalidArgumentError("A repo url is required.")
+	if req.GetBazelCommand() == "" && len(req.GetSteps()) == 0 {
+		return status.InvalidArgumentError("A command to run is required.")
 	}
-	if req.GetBazelCommand() == "" {
-		return status.InvalidArgumentError("A bazel command is required.")
+	if req.GetBazelCommand() != "" && len(req.GetSteps()) > 0 {
+		return status.InvalidArgumentError("Only one of `BazelCommand` or `Steps` should be specified.")
 	}
-	if req.GetRepoState().GetCommitSha() == "" && req.GetRepoState().GetBranch() == "" {
-		return status.InvalidArgumentError("Either commit_sha or branch must be specified.")
+	// Branch/commit are only required when a repo URL is specified
+	if req.GetGitRepo().GetRepoUrl() != "" {
+		if req.GetRepoState().GetCommitSha() == "" && req.GetRepoState().GetBranch() == "" {
+			return status.InvalidArgumentError("Either commit_sha or branch must be specified.")
+		}
 	}
 	return nil
+}
+
+func normalizeWorkingDirectory(path string) (string, error) {
+	path = filepath.Clean(path)
+	if filepath.IsAbs(path) {
+		return "", status.InvalidArgumentErrorf("working_directory must be repo-relative: %q", path)
+	}
+	if path == "." {
+		return "", nil
+	}
+	if strings.Contains(path, "..") {
+		return "", status.InvalidArgumentErrorf("working_directory must not have relative components: %q", path)
+	}
+	return path, nil
+}
+
+func actionFromRunRequest(req *rnpb.RunRequest) (*config.Action, error) {
+	name := "remote run"
+	if req.GetName() != "" {
+		name = req.GetName()
+	}
+	workingDirectory, err := normalizeWorkingDirectory(req.GetWorkingDirectory())
+	if err != nil {
+		return nil, err
+	}
+	return &config.Action{
+		Name:              name,
+		Steps:             req.GetSteps(),
+		BazelWorkspaceDir: workingDirectory,
+	}, nil
 }
 
 // createAction creates and uploads an action that will trigger the CI runner
@@ -71,75 +119,161 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, r.env.GetByteStreamClient(), req.GetInstanceName(), repb.DigestFunction_BLAKE3, ci_runner_bundle.CiRunnerBytes)
-	if err != nil {
-		return nil, status.WrapError(err, "upload runner bin")
+
+	// The top level OS and arch fields are deprecated, so prefer the platform property values.
+	os := req.GetOs()
+	arch := req.GetArch()
+	if osProp := getExecProperty(req.GetExecProperties(), platform.OperatingSystemPropertyName); osProp != "" {
+		os = osProp
+	} else if os != "" {
+		req.ExecProperties = append(req.GetExecProperties(), &repb.Platform_Property{
+			Name:  platform.OperatingSystemPropertyName,
+			Value: req.GetOs(),
+		})
 	}
-	// Save this to use when constructing the command to run below.
-	runnerName := filepath.Base(ci_runner_bundle.RunnerName)
-	dir := &repb.Directory{
-		Files: []*repb.FileNode{{
-			Name:         runnerName,
-			Digest:       runnerBinDigest,
-			IsExecutable: true,
-		}},
+	if archProp := getExecProperty(req.GetExecProperties(), platform.CPUArchitecturePropertyName); archProp != "" {
+		arch = archProp
+	} else if arch != "" {
+		req.ExecProperties = append(req.GetExecProperties(), &repb.Platform_Property{
+			Name:  platform.CPUArchitecturePropertyName,
+			Value: req.GetArch(),
+		})
 	}
-	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, dir)
+
+	in := instanceName(req)
+	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, r.env.GetByteStreamClient(), r.env.GetCache(), in, os, arch)
 	if err != nil {
 		return nil, status.WrapError(err, "upload input root")
 	}
 
 	var patchURIs []string
 	for _, patch := range req.GetRepoState().GetPatch() {
-		patchDigest, err := cachetools.UploadBlobToCAS(ctx, r.env.GetByteStreamClient(), req.GetInstanceName(), repb.DigestFunction_BLAKE3, patch)
+		patchDigest, err := cachetools.UploadBlobToCAS(ctx, r.env.GetByteStreamClient(), in, repb.DigestFunction_BLAKE3, patch)
 		if err != nil {
 			return nil, status.WrapError(err, "upload patch")
 		}
-		rn := digest.NewResourceName(patchDigest, req.GetInstanceName(), rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
-		uri, err := rn.DownloadString()
+		rn := digest.NewCASResourceName(patchDigest, in, repb.DigestFunction_BLAKE3)
+		patchURIs = append(patchURIs, rn.DownloadString())
+	}
+
+	repoURL := req.GetGitRepo().GetRepoUrl()
+	if repoURL != "" && !req.GetGitRepo().GetUseSystemGitCredentials() {
+		// Use https for git operations.
+		u, err := git.NormalizeRepoURL(req.GetGitRepo().GetRepoUrl())
 		if err != nil {
-			return nil, status.WrapError(err, "patch download string")
+			return nil, status.WrapError(err, "normalize git repo")
 		}
-		patchURIs = append(patchURIs, uri)
+		repoURL = u.String()
 	}
 
-	// Use https for git operations.
-	repoURL, err := git.NormalizeRepoURL(req.GetGitRepo().GetRepoUrl())
+	// Migrate deprecated `BazelCommand` to `Steps`
+	if req.GetBazelCommand() != "" {
+		req.Steps = []*rnpb.Step{{Run: "bazel " + req.GetBazelCommand()}}
+	}
+
+	runAction, err := actionFromRunRequest(req)
 	if err != nil {
-		return nil, status.WrapError(err, "normalize git repo")
+		return nil, err
+	}
+	actionBytes, err := yaml.Marshal(runAction)
+	if err != nil {
+		return nil, err
+	}
+	serializedAction := base64.StdEncoding.EncodeToString(actionBytes)
+
+	timeout := *ci_runner_util.CIRunnerDefaultTimeout
+	if req.GetTimeout() != "" {
+		d, err := time.ParseDuration(req.GetTimeout())
+		if err != nil {
+			return nil, status.WrapError(err, "parse timeout from request")
+		}
+		timeout = d
 	}
 
-	// NOTE: Be cautious when adding new flags. See
-	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3101
 	args := []string{
-		"./" + runnerName,
+		"./" + ci_runner_util.ExecutableName,
 		"--bes_backend=" + events_api_url.String(),
 		"--cache_backend=" + cache_api_url.String(),
+		"--rbe_backend=" + remote_exec_api_url.String(),
 		"--bes_results_url=" + build_buddy_url.WithPath("/invocation/").String(),
-		"--target_repo_url=" + repoURL.String(),
-		"--bazel_sub_command=" + req.GetBazelCommand(),
+		"--digest_function=" + repb.DigestFunction_BLAKE3.String(),
 		"--invocation_id=" + invocationID,
-		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
-		"--target_branch=" + req.GetRepoState().GetBranch(),
+		"--serialized_action=" + serializedAction,
+		"--timeout=" + timeout.String(),
+		"--remote_instance_name=" + in,
 	}
-	if !req.GetRunRemotely() && strings.HasPrefix(req.GetBazelCommand(), "run ") {
+	if repoURL != "" {
+		args = append(args,
+			"--target_repo_url="+repoURL,
+			"--pushed_repo_url="+repoURL,
+			"--pushed_branch="+req.GetRepoState().GetBranch(),
+			"--commit_sha="+req.GetRepoState().GetCommitSha(),
+			"--target_branch="+req.GetRepoState().GetBranch(),
+		)
+	} else {
+		args = append(args, "--skip_auto_checkout")
+	}
+	if !req.GetRunRemotely() {
 		args = append(args, "--record_run_metadata")
-	}
-	if req.GetInstanceName() != "" {
-		args = append(args, "--remote_instance_name="+req.GetInstanceName())
 	}
 	for _, patchURI := range patchURIs {
 		args = append(args, "--patch_uri="+patchURI)
 	}
+	if efp := r.env.GetExperimentFlagProvider(); efp != nil {
+		bazelCommandOverride := efp.String(ctx, "ci-runner-bazel-command", "", experiments.WithContext("workflow-name", "remote-bazel"))
+		if bazelCommandOverride != "" {
+			args = append(args, "--bazel_command="+bazelCommandOverride)
+		}
+	}
+	args = append(args, req.GetRunnerFlags()...)
 
 	affinityKey := req.GetSessionAffinityKey()
 	if affinityKey == "" {
-		affinityKey = repoURL.String()
+		affinityKey = repoURL
+	}
+
+	// By default, use the non-root user as the operating user on the runner.
+	user := nonRootUser
+	for _, p := range req.ExecProperties {
+		if p.Name == platform.DockerUserPropertyName {
+			user = p.Value
+			break
+		}
+	}
+
+	// Run from the scratch disk, since the workspace disk is hot-swapped
+	// between runs, which may not be very Bazel-friendly.
+	wd := "/home/buildbuddy/workspace"
+	if user == rootUser {
+		wd = "/root/workspace"
 	}
 
 	image := DefaultRunnerContainerImage
+	isolationType := getExecProperty(req.GetExecProperties(), "workload-isolation-type")
+	if isolationType == "" {
+		isolationType = "firecracker"
+	}
+
+	// Containers/VMs aren't supported on darwin - default to bare execution
+	// and use the action workspace as the working directory.
+	if os == "darwin" || isolationType == "none" {
+		wd = ""
+		image = ""
+		isolationType = "none"
+	}
 	if req.GetContainerImage() != "" {
 		image = req.GetContainerImage()
+	}
+
+	retry := !req.GetDisableRetry()
+
+	pool := r.env.GetWorkflowService().WorkflowsPoolName()
+	if efp := r.env.GetExperimentFlagProvider(); efp != nil {
+		poolOverride := efp.String(ctx, "remote-runner-pool", "",
+			experiments.WithContext("workflow-name", "remote-bazel"))
+		if poolOverride != "" {
+			pool = poolOverride
+		}
 	}
 
 	// Hosted Bazel shares the same pool with workflows.
@@ -147,34 +281,25 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			// Run from the scratch disk, since the workspace disk is hot-swapped
 			// between runs, which may not be very Bazel-friendly.
-			{Name: "WORKDIR_OVERRIDE", Value: "/root/workspace"},
+			{Name: "WORKDIR_OVERRIDE", Value: wd},
 			{Name: "GIT_BRANCH", Value: req.GetRepoState().GetBranch()},
 		},
 		Arguments: args,
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: "Pool", Value: r.env.GetWorkflowService().WorkflowsPoolName()},
+				{Name: "Pool", Value: pool},
 				{Name: platform.HostedBazelAffinityKeyPropertyName, Value: affinityKey},
 				{Name: "container-image", Value: image},
 				{Name: "recycle-runner", Value: "true"},
-				{Name: "workload-isolation-type", Value: "firecracker"},
-				{Name: platform.EstimatedComputeUnitsPropertyName, Value: "2"},
+				{Name: "runner-recycling-max-wait", Value: (*ci_runner_util.RecycledCIRunnerMaxWait).String()},
+				{Name: "preserve-workspace", Value: "true"},
+				{Name: "workload-isolation-type", Value: isolationType},
+				{Name: platform.EstimatedComputeUnitsPropertyName, Value: "3"},
 				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
+				{Name: platform.DockerUserPropertyName, Value: user},
+				{Name: platform.RetryPropertyName, Value: fmt.Sprintf("%v", retry)},
 			},
 		},
-	}
-
-	if req.GetOs() != "" {
-		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
-			Name:  platform.OperatingSystemPropertyName,
-			Value: req.GetOs(),
-		})
-	}
-	if req.GetArch() != "" {
-		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
-			Name:  platform.CPUArchitecturePropertyName,
-			Value: req.GetArch(),
-		})
 	}
 
 	for k, v := range req.GetEnv() {
@@ -184,35 +309,53 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		})
 	}
 
-	cmd.Platform.Properties = append(cmd.Platform.Properties, req.GetExecProperties()...)
-	cmd.Platform.Properties = normalizePlatform(cmd.Platform.Properties)
+	if isolationType != string(platform.FirecrackerContainerType) {
+		// If not running with Firecracker, run an init process so that the
+		// bazel process can be reaped.
+		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
+			Name:  platform.DockerInitPropertyName,
+			Value: "true",
+		})
+	}
 
-	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, cmd)
+	cmd.Platform.Properties = append(cmd.Platform.Properties, req.GetExecProperties()...)
+
+	// Normalize to adhere to the REAPI spec.
+	rexec.NormalizeCommand(cmd)
+
+	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, in, repb.DigestFunction_BLAKE3, cmd)
 	if err != nil {
 		return nil, status.WrapError(err, "upload command")
 	}
+	// Set the action timeout slightly longer than the CI runner timeout, so
+	// that we allow the CI runner to finalize the outer workflow invocation
+	// once the timeout has elapsed, but if the CI runner takes too long to
+	// finalize, we can still kill the action.
+	actionTimeout := timeout + timeoutGracePeriod
 	action := &repb.Action{
 		CommandDigest:   cmdDigest,
 		InputRootDigest: inputRootDigest,
 		DoNotCache:      true,
+		Timeout:         durationpb.New(actionTimeout),
 	}
 
-	if req.GetTimeout() != "" {
-		d, err := time.ParseDuration(req.GetTimeout())
-		if err != nil {
-			return nil, status.WrapError(err, "parse timeout from request")
-		}
-		action.Timeout = durationpb.New(d)
-	}
-
-	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, action)
+	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, in, repb.DigestFunction_BLAKE3, action)
 	if err != nil {
 		return nil, status.WrapError(err, "upload action")
 	}
 	return actionDigest, nil
 }
 
-func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunRequest) (context.Context, error) {
+func getExecProperty(execProps []*repb.Platform_Property, key string) string {
+	for _, p := range execProps {
+		if p.Name == key {
+			return p.Value
+		}
+	}
+	return ""
+}
+
+func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.RunRequest) ([]string, error) {
 	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -222,15 +365,25 @@ func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunReques
 		return nil, err
 	}
 
-	// If no access token is provided explicitly, try fetching the token.
+	// If no access token is provided explicitly, try reading from the REPO_TOKEN env var.
 	accessToken := req.GetGitRepo().GetAccessToken()
 	if accessToken == "" {
+		for k, v := range req.GetEnv() {
+			if k == "REPO_TOKEN" {
+				accessToken = v
+				break
+			}
+		}
+	}
+	// If the token is still not set, try fetching the token from a Workflow
+	// configured for the same repo.
+	if accessToken == "" && req.GetGitRepo().GetRepoUrl() != "" {
 		repoURL, err := git.NormalizeRepoURL(req.GetGitRepo().GetRepoUrl())
 		if err != nil {
 			return nil, status.WrapError(err, "normalize git repo url")
 		}
 
-		gitToken, err := r.getGitToken(ctx, repoURL.String())
+		gitToken, err := r.getGitHubAccessToken(ctx, u.GetGroupID(), repoURL.String())
 		if err != nil {
 			log.Warningf("Could not fetch git auth token for %s for hosted runner"+
 				" (Note: The token is not needed for public repos): %s", repoURL, err)
@@ -239,41 +392,29 @@ func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunReques
 	}
 
 	// Use env override headers for credentials.
-	envOverrides := []*repb.Command_EnvironmentVariable{
-		{Name: "BUILDBUDDY_API_KEY", Value: apiKey.Value},
-		{Name: "REPO_USER", Value: req.GetGitRepo().GetUsername()},
-		{Name: "REPO_TOKEN", Value: accessToken},
+	// TODO(Maggie): Remove REPO_TOKEN once the leaser fetches the token.
+	envOverrides := []string{
+		ci_runner_env.BuildBuddyAPIKeyEnvVarName + "=" + apiKey.Value,
+		"REPO_USER=" + req.GetGitRepo().GetUsername(),
+		"REPO_TOKEN=" + accessToken,
 	}
-	ctx = withEnvOverrides(ctx, envOverrides)
-	return ctx, nil
+	return envOverrides, nil
 }
 
-func (r *runnerService) getGitToken(ctx context.Context, repoURL string) (string, error) {
-	app := r.env.GetGitHubApp()
-	if app == nil {
-		return "", status.UnimplementedError("GitHub App is not configured")
+func (r *runnerService) getGitHubAccessToken(ctx context.Context, groupID string, repoURL string) (string, error) {
+	gh := r.env.GetGitHubAppService()
+	if gh == nil {
+		return "", status.UnimplementedError("No GitHub app configured")
 	}
-
-	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+	app, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return "", err
 	}
-
-	gitRepository := &tables.GitRepository{}
-	err = r.env.GetDBHandle().NewQuery(ctx, "hosted_runner_get_for_repo").Raw(`
-		SELECT *
-		FROM "GitRepositories"
-		WHERE group_id = ?
-		AND repo_url = ?
-	`, u.GetGroupID(), repoURL).Take(gitRepository)
+	token, err := app.GetRepositoryInstallationToken(ctx, groupID, repoURL)
 	if err != nil {
-		if db.IsRecordNotFound(err) {
-			return "", status.NotFoundErrorf("workflow not configured for %s", repoURL)
-		}
-		return "", status.InternalErrorf("failed to look up repo %s: %s", repoURL, err)
+		return "", err
 	}
-
-	return app.GetRepositoryInstallationToken(ctx, gitRepository)
+	return token, nil
 }
 
 // Run creates and dispatches an execution that will call the CI-runner and run
@@ -284,7 +425,7 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	if err := r.checkPreconditions(req); err != nil {
 		return nil, status.WrapError(err, "check preconditions")
 	}
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env.GetAuthenticator())
 	if err != nil {
 		return nil, status.WrapError(err, "attach user prefix")
 	}
@@ -300,21 +441,46 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	}
 	log.Debugf("Uploaded runner action to cache. Digest: %s/%d", actionDigest.GetHash(), actionDigest.GetSizeBytes())
 
-	execCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{ToolInvocationId: invocationID})
+	execCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: invocationID,
+		ActionMnemonic:   "RemoteBazelRun",
+	})
 	if err != nil {
 		return nil, status.WrapError(err, "add request metadata to ctx")
 	}
-	execCtx, err = r.withCredentials(execCtx, req)
+	// Apply remote headers
+	envOverrides, err := r.credentialEnvOverrides(execCtx, req)
 	if err != nil {
-		return nil, status.WrapError(err, "authenticate ctx")
+		return nil, status.WrapError(err, "get credentials")
 	}
+
+	for _, h := range req.GetRemoteHeaders() {
+		parts := strings.SplitN(h, "=", 2)
+		if len(parts) != 2 {
+			return nil, status.InvalidArgumentErrorf("malformed remote header %s: key-value pairs should be separated by '='", h)
+		}
+		headerKey := parts[0]
+		headerVal := parts[1]
+
+		// We must set all env overrides in a single platform property, so add them
+		// to credential-related env overrides that were set above.
+		if headerKey == platform.OverrideHeaderPrefix+platform.EnvOverridesPropertyName {
+			envOverrides = append(envOverrides, headerVal)
+			continue
+		}
+
+		execCtx = metadata.AppendToOutgoingContext(execCtx, headerKey, headerVal)
+	}
+
+	execCtx = platform.WithRemoteHeaderOverride(
+		execCtx, platform.EnvOverridesPropertyName, strings.Join(envOverrides, ","))
 
 	executionClient := r.env.GetRemoteExecutionClient()
 	if executionClient == nil {
 		return nil, status.UnimplementedError("Missing remote execution client.")
 	}
 	opStream, err := executionClient.Execute(execCtx, &repb.ExecuteRequest{
-		InstanceName:    req.GetInstanceName(),
+		InstanceName:    instanceName(req),
 		SkipCacheLookup: true,
 		ActionDigest:    actionDigest,
 		DigestFunction:  repb.DigestFunction_BLAKE3,
@@ -331,13 +497,14 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	}
 
 	res := &rnpb.RunResponse{InvocationId: invocationID}
-	if req.GetAsync() {
+
+	if req.GetAsync() || req.GetWaitUntil() == rnpb.WaitCondition_QUEUED {
 		return res, nil
 	}
 
 	executionID := op.GetName()
-	if err := waitUntilInvocationExists(ctx, r.env, executionID, invocationID); err != nil {
-		return nil, status.WrapError(err, "wait invocation exists")
+	if err := waitUntilInvocationExists(ctx, r.env, executionID, invocationID, req.GetWaitUntil()); err != nil {
+		return nil, err
 	}
 
 	return res, nil
@@ -345,7 +512,7 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 
 // waitUntilInvocationExists waits until the specified invocationID exists or
 // an error is encountered. Borrowed from workflow.go.
-func waitUntilInvocationExists(ctx context.Context, env environment.Env, executionID, invocationID string) error {
+func waitUntilInvocationExists(ctx context.Context, env environment.Env, executionID, invocationID string, waitUntil rnpb.WaitCondition) error {
 	executionClient := env.GetRemoteExecutionClient()
 	if executionClient == nil {
 		return status.UnimplementedError("Missing remote execution client.")
@@ -356,7 +523,7 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 	}
 
 	errCh := make(chan error)
-	opCh := make(chan *longrunning.Operation)
+	opCh := make(chan *longrunningpb.Operation)
 
 	waitStream, err := executionClient.WaitExecution(ctx, &repb.WaitExecutionRequest{
 		Name: executionID,
@@ -385,13 +552,23 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 	for {
 		select {
 		case <-ctx.Done():
+			log.Infof("Attempting to cancel invocation %s because the context for the remote runner has ended with %s", invocationID, ctx.Err())
+			// If the context is canceled, ensure the remote run is canceled
+			if err := env.GetRemoteExecutionService().Cancel(context.WithoutCancel(ctx), invocationID); err != nil {
+				return status.InternalErrorf("context canceled with %s but failed to cancel invocation %s: %s", ctx.Err(), invocationID, err)
+			}
 			return ctx.Err()
 		case err := <-errCh:
 			return err
 		case <-time.After(1 * time.Second):
 			if executing {
-				_, err := invocationDB.LookupInvocation(ctx, invocationID)
-				if err == nil {
+				inv, err := invocationDB.LookupInvocation(ctx, invocationID)
+				if err == nil && (waitUntil == rnpb.WaitCondition_STARTED || waitUntil == rnpb.WaitCondition_UNKNOWN_CONDITION) {
+					return nil
+				}
+				if err == nil && waitUntil == rnpb.WaitCondition_COMPLETED &&
+					(inv.InvocationStatus == int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS) ||
+						inv.InvocationStatus == int64(inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)) {
 					return nil
 				}
 			}
@@ -402,8 +579,8 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 			}
 			if stage == repb.ExecutionStage_COMPLETED {
 				if execResponse := operation.ExtractExecuteResponse(op); execResponse != nil {
-					if gstatus.FromProto(execResponse.Status).Err() != nil {
-						return status.InternalErrorf("Failed to create runner invocation (execution ID: %q): %s", executionID, execResponse.GetStatus().GetMessage())
+					if execErr := gstatus.FromProto(execResponse.Status).Err(); execErr != nil {
+						return fmt.Errorf("failed to create runner invocation (execution ID: %q): %w", executionID, execErr)
 					}
 				}
 				return nil
@@ -412,30 +589,6 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 	}
 }
 
-func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariable) context.Context {
-	assignments := make([]string, 0, len(env))
-	for _, e := range env {
-		assignments = append(assignments, e.Name+"="+e.Value)
-	}
-	return platform.WithRemoteHeaderOverride(
-		ctx, platform.EnvOverridesPropertyName, strings.Join(assignments, ","))
-}
-
-// normalizePlatform sorts platform properties alphabetically by name.
-// If the same name is specified more than once, the last one wins.
-func normalizePlatform(props []*repb.Platform_Property) []*repb.Platform_Property {
-	sort.Slice(props, func(i, j int) bool {
-		if props[i].Name == props[j].Name {
-			// If there are multiple entries with the same name, sort them
-			// so the later entry in the input slice is first in the sorted list
-			// because slices.CompactFunc selects the first entry if there
-			// are duplicates
-			return j < i
-		}
-		return props[i].Name < props[j].Name
-	})
-	props = slices.CompactFunc(props, func(i, j *repb.Platform_Property) bool {
-		return i.Name == j.Name
-	})
-	return props
+func instanceName(req *rnpb.RunRequest) string {
+	return filepath.Join(snaputil.SnapshotPartitionPrefix, req.GetInstanceName())
 }

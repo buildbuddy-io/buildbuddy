@@ -9,9 +9,12 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
+        "//proto:resource_go_proto",
         "//server/build_event_protocol/event_parser",
         "//server/build_event_protocol/invocation_format",
+        "//server/remote_cache/digest",
         "//server/util/log",
+        "//server/util/proto",
         "//server/util/timeutil",
     ],
 )

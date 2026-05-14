@@ -11,7 +11,7 @@ go_library(
         "//server/build_event_protocol/accumulator",
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
-        "//server/tables",
+        "//server/interfaces",
         "//server/util/git",
         "//server/util/log",
         "//server/util/timeutil",

@@ -6,12 +6,13 @@ package query
 
 import (
 	"fmt"
-	"log"
 	"regexp/syntax"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/buildbuddy-io/buildbuddy/codesearch/token"
 )
 
 // A Query is a matching machine, like a regular expression,
@@ -275,7 +276,7 @@ func (q *Query) maybeRewrite(op QueryOp) {
 }
 
 // andTrigrams returns q AND the OR of the AND of the trigrams present in each string.
-func (q *Query) andTrigrams(t stringSet) *Query {
+func (q *Query) andTrigrams(t stringSet, opts *token.Options) *Query {
 	if t.minLen() < 3 {
 		// If there is a short string, we can't guarantee
 		// that any trigrams must be present, so use ALL.
@@ -286,10 +287,7 @@ func (q *Query) andTrigrams(t stringSet) *Query {
 	//println("andtrigrams", strings.Join(t, ","))
 	or := noneQuery
 	for _, tt := range t {
-		var trig stringSet
-		for i := 0; i+3 <= len(tt); i++ {
-			trig.add(tt[i : i+3])
-		}
+		trig := stringSet(token.BuildCoveringNgrams(tt, opts.Mods()...))
 		trig.clean(false)
 		//println(tt, "trig", strings.Join(trig, ","))
 		or = or.or(&Query{Op: QAnd, Trigram: trig})
@@ -299,7 +297,6 @@ func (q *Query) andTrigrams(t stringSet) *Query {
 }
 
 func (q *Query) String() string {
-	log.Printf("q: %#v", q)
 	if q == nil {
 		return "?"
 	}
@@ -335,12 +332,7 @@ func (q *Query) String() string {
 		}
 		s += strconv.Quote(t)
 	}
-	for _, sq := range q.Sub {
-		log.Printf("subQ: %#v", sq)
-	}
-
 	if len(q.Sub) > 0 {
-
 		if len(q.Trigram) > 0 {
 			s += sjoin
 		}
@@ -365,7 +357,7 @@ func (q *Query) SQuery(fieldName string) string {
 	}
 
 	if len(q.Sub) == 0 && len(q.Trigram) == 1 {
-		return fmt.Sprintf("(:eq %s %s)", fieldName, q.Trigram[0])
+		return fmt.Sprintf("(:eq %s %s)", fieldName, strconv.Quote(q.Trigram[0]))
 	}
 
 	var qb strings.Builder
@@ -385,7 +377,7 @@ func (q *Query) SQuery(fieldName string) string {
 	}
 
 	if len(q.Sub) == 0 {
-		return qb.String() + " "
+		return qb.String()
 	}
 
 	var sb strings.Builder
@@ -408,8 +400,12 @@ func (q *Query) SQuery(fieldName string) string {
 }
 
 // RegexpQuery returns a Query for the given regexp.
-func RegexpQuery(re *syntax.Regexp) *Query {
-	info := analyze(re)
+func RegexpQuery(re *syntax.Regexp, mods ...token.Option) *Query {
+	opts := token.DefaultOptions()
+	for _, mod := range mods {
+		mod(opts)
+	}
+	info := analyze(re, opts)
 	info.simplify(true)
 	info.addExact()
 	return info.match
@@ -432,6 +428,10 @@ type regexpInfo struct {
 	// match for the regexp, in addition to the information
 	// recorded above.
 	match *Query
+
+	// tokenizerOptions are options that should be passed to the tokenizer.
+	// to control ngram generation.
+	tokenizerOptions *token.Options
 }
 
 const (
@@ -457,63 +457,69 @@ const (
 
 // anyMatch returns the regexpInfo describing a regexp that
 // matches any string.
-func anyMatch() regexpInfo {
+func anyMatch(opts *token.Options) regexpInfo {
 	return regexpInfo{
-		canEmpty: true,
-		prefix:   []string{""},
-		suffix:   []string{""},
-		match:    allQuery,
+		canEmpty:         true,
+		prefix:           []string{""},
+		suffix:           []string{""},
+		match:            allQuery,
+		tokenizerOptions: opts,
 	}
 }
 
 // anyChar returns the regexpInfo describing a regexp that
 // matches any single character.
-func anyChar() regexpInfo {
+func anyChar(opts *token.Options) regexpInfo {
 	return regexpInfo{
-		prefix: []string{""},
-		suffix: []string{""},
-		match:  allQuery,
+		prefix:           []string{""},
+		suffix:           []string{""},
+		match:            allQuery,
+		tokenizerOptions: opts,
 	}
 }
 
 // noMatch returns the regexpInfo describing a regexp that
 // matches no strings at all.
-func noMatch() regexpInfo {
+func noMatch(opts *token.Options) regexpInfo {
 	return regexpInfo{
-		match: noneQuery,
+		match:            noneQuery,
+		tokenizerOptions: opts,
 	}
 }
 
 // emptyString returns the regexpInfo describing a regexp that
 // matches only the empty string.
-func emptyString() regexpInfo {
+func emptyString(opts *token.Options) regexpInfo {
 	return regexpInfo{
-		canEmpty: true,
-		exact:    []string{""},
-		match:    allQuery,
+		canEmpty:         true,
+		exact:            []string{""},
+		match:            allQuery,
+		tokenizerOptions: opts,
 	}
 }
 
 // analyze returns the regexpInfo for the regexp re.
-func analyze(re *syntax.Regexp) (ret regexpInfo) {
+func analyze(re *syntax.Regexp, opts *token.Options) (ret regexpInfo) {
 	//println("analyze", re.String())
 	//defer func() { println("->", ret.String()) }()
 	var info regexpInfo
+	info.tokenizerOptions = opts
+
 	switch re.Op {
 	case syntax.OpNoMatch:
-		return noMatch()
+		return noMatch(opts)
 
 	case syntax.OpEmptyMatch,
 		syntax.OpBeginLine, syntax.OpEndLine,
 		syntax.OpBeginText, syntax.OpEndText,
 		syntax.OpWordBoundary, syntax.OpNoWordBoundary:
-		return emptyString()
+		return emptyString(opts)
 
 	case syntax.OpLiteral:
-		if re.Flags&syntax.FoldCase != 0 {
+		if re.Flags&syntax.FoldCase != 0 && !opts.LowerCase {
 			switch len(re.Rune) {
 			case 0:
-				return emptyString()
+				return emptyString(opts)
 			case 1:
 				// Single-letter case-folded string:
 				// rewrite into char class and analyze.
@@ -526,7 +532,7 @@ func analyze(re *syntax.Regexp) (ret regexpInfo) {
 				for r1 := unicode.SimpleFold(r0); r1 != r0; r1 = unicode.SimpleFold(r1) {
 					re1.Rune = append(re1.Rune, r1, r1)
 				}
-				info = analyze(re1)
+				info = analyze(re1, opts)
 				return info
 			}
 			// Multi-letter case-folded string:
@@ -535,46 +541,50 @@ func analyze(re *syntax.Regexp) (ret regexpInfo) {
 				Op:    syntax.OpLiteral,
 				Flags: syntax.FoldCase,
 			}
-			info = emptyString()
+			info = emptyString(opts)
 			for i := range re.Rune {
 				re1.Rune = re.Rune[i : i+1]
-				info = concat(info, analyze(re1))
+				info = concat(info, analyze(re1, opts))
 			}
 			return info
 		}
-		info.exact = stringSet{string(re.Rune)}
+		s := string(re.Rune)
+		if opts.LowerCase {
+			s = strings.ToLower(s)
+		}
+		info.exact = stringSet{s}
 		info.match = allQuery
 
 	case syntax.OpAnyCharNotNL, syntax.OpAnyChar:
-		return anyChar()
+		return anyChar(opts)
 
 	case syntax.OpCapture:
-		return analyze(re.Sub[0])
+		return analyze(re.Sub[0], opts)
 
 	case syntax.OpConcat:
-		return fold(concat, re.Sub, emptyString())
+		return fold(concat, re.Sub, emptyString(opts), opts)
 
 	case syntax.OpAlternate:
-		return fold(alternate, re.Sub, noMatch())
+		return fold(alternate, re.Sub, noMatch(opts), opts)
 
 	case syntax.OpQuest:
-		return alternate(analyze(re.Sub[0]), emptyString())
+		return alternate(analyze(re.Sub[0], opts), emptyString(opts))
 
 	case syntax.OpStar:
 		// We don't know anything, so assume the worst.
-		return anyMatch()
+		return anyMatch(opts)
 
 	case syntax.OpRepeat:
 		if re.Min == 0 {
 			// Like OpStar
-			return anyMatch()
+			return anyMatch(opts)
 		}
 		fallthrough
 	case syntax.OpPlus:
 		// x+
 		// Since there has to be at least one x, the prefixes and suffixes
 		// stay the same.  If x was exact, it isn't anymore.
-		info = analyze(re.Sub[0])
+		info = analyze(re.Sub[0], opts)
 		if info.exact.have() {
 			info.prefix = info.exact
 			info.suffix = info.exact.copy()
@@ -586,7 +596,7 @@ func analyze(re *syntax.Regexp) (ret regexpInfo) {
 
 		// Special case.
 		if len(re.Rune) == 0 {
-			return noMatch()
+			return noMatch(opts)
 		}
 
 		// Special case.
@@ -601,7 +611,7 @@ func analyze(re *syntax.Regexp) (ret regexpInfo) {
 		}
 		// If the class is too large, it's okay to overestimate.
 		if n > 100 {
-			return anyChar()
+			return anyChar(opts)
 		}
 
 		info.exact = []string{}
@@ -618,16 +628,16 @@ func analyze(re *syntax.Regexp) (ret regexpInfo) {
 }
 
 // fold is the usual higher-order function.
-func fold(f func(x, y regexpInfo) regexpInfo, sub []*syntax.Regexp, zero regexpInfo) regexpInfo {
+func fold(f func(x, y regexpInfo) regexpInfo, sub []*syntax.Regexp, zero regexpInfo, opts *token.Options) regexpInfo {
 	if len(sub) == 0 {
 		return zero
 	}
 	if len(sub) == 1 {
-		return analyze(sub[0])
+		return analyze(sub[0], opts)
 	}
-	info := f(analyze(sub[0]), analyze(sub[1]))
+	info := f(analyze(sub[0], opts), analyze(sub[1], opts))
 	for i := 2; i < len(sub); i++ {
-		info = f(info, analyze(sub[i]))
+		info = f(info, analyze(sub[i], opts))
 	}
 	return info
 }
@@ -638,6 +648,11 @@ func concat(x, y regexpInfo) (out regexpInfo) {
 	//defer func() { println("->", out.String()) }()
 	var xy regexpInfo
 	xy.match = x.match.and(y.match)
+	xy.tokenizerOptions = x.tokenizerOptions
+	if xy.tokenizerOptions == nil && y.tokenizerOptions != nil {
+		xy.tokenizerOptions = y.tokenizerOptions
+	}
+
 	if x.exact.have() && y.exact.have() {
 		xy.exact = x.exact.cross(y.exact, false)
 	} else {
@@ -667,7 +682,7 @@ func concat(x, y regexpInfo) (out regexpInfo) {
 	if !x.exact.have() && !y.exact.have() &&
 		x.suffix.size() <= maxSet && y.prefix.size() <= maxSet &&
 		x.suffix.minLen()+y.prefix.minLen() >= 3 {
-		xy.match = xy.match.andTrigrams(x.suffix.cross(y.prefix, false))
+		xy.match = xy.match.andTrigrams(x.suffix.cross(y.prefix, false), xy.tokenizerOptions)
 	}
 
 	xy.simplify(false)
@@ -703,7 +718,7 @@ func alternate(x, y regexpInfo) (out regexpInfo) {
 // addExact adds to the match query the trigrams for matching info.exact.
 func (info *regexpInfo) addExact() {
 	if info.exact.have() {
-		info.match = info.match.andTrigrams(info.exact)
+		info.match = info.match.andTrigrams(info.exact, info.tokenizerOptions)
 	}
 }
 
@@ -746,7 +761,7 @@ func (info *regexpInfo) simplifySet(s *stringSet) {
 	t.clean(s == &info.suffix)
 
 	// Add the OR of the current prefix/suffix set to the query.
-	info.match = info.match.andTrigrams(t)
+	info.match = info.match.andTrigrams(t, info.tokenizerOptions)
 
 	for n := 3; n == 3 || t.size() > maxSet; n-- {
 		// Replace set by strings of length n-1.

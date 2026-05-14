@@ -8,14 +8,17 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/go-redis/redis/v8"
+	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/test/bufconn"
 
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
+	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -36,93 +39,115 @@ func (cc *executionClientConfig) DisableStreaming() bool {
 }
 
 type RealEnv struct {
-	schedulerService                 interfaces.SchedulerService
-	taskRouter                       interfaces.TaskRouter
-	taskSizer                        interfaces.TaskSizer
-	healthChecker                    interfaces.HealthChecker
-	serverContext                    context.Context
-	workflowService                  interfaces.WorkflowService
-	runnerService                    interfaces.RunnerService
-	gitProviders                     interfaces.GitProviders
-	gitHubApp                        interfaces.GitHubApp
-	staticFilesystem                 fs.FS
-	appFilesystem                    fs.FS
-	blobstore                        interfaces.Blobstore
-	invocationDB                     interfaces.InvocationDB
-	authenticator                    interfaces.Authenticator
-	repoDownloader                   interfaces.RepoDownloader
-	executionService                 interfaces.ExecutionService
-	executionSearchService           interfaces.ExecutionSearchService
-	cache                            interfaces.Cache
-	userDB                           interfaces.UserDB
-	authDB                           interfaces.AuthDB
-	buildEventHandler                interfaces.BuildEventHandler
-	invocationSearchService          interfaces.InvocationSearchService
-	invocationStatService            interfaces.InvocationStatService
-	usageService                     interfaces.UsageService
-	usageTracker                     interfaces.UsageTracker
-	splashPrinter                    interfaces.SplashPrinter
-	actionCacheClient                repb.ActionCacheClient
-	byteStreamClient                 bspb.ByteStreamClient
-	pooledByteStreamClient           interfaces.PooledByteStreamClient
-	schedulerClient                  scpb.SchedulerClient
-	capabilitiesClient               repb.CapabilitiesClient
-	remoteExecutionClient            repb.ExecutionClient
-	contentAddressableStorageClient  repb.ContentAddressableStorageClient
-	metricsCollector                 interfaces.MetricsCollector
-	keyValStore                      interfaces.KeyValStore
-	APIService                       interfaces.ApiService
-	fileCache                        interfaces.FileCache
-	remoteExecutionService           interfaces.RemoteExecutionService
-	executionClients                 map[string]*executionClientConfig
-	cacheRedisClient                 redis.UniversalClient
-	defaultRedisClient               redis.UniversalClient
-	remoteExecutionRedisClient       redis.UniversalClient
-	dbHandle                         interfaces.DBHandle
-	remoteExecutionRedisPubSubClient redis.UniversalClient
-	buildEventProxyClients           []pepb.PublishBuildEventClient
-	webhooks                         []interfaces.Webhook
-	xcodeLocator                     interfaces.XcodeLocator
-	internalHTTPMux                  interfaces.HttpServeMux
-	mux                              interfaces.HttpServeMux
-	httpServerWaitGroup              *sync.WaitGroup
-	listenAddr                       string
-	buildbuddyServer                 interfaces.BuildBuddyServer
-	sslService                       interfaces.SSLService
-	quotaManager                     interfaces.QuotaManager
-	buildEventServer                 pepb.PublishBuildEventServer
-	casServer                        repb.ContentAddressableStorageServer
-	byteStreamServer                 bspb.ByteStreamServer
-	actionCacheServer                repb.ActionCacheServer
-	pushServer                       rapb.PushServer
-	fetchServer                      rapb.FetchServer
-	capabilitiesServer               repb.CapabilitiesServer
-	internalGRPCServer               *grpc.Server
-	internalGRPCSServer              *grpc.Server
-	grpcServer                       *grpc.Server
-	grpcsServer                      *grpc.Server
-	olapDBHandle                     interfaces.OLAPDBHandle
-	kms                              interfaces.KMS
-	secretService                    interfaces.SecretService
-	executionCollector               interfaces.ExecutionCollector
-	suggestionService                interfaces.SuggestionService
-	crypterService                   interfaces.Crypter
-	sociArtifactStoreServer          socipb.SociArtifactStoreServer
-	sociArtifactStoreClient          socipb.SociArtifactStoreClient
-	singleFlightDeduper              interfaces.SingleFlightDeduper
-	promQuerier                      interfaces.PromQuerier
-	auditLog                         interfaces.AuditLogger
-	ipRulesService                   interfaces.IPRulesService
-	serverIdentityService            interfaces.ClientIdentityService
-	imageCacheAuthenticator          interfaces.ImageCacheAuthenticator
-	serverNotificationService        interfaces.ServerNotificationService
-	gcpService                       interfaces.GCPService
-	scimService                      interfaces.SCIMService
-	localBufconnListener             *bufconn.Listener
-	gossipService                    interfaces.GossipService
-	commandRunner                    interfaces.CommandRunner
-	codesearchService                interfaces.CodesearchService
-	snapshotService                  interfaces.SnapshotService
+	schedulerService                     interfaces.SchedulerService
+	taskRouter                           interfaces.TaskRouter
+	taskSizer                            interfaces.TaskSizer
+	healthChecker                        interfaces.HealthChecker
+	serverContext                        context.Context
+	workflowService                      interfaces.WorkflowService
+	workspaceService                     interfaces.WorkspaceService
+	runnerService                        interfaces.RunnerService
+	gitProviders                         interfaces.GitProviders
+	githubAppService                     interfaces.GitHubAppService
+	gitHubStatusService                  interfaces.GitHubStatusService
+	staticFilesystem                     fs.FS
+	appFilesystem                        fs.FS
+	blobstore                            interfaces.Blobstore
+	invocationDB                         interfaces.InvocationDB
+	authenticator                        interfaces.Authenticator
+	repoDownloader                       interfaces.RepoDownloader
+	executionService                     interfaces.ExecutionService
+	executionSearchService               interfaces.ExecutionSearchService
+	cache                                interfaces.Cache
+	userDB                               interfaces.UserDB
+	authDB                               interfaces.AuthDB
+	buildEventHandler                    interfaces.BuildEventHandler
+	invocationSearchService              interfaces.InvocationSearchService
+	invocationStatService                interfaces.InvocationStatService
+	usageService                         interfaces.UsageService
+	usageTracker                         interfaces.UsageTracker
+	splashPrinter                        interfaces.SplashPrinter
+	actionCacheClient                    repb.ActionCacheClient
+	byteStreamClient                     bspb.ByteStreamClient
+	localByteStreamClient                bspb.ByteStreamClient
+	pooledByteStreamClient               interfaces.PooledByteStreamClient
+	schedulerClient                      scpb.SchedulerClient
+	capabilitiesClient                   repb.CapabilitiesClient
+	remoteExecutionClient                repb.ExecutionClient
+	contentAddressableStorageClient      repb.ContentAddressableStorageClient
+	localContentAddressableStorageClient repb.ContentAddressableStorageClient
+	cacheRoutingService                  interfaces.CacheRoutingService
+	metricsCollector                     interfaces.MetricsCollector
+	keyValStore                          interfaces.KeyValStore
+	APIService                           interfaces.ApiService
+	fileCache                            interfaces.FileCache
+	remoteExecutionService               interfaces.RemoteExecutionService
+	executionClients                     map[string]*executionClientConfig
+	cacheRedisClient                     redis.UniversalClient
+	defaultRedisClient                   redis.UniversalClient
+	remoteExecutionRedisClient           redis.UniversalClient
+	dbHandle                             interfaces.DBHandle
+	remoteExecutionRedisPubSubClient     redis.UniversalClient
+	buildEventProxyClients               []pepb.PublishBuildEventClient
+	webhooks                             []interfaces.Webhook
+	xcodeLocator                         interfaces.XcodeLocator
+	internalHTTPMux                      interfaces.HttpServeMux
+	mux                                  interfaces.HttpServeMux
+	httpServerWaitGroup                  *sync.WaitGroup
+	listenAddr                           string
+	buildbuddyServer                     interfaces.BuildBuddyServer
+	buildBuddyServiceClient              bbspb.BuildBuddyServiceClient
+	cacheServer                          cspb.CacheServer
+	cacheClient                          cspb.CacheClient
+	localCacheClient                     cspb.CacheClient
+	sslService                           interfaces.SSLService
+	quotaManager                         interfaces.QuotaManager
+	buildEventServer                     pepb.PublishBuildEventServer
+	localCASServer                       repb.ContentAddressableStorageServer
+	casServer                            repb.ContentAddressableStorageServer
+	localByteStreamServer                interfaces.ByteStreamServer
+	byteStreamServer                     bspb.ByteStreamServer
+	localActionCacheServer               repb.ActionCacheServer
+	actionCacheServer                    repb.ActionCacheServer
+	pushServer                           rapb.PushServer
+	fetchServer                          rapb.FetchServer
+	capabilitiesServer                   repb.CapabilitiesServer
+	internalGRPCServer                   *grpc.Server
+	internalGRPCSServer                  *grpc.Server
+	grpcServer                           *grpc.Server
+	grpcsServer                          *grpc.Server
+	olapDBHandle                         interfaces.OLAPDBHandle
+	kms                                  interfaces.KMS
+	secretService                        interfaces.SecretService
+	executionCollector                   interfaces.ExecutionCollector
+	suggestionService                    interfaces.SuggestionService
+	crypterService                       interfaces.Crypter
+	singleFlightDeduper                  interfaces.SingleFlightDeduper
+	promQuerier                          interfaces.PromQuerier
+	auditLog                             interfaces.AuditLogger
+	ipRulesEnforcer                      interfaces.IPRulesEnforcer
+	ipRulesService                       interfaces.IPRulesService
+	serverIdentityService                interfaces.ClientIdentityService
+	imageCacheAuthenticator              interfaces.ImageCacheAuthenticator
+	serverNotificationService            interfaces.ServerNotificationService
+	gcpService                           interfaces.GCPService
+	mcpService                           interfaces.MCPService
+	scimService                          interfaces.SCIMService
+	gossipService                        interfaces.GossipService
+	commandRunner                        interfaces.CommandRunner
+	codesearchService                    interfaces.CodesearchService
+	snapshotService                      interfaces.SnapshotService
+	authService                          interfaces.AuthService
+	registryService                      interfaces.RegistryService
+	pubsub                               interfaces.PubSub
+	clock                                clockwork.Clock
+	cpuLeaser                            interfaces.CPULeaser
+	ociRegistry                          interfaces.OCIRegistry
+	ociFetcherClient                     ofpb.OCIFetcherClient
+	ociFetcherServer                     ofpb.OCIFetcherServer
+	hitTrackerFactory                    interfaces.HitTrackerFactory
+	hitTrackerServiceServer              hitpb.HitTrackerServiceServer
+	experimentFlagProvider               interfaces.ExperimentFlagProvider
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -132,6 +157,7 @@ func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
 		serverContext:       context.Background(),
 		executionClients:    make(map[string]*executionClientConfig, 0),
 		httpServerWaitGroup: &sync.WaitGroup{},
+		clock:               clockwork.NewRealClock(),
 	}
 }
 
@@ -213,13 +239,6 @@ func (r *RealEnv) SetUsageService(s interfaces.UsageService) {
 	r.usageService = s
 }
 
-func (r *RealEnv) GetLocalBufconnListener() *bufconn.Listener {
-	return r.localBufconnListener
-}
-func (r *RealEnv) SetLocalBufconnListener(l *bufconn.Listener) {
-	r.localBufconnListener = l
-}
-
 func (r *RealEnv) GetUsageTracker() interfaces.UsageTracker {
 	return r.usageTracker
 }
@@ -290,6 +309,14 @@ func (r *RealEnv) GetByteStreamClient() bspb.ByteStreamClient {
 	return r.byteStreamClient
 }
 
+func (r *RealEnv) GetLocalByteStreamClient() bspb.ByteStreamClient {
+	return r.localByteStreamClient
+}
+
+func (r *RealEnv) SetLocalByteStreamClient(b bspb.ByteStreamClient) {
+	r.localByteStreamClient = b
+}
+
 func (r *RealEnv) SetPooledByteStreamClient(p interfaces.PooledByteStreamClient) {
 	r.pooledByteStreamClient = p
 }
@@ -322,6 +349,20 @@ func (r *RealEnv) SetContentAddressableStorageClient(c repb.ContentAddressableSt
 }
 func (r *RealEnv) GetContentAddressableStorageClient() repb.ContentAddressableStorageClient {
 	return r.contentAddressableStorageClient
+}
+
+func (r *RealEnv) GetLocalContentAddressableStorageClient() repb.ContentAddressableStorageClient {
+	return r.localContentAddressableStorageClient
+}
+func (r *RealEnv) SetLocalContentAddressableStorageClient(c repb.ContentAddressableStorageClient) {
+	r.localContentAddressableStorageClient = c
+}
+
+func (r *RealEnv) SetCacheRoutingService(s interfaces.CacheRoutingService) {
+	r.cacheRoutingService = s
+}
+func (r *RealEnv) GetCacheRoutingService() interfaces.CacheRoutingService {
+	return r.cacheRoutingService
 }
 
 func (r *RealEnv) SetAPIService(s interfaces.ApiService) {
@@ -396,6 +437,12 @@ func (r *RealEnv) GetWorkflowService() interfaces.WorkflowService {
 func (r *RealEnv) SetWorkflowService(wf interfaces.WorkflowService) {
 	r.workflowService = wf
 }
+func (r *RealEnv) GetWorkspaceService() interfaces.WorkspaceService {
+	return r.workspaceService
+}
+func (r *RealEnv) SetWorkspaceService(ws interfaces.WorkspaceService) {
+	r.workspaceService = ws
+}
 func (r *RealEnv) GetSnapshotService() interfaces.SnapshotService {
 	return r.snapshotService
 }
@@ -414,11 +461,17 @@ func (r *RealEnv) GetGitProviders() interfaces.GitProviders {
 func (r *RealEnv) SetGitProviders(gp interfaces.GitProviders) {
 	r.gitProviders = gp
 }
-func (r *RealEnv) SetGitHubApp(val interfaces.GitHubApp) {
-	r.gitHubApp = val
+func (r *RealEnv) GetGitHubAppService() interfaces.GitHubAppService {
+	return r.githubAppService
 }
-func (r *RealEnv) GetGitHubApp() interfaces.GitHubApp {
-	return r.gitHubApp
+func (r *RealEnv) SetGitHubAppService(v interfaces.GitHubAppService) {
+	r.githubAppService = v
+}
+func (r *RealEnv) SetGitHubStatusService(val interfaces.GitHubStatusService) {
+	r.gitHubStatusService = val
+}
+func (r *RealEnv) GetGitHubStatusService() interfaces.GitHubStatusService {
+	return r.gitHubStatusService
 }
 func (r *RealEnv) GetXcodeLocator() interfaces.XcodeLocator {
 	return r.xcodeLocator
@@ -487,6 +540,34 @@ func (r *RealEnv) SetBuildBuddyServer(buildbuddyServer interfaces.BuildBuddyServ
 	r.buildbuddyServer = buildbuddyServer
 }
 
+func (r *RealEnv) GetBuildBuddyServiceClient() bbspb.BuildBuddyServiceClient {
+	return r.buildBuddyServiceClient
+}
+func (r *RealEnv) SetBuildBuddyServiceClient(bb bbspb.BuildBuddyServiceClient) {
+	r.buildBuddyServiceClient = bb
+}
+
+func (r *RealEnv) GetCacheServer() cspb.CacheServer {
+	return r.cacheServer
+}
+func (r *RealEnv) SetCacheServer(cs cspb.CacheServer) {
+	r.cacheServer = cs
+}
+
+func (r *RealEnv) GetCacheClient() cspb.CacheClient {
+	return r.cacheClient
+}
+func (r *RealEnv) SetCacheClient(c cspb.CacheClient) {
+	r.cacheClient = c
+}
+
+func (r *RealEnv) GetLocalCacheClient() cspb.CacheClient {
+	return r.localCacheClient
+}
+func (r *RealEnv) SetLocalCacheClient(localCacheClient cspb.CacheClient) {
+	r.localCacheClient = localCacheClient
+}
+
 func (r *RealEnv) GetSSLService() interfaces.SSLService {
 	return r.sslService
 }
@@ -511,6 +592,13 @@ func (r *RealEnv) SetBuildEventServer(buildEventServer pepb.PublishBuildEventSer
 	r.buildEventServer = buildEventServer
 }
 
+func (r *RealEnv) GetLocalCASServer() repb.ContentAddressableStorageServer {
+	return r.localCASServer
+}
+func (r *RealEnv) SetLocalCASServer(localCASServer repb.ContentAddressableStorageServer) {
+	r.localCASServer = localCASServer
+}
+
 func (r *RealEnv) GetCASServer() repb.ContentAddressableStorageServer {
 	return r.casServer
 }
@@ -519,12 +607,25 @@ func (r *RealEnv) SetCASServer(casServer repb.ContentAddressableStorageServer) {
 	r.casServer = casServer
 }
 
+func (r *RealEnv) GetLocalByteStreamServer() interfaces.ByteStreamServer {
+	return r.localByteStreamServer
+}
+func (r *RealEnv) SetLocalByteStreamServer(localByteStreamServer interfaces.ByteStreamServer) {
+	r.localByteStreamServer = localByteStreamServer
+}
+
 func (r *RealEnv) GetByteStreamServer() bspb.ByteStreamServer {
 	return r.byteStreamServer
 }
-
 func (r *RealEnv) SetByteStreamServer(byteStreamServer bspb.ByteStreamServer) {
 	r.byteStreamServer = byteStreamServer
+}
+
+func (r *RealEnv) GetLocalActionCacheServer() repb.ActionCacheServer {
+	return r.localActionCacheServer
+}
+func (r *RealEnv) SetLocalActionCacheServer(localServer repb.ActionCacheServer) {
+	r.localActionCacheServer = localServer
 }
 
 func (r *RealEnv) GetActionCacheServer() repb.ActionCacheServer {
@@ -636,13 +737,6 @@ func (r *RealEnv) SetCrypter(c interfaces.Crypter) {
 	r.crypterService = c
 }
 
-func (r *RealEnv) GetSociArtifactStoreServer() socipb.SociArtifactStoreServer {
-	return r.sociArtifactStoreServer
-}
-func (r *RealEnv) SetSociArtifactStoreServer(s socipb.SociArtifactStoreServer) {
-	r.sociArtifactStoreServer = s
-}
-
 func (r *RealEnv) GetSingleFlightDeduper() interfaces.SingleFlightDeduper {
 	return r.singleFlightDeduper
 }
@@ -665,12 +759,20 @@ func (r *RealEnv) SetAuditLogger(l interfaces.AuditLogger) {
 	r.auditLog = l
 }
 
+func (r *RealEnv) GetIPRulesEnforcer() interfaces.IPRulesEnforcer {
+	return r.ipRulesEnforcer
+}
+
+func (r *RealEnv) SetIPRulesEnforcer(e interfaces.IPRulesEnforcer) {
+	r.ipRulesEnforcer = e
+}
+
 func (r *RealEnv) GetIPRulesService() interfaces.IPRulesService {
 	return r.ipRulesService
 }
 
-func (r *RealEnv) SetIPRulesService(e interfaces.IPRulesService) {
-	r.ipRulesService = e
+func (r *RealEnv) SetIPRulesService(s interfaces.IPRulesService) {
+	r.ipRulesService = s
 }
 
 func (r *RealEnv) GetClientIdentityService() interfaces.ClientIdentityService {
@@ -705,20 +807,20 @@ func (r *RealEnv) SetGCPService(service interfaces.GCPService) {
 	r.gcpService = service
 }
 
+func (r *RealEnv) GetMCPService() interfaces.MCPService {
+	return r.mcpService
+}
+
+func (r *RealEnv) SetMCPService(val interfaces.MCPService) {
+	r.mcpService = val
+}
+
 func (r *RealEnv) GetSCIMService() interfaces.SCIMService {
 	return r.scimService
 }
 
 func (r *RealEnv) SetSCIMService(val interfaces.SCIMService) {
 	r.scimService = val
-}
-
-func (r *RealEnv) GetGossipService() interfaces.GossipService {
-	return r.gossipService
-}
-
-func (r *RealEnv) SetGossipService(g interfaces.GossipService) {
-	r.gossipService = g
 }
 
 func (r *RealEnv) GetCommandRunner() interfaces.CommandRunner {
@@ -734,4 +836,81 @@ func (r *RealEnv) GetCodesearchService() interfaces.CodesearchService {
 }
 func (r *RealEnv) SetCodesearchService(css interfaces.CodesearchService) {
 	r.codesearchService = css
+}
+
+func (r *RealEnv) GetAuthService() interfaces.AuthService {
+	return r.authService
+}
+func (r *RealEnv) SetAuthService(auths interfaces.AuthService) {
+	r.authService = auths
+}
+
+func (r *RealEnv) GetRegistryService() interfaces.RegistryService {
+	return r.registryService
+}
+func (r *RealEnv) SetRegistryService(reg interfaces.RegistryService) {
+	r.registryService = reg
+}
+
+func (r *RealEnv) GetPubSub() interfaces.PubSub {
+	return r.pubsub
+}
+func (r *RealEnv) SetPubSub(value interfaces.PubSub) {
+	r.pubsub = value
+}
+
+func (r *RealEnv) GetClock() clockwork.Clock {
+	return r.clock
+}
+func (r *RealEnv) SetClock(clock clockwork.Clock) {
+	r.clock = clock
+}
+
+func (r *RealEnv) GetCPULeaser() interfaces.CPULeaser {
+	return r.cpuLeaser
+}
+func (r *RealEnv) SetCPULeaser(cpuLeaser interfaces.CPULeaser) {
+	r.cpuLeaser = cpuLeaser
+}
+
+func (r *RealEnv) GetOCIRegistry() interfaces.OCIRegistry {
+	return r.ociRegistry
+}
+func (r *RealEnv) SetOCIRegistry(ociRegistry interfaces.OCIRegistry) {
+	r.ociRegistry = ociRegistry
+}
+
+func (r *RealEnv) GetOCIFetcherClient() ofpb.OCIFetcherClient {
+	return r.ociFetcherClient
+}
+func (r *RealEnv) SetOCIFetcherClient(c ofpb.OCIFetcherClient) {
+	r.ociFetcherClient = c
+}
+
+func (r *RealEnv) GetOCIFetcherServer() ofpb.OCIFetcherServer {
+	return r.ociFetcherServer
+}
+func (r *RealEnv) SetOCIFetcherServer(s ofpb.OCIFetcherServer) {
+	r.ociFetcherServer = s
+}
+
+func (r *RealEnv) GetHitTrackerFactory() interfaces.HitTrackerFactory {
+	return r.hitTrackerFactory
+}
+func (r *RealEnv) SetHitTrackerFactory(hitTrackerFactory interfaces.HitTrackerFactory) {
+	r.hitTrackerFactory = hitTrackerFactory
+}
+
+func (r *RealEnv) GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer {
+	return r.hitTrackerServiceServer
+}
+func (r *RealEnv) SetHitTrackerServiceServer(hitTrackerServiceServer hitpb.HitTrackerServiceServer) {
+	r.hitTrackerServiceServer = hitTrackerServiceServer
+}
+
+func (r *RealEnv) GetExperimentFlagProvider() interfaces.ExperimentFlagProvider {
+	return r.experimentFlagProvider
+}
+func (r *RealEnv) SetExperimentFlagProvider(experimentFlagProvider interfaces.ExperimentFlagProvider) {
+	r.experimentFlagProvider = experimentFlagProvider
 }

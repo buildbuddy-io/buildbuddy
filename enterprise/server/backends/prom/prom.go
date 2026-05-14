@@ -1,9 +1,14 @@
 package prom
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -78,25 +84,37 @@ sum by (cache_type) (increase(exported_buildbuddy_remote_cache_num_hits[1w]))`,
 		},
 		{
 			sourceMetricName: "buildbuddy_remote_cache_download_size_bytes_exported",
-			LabelNames:       []string{podNameLabel},
+			LabelNames:       []string{podNameLabel, metrics.CacheRequestOrigin},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_cache_download_size_bytes"),
 				Help: proto.String("Number of bytes downloaded from the remote cache."),
 				Type: dto.MetricType_COUNTER.Enum(),
 			},
 			Examples: `# Number of bytes downloaded as measured over the last week
-sum(increase(exported_buildbuddy_remote_cache_download_size_bytes[1w]))`,
+sum(increase(exported_buildbuddy_remote_cache_download_size_bytes[1w]))
+
+# Bytes downloaded internal to BuildBuddy between services
+sum(increase(exported_buildbuddy_remote_cache_download_size_bytes{origin="internal"}[1w]))
+
+# Bytes downloaded directly by your builds
+sum(increase(exported_buildbuddy_remote_cache_download_size_bytes{origin="external"}[1w]))`,
 		},
 		{
 			sourceMetricName: "buildbuddy_remote_cache_upload_size_bytes_exported",
-			LabelNames:       []string{podNameLabel},
+			LabelNames:       []string{podNameLabel, metrics.CacheRequestOrigin},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_cache_upload_size_bytes"),
 				Help: proto.String("Number of bytes uploaded to the remote cache."),
 				Type: dto.MetricType_COUNTER.Enum(),
 			},
 			Examples: `# Number of bytes uploaded as measured over the last week
-sum(increase(exported_buildbuddy_remote_cache_upload_size_bytes[1w]))`,
+sum(increase(exported_buildbuddy_remote_cache_upload_size_bytes[1w]))
+
+# Bytes uploaded internal to BuildBuddy between services
+sum(increase(exported_buildbuddy_remote_cache_upload_size_bytes{origin="internal"}[1w]))
+
+# Bytes uploaded directly by your builds
+sum(increase(exported_buildbuddy_remote_cache_upload_size_bytes{origin="external"}[1w]))`,
 		},
 		{
 			sourceMetricName: "buildbuddy_remote_execution_duration_usec_exported",
@@ -129,8 +147,10 @@ const (
 )
 
 type promQuerier struct {
-	api promapi.API
-	rdb redis.UniversalClient
+	api    promapi.API
+	client *http.Client
+	url    *url.URL
+	rdb    redis.UniversalClient
 }
 
 type MetricConfig struct {
@@ -175,6 +195,10 @@ func Register(env *real_environment.RealEnv) error {
 	if len(*address) == 0 {
 		return nil
 	}
+	u, err := url.Parse(*address)
+	if err != nil {
+		return status.InternalErrorf("failed to parse prometheus.address as URL (%q)", *address)
+	}
 	c, err := api.NewClient(api.Config{
 		Address: *address,
 	})
@@ -183,6 +207,7 @@ func Register(env *real_environment.RealEnv) error {
 	}
 	q := &promQuerier{
 		api: promapi.NewAPI(c),
+		url: u,
 		rdb: env.GetDefaultRedisClient(),
 	}
 	env.SetPromQuerier(q)
@@ -224,7 +249,7 @@ func (c *bbMetricsCollector) Collect(out chan<- prometheus.Metric) {
 
 	metricFamilies, err := promQuerier.FetchMetrics(c.env.GetServerContext(), c.groupID)
 	if err != nil {
-		log.Warningf("error fetch metrics: %v", err)
+		alert.UnexpectedEvent("export_prometheus_metrics_failure", "err: %s", err)
 		return
 	}
 
@@ -238,7 +263,7 @@ func (c *bbMetricsCollector) Collect(out chan<- prometheus.Metric) {
 func (q *promQuerier) FetchMetrics(ctx context.Context, groupID string) ([]*dto.MetricFamily, error) {
 	cachedMetrics, err := q.getCachedMetrics(ctx, groupID)
 	if err != nil {
-		log.Warningf("failed to get cached metrics: %s", err)
+		log.CtxWarningf(ctx, "failed to get cached metrics (groupID=%s): %s", groupID, err)
 		// Failed to get metrics from Redis. Let's try query prometheus.
 	}
 	if cachedMetrics != nil {
@@ -247,18 +272,49 @@ func (q *promQuerier) FetchMetrics(ctx context.Context, groupID string) ([]*dto.
 
 	vectorMap, err := q.fetchMetrics(ctx, groupID)
 	if err != nil {
-		return nil, status.InternalErrorf("failed to fetch metrics from prometheus: %s", err)
+		return nil, status.InternalErrorf("failed to fetch metrics (groupID: %s) from prometheus: %s", groupID, err)
 	}
 	metricFamilies, err := queryResultsToMetrics(vectorMap)
 	if err != nil {
-		return nil, status.InternalErrorf("failed to prase metrics fetched from prometheus: %s", err)
+		return nil, status.InternalErrorf("failed to parse metrics fetched from prometheus (groupID: %s): %s", groupID, err)
 	}
 
 	err = q.setMetrics(ctx, groupID, metricFamilies)
 	if err != nil {
-		log.Warningf("failed to set metrics to redis: %s", err)
+		log.CtxWarningf(ctx, "failed to set metrics to redis (groupID: %s): %s", groupID, err)
 	}
 	return metricFamilies.GetMetricFamilies(), nil
+}
+
+func (q *promQuerier) FetchFederatedMetrics(ctx context.Context, w io.Writer, match string) error {
+	u := *q.url // copy
+	u.Path = path.Join(u.Path, "/federate")
+	u.RawQuery = url.Values{
+		"match[]": []string{match},
+	}.Encode()
+	req, err := http.NewRequest("GET", u.String(), nil)
+	req.Header.Add("Content-Type", "text/plain")
+	if err != nil {
+		return fmt.Errorf("create HTTP request: %w", err)
+	}
+	rsp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("fetch federated metrics: %w", err)
+	}
+	defer func() {
+		io.Copy(io.Discard, rsp.Body)
+		rsp.Body.Close()
+	}()
+	if rsp.StatusCode >= 400 {
+		errMsg := &bytes.Buffer{}
+		io.Copy(errMsg, io.LimitReader(rsp.Body, 16*1024))
+		log.CtxErrorf(ctx, "Failed to fetch federated metrics: %s: %q", rsp.Status, errMsg)
+		return fmt.Errorf("fetch federation request: upstream error: %s", rsp.Status)
+	}
+	if _, err := io.Copy(w, rsp.Body); err != nil {
+		return fmt.Errorf("copy metrics: %w", err)
+	}
+	return nil
 }
 
 func (q *promQuerier) fetchMetrics(ctx context.Context, groupID string) (map[string]model.Vector, error) {
@@ -298,6 +354,7 @@ func (q *promQuerier) fetchMetrics(ctx context.Context, groupID string) (map[str
 	}
 
 	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(2)
 
 	for _, p := range queryParams {
 		p := p
@@ -326,9 +383,12 @@ func (q *promQuerier) query(ctx context.Context, metricName string, sumByFields 
 	} else {
 		query = fmt.Sprintf("sum(%s{group_id='%s'})", metricName, groupID)
 	}
-	result, _, err := q.api.Query(ctx, query, now)
+	result, warnings, err := q.api.Query(ctx, query, now)
 	if err != nil {
 		return nil, err
+	}
+	if len(warnings) > 0 {
+		log.CtxWarningf(ctx, "prometheus query returned warnings (groupID=%s, query=%q): %v", groupID, query, warnings)
 	}
 	resultVector, ok := result.(model.Vector)
 	if !ok {

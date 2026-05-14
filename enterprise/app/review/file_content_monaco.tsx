@@ -1,12 +1,11 @@
-import React from "react";
-import { github } from "../../../proto/github_ts_proto";
-import ReviewThreadComponent from "./review_thread";
-import { FileModel, ReviewModel, ThreadModel } from "./review_model";
-import { ReviewController } from "./review_controller";
 import * as monaco from "monaco-editor";
+import React from "react";
 import { createPortal } from "react-dom";
-import rpc_service from "../../../app/service/rpc_service";
-import error_service from "../../../app/errors/error_service";
+import { github } from "../../../proto/github_ts_proto";
+import { getModelForText, getMonacoModelForGithubFile } from "./file_content_service";
+import { ReviewController } from "./review_controller";
+import { FileModel, ReviewModel, ThreadModel } from "./review_model";
+import ReviewThreadComponent from "./review_thread";
 
 interface FileContentMonacoComponentProps {
   fileModel: FileModel;
@@ -16,22 +15,20 @@ interface FileContentMonacoComponentProps {
 }
 
 interface FileContentMonacoComponentState {
-  originalContent: string;
+  originalModel: monaco.editor.ITextModel;
   originalLoaded: boolean;
-  modifiedContent: string;
+  modifiedModel: monaco.editor.ITextModel;
   modifiedLoaded: boolean;
 }
-
-const textDecoder = new TextDecoder();
 
 export default class FileContentMonacoComponent extends React.Component<
   FileContentMonacoComponentProps,
   FileContentMonacoComponentState
 > {
   state: FileContentMonacoComponentState = {
-    originalContent: "",
+    originalModel: getModelForText("Loading"),
     originalLoaded: false,
-    modifiedContent: "",
+    modifiedModel: getModelForText("Loading"),
     modifiedLoaded: false,
   };
 
@@ -40,50 +37,44 @@ export default class FileContentMonacoComponent extends React.Component<
     // TODO(jdhollen): Check for existing monaco model first.
     const changeType = this.props.fileModel.getChangeType();
     if (changeType !== github.FileChangeType.FILE_CHANGE_TYPE_REMOVED) {
-      rpc_service.service
-        .getGithubContent(
-          new github.GetGithubContentRequest({
-            owner: this.props.reviewModel.getOwner(),
-            repo: this.props.reviewModel.getRepo(),
-            path: this.props.fileModel.getFullPath(),
-            ref: this.props.fileModel.getModifiedCommitSha(),
-          })
-        )
-        .then((r) => {
-          const modifiedContent = textDecoder.decode(r.content);
-          this.setState({ modifiedContent, modifiedLoaded: true });
+      getMonacoModelForGithubFile({
+        owner: this.props.reviewModel.getOwner(),
+        repo: this.props.reviewModel.getRepo(),
+        path: this.props.fileModel.getFullPath(),
+        ref: this.props.fileModel.getModifiedCommitSha(),
+      })
+        .then((modifiedModel) => {
+          this.setState({ modifiedModel, modifiedLoaded: true });
         })
         .catch((e) => {
-          error_service.handleError("Failed to fetch source: " + e);
+          console.error(e);
+          this.setState({ modifiedModel: getModelForText("Failed to load file content."), modifiedLoaded: true });
         });
     } else {
       // TODO(jdhollen): better support for added / removed files.
-      this.setState({ modifiedContent: "", modifiedLoaded: true });
+      this.setState({ modifiedModel: getModelForText("(File deleted)"), modifiedLoaded: true });
     }
 
     if (
       changeType !== github.FileChangeType.FILE_CHANGE_TYPE_ADDED &&
       changeType !== github.FileChangeType.FILE_CHANGE_TYPE_UNKNOWN
     ) {
-      rpc_service.service
-        .getGithubContent(
-          new github.GetGithubContentRequest({
-            owner: this.props.reviewModel.getOwner(),
-            repo: this.props.reviewModel.getRepo(),
-            path: this.props.fileModel.getOriginalFullPath(),
-            ref: this.props.fileModel.getOriginalCommitSha(),
-          })
-        )
-        .then((r) => {
-          const originalContent = textDecoder.decode(r.content);
-          this.setState({ originalContent, originalLoaded: true });
+      getMonacoModelForGithubFile({
+        owner: this.props.reviewModel.getOwner(),
+        repo: this.props.reviewModel.getRepo(),
+        path: this.props.fileModel.getOriginalFullPath(),
+        ref: this.props.fileModel.getOriginalCommitSha(),
+      })
+        .then((originalModel) => {
+          this.setState({ originalModel, originalLoaded: true });
         })
         .catch((e) => {
-          error_service.handleError("Failed to fetch source: " + e);
+          console.error(e);
+          this.setState({ originalModel: getModelForText("Failed to load file content."), originalLoaded: true });
         });
     } else {
       // TODO(jdhollen): better support for added / removed files.
-      this.setState({ originalContent: "", originalLoaded: true });
+      this.setState({ originalModel: getModelForText("(New file)"), originalLoaded: true });
     }
   }
 
@@ -119,9 +110,9 @@ export default class FileContentMonacoComponent extends React.Component<
     return (
       <MonacoDiffViewerComponent
         handler={this.props.handler}
-        originalContent={this.state.originalContent}
+        originalModel={this.state.originalModel}
         originalThreads={originalThreads}
-        modifiedContent={this.state.modifiedContent}
+        modifiedModel={this.state.modifiedModel}
         modifiedThreads={modifiedThreads}
         disabled={this.props.disabled}
         path={this.props.fileModel.getFullPath()}
@@ -136,9 +127,9 @@ interface MonacoDiffViewerComponentProps {
   reviewModel: ReviewModel;
   disabled: boolean;
   handler: ReviewController;
-  originalContent: string;
+  originalModel: monaco.editor.ITextModel;
   originalThreads: ThreadModel[];
-  modifiedContent: string;
+  modifiedModel: monaco.editor.ITextModel;
   modifiedThreads: ThreadModel[];
   path: string;
   baseSha: string;
@@ -283,7 +274,7 @@ class AutoZone {
     this.editor = editor;
   }
 
-  updateHeight() {
+  updateSize() {
     if (!this.editor) {
       return;
     }
@@ -325,6 +316,8 @@ class AutoZone {
 
     let zoneId: string;
     const updateFunction = (ca: monaco.editor.IViewZoneChangeAccessor) => {
+      const width = editor.getContainerDomNode().getBoundingClientRect().width;
+      overlayElement.style.width = width + "px";
       if (zoneForMonaco.heightInPx !== overlayElement.getBoundingClientRect().height) {
         zoneForMonaco.heightInPx = overlayElement.getBoundingClientRect().height;
         ca.layoutZone(zoneId);
@@ -357,16 +350,74 @@ class MonacoDiffViewerComponent extends React.Component<
 > {
   monacoElement: React.RefObject<HTMLDivElement> = React.createRef();
 
+  // If true, we've set a timer and will resize the editor when the timer fires.
+  resizeUpdateScheduled: boolean = false;
+  // If true, we're actively updating the editor size (prevents loops).
+  sizeUpdateInProgress: boolean = false;
+
+  currentContentHeight: number = -1;
+  currentContentWidth: number = -1;
+  resizeListener?: any;
+
   state: MonacoDiffViewerComponentState = {
     originalEditorThreadZones: [],
     modifiedEditorThreadZones: [],
   };
 
+  scheduleSizeUpdate() {
+    if (this.resizeUpdateScheduled) {
+      return;
+    }
+    this.resizeUpdateScheduled = true;
+    window.setTimeout(() => {
+      this.resizeUpdateScheduled = false;
+      this.performSizeUpdate();
+    }, 200);
+  }
+
+  performSizeUpdate() {
+    const editor = this.state.editor;
+    const container = this.monacoElement.current;
+    if (this.sizeUpdateInProgress || !editor || !container) {
+      return;
+    }
+    this.sizeUpdateInProgress = true;
+    try {
+      const contentHeight = Math.max(
+        editor.getOriginalEditor().getContentHeight(),
+        editor.getModifiedEditor().getContentHeight()
+      );
+      const contentWidth = container.getBoundingClientRect().width;
+
+      if (contentWidth === this.currentContentWidth && contentHeight === this.currentContentHeight) {
+        return;
+      }
+      const widthChanged = this.currentContentWidth !== contentWidth;
+      this.currentContentWidth = contentWidth;
+      this.currentContentHeight = contentHeight;
+
+      container.style.height = `${contentHeight}px`;
+      if (widthChanged) {
+        this.state.originalEditorThreadZones.forEach((z) => z.updateSize());
+        this.state.modifiedEditorThreadZones.forEach((z) => z.updateSize());
+      }
+
+      editor.getModifiedEditor().layout({ width: contentWidth / 2, height: contentHeight });
+      editor.getOriginalEditor().layout({ width: contentWidth / 2, height: contentHeight });
+      // Performing an editor layout on an IDiffEditor causes scroll height to
+      // reposition in some cases, so while it might be tempting to update this,
+      // please don't.
+      editor.layout();
+    } finally {
+      this.sizeUpdateInProgress = false;
+    }
+  }
+
   componentDidMount() {
     // Element is always part of the render() result.
     const container = this.monacoElement.current!;
     const editor = monaco.editor.createDiffEditor(container, {
-      automaticLayout: true,
+      enableSplitViewResizing: false,
       scrollBeyondLastLine: false,
       scrollbar: {
         alwaysConsumeMouseWheel: false,
@@ -394,44 +445,13 @@ class MonacoDiffViewerComponent extends React.Component<
     });
     this.setState({ editor });
 
-    // TODO(jdhollen): switch this to be by sha, probably.
-    const originalUri = monaco.Uri.file(`original-${this.props.path}`);
-    const modifiedUri = monaco.Uri.file(`modified-${this.props.path}`);
-    const originalModel =
-      monaco.editor.getModel(originalUri) ??
-      monaco.editor.createModel(this.props.originalContent, undefined, originalUri);
-    const modifiedModel =
-      monaco.editor.getModel(modifiedUri) ??
-      monaco.editor.createModel(this.props.modifiedContent, undefined, modifiedUri);
-    editor.setModel({ original: originalModel, modified: modifiedModel });
+    editor.setModel({ original: this.props.originalModel, modified: this.props.modifiedModel });
 
-    let ignoreEvent = false;
-    const maxHeight = () => {
-      return Math.max(editor.getOriginalEditor().getContentHeight(), editor.getModifiedEditor().getContentHeight());
-    };
-    const trueWidth = () => {
-      return editor.getContainerDomNode().getBoundingClientRect().width;
-    };
-    const updateHeight = () => {
-      if (ignoreEvent) {
-        return;
-      }
-      const contentHeight = maxHeight();
-      container.style.height = `${contentHeight}px`;
-      try {
-        ignoreEvent = true;
-        editor.getModifiedEditor().layout({ width: trueWidth() / 2, height: contentHeight });
-        editor.getOriginalEditor().layout({ width: trueWidth() / 2, height: contentHeight });
-      } finally {
-        ignoreEvent = false;
-      }
-    };
-    editor.getOriginalEditor().onDidContentSizeChange(updateHeight);
-    editor.getModifiedEditor().onDidContentSizeChange(updateHeight);
     const originalListener = new EditorMouseListener(
       this.props.path,
       github.CommentSide.LEFT_SIDE,
-      this.props.baseSha,
+      // TODO(jdhollen): Fix weirdness when review spans multiple revisions.
+      this.props.commitSha,
       editor.getOriginalEditor(),
       this.props.handler
     );
@@ -443,7 +463,18 @@ class MonacoDiffViewerComponent extends React.Component<
       this.props.handler
     );
 
-    updateHeight();
+    // Boy, does this feel brittle.  Monaco will call this callback once it has
+    // finished rendering all diffs.  At that point, the line breaks, hidden
+    // lines, etc., have all been determined and subsequent height changes are
+    // "legit" in the sense that we should actually update the DOM for them.
+    editor.onDidUpdateDiff(() => {
+      editor.getOriginalEditor().onDidContentSizeChange(() => this.performSizeUpdate());
+      editor.getModifiedEditor().onDidContentSizeChange(() => this.performSizeUpdate());
+      this.performSizeUpdate();
+      window.addEventListener("resize", () => {
+        this.scheduleSizeUpdate();
+      });
+    });
   }
 
   // I don't like to use this, but this is the nicest way to add junk to Monaco
@@ -476,7 +507,7 @@ class MonacoDiffViewerComponent extends React.Component<
     originalUpdates.removed.forEach((z) => z.removeFromEditor());
     editor.getModifiedEditor().changeViewZones(function (changeAccessor) {
       modifiedUpdates.added.forEach((t) => {
-        newOriginalZones.push(AutoZone.create(t.getId(), t.getLine(), editor.getModifiedEditor(), changeAccessor));
+        newModifiedZones.push(AutoZone.create(t.getId(), t.getLine(), editor.getModifiedEditor(), changeAccessor));
       });
     });
     modifiedUpdates.removed.forEach((z) => z.removeFromEditor());
@@ -487,8 +518,16 @@ class MonacoDiffViewerComponent extends React.Component<
   }
 
   componentDidUpdate() {
-    this.state.originalEditorThreadZones.forEach((z) => z.updateHeight());
-    this.state.modifiedEditorThreadZones.forEach((z) => z.updateHeight());
+    this.state.originalEditorThreadZones.forEach((z) => z.updateSize());
+    this.state.modifiedEditorThreadZones.forEach((z) => z.updateSize());
+  }
+
+  componentWillUnmount(): void {
+    if (this.resizeListener) {
+      window.removeEventListener("resize", this.resizeListener);
+      this.resizeListener = undefined;
+    }
+    this.state.editor?.dispose();
   }
 
   render() {

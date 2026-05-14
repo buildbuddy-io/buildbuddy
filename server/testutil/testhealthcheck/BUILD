@@ -6,8 +6,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testhealthcheck",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:health_go_proto",
         "//server/interfaces",
         "//server/util/status",
+        "@org_golang_google_grpc//health/grpc_health_v1",
     ],
 )

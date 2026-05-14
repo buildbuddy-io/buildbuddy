@@ -13,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/stretchr/testify/require"
@@ -41,10 +42,12 @@ func Run(t *testing.T, args ...string) *app.App {
 
 func RunWithConfig(t *testing.T, appConfig *app.App, configPath string, args ...string) *app.App {
 	redisTarget := testredis.Start(t).Target
+	pebbleCacheDir := testfs.MakeTempDir(t)
 	commandArgs := []string{
 		"--app_directory=/enterprise/app",
 		"--app.default_redis_target=" + redisTarget,
 		"--telemetry_port=-1",
+		"--cache.pebble.root_directory=" + pebbleCacheDir,
 	}
 	commandArgs = append(commandArgs, args...)
 	return app.RunWithApp(
@@ -71,18 +74,37 @@ func (d *remote) HTTPURL() string {
 	return *remoteAppEndpoint
 }
 
+func (d *remote) GRPCAddress() string {
+	panic("TODO: configure gRPC targets for remote BB endpoints")
+}
+
 func (d *remote) SSOSlug() string {
 	return *remoteSSOSlug
 }
 
 type WebTarget interface {
 	HTTPURL() string
+	GRPCAddress() string
 }
 
-func SetupWebTarget(t *testing.T) WebTarget {
+// MarkTestLocalOnly skips the webdriver test if it is not being run against a
+// local, test-scoped server (i.e. the test is not suitable for running against
+// a live BuildBuddy server).
+func MarkTestLocalOnly(t *testing.T) {
+	if *webdriverTarget != "local" {
+		t.Skipf("test is not compatible with buildbuddy target %q", *webdriverTarget)
+	}
+}
+
+func SetupWebTarget(t *testing.T, localArgs ...string) WebTarget {
 	switch *webdriverTarget {
 	case "local":
-		return Run(t, "--cache.detailed_stats_enabled=true", "--app.user_owned_keys_enabled=true")
+		args := append([]string{
+			"--cache.detailed_stats_enabled=true",
+			"--app.user_owned_keys_enabled=true",
+			"--app.strict_csp_enabled=true",
+		}, localArgs...)
+		return Run(t, args...)
 	case "remote":
 		return &remote{}
 	default:

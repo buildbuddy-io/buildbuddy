@@ -1,11 +1,8 @@
 ---
 slug: buildbuddy-v1-1-0-release-notes
 title: BuildBuddy v1.1.0 Release Notes
-author: Siggi Simonarson
-author_title: "Co-founder @ BuildBuddy"
+authors: siggi
 date: 2020-07-15:12:00:00
-author_url: https://www.linkedin.com/in/siggisim/
-author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
 tags: [product, release-notes]
 ---
 
@@ -42,7 +39,7 @@ We'll be adding more documentation on getting started with BuildBuddy RBE in th
 
 ![](../static/img/blog/favicon.png)
 
-- **Improved documentation and new website** - we've completely revamped the BuildBuddy documentation, and it's now sync'd between GitHub and [buildbuddy.io/docs/](https://buildbuddy.io/docs/), so your docs will be fresh regardless of where you're reading them. We'll be adding new sections on configuring RBE in the coming weeks. We've also completely revamped the BuildBuddy website to make it easier to navigate and perform actions like requesting a quote, or subscribing to our [newsletter](#wf-form-Newsletter-Form).
+- **Improved documentation and new website** - we've completely revamped the BuildBuddy documentation, and it's now sync'd between GitHub and [buildbuddy.io/docs/](https://buildbuddy.io/docs/), so your docs will be fresh regardless of where you're reading them. We'll be adding new sections on configuring RBE in the coming weeks. We've also completely revamped the BuildBuddy website to make it easier to navigate and perform actions like requesting a quote.
 
 ![](../static/img/blog/docs.png)
 

@@ -1,31 +1,74 @@
 package help
 
 import (
+	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"regexp"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 )
 
 const (
 	cliName = "bb"
 )
 
-var (
-	// helpModifiers are flags that affect how the help output is displayed.
-	helpModifiers = map[string]struct{}{
-		"--long":  {},
-		"--short": {},
+// FindTargetCommandFromHelpArgs extracts the target command from "bb help <command>" arguments.
+// Returns the command name if found, empty string otherwise.
+func FindTargetCommandFromHelpArgs(orderedArgs *parsed.OrderedArgs) string {
+	commandIndex, command := parsed.Find[*parsed.Command](orderedArgs.Args)
+	if command == nil {
+		return ""
 	}
-)
+
+	// If the command is "help", the target is the next positional argument
+	// after it. rc-file expansion may have injected options between "help"
+	// and the target, so skip over non-positional arguments.
+	if command.Value == "help" {
+		for _, arg := range orderedArgs.Args[commandIndex+1:] {
+			if pos, ok := arg.(*arguments.PositionalArgument); ok {
+				return pos.Value
+			}
+		}
+		return ""
+	}
+
+	// Otherwise return the command itself
+	return command.Value
+}
+
+// TryShowBBCommandHelp checks if the target command is a BB CLI command and shows its help.
+// Returns true if help was shown, false if not a BB CLI command.
+func TryShowBBCommandHelp(targetCommand string) bool {
+	if targetCommand == "" {
+		return false
+	}
+
+	bbCommand := cli_command.GetCommand(targetCommand)
+	if bbCommand == nil {
+		return false
+	}
+	fmt.Printf("Usage: bb %s\n\n%s\n", bbCommand.Name, bbCommand.Help)
+	if bbCommand.Flags != nil {
+		hasFlags := false
+		bbCommand.Flags.VisitAll(func(*flag.Flag) { hasFlags = true })
+		if hasFlags {
+			fmt.Println("\nFlags:")
+			prevOutput := bbCommand.Flags.Output()
+			bbCommand.Flags.SetOutput(os.Stdout)
+			bbCommand.Flags.PrintDefaults()
+			bbCommand.Flags.SetOutput(prevOutput)
+		}
+	}
+	return true
+}
 
 // HandleHelp Valid cases to trigger help:
 // * bb (no additional command passed)
@@ -35,41 +78,18 @@ var (
 // * bb `command name` -h
 // * bb --help `command name`
 // * bb `command name` --help
-func HandleHelp(args []string) (exitCode int, err error) {
-	args, _ = arg.SplitExecutableArgs(args)
-
-	// Returns first non-flag
-	cmd, idx := arg.GetCommandAndIndex(args)
-	// If no command is specified, show general help.
-	// TODO: Allow configuring a "default command" that is run when
-	// no args are passed? Like `build //...`
-	if idx == -1 {
-		return showHelp("", getHelpModifiers(args))
-	}
-	if cmd == "help" {
-		helpTopic := arg.GetCommand(args[idx+1:])
-		return showHelp(helpTopic, getHelpModifiers(args))
-	}
-	if arg.ContainsExact(args, "-h") || arg.ContainsExact(args, "--help") {
-		bazelCommand, _ := parser.GetBazelCommandAndIndex(args)
-		// Sanity check to work around potential issues with
-		// GetBazelCommandAndIndex (see TODOs on that func).
-		if cmd != bazelCommand {
-			return -1, nil
+func HandleHelp(args parsed.Args) (exitCode int, err error) {
+	// Check if the help request is for a BB CLI command
+	if orderedArgs, ok := args.(*parsed.OrderedArgs); ok {
+		targetCommand := FindTargetCommandFromHelpArgs(orderedArgs)
+		if TryShowBBCommandHelp(targetCommand) {
+			return 0, nil
 		}
-		return showHelp(bazelCommand, getHelpModifiers(args))
 	}
-	return -1, nil
-}
 
-func showHelp(subcommand string, modifiers []string) (exitCode int, err error) {
-	bazelArgs := []string{"help"}
-	if subcommand != "" {
-		bazelArgs = append(bazelArgs, subcommand)
-	}
-	bazelArgs = append(bazelArgs, modifiers...)
-	buf := lockingbuffer.New()
-	exitCode, err = bazelisk.Run(bazelArgs, &bazelisk.RunOpts{Stdout: buf, Stderr: buf})
+	// Not a BB CLI command, forward to Bazel as usual
+	buf := &bytes.Buffer{}
+	exitCode, err = bazelisk.Run(args.Format(), &bazelisk.RunOpts{Stdout: buf, Stderr: buf})
 	if err != nil {
 		io.Copy(os.Stdout, buf)
 		return exitCode, err
@@ -83,8 +103,8 @@ func showHelp(subcommand string, modifiers []string) (exitCode int, err error) {
 	// Match example "bazel help ..." commands in "Getting more help" section
 	moreHelpPattern := regexp.MustCompile(`^(\s*)bazel( help\s+.*)$`)
 	// Get help output lines with trailing newlines removed
-	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(strings.TrimRight(buf.String(), "\n"), "\n")
+	for line := range lines {
 		line = strings.TrimRight(line, "\r")
 
 		if line == "Available commands:" {
@@ -124,16 +144,6 @@ func printBBCommands() {
 		fmt.Printf("  %s  %s\n", padEnd(c.Name, 18), c.Help)
 	}
 	fmt.Println()
-}
-
-func getHelpModifiers(args []string) []string {
-	var out []string
-	for _, arg := range args {
-		if _, ok := helpModifiers[arg]; ok {
-			out = append(out, arg)
-		}
-	}
-	return out
 }
 
 func padStart(value string, targetLength int) string {

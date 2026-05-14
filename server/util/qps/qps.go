@@ -4,6 +4,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/jonboulle/clockwork"
 )
 
 type bin struct {
@@ -30,6 +32,7 @@ type Counter struct {
 	// first full averaging period elapses, this will always equal len(counts).
 	nValidBins uint64
 	window     time.Duration
+	clock      clockwork.Clock
 	startOnce  sync.Once
 	stop       chan struct{}
 }
@@ -37,10 +40,11 @@ type Counter struct {
 // NewCounter returns a QPS counter using the given duration as the averaging
 // window. The caller must call Stop() on the returned counter when it is no
 // longer needed.
-func NewCounter(window time.Duration) *Counter {
+func NewCounter(window time.Duration, clock clockwork.Clock) *Counter {
 	return &Counter{
 		nValidBins: 1,
 		window:     window,
+		clock:      clock,
 		stop:       make(chan struct{}),
 	}
 }
@@ -67,26 +71,30 @@ func (c *Counter) Get() float64 {
 	return qps
 }
 
+// Advances to the next bin, resets its current count, and marks it valid if
+// it is still marked invalid.
+func (c *Counter) update() {
+	idx := atomic.LoadUint64(&c.idx)
+	idx = (idx + 1) % uint64(len(c.counts))
+	atomic.StoreUint64(&c.idx, idx)
+
+	c.bin(int(idx)).Reset()
+
+	nv := atomic.LoadUint64(&c.nValidBins)
+	nv = min(nv+1, uint64(len(c.counts)))
+	atomic.StoreUint64(&c.nValidBins, nv)
+}
+
 func (c *Counter) start() {
-	t := time.NewTicker(time.Duration(float64(c.window) / float64(len(c.counts))))
+	t := c.clock.NewTicker(time.Duration(float64(c.window) / float64(len(c.counts))))
 	defer t.Stop()
 	for {
 		select {
 		case <-c.stop:
 			return
-		case <-t.C:
+		case <-t.Chan():
 		}
-		// Advance to the next bin, reset its current count, and mark it valid
-		// if we haven't done so already.
-		idx := atomic.LoadUint64(&c.idx)
-		idx = (idx + 1) % uint64(len(c.counts))
-		atomic.StoreUint64(&c.idx, idx)
-
-		c.bin(int(idx)).Reset()
-
-		nv := atomic.LoadUint64(&c.nValidBins)
-		nv = min(nv+1, uint64(len(c.counts)))
-		atomic.StoreUint64(&c.nValidBins, nv)
+		c.update()
 	}
 }
 

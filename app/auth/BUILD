@@ -6,6 +6,8 @@ ts_library(
     name = "auth_service",
     srcs = ["auth_service.ts"],
     deps = [
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
         "//app/auth:user",
         "//app/capabilities",
         "//app/errors:error_service",
@@ -16,8 +18,18 @@ ts_library(
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
         "//proto:user_ts_proto",
-        "@npm//rxjs",
-        "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "certificate_download_link",
+    srcs = ["certificate_download_link.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//app/components/button:link_button",
+        "//app/components/link:blob",
     ],
 )
 

@@ -2,58 +2,93 @@ package client
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/client"
+	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	"google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
 )
 
-// A default timeout that can be applied to raft requests that do not have one
-// set.
-const DefaultContextTimeout = 10 * time.Second
+var (
+	sessionLifetime = flag.Duration("cache.raft.client_session_lifetime", 1*time.Hour, "The duration of a client session before it's reset")
+)
+
+const (
+	// A default timeout that can be applied to raft requests that do not have one
+	// set.
+	DefaultContextTimeout = 10 * time.Second
+
+	SyncProposeMethodName = "SyncPropose"
+)
 
 type NodeHost interface {
 	ID() string
-	GetNoOPSession(shardID uint64) *client.Session
+	GetNoOPSession(rangeID uint64) *client.Session
 	SyncPropose(ctx context.Context, session *client.Session, cmd []byte) (dbsm.Result, error)
-	SyncRead(ctx context.Context, shardID uint64, query interface{}) (interface{}, error)
-	ReadIndex(shardID uint64, timeout time.Duration) (*dragonboat.RequestState, error)
+	SyncRead(ctx context.Context, rangeID uint64, query interface{}) (interface{}, error)
+	ReadIndex(rangeID uint64, timeout time.Duration) (*dragonboat.RequestState, error)
 	ReadLocalNode(rs *dragonboat.RequestState, query interface{}) (interface{}, error)
-	StaleRead(shardID uint64, query interface{}) (interface{}, error)
+	StaleRead(rangeID uint64, query interface{}) (interface{}, error)
+}
+
+type IRegistry interface {
+	// Lookup the grpc address given a replica's nhid
+	ResolveGRPC(ctx context.Context, nhid string) (string, error)
 }
 
 type APIClient struct {
-	env     environment.Env
-	log     log.Logger
-	mu      sync.Mutex
-	clients map[string]*grpc_client.ClientConnPool
+	env      environment.Env
+	log      log.Logger
+	mu       sync.Mutex
+	clients  map[string]*grpc_client.ClientConnPool
+	registry IRegistry
 }
 
-func NewAPIClient(env environment.Env, name string) *APIClient {
+func NewAPIClient(env environment.Env, name string, registry IRegistry) *APIClient {
 	return &APIClient{
-		env:     env,
-		log:     log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", name)),
-		clients: make(map[string]*grpc_client.ClientConnPool),
+		env:      env,
+		log:      log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", name)),
+		clients:  make(map[string]*grpc_client.ClientConnPool),
+		registry: registry,
 	}
 }
 
-func (c *APIClient) getClient(ctx context.Context, peer string) (rfspb.ApiClient, error) {
+func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient rfspb.ApiClient, returnedErr error) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	defer func() {
+		tracing.RecordErrorToSpan(spn, returnedErr)
+		spn.End()
+	}()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if client, ok := c.clients[peer]; ok {
@@ -64,7 +99,23 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (rfspb.ApiClient
 		return rfspb.NewApiClient(conn), nil
 	}
 	log.Debugf("Creating new client for peer: %q", peer)
-	conn, err := grpc_client.DialSimple("grpc://" + peer)
+
+	// Use a backoff config allows for fast-reconnect during server rollout.
+	// Use kube:/// resolver when running in k8s for instant IP updates on
+	// pod restarts. Fall back to default grpc:// resolver otherwise (e.g. tests).
+	target := "grpc://" + peer
+	if kuberesolver.RunningInKubernetes() {
+		target = "kube:///" + peer
+	}
+	conn, err := grpc_client.DialSimple(target, grpc.WithConnectParams(grpc.ConnectParams{
+		Backoff: backoff.Config{
+			BaseDelay:  100 * time.Millisecond,
+			Multiplier: 1.6,
+			Jitter:     0.2,
+			MaxDelay:   1 * time.Second,
+		},
+		MinConnectTimeout: 20 * time.Second,
+	}))
 	if err != nil {
 		return nil, err
 	}
@@ -76,25 +127,99 @@ func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, erro
 	return c.getClient(ctx, peer)
 }
 
-func singleOpTimeout(ctx context.Context) time.Duration {
-	// This value should be approximately 10x the config.RTTMilliseconds,
-	// but we want to include a little more time for the operation itself to
-	// complete.
-	const maxTimeout = time.Second
+func (c *APIClient) GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescriptor) (returnedClient rfspb.ApiClient, returnedErr error) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	defer func() {
+		tracing.RecordErrorToSpan(spn, returnedErr)
+		spn.End()
+	}()
+	addr, err := c.registry.ResolveGRPC(ctx, rd.GetNhid())
+	if err != nil {
+		return nil, err
+	}
+	return c.getClient(ctx, addr)
+}
+
+func (c *APIClient) haveReadyConnections(ctx context.Context, peer string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if client, ok := c.clients[peer]; ok {
+		_, err := client.GetReadyConnection()
+		return err == nil
+	}
+	return false
+}
+
+func (c *APIClient) HaveReadyConnections(ctx context.Context, rd *rfpb.ReplicaDescriptor) (bool, error) {
+	addr, err := c.registry.ResolveGRPC(ctx, rd.GetNhid())
+	if err != nil {
+		return false, status.WrapError(err, "failed to resolve GRPC address")
+	}
+	return c.haveReadyConnections(ctx, addr), nil
+}
+
+func singleOpTimeout(ctx context.Context, maxSingleOpTimeout time.Duration) time.Duration {
 	if deadline, ok := ctx.Deadline(); ok {
 		dur := time.Until(deadline)
 		if dur <= 0 {
 			return dur
 		}
-		if dur < maxTimeout {
+		if dur < maxSingleOpTimeout {
 			// ensure that the returned duration / constants.RTTMillisecond > 0.
 			return dur + constants.RTTMillisecond
 		}
 	}
-	return maxTimeout
+	return maxSingleOpTimeout
 }
 
-func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) error {
+type aggErr struct {
+	errCount          map[string]int
+	lastErr           error
+	lastNonTimeoutErr error
+}
+
+func (e *aggErr) err() error {
+	if e.lastErr == nil {
+		return nil
+	}
+
+	// Build the error to return
+	var err error
+	if e.lastErr == e.lastNonTimeoutErr || e.lastNonTimeoutErr == nil {
+		err = fmt.Errorf("last error: %w, errors encountered: %+v", e.lastErr, e.errCount)
+	} else {
+		err = fmt.Errorf("last error: %w, last non-timeout error: %s, errors encountered: %+v", e.lastErr, e.lastNonTimeoutErr, e.errCount)
+	}
+
+	// If error already has a status code, return as-is
+	if !status.IsUnknownError(err) {
+		return err
+	}
+
+	// Add appropriate status code based on error type
+	if dragonboat.IsTempError(err) {
+		return status.WithCode(err, codes.Unavailable)
+	}
+	if errors.Is(err, dragonboat.ErrCanceled) {
+		return status.WithCode(err, codes.Canceled)
+	}
+	return status.WithCode(err, codes.Internal)
+}
+
+func (e *aggErr) Add(err error) {
+	if err == nil {
+		return
+	}
+	e.lastErr = err
+	if !errors.Is(err, dragonboat.ErrTimeoutTooSmall) && err != context.Canceled && err != context.DeadlineExceeded {
+		e.lastNonTimeoutErr = err
+	}
+	e.errCount[err.Error()] += 1
+}
+
+func RunNodehostFn(ctx context.Context, maxSingleOpTimeout time.Duration, nhf func(ctx context.Context) error) error {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	defer spn.End()
 	// Ensure that the outer context has a timeout set to limit the total
 	// time we'll attempt to run an operation.
 	if _, ok := ctx.Deadline(); !ok {
@@ -102,19 +227,11 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 		ctx, cancel = context.WithTimeout(ctx, DefaultContextTimeout)
 		defer cancel()
 	}
-	var lastErr error
-	for {
-		select {
-		case <-ctx.Done():
-			if lastErr != nil {
-				return lastErr
-			}
-			return ctx.Err()
-		default:
-			// continue with for loop
-		}
+	aggregatedErr := &aggErr{errCount: make(map[string]int)}
 
-		timeout := singleOpTimeout(ctx)
+	retrier := retry.DefaultWithContext(ctx)
+	for retrier.Next() {
+		timeout := singleOpTimeout(ctx, maxSingleOpTimeout)
 		if timeout <= 0 {
 			// The deadline has already passed.
 			continue
@@ -124,27 +241,121 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 		cancel()
 
 		if err != nil {
-			lastErr = err
+			aggregatedErr.Add(err)
 			if dragonboat.IsTempError(err) {
 				continue
 			}
-			return err
+			return aggregatedErr.err()
 		}
 		return nil
 	}
+	return aggregatedErr.err()
 }
 
-func SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	sesh := nodehost.GetNoOPSession(shardID)
+type Session struct {
+	id        string
+	index     uint64
+	createdAt time.Time
+
+	clock     clockwork.Clock
+	refreshAt time.Time
+	mu        sync.Mutex
+
+	locker lockmap.Locker
+
+	maxSingleOpTimeout time.Duration
+}
+
+func (s *Session) ToProto() *rfpb.Session {
+	return &rfpb.Session{
+		Id:            []byte(s.id),
+		Index:         s.index,
+		CreatedAtUsec: s.createdAt.UnixMicro(),
+	}
+}
+
+func NewSession() *Session {
+	return NewSessionWithClock(clockwork.NewRealClock())
+}
+
+func NewSessionWithClock(clock clockwork.Clock) *Session {
+	now := clock.Now()
+	return &Session{
+		id:                 uuid.New(),
+		index:              0,
+		clock:              clock,
+		createdAt:          now,
+		refreshAt:          now.Add(*sessionLifetime),
+		locker:             lockmap.New(),
+		maxSingleOpTimeout: config.SingleRaftOpTimeout(),
+	}
+}
+
+// maybeRefresh resets the id and index when the session expired.
+func (s *Session) maybeRefresh() {
+	now := s.clock.Now()
+	if s.refreshAt.After(now) {
+		return
+	}
+
+	s.id = uuid.New()
+	s.index = 0
+	s.createdAt = now
+	s.refreshAt = now.Add(*sessionLifetime)
+}
+
+func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, rangeID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	_, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	spn.SetName("SyncProposeLocal: locker.Lock")
+	attr := attribute.Int64("range_id", int64(rangeID))
+	spn.SetAttributes(attr)
+	// At most one SyncProposeLocal can be run for the same replica per session.
+	start := s.clock.Now()
+	unlockFn := s.locker.Lock(fmt.Sprintf("%d", rangeID))
+	spn.End()
+	defer func() {
+		unlockFn()
+		metrics.RaftRangeLockDurationMsec.With(prometheus.Labels{
+			metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
+		}).Observe(float64(s.clock.Since(start).Milliseconds()))
+	}()
+
+	_, spn = tracing.StartSpan(ctx) // nolint:SA4006
+	spn.SetName("SyncProposeLocal: set session")
+	s.mu.Lock()
+	// Refreshes the session if necessary
+	s.maybeRefresh()
+	s.index++
+	batch.Session = s.ToProto()
+	s.mu.Unlock()
+	spn.End()
+
+	sesh := nodehost.GetNoOPSession(rangeID)
+
 	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err
 	}
 	var raftResponse dbsm.Result
-	err = RunNodehostFn(ctx, func(ctx context.Context) error {
-		defer canary.Start("nodehost.SyncPropose", time.Second)()
+
+	err = RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) (returnedErr error) {
+		ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+		spn.SetName("nodehost.SyncPropose")
+		fnStart := s.clock.Now()
+		defer func() {
+			tracing.RecordErrorToSpan(spn, returnedErr)
+			spn.End()
+			metrics.RaftNodeHostMethodDurationUsec.With(prometheus.Labels{
+				metrics.RaftNodeHostMethodLabel: SyncProposeMethodName,
+				metrics.RaftRangeIDLabel:        strconv.Itoa(int(rangeID)),
+			}).Observe(float64(s.clock.Since(fnStart).Microseconds()))
+		}()
 		result, err := nodehost.SyncPropose(ctx, sesh, buf)
 		if err != nil {
+			metrics.RaftNodeHostMethodErrorCount.With(prometheus.Labels{
+				metrics.RaftNodeHostMethodLabel: SyncProposeMethodName,
+				metrics.RaftDragonboatError:     err.Error(),
+			}).Inc()
 			return err
 		}
 		if result.Value == constants.EntryErrorValue {
@@ -169,7 +380,7 @@ func SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, ba
 	return batchResponse, err
 }
 
-func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func SyncReadLocal(ctx context.Context, nodehost NodeHost, rangeID uint64, batch *rfpb.BatchCmdRequest, maxSingleOpTimeout time.Duration) (*rfpb.BatchCmdResponse, error) {
 	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err
@@ -179,10 +390,10 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch
 		return nil, status.FailedPreconditionError("Header must be set")
 	}
 	var raftResponseIface interface{}
-	err = RunNodehostFn(ctx, func(ctx context.Context) error {
+	err = RunNodehostFn(ctx, maxSingleOpTimeout, func(ctx context.Context) error {
 		switch batch.GetHeader().GetConsistencyMode() {
 		case rfpb.Header_LINEARIZABLE:
-			rs, err := nodehost.ReadIndex(shardID, singleOpTimeout(ctx))
+			rs, err := nodehost.ReadIndex(rangeID, singleOpTimeout(ctx, maxSingleOpTimeout))
 			if err != nil {
 				return err
 			}
@@ -205,7 +416,7 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch
 			}
 
 		case rfpb.Header_STALE, rfpb.Header_RANGELEASE:
-			raftResponseIface, err = nodehost.StaleRead(shardID, buf)
+			raftResponseIface, err = nodehost.StaleRead(rangeID, buf)
 			return err
 		default:
 			return status.UnknownError("Unknown consistency mode")
@@ -227,45 +438,18 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch
 	return batchResponse, nil
 }
 
-type NodeHostSender struct {
-	*dragonboat.NodeHost
-}
-
-func (nhs *NodeHostSender) SyncProposeLocal(ctx context.Context, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	return SyncProposeLocal(ctx, nhs.NodeHost, shardID, batch)
-}
-func (nhs *NodeHostSender) SyncReadLocal(ctx context.Context, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	return SyncReadLocal(ctx, nhs.NodeHost, shardID, batch)
-}
-
-func SyncProposeLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, shardID uint64, builder *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {
+func SyncReadLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, rangeID uint64, builder *rbuilder.BatchBuilder, maxSingleOpTimeout time.Duration) (*rbuilder.BatchResponse, error) {
 	batch, err := builder.ToProto()
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := SyncProposeLocal(ctx, nodehost, shardID, batch)
+	rsp, err := SyncReadLocal(ctx, nodehost, rangeID, batch, maxSingleOpTimeout)
 	if err != nil {
 		return nil, err
 	}
 	return rbuilder.NewBatchResponseFromProto(rsp), nil
 }
 
-func SyncProposeLocalBatchNoRsp(ctx context.Context, nodehost *dragonboat.NodeHost, shardID uint64, builder *rbuilder.BatchBuilder) error {
-	rspBatch, err := SyncProposeLocalBatch(ctx, nodehost, shardID, builder)
-	if err != nil {
-		return err
-	}
-	return rspBatch.AnyError()
-}
-
-func SyncReadLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, shardID uint64, builder *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {
-	batch, err := builder.ToProto()
-	if err != nil {
-		return nil, err
-	}
-	rsp, err := SyncReadLocal(ctx, nodehost, shardID, batch)
-	if err != nil {
-		return nil, err
-	}
-	return rbuilder.NewBatchResponseFromProto(rsp), nil
+func SessionLifetime() time.Duration {
+	return *sessionLifetime
 }

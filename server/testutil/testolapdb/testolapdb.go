@@ -22,6 +22,10 @@ type Handle struct {
 	invIDs              sync.Map // map of invocationID => struct{}
 }
 
+func (h *Handle) DialectName() string {
+	return "clickhouse"
+}
+
 func (h *Handle) NewQuery(ctx context.Context, name string) interfaces.DBQuery {
 	return nil
 }
@@ -50,6 +54,10 @@ func (h *Handle) DateFromUsecTimestamp(fieldNmae string, timezoneOffsetMinutes i
 
 func (h *Handle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
 	h.invIDs.LoadOrStore(ti.InvocationID, struct{}{})
+	return nil
+}
+
+func (h *Handle) FlushUsages(ctx context.Context, rows []*schema.RawUsage) error {
 	return nil
 }
 

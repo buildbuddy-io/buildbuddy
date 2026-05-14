@@ -9,13 +9,17 @@ go_library(
     deps = [
         "//enterprise/server/usage/config",
         "//proto:usage_go_proto",
+        "//proto:user_id_go_proto",
         "//server/environment",
+        "//server/interfaces",
         "//server/real_environment",
+        "//server/tables",
         "//server/util/authutil",
         "//server/util/db",
         "//server/util/log",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
@@ -24,15 +28,20 @@ go_test(
     srcs = ["usage_service_test.go"],
     deps = [
         ":usage_service",
+        "//proto:capability_go_proto",
         "//proto:context_go_proto",
         "//proto:usage_go_proto",
+        "//proto:user_id_go_proto",
+        "//server/interfaces",
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/util/status",
         "@com_github_google_go_cmp//cmp",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

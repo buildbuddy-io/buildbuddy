@@ -14,26 +14,33 @@ import (
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	// Need to init this so that we can marshal messages type Any such as OriginMetadata
+	_ "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rlpb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution_log"
 )
 
 const (
 	usage = `
-usage: bb print [--grpc_log=PATH] [--compact_execution_log=PATH] [--sort=true]
+usage: bb print [--grpc_log=PATH] [--compact_execution_log=PATH] [--sort=false] [--raw=false] [--max_entry_size_mb=40]
 
 Prints a human-readable representation of log files output by Bazel.
 
 Currently supported log types:
   --grpc_log: Path to a file saved with --experimental_remote_grpc_log.
   --compact_execution_log: Path to a file saved with --experimental_execution_log_compact_file.
+  --sort: Apply sorting to log output, only applicable with --compact_execution_log.
+  --raw: Don't convert the log entries to Bazel's Spawn, only applicable with --compact_execution_log.
 `
 )
 
 var (
 	flags          = flag.NewFlagSet("print", flag.ContinueOnError)
+	Flags          = flags
 	grpcLog        = flags.String("grpc_log", "", "gRPC log path.")
 	compactExecLog = flags.String("compact_execution_log", "", "compact execution log path.")
 	sort           = flags.Bool("sort", false, "apply sorting to log output, only applicable with --compact_execution_log")
+	raw            = flags.Bool("raw", false, "don't convert the log entries to Bazel's Spawn, only applicable with --compact_execution_log")
+	maxEntrySizeMB = flags.Int64("max_entry_size_mb", 40, "maximum size in MB of proto log entry that can be unmarshalled")
 )
 
 func HandlePrint(args []string) (int, error) {
@@ -51,7 +58,7 @@ func HandlePrint(args []string) (int, error) {
 		return 0, nil
 	}
 	if *compactExecLog != "" {
-		if err := compact.PrintCompactExecLog(*compactExecLog, *sort); err != nil {
+		if err := compact.PrintCompactExecLog(*compactExecLog, *raw, *sort); err != nil {
 			return -1, err
 		}
 		return 0, nil
@@ -75,7 +82,7 @@ func printLog(path string, m proto.Message) error {
 func copyUnmarshaled(w io.Writer, grpcLog io.Reader, m proto.Message) error {
 	br := bufio.NewReader(grpcLog)
 	for {
-		err := protodelim.UnmarshalFrom(br, m)
+		err := protodelim.UnmarshalOptions{MaxSize: *maxEntrySizeMB << 20}.UnmarshalFrom(br, m)
 		if err == io.EOF {
 			return nil
 		}

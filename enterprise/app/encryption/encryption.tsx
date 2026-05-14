@@ -1,7 +1,5 @@
 import React from "react";
-import rpc_service from "../../../app/service/rpc_service";
-import { encryption } from "../../../proto/encryption_ts_proto";
-import Modal from "../../../app/components/modal/modal";
+import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -9,12 +7,14 @@ import Dialog, {
   DialogHeader,
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
-import Spinner from "../../../app/components/spinner/spinner";
-import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
-import { BuildBuddyError } from "../../../app/util/errors";
-import error_service from "../../../app/errors/error_service";
 import TextInput from "../../../app/components/input/input";
 import Link from "../../../app/components/link/link";
+import Modal from "../../../app/components/modal/modal";
+import Spinner from "../../../app/components/spinner/spinner";
+import error_service from "../../../app/errors/error_service";
+import rpc_service from "../../../app/service/rpc_service";
+import { BuildBuddyError } from "../../../app/util/errors";
+import { encryption } from "../../../proto/encryption_ts_proto";
 
 interface State {
   encryptionEnabled: boolean;

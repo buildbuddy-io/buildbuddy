@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "upload",
     srcs = ["upload.go"],
@@ -7,9 +9,8 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/log",
-        "//cli/storage",
+        "//cli/login",
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/grpc_client",
@@ -17,5 +18,3 @@ go_library(
         "@org_golang_google_grpc//metadata",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

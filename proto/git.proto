@@ -20,6 +20,8 @@ message GitRepo {
   // GitHub account, if the repo URL is a GitHub URL. Otherwise,
   // an error is returned.
   //
+  // This is ignored if `use_system_git_credentials` if set.
+  //
   // Ex. "ABASDBASDBASBD"
   string access_token = 2;
 
@@ -27,6 +29,14 @@ message GitRepo {
   // This is required for Bitbucket, whose "app passwords" require an
   // associated username.
   string username = 3;
+
+  // Whether to use github credentials configured on the system.
+  //
+  // By default, we require https for git operations and generate short-lived
+  // access tokens using our github app installation.
+  // If GitHub SSH access is already configured on the runners, set this
+  // to true to skip doing that and use the configured auth.
+  bool use_system_git_credentials = 4;
 }
 
 message RepoState {

@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "tracing",
@@ -11,16 +11,32 @@ go_library(
         "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
+        "@io_opentelemetry_go_contrib_detectors_aws_ec2_v2//:ec2",
         "@io_opentelemetry_go_contrib_detectors_gcp//:gcp",
         "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
         "@io_opentelemetry_go_otel//propagation",
         "@io_opentelemetry_go_otel//semconv/v1.4.0:v1_4_0",
         "@io_opentelemetry_go_otel_exporters_jaeger//:jaeger",
+        "@io_opentelemetry_go_otel_exporters_otlp_otlptrace_otlptracegrpc//:otlptracegrpc",
+        "@io_opentelemetry_go_otel_exporters_otlp_otlptrace_otlptracehttp//:otlptracehttp",
         "@io_opentelemetry_go_otel_sdk//resource",
         "@io_opentelemetry_go_otel_sdk//trace",
         "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_grpc//metadata",
+    ],
+)
+
+go_test(
+    name = "tracing_test",
+    srcs = ["tracing_test.go"],
+    deps = [
+        ":tracing",
+        "//server/testutil/testenv",
+        "//server/util/log",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
     ],
 )

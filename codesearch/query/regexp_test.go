@@ -7,13 +7,14 @@ package query
 import (
 	"regexp/syntax"
 	"testing"
+
+	"github.com/buildbuddy-io/buildbuddy/codesearch/token"
 )
 
 var queryTests = []struct {
 	re string
 	q  string
 }{
-	{`Abcdef`, `"Abc" "bcd" "cde" "def"`},
 	{`(abc)(def)`, `"abc" "bcd" "cde" "def"`},
 	{`abc.*(def|ghi)`, `"abc" ("def"|"ghi")`},
 	{`abc(def|ghi)`, `"abc" ("bcd" "cde" "def")|("bcg" "cgh" "ghi")`},
@@ -61,14 +62,6 @@ var queryTests = []struct {
 
 	{`(?s).`, `+`},
 
-	// Expanding case.
-	{`(?i)a~~`, `("A~~"|"a~~")`},
-	{`(?i)ab~`, `("AB~"|"Ab~"|"aB~"|"ab~")`},
-	{`(?i)abc`, `("ABC"|"ABc"|"AbC"|"Abc"|"aBC"|"aBc"|"abC"|"abc")`},
-	{`(?i)abc|def`, `("ABC"|"ABc"|"AbC"|"Abc"|"DEF"|"DEf"|"DeF"|"Def"|"aBC"|"aBc"|"abC"|"abc"|"dEF"|"dEf"|"deF"|"def")`},
-	{`(?i)abcd`, `("ABC"|"ABc"|"AbC"|"Abc"|"aBC"|"aBc"|"abC"|"abc") ("BCD"|"BCd"|"BcD"|"Bcd"|"bCD"|"bCd"|"bcD"|"bcd")`},
-	{`(?i)abc|abc`, `("ABC"|"ABc"|"AbC"|"Abc"|"aBC"|"aBc"|"abC"|"abc")`},
-
 	// Word boundary.
 	{`\b`, `+`},
 	{`\B`, `+`},
@@ -87,6 +80,28 @@ func TestQuery(t *testing.T) {
 			t.Fatal(err)
 		}
 		q := RegexpQuery(re).String()
+		if q != tt.q {
+			t.Errorf("RegexpQuery(%#q) = %#q, want %#q", tt.re, q, tt.q)
+		}
+	}
+}
+
+var sparseQueryTests = []struct {
+	re string
+	q  string
+}{
+	// Sparse ngrams
+	{`Abcdef`, `"Abcd" "cde" "def"`},
+	{`FailedPrecondition`, `"Fai" "ail" "cond" "dPre" "diti" "edP" "iled" "ion" "ndi" "reco" "tio"`},
+}
+
+func TestSparseQuery(t *testing.T) {
+	for _, tt := range sparseQueryTests {
+		re, err := syntax.Parse(tt.re, syntax.Perl)
+		if err != nil {
+			t.Fatal(err)
+		}
+		q := RegexpQuery(re, token.WithMaxNgramLength(6), token.WithLowerCase(false)).String()
 		if q != tt.q {
 			t.Errorf("RegexpQuery(%#q) = %#q, want %#q", tt.re, q, tt.q)
 		}

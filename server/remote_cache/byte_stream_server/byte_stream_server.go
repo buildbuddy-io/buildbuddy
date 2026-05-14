@@ -1,16 +1,21 @@
 package byte_stream_server
 
 import (
+	"bytes"
 	"context"
-	"fmt"
+	"encoding/hex"
 	"hash"
 	"io"
+	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_deprecation"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -19,29 +24,32 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/peer"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-const (
-	// Keep under the limit of ~4MB (save 256KB).
-	readBufSizeBytes = (1024 * 1024 * 4) - (1024 * 256)
-)
+const defaultChunkedReadMaxInFlight = 32
+
+var compressBufSize = int(4e6) // 4MB
 
 var (
 	bazel5_1_0              = bazel_request.MustParseVersion("5.1.0")
-	maxDirectWriteSizeBytes = flag.Int64("cache.max_direct_write_size_bytes", 0, "For bytestream requests smaller than this size, write straight to the cache without checking if the entry already exists.")
+	maxDirectWriteSizeBytes = flag.Int64("cache.max_direct_write_size_bytes", 16384, "For bytestream requests smaller than this size, write straight to the cache without checking if the entry already exists.")
 )
 
 type ByteStreamServer struct {
 	env        environment.Env
 	cache      interfaces.Cache
 	bufferPool *bytebufferpool.VariableSizePool
+	warner     *bazel_deprecation.Warner
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -65,7 +73,8 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	return &ByteStreamServer{
 		env:        env,
 		cache:      cache,
-		bufferPool: bytebufferpool.VariableSize(readBufSizeBytes),
+		bufferPool: bytebufferpool.VariableSize(max(*remote_cache_config.ReadBufSizeBytes, compressBufSize, int(compression.ZstdCompressBound(chunking.MaxChunkSizeBytes())))),
+		warner:     bazel_deprecation.NewWarner(env),
 	}, nil
 }
 
@@ -82,6 +91,13 @@ func checkReadPreconditions(req *bspb.ReadRequest) error {
 	return nil
 }
 
+func rpcPeerAddr(ctx context.Context) string {
+	if p, ok := peer.FromContext(ctx); ok {
+		return p.Addr.String()
+	}
+	return "unknown"
+}
+
 // `Read()` is used to retrieve the contents of a resource as a sequence
 // of bytes. The bytes are returned in a sequence of responses, and the
 // responses are delivered as the results of a server-side streaming FUNC (S *BYTESTREAMSERVER).
@@ -89,64 +105,77 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err := checkReadPreconditions(req); err != nil {
 		return err
 	}
-	r, err := digest.ParseDownloadResourceName(req.GetResourceName())
+	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
 	if err != nil {
 		return err
 	}
+	return s.ReadCASResource(stream.Context(), rn, req.GetReadOffset(), req.GetReadLimit(), stream)
+}
+
+// This version of Read accepts the parameters of a ReadRequest directly so it
+// can be called by ByteStreamServerProxy to avoid re-parsing resource names.
+func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASResourceName, offset, limit int64, stream bspb.ByteStream_ReadServer) error {
 	if !s.supportsCompressor(r.GetCompressor()) {
 		return status.UnimplementedErrorf("Unsupported compressor %s", r.GetCompressor())
 	}
-	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return err
 	}
 
-	ht := hit_tracker.NewHitTracker(ctx, s.env, false /*=ac*/)
+	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
 	if r.IsEmpty() {
-		if err := ht.TrackEmptyHit(); err != nil {
+		dt := ht.TrackDownload(r.GetDigest())
+		if err := dt.CloseWithBytesTransferred(0, 0, r.GetCompressor(), "byte_stream_server"); err != nil {
 			log.Debugf("ByteStream Read: hit tracker TrackEmptyHit error: %s", err)
 		}
 		return nil
 	}
+
+	// Check quota before reading - use digest size as expected transfer size
+	if qm := s.env.GetQuotaManager(); qm != nil {
+		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), r.GetDigest().GetSizeBytes()); err != nil {
+			return err
+		}
+	}
+
 	downloadTracker := ht.TrackDownload(r.GetDigest())
 
-	cacheRN := digest.NewResourceName(r.GetDigest(), r.GetInstanceName(), rspb.CacheType_CAS, r.GetDigestFunction())
-	passthroughCompressionEnabled := s.cache.SupportsCompressor(r.GetCompressor()) && req.ReadOffset == 0 && req.ReadLimit == 0
+	cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
+	passthroughCompressionEnabled := s.cache.SupportsCompressor(r.GetCompressor()) && offset == 0 && limit == 0
 	if passthroughCompressionEnabled {
 		cacheRN.SetCompressor(r.GetCompressor())
 	}
-	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), req.ReadOffset, req.ReadLimit)
+	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
 	if err != nil {
-		if err := ht.TrackMiss(r.GetDigest()); err != nil {
-			log.Debugf("ByteStream Read: hit tracker TrackMiss error: %s", err)
+		if status.IsNotFoundError(err) && chunking.ShouldReadChunked(ctx, s.env.GetExperimentFlagProvider(), cacheRN.GetDigest().GetSizeBytes(), offset, limit) {
+			reader, err = s.attemptReadChunked(ctx, cacheRN, offset)
 		}
-		return err
+		if err != nil {
+			if htErr := ht.TrackMiss(r.GetDigest()); htErr != nil {
+				log.Debugf("ByteStream Read: hit tracker TrackMiss error: %s", htErr)
+			}
+			return err
+		}
 	}
 	defer reader.Close()
 
-	bufSize := int64(readBufSizeBytes)
-	if r.GetDigest().GetSizeBytes() > 0 && r.GetDigest().GetSizeBytes() < bufSize {
-		bufSize = r.GetDigest().GetSizeBytes()
-	}
+	bufSize := int64(digest.SafeBufferSize(r.ToProto(), *remote_cache_config.ReadBufSizeBytes))
 
 	// If the cache doesn't support the requested compression, it will cache decompressed bytes and the server
 	// is in charge of compressing it
 	var counter *ioutil.Counter
 	if r.GetCompressor() == repb.Compressor_ZSTD && !passthroughCompressionEnabled {
-		rbuf := s.bufferPool.Get(bufSize)
-		defer s.bufferPool.Put(rbuf)
-		cbuf := s.bufferPool.Get(bufSize)
-		defer s.bufferPool.Put(cbuf)
-
 		// Counter for the number of bytes from the original reader containing decompressed bytes
 		counter = &ioutil.Counter{}
-		reader, err = compression.NewZstdCompressingReader(io.NopCloser(io.TeeReader(reader, counter)), rbuf, cbuf)
+		rc := io.NopCloser(io.TeeReader(reader, counter))
+
+		reader, err = compression.NewZstdCompressingReader(rc, s.bufferPool, bufSize)
 		if err != nil {
 			return status.InternalErrorf("Failed to compress blob: %s", err)
 		}
 		defer reader.Close()
 	}
-
 	copyBuf := s.bufferPool.Get(bufSize)
 	defer s.bufferPool.Put(copyBuf)
 
@@ -177,6 +206,464 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	return err
 }
 
+func (s *ByteStreamServer) attemptReadChunked(ctx context.Context, rn *digest.CASResourceName, offset int64) (io.ReadCloser, error) {
+	manifest, err := chunking.LoadManifest(ctx, s.cache, rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
+	if err != nil {
+		return nil, err
+	}
+
+	offsetRead := strconv.FormatBool(offset > 0)
+
+	// Skip chunks that fall entirely before the requested offset.
+	chunkDigests := manifest.ChunkDigests
+	remainingOffset := offset
+	for len(chunkDigests) > 0 && remainingOffset >= chunkDigests[0].GetSizeBytes() {
+		remainingOffset -= chunkDigests[0].GetSizeBytes()
+		chunkDigests = chunkDigests[1:]
+	}
+	if len(chunkDigests) == 0 {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	}
+
+	rns := make([]*rspb.ResourceName, 0, len(chunkDigests))
+	for _, d := range chunkDigests {
+		chunkRN := digest.NewCASResourceName(d, manifest.InstanceName, manifest.DigestFunction)
+		chunkRN.SetCompressor(rn.GetCompressor())
+		rns = append(rns, chunkRN.ToProto())
+	}
+	if missing, err := s.cache.FindMissing(ctx, rns); err != nil {
+		metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
+			metrics.ChunkedFailureReasonLabel: "chunk_find_missing_error",
+			metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
+			metrics.ChunkedOffsetReadLabel:    offsetRead,
+		}).Inc()
+		return nil, err
+	} else if len(missing) > 0 {
+		metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
+			metrics.ChunkedFailureReasonLabel: "chunks_missing",
+			metrics.StatusHumanReadableLabel:  "NotFound",
+			metrics.ChunkedOffsetReadLabel:    offsetRead,
+		}).Inc()
+		return nil, status.NotFoundErrorf("chunks missing from manifest for %q: %q", rn.DownloadString(), chunking.DigestsSummary(missing))
+	}
+
+	return newChunkedBlobReader(ctx, s.cache, s.bufferPool, rns, remainingOffset, offsetRead), nil
+}
+
+type chunkReadResult struct {
+	data []byte
+	err  error
+}
+
+// chunkedBlobReader reconstructs a chunked blob by reading a bounded window of
+// chunks in parallel while returning bytes to the caller in order. This avoids
+// the per-chunk sequential latency of reading chunk-by-chunk from remote
+// backing storage such as GCS.
+type chunkedBlobReader struct {
+	ctx             context.Context
+	cancel          context.CancelFunc
+	cache           interfaces.Cache
+	bufferPool      *bytebufferpool.VariableSizePool
+	rns             []*rspb.ResourceName
+	firstOffset     int64
+	offsetReadLabel string
+
+	resultChans []chan chunkReadResult
+
+	currentBuf    []byte
+	currentOffset int
+	nextStart     int
+	nextRead      int
+}
+
+func newChunkedBlobReader(ctx context.Context, cache interfaces.Cache, bufferPool *bytebufferpool.VariableSizePool, rns []*rspb.ResourceName, firstOffset int64, offsetReadLabel string) io.ReadCloser {
+	ctx, cancel := context.WithCancel(ctx)
+	r := &chunkedBlobReader{
+		ctx:             ctx,
+		cancel:          cancel,
+		cache:           cache,
+		bufferPool:      bufferPool,
+		rns:             rns,
+		firstOffset:     firstOffset,
+		offsetReadLabel: offsetReadLabel,
+		resultChans:     make([]chan chunkReadResult, len(rns)),
+	}
+	r.fillWindow()
+	return r
+}
+
+func (r *chunkedBlobReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	for {
+		if r.currentBuf == nil {
+			if err := r.advance(); err != nil {
+				return 0, err
+			}
+		}
+		n := copy(p, r.currentBuf[r.currentOffset:])
+		r.currentOffset += n
+		if r.currentOffset == len(r.currentBuf) {
+			r.releaseCurrent()
+		}
+		if n > 0 {
+			return n, nil
+		}
+	}
+}
+
+func (r *chunkedBlobReader) Close() error {
+	r.cancel()
+	r.releaseCurrent()
+	r.drainPendingAsync()
+	return nil
+}
+
+// advance promotes the next chunk in order to the current read buffer and
+// refills the parallel prefetch window.
+func (r *chunkedBlobReader) advance() error {
+	if r.nextRead >= len(r.rns) {
+		return io.EOF
+	}
+	index := r.nextRead
+	resultChan := r.resultChans[index]
+	var result chunkReadResult
+	select {
+	case result = <-resultChan:
+	case <-r.ctx.Done():
+		return r.ctx.Err()
+	}
+	r.resultChans[index] = nil
+	r.nextRead++
+	if result.err != nil {
+		r.bufferPool.Put(result.data)
+		r.cancel()
+		metrics.ByteStreamServerChunkedReadFailures.With(prometheus.Labels{
+			metrics.ChunkedFailureReasonLabel: "chunk_read_error",
+			metrics.StatusHumanReadableLabel:  status.MetricsLabel(result.err),
+			metrics.ChunkedOffsetReadLabel:    r.offsetReadLabel,
+		}).Inc()
+		return result.err
+	}
+	r.currentBuf = result.data
+	r.fillWindow()
+	return nil
+}
+
+func (r *chunkedBlobReader) fillWindow() {
+	for r.nextStart < len(r.rns) && r.nextStart-r.nextRead < defaultChunkedReadMaxInFlight {
+		r.spawn(r.nextStart)
+		r.nextStart++
+	}
+}
+
+func (r *chunkedBlobReader) spawn(index int) {
+	rn := r.rns[index]
+	offset := int64(0)
+	if index == 0 {
+		offset = r.firstOffset
+	}
+	bufSize := rn.GetDigest().GetSizeBytes() - offset
+	if rn.GetCompressor() == repb.Compressor_ZSTD {
+		bufSize = compression.ZstdCompressBound(bufSize)
+	}
+	buf := r.bufferPool.Get(bufSize)
+	resultCh := make(chan chunkReadResult, 1)
+	r.resultChans[index] = resultCh
+	go func() {
+		resultCh <- r.readChunk(rn, offset, buf)
+	}()
+}
+
+func (r *chunkedBlobReader) readChunk(rn *rspb.ResourceName, offset int64, buf []byte) chunkReadResult {
+	rc, err := r.cache.Reader(r.ctx, rn, offset, 0)
+	if err != nil {
+		return chunkReadResult{data: buf, err: err}
+	}
+	defer rc.Close()
+
+	n, err := ioutil.ReadTryFillBuffer(rc, buf)
+	if err != nil {
+		return chunkReadResult{data: buf, err: err}
+	}
+	readSize := rn.GetDigest().GetSizeBytes() - offset
+	if rn.GetCompressor() != repb.Compressor_ZSTD && int64(n) != readSize {
+		return chunkReadResult{data: buf, err: io.ErrUnexpectedEOF}
+	}
+	return chunkReadResult{data: buf[:n]}
+}
+
+func (r *chunkedBlobReader) releaseCurrent() {
+	if r.currentBuf != nil {
+		r.bufferPool.Put(r.currentBuf)
+		r.currentBuf = nil
+	}
+	r.currentOffset = 0
+}
+
+func (r *chunkedBlobReader) drainPendingAsync() {
+	var pending []chan chunkReadResult
+	for i, resultChan := range r.resultChans {
+		if resultChan == nil {
+			continue
+		}
+		pending = append(pending, resultChan)
+		r.resultChans[i] = nil
+	}
+	if len(pending) == 0 {
+		return
+	}
+	go drainChunkReadResults(r.bufferPool, pending)
+}
+
+func drainChunkReadResults(bufferPool *bytebufferpool.VariableSizePool, resultChans []chan chunkReadResult) {
+	for _, resultChan := range resultChans {
+		result := <-resultChan
+		bufferPool.Put(result.data)
+	}
+}
+
+// writeHandler enapsulates an on-going ByteStream write to a cache,
+// freeing the caller of having to manage writing and committing-to the cache
+// tracking cache hits, verifying checksums, etc. Here is how it must be used:
+//   - A new WriteHandler may be obtained by providing the first frame of the
+//     stream to the ByteStreamServer.beginWrite() function. This function will
+//     return a new writeHandler, or an error.
+//   - If a writeHandler is returned from beginWrite(),
+//     writeHandler.Close() must be called to free system resources
+//     when the write is finished.
+//   - Each subsequent frame should be passed to
+//     writeHandler.Write(), which will return an error on error
+//     (note: io.EOF indicates the cache believes the write is finished), or an
+//     optional WriteResponse that should be sent to the client if the client
+//     indicated the write is finished. This function will return (nil, nil) if
+//     the frame was processed successfully, but the write is not finished yet.
+type writeHandler struct {
+	// Top-level writer that handles incoming bytes.
+	writer io.Writer
+
+	bytesUploadedFromClient int
+	transferTimer           interfaces.TransferTimer
+
+	bufioCloser    io.Closer
+	cacheCommitter interfaces.Committer
+	cacheCloser    io.Closer
+
+	checksum           *Checksum
+	resourceName       *digest.CASResourceName
+	resourceNameString string
+	offset             int64
+}
+
+func checkInitialPreconditions(req *bspb.WriteRequest) error {
+	if req.ResourceName == "" {
+		return status.InvalidArgumentError("Initial ResourceName must not be null")
+	}
+	if req.WriteOffset != 0 {
+		return status.InvalidArgumentError("Initial WriteOffset should be 0")
+	}
+	return nil
+}
+
+func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeHandler) error {
+	if req.ResourceName != "" {
+		if req.ResourceName != ws.resourceNameString {
+			return status.InvalidArgumentErrorf("ResourceName '%s' does not match initial ResourceName: '%s'", req.ResourceName, ws.resourceNameString)
+		}
+	}
+	if req.WriteOffset != ws.offset {
+		return status.InvalidArgumentErrorf("Incorrect WriteOffset. Expected %d, got %d", ws.offset, req.WriteOffset)
+	}
+	return nil
+}
+
+func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteRequest) (*writeHandler, error) {
+	if err := checkInitialPreconditions(req); err != nil {
+		return nil, err
+	}
+
+	r, err := digest.ParseUploadResourceName(req.ResourceName)
+	if err != nil {
+		return nil, err
+	}
+	if !s.supportsCompressor(r.GetCompressor()) {
+		return nil, status.UnimplementedErrorf("Unsupported compressor %s", r.GetCompressor())
+	}
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
+
+	// Check quota before writing - use digest size as expected upload size
+	if qm := s.env.GetQuotaManager(); qm != nil {
+		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), r.GetDigest().GetSizeBytes()); err != nil {
+			return nil, err
+		}
+	}
+
+	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
+	if err != nil {
+		return nil, err
+	}
+	if !canWrite {
+		// Return already-exists error if the API key may not write so that
+		// higher-level code can detect and short-circuit this case.
+		return nil, status.AlreadyExistsError("The provided API Key does not have permission to write to the cache")
+	}
+
+	casRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
+	if s.cache.SupportsCompressor(r.GetCompressor()) {
+		casRN.SetCompressor(r.GetCompressor())
+	}
+	compressData := false
+	if casRN.GetCompressor() == repb.Compressor_IDENTITY && s.cache.SupportsCompressor(repb.Compressor_ZSTD) && r.GetDigest().GetSizeBytes() >= 100 {
+		casRN.SetCompressor(repb.Compressor_ZSTD)
+		compressData = true
+	}
+
+	if r.GetDigest().GetSizeBytes() >= *maxDirectWriteSizeBytes {
+		// The protocol says it is *optional* to allow overwriting, but does
+		// not specify what errors should be returned in that case. We would
+		// like to return an "AlreadyExists" error here, but it causes errors
+		// with parallel actions during remote execution.
+		//
+		// Protocol does say that if another parallel write had finished while
+		// this one was ongoing, we can immediately return a response with the
+		// committed size, so we'll just do that.
+		exists, err := s.cache.Contains(ctx, casRN.ToProto())
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			return nil, status.AlreadyExistsError("Already exists")
+		}
+	}
+
+	hasher, err := digest.HashForDigestType(r.GetDigestFunction())
+	if err != nil {
+		return nil, err
+	}
+	var committedWriteCloser interfaces.CommittedWriteCloser
+	if r.IsEmpty() {
+		committedWriteCloser = ioutil.DiscardWriteCloser()
+	} else {
+		cacheWriter, err := s.cache.Writer(ctx, casRN.ToProto())
+		if err != nil {
+			return nil, err
+		}
+		committedWriteCloser = cacheWriter
+	}
+	hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
+	ws := &writeHandler{
+		transferTimer:      hitTracker.TrackUpload(r.GetDigest()),
+		resourceName:       r,
+		resourceNameString: req.ResourceName,
+		cacheCommitter:     committedWriteCloser,
+		cacheCloser:        committedWriteCloser,
+		checksum:           NewChecksum(hasher, r.GetDigestFunction()),
+	}
+
+	// Write to the cache first. This gives more time between the final cache
+	// write and the commit, reducing the amount of time that the commit has to
+	// wait to flush writes.
+	ws.writer = io.MultiWriter(committedWriteCloser, ws.checksum)
+
+	if r.GetCompressor() == repb.Compressor_ZSTD {
+		// The incoming data is compressed.
+		if s.cache.SupportsCompressor(r.GetCompressor()) {
+			// If the cache supports compression, write the already compressed
+			// bytes to the cache with committedWriteCloser but wrap the
+			// checksum in a decompressor to validate the decompressed data.
+			decompressingChecksum, err := compression.NewZstdDecompressor(ws.checksum)
+			if err != nil {
+				ws.Close()
+				return nil, err
+			}
+			ws.writer = io.MultiWriter(committedWriteCloser, decompressingChecksum)
+			ws.bufioCloser = decompressingChecksum
+		} else {
+			// If the cache doesn't support compression, wrap both the checksum and cache writer in a decompressor
+			decompressor, err := compression.NewZstdDecompressor(ws.writer)
+			if err != nil {
+				ws.Close()
+				return nil, err
+			}
+			ws.writer = decompressor
+			ws.bufioCloser = decompressor
+		}
+	} else if compressData {
+		// If the cache supports compression but the request isn't compressed,
+		// wrap the cache writer in a compressor. This is faster than sending
+		// uncompressed data to the cache and letting it compress it.
+		bufSize := int64(digest.SafeBufferSize(r.ToProto(), compressBufSize))
+		compressor, err := compression.NewZstdCompressingWriter(committedWriteCloser, s.bufferPool, bufSize)
+		if err != nil {
+			ws.Close()
+			return nil, err
+		}
+		ws.writer = io.MultiWriter(compressor, ws.checksum)
+		ws.bufioCloser = compressor
+	}
+
+	return ws, nil
+}
+
+func (w *writeHandler) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error) {
+	if err := checkSubsequentPreconditions(req, w); err != nil {
+		return nil, err
+	}
+
+	n, err := w.writer.Write(req.Data)
+	if err != nil {
+		return nil, err
+	}
+	w.bytesUploadedFromClient += len(req.Data)
+	w.offset += int64(n)
+	if req.FinishWrite {
+		if err := w.commit(); err != nil {
+			return nil, err
+		}
+		return &bspb.WriteResponse{CommittedSize: w.offset}, nil
+	}
+	return nil, nil
+}
+
+func (w *writeHandler) commit() error {
+	if w.bufioCloser != nil {
+		defer func() {
+			w.bufioCloser = nil
+		}()
+		// Close the decompressor or compressor, flushing any currently buffered
+		// bytes. If this fails, don't bother computing the checksum or
+		// commiting the file to cache, since the incoming data is likely
+		// corrupt anyway.
+		if err := w.bufioCloser.Close(); err != nil {
+			log.Warning(err.Error())
+			return err
+		}
+	}
+
+	// Verify the checksum. If it does not match, note that the cache writer is
+	// not committed, since that persists the file to cache.
+	if err := w.checksum.Check(w.resourceName); err != nil {
+		return err
+	}
+
+	return w.cacheCommitter.Commit()
+}
+
+func (w *writeHandler) Close() error {
+	if err := w.transferTimer.CloseWithBytesTransferred(w.offset, int64(w.bytesUploadedFromClient), w.resourceName.GetCompressor(), "byte_stream_server"); err != nil {
+		log.Debugf("ByteStream Write: uploadTracker.CloseWithBytesTransferred error: %s", err)
+	}
+
+	if w.bufioCloser != nil {
+		w.bufioCloser.Close()
+	}
+	return w.cacheCloser.Close()
+}
+
 // `Write()` is used to send the contents of a resource as a sequence of
 // bytes. The bytes are sent in a sequence of request protos of a client-side
 // streaming FUNC (S *BYTESTREAMSERVER).
@@ -199,201 +686,23 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 // check the `WriteResponse` it receives to determine how much data the
 // service was able to commit and whether the service views the resource as
 // `complete` or not.
-
-type writeState struct {
-	// Top-level writer that handles incoming bytes.
-	writer io.Writer
-
-	decompressorCloser io.Closer
-	cacheCommitter     interfaces.Committer
-	cacheCloser        io.Closer
-
-	checksum           *Checksum
-	resourceName       *digest.ResourceName
-	resourceNameString string
-	offset             int64
-}
-
-func checkInitialPreconditions(req *bspb.WriteRequest) error {
-	if req.ResourceName == "" {
-		return status.InvalidArgumentError("Initial ResourceName must not be null")
-	}
-	if req.WriteOffset != 0 {
-		return status.InvalidArgumentError("Initial WriteOffset should be 0")
-	}
-	return nil
-}
-
-func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeState) error {
-	if req.ResourceName != "" {
-		if req.ResourceName != ws.resourceNameString {
-			return status.InvalidArgumentErrorf("ResourceName '%s' does not match initial ResourceName: '%s'", req.ResourceName, ws.resourceNameString)
-		}
-	}
-	if req.WriteOffset != ws.offset {
-		return status.InvalidArgumentErrorf("Incorrect WriteOffset. Expected %d, got %d", ws.offset, req.WriteOffset)
-	}
-	return nil
-}
-
-func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteRequest) (*writeState, error) {
-	r, err := digest.ParseUploadResourceName(req.ResourceName)
-	if err != nil {
-		return nil, err
-	}
-	if !s.supportsCompressor(r.GetCompressor()) {
-		return nil, status.UnimplementedErrorf("Unsupported compressor %s", r.GetCompressor())
-	}
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env)
-	if err != nil {
-		return nil, err
-	}
-
-	ws := &writeState{
-		resourceName:       r,
-		resourceNameString: req.ResourceName,
-	}
-
-	casRN := digest.NewResourceName(r.GetDigest(), r.GetInstanceName(), rspb.CacheType_CAS, r.GetDigestFunction())
-	if s.cache.SupportsCompressor(r.GetCompressor()) {
-		casRN.SetCompressor(r.GetCompressor())
-	}
-
-	if r.GetDigest().GetSizeBytes() >= *maxDirectWriteSizeBytes {
-		// The protocol says it is *optional* to allow overwriting, but does
-		// not specify what errors should be returned in that case. We would
-		// like to return an "AlreadyExists" error here, but it causes errors
-		// with parallel actions during remote execution.
-		//
-		// Protocol does say that if another parallel write had finished while
-		// this one was ongoing, we can immediately return a response with the
-		// committed size, so we'll just do that.
-		exists, err := s.cache.Contains(ctx, casRN.ToProto())
-		if err != nil {
-			return nil, err
-		}
-		if exists {
-			return nil, status.AlreadyExistsError("Already exists")
-		}
-	}
-
-	var committedWriteCloser interfaces.CommittedWriteCloser
-	if r.IsEmpty() {
-		committedWriteCloser = ioutil.DiscardWriteCloser()
-	} else {
-		cacheWriter, err := s.cache.Writer(ctx, casRN.ToProto())
-		if err != nil {
-			return nil, err
-		}
-		committedWriteCloser = cacheWriter
-	}
-	ws.cacheCommitter = committedWriteCloser
-	ws.cacheCloser = committedWriteCloser
-
-	hasher, err := digest.HashForDigestType(r.GetDigestFunction())
-	if err != nil {
-		return nil, err
-	}
-	ws.checksum = NewChecksum(hasher, r.GetDigestFunction())
-	ws.writer = io.MultiWriter(ws.checksum, committedWriteCloser)
-
-	if r.GetCompressor() == repb.Compressor_ZSTD {
-		if s.cache.SupportsCompressor(r.GetCompressor()) {
-			// If the cache supports compression, write compressed bytes to the cache with committedWriteCloser
-			// but wrap the checksum in a decompressor to validate the decompressed data
-			decompressingChecksum, err := compression.NewZstdDecompressor(ws.checksum)
-			if err != nil {
-				return nil, err
-			}
-			ws.writer = io.MultiWriter(decompressingChecksum, committedWriteCloser)
-			ws.decompressorCloser = decompressingChecksum
-		} else {
-			// If the cache doesn't support compression, wrap both the checksum and cache writer in a decompressor
-			decompressor, err := compression.NewZstdDecompressor(ws.writer)
-			if err != nil {
-				return nil, err
-			}
-			ws.writer = decompressor
-			ws.decompressorCloser = decompressor
-		}
-	}
-
-	return ws, nil
-}
-
-func (w *writeState) Write(buf []byte) error {
-	n, err := w.writer.Write(buf)
-	w.offset += int64(n)
-	return err
-}
-
-func (w *writeState) Flush() error {
-	if w.decompressorCloser != nil {
-		defer func() {
-			w.decompressorCloser = nil
-		}()
-		// Close the decompressor, flushing any currently buffered bytes to the
-		// checksum+cache multi-writer. If this fails, don't bother computing the
-		// checksum or commiting the file to cache, since the incoming data is
-		// likely corrupt anyway.
-		if err := w.decompressorCloser.Close(); err != nil {
-			log.Warning(err.Error())
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (w *writeState) Commit() error {
-	// Verify the checksum. If it does not match, note that the cache writer is
-	// not committed, since that persists the file to cache.
-	if err := w.checksum.Check(w.resourceName); err != nil {
-		return err
-	}
-
-	return w.cacheCommitter.Commit()
-}
-
-func (w *writeState) Close() error {
-	return w.cacheCloser.Close()
-}
-
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
-
-	canWrite, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY|akpb.ApiKey_CAS_WRITE_CAPABILITY)
-	if err != nil {
-		return err
-	}
-
-	var streamState *writeState
-	bytesUploadedFromClient := 0
+	var streamState *writeHandler
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
-			break
+			return nil
 		}
 		if err != nil {
 			return err
 		}
 
-		bytesUploadedFromClient += len(req.Data)
-		if streamState == nil { // First message
-			if err := checkInitialPreconditions(req); err != nil {
-				return err
-			}
-
-			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
-
-			// If the API key is read-only, pretend the object already exists.
-			if !canWrite {
-				return s.handleAlreadyExists(ctx, ht, stream, req)
-			}
-
-			streamState, err = s.initStreamState(ctx, req)
+		if streamState == nil {
+			streamState, err = s.beginWrite(ctx, req)
 			if status.IsAlreadyExistsError(err) {
-				return s.handleAlreadyExists(ctx, ht, stream, req)
+				hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
+				return s.handleAlreadyExists(ctx, hitTracker, stream, req)
 			}
 			if err != nil {
 				return err
@@ -403,37 +712,20 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 					log.Error(err.Error())
 				}
 			}()
-			uploadTracker := ht.TrackUpload(streamState.resourceName.GetDigest())
-			defer func() {
-				if err := uploadTracker.CloseWithBytesTransferred(streamState.offset, int64(bytesUploadedFromClient), streamState.resourceName.GetCompressor(), "byte_stream_server"); err != nil {
-					log.Debugf("ByteStream Write: uploadTracker.CloseWithBytesTransferred error: %s", err)
-				}
-			}()
-		} else { // Subsequent messages
-			if err := checkSubsequentPreconditions(req, streamState); err != nil {
-				return err
-			}
-		}
-		if err := streamState.Write(req.Data); err != nil {
-			return err
 		}
 
-		if req.FinishWrite {
-			// Note: Need to Flush before committing, since this
-			// flushes any currently buffered bytes from the
-			// decompressor to the cache writer.
-			if err := streamState.Flush(); err != nil {
+		resp, err := streamState.Write(req)
+		if err != nil {
+			return err
+		}
+		if resp != nil {
+			// Warn after the write has completed.
+			if err := s.warner.Warn(ctx); err != nil {
 				return err
 			}
-			if err := streamState.Commit(); err != nil {
-				return err
-			}
-			return stream.SendAndClose(&bspb.WriteResponse{
-				CommittedSize: streamState.offset,
-			})
+			return stream.SendAndClose(resp)
 		}
 	}
-	return nil
 }
 
 func (s *ByteStreamServer) supportsCompressor(compression repb.Compressor_Value) bool {
@@ -457,14 +749,13 @@ func (s *ByteStreamServer) supportsCompressor(compression repb.Compressor_Value)
 // non-decreasing.
 func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
 	// If the data has not been committed to the cache, then just tell the
-	//client that we don't have anything and let them retry it.
-	return &bspb.QueryWriteStatusResponse{
-		CommittedSize: 0,
-		Complete:      false,
-	}, nil
+	// client to retry from the beginning in a way that avoids future calls
+	// to this method in the case of Bazel.
+	// https://github.com/bazelbuild/bazel/pull/28235
+	return nil, status.UnimplementedError("not implemented")
 }
 
-func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht *hit_tracker.HitTracker, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
+func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht interfaces.HitTracker, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
 	r, err := digest.ParseUploadResourceName(firstRequest.ResourceName)
 	if err != nil {
 		return err
@@ -547,14 +838,26 @@ func (s *Checksum) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func (s *Checksum) Check(r *digest.ResourceName) error {
+func (s *Checksum) Check(r *digest.CASResourceName) error {
 	d := r.GetDigest()
-	computedDigest := fmt.Sprintf("%x", s.hash.Sum(nil))
-	if computedDigest != d.GetHash() {
-		return status.DataLossErrorf("Hash of uploaded bytes %q [%s] did not match provided digest: %q [%s].", computedDigest, s.digestFunction, d.GetHash(), r.GetDigestFunction())
-	}
-	if s.BytesWritten() != d.GetSizeBytes() {
-		return status.DataLossErrorf("Uploaded bytes length (%d bytes) did not match digest (%d).", s.BytesWritten(), d.GetSizeBytes())
+	computedHash := hex.EncodeToString(s.hash.Sum(nil))
+	// Use an INVALID_ARGUMENT status error to match the spec.
+	// https://github.com/bazelbuild/bazel/blob/ec36eacc31678ecf4b5c25f9ab7ab166330aff28/third_party/remoteapis/build/bazel/remote/execution/v2/remote_execution.proto#L283-L286
+	//
+	// It's hard to see the hashes matched but file sizes did not,
+	// but we are still supporting SHA1 so this could shield off potential collision attacks.
+	if computedHash != d.GetHash() || s.BytesWritten() != d.GetSizeBytes() {
+		computed := &repb.Digest{
+			Hash:      computedHash,
+			SizeBytes: s.BytesWritten(),
+		}
+		return status.InvalidArgumentErrorf(
+			"Digest of uploaded bytes %q [%s] did not match provided digest: %q [%s].",
+			digest.String(computed),
+			s.digestFunction,
+			digest.String(d),
+			r.GetDigestFunction(),
+		)
 	}
 	return nil
 }

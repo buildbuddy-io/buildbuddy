@@ -11,11 +11,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/cli/config"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
@@ -23,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/creack/pty"
 
@@ -30,20 +33,15 @@ import (
 )
 
 const (
-	// Path where we expect to find the plugin configuration, relative to the
-	// root of the Bazel workspace in which the CLI is invoked.
-	workspaceRelativeConfigPath = "buildbuddy.yaml"
-
-	// Path where we expect to find the user's plugin configuration, relative
-	// to the user's home directory.
-	homeRelativeUserConfigPath = "buildbuddy.yaml"
-
 	// Path under the CLI storage dir where plugins are saved.
 	pluginsStorageDirName = "plugins"
 
 	// Environment variable whose presence indicates that a script has been
 	// invoked by BB as a plugin.
 	isPluginEnvVar = "IS_BB_PLUGIN"
+
+	execArgsFileEnvVar          = "EXEC_ARGS_FILE"
+	resolvedBazelArgsFileEnvVar = "RESOLVED_BAZEL_ARGS_FILE"
 
 	installCommandUsage = `
 Usage: bb install [REPO[@VERSION]][:PATH] [--user]
@@ -75,9 +73,9 @@ Examples:
 )
 
 var (
-	installCmd     = flag.NewFlagSet("install", flag.ContinueOnError)
-	installPath    = installCmd.String("path", "", "Path under the repo root where the plugin directory is located.")
-	installForUser = installCmd.Bool("user", false, "Whether to install globally for the user.")
+	Flags          = flag.NewFlagSet("install", flag.ContinueOnError)
+	installPath    = Flags.String("path", "", "Path under the repo root where the plugin directory is located.")
+	installForUser = Flags.Bool("user", false, "Whether to install globally for the user.")
 
 	repoPattern = regexp.MustCompile(`` +
 		`^` + // Start marker
@@ -92,29 +90,29 @@ var (
 // HandleInstall handles the "bb install" subcommand, which allows adding
 // plugins to buildbuddy.yaml.
 func HandleInstall(args []string) (exitCode int, err error) {
-	if err := arg.ParseFlagSet(installCmd, args); err != nil {
+	if err := arg.ParseFlagSet(Flags, args); err != nil {
 		if err != flag.ErrHelp {
 			log.Printf("Failed to parse flags: %s", err)
 		}
 		log.Print(installCommandUsage)
 		return 1, nil
 	}
-	if len(installCmd.Args()) == 0 && *installPath == "" {
+	if len(Flags.Args()) == 0 && *installPath == "" {
 		log.Print("Error: either a repo or a --path= is expected.")
 		log.Print(installCommandUsage)
 		return 1, nil
 	}
-	if len(installCmd.Args()) > 1 {
+	if len(Flags.Args()) > 1 {
 		log.Print("Error: unexpected positional arguments")
 		log.Print(installCommandUsage)
 		return 1, nil
 	}
-	pluginCfg := &PluginConfig{
+	pluginCfg := &config.PluginConfig{
 		Repo: "",
 		Path: *installPath,
 	}
-	if len(installCmd.Args()) == 1 {
-		repo := installCmd.Args()[0]
+	if len(Flags.Args()) == 1 {
+		repo := Flags.Args()[0]
 		cfg, err := parsePluginSpec(repo, *installPath)
 		if err != nil {
 			log.Printf("Failed to parse repo: %s", repo)
@@ -130,14 +128,14 @@ func HandleInstall(args []string) (exitCode int, err error) {
 			log.Printf("Could not locate user config path: $HOME not set")
 			return 1, nil
 		}
-		configPath = filepath.Join(home, homeRelativeUserConfigPath)
+		configPath = filepath.Join(home, config.HomeRelativeUserConfigPath)
 	} else {
 		ws, err := workspace.Path()
 		if err != nil {
 			log.Printf("Could not locate workspace config path: %s", err)
 			return 1, nil
 		}
-		configPath = filepath.Join(ws, workspaceRelativeConfigPath)
+		configPath = filepath.Join(ws, config.WorkspaceRelativeConfigPath)
 	}
 
 	if err := installPlugin(pluginCfg, configPath); err != nil {
@@ -148,10 +146,10 @@ func HandleInstall(args []string) (exitCode int, err error) {
 	return 0, nil
 }
 
-func parsePluginSpec(spec, pathArg string) (*PluginConfig, error) {
+func parsePluginSpec(spec, pathArg string) (*config.PluginConfig, error) {
 	var repoSpec, versionSpec, pathSpec string
-	if strings.HasPrefix(spec, ":") {
-		pathSpec = strings.TrimPrefix(spec, ":")
+	if after, ok := strings.CutPrefix(spec, ":"); ok {
+		pathSpec = after
 	} else {
 		m := repoPattern.FindStringSubmatch(spec)
 		if len(m) == 0 {
@@ -171,21 +169,21 @@ func parsePluginSpec(spec, pathArg string) (*PluginConfig, error) {
 		pathSpec = pathArg
 	}
 
-	return &PluginConfig{
+	return &config.PluginConfig{
 		Repo: repoSpec + versionSpec,
 		Path: pathSpec,
 	}, nil
 }
 
-func installPlugin(plugin *PluginConfig, configPath string) error {
-	configFile, err := readConfig(configPath)
+func installPlugin(plugin *config.PluginConfig, configPath string) error {
+	configFile, err := config.LoadFile(configPath)
 	if err != nil {
 		return err
 	}
 	if configFile == nil {
-		configFile = &ConfigFile{
-			Path:             configPath,
-			BuildBuddyConfig: &BuildBuddyConfig{},
+		configFile = &config.File{
+			Path:       configPath,
+			RootConfig: &config.RootConfig{},
 		}
 	}
 
@@ -232,7 +230,10 @@ func installPlugin(plugin *PluginConfig, configPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to read existing config contents: %s", err)
 	}
-	lines := strings.Split(string(b), "\n")
+	var lines []string
+	if len(b) > 0 {
+		lines = strings.Split(string(b), "\n")
+	}
 	pluginSection := struct{ start, end int }{-1, -1}
 	anyMapKeyRE := regexp.MustCompile(`^\w.*?:`)
 	for i, line := range lines {
@@ -255,9 +256,11 @@ func installPlugin(plugin *PluginConfig, configPath string) error {
 	var head, tail []string
 	if pluginSection.start >= 0 {
 		head, tail = lines[:pluginSection.start], lines[pluginSection.end:]
+	} else {
+		head = lines
 	}
 	configFile.Plugins = append(configFile.Plugins, plugin)
-	b, err = yaml.Marshal(configFile.BuildBuddyConfig)
+	b, err = yaml.Marshal(configFile.RootConfig)
 	if err != nil {
 		return err
 	}
@@ -293,79 +296,6 @@ func installPlugin(plugin *PluginConfig, configPath string) error {
 	return nil
 }
 
-// ConfigFile represents a decoded config file along its file metadata.
-type ConfigFile struct {
-	Path string
-	*BuildBuddyConfig
-}
-
-type BuildBuddyConfig struct {
-	Plugins []*PluginConfig `yaml:"plugins,omitempty"`
-}
-
-type PluginConfig struct {
-	// Repo where the plugin should be loaded from.
-	// If empty, use the local workspace.
-	Repo string `yaml:"repo,omitempty"`
-
-	// Path relative to the repo where the plugin is defined.
-	// Optional. If unspecified, it behaves the same as "." (the repo root).
-	Path string `yaml:"path,omitempty"`
-}
-
-func readWorkspaceConfig(workspaceDir string) (*ConfigFile, error) {
-	return readConfig(filepath.Join(workspaceDir, workspaceRelativeConfigPath))
-}
-
-func readUserConfig() (*ConfigFile, error) {
-	homeDir := os.Getenv("HOME")
-	if homeDir == "" {
-		log.Debugf("not reading ~/%s: $HOME environment variable is not set", homeRelativeUserConfigPath)
-		return nil, nil
-	}
-	return readConfig(filepath.Join(homeDir, homeRelativeUserConfigPath))
-}
-
-func readConfig(path string) (*ConfigFile, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			log.Debugf("%s not found", path)
-			return nil, nil
-		}
-		return nil, err
-	}
-	defer f.Close()
-
-	log.Debugf("Reading %s", f.Name())
-	cfg := &BuildBuddyConfig{}
-	if err := yaml.NewDecoder(f).Decode(cfg); err != nil {
-		return nil, status.UnknownErrorf("failed to parse %s: %s", f.Name(), err)
-	}
-	return &ConfigFile{Path: path, BuildBuddyConfig: cfg}, nil
-}
-
-// getConfigFiles returns a list of parsed buildbuddy.yaml files from which to
-// load plugins, in increasing order of precedence.
-func getConfigFiles(workspaceDir string) ([]*ConfigFile, error) {
-	var configs []*ConfigFile
-	cfg, err := readUserConfig()
-	if err != nil {
-		return nil, err
-	}
-	if cfg != nil {
-		configs = append(configs, cfg)
-	}
-	cfg, err = readWorkspaceConfig(workspaceDir)
-	if err != nil {
-		return nil, err
-	}
-	if cfg != nil {
-		configs = append(configs, cfg)
-	}
-	return configs, nil
-}
-
 // dedupe returns a modified list of plugins such that if there are multiple
 // occurrences of the same plugin in the list, only the last occurrence appears
 // in the final list. Version info is ignored when determining whether two
@@ -389,24 +319,17 @@ func dedupe(plugins []*Plugin) ([]*Plugin, error) {
 	}
 	// Reverse to undo the reverse-iteration. This ensures plugin hooks are
 	// run with the same relative ordering as they appear in buildbuddy.yaml.
-	reversePlugins(out)
+	slices.Reverse(out)
 	return out, nil
-}
-
-func reversePlugins(a []*Plugin) {
-	for i := 0; i < len(a)/2; i++ {
-		j := len(a) - i - 1
-		a[i], a[j] = a[j], a[i]
-	}
 }
 
 // Plugin represents a CLI plugin. Plugins can exist locally or remotely
 // (if remote, they will be fetched).
 type Plugin struct {
 	// config is the raw config spec for this plugin.
-	config *PluginConfig
+	config *config.PluginConfig
 	// configFile is the ConfigFile that defined this plugin.
-	configFile *ConfigFile
+	configFile *config.File
 	// tempDir is a directory where the plugin can store temporary files.
 	// This dir lasts only for the current CLI invocation and is visible
 	// to all hooks.
@@ -456,13 +379,13 @@ func loadAll(workspaceDir, tempDir string) ([]*Plugin, error) {
 // workspace buildbuddy.yaml and returns the set of plugins. The returned
 // plugins are not yet ready to use.
 func getConfiguredPlugins(workspaceDir string) ([]*Plugin, error) {
-	configFiles, err := getConfigFiles(workspaceDir)
+	configFiles, err := config.LoadAllFiles(workspaceDir)
 	if err != nil {
 		return nil, err
 	}
 	var plugins []*Plugin
 	for _, f := range configFiles {
-		for _, p := range f.BuildBuddyConfig.Plugins {
+		for _, p := range f.RootConfig.Plugins {
 			plugin := &Plugin{config: p, configFile: f}
 			plugins = append(plugins, plugin)
 		}
@@ -615,9 +538,12 @@ func (p *Plugin) load() error {
 	}
 
 	log.Printf("Downloading %q", p.RepoURL())
-	// Clone into a temp dir so that if the ref does not exist, we don't
-	// actually create the plugin directory.
-	tempPath, err := os.MkdirTemp("", "buildbuddy-git-clone-*")
+	// Clone into a temp dir next to where the repo will be cloned so that if
+	// the ref does not exist, we don't actually create the plugin directory.
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("failed to create repo dir: %s", err)
+	}
+	tempPath, err := os.MkdirTemp(filepath.Dir(path), ".git-clone.*.tmp")
 	if err != nil {
 		return fmt.Errorf("failed to create temp dir: %s", err)
 	}
@@ -646,9 +572,6 @@ func (p *Plugin) load() error {
 
 	// We cloned the repo and checked out the ref successfully; move it to
 	// the cache dir.
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return fmt.Errorf("failed to create repo dir: %s", err)
-	}
 	if err := os.Rename(tempPath, path); err != nil {
 		return fmt.Errorf("failed to add cloned repo to plugins dir: %s", err)
 	}
@@ -709,8 +632,9 @@ func (p *Plugin) commandEnv() []string {
 // last plugin.
 //
 // See cli/example_plugins/ping-remote/pre_bazel.sh for an example.
-func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
-	// Write args to a file so the plugin can manipulate them.
+func (p *Plugin) PreBazel(bazelArgs *arg.BazelArgs, execArgs []string) (*arg.BazelArgs, []string, error) {
+	// Write bazel args to a file that the plugin can manipulate.
+	// Any changes are passed through to bazelisk.
 	argsFile, err := os.CreateTemp("", "bazelisk-args-*")
 	if err != nil {
 		return nil, nil, status.InternalErrorf("failed to create args file for pre-bazel hook: %s", err)
@@ -719,8 +643,23 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 		argsFile.Close()
 		os.Remove(argsFile.Name())
 	}()
-	_, err = disk.WriteFile(context.TODO(), argsFile.Name(), []byte(strings.Join(args, "\n")+"\n"))
+	// TODO(#7216): Write the forwarded args to the file.
+	if err := writeArgsFile(argsFile.Name(), bazelArgs.Resolved); err != nil {
+		return nil, nil, err
+	}
+
+	// Write resolved bazel args to a separate read-only file. The plugin may
+	// read this to see rc/config-expanded values, but only the forwarded args
+	// file is read back after the plugin runs. Any edits to this file are ignored.
+	resolvedArgsFile, err := os.CreateTemp("", "bazelisk-resolved-args-*")
 	if err != nil {
+		return nil, nil, status.InternalErrorf("failed to create resolved args file for pre-bazel hook: %s", err)
+	}
+	defer func() {
+		resolvedArgsFile.Close()
+		os.Remove(resolvedArgsFile.Name())
+	}()
+	if err := writeArgsFile(resolvedArgsFile.Name(), bazelArgs.Resolved); err != nil {
 		return nil, nil, err
 	}
 
@@ -733,8 +672,7 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 		execArgsFile.Close()
 		os.Remove(execArgsFile.Name())
 	}()
-	_, err = disk.WriteFile(context.TODO(), execArgsFile.Name(), []byte(strings.Join(execArgs, "\n")+"\n"))
-	if err != nil {
+	if err := writeArgsFile(execArgsFile.Name(), execArgs); err != nil {
 		return nil, nil, err
 	}
 
@@ -749,7 +687,7 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 	}
 	if !exists {
 		log.Debugf("Bazel hook not found at %s", scriptPath)
-		return args, execArgs, nil
+		return bazelArgs, execArgs, nil
 	}
 	log.Debugf("Running pre-bazel hook for %s/%s", p.config.Repo, p.config.Path)
 	// TODO: support "pre_bazel.<any-extension>" as long as the file is
@@ -760,7 +698,8 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	cmd.Env = p.commandEnv()
-	cmd.Env = append(cmd.Env, "EXEC_ARGS_FILE="+execArgsFile.Name())
+	cmd.Env = append(cmd.Env, execArgsFileEnvVar+"="+execArgsFile.Name())
+	cmd.Env = append(cmd.Env, resolvedBazelArgsFileEnvVar+"="+resolvedArgsFile.Name())
 	if err := cmd.Run(); err != nil {
 		return nil, nil, status.InternalErrorf("Pre-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
 	}
@@ -775,8 +714,8 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 		return nil, nil, err
 	}
 
-	log.Debugf("New bazel args: %s", newArgs)
-	log.Debugf("New executable args: %s", newExecArgs)
+	log.Debugf("New bazel args: %s", shlex.Quote(newArgs...))
+	log.Debugf("New executable args: %s", shlex.Quote(newExecArgs...))
 
 	// Canonicalize args after each plugin is run, so that every plugin gets
 	// canonicalized args as input.
@@ -784,7 +723,11 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return canonicalizedArgs, newExecArgs, nil
+	// TODO(#7216): Resolve bazel args after each plugin is run (using bazelArgs.Set), so every following plugin gets
+	// a refreshed resolved view of the bazel args (i.e. all --config flags expanded).
+	bazelArgs.Resolved = canonicalizedArgs
+
+	return bazelArgs, newExecArgs, nil
 }
 
 // PostBazel executes the plugin's post-bazel hook if it exists, allowing it to
@@ -794,7 +737,7 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 // is passed as the first argument.
 //
 // See cli/example_plugins/go-deps/post_bazel.sh for an example.
-func (p *Plugin) PostBazel(bazelOutputPath string) error {
+func (p *Plugin) PostBazel(bazelOutputPath string, exitCode int) error {
 	path, err := p.Path()
 	if err != nil {
 		return err
@@ -815,6 +758,7 @@ func (p *Plugin) PostBazel(bazelOutputPath string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = os.Stdin
 	cmd.Env = p.commandEnv()
+	cmd.Env = append(cmd.Env, fmt.Sprintf("BAZEL_EXIT_CODE=%d", exitCode))
 	if err := cmd.Run(); err != nil {
 		return status.InternalErrorf("Post-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
 	}
@@ -865,30 +809,48 @@ func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, status.InternalErrorf("failed to start plugin bazel output handler: %s", err)
 	}
+	doneCopying := make(chan struct{})
 	go func() {
+		defer close(doneCopying)
 		// Copy pty output to the next pipeline stage.
 		io.Copy(pw, ptmx)
+		// Signal EOF to downstream now that all pty data has been
+		// forwarded. If a downstream reader has exited, it will have
+		// closed its end of the pipe (via PipelineWriter), making
+		// pw.Write() return ErrClosedPipe, so we reach this point
+		// without hanging.
+		pw.Close()
 	}()
 	go func() {
-		// TODO: Properly clean up the tty here. We disable the cleanup since it
-		// seems to cause some plugin output to get dropped in rare cases.
-		// See: https://github.com/creack/pty/issues/127
-		//
-		// The cleanup being disabled is not a problem for the CLI because it
-		// should get cleaned up automatically when the CLI process exits, but
-		// if we want to reuse this code for other things then we should
-		// probably fix this so the tty can get cleaned up sooner.
-
-		// defer tty.Close()
-
 		defer ptmx.Close()
-		defer pw.Close()
 		log.Debugf("Running bazel output handler for %s/%s", p.config.Repo, p.config.Path)
 		if err := cmd.Wait(); err != nil {
 			log.Debugf("Command failed: %s", err)
 		} else {
 			log.Debugf("Command %s completed", cmd.Args)
 		}
+		// Close the pty subsidiary to signal no more writes.
+		// After cmd.Wait(), the child process has exited and released
+		// its reference to tty, so this closes the last open handle.
+		// The copy goroutine reading from ptmx will drain any remaining
+		// buffered data and then receive EIO, causing it to exit
+		// cleanly without data loss. This is safe to do after
+		// cmd.Wait() — the creack/pty#127 concern about dropped output
+		// only applies when closing tty while the child is still
+		// writing.
+		tty.Close()
+		// Wait for the copy goroutine to finish draining remaining
+		// pty data and close pw. We must wait here rather than closing
+		// pw first, because closing pw would race with the copy
+		// goroutine's writes, causing data loss (the copy goroutine
+		// would get ErrClosedPipe and drop buffered pty output).
+		//
+		// This won't deadlock: after tty.Close(), ptmx reads will
+		// return EIO once the buffer is drained, so the copy goroutine
+		// always terminates. If a downstream reader has exited, it
+		// closes its end of the pipe (see PipelineWriter), making
+		// pw.Write() return ErrClosedPipe, also causing termination.
+		<-doneCopying
 		// Flush any remaining data from the preceding stage, to prevent
 		// the output writer for the preceding stage from getting stuck.
 		io.Copy(io.Discard, r)
@@ -917,6 +879,14 @@ func PipelineWriter(w io.Writer, plugins []*Plugin) (io.WriteCloser, error) {
 	go func() {
 		defer close(doneCopying)
 		io.Copy(w, pluginOutput)
+		// Close the plugin output reader so that any upstream plugin's
+		// pw.Write() returns ErrClosedPipe instead of blocking forever.
+		// Without this, if w (e.g. os.Stderr) becomes unwritable, the
+		// upstream copy goroutine would hang on pw.Write() indefinitely
+		// since io.Pipe is synchronous.
+		if closer, ok := pluginOutput.(io.Closer); ok {
+			closer.Close()
+		}
 	}()
 	out := &overrideCloser{
 		WriteCloser: pw,
@@ -942,7 +912,7 @@ func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin)
 	// post_bazel output will get intermingled with bazel output.
 	defer wc.Close()
 
-	log.Debugf("Calling bazelisk with %+v", args)
+	log.Debugf("Calling bazelisk with %s", shlex.Quote(args...))
 
 	// Create the output file where the original bazel output will be written,
 	// for post-bazel plugins to read.
@@ -968,7 +938,7 @@ func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin)
 		// are still writing to a terminal, by setting --color=yes --curses=yes
 		// (with lowest priority, in case the user wants to set those flags
 		// themselves).
-		args = terminal.AddTerminalFlags(args)
+		args = addTerminalFlags(args)
 
 		ptmx, tty, err := pty.Open()
 		if err != nil {
@@ -993,6 +963,19 @@ func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin)
 	return bazelisk.Run(args, opts)
 }
 
+func addTerminalFlags(args []string) []string {
+	_, idx := parser.GetBazelCommandAndIndex(args)
+	if idx == -1 {
+		return args
+	}
+	tArgs := []string{"--curses=yes", "--color=yes"}
+	a := make([]string, 0, len(args)+len(tArgs))
+	a = append(a, args[:idx+1]...)
+	a = append(a, tArgs...)
+	a = append(a, args[idx+1:]...)
+	return a
+}
+
 type overrideCloser struct {
 	io.WriteCloser
 	AfterClose func()
@@ -1005,23 +988,27 @@ func (o *overrideCloser) Close() error {
 
 // readArgsFile reads the arguments from the file at the given path.
 // Each arg is expected to be placed on its own line.
-// Blank lines are ignored.
+// Blank lines are intentionally preserved, since some commands accept
+// empty arguments, e.g.: bazel mod dump_repo_mapping ""
 func readArgsFile(path string) ([]string, error) {
-	b, err := disk.ReadFile(context.TODO(), path)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, status.InternalErrorf("failed to read arguments: %s", err)
 	}
-
-	lines := strings.Split(string(b), "\n")
-	// Construct args from non-blank lines.
-	newArgs := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if line != "" {
-			newArgs = append(newArgs, line)
-		}
+	if len(b) == 0 {
+		return nil, nil
 	}
+	s := string(b)
+	s = strings.TrimSuffix(s, "\n")
+	return strings.Split(s, "\n"), nil
+}
 
-	return newArgs, nil
+func writeArgsFile(path string, args []string) error {
+	lines := make([]string, 0, len(args))
+	for _, arg := range args {
+		lines = append(lines, arg+"\n")
+	}
+	return os.WriteFile(path, []byte(strings.Join(lines, "")), 0644)
 }
 
 func realpath(path string) (string, error) {

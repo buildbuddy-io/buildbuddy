@@ -1,11 +1,8 @@
 ---
 slug: welcoming-grace-chuang
 title: Welcoming Grace Chuang
-author: Siggi Simonarson
-author_title: "Co-founder @ BuildBuddy"
+authors: siggi
 date: 2023-04-03 12:00:00
-author_url: https://www.linkedin.com/in/grace2chuang/
-author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
 image: /img/welcome_grace.png
 tags: [company, team]
 ---
@@ -19,3 +16,5 @@ Grace joins us from Google, where she spent 5+ years working on Product Strategy
 We look forward to working alongside Grace to build the future of developer tools.
 
 Welcome to BuildBuddy, Grace!
+
+<!-- truncate -->

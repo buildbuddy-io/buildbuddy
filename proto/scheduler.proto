@@ -17,6 +17,15 @@ message NodeAddress {
   int32 port = 2;
 }
 
+message TaskExistsRequest {
+  // The task ID being checked.
+  string task_id = 1;
+}
+
+message TaskExistsResponse {
+  bool exists = 1;
+}
+
 message LeaseTaskRequest {
   // The task for which to request a lease. If successful, a LeaseTaskResponse
   // will be returned containing the serialized task and duration of the lease.
@@ -34,6 +43,9 @@ message LeaseTaskRequest {
 
   // ID of the executor making the request.
   string executor_id = 4;
+
+  // The hostname of the executor making the request.
+  string executor_hostname = 9;
 
   // Indicates that the leased task could not be run to completion and should
   // be re-enqueued to be retried.
@@ -86,6 +98,27 @@ message LeaseTaskResponse {
   bool supports_reconnect = 6;
 }
 
+// CustomResource represents a user-defined resource.
+// These are the remote equivalent of bazel's --local_extra_resources flag.
+message CustomResource {
+  // Name of the resource, which does not include the "resources:" prefix.
+  // Ex: "gpu_memory_gb"
+  string name = 1;
+
+  // Requested resource amount.
+  float value = 2;
+}
+
+// WarmupImage represents a container image configured for executor startup
+// warmup.
+message WarmupImage {
+  // Image to warm up, without the "docker://" prefix.
+  string image = 1;
+
+  // Workload isolation type for this warmup image.
+  string isolation = 2;
+}
+
 message TaskSize {
   // The tasks's estimated memory usage.
   int64 estimated_memory_bytes = 1;
@@ -95,36 +128,220 @@ message TaskSize {
 
   // The task's estimated disk space requirement (beyond task inputs).
   int64 estimated_free_disk_bytes = 3;
+
+  // The task's estimated disk bytes read per second.
+  int64 disk_read_bps = 5;
+
+  // The task's estimated disk bytes written per second.
+  int64 disk_write_bps = 6;
+
+  // The task's estimated disk read IO operations per second.
+  int64 disk_read_iops = 7;
+
+  // The task's estimated disk write IO operations per second.
+  int64 disk_write_iops = 8;
+
+  // The task's custom resource requirement.
+  //
+  // These are requested explicitly using platform properties prefixed with
+  // "resources:". For a task to be assigned to an executor, the executor must
+  // be configured with enough custom resource capacity to satisfy all of the
+  // resource requests in this list.
+  repeated CustomResource custom_resources = 4;
+}
+
+// CgroupSettings defines Linux cgroup2 options for an execution.
+//
+// See https://www.kernel.org/doc/Documentation/admin-guide/cgroup-v2.rst
+//
+// Note that proto3 optional is used for scalar fields below. If values are not
+// present, then the executor should leave them at the cgroup2 default values.
+message CgroupSettings {
+  // Proportion of CPU given to this task relative to other tasks in the parent
+  // cgroup. This provides for a best-effort CPU guarantee.
+  //
+  // Values 1 to 10000 are supported.
+  //
+  // Maps to "cpu.weight" in cgroup2.
+  optional int64 cpu_weight = 1;
+
+  // Maximum CPU usage allowed per quota period.
+  //
+  // Maps to the "cpu.max" quota field in cgroup2.
+  optional int64 cpu_quota_limit_usec = 2;
+
+  // How often the CPU quota is refreshed. Longer periods may allow for higher
+  // burst CPU usage but may result in more stalling if the quota is exhausted
+  // very early in the period.
+  //
+  // Maps to the "cpu.max" period field in cgroup2.
+  optional int64 cpu_quota_period_usec = 3;
+
+  // CPU time that can be "borrowed" from other quota periods to allow for burst
+  // CPU usage, in usec.
+  //
+  // Maps to "cpu.max.burst" in cgroup2.
+  optional int64 cpu_max_burst_usec = 4;
+
+  // The requested minimum utilization (protection) as a percentage rational
+  // number, e.g. 12.34 for 12.34%.
+  //
+  // Maps to "cpu.uclamp.min" in cgroup2.
+  optional float cpu_uclamp_min = 5;
+
+  // The requested maximum utilization (limit) as a percentage rational
+  // number, e.g. 98.76 for 98.76%.
+  //
+  // Maps to "cpu.uclamp.max" in cgroup2.
+  optional float cpu_uclamp_max = 6;
+
+  // Hard limit on the number of processes allowed in the cgroup.
+  //
+  // Maps to "pids.max" in cgroup2.
+  optional int64 pids_max = 7;
+
+  // Limit after which memory usage is throttled and processes are put under
+  // heavy reclaim pressure.
+  //
+  // Maps to the "memory.high" field in cgroup2.
+  optional int64 memory_throttle_limit_bytes = 8;
+
+  // Limit after which processes in the cgroup are killed by the OOM killer.
+  //
+  // Maps to the "memory.max" field in cgroup2.
+  optional int64 memory_limit_bytes = 9;
+
+  // Best-effort memory protection - if the cgroup and its descendants are below
+  // this threshold then memory won't be reclaimed unless memory can't be
+  // reclaimed from other unprotected cgroups.
+  //
+  // Maps to "memory.low" in cgroup2.
+  optional int64 memory_soft_guarantee_bytes = 10;
+
+  // Guaranteed minimum memory that can never be reclaimed by the system. If
+  // there is not enough memory to provide this guarantee then the OOM killer
+  // will be invoked.
+  //
+  // Maps to "memory.min" in cgroup2.
+  optional int64 memory_minimum_bytes = 11;
+
+  // Determines whether the cgroup should be treated as an indivisible workload
+  // by the OOM killer. If set, all tasks belonging to the cgroup or to its
+  // descendants (if the memory cgroup is not a leaf cgroup) are killed together
+  // or not at all. This can be used to avoid partial kills to guarantee
+  // workload integrity.
+  optional bool memory_oom_group = 12;
+
+  // Throttle limit for anonymous swap memory.
+  //
+  // Maps to "memory.swap.high" in cgroup2.
+  optional int64 swap_throttle_limit_bytes = 13;
+
+  // Hard limit for anonymous swap memory.
+  //
+  // Maps to "memory.swap.max" in cgroup2.
+  optional int64 swap_limit_bytes = 14;
+
+  // Basic IO quality of service mechanism defined in terms of a single latency
+  // target number. Specifies the number of microseconds a process can wait
+  // before IO from other processes is given to it.
+  //
+  // Maps to "io.latency" in cgroup2. The major/minor device numbers are not
+  // defined here because these may differ from one executor to another.
+  optional int64 block_io_latency_target_usec = 15;
+
+  // Proportion of IO time given to this task relative to other tasks in the
+  // parent cgroup. This weight is applied only to the disk where all action IO
+  // is performed. Other IO block devices receive the default weight.
+  //
+  // Values 1 to 10000 are supported.
+  //
+  // Maps to "io.weight" in cgroup2. The major/minor device numbers are not
+  // defined here because these may differ from one executor to another.
+  optional int64 block_io_weight = 16;
+
+  // IO limit for the block device where all action IO is performed.
+  //
+  // Maps to "io.max" in cgroup2. The major/minor device numbers are not defined
+  // here because these may differ from one executor to another.
+  BlockIOLimits block_io_limit = 17;
+
+  message BlockIOLimits {
+    // Max read operations per second.
+    optional int64 riops = 1;
+
+    // Max write operations per second.
+    optional int64 wiops = 2;
+
+    // Max read bytes per second.
+    optional int64 rbps = 3;
+
+    // Max write bytes per second.
+    optional int64 wbps = 4;
+  }
+
+  // CPUSet: the set of cpus that a task may run on. This field is set by the
+  // executor, based on the estimated task size. Any value set by the app is
+  // ignored.
+  repeated int32 cpuset_cpus = 18;
+
+  // CPUSet: the numa node that a task may run on. This field is set by the
+  // executor, based on the estimated task size. Any value set by the app is
+  // ignored.
+  optional int32 numa_node = 19;
 }
 
 // Next ID: 9
 message SchedulingMetadata {
-  // Task size used for scheduling purposes, when the scheduler is deciding
-  // which executors (if any) may execute a task, and also when an executor is
-  // deciding which task to dequeue. Executors may see a different value of this
-  // field than what the scheduler sees, depending on measured_task_size. See
-  // documentation of that field for more info.
-  TaskSize task_size = 1;
+  // DEPRECATED. This field has two different meanings:
+  // 1. The execution server sets this to the task size "estimate" which only
+  //    incorporates the default task size and user-requested size, and not any
+  //    historical information or model predictions. This estimate is now split
+  //    into two separate fields: default_task_size and requested_size.
+  // 2. Just before enqueueing a task on an executor, the scheduler sets this to
+  //    the "final" task size that should be used by the executor, which
+  //    incorporates the measured size or model-predicated size as applicable.
+  //    In this case, EnqueueTaskReservationRequest.task_size should be used
+  //    instead.
+  TaskSize task_size = 1 [deprecated = true];
+
+  // A default task size based on some hard-coded parameters. For example,
+  // non-test actions may be given some default task size, test actions
+  // declaring TEST_SIZE=large in their environment variables may be given a
+  // predefined number of resources, etc. If no better estimate is available,
+  // this is the size that is used when scheduling the task on an executor.
+  TaskSize default_task_size = 13;
 
   // Task size measured from a previous task execution of a similar task, if
   // such data is available.
-  //
-  // The scheduler may use this size to compute an adjusted `task_size` just
-  // before enqueueing a task onto an executor, but the adjusted size should not
-  // exceed the executor's limits.
   TaskSize measured_task_size = 7;
 
-  // Task size computed via prediction model. This is only necessary when we
-  // a measured task size is not available.
-  //
-  // The scheduler may use this size to compute an adjusted `task_size` just
-  // before enqueueing a task onto an executor, but the adjusted size should not
-  // exceed the executor's limits.
+  // Task size computed via prediction model. This is only necessary when a
+  // measured task size is not available.
   TaskSize predicted_task_size = 8;
+
+  // The resources explicitly requested by the user. These will be unset if the
+  // user did not explicitly request resources.
+  //
+  // These should NOT be used for scheduling purposes. See comments on other
+  // TaskSize fields in this message to understand how tasks are sized for
+  // scheduling.
+  TaskSize requested_task_size = 10;
 
   string os = 2;
   string arch = 3;
   string pool = 4;
+
+  reserved 14;
+
+  // If set, the task will be scheduled only on nodes matching this hostname
+  // pattern within the pool.
+  // DEPRECATED: use routing_config instead.
+  string hostname_pattern = 15 [deprecated = true];
+
+  // Experimental routing config.
+  RoutingConfig routing_config = 16;
+
   // Group ID that owns the executors on which the task is to be executed.
   // May be different from the Group ID of the user that issued the Execute
   // request.
@@ -140,11 +357,40 @@ message SchedulingMetadata {
   // This is for metrics purposes only and shouldn't affect the behavior of the
   // scheduler or the executor.
   bool track_queued_task_size = 9;
+
+  // Optional task priority hint. Tasks with *lower* priority values will be
+  // prioritized over tasks with higher priority values, on a best-effort basis.
+  // Assigning priorities to tasks does not provide any strong guarantees about
+  // execution ordering.
+  //
+  // The default priority is 0, and priorities can be negative.
+  //
+  // In a multi-tenant scenario, this value does not affect the relative
+  // priority of tasks belonging to different groups; it only affects the
+  // relative priority of tasks within a group.
+  int32 priority = 11;
+
+  // cgroup2 settings. Will be set only for Linux executions.
+  CgroupSettings cgroup_settings = 12;
+}
+
+message RoutingConfig {
+  // If set, the task will be scheduled only on nodes matching this hostname
+  // pattern within the pool.
+  string hostname_pattern = 1;
+
+  // If true, and the routing requirements cannot be satisfied, behave as though
+  // the routing config was not specified at all.
+  bool best_effort = 2;
 }
 
 message ScheduleTaskRequest {
   string task_id = 1;
   SchedulingMetadata metadata = 2;
+
+  // Serialized build.bazel.remote.execution.v2.ExecutionTask. That proto
+  // depends on this one, so using the full type would create a build cycle.
+  // We could move ExecutionTask to this file to fix this.
   bytes serialized_task = 3;
 }
 
@@ -186,6 +432,10 @@ message EnqueueTaskReservationRequest {
   // it can retry the lease.
   google.protobuf.Duration delay = 5;
 
+  // The jwt for this specific task. Can't be propagated via RPC metadata
+  // because this is sent in long-running streaming RPC.
+  string jwt = 6;
+
   // Used to propagate trace information from the initial Execute request.
   // Normally trace information is automatically propagated via RPC metadata but
   // that doesn't work for streamed task reservations since there's one
@@ -197,8 +447,29 @@ message EnqueueTaskReservationResponse {
   string task_id = 1;
 }
 
+// CancelTaskReservationRequest may be sent from the scheduler to the executor
+// to cancel a task reservation previously enqueued with EnqueueTaskReservation.
+// The scheduler only sends these messages if the executor sets
+// supports_proactive_cancellation in the node registration request.
+message CancelTaskReservationRequest {
+  // The ID of the task to cancel.
+  string task_id = 1;
+}
+
 message RegisterExecutorRequest {
   ExecutionNode node = 1;
+}
+
+// AskForMoreWorkRequest may be sent from the executor to the scheduler when
+// the executor detects it is idle. If more unclaimed work is available, the
+// scheduler may enqueue some of it on this executor.
+message AskForMoreWorkRequest {}
+
+// AskForMoreWorkResponse is sent from the scheduler to executor in reply to
+// AskForMoreWorkRequest. It indicates the minimum amount of time the executor
+// must wait before sending another AskForMoreWorkRequest.
+message AskForMoreWorkResponse {
+  google.protobuf.Duration delay = 1;
 }
 
 message ShuttingDownRequest {
@@ -221,12 +492,22 @@ message RegisterAndStreamWorkRequest {
 
   // Notifications to the scheduler that this executor is going away.
   ShuttingDownRequest shutting_down_request = 3;
+
+  // Request more work, if idle.
+  AskForMoreWorkRequest ask_for_more_work_request = 4;
 }
 
 message RegisterAndStreamWorkResponse {
   // Request to enqueue a task reservation. A EnqueueTaskReservationResponse
   // message will be sent to ack the task reservation.
   EnqueueTaskReservationRequest enqueue_task_reservation_request = 3;
+
+  // How long to backoff if a AskForMoreWorkRequest was sent.
+  AskForMoreWorkResponse ask_for_more_work_response = 4;
+
+  // Request to cancel a task reservation previously enqueued with
+  // EnqueueTaskReservationRequest.
+  CancelTaskReservationRequest cancel_task_reservation_request = 5;
 }
 
 service Scheduler {
@@ -234,6 +515,8 @@ service Scheduler {
       returns (stream RegisterAndStreamWorkResponse) {}
 
   rpc LeaseTask(stream LeaseTaskRequest) returns (stream LeaseTaskResponse) {}
+
+  rpc TaskExists(TaskExistsRequest) returns (TaskExistsResponse) {}
 
   rpc ScheduleTask(ScheduleTaskRequest) returns (ScheduleTaskResponse) {}
 
@@ -262,9 +545,15 @@ message ExecutionNode {
   // Ex. 7000
   int64 assignable_milli_cpu = 4;
 
-  // Remote execution node operating system.
-  // Ex. "linux".
-  string os = 5;
+  // Assignable custom resources.
+  repeated CustomResource assignable_custom_resources = 11;
+
+  // Node's operating system family. One of: "darwin", "linux", or "windows".
+  string os_family = 5;
+
+  // Node's operating system with version info, suitable for display. This will
+  // be something like "macOS 10.17 Sierra".
+  string os_display_name = 15;
 
   // Architecture of the remote execution node.
   // Ex. "amd64"
@@ -288,6 +577,40 @@ message ExecutionNode {
   //
   // Ex. "8BiY6U0F"
   string executor_host_id = 10;
+
+  // Supported isolation types for this executor.
+  // Ex. ["docker", "firecracker", "none"]
+  repeated string supported_isolation_types = 12;
+
+  // Current number of tasks in the executor's queue.
+  int32 current_queue_length = 13;
+
+  // The number of in-flight actions the executor is currently executing.
+  int32 active_action_count = 14;
+
+  // The Xcode versions installed on this executor.
+  repeated string xcode_versions = 16;
+
+  // The Xcode SDKs installed on this executor.
+  repeated string xcode_sdks = 17;
+
+  // Whether the executor supports proactive task cancellation, which allows
+  // cancelling queued requests for tasks that have already been completed by
+  // another executor.
+  bool supports_proactive_cancellation = 18;
+
+  // Configured maximum size of the local filecache. If present and set to 0,
+  // the local filecache is disabled.
+  optional int64 filecache_max_size_bytes = 19;
+
+  // Images configured to warm up during executor startup.
+  repeated WarmupImage warmup_images = 20;
+
+  // Time when this executor process started.
+  google.protobuf.Timestamp start_time = 21;
+
+  // Optional set of key-value labels identifying this executor.
+  map<string, string> labels = 22;
 }
 
 message GetExecutionNodesRequest {
@@ -304,6 +627,9 @@ message GetExecutionNodesResponse {
 
     // Whether tasks will be routed to this node by default.
     bool is_default = 2;
+
+    // Last time this executor checked in with the scheduler.
+    google.protobuf.Timestamp last_check_in_time = 3;
   }
 
   bool user_owned_executors_supported = 3;

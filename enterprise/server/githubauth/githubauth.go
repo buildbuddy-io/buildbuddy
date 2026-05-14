@@ -15,7 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 )
 
@@ -46,7 +46,7 @@ func (a *githubAuthenticator) Login(w http.ResponseWriter, r *http.Request) erro
 	if r.URL.Path != loginPath {
 		return status.UnauthenticatedError("not a github login")
 	}
-	a.handler().StartAuthFlow(w, r, authPath)
+	a.handler().HandleLinkRepo(w, r, authPath)
 	return nil
 }
 
@@ -126,7 +126,23 @@ func (a *githubAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error
 }
 
 func (a *githubAuthenticator) handler() *github.OAuthHandler {
-	return a.env.GetGitHubApp().OAuthHandler().(*github.OAuthHandler)
+	// We always use the read-write github app for login for legacy reasons.
+	// Previously, we only offered a read-write app, and customers onboarded to it.
+	// Even though login only needs read access, there is no easy way to transfer
+	// customers to the read-only app once we added support for it.
+	//
+	// Using the read-write app does NOT mean that users have to grant write access
+	// for login. In GitHub, authorizing and installing a GitHub app are different.
+	// When *authorizing*, our read-write app only requests read access to emails.
+	// In GitHub terminology, you are authorizing an Oauth app.
+	// When *installing*, our read-write app requests write access to certain resources.
+	// In GitHub terminology, you are installing a GitHub app.
+	//
+	// TLDR: The login flow only prompts the user to authorize the app, so the user won't
+	// be asked to grant any write permissions, even though it's technically under
+	// our read-write app.
+	ghApp := a.env.GetGitHubAppService().GetReadWriteGitHubApp()
+	return ghApp.OAuthHandler().(*github.OAuthHandler)
 }
 
 func (a *githubAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
@@ -145,7 +161,7 @@ func (a *githubAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r 
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
-	return claims.AuthContextFromClaims(ctx, c, err)
+	return claims.AuthContextWithJWT(ctx, c, err)
 }
 
 func (a *githubAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
@@ -169,7 +185,6 @@ func (a *githubAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 	}
 	user.Email = t.Profile.Email
 	user.ImageURL = t.Profile.AvatarURL
-	user.GithubToken = t.AccessToken
 
 	return nil
 }
@@ -181,11 +196,11 @@ func (a *githubAuthenticator) Logout(w http.ResponseWriter, r *http.Request) err
 	// their access token.
 	jwt := cookie.GetCookie(r, cookie.JWTCookie)
 	if jwt == "" {
-		return status.UnauthenticatedError("Logged out!")
+		return nil
 	}
 	sessionID := cookie.GetCookie(r, cookie.SessionIDCookie)
 	if sessionID == "" {
-		return status.UnauthenticatedError("Logged out!")
+		return nil
 	}
 
 	if authDB := a.env.GetAuthDB(); authDB != nil {
@@ -193,7 +208,7 @@ func (a *githubAuthenticator) Logout(w http.ResponseWriter, r *http.Request) err
 			log.Errorf("Error clearing user session on logout: %s", err)
 		}
 	}
-	return status.UnauthenticatedError("Logged out!")
+	return nil
 }
 
 func (a *githubAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {

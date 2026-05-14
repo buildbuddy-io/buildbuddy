@@ -1,7 +1,7 @@
-import React from "react";
-import clsx from "clsx";
 import Link from "@docusaurus/Link";
 import type { Props } from "@theme/BlogSidebar";
+import clsx from "clsx";
+import React from "react";
 import styles from "./styles.module.css";
 
 export default function BlogSidebar({ sidebar }: Props): JSX.Element | null {

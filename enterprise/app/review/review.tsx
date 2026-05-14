@@ -1,7 +1,7 @@
 import React from "react";
+import { Path } from "../../../app/router/router";
 import ReviewListComponent from "./review_list";
 import ViewPullRequestComponent from "./view_pull_request";
-import { Path } from "../../../app/router/router";
 
 interface CodeReviewComponentProps {
   path: string;

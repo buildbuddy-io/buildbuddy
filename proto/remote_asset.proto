@@ -34,7 +34,7 @@ option java_package = "build.bazel.remote.asset.v1";
 option objc_class_prefix = "RA";
 
 // The Remote Asset API provides a mapping from a URI and Qualifiers to
-// Digests.  
+// Digests.
 //
 // Multiple URIs may be used to refer to the same content.  For example, the
 // same tarball may exist at multiple mirrors and thus be retrievable from
@@ -80,7 +80,7 @@ message Qualifier {
 }
 
 // The Fetch service resolves or fetches assets referenced by URI and
-// Qualifiers, returning a Digest for the content in 
+// Qualifiers, returning a Digest for the content in
 // [ContentAddressableStorage][build.bazel.remote.execution.v2.ContentAddressableStorage].
 //
 // As with other services in the Remote Execution API, any call may return an
@@ -179,7 +179,7 @@ message FetchBlobRequest {
   google.protobuf.Duration timeout = 2;
 
   // The oldest content the client is willing to accept, as measured from the
-  // time it was Push'd or when the underlying retrieval from origin was 
+  // time it was Push'd or when the underlying retrieval from origin was
   // started.
   // Upon retries of Fetch requests that cannot be completed within a single
   // RPC, clients *SHOULD* provide the same value for subsequent requests as the

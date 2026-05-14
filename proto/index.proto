@@ -1,27 +1,117 @@
 syntax = "proto3";
 
 import "proto/context.proto";
+import "proto/git.proto";
+import "proto/resource.proto";
 
 package index;
 
-message GitRepoRequest {
-  // A string like "buildbuddy-io/buildbuddy".
-  string owner_repo = 1;
-
-  // A commit sha "1d8a3184c996c3d167a281b70a4eeccd5188e5e1".
-  string commit_sha = 2;
+enum ReplacementStrategy {
+  UNKNOWN_REPLACEMENT_STRATEGY = 0;
+  // Download and fully reindex a single repository.
+  REPLACE_REPO = 1;
+  // Apply an incremental update, using data included in the request to update
+  // the index.
+  INCREMENTAL = 2;
+  // Drop an entire namespace
+  DROP_NAMESPACE = 3;
 }
-
-message GitRepoResponse {}
 
 message IndexRequest {
   context.RequestContext request_context = 1;
 
-  GitRepoRequest git_repo = 2;
+  git.GitRepo git_repo = 2;
+
+  // Required for, and only used by, REPLACE_REPO replacement_strategy
+  git.RepoState repo_state = 3;
+
+  // Required. The search namespace to operate in. Namespaces are logically
+  // distinct domains. Documents indexed in one namespace are not visible from
+  // another. The search server does not itself apply restrictions on who can
+  // query -- so the application should enforce separation by putting users into
+  // different namespaces.
+  //
+  // Ex. "gr12345" or "anon", or "public" or "foobarbaz".
+  string namespace = 4;
+
+  // Required. The strategy to use when indexing this repo.
+  ReplacementStrategy replacement_strategy = 5;
+
+  // If true, the request will return immediately, even before indexing is
+  // complete. This is useful if you don't care about the results and can
+  // tolerate errors.
+  bool async = 6;
+
+  // Required for, and only used by, INCREMENTAL_STRATEGY replacement_strategy
+  IncrementalUpdate update = 7;
 }
 
 message IndexResponse {
   context.ResponseContext response_context = 1;
+}
 
-  GitRepoResponse git_repo = 2;
+message RepoStatusRequest {
+  context.RequestContext request_context = 1;
+
+  // Required. See namespace field on IndexRequest above.
+  string namespace = 2;
+
+  // The URL of the repo
+  string repo_url = 3;
+}
+
+message RepoStatusResponse {
+  context.ResponseContext response_context = 1;
+
+  // The SHA of the most recently indexed commit
+  string last_indexed_commit_sha = 2;
+}
+
+message IngestAnnotationsRequest {
+  context.RequestContext request_context = 1;
+
+  // The resource name of the sstable to index.
+  resource.ResourceName sstable_name = 2;
+
+  // If true, the request will return immediately, even before indexing is
+  // complete. This is useful if you don't care about the results and can
+  // tolerate errors.
+  bool async = 3;
+}
+
+message IngestAnnotationsResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message IncrementalUpdate {
+  // The list of commits. The changes from the commits will be applied in order,
+  // in a single atomic batch. The commits must be ordered, with each commit
+  // following its direct parent.
+  repeated Commit commits = 1;
+}
+
+message Commit {
+  // The SHA of this commit
+  string sha = 1;
+  // The SHA of the parent of this commit
+  string parent_sha = 2;
+
+  // The paths, relative to the root of the repo, of the files deleted in this
+  // commit.
+  repeated string delete_filepaths = 4;
+
+  // The files which were added or updated in this commit.
+  // Currently, a file rename should be represented by an add of the new file
+  // and a delete of the old file. Deletes are processed before adds, so
+  // deleting and adding the same filepath in a single Commit will result in the
+  // added document existing after the update.
+  repeated File adds_and_updates = 3;
+}
+
+message File {
+  // The path, relative to the root of the repo, of this file.
+  string filepath = 1;
+
+  // The content of the file
+  bytes content = 2;
 }

@@ -1,24 +1,52 @@
+// Package driver implements a priority queue that drives Raft range management
+// decisions. It periodically examines ranges and partitions, determines what
+// action (if any) is needed, and executes the appropriate change.
+//
+// For ranges, the driver handles:
+//   - Up-replication: adding replicas when a range has fewer than the configured minimum.
+//   - Down-replication: removing replicas when a range exceeds the minimum.
+//   - Dead replica replacement and removal.
+//   - Range splitting when a range exceeds the target size.
+//   - Replica rebalancing to distribute ranges evenly across stores.
+//   - Lease rebalancing to distribute lease ownership evenly across stores.
+//   - Finishing replica removal by cleaning up data on removed nodes.
+//
+// For partitions, the driver handles initialization of new partitions by
+// creating the required Raft shards across available nodes.
+//
+// Actions are prioritized so that critical operations (e.g. replacing dead
+// replicas) run before less urgent ones (e.g. rebalancing). Failed actions are
+// retried with exponential backoff up to a maximum retry count.
 package driver
 
 import (
+	"cmp"
+	"container/heap"
 	"context"
-	"encoding/base64"
 	"flag"
-	"fmt"
+	"maps"
 	"math"
-	"sort"
+	"math/rand"
+	"slices"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/storemap"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
-	"github.com/hashicorp/serf/serf"
+	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -26,365 +54,1630 @@ import (
 )
 
 var (
-	enableDriver            = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
-	enableMovingReplicas    = flag.Bool("cache.raft.enable_moving_replicas", true, "If set, allow moving replicas between nodes")
-	enableReplacingReplicas = flag.Bool("cache.raft.enable_replacing_replicas", true, "If set, allow replacing dead / down replicas")
-	driverPollInterval      = flag.Duration("cache.raft.driver_poll_interval", 10*time.Second, "Poll the cluster for moves/replacements this often")
-	driverStartupDelay      = flag.Duration("cache.raft.driver_startup_delay", 1*time.Minute, "Don't allow driver to propose any changes until this window has passed")
-	deadReplicaTimeout      = flag.Duration("cache.raft.dead_replica_timeout", 5*time.Minute, "After this time, consider a node dead")
+	minReplicasPerRange        = flag.Int("cache.raft.min_replicas_per_range", 3, "The minimum number of replicas each range should have")
+	minMetaRangeReplicas       = flag.Int("cache.raft.min_meta_range_replicas", 5, "The minimum number of replicas the meta range should have")
+	missingLeaseCountThreshold = flag.Int("cache.raft.missing_lease_count_threshold", 5, "When the number of ranges without leases is greater than this number, don't rebalance leases")
+	newReplicaGracePeriod      = flag.Duration("cache.raft.new_replica_grace_period", 5*time.Minute, "The amount of time we allow for a new replica to catch up to the leader's before we start to consider it to be behind.")
 )
 
 const (
-	// A node must have this * idealReplicaCount number of replicas to be
-	// eligible for moving a replica to another node.
-	replicaMoveThreshold = 1.05
-
-	// If a node has more QPS than it's share * this ratio, leases may
-	// be moved to other nodes to more evenly balance load.
-	leaseMoveQPSThreshold = 1.05
+	// If a node's disk is fuller than this (by percentage), it is not
+	// eligible to be used for a rebalance or allocation target and we will
+	// actively try to move replicas from this node.
+	maximumDiskCapacity = .95
+	// If a node's disk is fuller than this (by percentage), it is not
+	// eligible to be used as a rebalance target.
+	maxDiskCapacityForRebalance = .925
+	// The max number of retries per action. When a driver operation failed, we
+	// will put the replica back on the queue to retry during post-process. An
+	// alert will be fired once the max number of retries have reached, and we
+	// won't put the replica back on to the queue during post-process.  However,
+	// the store periodically scan the replicas and add to the queue if a driver
+	// action is needed.
+	maxRetry = 10
 )
 
-func rkey(r *rfpb.ReplicaDescriptor) string {
-	return fmt.Sprintf("s%05dr%05d", r.GetShardId(), r.GetReplicaId())
+type DriverAction int
+
+const (
+	_ DriverAction = iota
+	DriverNoop
+	DriverSplitRange
+	DriverFinishReplicaRemoval
+	DriverRemoveReplica
+	DriverRemoveDeadReplica
+	DriverAddReplica
+	DriverReplaceDeadReplica
+	DriverRebalanceReplica
+	DriverRebalanceLease
+	// Partition-level actions
+	DriverInitializePartition
+)
+
+type RequeueType int
+
+const (
+	_ RequeueType = iota
+	// Do not requeue.
+	RequeueNoop
+	// Current operation succeeded, but we want to requeue to see if we need to
+	// perform other driver actions.
+	RequeueCheckOtherActions
+	// Current operation failed, but we want to retry.
+	RequeueRetry
+	// We need to wait to perform the current operation.
+	RequeueWait
+)
+
+func (r RequeueType) String() string {
+	switch r {
+	case RequeueNoop:
+		return "requeue-noop"
+	case RequeueCheckOtherActions:
+		return "requeue-check-other-actions"
+	case RequeueRetry:
+		return "requeue-retry"
+	case RequeueWait:
+		return "requeue-wait"
+	default:
+		return "requeue-unknown"
+	}
 }
 
-type replicaSet map[string]*rfpb.ReplicaDescriptor
+const (
+	// how long do we wait until we process the next item
+	queueWaitDuration = 1 * time.Second
+	// This is a ratio used in determining whether a store is above, around or
+	// below the mean. If a store has range count that is greater than the mean
+	// plus the product of the mean and this ratio, it is considered above the
+	// mean; and if the range count is less than the mean minus the product of
+	// the mean and this ratio, it is considered below the mean. Otherwise, it's
+	// considered around the mean.
+	replicaCountMeanRatioThreshold = .05
+	// The minimum number of ranges by which a store must deviate from the mean
+	// to be considered above or below the mean.
+	minReplicaCountThreshold = 2
 
-func (rs replicaSet) Add(nr *rfpb.ReplicaDescriptor)    { rs[rkey(nr)] = nr }
-func (rs replicaSet) Remove(nr *rfpb.ReplicaDescriptor) { delete(rs, rkey(nr)) }
-func (rs replicaSet) Get(nr *rfpb.ReplicaDescriptor) (*rfpb.ReplicaDescriptor, bool) {
-	r, ok := rs[rkey(nr)]
-	return r, ok
-}
-func NewReplicaSet() replicaSet {
-	return make(map[string]*rfpb.ReplicaDescriptor)
-}
+	// Similar to replica count mean ration Threshold; but for lease count
+	// instead.
+	leaseCountMeanRatioThreshold = .05
+	// The minimum number of leases by which a store must deviate from the mean
+	// to be considered above or below the mean.
+	minLeaseCountThreshold = 2
+)
 
-func variance(samples []float64, mean float64) float64 {
-	if len(samples) <= 1 {
+func (a DriverAction) Priority() float64 {
+	switch a {
+	case DriverInitializePartition:
+		return 800
+	case DriverReplaceDeadReplica:
+		return 700
+	case DriverAddReplica:
+		return 600
+	case DriverFinishReplicaRemoval:
+		return 500
+	case DriverRemoveDeadReplica:
+		return 400
+	case DriverRemoveReplica:
+		return 300
+	case DriverSplitRange:
+		return 200
+	case DriverRebalanceReplica, DriverRebalanceLease, DriverNoop:
 		return 0
-	}
-	var diffSquaredSum float64
-	for _, s := range samples {
-		diffSquaredSum += math.Pow(s-mean, 2)
-	}
-	return diffSquaredSum / float64(len(samples)-1)
-}
-
-type ClusterMap struct {
-	mu *sync.RWMutex
-
-	// a map of nhid -> *StoreUsage
-	lastUsage map[string]timestampedUsage
-
-	// a map of nhid -> last seen time. Cleared when
-	// a node is seen, set when it disappears.
-	leaveTime map[string]time.Time
-
-	// Each node keeps track of the ranges it holds the range lease for.
-	// For each leased range it also tracks:
-	//   - the range usage
-	//   - the other nodes which hold replicas in this range
-
-	// map of rangeID -> rangeDescriptor
-	leasedRanges map[uint64]*rfpb.RangeDescriptor
-
-	// map of rangeID -> replicaUsage (same usage for all replicas in range)
-	rangeUsage map[uint64]*rfpb.ReplicaUsage
-
-	// map of nhid -> replicas running on node
-	replicas replicaSet
-}
-
-type timestampedUsage struct {
-	*rfpb.StoreUsage
-	timestamp time.Time
-}
-
-func NewClusterMap() *ClusterMap {
-	return &ClusterMap{
-		mu: &sync.RWMutex{},
-
-		lastUsage:    make(map[string]timestampedUsage),
-		leaveTime:    make(map[string]time.Time),
-		leasedRanges: make(map[uint64]*rfpb.RangeDescriptor),
-		rangeUsage:   make(map[uint64]*rfpb.ReplicaUsage),
-		replicas:     make(replicaSet),
+	default:
+		alert.UnexpectedEvent("unknown-driver-action", "unknown driver action %s", a)
+		return -1
 	}
 }
 
-func (cm *ClusterMap) ObserveNode(nhid string, usage *rfpb.StoreUsage, nodeStatus serf.MemberStatus) error {
-	if nhid == "" {
-		return status.FailedPreconditionError("empty nodehost ID")
+func (a DriverAction) String() string {
+	switch a {
+	case DriverRemoveDeadReplica:
+		return "remove-dead-replica"
+	case DriverAddReplica:
+		return "add-replica"
+	case DriverRemoveReplica:
+		return "remove-replica"
+	case DriverReplaceDeadReplica:
+		return "replace-dead-replica"
+	case DriverFinishReplicaRemoval:
+		return "finish-replica-removal"
+	case DriverSplitRange:
+		return "split-range"
+	case DriverRebalanceReplica:
+		return "consider-rebalance-replica"
+	case DriverRebalanceLease:
+		return "consider-rebalance-lease"
+	case DriverNoop:
+		return "no-op"
+	case DriverInitializePartition:
+		return "initialize-partition"
+	default:
+		return "unknown"
 	}
-	if usage == nil {
-		return status.FailedPreconditionError("nil usage")
-	}
-
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	if nodeStatus == serf.StatusAlive {
-		delete(cm.leaveTime, nhid)
-		cm.lastUsage[nhid] = timestampedUsage{usage, time.Now()}
-	} else {
-		cm.leaveTime[nhid] = time.Now()
-	}
-	return nil
 }
 
-func (cm *ClusterMap) ObserveLocalReplicaUsage(usage *rfpb.ReplicaUsage, rd *rfpb.RangeDescriptor) error {
-	if usage == nil {
-		return status.FailedPreconditionError("nil range usage")
-	}
-
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	cm.rangeUsage[rd.GetRangeId()] = usage
-
-	cm.replicas.Add(usage.GetReplica())
-
-	return nil
+type IReplica interface {
+	ReplicaID() uint64
+	RangeID() uint64
+	Usage() (*rfpb.ReplicaUsage, error)
 }
 
-func (cm *ClusterMap) OnRangeLeaseAcquired(rd *rfpb.RangeDescriptor) {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	cm.leasedRanges[rd.GetRangeId()] = rd
+type IStore interface {
+	GetReplica(rangeID uint64) (*replica.Replica, error)
+	GetRange(rangeID uint64) *rfpb.RangeDescriptor
+	HaveLease(ctx context.Context, rangeID uint64) bool
+	AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*rfpb.AddReplicaResponse, error)
+	RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaRequest) (*rfpb.RemoveReplicaResponse, error)
+	GetReplicaStates(ctx context.Context, rd *rfpb.RangeDescriptor) map[uint64]constants.ReplicaState
+	SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error)
+	TransferLeadership(ctx context.Context, req *rfpb.TransferLeadershipRequest) (*rfpb.TransferLeadershipResponse, error)
+	NHID() string
+	ReserveRangeIDs(ctx context.Context, n int) ([]uint64, error)
+	InitializeShardsForPartition(ctx context.Context, nodeGrpcAddrs map[string]string, partition disk.Partition) error
 }
 
-func (cm *ClusterMap) OnRangeLeaseDropped(rd *rfpb.RangeDescriptor) {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	delete(cm.leasedRanges, rd.GetRangeId())
+type IClient interface {
+	HaveReadyConnections(ctx context.Context, rd *rfpb.ReplicaDescriptor) (bool, error)
+	GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error)
 }
 
-func (t timestampedUsage) String() string {
-	buf := fmt.Sprintf("%36s | Replicas: %4d | Leases: %4d | QPS (R): %5d | (W): %5d | Size: %d MB | Age: %2.2f",
-		t.GetNode().GetNhid(),
-		t.GetReplicaCount(),
-		t.GetLeaseCount(),
-		t.GetReadQps(),
-		t.GetRaftProposeQps(),
-		t.GetTotalBytesUsed()/1e6,
-		time.Since(t.timestamp).Seconds(),
-	)
-	return buf
+// computeQuorum computes a quorum, which a majority of members from a peer set.
+// In raft, when a quorum of nodes is unavailable, the cluster becomes
+// unavailable.
+func computeQuorum(numNodes int) int {
+	return (numNodes / 2) + 1
 }
 
-func (cm *ClusterMap) String() string {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	nhids := make([]string, 0)
-	for nhid := range cm.lastUsage {
-		nhids = append(nhids, nhid)
-	}
-	sort.Strings(nhids)
-	buf := ""
-	for i, nhid := range nhids {
-		buf += cm.lastUsage[nhid].String()
-		// if this is not the last one; add a newline.
-		if i < len(nhids)-1 {
-			buf += "\n"
-		}
-	}
-	return buf
+type attemptRecord struct {
+	action          DriverAction
+	attempts        int
+	nextAttemptTime time.Time
 }
 
-func (cm *ClusterMap) MeanReplicaCount() float64 {
-	log.Printf("cm:\n%s", cm)
-	numReplicas := int64(0)
-	numNodes := 0
-	for _, usage := range cm.lastUsage {
-		numReplicas += usage.GetReplicaCount()
-		numNodes += 1
-	}
+type TaskType int
 
-	return float64(numReplicas) / float64(numNodes)
+const (
+	_ TaskType = iota
+	RangeTaskType
+	PartitionTaskType
+)
+
+type taskKey struct {
+	taskType    TaskType
+	rangeID     uint64 // used for range tasks
+	partitionID string // used for partition tasks
 }
 
-func (cm *ClusterMap) MeanProposeQPS() float64 {
-	log.Printf("cm:\n%s", cm)
-	totalProposeQPS := int64(0)
-	numNodes := 0
-	for _, usage := range cm.lastUsage {
-		totalProposeQPS += usage.GetRaftProposeQps()
-		numNodes += 1
-	}
-
-	return float64(totalProposeQPS) / float64(numNodes)
+type rangeTask struct {
+	repl IReplica
 }
 
-// Driver represents a placement driver, which is responsible for managing
-// clusters: balance load data automatically across nodes and regions.
-type Driver struct {
-	store         rfspb.ApiServer
-	gossipManager interfaces.GossipService
-	updates       <-chan events.Event
+type partitionTask struct {
+	config disk.Partition
+	pd     *rfpb.PartitionDescriptor
+}
 
-	mu         *sync.Mutex
-	ClusterMap *ClusterMap
-	startTime  time.Time
+type driverTask struct {
+	key taskKey
+
+	// Task-type-specific data
+	rangeTask     *rangeTask
+	partitionTask *partitionTask
+
+	processing bool
+	requeue    bool
+
+	attemptRecord attemptRecord
+
+	item *priority_queue.Item[taskKey]
+}
+
+type queueImpl interface {
+	processTask(ctx context.Context, task *driverTask, action DriverAction) RequeueType
+	computeAction(ctx context.Context, task *driverTask) (DriverAction, float64)
+	getReplica(rangeID uint64) (IReplica, error)
+}
+
+type baseQueue struct {
+	impl queueImpl
+
+	maxSize int
+	stop    chan struct{}
+
+	mu      sync.Mutex //protects pq, taskMap
+	pq      *priority_queue.PriorityQueue[taskKey]
+	taskMap map[taskKey]*driverTask
+
+	clock clockwork.Clock
+
+	log log.Logger
 
 	eg       *errgroup.Group
+	egCtx    context.Context
 	egCancel context.CancelFunc
 }
 
-func New(store *store.Store, gossipManager interfaces.GossipService, updates <-chan events.Event) *Driver {
-	d := &Driver{
-		store:         store,
-		gossipManager: gossipManager,
-		updates:       updates,
-		mu:            &sync.Mutex{},
-		ClusterMap:    NewClusterMap(),
-		startTime:     time.Now(),
+func newBaseQueue(nhlog log.Logger, clock clockwork.Clock, impl queueImpl) *baseQueue {
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	eg, gctx := errgroup.WithContext(ctx)
+	return &baseQueue{
+		clock:    clock,
+		log:      nhlog,
+		maxSize:  1000,
+		pq:       &priority_queue.PriorityQueue[taskKey]{},
+		taskMap:  make(map[taskKey]*driverTask),
+		eg:       eg,
+		egCtx:    gctx,
+		egCancel: cancelFunc,
+		impl:     impl,
 	}
-	// Register the driver as a gossip listener so that it receives
-	// gossip callbacks.
-	gossipManager.AddListener(d)
-	statusz.AddSection("raft_driver", "Placement Driver", d)
-	return d
 }
 
-func (d *Driver) Start() error {
-	if !*enableDriver {
-		log.Debugf("Driver disabled; not running")
+func (bq *baseQueue) pop() *driverTask {
+	bq.mu.Lock()
+	defer bq.mu.Unlock()
+	item := heap.Pop(bq.pq).(*priority_queue.Item[taskKey])
+	key := item.Value()
+	task, ok := bq.taskMap[key]
+	if !ok {
+		alert.UnexpectedEvent("unexpected_task_not_found", "task not found for key %+v", key)
 		return nil
 	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	d.egCancel = cancelFunc
-
-	eg, gctx := errgroup.WithContext(ctx)
-	d.eg = eg
-
-	eg.Go(func() error {
-		return d.handleEvents(gctx)
-	})
-	eg.Go(func() error {
-		return d.manageClustersLoop(gctx)
-	})
-
-	log.Debug("Driver started")
-	return nil
+	task.processing = true
+	return task
 }
 
-func (d *Driver) Stop() error {
-	now := time.Now()
-	defer func() {
-		log.Printf("Driver shutdown finished in %s", time.Since(now))
-	}()
+func (bq *baseQueue) pushLocked(task *driverTask, priority float64) {
+	item := priority_queue.NewItem(task.key, priority)
+	heap.Push(bq.pq, item)
+	task.item = item
+	bq.taskMap[task.key] = task
+}
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	if d.egCancel != nil {
-		d.egCancel()
-		d.eg.Wait()
+func (bq *baseQueue) removeItemWithMinPriority() {
+	item := bq.pq.RemoveItemWithMinPriority()
+	if item == nil {
+		return
+	}
+	key := item.Value()
+	task, ok := bq.taskMap[key]
+	if !ok {
+		alert.UnexpectedEvent("unexpected_task_not_found", "task not found for key %+v", key)
+		return
 	}
 
-	log.Debug("Driver stopped")
-	return nil
+	if task.processing {
+		task.requeue = false
+		return
+	}
+	delete(bq.taskMap, key)
 }
 
-// manageClustersLoop loops does not return; call it from a goroutine.
-// It will loop forever calling "manageClusters" until the quit channel
-// is closed by driver.Close().
-func (d *Driver) manageClustersLoop(ctx context.Context) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-time.After(*driverPollInterval):
-			err := d.manageClusters()
+func (bq *baseQueue) Len() int {
+	bq.mu.Lock()
+	defer bq.mu.Unlock()
+	return bq.pq.Len()
+}
+
+func (bq *baseQueue) postProcess(ctx context.Context, task *driverTask, requeueType RequeueType) {
+	ar := attemptRecord{}
+	if requeueType == RequeueRetry {
+		ar = task.attemptRecord
+		ar.attempts++
+		ar.nextAttemptTime = bq.nextAttemptTime(ar.attempts)
+	} else if requeueType == RequeueWait {
+		ar = task.attemptRecord
+	}
+	bq.mu.Lock()
+	delete(bq.taskMap, task.key)
+	bq.mu.Unlock()
+
+	if ar.attempts >= maxRetry {
+		if task.key.taskType == RangeTaskType {
+			alert.UnexpectedEvent("driver_action_retries_exceeded", "c%dn%d action: %s retries exceeded", task.key.rangeID, task.rangeTask.repl.ReplicaID(), ar.action)
+		} else if task.key.taskType == PartitionTaskType {
+			alert.UnexpectedEvent("driver_action_retries_exceeded", "partition %s action: %s retries exceeded", task.key.partitionID, ar.action)
+		}
+		// do not add it to the queue
+	} else if requeueType != RequeueNoop || task.requeue {
+		if task.key.taskType == RangeTaskType {
+			bq.maybeAddRangeTask(ctx, task.rangeTask, ar)
+		} else if task.key.taskType == PartitionTaskType {
+			bq.maybeAddPartitionTask(ctx, task.partitionTask, ar)
+		}
+	}
+}
+
+func (bq *baseQueue) nextAttemptTime(attemptNumber int) time.Time {
+	backoff := float64(1*time.Second) * math.Pow(2, float64(attemptNumber))
+	return bq.clock.Now().Add(time.Duration(backoff))
+}
+
+func (bq *baseQueue) process(ctx context.Context, task *driverTask) RequeueType {
+	action, _ := bq.impl.computeAction(ctx, task)
+
+	if task.key.taskType == RangeTaskType {
+		rangeID := task.key.rangeID
+		if task.rangeTask == nil {
+			bq.log.Errorf("task is nil for range %d", rangeID)
+			return RequeueNoop
+		}
+		replicaID := task.rangeTask.repl.ReplicaID()
+		bq.log.Debugf("start to process c%dn%d", rangeID, replicaID)
+	} else if task.key.taskType == PartitionTaskType {
+		bq.log.Debugf("start to process partition %s", task.key.partitionID)
+		if task.partitionTask == nil {
+			bq.log.Errorf("task is nil for partition %s", task.key.partitionID)
+			return RequeueNoop
+		}
+	}
+
+	ar := task.attemptRecord
+	if action == ar.action && !ar.nextAttemptTime.IsZero() {
+		if bq.clock.Now().Before(ar.nextAttemptTime) {
+			// Do nothing until nextAttemptTime becomes current
+			return RequeueWait
+		}
+	}
+
+	return bq.impl.processTask(ctx, task, action)
+}
+
+// The Queue is responsible for up-replicate, down-replicate and reblance ranges
+// across the stores.
+type Queue struct {
+	*baseQueue
+
+	storeMap storemap.IStoreMap
+	store    IStore
+	sender   *sender.Sender
+
+	apiClient IClient
+
+	minReplicasPerRange  int
+	minMetaRangeReplicas int
+
+	efp interfaces.ExperimentFlagProvider
+}
+
+func NewQueue(store IStore, sender *sender.Sender, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock, efp interfaces.ExperimentFlagProvider) *Queue {
+	storeMap := storemap.New(gossipManager, clock, nhlog, *minReplicasPerRange, *minMetaRangeReplicas, *missingLeaseCountThreshold)
+	q := &Queue{
+		storeMap:             storeMap,
+		store:                store,
+		apiClient:            apiClient,
+		sender:               sender,
+		minReplicasPerRange:  *minReplicasPerRange,
+		minMetaRangeReplicas: *minMetaRangeReplicas,
+		efp:                  efp,
+	}
+	q.baseQueue = newBaseQueue(nhlog, clock, q)
+	return q
+}
+
+func (rq *Queue) getReplica(rangeID uint64) (IReplica, error) {
+	return rq.store.GetReplica(rangeID)
+}
+
+const driverEnabledFlag = "cache.raft.enable_driver"
+const splitEnabledFlag = "cache.raft.enable_split"
+
+// isDriverEnabled checks if the driver is enabled via the experiment flag.
+// By default, the driver is enabled (returns true).
+func (rq *Queue) isDriverEnabled(ctx context.Context) bool {
+	if rq.efp == nil {
+		return true
+	}
+	return rq.efp.Boolean(ctx, driverEnabledFlag, true)
+}
+
+// isSplitEnabled checks if split is enabled via the experiment flag.
+// By default, split is enabled (returns true).
+func (rq *Queue) isSplitEnabled(ctx context.Context) bool {
+	if rq.efp == nil {
+		return true
+	}
+	return rq.efp.Boolean(ctx, splitEnabledFlag, true)
+}
+
+// computeActionForRangeTask computes the drive action needed for range task and its priority.
+func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask) (DriverAction, float64) {
+	// Handle range tasks
+	repl := task.repl
+	rangeID := repl.RangeID()
+	rd := rq.store.GetRange(rangeID)
+	action := DriverNoop
+	if rd == nil || !rq.store.HaveLease(ctx, rd.GetRangeId()) {
+		return action, action.Priority()
+	}
+
+	if rd.GetDeleted() {
+		// If the range descriptor is marked as deleted, we don't want to do
+		// any up/down-replicate and reblance actions, except for finish the
+		// cleanup.
+		return action, action.Priority()
+	}
+
+	needsRemoveData := false
+	if len(rd.GetRemoved()) > 0 {
+		// There is no point to call to finish replica removal if the node is
+		// dead.
+		byStatus := rq.storeMap.DivideByStatus(rd.GetRemoved())
+		if len(byStatus.LiveReplicas)+len(byStatus.SuspectReplicas) > 0 {
+			needsRemoveData = true
+			action = DriverFinishReplicaRemoval
+		}
+	}
+
+	if rq.storeMap == nil {
+		return action, action.Priority()
+	}
+
+	replicas := rd.GetReplicas()
+	curReplicas := len(replicas)
+	if curReplicas == 0 {
+		return action, action.Priority()
+	}
+	minReplicas := rq.minReplicasPerRange
+	if rangeID == constants.MetaRangeID {
+		minReplicas = rq.minMetaRangeReplicas
+	}
+
+	desiredQuorum := computeQuorum(minReplicas)
+	quorum := computeQuorum(curReplicas)
+
+	if curReplicas < minReplicas || len(rd.GetStaging()) > 0 {
+		action = DriverAddReplica
+		adjustedPriority := action.Priority() + float64(desiredQuorum-curReplicas)
+		change := rq.addReplica(rd)
+		if change == nil {
+			// not able to find target node for allocation; if there is
+			// in-progress replica removal, complete it so this can be a target
+			// for allocation
+			if needsRemoveData {
+				return DriverFinishReplicaRemoval, adjustedPriority
+			}
+		}
+		return action, adjustedPriority
+	}
+	replicasByStatus := rq.storeMap.DivideByStatus(replicas)
+	numLiveReplicas := len(replicasByStatus.LiveReplicas) + len(replicasByStatus.SuspectReplicas)
+	numDeadReplicas := len(replicasByStatus.DeadReplicas)
+
+	if numLiveReplicas < quorum {
+		// We don't have enough live nodes to do any cluster membership change;
+		// However, RemoveData doesn't require cluster membership change
+		if needsRemoveData {
+			return DriverFinishReplicaRemoval, action.Priority()
+		}
+		log.Debugf("noop because num live replicas of range %d = %d less than quorum =%d", rd.GetRangeId(), numLiveReplicas, quorum)
+		action = DriverNoop
+		return action, action.Priority()
+	}
+
+	if curReplicas <= minReplicas && numDeadReplicas > 0 {
+		action = DriverReplaceDeadReplica
+		// not able to find target node for allocation; if there is
+		// in-progress replica removal, complete it so this can be a target
+		// for allocation
+		if needsRemoveData {
+			return DriverFinishReplicaRemoval, action.Priority()
+		}
+		return action, action.Priority()
+	}
+
+	if numDeadReplicas > 0 {
+		action = DriverRemoveDeadReplica
+		return action, action.Priority()
+	}
+
+	if curReplicas > minReplicas {
+		action = DriverRemoveReplica
+		adjustedPriority := action.Priority() - float64(curReplicas%2)
+		return action, adjustedPriority
+	}
+
+	if needsRemoveData {
+		action = DriverFinishReplicaRemoval
+		return action, action.Priority()
+	}
+
+	if rd.GetRangeId() == constants.MetaRangeID {
+		// Do not try to re-balance meta-range.
+		//
+		// When meta-range is moved onto a different node, range cache has to
+		// update its range descriptor. Before the range descriptor get updated,
+		// SyncPropose to all other ranges can fail temporarily because the range
+		// descriptor is not current. Therefore, we should only move meta-range
+		// when it's absolutely necessary.
+		action = DriverNoop
+		return action, action.Priority()
+	}
+
+	// Do not split when there is a store that's unavailable and a replica is
+	// in the middle of a removal.
+	isClusterHealthy := rq.storeMap.AllStoresAvailableAndReady()
+	if isClusterHealthy && rq.isSplitEnabled(ctx) {
+		if targetRangeSizeBytes := config.TargetRangeSizeBytes(); targetRangeSizeBytes > 0 {
+			usage, err := repl.Usage()
 			if err != nil {
-				log.Errorf("Manage clusters error: %s", err)
+				rq.log.Errorf("failed to get Usage of replica c%dn%d", repl.RangeID(), repl.ReplicaID())
+			} else {
+				jitterFactor := config.RangeSizeJitterFactor()
+				lowerBound := (1 - jitterFactor) * float64(targetRangeSizeBytes)
+				jitter := (rand.Float64()*2 - 1) * jitterFactor * float64(targetRangeSizeBytes)
+				threshold := float64(targetRangeSizeBytes) + jitter
+				if sizeUsed := usage.GetEstimatedDiskBytesUsed(); float64(sizeUsed) >= threshold {
+					action = DriverSplitRange
+					adjustedPriority := action.Priority() + (float64(sizeUsed)-lowerBound)/float64(sizeUsed)*100.0
+					return action, adjustedPriority
+				}
 			}
 		}
 	}
-}
 
-func (d *Driver) handleEvents(ctx context.Context) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case e := <-d.updates:
-			d.processSingleEvent(e)
+	// Do not try to rebalance replica or leases when there is a store that's
+	// unavailable because it can make the system more unstable.
+	if isClusterHealthy {
+		// For DriverConsiderRebalance check if there are rebalance opportunities.
+		storesWithStats := rq.storeMap.GetStoresWithStats()
+		op := rq.findRebalanceReplicaOp(rd, storesWithStats, repl.ReplicaID())
+		if op != nil {
+			log.Debugf("find rebalancing opportunities: from (nhid=%q, replicaCount=%d, isReady=%t) to (nhid=%q, replicaCount=%d, isReady=%t)", op.from.nhid, op.from.replicaCount, op.from.usage.GetIsReady(), op.to.nhid, op.to.replicaCount, op.to.usage.GetIsReady())
+			action = DriverRebalanceReplica
+			return action, action.Priority()
 		}
 	}
-}
 
-func (d *Driver) processSingleEvent(e events.Event) {
-	switch e.EventType() {
-	case events.EventRangeUsageUpdated:
-		rangeUsageEvent, ok := e.(events.RangeUsageEvent)
-		if !ok {
-			return
-		}
-		d.ClusterMap.ObserveLocalReplicaUsage(rangeUsageEvent.ReplicaUsage, rangeUsageEvent.RangeDescriptor)
-	case events.EventRangeLeaseAcquired:
-		rangeEvent, ok := e.(events.RangeEvent)
-		if !ok {
-			return
-		}
-		d.ClusterMap.OnRangeLeaseAcquired(rangeEvent.RangeDescriptor)
-	case events.EventRangeLeaseDropped:
-		rangeEvent, ok := e.(events.RangeEvent)
-		if !ok {
-			return
-		}
-		d.ClusterMap.OnRangeLeaseDropped(rangeEvent.RangeDescriptor)
-	default:
-		return
+	if rq.findRebalanceLeaseOp(ctx, rd, repl.ReplicaID()) != nil {
+		action = DriverRebalanceLease
+		return action, action.Priority()
 	}
+
+	action = DriverNoop
+	return action, action.Priority()
 }
 
-// OnEvent listens for other nodes' gossip events and handles them.
-func (d *Driver) OnEvent(updateType serf.EventType, event serf.Event) {
-	memberEvent, ok := event.(serf.MemberEvent)
+// computeActionForPartitionTask computes the action needed for a partition task and its priority.
+func (rq *Queue) computeActionForPartitionTask(ctx context.Context, task *partitionTask) (DriverAction, float64) {
+	if task.pd == nil || task.pd.GetState() == rfpb.PartitionDescriptor_INITIALIZING {
+		a := DriverInitializePartition
+		rq.log.Infof("action: %s for partition: %q", a, task.config.ID)
+		return a, a.Priority()
+	}
+	return DriverNoop, DriverNoop.Priority()
+}
+
+// computeAction computes the action needed and its priority.
+func (rq *Queue) computeAction(ctx context.Context, task *driverTask) (DriverAction, float64) {
+	switch task.key.taskType {
+	case RangeTaskType:
+		return rq.computeActionForRangeTask(ctx, task.rangeTask)
+	case PartitionTaskType:
+		return rq.computeActionForPartitionTask(ctx, task.partitionTask)
+	}
+	return DriverNoop, DriverNoop.Priority()
+
+}
+
+func (bq *baseQueue) maybeAddTask(ctx context.Context, newTask *driverTask, ar attemptRecord) {
+	bq.mu.Lock()
+	defer bq.mu.Unlock()
+
+	task, ok := bq.taskMap[newTask.key]
 	if !ok {
+		task = newTask
+	}
+
+	action, priority := bq.impl.computeAction(ctx, task)
+	if action == DriverNoop {
 		return
 	}
-	for _, member := range memberEvent.Members {
-		usageTag := member.Tags[constants.StoreUsageTag]
-		if len(usageTag) == 0 {
-			log.Debugf("member %q did not have usage tag yet", member.Name)
-			continue
+
+	if ok {
+		// The item is processing. Mark to be requeued.
+		if task.processing {
+			task.requeue = true
+			return
 		}
-		usageBuf, err := base64.StdEncoding.DecodeString(usageTag)
-		if err != nil {
-			log.Warningf("error b64 decoding usage tag: %s", err)
-			continue
+		if task.attemptRecord.action != action {
+			// clear the attempt record if action is different
+			task.attemptRecord = attemptRecord{
+				action: action,
+			}
 		}
-		usage := &rfpb.StoreUsage{}
-		if err := proto.Unmarshal(usageBuf, usage); err != nil {
-			log.Warningf("error unmarshaling usage buf: %s", err)
-			continue
+		bq.pq.Update(task.item, priority)
+		return
+	}
+
+	if action == ar.action {
+		task.attemptRecord = ar
+	} else {
+		task.attemptRecord = attemptRecord{
+			action: action,
 		}
-		if err := d.ClusterMap.ObserveNode(usage.GetNode().GetNhid(), usage, member.Status); err != nil {
-			log.Errorf("Error observing cluster change: %s", err)
-		}
+	}
+
+	bq.pushLocked(task, priority)
+
+	// If the priroityQueue if full, let's remove the item with the lowest priority.
+	if pqLen := bq.pq.Len(); pqLen > bq.maxSize {
+		bq.removeItemWithMinPriority()
 	}
 }
 
-func (d *Driver) manageClusters() error {
-	if time.Since(d.startTime) < *driverStartupDelay {
-		log.Debugf("not making changes yet; still in startup period")
+func (bq *baseQueue) maybeAddRangeTask(ctx context.Context, rt *rangeTask, ar attemptRecord) {
+	if rt.repl == nil {
+		return
+	}
+	rangeID := rt.repl.RangeID()
+	key := taskKey{taskType: RangeTaskType, rangeID: rangeID}
+	newTask := &driverTask{
+		key:       key,
+		rangeTask: rt,
+	}
+	bq.maybeAddTask(ctx, newTask, ar)
+}
+
+func (bq *baseQueue) maybeAddPartitionTask(ctx context.Context, pt *partitionTask, ar attemptRecord) {
+	key := taskKey{taskType: PartitionTaskType, partitionID: pt.config.ID}
+	newTask := &driverTask{
+		key:           key,
+		partitionTask: pt,
+	}
+	bq.maybeAddTask(ctx, newTask, ar)
+}
+
+func (rq *Queue) MaybeAddPartitionTask(ctx context.Context, p disk.Partition, pd *rfpb.PartitionDescriptor) {
+	if !rq.isDriverEnabled(ctx) {
+		return
+	}
+	rq.log.Infof("maybe add partition task for %q", p.ID)
+	rq.maybeAddPartitionTask(ctx, &partitionTask{config: p, pd: pd}, attemptRecord{})
+}
+
+func (rq *Queue) MaybeAddRangeTask(ctx context.Context, replica IReplica) {
+	if !rq.isDriverEnabled(ctx) {
+		return
+	}
+	rq.maybeAddRangeTask(ctx, &rangeTask{repl: replica}, attemptRecord{})
+}
+
+func (bq *baseQueue) Start() {
+	bq.eg.Go(func() error {
+		queueDelay := bq.clock.NewTicker(queueWaitDuration)
+		defer queueDelay.Stop()
+		for {
+			select {
+			case <-bq.egCtx.Done():
+				return nil
+			case <-queueDelay.Chan():
+				bq.processQueue()
+			}
+		}
+	})
+}
+
+func (bq *baseQueue) Stop() {
+	bq.log.Infof("Driver shutdown started")
+	now := time.Now()
+	defer func() {
+		bq.log.Infof("Driver shutdown finished in %s", time.Since(now))
+	}()
+
+	bq.egCancel()
+	bq.eg.Wait()
+}
+
+func (bq *baseQueue) processQueue() {
+	if bq.Len() == 0 {
+		return
+	}
+	task := bq.pop()
+	if task == nil {
+		return
+	}
+	requeueType := bq.process(bq.egCtx, task)
+	bq.postProcess(bq.egCtx, task, requeueType)
+}
+
+// findDeadReplica finds a dead replica to be removed.
+func findDeadReplica(replicas []*rfpb.ReplicaDescriptor, replicaByStatus *storemap.ReplicasByStatus) *rfpb.ReplicaDescriptor {
+	if len(replicaByStatus.DeadReplicas) == 0 {
+		// nothing to be removed
 		return nil
 	}
-	// TODO(tylerw): do work here.
+
+	if len(replicas) == 1 {
+		// only one replica remains, don't remove the replica
+		return nil
+	}
+
+	return replicaByStatus.DeadReplicas[0]
+}
+
+func storeHasReplica(node *rfpb.NodeDescriptor, existing []*rfpb.ReplicaDescriptor) bool {
+	for _, repl := range existing {
+		if repl.GetNhid() == node.GetNhid() {
+			return true
+		}
+	}
+	return false
+}
+
+func (rq *Queue) findNodesForAllocation(storesWithStats *storemap.StoresWithStats) []*rfpb.NodeDescriptor {
+	var candidates []*candidate
+	for _, su := range storesWithStats.Usages {
+		if isDiskFull(su) {
+			rq.log.Debugf("skip node %+v because the disk is full", su)
+			continue
+		}
+		rq.log.Debugf("add node %+v to candidate list", su.GetNode())
+		candidates = append(candidates, &candidate{
+			nhid:                  su.GetNode().GetNhid(),
+			usage:                 su,
+			replicaCount:          su.GetReplicaCount(),
+			replicaCountMeanLevel: replicaCountMeanLevel(storesWithStats, su),
+		})
+	}
+
+	quorum := computeQuorum(rq.minReplicasPerRange)
+	if len(candidates) < quorum {
+		log.Info("we don't have enough nodes to bring up a new raft cluster")
+		// We don't have enough nodes to bring up a new raft cluster.
+		return nil
+	}
+	slices.SortFunc(candidates, func(a, b *candidate) int {
+		// Best targets are up front.
+		return -compareByScoreAndID(a, b)
+	})
+	res := make([]*rfpb.NodeDescriptor, 0, rq.minReplicasPerRange)
+	for i := 0; i < min(rq.minReplicasPerRange, len(candidates)); i++ {
+		res = append(res, candidates[i].usage.GetNode())
+	}
+	return res
+}
+
+// findNodeForAllocation finds a target node for the range to up-replicate.
+func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats) *rfpb.NodeDescriptor {
+	var candidates []*candidate
+	existing := append(rd.GetReplicas(), rd.GetRemoved()...)
+	for _, su := range storesWithStats.Usages {
+		if storeHasReplica(su.GetNode(), rd.GetStaging()) {
+			// There is a staging replica, complete it.
+			return su.GetNode()
+		}
+		if storeHasReplica(su.GetNode(), existing) {
+			rq.log.Debugf("skip node %+v because the replica is already on the node", su.GetNode())
+			continue
+		}
+		if isDiskFull(su) {
+			rq.log.Debugf("skip node %+v because the disk is full", su)
+			continue
+		}
+		rq.log.Debugf("add node %+v to candidate list", su.GetNode())
+		candidates = append(candidates, &candidate{
+			nhid:                  su.GetNode().GetNhid(),
+			usage:                 su,
+			replicaCount:          su.GetReplicaCount(),
+			replicaCountMeanLevel: replicaCountMeanLevel(storesWithStats, su),
+		})
+	}
+
+	if len(candidates) == 0 {
+		return nil
+	}
+	slices.SortFunc(candidates, func(a, b *candidate) int {
+		// Best targets are up front.
+		return -compareByScoreAndID(a, b)
+	})
+	return candidates[0].usage.GetNode()
+}
+
+type removeDataOp struct {
+	replDesc *rfpb.ReplicaDescriptor
+	rd       *rfpb.RangeDescriptor
+}
+
+type change struct {
+	addOp                *rfpb.AddReplicaRequest
+	removeOp             *rfpb.RemoveReplicaRequest
+	removeDataOp         *removeDataOp
+	splitOp              *rfpb.SplitRangeRequest
+	transferLeadershipOp *rfpb.TransferLeadershipRequest
+}
+
+func (rq *Queue) finishReplicaRemoval(rd *rfpb.RangeDescriptor) *change {
+	if len(rd.GetRemoved()) == 0 {
+		return nil
+	}
+	return &change{
+		removeDataOp: &removeDataOp{
+			replDesc: rd.GetRemoved()[0],
+			rd:       rd,
+		},
+	}
+}
+
+func (rq *Queue) splitRange(rd *rfpb.RangeDescriptor) *change {
+	return &change{
+		splitOp: &rfpb.SplitRangeRequest{
+			Header: header.New(rd, rd.GetReplicas()[0], rfpb.Header_LINEARIZABLE),
+			Range:  rd,
+		},
+	}
+}
+
+func (rq *Queue) addReplica(rd *rfpb.RangeDescriptor) *change {
+	storesWithStats := rq.storeMap.GetStoresWithStats()
+	target := rq.findNodeForAllocation(rd, storesWithStats)
+	if target == nil {
+		rq.log.Debugf("cannot find targets for range descriptor:%+v", rd)
+		return nil
+	}
+
+	return &change{
+		addOp: &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node:  target,
+		},
+	}
+}
+
+func (rq *Queue) initializePartition(ctx context.Context, p disk.Partition) error {
+	rq.log.Infof("initialize partitions: %q", p.ID)
+	storesWithStats := rq.storeMap.GetStoresWithStats()
+	nodes := rq.findNodesForAllocation(storesWithStats)
+	if nodes == nil {
+		return status.InternalErrorf("cannot find nodes to initialize partition %q", p.ID)
+	}
+	nodeGrpcAddrs := make(map[string]string, len(nodes))
+	for _, n := range nodes {
+		nodeGrpcAddrs[n.GetNhid()] = n.GetGrpcAddress()
+	}
+	return rq.store.InitializeShardsForPartition(ctx, nodeGrpcAddrs, p)
+}
+
+func (rq *Queue) replaceDeadReplica(rd *rfpb.RangeDescriptor) *change {
+	replicasByStatus := rq.storeMap.DivideByStatus(rd.GetReplicas())
+	dead := findDeadReplica(rd.GetReplicas(), replicasByStatus)
+	if dead == nil {
+		// nothing to remove
+		return nil
+	}
+	change := rq.addReplica(rd)
+	if change == nil {
+		rq.log.Debug("replaceDeadReplica cannot find node for allocation")
+		return nil
+	}
+
+	change.removeOp = &rfpb.RemoveReplicaRequest{
+		Range:     rd,
+		ReplicaId: dead.GetReplicaId(),
+	}
+
+	return change
+}
+
+func (rq *Queue) removeDeadReplica(rd *rfpb.RangeDescriptor) *change {
+	replicasByStatus := rq.storeMap.DivideByStatus(rd.GetReplicas())
+	dead := findDeadReplica(rd.GetReplicas(), replicasByStatus)
+	if dead == nil {
+		// nothing to remove
+		return nil
+	}
+	return &change{
+		removeOp: &rfpb.RemoveReplicaRequest{
+			Range:     rd,
+			ReplicaId: dead.GetReplicaId(),
+		},
+	}
+}
+
+type rebalanceChoice struct {
+	existing   *candidate
+	candidates []*candidate
+}
+
+type rebalanceOp struct {
+	from *candidate
+	to   *candidate
+}
+
+func compareOp(op1 *rebalanceOp, op2 *rebalanceOp) int {
+	c1 := compareByScore(op1.to, op1.from)
+	c2 := compareByScore(op2.to, op2.from)
+	if c1 != c2 {
+		return cmp.Compare(c1, c2)
+	}
+	return compareByScore(op1.to, op2.to)
+}
+
+func canConvergeByRebalanceReplica(existingStores map[string]*candidate, targets []*candidate, allStores *storemap.StoresWithStats) bool {
+	overfullThreshold := int64(math.Ceil(aboveMeanReplicaCountThreshold(allStores.ReplicaCount.Mean)))
+	// The existing store is too far above the mean.
+	aboveMean := false
+	for _, source := range existingStores {
+		if source.usage.ReplicaCount > overfullThreshold {
+			return true
+		}
+		aboveMean = aboveMean || float64(source.usage.ReplicaCount) > allStores.ReplicaCount.Mean
+	}
+
+	// One existing store is above the mean, but not too far; but there is at least one other store that is too far below the mean.
+	if aboveMean {
+		underfullThreshold := int64(math.Floor(belowMeanReplicaCountThreshold(allStores.ReplicaCount.Mean)))
+		for _, c := range targets {
+			if c.usage.ReplicaCount < underfullThreshold {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func canConvergeByRebalanceLease(choice *rebalanceChoice, mean float64) bool {
+	if len(choice.candidates) == 0 {
+		return false
+	}
+	overfullThreshold := int64(math.Ceil(aboveMeanLeaseCountThreshold(mean)))
+	// The existing store is too far above the mean.
+	if choice.existing.usage.LeaseCount > overfullThreshold {
+		// There is a candidate store that's below mean
+		for _, c := range choice.candidates {
+			if float64(c.usage.LeaseCount) < mean {
+				return true
+			}
+		}
+		// No candidate store is below mean, don't transfer.
+		return false
+	}
+
+	// The existing store is above the mean, but not too far; but there is at least one other store that is too far below the mean.
+	if float64(choice.existing.usage.LeaseCount) > mean {
+		underfullThreshold := int64(math.Floor(belowMeanLeaseCountThreshold(mean)))
+		for _, c := range choice.candidates {
+			if c.usage.LeaseCount < underfullThreshold {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func findReplicaWithNHID(rd *rfpb.RangeDescriptor, nhid string) (uint64, error) {
+	for _, replica := range rd.GetReplicas() {
+		if replica.GetNhid() == nhid {
+			return replica.GetReplicaId(), nil
+		}
+	}
+	return 0, status.InternalErrorf("cannot find replica with NHID: %s", nhid)
+}
+
+func (rq *Queue) rebalanceReplica(rd *rfpb.RangeDescriptor, localRepl IReplica) *change {
+	storesWithStats := rq.storeMap.GetStoresWithStats()
+	op := rq.findRebalanceReplicaOp(rd, storesWithStats, localRepl.ReplicaID())
+	if op == nil {
+		return nil
+	}
+	rq.log.Debugf("found rebalance replica op for range %d: %s -> %s", rd.GetRangeId(), op.from.nhid, op.to.nhid)
+
+	replicaID, err := findReplicaWithNHID(rd, op.from.usage.GetNode().GetNhid())
+	if err != nil {
+		rq.log.Errorf("failed to rebalance replica: %s", err)
+		return nil
+	}
+
+	return &change{
+		addOp: &rfpb.AddReplicaRequest{
+			Range: rd,
+			Node:  op.to.usage.GetNode(),
+		},
+		removeOp: &rfpb.RemoveReplicaRequest{
+			Range:     rd,
+			ReplicaId: replicaID,
+		},
+	}
+}
+
+func (rq *Queue) rebalanceLease(ctx context.Context, rd *rfpb.RangeDescriptor, localRepl IReplica) *change {
+	op := rq.findRebalanceLeaseOp(ctx, rd, localRepl.ReplicaID())
+	if op == nil {
+		return nil
+	}
+	rq.log.Debugf("found rebalance lease op for range %d: %s -> %s", rd.GetRangeId(), op.from.nhid, op.to.nhid)
+	replicaID, err := findReplicaWithNHID(rd, op.to.usage.GetNode().GetNhid())
+	if err != nil {
+		rq.log.Errorf("failed to rebalance lease: %s", err)
+		return nil
+	}
+	return &change{
+		transferLeadershipOp: &rfpb.TransferLeadershipRequest{
+			RangeId:         rd.GetRangeId(),
+			TargetReplicaId: replicaID,
+		},
+	}
+}
+
+func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescriptor, localReplicaID uint64) *rebalanceOp {
+	globalMean, shouldRebalance := rq.storeMap.CheckLeaseRebalancePrecondition()
+	if !shouldRebalance {
+		return nil
+	}
+	var existing *candidate
+	nhids := make([]string, 0, len(rd.GetReplicas()))
+	existingNHID := ""
+	for _, repl := range rd.GetReplicas() {
+		nhids = append(nhids, repl.GetNhid())
+		if repl.GetReplicaId() == localReplicaID {
+			existingNHID = repl.GetNhid()
+		}
+	}
+	storesWithStats := rq.storeMap.GetStoresWithStatsFromIDs(nhids)
+	allStores := make(map[string]*candidate)
+	for _, su := range storesWithStats.Usages {
+		nhid := su.GetNode().GetNhid()
+		store := &candidate{
+			nhid:  nhid,
+			usage: su,
+		}
+		allStores[nhid] = store
+		if nhid == existingNHID {
+			existing = store
+		}
+	}
+
+	if existing == nil {
+		rq.log.Warningf("failed to find existing store for c%dn%d", rd.GetRangeId(), localReplicaID)
+		return nil
+	}
+
+	existing.leaseCount = existing.usage.LeaseCount
+	existing.leaseCountMeanLevel = leaseCountMeanLevel(globalMean, existing.usage)
+	choice := &rebalanceChoice{
+		existing:   existing,
+		candidates: make([]*candidate, 0, len(rd.GetReplicas())-1),
+	}
+	for _, repl := range rd.GetReplicas() {
+		if repl.GetReplicaId() == localReplicaID {
+			continue
+		}
+		store, ok := allStores[repl.GetNhid()]
+		if !ok {
+			// The store might not be available.
+			continue
+		}
+
+		if hasReadyConnections, err := rq.apiClient.HaveReadyConnections(ctx, repl); err != nil || !hasReadyConnections {
+			// Do not try to rebalance to replicas that cannot be connected to.
+			continue
+		}
+		choice.candidates = append(choice.candidates, &candidate{
+			nhid:                repl.GetNhid(),
+			usage:               store.usage,
+			leaseCount:          store.usage.LeaseCount,
+			leaseCountMeanLevel: leaseCountMeanLevel(globalMean, store.usage),
+		})
+	}
+	if !canConvergeByRebalanceLease(choice, globalMean) {
+		return nil
+	}
+
+	best := slices.MaxFunc(choice.candidates, compareByScoreAndID)
+
+	if compareByScore(best, existing) < 0 {
+		return nil
+	}
+	return &rebalanceOp{
+		from: existing,
+		to:   best,
+	}
+}
+
+func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats, localReplicaID uint64) *rebalanceOp {
+	candidateStores := make(map[string]*candidate, len(storesWithStats.Usages))
+	otherReplicaStores := make(map[string]*candidate, len(rd.GetReplicas()))
+	needRebalance := false
+	for _, su := range storesWithStats.Usages {
+		nhid := su.GetNode().GetNhid()
+		store := &candidate{
+			nhid:     nhid,
+			usage:    su,
+			fullDisk: isDiskFull(su),
+		}
+		candidateStores[nhid] = store
+	}
+
+	for _, repl := range rd.GetReplicas() {
+		store, ok := candidateStores[repl.GetNhid()]
+		if !ok {
+			// The store might not be available rn.
+			continue
+		}
+		delete(candidateStores, repl.GetNhid())
+		if repl.GetReplicaId() == localReplicaID {
+			// This is to prevent us from removing the replica on this node. We
+			// can only support this after we have the ability to transfer the
+			// leadership away.
+			continue
+		}
+		if store.fullDisk {
+			// We want to move the replica away from the store with full disk.
+			needRebalance = true
+		}
+		otherReplicaStores[repl.GetNhid()] = store
+	}
+
+	// Remove replicas that are in the middle of removal from candidates.
+	for _, repl := range rd.GetRemoved() {
+		delete(candidateStores, repl.GetNhid())
+	}
+
+	var targetCandidates []*candidate
+	for _, store := range candidateStores {
+		if !store.fullDisk {
+			store.fullDisk = isDiskFullForRebalance(store.usage)
+			store.replicaCountMeanLevel = replicaCountMeanLevel(storesWithStats, store.usage)
+			store.replicaCount = store.usage.ReplicaCount
+			targetCandidates = append(targetCandidates, store)
+		}
+	}
+	if len(targetCandidates) == 0 {
+		return nil
+	}
+	if !needRebalance && !canConvergeByRebalanceReplica(otherReplicaStores, targetCandidates, storesWithStats) {
+		return nil
+	}
+	bestTarget := slices.MaxFunc(targetCandidates, compareByScoreAndID)
+
+	potentialOps := make([]*rebalanceOp, 0, len(otherReplicaStores))
+	for _, nhid := range slices.Sorted(maps.Keys(otherReplicaStores)) {
+		existing := otherReplicaStores[nhid]
+		existing.replicaCountMeanLevel = replicaCountMeanLevel(storesWithStats, existing.usage)
+		existing.replicaCount = existing.usage.ReplicaCount
+
+		if compareByScore(bestTarget, existing) >= 0 {
+			potentialOps = append(potentialOps, &rebalanceOp{
+				from: existing,
+				to:   bestTarget,
+			})
+		}
+	}
+
+	if len(potentialOps) == 0 {
+		return nil
+	}
+	// Find the best rebalance move.
+	return slices.MaxFunc(potentialOps, compareOp)
+}
+
+func (rq *Queue) findRemovableReplicas(rd *rfpb.RangeDescriptor, replicaStateMap map[uint64]constants.ReplicaState, brandNewReplicaID *uint64) []*rfpb.ReplicaDescriptor {
+	numUpToDateReplicas := 0
+	replicasBehind := make([]*rfpb.ReplicaDescriptor, 0)
+	replicasUnavailable := make([]*rfpb.ReplicaDescriptor, 0)
+	for _, r := range rd.GetReplicas() {
+		rs, ok := replicaStateMap[r.GetReplicaId()]
+		if !ok {
+			replicasUnavailable = append(replicasUnavailable, r)
+			continue
+		}
+		switch rs {
+		case constants.ReplicaStateCurrent:
+			numUpToDateReplicas++
+		case constants.ReplicaStateBehind:
+			// Don't consider brand new replica ID as falling behind
+			if brandNewReplicaID == nil || r.GetReplicaId() != *brandNewReplicaID {
+				replicasBehind = append(replicasBehind, r)
+			}
+		case constants.ReplicaStateUnknown:
+			replicasUnavailable = append(replicasUnavailable, r)
+		}
+	}
+
+	quorum := computeQuorum(len(rd.GetReplicas()) - 1)
+	if numUpToDateReplicas < quorum {
+		// The number of up-to-date replicas is less than quorum. Don't remove
+		rq.log.Debugf("there are %d up-to-date replicas for range %d and quorum is %d, don't remove", rd.GetRangeId(), numUpToDateReplicas, quorum)
+		return nil
+	}
+
+	if numUpToDateReplicas > quorum {
+		// Any replica can be removed.
+		replicasByStatus := rq.storeMap.DivideByStatus(rd.GetReplicas())
+		if suspects := replicasByStatus.SuspectReplicas; len(suspects) > 0 {
+			rq.log.Debugf("there are %d suspects for range %d, removing suspects", rd.GetRangeId(), len(suspects))
+			return suspects
+		}
+		if count := len(replicasUnavailable); count > 0 {
+			rq.log.Debugf("there are %d replicas for range %d without states, removing replicas without states", rd.GetRangeId(), count)
+			return replicasUnavailable
+		}
+		rq.log.Debugf("there are %d up-to-date replicas for range %d and quorum is %d, any replica can be removed", rd.GetRangeId(), numUpToDateReplicas, quorum)
+		return rd.GetReplicas()
+	}
+
+	// The number of up-to-date-replicas equals to the quorum. We only want to delete replicas that are behind.
+	rq.log.Debugf("there are %d up-to-date replicas and quorum is %d, only remove behind replicas", numUpToDateReplicas, quorum)
+	return replicasBehind
+}
+
+func (rq *Queue) findReplicaForRemoval(rd *rfpb.RangeDescriptor, replicaStateMap map[uint64]constants.ReplicaState, localReplicaID uint64) *rfpb.ReplicaDescriptor {
+	lastReplIDAdded := rd.LastAddedReplicaId
+	if lastReplIDAdded != nil && rd.LastReplicaAddedAtUsec != nil {
+		if rq.clock.Since(time.UnixMicro(rd.GetLastReplicaAddedAtUsec())) > *newReplicaGracePeriod {
+			lastReplIDAdded = nil
+		}
+	}
+
+	removableReplicas := rq.findRemovableReplicas(rd, replicaStateMap, lastReplIDAdded)
+
+	if len(removableReplicas) == 0 {
+		// there is nothing to remove
+		return nil
+	}
+
+	nhids := make([]string, 0, len(removableReplicas))
+	for _, repl := range removableReplicas {
+		nhids = append(nhids, repl.GetNhid())
+	}
+
+	storesWithStats := rq.storeMap.GetStoresWithStatsFromIDs(nhids)
+
+	var candidates []*candidate
+	for _, su := range storesWithStats.Usages {
+		candidates = append(candidates, &candidate{
+			usage:                 su,
+			replicaCount:          su.GetReplicaCount(),
+			replicaCountMeanLevel: replicaCountMeanLevel(storesWithStats, su),
+			fullDisk:              isDiskFull(su),
+		})
+	}
+
+	if len(candidates) == 0 {
+		// cannot find candidates for removal
+		return nil
+	}
+
+	slices.SortFunc(candidates, compareByScoreAndID)
+
+	for _, c := range candidates {
+		for _, repl := range rd.GetReplicas() {
+			if repl.GetNhid() == c.usage.GetNode().GetNhid() {
+				if repl.GetReplicaId() != localReplicaID {
+					return repl
+				}
+				// For simplicity, we don't want to select the local replica
+				// as the removal target. Let's go to the next worst candidate.
+				// TODO: support lease transfer so we can remove local replica.
+				break
+			}
+		}
+	}
 	return nil
 }
 
-func (d *Driver) Statusz(ctx context.Context) string {
-	buf := "<pre>"
-	buf += d.ClusterMap.String()
-	buf += "</pre>"
-	// TODO(tylerw): list planned moves here.
-	return buf
+func (rq *Queue) removeReplica(ctx context.Context, rd *rfpb.RangeDescriptor, localRepl IReplica) *change {
+	replicaStateMap := rq.store.GetReplicaStates(ctx, rd)
+	localReplicaID := localRepl.ReplicaID()
+	removingReplica := rq.findReplicaForRemoval(rd, replicaStateMap, localReplicaID)
+	if removingReplica == nil {
+		return nil
+	}
+
+	return &change{
+		removeOp: &rfpb.RemoveReplicaRequest{
+			Range:     rd,
+			ReplicaId: removingReplica.GetReplicaId(),
+		},
+	}
+}
+
+func (rq *Queue) applyChange(ctx context.Context, change *change) error {
+	var rd *rfpb.RangeDescriptor
+	if change.splitOp != nil {
+		rsp, err := rq.store.SplitRange(ctx, change.splitOp)
+		// Increment RaftSplits counter.
+		metrics.RaftSplits.With(prometheus.Labels{
+			metrics.RaftNodeHostIDLabel:      rq.store.NHID(),
+			metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+		}).Inc()
+		if err != nil {
+			rq.log.Errorf("Error splitting range, request: %+v: %s", change.splitOp, err)
+			return err
+		} else {
+			rq.log.Infof("Successfully split range: %+v", rsp)
+		}
+	}
+	if change.addOp != nil {
+		rsp, err := rq.store.AddReplica(ctx, change.addOp)
+		metrics.RaftMoves.With(prometheus.Labels{
+			metrics.RaftNodeHostIDLabel:      rq.store.NHID(),
+			metrics.RaftMoveLabel:            "add",
+			metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+		}).Inc()
+		if err != nil {
+			rq.log.Errorf("AddReplica %+v err: %s", change.addOp, err)
+			return err
+		}
+		rd = rsp.GetRange()
+		rq.log.Infof("AddReplicaRequest finished: op: %+v, rd: %+v", change.addOp, rd)
+	}
+	if change.removeOp != nil {
+		if rd != nil {
+			change.removeOp.Range = rd
+		}
+		rsp, err := rq.store.RemoveReplica(ctx, change.removeOp)
+		metrics.RaftMoves.With(prometheus.Labels{
+			metrics.RaftNodeHostIDLabel:      rq.store.NHID(),
+			metrics.RaftMoveLabel:            "remove",
+			metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+		}).Inc()
+
+		if err != nil {
+			rq.log.Errorf("RemoveReplica %+v err: %s", change.removeOp, err)
+			return err
+		}
+		rq.log.Infof("RemoveReplicaRequest finished: op: %+v, rd: %+v", change.removeOp, rsp.GetRange())
+	}
+	if op := change.removeDataOp; op != nil {
+		c, err := rq.apiClient.GetForReplica(ctx, op.replDesc)
+		if err != nil {
+			err = status.WrapErrorf(err, "unable to remove data on c%dn%d due to failure to get api client", op.replDesc.GetRangeId(), op.replDesc.GetReplicaId())
+			rq.log.Error(err.Error())
+			return err
+		}
+		_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
+			ReplicaId: op.replDesc.GetReplicaId(),
+			Range:     op.rd,
+		})
+		if err != nil {
+			rq.log.Errorf("unable to remove data on c%dn%d: %s", op.replDesc.GetRangeId(), op.replDesc.GetReplicaId(), err)
+			return err
+		}
+		rq.log.Infof("RemoveData on c%dn%d succeeded", op.replDesc.GetRangeId(), op.replDesc.GetReplicaId())
+	}
+	if change.transferLeadershipOp != nil {
+		_, err := rq.store.TransferLeadership(ctx, change.transferLeadershipOp)
+		if err != nil {
+			rq.log.Errorf("TransferLeadership %+v err: %s", change.transferLeadershipOp, err)
+			return err
+		}
+		rq.log.Infof("TransferLeadershipRequest finished: %+v", change.transferLeadershipOp)
+	}
+	return nil
+}
+
+func (rq *Queue) processRangeTask(ctx context.Context, task *driverTask, action DriverAction) (requeueType RequeueType) {
+	var change *change
+	rangeID := task.key.rangeID
+	repl := task.rangeTask.repl
+	rd := rq.store.GetRange(rangeID)
+	if rd == nil {
+		// We might be calling GetRange in the small window between RemoveRange and AddRange
+		return RequeueCheckOtherActions
+	}
+
+	if !rq.isDriverEnabled(ctx) {
+		rq.log.Debugf("driver is disabled via experiment flag, skipping action %s", action)
+		return RequeueNoop
+	}
+
+	switch action {
+	case DriverNoop:
+	case DriverFinishReplicaRemoval:
+		change = rq.finishReplicaRemoval(rd)
+	case DriverSplitRange:
+		change = rq.splitRange(rd)
+	case DriverAddReplica:
+		change = rq.addReplica(rd)
+	case DriverReplaceDeadReplica:
+		change = rq.replaceDeadReplica(rd)
+	case DriverRemoveReplica:
+		change = rq.removeReplica(ctx, rd, repl)
+	case DriverRemoveDeadReplica:
+		change = rq.removeDeadReplica(rd)
+	case DriverRebalanceReplica:
+		change = rq.rebalanceReplica(rd, repl)
+	case DriverRebalanceLease:
+		change = rq.rebalanceLease(ctx, rd, repl)
+	case DriverInitializePartition:
+		// This should not be called for range tasks
+		alert.UnexpectedEvent("unexpected-action-for-range-task", "driver action %s for range_id: %q", action, rangeID)
+	}
+
+	rq.log.Debugf("driver action: %s, range_id: %d, hasChange=%t", action, rangeID, change != nil)
+
+	defer func() {
+		if change == nil {
+			action = DriverNoop
+		}
+		metrics.RaftDriverActionCount.With(prometheus.Labels{
+			metrics.RaftDriverAction:      action.String(),
+			metrics.RaftDriverRequeueType: requeueType.String(),
+			metrics.RaftRangeIDLabel:      strconv.Itoa(int(rangeID)),
+		}).Inc()
+	}()
+
+	if change == nil {
+		return RequeueNoop
+	}
+
+	err := rq.applyChange(ctx, change)
+	if err != nil {
+		rq.log.Warningf("Error apply change for action %s to range_id: %d: %s", action, rangeID, err)
+	}
+
+	if action == DriverNoop || action == DriverRebalanceReplica || action == DriverRebalanceLease {
+		return RequeueNoop
+	}
+
+	if err != nil {
+		rq.log.Errorf("failed to process replica for action %s (range_id: %d): %s", action, rangeID, err)
+		return RequeueRetry
+	} else {
+		return RequeueCheckOtherActions
+	}
+}
+
+func (rq *Queue) processPartitionTask(ctx context.Context, task *driverTask, action DriverAction) (requeueType RequeueType) {
+	if !rq.isDriverEnabled(ctx) {
+		rq.log.Debugf("driver is disabled via experiment flag, skipping action %s", action)
+		return RequeueNoop
+	}
+
+	var err error
+	switch action {
+	case DriverInitializePartition:
+		err = rq.initializePartition(ctx, task.partitionTask.config)
+	case DriverAddReplica, DriverFinishReplicaRemoval, DriverNoop, DriverRebalanceLease, DriverRebalanceReplica, DriverRemoveDeadReplica, DriverRemoveReplica, DriverReplaceDeadReplica, DriverSplitRange:
+		// This should not be called for range tasks
+		alert.UnexpectedEvent("unexpected-action-for-parition-task", "driver action %s for parition %q", task.key.partitionID)
+	}
+	if err != nil {
+		rq.log.Errorf("failed to process partition task action %s (ID: %s): %s", action, task.key.partitionID, err)
+		return RequeueRetry
+	}
+	return RequeueNoop
+}
+
+func (rq *Queue) processTask(ctx context.Context, task *driverTask, action DriverAction) (requeueType RequeueType) {
+	switch task.key.taskType {
+	case RangeTaskType:
+		return rq.processRangeTask(ctx, task, action)
+	case PartitionTaskType:
+		return rq.processPartitionTask(ctx, task, action)
+	}
+	return RequeueNoop
+}
+
+func isDiskFull(su *rfpb.StoreUsage) bool {
+	return isDiskCapacityReached(su, maximumDiskCapacity)
+}
+
+func isDiskFullForRebalance(su *rfpb.StoreUsage) bool {
+	return isDiskCapacityReached(su, maxDiskCapacityForRebalance)
+}
+
+func isDiskCapacityReached(su *rfpb.StoreUsage, capacity float64) bool {
+	bytesFree := su.GetTotalBytesFree()
+	bytesUsed := su.GetTotalBytesUsed()
+	return float64(bytesFree+bytesUsed)*capacity <= float64(bytesUsed)
+}
+
+func aboveMeanReplicaCountThreshold(mean float64) float64 {
+	return mean + math.Max(mean*replicaCountMeanRatioThreshold, minReplicaCountThreshold)
+}
+
+func belowMeanReplicaCountThreshold(mean float64) float64 {
+	return mean - math.Max(mean*replicaCountMeanRatioThreshold, minReplicaCountThreshold)
+}
+
+func aboveMeanLeaseCountThreshold(mean float64) float64 {
+	return mean + math.Max(mean*leaseCountMeanRatioThreshold, minLeaseCountThreshold)
+}
+
+func belowMeanLeaseCountThreshold(mean float64) float64 {
+	return mean - math.Max(mean*leaseCountMeanRatioThreshold, minLeaseCountThreshold)
+}
+
+type meanLevel int
+
+const (
+	aboveMean  meanLevel = -1
+	aroundMean meanLevel = 0
+	belowMean  meanLevel = 1
+)
+
+type candidate struct {
+	nhid                  string
+	usage                 *rfpb.StoreUsage
+	fullDisk              bool
+	replicaCountMeanLevel meanLevel
+	replicaCount          int64
+	leaseCount            int64
+	leaseCountMeanLevel   meanLevel
+}
+
+// compare returns
+//   - a positive number if a is a better fit than b;
+//   - 0 if a and b is equivalent
+//   - a negative number if a is a worse fit than b.
+//
+// The result reflects how much better or worse candidate a is.
+func compareByScore(a *candidate, b *candidate) int {
+	if a.fullDisk != b.fullDisk {
+		if a.fullDisk {
+			return -20
+		}
+		if b.fullDisk {
+			return 20
+		}
+	}
+
+	// [10, 12] or [-12, -10]
+	if a.replicaCountMeanLevel != b.replicaCountMeanLevel {
+		score := int(10 + math.Abs(float64(a.replicaCountMeanLevel-b.replicaCountMeanLevel)))
+		if a.replicaCountMeanLevel > b.replicaCountMeanLevel {
+			return score
+		}
+		return -score
+	}
+
+	// (-10, 10)
+	diff := math.Abs(float64(a.replicaCount - b.replicaCount))
+	if a.replicaCount < b.replicaCount {
+		return int(math.Ceil(diff / float64(b.replicaCount) * 10))
+	} else if a.replicaCount > b.replicaCount {
+		return -int(math.Ceil(diff / float64(a.replicaCount) * 10))
+	}
+
+	// [10, 12] or [-12, -10]
+	if a.leaseCountMeanLevel != b.leaseCountMeanLevel {
+		score := int(10 + math.Abs(float64(a.leaseCountMeanLevel-b.leaseCountMeanLevel)))
+		if a.leaseCountMeanLevel > b.leaseCountMeanLevel {
+			return score
+		}
+		return -score
+	}
+
+	// (-10, 10)
+	leaseCountDiff := math.Abs(float64(a.leaseCount - b.leaseCount))
+	if a.leaseCount < b.leaseCount {
+		return int(math.Ceil(leaseCountDiff / float64(b.leaseCount) * 10))
+	} else if a.leaseCount > b.leaseCount {
+		return -int(math.Ceil(leaseCountDiff / float64(a.leaseCount) * 10))
+	}
+	return 0
+}
+
+func compareByScoreAndID(a *candidate, b *candidate) int {
+	if res := compareByScore(a, b); res != 0 {
+		return res
+	}
+	return cmp.Compare(a.nhid, b.nhid)
+}
+
+func replicaCountMeanLevel(storesWithStats *storemap.StoresWithStats, su *rfpb.StoreUsage) meanLevel {
+	maxReplicaCount := aboveMeanReplicaCountThreshold(storesWithStats.ReplicaCount.Mean)
+	minReplicaCount := belowMeanReplicaCountThreshold(storesWithStats.ReplicaCount.Mean)
+	curReplicaCount := float64(su.GetReplicaCount())
+	if curReplicaCount < minReplicaCount {
+		return belowMean
+	} else if curReplicaCount >= maxReplicaCount {
+		return aboveMean
+	}
+	return aroundMean
+}
+
+func leaseCountMeanLevel(mean float64, su *rfpb.StoreUsage) meanLevel {
+	maxLeaseCount := aboveMeanLeaseCountThreshold(mean)
+	minLeaseCount := belowMeanLeaseCountThreshold(mean)
+	curLeaseCount := float64(su.GetLeaseCount())
+	if curLeaseCount < minLeaseCount {
+		return belowMean
+	} else if curLeaseCount >= maxLeaseCount {
+		return aboveMean
+	}
+	return aroundMean
 }

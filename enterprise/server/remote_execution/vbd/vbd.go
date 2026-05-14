@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -127,17 +128,38 @@ func (f *FS) Unmount(ctx context.Context) error {
 	// Unmount in the background to prevent tasks from being blocked if it
 	// hangs forever.
 	// Log an error if this happens, since this is a goroutine leak.
-	resultCh := make(chan error, 1)
+	resultCh := make(chan error)
 	go func() {
-		resultCh <- f.unmount(ctx)
+		defer close(resultCh)
+		err := f.unmount(ctx)
+		select {
+		case resultCh <- err:
+			// Since resultCh is unbuffered, this only happens when the outer
+			// function received from the channel and will return this err.
+		case <-ctx.Done():
+			// Nothing is waiting for this result, so log it here.
+			if err != nil {
+				log.CtxErrorf(ctx, "Failed to unmount %s in the background after context was cancelled: %s", f.mountPath, err)
+			} else {
+				log.CtxInfof(ctx, "Unmounted %s in the background, even after the context was canceled", f.mountPath)
+			}
+		}
 	}()
 	select {
 	case err := <-resultCh:
 		return err
 	case <-ctx.Done():
-		log.CtxErrorf(ctx, "Failed to unmount vbd at %s: %s", f.mountPath, ctx.Err())
 		return ctx.Err()
 	}
+}
+
+// FilePath returns the path to the mounted VBD file.
+// It returns an error if the VBD is not mounted.
+func (f *FS) FilePath() (string, error) {
+	if f.mountPath == "" {
+		return "", status.UnavailableError("VBD is not mounted")
+	}
+	return filepath.Join(f.mountPath, FileName), nil
 }
 
 func (f *FS) unmount(ctx context.Context) error {
@@ -148,7 +170,7 @@ func (f *FS) unmount(ctx context.Context) error {
 		// If we successfully unmounted, then the mount path should point to
 		// an empty dir. Remove it.
 		if err := os.Remove(f.mountPath); err != nil {
-			log.CtxErrorf(ctx, "Failed to unmount vbd: %s", err)
+			log.CtxErrorf(ctx, "Failed to remove vbd mount path %s: %s", f.mountPath, err)
 		}
 	}
 	if err := os.Remove(f.lockFile.Name()); err != nil {
@@ -157,7 +179,6 @@ func (f *FS) unmount(ctx context.Context) error {
 	if err := f.lockFile.Close(); err != nil {
 		log.CtxErrorf(ctx, "Failed to unlock vbd lock file: %s", err)
 	}
-	log.CtxDebugf(ctx, "Unmounted %s", f.mountPath)
 	return err
 }
 
@@ -169,6 +190,7 @@ type Node struct {
 
 var _ fusefs.NodeOpener = (*Node)(nil)
 var _ fusefs.NodeGetattrer = (*Node)(nil)
+var _ fusefs.NodeSetattrer = (*Node)(nil)
 
 func (n *Node) Open(ctx context.Context, flags uint32) (fusefs.FileHandle, uint32, syscall.Errno) {
 	if n.file == nil {
@@ -188,6 +210,27 @@ func (n *Node) Getattr(ctx context.Context, _ fusefs.FileHandle, out *fuse.AttrO
 		out.Size = uint64(size)
 	}
 	return fusefs.OK
+}
+
+func (n *Node) Setattr(ctx context.Context, fh fusefs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
+	if n.file == nil {
+		return syscall.ENODEV
+	}
+
+	if requestedSize, ok := in.GetSize(); ok {
+		currentSize, err := n.file.SizeBytes()
+		if err != nil {
+			log.CtxErrorf(ctx, "VBD size failed: %s", err)
+			return syscall.EIO
+		}
+
+		if requestedSize != uint64(currentSize) {
+			log.CtxErrorf(ctx, "VBD does not support resizing: current size %d, requested size %d", currentSize, requestedSize)
+			return syscall.EOPNOTSUPP
+		}
+	}
+
+	return n.Getattr(ctx, fh, out)
 }
 
 type fileHandle struct {

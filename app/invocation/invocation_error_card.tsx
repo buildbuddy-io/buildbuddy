@@ -1,17 +1,18 @@
 import { AlertCircle } from "lucide-react";
 import React from "react";
-import InvocationModel from "./invocation_model";
-import { failure_details } from "../../proto/failure_details_ts_proto";
-import TerminalComponent from "../terminal/terminal";
-import rpc_service, { CancelablePromise } from "../service/rpc_service";
-import { exitCode } from "../util/exit_codes";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { failure_details } from "../../proto/failure_details_ts_proto";
+import rpcService, { CancelablePromise } from "../service/rpc_service";
+import TerminalComponent from "../terminal/terminal";
+import { exitCode } from "../util/exit_codes";
+import InvocationModel from "./invocation_model";
 
 const debugMessage =
   "Use --sandbox_debug to see verbose messages from the sandbox and retain the sandbox build root for debugging";
 
 interface Props {
   model: InvocationModel;
+  dark?: boolean;
 }
 
 interface State {
@@ -57,7 +58,7 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
     for (const error of model.errors) {
       if (error.action?.stderr?.uri) {
         promises.push(
-          rpc_service
+          rpcService
             .fetchBytestreamFile(error.action?.stderr?.uri, this.props.model.getInvocationId(), "text")
             .then((stderr) => {
               error.actionStderr = stderr;
@@ -67,7 +68,7 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
       }
       if (error.action?.stdout?.uri) {
         promises.push(
-          rpc_service
+          rpcService
             .fetchBytestreamFile(error.action?.stdout?.uri, this.props.model.getInvocationId(), "text")
             .then((stdout) => {
               error.actionStdout = stdout;
@@ -138,7 +139,8 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
         }
       }
     }
-    let text = lines.join("\n");
+
+    let text = deduplicateLines(lines).join("\n");
     text = deemphasizeSandboxDebug(text);
     text = underlineFileNames(text);
     return text;
@@ -150,7 +152,7 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
     }
 
     return (
-      <div className="invocation-error-card card card-failure">
+      <div className={`invocation-error-card card card-failure ${this.props.dark ? "dark" : "light-terminal"}`}>
         <AlertCircle className="icon red" />
         <div className="content">
           <div className="title">{this.getTitle(this.state.model)}</div>
@@ -158,7 +160,7 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
           <div className="details">
             <TerminalComponent
               value={this.getBodyText(this.state.model)}
-              lightTheme
+              lightTheme={!this.props.dark}
               scrollTop
               bottomControls
               defaultWrapped
@@ -176,8 +178,17 @@ function getModel(props: Props): CardModel {
     model.errors.push({ action: props.model.failedAction.action });
   }
   for (const event of props.model.aborted) {
-    if (!event.aborted) continue;
-    model.errors.push({ aborted: event });
+    if (event.aborted) {
+      if (
+        // Ignore aborted events caused by --nobuild and --noanalyze flags.
+        // Note: 'bazel cquery' includes --nobuild automatically.
+        event.aborted.reason === build_event_stream.Aborted.AbortReason.NO_BUILD ||
+        event.aborted.reason === build_event_stream.Aborted.AbortReason.NO_ANALYZE
+      ) {
+        continue;
+      }
+      model.errors.push({ aborted: event });
+    }
   }
   if (props.model.finished?.failureDetail?.message) {
     model.errors.push({ finished: props.model.finished });
@@ -189,11 +200,13 @@ function formatFailureDescription(failureDetail: failure_details.IFailureDetail)
   let message = failureDetail.message;
   let code = "";
   if (failureDetail.spawn) {
-    code = failure_details.Spawn.Code[failureDetail.spawn.code];
+    code = failure_details.Spawn.Code[failureDetail.spawn.code] ?? String(failureDetail.spawn.code);
   } else if (failureDetail.execution) {
-    code = failure_details.Execution.Code[failureDetail.execution.code];
+    code = failure_details.Execution.Code[failureDetail.execution.code] ?? String(failureDetail.execution.code);
   } else if (failureDetail.targetPatterns) {
-    code = failure_details.TargetPatterns.Code[failureDetail.targetPatterns.code];
+    code =
+      failure_details.TargetPatterns.Code[failureDetail.targetPatterns.code] ??
+      String(failureDetail.targetPatterns.code);
   }
   // TODO: handle other FailureDetail fields
 
@@ -204,6 +217,10 @@ function joinNonEmpty(parts: string[], join: string) {
   return parts.filter((x) => x).join(join);
 }
 
+function deduplicateLines(lines: string[]): string[] {
+  return lines.filter((x, index, self) => self.indexOf(x) === index);
+}
+
 function modelsEqual(a: CardModel, b: CardModel): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -212,7 +229,7 @@ function modelsEqual(a: CardModel, b: CardModel): boolean {
  * Styles file names like "/path/to/file.go:10:20" in bold+underline
  */
 function underlineFileNames(text: string): string {
-  return text.replaceAll(/([^\s]*:\d+:\d+)/g, "\x1b[1;4m$1\x1b[0m");
+  return text.replaceAll(/([^\s:]+:\d+:\d+)/g, "\x1b[1;4m$1\x1b[0m");
 }
 
 /**

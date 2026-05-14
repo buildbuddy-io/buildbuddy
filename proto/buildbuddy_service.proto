@@ -4,18 +4,22 @@ import "proto/api_key.proto";
 import "proto/auditlog.proto";
 import "proto/bazel_config.proto";
 import "proto/cache.proto";
+import "proto/cache_proxy.proto";
 import "proto/search.proto";
 import "proto/eventlog.proto";
 import "proto/execution_stats.proto";
 import "proto/encryption.proto";
 import "proto/grp.proto";
+import "proto/index.proto";
 import "proto/invocation.proto";
 import "proto/iprules.proto";
 import "proto/runner.proto";
 import "proto/stats.proto";
 import "proto/target.proto";
 import "proto/user.proto";
+import "proto/user_list.proto";
 import "proto/workflow.proto";
+import "proto/workspace.proto";
 import "proto/scheduler.proto";
 import "proto/usage.proto";
 import "proto/gcp.proto";
@@ -46,6 +50,9 @@ service BuildBuddyService {
       returns (invocation.CancelExecutionsResponse);
   rpc GetInvocationOwner(invocation.GetInvocationOwnerRequest)
       returns (invocation.GetInvocationOwnerResponse);
+  rpc GetInvocationFilterSuggestions(
+      invocation.GetInvocationFilterSuggestionsRequest)
+      returns (invocation.GetInvocationFilterSuggestionsResponse);
 
   // Fancy build stat breakdowns.
   rpc GetTrend(stats.GetTrendRequest) returns (stats.GetTrendResponse);
@@ -53,6 +60,10 @@ service BuildBuddyService {
       returns (stats.GetStatHeatmapResponse);
   rpc GetStatDrilldown(stats.GetStatDrilldownRequest)
       returns (stats.GetStatDrilldownResponse);
+  // Fetches stats about targets that were run on RBE _only_ (i.e.,
+  // from the executions table).
+  rpc GetTargetTrends(stats.GetTargetTrendsRequest)
+      returns (stats.GetTargetTrendsResponse);
 
   // Zip manifest API
   rpc GetZipManifest(zip.GetZipManifestRequest)
@@ -75,6 +86,24 @@ service BuildBuddyService {
   rpc JoinGroup(grp.JoinGroupRequest) returns (grp.JoinGroupResponse);
   rpc CreateGroup(grp.CreateGroupRequest) returns (grp.CreateGroupResponse);
   rpc UpdateGroup(grp.UpdateGroupRequest) returns (grp.UpdateGroupResponse);
+  rpc SetGroupStatus(grp.SetGroupStatusRequest)
+      returns (grp.SetGroupStatusResponse);
+  rpc GetSSOConfig(grp.GetSSOConfigRequest) returns (grp.GetSSOConfigResponse);
+  rpc SetSSOConfig(grp.SetSSOConfigRequest) returns (grp.SetSSOConfigResponse);
+
+  // User Lists API
+  rpc GetUserLists(user_list.GetUserListsRequest)
+      returns (user_list.GetUserListsResponse);
+  rpc GetUserList(user_list.GetUserListRequest)
+      returns (user_list.GetUserListResponse);
+  rpc CreateUserList(user_list.CreateUserListRequest)
+      returns (user_list.GetUserListsResponse);
+  rpc DeleteUserList(user_list.DeleteUserListRequest)
+      returns (user_list.DeleteUserListResponse);
+  rpc UpdateUserList(user_list.UpdateUserListRequest)
+      returns (user_list.UpdateUserListResponse);
+  rpc UpdateUserListMembership(user_list.UpdateUserListMembershipRequest)
+      returns (user_list.UpdateUserListMembershipResponse);
 
   // Org API Keys API
   rpc GetApiKeys(api_key.GetApiKeysRequest)
@@ -104,6 +133,8 @@ service BuildBuddyService {
   // Execution API
   rpc GetExecution(execution_stats.GetExecutionRequest)
       returns (execution_stats.GetExecutionResponse);
+  rpc WaitExecution(execution_stats.WaitExecutionRequest)
+      returns (stream execution_stats.WaitExecutionResponse);
   rpc GetExecutionNodes(scheduler.GetExecutionNodesRequest)
       returns (scheduler.GetExecutionNodesResponse);
   rpc SearchExecution(execution_stats.SearchExecutionRequest)
@@ -114,17 +145,28 @@ service BuildBuddyService {
       returns (cache.GetCacheScoreCardResponse);
   rpc GetCacheMetadata(cache.GetCacheMetadataRequest)
       returns (cache.GetCacheMetadataResponse);
+  rpc GetTree(cache.GetTreeRequest) returns (stream cache.GetTreeResponse);
+  rpc GetExecutionDownloads(cache.GetExecutionDownloadsRequest)
+      returns (cache.GetExecutionDownloadsResponse);
   rpc GetTreeDirectorySizes(cache.GetTreeDirectorySizesRequest)
       returns (cache.GetTreeDirectorySizesResponse);
+
+  // Cache Proxy API
+  rpc GetCacheProxies(cache_proxy.GetCacheProxiesRequest)
+      returns (cache_proxy.GetCacheProxiesResponse);
 
   // Targets API
   rpc GetTarget(target.GetTargetRequest) returns (target.GetTargetResponse);
   rpc GetTargetHistory(target.GetTargetHistoryRequest)
       returns (target.GetTargetHistoryResponse);
+  rpc GetTargetStats(target.GetTargetStatsRequest)
+      returns (target.GetTargetStatsResponse);
+  rpc GetDailyTargetStats(target.GetDailyTargetStatsRequest)
+      returns (target.GetDailyTargetStatsResponse);
+  rpc GetTargetFlakeSamples(target.GetTargetFlakeSamplesRequest)
+      returns (target.GetTargetFlakeSamplesResponse);
 
   // Workflow API
-  rpc CreateWorkflow(workflow.CreateWorkflowRequest)
-      returns (workflow.CreateWorkflowResponse);
   rpc DeleteWorkflow(workflow.DeleteWorkflowRequest)
       returns (workflow.DeleteWorkflowResponse);
   rpc GetWorkflows(workflow.GetWorkflowsRequest)
@@ -140,18 +182,34 @@ service BuildBuddyService {
       workflow.InvalidateAllSnapshotsForRepoRequest)
       returns (workflow.InvalidateAllSnapshotsForRepoResponse);
 
+  // Workspace API
+  rpc GetWorkspace(workspace.GetWorkspaceRequest)
+      returns (workspace.GetWorkspaceResponse);
+  rpc SaveWorkspace(workspace.SaveWorkspaceRequest)
+      returns (workspace.SaveWorkspaceResponse);
+  rpc GetWorkspaceDirectory(workspace.GetWorkspaceDirectoryRequest)
+      returns (workspace.GetWorkspaceDirectoryResponse);
+  rpc GetWorkspaceFile(workspace.GetWorkspaceFileRequest)
+      returns (workspace.GetWorkspaceFileResponse);
+
   // GitHub account API
   // Note: GitHub account linking is accomplished via HTTP redirect flow
   rpc UnlinkGitHubAccount(github.UnlinkGitHubAccountRequest)
       returns (github.UnlinkGitHubAccountResponse);
+  rpc UnlinkUserGitHubAccount(github.UnlinkUserGitHubAccountRequest)
+      returns (github.UnlinkUserGitHubAccountResponse);
 
   // GitHub app link API
+  rpc GetGitHubAppInstallPath(github.GetGithubAppInstallPathRequest)
+      returns (github.GetGithubAppInstallPathResponse);
   rpc LinkGitHubAppInstallation(github.LinkAppInstallationRequest)
       returns (github.LinkAppInstallationResponse);
   rpc GetGitHubAppInstallations(github.GetAppInstallationsRequest)
       returns (github.GetAppInstallationsResponse);
   rpc UnlinkGitHubAppInstallation(github.UnlinkAppInstallationRequest)
       returns (github.UnlinkAppInstallationResponse);
+  rpc UpdateGitHubAppInstallation(github.UpdateGitHubAppInstallationRequest)
+      returns (github.UpdateGitHubAppInstallationResponse);
 
   // Linked Git repositories API
   rpc GetLinkedGitHubRepos(github.GetLinkedReposRequest)
@@ -159,6 +217,8 @@ service BuildBuddyService {
   rpc LinkGitHubRepo(github.LinkRepoRequest) returns (github.LinkRepoResponse);
   rpc UnlinkGitHubRepo(github.UnlinkRepoRequest)
       returns (github.UnlinkRepoResponse);
+  rpc UpdateGitHubRepoSettings(github.UpdateRepoSettingsRequest)
+      returns (github.UpdateRepoSettingsResponse);
 
   // Installation-repos API (authenticates w/ GitHub using
   // installation access token)
@@ -171,9 +231,21 @@ service BuildBuddyService {
   // Eventlog API
   rpc GetEventLogChunk(eventlog.GetEventLogChunkRequest)
       returns (eventlog.GetEventLogChunkResponse);
+  rpc GetEventLog(eventlog.GetEventLogChunkRequest)
+      returns (stream eventlog.GetEventLogChunkResponse);
+  rpc WriteEventLog(stream eventlog.WriteEventLogRequest)
+      returns (eventlog.WriteEventLogResponse);
+  rpc UpdateRunStatus(eventlog.UpdateRunStatusRequest)
+      returns (eventlog.UpdateRunStatusResponse);
 
   // Usage API
   rpc GetUsage(usage.GetUsageRequest) returns (usage.GetUsageResponse);
+  rpc GetUsageAlertingRules(usage.GetUsageAlertingRulesRequest)
+      returns (usage.GetUsageAlertingRulesResponse);
+  rpc CreateUsageAlertingRule(usage.CreateUsageAlertingRuleRequest)
+      returns (usage.CreateUsageAlertingRuleResponse);
+  rpc DeleteUsageAlertingRule(usage.DeleteUsageAlertingRuleRequest)
+      returns (usage.DeleteUsageAlertingRuleResponse);
 
   // Quota API
   rpc GetNamespace(quota.GetNamespaceRequest)
@@ -201,8 +273,11 @@ service BuildBuddyService {
   rpc GetSuggestion(suggestion.GetSuggestionRequest)
       returns (suggestion.GetSuggestionResponse);
 
-  // Codesearch API
+  // Codesearch and Kythe API
   rpc Search(search.SearchRequest) returns (search.SearchResponse);
+  rpc KytheProxy(search.KytheRequest) returns (search.KytheResponse);
+  rpc Index(index.IndexRequest) returns (index.IndexResponse);
+  rpc RepoStatus(index.RepoStatusRequest) returns (index.RepoStatusResponse);
 
   // Encryption API
   rpc SetEncryptionConfig(encryption.SetEncryptionConfigRequest)

@@ -33,6 +33,6 @@ func (c *nullEventChannel) Context() context.Context {
 
 type BuildEventHandler struct{}
 
-func (h *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfaces.BuildEventChannel {
-	return &nullEventChannel{ctx: ctx}
+func (h *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interfaces.BuildEventChannel, error) {
+	return &nullEventChannel{ctx: ctx}, nil
 }

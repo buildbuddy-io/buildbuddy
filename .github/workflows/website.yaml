@@ -17,11 +17,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
+        with:
+          fetch-depth: 2
+
+      - name: Setup Bazel Go module cache
+        uses: ./.github/actions/setup-bazel-go-mod-cache
 
       - name: Build Website
         run: |
-          bazel build //website:website --config=ci --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
+          bazelisk build --repository_cache='~/repo-cache/' //website:website --config=ci --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
           rm -rf website/build
           mkdir -p website/build
           cd website/build
@@ -29,7 +34,51 @@ jobs:
           touch .nojekyll
 
       - name: Deploy Website 🚀
-        uses: JamesIves/github-pages-deploy-action@4.1.0
+        uses: JamesIves/github-pages-deploy-action@3dbacc7e69578703f91f077118b3475862cb09b8 # 4.1.0
         with:
           branch: gh-pages
           folder: website/build
+
+      - name: Build notification if there are new changelog entries
+        id: changelog-msg
+        shell: bash
+        run: |
+          prev_sha="${{ github.event.before }}"
+          modified_changelog_files=$(
+            git diff --name-status "$prev_sha" "${{ github.sha }}" -- "website/changelog/*.md" "website/changelog/*.mdx" \
+              | awk '$1 == "A" {print $2}'
+          )
+
+          if [[ -z "$modified_changelog_files" ]]; then
+            echo "No newly added changelog entries."
+            exit 0
+          fi
+
+          msg="*New changelog entries added:*\n"
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            slug="$(basename "$file")"
+            slug="${slug%.*}"
+            msg="${msg}• https://www.buildbuddy.io/changelog/${slug}\n"
+          done <<< "$modified_changelog_files"
+
+          {
+            echo "text<<EOF"
+            echo -e "$msg"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post to Slack
+        if: steps.changelog-msg.outputs.text != ''
+        uses: 8398a7/action-slack@77eaa4f1c608a7d68b38af4e3f739dcd8cba273e # v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              attachments: [{
+                color: '#1f883d',
+                text: `${{ steps.changelog-msg.outputs.text }}`
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_CHANGELOG_WEBHOOK_URL }}

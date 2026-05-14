@@ -7,18 +7,20 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/hex"
 	"fmt"
 	"hash"
 	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
-	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/zeebo/blake3"
@@ -32,60 +34,27 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
+type resourceNameType int
+
 const (
 	EmptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 	EmptyHash   = ""
+
+	uploadResourceName resourceNameType = iota
+	downloadResourceName
+
+	TreeCacheRemoteInstanceName = "_bb_treecache_"
 )
 
 var (
-	hashKeyRegex     *regexp.Regexp
-	uploadRegex      *regexp.Regexp
-	downloadRegex    *regexp.Regexp
-	actionCacheRegex *regexp.Regexp
-
-	knownDigestFunctions []repb.DigestFunction_Value
+	knownDigestFunctions = []repb.DigestFunction_Value{
+		repb.DigestFunction_SHA256,
+		repb.DigestFunction_SHA384,
+		repb.DigestFunction_SHA512,
+		repb.DigestFunction_SHA1,
+		repb.DigestFunction_BLAKE3,
+	}
 )
-
-func init() {
-	digestFunctions := []struct {
-		digestType repb.DigestFunction_Value
-		sizeBytes  int
-	}{
-		{
-			digestType: repb.DigestFunction_SHA256,
-			sizeBytes:  sha256.Size,
-		},
-		{
-			digestType: repb.DigestFunction_SHA1,
-			sizeBytes:  sha1.Size,
-		},
-		{
-			digestType: repb.DigestFunction_BLAKE3,
-			sizeBytes:  32,
-		},
-	}
-
-	hashMatchers := make([]string, 0)
-	for _, df := range digestFunctions {
-		hashMatchers = append(hashMatchers, fmt.Sprintf("[a-f0-9]{%d}", df.sizeBytes*2))
-		knownDigestFunctions = append(knownDigestFunctions, df.digestType)
-	}
-	joinedMatchers := strings.Join(hashMatchers, "|")
-
-	// Cache keys must be:
-	//  - lower case
-	//  - ascii
-	//  - a sha256 sum
-	hashKeyRegex = regexp.MustCompile(fmt.Sprintf("^(%s)$", joinedMatchers))
-
-	// Matches:
-	// - "blobs/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
-	// - "blobs/ac/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
-	// - "uploads/2042a8f9-eade-4271-ae58-f5f6f5a32555/blobs/8afb02ca7aace3ae5cd8748ac589e2e33022b1a4bfd22d5d234c5887e270fe9c/17997850"
-	uploadRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?:(?P<instance_name>.*)/)?uploads/(?P<uuid>[a-f0-9-]{36})/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?:(?P<digest_function>blake3)/)?(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
-	downloadRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?:(?P<digest_function>blake3)/)?(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
-	actionCacheRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/ac/(?:(?P<digest_function>blake3)/)?(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
-}
 
 func SupportedDigestFunctions() []repb.DigestFunction_Value {
 	return knownDigestFunctions
@@ -95,6 +64,7 @@ type ResourceName struct {
 	rn *rspb.ResourceName
 }
 
+// Prefer either CASResourceNameFromProto or ACResourceNameFromProto.
 func ResourceNameFromProto(in *rspb.ResourceName) *ResourceName {
 	rn := in.CloneVT()
 	// TODO(tylerw): remove once digest function is explicit everywhere.
@@ -106,6 +76,51 @@ func ResourceNameFromProto(in *rspb.ResourceName) *ResourceName {
 	}
 }
 
+// The median and average AC results are less than 4KiB: go/action-result-size
+const actionCacheByteBufferSize = (1024 * 4)
+
+// The min size of the buffer. 0-size buffer can cause infinite loop if the
+// digest size is not really 0.
+const minByteBufferSize = 32
+
+// SafeBufferSize returns
+//   - a size between 0 - the given maxSize for CAS entries and Tree Cache entries
+//   - 4Kib for AC entries besides Tree Cache entries.
+func SafeBufferSize(rn *rspb.ResourceName, maxSize int) int {
+	if rn.GetCacheType() == rspb.CacheType_CAS {
+		// Clamp the size between minByteBufferSize and maxSize, to protect from
+		// invalid and malicious requests.
+		return min(maxSize, max(minByteBufferSize, int(rn.GetDigest().GetSizeBytes())))
+	} else if strings.HasPrefix(rn.GetInstanceName(), TreeCacheRemoteInstanceName) {
+		// If this is a TreeCache entry that we wrote; pull the size
+		// from the remote instance name.
+		parts := strings.Split(rn.GetInstanceName(), "/")
+		if s, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
+			return min(max(minByteBufferSize, s), maxSize)
+		}
+	}
+	return actionCacheByteBufferSize
+}
+
+func GetTreeCacheInstanceName(d *repb.Digest) string {
+	return fmt.Sprintf("%s/%d", TreeCacheRemoteInstanceName, d.GetSizeBytes())
+}
+
+func CASResourceNameFromProto(in *rspb.ResourceName) (*CASResourceName, error) {
+	if in.GetCacheType() != rspb.CacheType_CAS {
+		return nil, status.FailedPreconditionErrorf("ResourceName is not a CAS resource name: %s", in)
+	}
+	return &CASResourceName{*ResourceNameFromProto(in)}, nil
+}
+
+func ACResourceNameFromProto(in *rspb.ResourceName) (*ACResourceName, error) {
+	if in.GetCacheType() != rspb.CacheType_AC {
+		return nil, status.FailedPreconditionErrorf("ResourceName is not an AC resource name: %s", in)
+	}
+	return &ACResourceName{*ResourceNameFromProto(in)}, nil
+}
+
+// Prefer either NewCASResourceName or NewACResourceName.
 func NewResourceName(d *repb.Digest, instanceName string, cacheType rspb.CacheType, digestFunction repb.DigestFunction_Value) *ResourceName {
 	if digestFunction == repb.DigestFunction_UNKNOWN {
 		digestFunction = InferOldStyleDigestFunctionInDesperation(d)
@@ -119,6 +134,28 @@ func NewResourceName(d *repb.Digest, instanceName string, cacheType rspb.CacheTy
 			DigestFunction: digestFunction,
 		},
 	}
+}
+
+func NewCASResourceName(d *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) *CASResourceName {
+	return &CASResourceName{*NewResourceName(d, instanceName, rspb.CacheType_CAS, digestFunction)}
+}
+
+func NewACResourceName(d *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) *ACResourceName {
+	return &ACResourceName{*NewResourceName(d, instanceName, rspb.CacheType_AC, digestFunction)}
+}
+
+func (r *ResourceName) CheckCAS() (*CASResourceName, error) {
+	if r.rn.GetCacheType() != rspb.CacheType_CAS {
+		return nil, status.FailedPreconditionErrorf("ResourceName is not a CAS resource name: %s", r.rn)
+	}
+	return &CASResourceName{*r}, nil
+}
+
+func (r *ResourceName) CheckAC() (*ACResourceName, error) {
+	if r.rn.GetCacheType() != rspb.CacheType_AC {
+		return nil, status.FailedPreconditionErrorf("ResourceName is not an AC resource name: %s", r.rn)
+	}
+	return &ACResourceName{*r}, nil
 }
 
 func (r *ResourceName) ToProto() *rspb.ResourceName {
@@ -153,6 +190,15 @@ func (r *ResourceName) IsEmpty() bool {
 	return IsEmptyHash(r.rn.GetDigest(), r.rn.GetDigestFunction())
 }
 
+func isLowerHex(s string) bool {
+	for _, ch := range s {
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 func (r *ResourceName) Validate() error {
 	d := r.rn.GetDigest()
 	if d == nil {
@@ -167,82 +213,90 @@ func (r *ResourceName) Validate() error {
 		}
 		return status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
 	}
-	if !hashKeyRegex.MatchString(d.Hash) {
-		return status.InvalidArgumentError("Malformed hash")
+	hash := d.GetHash()
+	if expected := hashLength(r.GetDigestFunction()); len(hash) != expected {
+		return status.InvalidArgumentErrorf("Invalid length hash. Expected len %v for %s function. Got %v",
+			expected, r.GetDigestFunction().String(), len(hash))
+	}
+	if !isLowerHex(hash) {
+		return status.InvalidArgumentError("Hash isn't all lower case hex characters.")
 	}
 	return nil
 }
 
+type CASResourceName struct {
+	ResourceName
+}
+
+// CASDownloadString is like UploadString, but without forcing the caller to
+// clone the ResourceName proto by calling ResourceNameFromProto first. Returns
+// an error if the cache type is not CAS.
+func CASDownloadString(r *rspb.ResourceName) (string, error) {
+	if r.GetCacheType() != rspb.CacheType_CAS {
+		return "", fmt.Errorf("CASDownloadString called for resource name with the wrong cache type: %v", r)
+	}
+	return casDownloadString(r), nil
+}
+
+func casDownloadString(r *rspb.ResourceName) string {
+	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
+	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
+	if isOldStyleDigestFunction(r.GetDigestFunction()) {
+		return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+	}
+	return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/" + lowerFunctionName(r.GetDigestFunction()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+}
+
 // DownloadString returns a string representing the resource name for download
 // purposes.
-func (r *ResourceName) DownloadString() (string, error) {
-	if r.rn.GetCacheType() != rspb.CacheType_CAS {
-		return "", status.FailedPreconditionError("Cannot compute bytestream download string for non-CAS resource name")
-	}
+func (r *CASResourceName) DownloadString() string {
+	return casDownloadString(r.rn)
+}
+
+// UploadString returns the upload-form resource name using the supplied upload
+// UUID.
+func (r *CASResourceName) UploadString(uploadID string) string {
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	if isOldStyleDigestFunction(r.rn.DigestFunction) {
-		return fmt.Sprintf(
-			"%s/%s/%s/%d",
-			instanceName, blobTypeSegment(r.GetCompressor()),
-			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
-	} else {
-		return fmt.Sprintf(
-			"%s/%s/%s/%s/%d",
-			instanceName, blobTypeSegment(r.GetCompressor()),
-			strings.ToLower(r.rn.DigestFunction.String()),
-			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
+		return instanceName + "/uploads/" + uploadID + "/" + blobTypeSegment(r.GetCompressor()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
 	}
+	return instanceName + "/uploads/" + uploadID + "/" + blobTypeSegment(r.GetCompressor()) + "/" + lowerFunctionName(r.rn.DigestFunction) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+}
+
+// NewUploadString returns a new string representing the resource name for
+// upload purposes each time it is called.
+func (r *CASResourceName) NewUploadString() string {
+	return r.UploadString(guuid.New().String())
+}
+
+type ACResourceName struct {
+	ResourceName
+}
+
+// ActionCacheString is like ACResourceName.ActionCacheString, but without
+// forcing the caller to clone the ResourceName proto by calling
+// ResourceNameFromProto first. Returns an error if the cache type is not AC.
+func ActionCacheString(r *rspb.ResourceName) (string, error) {
+	if r.GetCacheType() != rspb.CacheType_AC {
+		return "", fmt.Errorf("ActionCacheString called for resource name with the wrong cache type: %v", r)
+	}
+	return actionCacheString(r), nil
+}
+
+func actionCacheString(r *rspb.ResourceName) string {
+	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
+	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
+	if isOldStyleDigestFunction(r.GetDigestFunction()) {
+		return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+	}
+	return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + lowerFunctionName(r.GetDigestFunction()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
 }
 
 // ActionCacheString returns a string representing the resource name for in
 // the action cache. This is BuildBuddy specific.
-func (r *ResourceName) ActionCacheString() (string, error) {
-	if r.rn.GetCacheType() != rspb.CacheType_AC {
-		return "", status.FailedPreconditionError("Cannot compute bytestream download string for non-CAS resource name")
-	}
-	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
-	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
-	if isOldStyleDigestFunction(r.rn.DigestFunction) {
-		return fmt.Sprintf(
-			"%s/%s/ac/%s/%d",
-			instanceName, blobTypeSegment(r.GetCompressor()),
-			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
-	} else {
-		return fmt.Sprintf(
-			"%s/%s/ac/%s/%s/%d",
-			instanceName, blobTypeSegment(r.GetCompressor()),
-			strings.ToLower(r.rn.DigestFunction.String()),
-			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
-	}
-}
-
-// UploadString returns a string representing the resource name for upload
-// purposes.
-func (r *ResourceName) UploadString() (string, error) {
-	if r.rn.GetCacheType() != rspb.CacheType_CAS {
-		return "", status.FailedPreconditionError("Cannot compute bytestream upload string for non-CAS resource name")
-	}
-	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
-	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
-	u, err := guuid.NewRandom()
-	if err != nil {
-		return "", err
-	}
-	if isOldStyleDigestFunction(r.rn.DigestFunction) {
-		return fmt.Sprintf(
-			"%s/uploads/%s/%s/%s/%d",
-			instanceName, u.String(), blobTypeSegment(r.GetCompressor()),
-			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(),
-		), nil
-	} else {
-		return fmt.Sprintf(
-			"%s/uploads/%s/%s/%s/%s/%d",
-			instanceName, u.String(), blobTypeSegment(r.GetCompressor()),
-			strings.ToLower(r.rn.DigestFunction.String()),
-			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(),
-		), nil
-	}
+func (r *ACResourceName) ActionCacheString() string {
+	return actionCacheString(r.rn)
 }
 
 func CacheTypeToPrefix(cacheType rspb.CacheType) string {
@@ -311,6 +365,10 @@ func HashForDigestType(digestType repb.DigestFunction_Value) (hash.Hash, error) 
 		return sha1.New(), nil
 	case repb.DigestFunction_SHA256:
 		return sha256.New(), nil
+	case repb.DigestFunction_SHA384:
+		return sha512.New384(), nil
+	case repb.DigestFunction_SHA512:
+		return sha512.New(), nil
 	case repb.DigestFunction_BLAKE3:
 		return blake3.New(), nil
 	case repb.DigestFunction_UNKNOWN:
@@ -358,6 +416,25 @@ func IsEmptyHash(d *repb.Digest, digestFunction repb.DigestFunction_Value) bool 
 	}
 }
 
+func hashLength(digestFunction repb.DigestFunction_Value) int {
+	switch digestFunction {
+	case repb.DigestFunction_BLAKE3:
+		return 32 * 2
+	case repb.DigestFunction_SHA256:
+		return sha256.Size * 2
+	case repb.DigestFunction_SHA384:
+		return sha512.Size384 * 2
+	case repb.DigestFunction_SHA512:
+		return sha512.Size * 2
+	case repb.DigestFunction_SHA1:
+		return sha1.Size * 2
+	case repb.DigestFunction_MD5:
+		return md5.Size * 2
+	default:
+		return -1
+	}
+}
+
 func isOldStyleDigestFunction(digestFunction repb.DigestFunction_Value) bool {
 	switch digestFunction {
 	case repb.DigestFunction_SHA1:
@@ -375,10 +452,25 @@ func isOldStyleDigestFunction(digestFunction repb.DigestFunction_Value) bool {
 	}
 }
 
+var blake3Hashes = sync.Pool{New: func() any { return blake3.New() }}
+
 func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, error) {
-	h, err := HashForDigestType(digestType)
-	if err != nil {
-		return nil, err
+	var h hash.Hash
+	if digestType == repb.DigestFunction_BLAKE3 {
+		// blake3.New() allocates over 10KiB. Use a pool to avoid this.
+		// sha256.New() allocates under 360 bytes, so we don't pool it.
+		// The other hash functions are not used frequently enough to pool.
+		h = blake3Hashes.Get().(hash.Hash)
+		defer func() {
+			h.Reset()
+			blake3Hashes.Put(h)
+		}()
+	} else {
+		var err error
+		h, err = HashForDigestType(digestType)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Read file in 32KB chunks (default)
@@ -387,7 +479,7 @@ func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, 
 		return nil, err
 	}
 	return &repb.Digest{
-		Hash:      fmt.Sprintf("%x", h.Sum(nil)),
+		Hash:      hex.EncodeToString(h.Sum(nil)),
 		SizeBytes: n,
 	}, nil
 }
@@ -401,107 +493,220 @@ func ComputeForFile(path string, digestType repb.DigestFunction_Value) (*repb.Di
 	return Compute(f, digestType)
 }
 
-// AddInvocationIDToDigest combines the hash of the input digest and input invocationID and re-hash.
-// This is only to be used for failed action results.
-func AddInvocationIDToDigest(digest *repb.Digest, digestType repb.DigestFunction_Value, invocationID string) (*repb.Digest, error) {
-	if digest == nil {
-		return nil, status.FailedPreconditionError("nil digest")
+// parseResourceName parses a resource-name URL into a ResourceName. For upload
+// resource names, the parsed upload UUID is returned as the second value;
+// otherwise the second value is "".
+func parseResourceName(resourceName string, cacheType rspb.CacheType, resourceType resourceNameType) (*ResourceName, string, error) {
+	pieces := strings.Split(resourceName, "/")
+
+	// Need at least 2 slashes for CAS: blobs/hash/size
+	// 3 for AC: blobs/ac/hash/size
+	// 4 for upload: uploads/uuid/blobs/hash/size
+	if len(pieces) < 3 || (cacheType == rspb.CacheType_AC && len(pieces) < 4) || (resourceType == uploadResourceName && len(pieces) < 5) {
+		return nil, "", status.InvalidArgumentErrorf("Unparseable resource name, not enough pieces: %s", resourceName)
 	}
 
-	h, err := HashForDigestType(digestType)
+	// Parse back-to-front to avoid having to find the end of the instance name.
+	// The last piece must be the size (in bytes).
+	pieceIdx := len(pieces) - 1
+	sizeBytes, err := strconv.ParseInt(pieces[pieceIdx], 10, 64)
 	if err != nil {
-		return nil, err
+		return nil, "", status.InvalidArgumentErrorf("Unparseable resource name, invalid size: %s", resourceName)
 	}
-	h.Write([]byte(digest.Hash))
-	h.Write([]byte(invocationID))
-	return &repb.Digest{
-		Hash:      fmt.Sprintf("%x", h.Sum(nil)),
-		SizeBytes: digest.SizeBytes,
-	}, nil
-}
-
-func isResourceName(url string, matcher *regexp.Regexp) bool {
-	return matcher.MatchString(url)
-}
-
-func parseResourceName(resourceName string, matcher *regexp.Regexp, cacheType rspb.CacheType) (*ResourceName, error) {
-	match := matcher.FindStringSubmatch(resourceName)
-	result := make(map[string]string, len(match))
-	for i, name := range matcher.SubexpNames() {
-		if i != 0 && name != "" && i < len(match) {
-			result[name] = match[i]
-		}
-	}
-	hash, hashOK := result["hash"]
-	sizeStr, sizeOK := result["size"]
-	if !hashOK || !sizeOK {
-		return nil, status.InvalidArgumentErrorf("Unparsable resource name: %s", resourceName)
-	}
-	if hash == "" {
-		return nil, status.InvalidArgumentErrorf("Unparsable resource name (empty hash?): %s", resourceName)
-	}
-	sizeBytes, err := strconv.ParseInt(sizeStr, 10, 0)
-	if err != nil {
-		return nil, err
+	if sizeBytes < 0 {
+		return nil, "", status.InvalidArgumentErrorf("Unparseable resource name, negative size: %s", resourceName)
 	}
 
-	// Set the instance name, if one was present.
-	instanceName := ""
-	if in, ok := result["instance_name"]; ok {
-		instanceName = in
-	}
-
-	// Determine compression level from blob type segment
-	blobTypeStr, sizeOK := result["blob_type"]
-	if !sizeOK {
-		// Should never happen since the regex would not match otherwise.
-		return nil, status.InvalidArgumentError(`Unparsable resource name: "/blobs" or "/compressed-blobs/zstd" missing or out of place`)
-	}
-	compressor := repb.Compressor_IDENTITY
-	if blobTypeStr == "compressed-blobs/zstd" {
-		compressor = repb.Compressor_ZSTD
-	}
+	// The second-to-last piece is the hash.
+	pieceIdx--
+	hash := pieces[pieceIdx]
 	d := &repb.Digest{Hash: hash, SizeBytes: sizeBytes}
-
-	// Determine the digest function by looking at the digest length.
-	// If a digest_function value was specified in the bytestream URL, this
-	// is a new style hash, so lookup the type based on that value.
 	digestFunction := InferOldStyleDigestFunctionInDesperation(d)
-	if dfString, ok := result["digest_function"]; ok && dfString != "" {
-		df, err := ParseFunction(dfString)
-		if err != nil {
-			return nil, err
-		}
-		digestFunction = df
+	if digestFunction == repb.DigestFunction_UNKNOWN {
+		return nil, "", status.InvalidArgumentErrorf("Unparseable resource name, invalid hash (wrong length): %s", resourceName)
 	}
+	if !isLowerHex(hash) {
+		return nil, "", status.InvalidArgumentErrorf("Unparseable resource name, invalid hash (bad character(s)): %s", resourceName)
+	}
+
+	// The next piece may be the digest function.
+	pieceIdx--
+	piece := pieces[pieceIdx]
+	switch piece {
+	case "blake3":
+		digestFunction = repb.DigestFunction_BLAKE3
+	case "sha1":
+		digestFunction = repb.DigestFunction_SHA1
+	case "sha512":
+		digestFunction = repb.DigestFunction_SHA512
+	case "sha384":
+		digestFunction = repb.DigestFunction_SHA384
+	case "sha256":
+		digestFunction = repb.DigestFunction_SHA256
+	default:
+		pieceIdx++
+	}
+	if len(hash) != hashLength(digestFunction) {
+		return nil, "", status.InvalidArgumentErrorf("Unparseable resource name, invalid hash (wrong length): %s", resourceName)
+	}
+	pieceIdx--
+	if pieceIdx >= 0 {
+		piece = pieces[pieceIdx]
+	}
+
+	// The next piece must be "ac" for AC entries.
+	if cacheType == rspb.CacheType_AC {
+		if piece != "ac" {
+			return nil, "", status.InvalidArgumentErrorf("Unparseable Action Cache resource name, missing 'ac' blob type: %s", resourceName)
+		}
+		pieceIdx--
+		if pieceIdx >= 0 {
+			piece = pieces[pieceIdx]
+		}
+	}
+
+	// The next piece must be "blobs" or "zstd".
+	compressor := repb.Compressor_IDENTITY
+	if piece == "zstd" {
+		compressor = repb.Compressor_ZSTD
+	} else if piece != "blobs" {
+		return nil, "", status.InvalidArgumentErrorf("Unparseable resource name, invalid compressed blob type: %s", resourceName)
+	}
+
+	// If this is a compressed blob, the next piece must be "compressed-blobs".
+	pieceIdx--
+	piece = ""
+	if pieceIdx >= 0 {
+		piece = pieces[pieceIdx]
+	}
+	if compressor != repb.Compressor_IDENTITY {
+		if piece != "compressed-blobs" {
+			return nil, "", status.InvalidArgumentErrorf("Unparseable resource name, invalid compressed blob type: %s", resourceName)
+		}
+		pieceIdx--
+		piece = ""
+		if pieceIdx >= 0 {
+			piece = pieces[pieceIdx]
+		}
+	}
+
+	// If this is an upload, the next two pieces must be "uploads" and a UUID.
+	uploadID := ""
+	if resourceType == uploadResourceName {
+		if guuid.Validate(piece) != nil {
+			return nil, "", status.InvalidArgumentErrorf("Unparseable upload resource name, invalid UUID: %s", resourceName)
+		}
+		uploadID = piece
+		pieceIdx--
+		if pieceIdx < 0 {
+			return nil, "", status.InvalidArgumentErrorf("Unparseable upload resource name name, not enough pieces: %s", resourceName)
+		}
+		if pieces[pieceIdx] != "uploads" {
+			return nil, "", status.InvalidArgumentErrorf("Unparseable upload resource name, missing 'uploads': %s", resourceName)
+		}
+		pieceIdx--
+	}
+
+	// Everything remaining is the instance name.
+	instanceName := ""
+	if pieceIdx >= 0 {
+		instanceName = strings.Join(pieces[0:pieceIdx+1], "/")
+	}
+
 	r := NewResourceName(d, instanceName, cacheType, digestFunction)
 	r.SetCompressor(compressor)
-	return r, nil
+	return r, uploadID, nil
 }
 
-func ParseUploadResourceName(resourceName string) (*ResourceName, error) {
-	return parseResourceName(resourceName, uploadRegex, rspb.CacheType_CAS)
+func ParseUploadResourceName(resourceName string) (*CASResourceName, error) {
+	rn, _, err := ParseUploadResourceNameWithUUID(resourceName)
+	return rn, err
 }
 
-func ParseDownloadResourceName(resourceName string) (*ResourceName, error) {
-	return parseResourceName(resourceName, downloadRegex, rspb.CacheType_CAS)
+// ParseUploadResourceNameWithUUID parses an upload resource-name URL and
+// additionally returns the upload UUID parsed from the ".../uploads/<uuid>/..."
+// segment.
+func ParseUploadResourceNameWithUUID(resourceName string) (*CASResourceName, string, error) {
+	rn, uploadID, err := parseResourceName(resourceName, rspb.CacheType_CAS, uploadResourceName)
+	if err != nil {
+		return nil, "", err
+	}
+	cas, err := rn.CheckCAS()
+	if err != nil {
+		return nil, "", err
+	}
+	return cas, uploadID, nil
 }
 
-func ParseActionCacheResourceName(resourceName string) (*ResourceName, error) {
-	return parseResourceName(resourceName, actionCacheRegex, rspb.CacheType_AC)
+func ParseDownloadResourceName(resourceName string) (*CASResourceName, error) {
+	rn, _, err := parseResourceName(resourceName, rspb.CacheType_CAS, downloadResourceName)
+	if err != nil {
+		return nil, err
+	}
+	return rn.CheckCAS()
 }
 
-func IsDownloadResourceName(url string) bool {
-	return isResourceName(url, downloadRegex)
+func ParseActionCacheResourceName(resourceName string) (*ACResourceName, error) {
+	rn, _, err := parseResourceName(resourceName, rspb.CacheType_AC, downloadResourceName)
+	if err != nil {
+		return nil, err
+	}
+	return rn.CheckAC()
 }
 
-func IsActionCacheResourceName(url string) bool {
-	return isResourceName(url, actionCacheRegex)
+// DigestFunctionSegment returns the segment used in resource-name URLs for the
+// given digest function: "" for old-style SHA-family functions (which omit the
+// segment), the lowercase function name otherwise.
+func DigestFunctionSegment(df repb.DigestFunction_Value) string {
+	if isOldStyleDigestFunction(df) {
+		return ""
+	}
+	return lowerFunctionName(df)
+}
+
+// CompressorSegment returns the segment used in resource-name URLs for the
+// given compressor: "zstd" for ZSTD; "" for IDENTITY and any unsupported
+// compressor (which mirrors blobTypeSegment falling back to "blobs").
+func CompressorSegment(c repb.Compressor_Value) string {
+	switch c {
+	case repb.Compressor_ZSTD:
+		return "zstd"
+	default:
+		return ""
+	}
+}
+
+// DigestFunctionFromSegment is the inverse of DigestFunctionSegment. When
+// segment is empty, it falls back to InferOldStyleDigestFunctionInDesperation
+// against d. Returns InvalidArgumentError if neither path produces a known
+// function.
+func DigestFunctionFromSegment(segment string, d *repb.Digest) (repb.DigestFunction_Value, error) {
+	if segment == "" {
+		df := InferOldStyleDigestFunctionInDesperation(d)
+		if df == repb.DigestFunction_UNKNOWN {
+			return 0, status.InvalidArgumentErrorf("infer digest function for hash %q", d.GetHash())
+		}
+		return df, nil
+	}
+	return ParseFunction(segment)
+}
+
+// CompressorFromSegment is the inverse of CompressorSegment. "" → IDENTITY,
+// "zstd" → ZSTD, anything else → InvalidArgumentError.
+func CompressorFromSegment(segment string) (repb.Compressor_Value, error) {
+	switch segment {
+	case "":
+		return repb.Compressor_IDENTITY, nil
+	case "zstd":
+		return repb.Compressor_ZSTD, nil
+	default:
+		return 0, status.InvalidArgumentErrorf("unknown compressor %q", segment)
+	}
 }
 
 func blobTypeSegment(compressor repb.Compressor_Value) string {
-	if compressor == repb.Compressor_ZSTD {
-		return "compressed-blobs/zstd"
+	if seg := CompressorSegment(compressor); seg != "" {
+		return "compressed-blobs/" + seg
 	}
 	return "blobs"
 }
@@ -516,22 +721,42 @@ func IsCacheDebuggingEnabled(ctx context.Context) bool {
 }
 
 func MissingDigestError(d *repb.Digest) error {
+	return MissingDigestErrorf(d, "Digest %v not found", d)
+}
+
+func MissingDigestErrorf(d *repb.Digest, format string, args ...interface{}) error {
+	if d == nil {
+		log.Infof("MissingDigestErrorf called with nil digest. Stack trace:\n%s", string(debug.Stack()))
+	}
+
 	pf := &errdetails.PreconditionFailure{}
 	pf.Violations = append(pf.Violations, &errdetails.PreconditionFailure_Violation{
 		Type:    "MISSING",
 		Subject: fmt.Sprintf("blobs/%s/%d", d.GetHash(), d.GetSizeBytes()),
 	})
-	st := gstatus.Newf(gcodes.FailedPrecondition, "Digest %v not found", d)
+	st := gstatus.Newf(gcodes.FailedPrecondition, format, args...)
 	if st, err := st.WithDetails(pf); err != nil {
-		return status.InternalErrorf("Digest %v not found.", d)
+		return status.InternalErrorf(format, args...)
 	} else {
 		return st.Err()
 	}
 }
 
-// String returns the digest formatted as "HASH/SIZE".
+// String returns the digest formatted as "HASH/SIZE" or the string "<nil>"
+// if the digest is nil.
+//
+// Note: this is intended mainly for logging - to get a representation of a
+// digest suitable for use as a map key, use NewKey instead.
 func String(d *repb.Digest) string {
+	if d == nil {
+		return "<nil>"
+	}
 	return fmt.Sprintf("%s/%d", d.Hash, d.SizeBytes)
+}
+
+// Equal returns whether two digests are exactly equal, including the size.
+func Equal(d1 *repb.Digest, d2 *repb.Digest) bool {
+	return d1.GetHash() == d2.GetHash() && d1.GetSizeBytes() == d2.GetSizeBytes()
 }
 
 // ElementsMatch returns whether two slices contain the same digests, ignoring the order of the elements.
@@ -571,22 +796,23 @@ func Diff(s1 []*repb.Digest, s2 []*repb.Digest) (missingFromS1 []*repb.Digest, m
 	missingFromS1 = make([]*repb.Digest, 0)
 	missingFromS2 = make([]*repb.Digest, 0)
 
-	s1Set := make(map[*repb.Digest]struct{}, len(s1))
+	s1Set := make(map[Key]*repb.Digest, len(s1))
 	for _, d := range s1 {
-		s1Set[d] = struct{}{}
+		s1Set[NewKey(d)] = d
 	}
 
-	s2Set := make(map[*repb.Digest]struct{}, len(s2))
+	s2Set := make(map[Key]struct{}, len(s2))
 	for _, d := range s2 {
-		s2Set[d] = struct{}{}
+		k := NewKey(d)
+		s2Set[k] = struct{}{}
 
-		if _, inS1 := s1Set[d]; !inS1 {
+		if _, inS1 := s1Set[k]; !inS1 {
 			missingFromS1 = append(missingFromS1, d)
 		}
 	}
 
-	for d := range s1Set {
-		if _, inS2 := s2Set[d]; !inS2 {
+	for k, d := range s1Set {
+		if _, inS2 := s2Set[k]; !inS2 {
 			missingFromS2 = append(missingFromS2, d)
 		}
 	}
@@ -594,30 +820,32 @@ func Diff(s1 []*repb.Digest, s2 []*repb.Digest) (missingFromS1 []*repb.Digest, m
 	return missingFromS1, missingFromS2
 }
 
-type randomDataMaker struct {
-	src              rand.Source
-	compressionRatio float64
-	val              int64
-}
-
-func (r *randomDataMaker) Read(p []byte) (n int, err error) {
+func (g *Generator) fill(p []byte) {
 	todo := len(p)
 	offset := 0
+	compressionPercent := int64(g.compressionRatio * 100)
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	for {
-		// Generate a new random int64 (8 bytes) if we haven't generated one
-		// yet, or with a percent chance given by the compression ratio. This is
-		// a *very* rough way to generate blobs with the average compression
-		// ratios that we see in practice.
-		if r.val == 0 || r.src.Int63()%100 >= int64(r.compressionRatio*100) {
-			r.val = int64(r.src.Int63())
+		// Generate a new random int64 (8 bytes) with a percent chance given by
+		// the compression ratio. This is a *very* rough way to generate blobs
+		// with the average compression ratios that we see in practice.
+		if g.val == 0 || g.src.Int63()%100 >= compressionPercent {
+			g.val = g.src.Int63()
 		}
-		val := r.val
-		for i := 0; i < 8; i++ {
-			p[offset] = byte(val & 0xff)
-			todo--
+		if g.val == 0 && todo >= 8 {
+			// Fast path: write zeroes.
+			todo -= 8
+			offset += 8
+			continue
+		}
+		val := g.val
+		for range 8 {
 			if todo == 0 {
-				return len(p), nil
+				return
 			}
+			p[offset] = byte(val)
+			todo--
 			offset++
 			val >>= 8
 		}
@@ -625,8 +853,11 @@ func (r *randomDataMaker) Read(p []byte) (n int, err error) {
 }
 
 type Generator struct {
-	randMaker *randomDataMaker
-	mu        sync.Mutex
+	compressionRatio float64
+
+	mu  sync.Mutex // mu protects src and val.
+	src rand.Source
+	val int64
 }
 
 // RandomGenerator returns a digest sample generator for use in testing tools.
@@ -634,10 +865,8 @@ type Generator struct {
 // practice.
 func RandomGenerator(seed int64) *Generator {
 	return &Generator{
-		randMaker: &randomDataMaker{
-			src:              rand.NewSource(seed),
-			compressionRatio: 0.7,
-		},
+		src:              rand.NewSource(seed),
+		compressionRatio: 0.7,
 	}
 }
 
@@ -646,44 +875,49 @@ func RandomGenerator(seed int64) *Generator {
 // useful in cases where unique digests are needed.
 func UniformRandomGenerator(seed int64) *Generator {
 	return &Generator{
-		randMaker: &randomDataMaker{
-			src: rand.NewSource(seed),
-		},
+		src: rand.NewSource(seed),
 	}
 }
 
 func (g *Generator) RandomDigestReader(sizeBytes int64) (*repb.Digest, io.ReadSeeker, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	// Read some random bytes.
-	buf := new(bytes.Buffer)
-	if _, err := io.CopyN(buf, g.randMaker, sizeBytes); err != nil {
-		return nil, nil, err
-	}
-	readSeeker := bytes.NewReader(buf.Bytes())
-
-	// Compute a digest for the random bytes.
-	d, err := Compute(readSeeker, repb.DigestFunction_SHA256)
+	d, buf, err := g.RandomDigestBuf(sizeBytes)
 	if err != nil {
 		return nil, nil, err
 	}
-	if _, err := readSeeker.Seek(0, 0); err != nil {
-		return nil, nil, err
-	}
-	return d, readSeeker, nil
+	return d, bytes.NewReader(buf), nil
 }
 
 func (g *Generator) RandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte, error) {
-	d, rs, err := g.RandomDigestReader(sizeBytes)
-	if err != nil {
-		return nil, nil, err
-	}
-	buf, err := io.ReadAll(rs)
+	// Read some random bytes.
+	buf := make([]byte, sizeBytes)
+	g.fill(buf)
+
+	// Compute a digest for the random bytes.
+	d, err := Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, nil, err
 	}
 	return d, buf, nil
+}
+
+// lowerFunctionName returns the name for the digest function as a lower case
+// string. It exists just for performance reasons, to avoid the map lookup in
+// df.String() and the call to strings.ToLower.
+func lowerFunctionName(df repb.DigestFunction_Value) string {
+	switch df {
+	case repb.DigestFunction_BLAKE3:
+		return "blake3"
+	case repb.DigestFunction_SHA1:
+		return "sha1"
+	case repb.DigestFunction_SHA256:
+		return "sha256"
+	case repb.DigestFunction_SHA384:
+		return "sha384"
+	case repb.DigestFunction_SHA512:
+		return "sha512"
+	default:
+		return strings.ToLower(df.String())
+	}
 }
 
 // ParseFunction parses a digest function name to a proto.

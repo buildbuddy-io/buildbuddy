@@ -5,15 +5,442 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	fdpb "github.com/buildbuddy-io/buildbuddy/proto/failure_details"
 )
+
+func TestRedactPasswordsInURLs(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		event    *bespb.BuildEvent
+		expected *bespb.BuildEvent
+	}{
+		{
+			name: "redact passwords in urls in action stdout, stderr, primary output, metadata logs",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				Stdout:             fileWithURI("url://username:passwordthatshouldberedacted@uri"),
+				Stderr:             fileWithURI("url://username:passwordthatshouldberedacted@uri"),
+				PrimaryOutput:      fileWithURI("url://username:passwordthatshouldberedacted@uri"),
+				ActionMetadataLogs: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				Stdout:             fileWithURI("url://username:<REDACTED>@uri"),
+				Stderr:             fileWithURI("url://username:<REDACTED>@uri"),
+				PrimaryOutput:      fileWithURI("url://username:<REDACTED>@uri"),
+				ActionMetadataLogs: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in named set of files",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_NamedSetOfFiles{NamedSetOfFiles: &bespb.NamedSetOfFiles{
+				Files: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_NamedSetOfFiles{NamedSetOfFiles: &bespb.NamedSetOfFiles{
+				Files: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in target complete",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Completed{Completed: &bespb.TargetComplete{
+				DirectoryOutput: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Completed{Completed: &bespb.TargetComplete{
+				DirectoryOutput: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in test result",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestResult{TestResult: &bespb.TestResult{
+				TestActionOutput: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestResult{TestResult: &bespb.TestResult{
+				TestActionOutput: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in test summary files passed, failed",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestSummary{TestSummary: &bespb.TestSummary{
+				Passed: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
+				Failed: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestSummary{TestSummary: &bespb.TestSummary{
+				Passed: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
+				Failed: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in structured command line options",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "some_url",
+					OptionValue:  "https://username:passwordthatshouldberedacted@foo.com",
+					CombinedForm: "--some_url=https://username:passwordthatshouldberedacted@foo.com",
+				},
+				&clpb.Option{
+					OptionName:   "some_other_flag",
+					OptionValue:  "url://username:passwordthatshouldberedacted=@//foo",
+					CombinedForm: "--some_other_flag=url://username:passwordthatshouldberedacted=@//foo",
+				},
+				&clpb.Option{
+					OptionName:   "build_metadata",
+					OptionValue:  "PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:passwordthatshouldberedacted@bar,BAZ=",
+					CombinedForm: "--build_metadata=PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:passwordthatshouldberedacted@bar,BAZ=",
+				},
+				&clpb.Option{
+					OptionName:   "build_metadata",
+					OptionValue:  "FOO=A=1,BAR=SECRET=url://username:passwordthatshouldberedacted@buildbuddy.io",
+					CombinedForm: "--build_metadata=FOO=A=1,BAR=SECRET=url://username:passwordthatshouldberedacted@buildbuddy.io",
+				},
+			}}}}}}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "some_url",
+					OptionValue:  "https://username:<REDACTED>@foo.com",
+					CombinedForm: "--some_url=https://username:<REDACTED>@foo.com",
+				},
+				&clpb.Option{
+					OptionName:   "some_other_flag",
+					OptionValue:  "url://username:<REDACTED>@//foo",
+					CombinedForm: "--some_other_flag=url://username:<REDACTED>@//foo",
+				},
+				&clpb.Option{
+					OptionName:   "build_metadata",
+					OptionValue:  "PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:<REDACTED>@bar,BAZ=",
+					CombinedForm: "--build_metadata=PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:<REDACTED>@bar,BAZ=",
+				},
+				&clpb.Option{
+					OptionName:   "build_metadata",
+					OptionValue:  "FOO=A=1,BAR=SECRET=url://username:<REDACTED>@buildbuddy.io",
+					CombinedForm: "--build_metadata=FOO=A=1,BAR=SECRET=url://username:<REDACTED>@buildbuddy.io",
+				},
+			}}}}}}}},
+		},
+		{
+			name: "redact passwords in urls in options parsed",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: &bespb.OptionsParsed{
+				CmdLine: []string{
+					"url://username:passwordthatshouldberedacted@foo",
+					"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:passwordthatshouldberedacted@domain",
+					"--some_other_flag=url://username:SUBFLAGTHATSHOULDBEREDACTED=@//foo",
+				},
+				ExplicitCmdLine: []string{
+					"url://username:passwordthatshouldberedacted@foo",
+					"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:passwordthatshouldberedacted@domain",
+					"--some_other_flag=url://username:SUBFLAGTHATSHOULDBEREDACTED=@//foo",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: &bespb.OptionsParsed{
+				CmdLine: []string{
+					"url://username:<REDACTED>@foo",
+					"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:<REDACTED>@domain",
+					"--some_other_flag=url://username:<REDACTED>@//foo",
+				},
+				ExplicitCmdLine: []string{
+					"url://username:<REDACTED>@foo",
+					"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:<REDACTED>@domain",
+					"--some_other_flag=url://username:<REDACTED>@//foo",
+				},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in action failure detail message",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Error downloading https://username:passwordthatshouldberedacted@repo.example.com/package.tar.gz",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Error downloading https://username:<REDACTED>@repo.example.com/package.tar.gz",
+				},
+			}}},
+		},
+		{
+			name: "redact _json_key_base64 credentials in action failure detail message",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "ERROR: loading failure: end: failure command: pip install --requirement 'graphviz==0.20.1' --index-url https://_json_key_base64:totallysecretkey@artifactregistry.googleapis.com/pypi/repo/simple",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "ERROR: loading failure: end: failure command: pip install --requirement 'graphviz==0.20.1' --index-url https://_json_key_base64:<REDACTED>@artifactregistry.googleapis.com/pypi/repo/simple",
+				},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in finished failure detail message",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Finished{Finished: &bespb.BuildFinished{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Parsing failed: error loading repository from https://user:secret@github.com/org/repo.git",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Finished{Finished: &bespb.BuildFinished{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Parsing failed: error loading repository from https://user:<REDACTED>@github.com/org/repo.git",
+				},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in aborted description",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Aborted{Aborted: &bespb.Aborted{
+				Description: "Build aborted due to error: failed to fetch https://username:passwordthatshouldberedacted@example.com/resource",
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Aborted{Aborted: &bespb.Aborted{
+				Description: "Build aborted due to error: failed to fetch https://username:<REDACTED>@example.com/resource",
+			}}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redactor := redact.NewStreamingRedactor()
+			err := redactor.RedactMetadata(tc.event)
+			require.NoError(t, err)
+			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
+		})
+	}
+}
+
+func TestRedactEnvVar(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "unquoted var assignment",
+			input:    "--action_env=FOO=bar",
+			expected: "--action_env=FOO=<REDACTED>",
+		},
+		{
+			name:     "double quoted var assignment",
+			input:    `--client_env="FOO=bar baz"`,
+			expected: "--client_env=FOO=<REDACTED>",
+		},
+		{
+			name:     "single quoted var assignment",
+			input:    "--repo_env='FOO=bar=baz'",
+			expected: "--repo_env=FOO=<REDACTED>",
+		},
+		{
+			name:     "multiline quoted var assignment",
+			input:    "--client_env=\"FOO=bar\nbaz\"",
+			expected: "--client_env=FOO=<REDACTED>",
+		},
+		{
+			name:     "no equals sign",
+			input:    "--host_action_env",
+			expected: "--host_action_env",
+		},
+		{
+			name:     "empty var value",
+			input:    "--action_env=FOO=",
+			expected: "--action_env=FOO=",
+		},
+		{
+			name:     "inherit var",
+			input:    "--action_env=FOO",
+			expected: "--action_env=FOO",
+		},
+		{
+			name:     "clear var",
+			input:    "--repo_env==FOO",
+			expected: "--repo_env==FOO",
+		},
+		{
+			name:     "boolean value",
+			input:    "--repo_env=REPIN=TRUE",
+			expected: "--repo_env=REPIN=TRUE",
+		},
+		{
+			name:     "boolean-like value",
+			input:    "--repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1",
+			expected: "--repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, redact.RedactEnvVar(tc.input))
+		})
+	}
+}
+
+func TestRedactEntireSections(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		event    *bespb.BuildEvent
+		expected *bespb.BuildEvent
+	}{
+		{
+			name: "redact options description in build started event",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{
+				OptionsDescription: `--some_flag --another_flag`,
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{
+				OptionsDescription: `<REDACTED>`,
+			}}},
+		},
+		{
+			name: "remove args from unstructured commanbd line",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_UnstructuredCommandLine{UnstructuredCommandLine: &bespb.UnstructuredCommandLine{
+				Args: []string{"foo"},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_UnstructuredCommandLine{UnstructuredCommandLine: &bespb.UnstructuredCommandLine{}}},
+		},
+		{
+			name: "remove --default_override and EXPLICIT_COMMAND_LINE options from structured command line",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "default_override",
+					OptionValue:  "1:build:remote=--remote_default_exec_properties=container-registry-password=SECRET",
+					CombinedForm: "--default_override=1:build:remote=--remote_default_exec_properties=container-registry-password=SECRET",
+				},
+				&clpb.Option{
+					OptionName:   "build_metadata",
+					OptionValue:  `EXPLICIT_COMMAND_LINE=["secrets"]`,
+					CombinedForm: `--build_metadata=EXPLICIT_COMMAND_LINE=["secrets"]`,
+				},
+			}}}}}}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{}}}}}}}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redactor := redact.NewStreamingRedactor()
+			err := redactor.RedactMetadata(tc.event)
+			require.NoError(t, err)
+			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
+		})
+	}
+}
+
+func TestRedactRemoteHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		event    *bespb.BuildEvent
+		expected *bespb.BuildEvent
+	}{
+		{
+			name: "redact remote headers in structured command line",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "remote_header",
+					OptionValue:  "harmless_string_that_should_be_redacted_anyhow",
+					CombinedForm: "--remote_header=harmless_string_that_should_be_redacted_anyhow",
+				},
+				&clpb.Option{
+					OptionName:   "remote_cache_header",
+					OptionValue:  "harmless_string_that_should_be_redacted_anyhow",
+					CombinedForm: "--remote_cache_header=harmless_string_that_should_be_redacted_anyhow",
+				},
+			}}}}}}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "remote_header",
+					OptionValue:  "<REDACTED>",
+					CombinedForm: "--remote_header=<REDACTED>",
+				},
+				&clpb.Option{
+					OptionName:   "remote_cache_header",
+					OptionValue:  "<REDACTED>",
+					CombinedForm: "--remote_cache_header=<REDACTED>",
+				},
+			}}}}}}}},
+		},
+		{
+			name: "redact remote headers in options parsed",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: &bespb.OptionsParsed{
+				CmdLine: []string{
+					"--remote_header=harmless_string_that_should_be_redacted_anyhow",
+					"--remote_exec_header=harmless_string_that_should_be_redacted_anyhow",
+					"--bes_header=harmless_string_that_should_be_redacted_anyhow",
+				},
+				ExplicitCmdLine: []string{
+					"--remote_header=harmless_string_that_should_be_redacted_anyhow",
+					"--remote_exec_header=harmless_string_that_should_be_redacted_anyhow",
+					"--bes_header=harmless_string_that_should_be_redacted_anyhow",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: &bespb.OptionsParsed{
+				CmdLine: []string{
+					"--remote_header=<REDACTED>",
+					"--remote_exec_header=<REDACTED>",
+					"--bes_header=<REDACTED>",
+				},
+				ExplicitCmdLine: []string{
+					"--remote_header=<REDACTED>",
+					"--remote_exec_header=<REDACTED>",
+					"--bes_header=<REDACTED>",
+				},
+			}}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redactor := redact.NewStreamingRedactor()
+			err := redactor.RedactMetadata(tc.event)
+			require.NoError(t, err)
+			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
+		})
+	}
+}
+
+func TestRemoveRepoURLCredentials(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		event    *bespb.BuildEvent
+		expected *bespb.BuildEvent
+	}{
+		{
+			name: "remove credentials from github repository url in structured command line options",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "client_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+					CombinedForm: "--client_env=GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+				},
+				&clpb.Option{
+					OptionName:   "test_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+					CombinedForm: "--test_env=GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+				},
+				&clpb.Option{
+					OptionName:   "repo_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+					CombinedForm: "--repo_env=GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+				},
+			}}}}}}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "client_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://github.com/foo/bar",
+					CombinedForm: "--client_env=GITHUB_REPOSITORY=https://github.com/foo/bar",
+				},
+				&clpb.Option{
+					OptionName:   "test_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://github.com/foo/bar",
+					CombinedForm: "--test_env=GITHUB_REPOSITORY=https://github.com/foo/bar",
+				},
+				&clpb.Option{
+					OptionName:   "repo_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://github.com/foo/bar",
+					CombinedForm: "--repo_env=GITHUB_REPOSITORY=https://github.com/foo/bar",
+				},
+			}}}}}}}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redactor := redact.NewStreamingRedactor()
+			err := redactor.RedactMetadata(tc.event)
+			require.NoError(t, err)
+			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
+		})
+	}
+}
 
 func fileWithURI(uri string) *bespb.File {
 	return &bespb.File{
@@ -23,78 +450,33 @@ func fileWithURI(uri string) *bespb.File {
 }
 
 func structuredCommandLineEvent(option *clpb.Option) *bespb.BuildEvent {
-	section := &clpb.CommandLineSection{
-		SectionLabel: "command",
-		SectionType: &clpb.CommandLineSection_OptionList{
-			OptionList: &clpb.OptionList{
-				Option: []*clpb.Option{option},
+	return &bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_StructuredCommandLine{
+			StructuredCommandLine: &clpb.CommandLine{
+				Sections: []*clpb.CommandLineSection{
+					&clpb.CommandLineSection{
+						SectionType: &clpb.CommandLineSection_OptionList{
+							OptionList: &clpb.OptionList{
+								Option: []*clpb.Option{option},
+							},
+						},
+					},
+				},
 			},
 		},
 	}
-	commandLine := &clpb.CommandLine{
-		CommandLineLabel: "label",
-		Sections:         []*clpb.CommandLineSection{section},
-	}
-	return &bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_StructuredCommandLine{
-			StructuredCommandLine: commandLine,
-		},
-	}
-}
-
-func getCommandLineOptions(event *bespb.BuildEvent) []*clpb.Option {
-	p, ok := event.Payload.(*bespb.BuildEvent_StructuredCommandLine)
-	if !ok {
-		return nil
-	}
-	sections := p.StructuredCommandLine.Sections
-	if len(sections) == 0 {
-		return nil
-	}
-	s, ok := sections[0].SectionType.(*clpb.CommandLineSection_OptionList)
-	if !ok {
-		return nil
-	}
-	return s.OptionList.Option
-}
-
-func TestRedactMetadata_BuildStarted_RedactsOptionsDescription(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	buildStarted := &bespb.BuildStarted{
-		OptionsDescription: `--some_flag --another_flag`,
-	}
-
-	redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_Started{Started: buildStarted},
-	})
-
-	assert.Equal(t, "<REDACTED>", buildStarted.OptionsDescription)
-}
-
-func TestRedactMetadata_UnstructuredCommandLine_RemovesArgs(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	unstructuredCommandLine := &bespb.UnstructuredCommandLine{
-		Args: []string{"foo"},
-	}
-
-	redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_UnstructuredCommandLine{
-			UnstructuredCommandLine: unstructuredCommandLine,
-		},
-	})
-
-	assert.Equal(t, []string{}, unstructuredCommandLine.Args)
 }
 
 func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor()
 	// Started event specified which env vars shouldn't be redacted.
 	buildStarted := &bespb.BuildStarted{
 		OptionsDescription: "--build_metadata='ALLOW_ENV=FOO_ALLOWED,BAR_ALLOWED_PATTERN_*'",
 	}
-	redactor.RedactMetadata(&bespb.BuildEvent{
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_Started{Started: buildStarted},
 	})
+	require.NoError(t, err)
 
 	for _, testCase := range []struct {
 		optionName    string
@@ -102,18 +484,23 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 		expectedValue string
 	}{
 		{"client_env", "SECRET=codez", "SECRET=<REDACTED>"},
-		{"client_env", "GITHUB_REPOSITORY=https://username:password@github.com/foo/bar", "GITHUB_REPOSITORY=https://github.com/foo/bar"},
 		{"client_env", "FOO_ALLOWED=bar", "FOO_ALLOWED=bar"},
 		{"client_env", "BAR_ALLOWED_PATTERN_XYZ=qux", "BAR_ALLOWED_PATTERN_XYZ=qux"},
-		{"remote_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
-		{"remote_cache_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
-		{"some_url", "https://token@foo.com", "https://foo.com"},
+		{"test_env", "SECRET=codez", "SECRET=<REDACTED>"},
+		{"test_env", "FOO_ALLOWED=bar", "FOO_ALLOWED=bar"},
+		{"test_env", "BAR_ALLOWED_PATTERN_XYZ=qux", "BAR_ALLOWED_PATTERN_XYZ=qux"},
+		{"repo_env", "SECRET=codez", "SECRET=<REDACTED>"},
+		{"repo_env", "FOO_ALLOWED=bar", "FOO_ALLOWED=bar"},
+		{"repo_env", "BAR_ALLOWED_PATTERN_XYZ=qux", "BAR_ALLOWED_PATTERN_XYZ=qux"},
+		{"repo_env", "AWS_SECRET_ACCESS_KEY=super_secret_aws_secret_access_key", "AWS_SECRET_ACCESS_KEY=<REDACTED>"},
+		{"repo_env", "AWS_ACCESS_KEY_ID=super_secret_aws_access_key_id", "AWS_ACCESS_KEY_ID=<REDACTED>"},
 		{"remote_default_exec_properties", "container-registry-username=SECRET_USERNAME", "container-registry-username=<REDACTED>"},
 		{"remote_default_exec_properties", "container-registry-password=SECRET_PASSWORD", "container-registry-password=<REDACTED>"},
 		{"host_platform", "@buildbuddy_toolchain//:platform", "@buildbuddy_toolchain//:platform"},
-		{"build_metadata", "PATTERN=@//foo,NAME=@foo,PASSWORD=SECRET@bar,BAZ=", "PATTERN=@//foo,NAME=@foo,PASSWORD=bar,BAZ="},
-		{"build_metadata", "FOO=A=1,BAR=SECRET=SECRET@buildbuddy.io", "FOO=A=1,BAR=buildbuddy.io"},
-		{"some_other_flag", "PATTERN=@//foo", "//foo"},
+		{"action_env", "AWS_ACCESS_KEY_ID=super_secret_access_key_id", "AWS_ACCESS_KEY_ID=<REDACTED>"},
+		{"action_env", "AWS_SECRET_ACCESS_KEY=super_secret_access_key", "AWS_SECRET_ACCESS_KEY=<REDACTED>"},
+		{"host_action_env", "AWS_ACCESS_KEY_ID=super_secret_access_key_id", "AWS_ACCESS_KEY_ID=<REDACTED>"},
+		{"host_action_env", "AWS_SECRET_ACCESS_KEY=super_secret_access_key", "AWS_SECRET_ACCESS_KEY=<REDACTED>"},
 	} {
 		option := &clpb.Option{
 			OptionName:   testCase.optionName,
@@ -121,176 +508,224 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 			CombinedForm: fmt.Sprintf("--%s=%s", testCase.optionName, testCase.inputValue),
 		}
 
-		redactor.RedactMetadata(structuredCommandLineEvent(option))
+		err := redactor.RedactMetadata(structuredCommandLineEvent(option))
+		require.NoError(t, err)
 
 		expectedCombinedForm := fmt.Sprintf("--%s=%s", testCase.optionName, testCase.expectedValue)
 		assert.Equal(t, expectedCombinedForm, option.CombinedForm)
 		assert.Equal(t, testCase.expectedValue, option.OptionValue)
 	}
-
-	// default_override flags should be dropped altogether.
-
-	option := &clpb.Option{
-		OptionName:   "default_override",
-		OptionValue:  "1:build:remote=--remote_default_exec_properties=container-registry-password=SECRET",
-		CombinedForm: "--default_override=1:build:remote=--remote_default_exec_properties=container-registry-password=SECRET",
-	}
-	event := structuredCommandLineEvent(option)
-	assert.NotEmpty(t, getCommandLineOptions(event), "sanity check: --default_override should be an option before redacting")
-
-	redactor.RedactMetadata(event)
-
-	assert.Empty(t, getCommandLineOptions(event), "--default_override options should be removed")
-
-	// EXPLICIT_COMMAND_LINE flags should be dropped altogether.
-
-	option = &clpb.Option{
-		OptionName:   "build_metadata",
-		OptionValue:  `EXPLICIT_COMMAND_LINE=["secrets"]`,
-		CombinedForm: `--build_metadata=EXPLICIT_COMMAND_LINE=["secrets"]`,
-	}
-	event = structuredCommandLineEvent(option)
-	assert.NotEmpty(t, getCommandLineOptions(event), "sanity check: EXPLICIT_COMMAND_LINE should be an option before redacting")
-
-	redactor.RedactMetadata(event)
-
-	assert.Empty(t, getCommandLineOptions(event), "EXPLICIT_COMMAND_LINE should be removed")
 }
 
 func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor()
 	optionsParsed := &bespb.OptionsParsed{
 		CmdLine: []string{
-			"213wZJyTUyhXkj381312@foo",
 			"--flag=@repo//package",
-			"--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET",
-			"--remote_exec_header=x-buildbuddy-platform.container-registry-password=TOPSECRET2",
-			"--bes_header=foo=TOPSECRET",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=TOPSECRET@",
-			"--some_other_flag=SUBFLAG=@//foo",
+			"--repo_env=AWS_ACCESS_KEY_ID=secret_aws_access_key_id",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
 		ExplicitCmdLine: []string{
-			"213wZJyTUyhXkj381312@explicit",
 			"--flag=@repo//package",
-			"--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET_EXPLICIT",
-			"--remote_exec_header=x-buildbuddy-platform.container-registry-password=TOPSECRET2_EXPLICIT",
-			"--bes_header=foo=TOPSECRET",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=TOPSECRET_EXPLICIT@",
-			"--some_other_flag=SUBFLAG=@//foo",
+			"--repo_env=AWS_ACCESS_KEY_ID=secret_aws_access_key_id",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
 	}
 
-	redactor.RedactMetadata(&bespb.BuildEvent{
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: optionsParsed},
 	})
+	require.NoError(t, err)
 
 	assert.Equal(
 		t,
 		[]string{
-			"foo",
 			"--flag=@repo//package",
-			"--remote_header=<REDACTED>",
-			"--remote_exec_header=<REDACTED>",
-			"--bes_header=<REDACTED>",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=",
-			"--some_other_flag=//foo",
+			"--repo_env=AWS_ACCESS_KEY_ID=<REDACTED>",
 			"",
 		},
 		optionsParsed.CmdLine)
 	assert.Equal(
 		t,
 		[]string{
-			"explicit",
 			"--flag=@repo//package",
-			"--remote_header=<REDACTED>",
-			"--remote_exec_header=<REDACTED>",
-			"--bes_header=<REDACTED>",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=",
-			"--some_other_flag=//foo",
+			"--repo_env=AWS_ACCESS_KEY_ID=<REDACTED>",
 			"",
 		},
 		optionsParsed.ExplicitCmdLine)
 }
 
-func TestRedactMetadata_ActionExecuted_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	actionExecuted := &bespb.ActionExecuted{
-		Stdout:             fileWithURI("213wZJyTUyhXkj381312@uri"),
-		Stderr:             fileWithURI("213wZJyTUyhXkj381312@uri"),
-		PrimaryOutput:      fileWithURI("213wZJyTUyhXkj381312@uri"),
-		ActionMetadataLogs: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
+func TestRedactMetadata_OptionsParsed_RedactsMultilineEnvVar(t *testing.T) {
+	redactor := redact.NewStreamingRedactor()
+	const multiLineValue = `this value has spaces
+and multiple
+lines,
+oddly.
+it even has a
+-----BEGIN OPENSSH PRIVATE KEY-----
+PRIVATEKEYDATA
+-----END OPENSSH PRIVATE KEY-----`
+	flagValue := "--action_env=MULTILINE_VAR=" + multiLineValue
+	optionsParsed := &bespb.OptionsParsed{
+		CmdLine: []string{
+			"bazel",
+			"build",
+			flagValue,
+		},
+		ExplicitCmdLine: []string{
+			"bazel",
+			"build",
+			flagValue,
+		},
 	}
 
-	redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_Action{Action: actionExecuted},
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: optionsParsed},
 	})
+	require.NoError(t, err)
 
-	assert.Equal(t, "uri", actionExecuted.Stdout.GetUri())
-	assert.Equal(t, "uri", actionExecuted.Stderr.GetUri())
-	assert.Equal(t, "uri", actionExecuted.PrimaryOutput.GetUri())
-	assert.Equal(t, "uri", actionExecuted.ActionMetadataLogs[0].GetUri())
+	expected := "--action_env=MULTILINE_VAR=<REDACTED>"
+	require.Len(t, optionsParsed.CmdLine, 3)
+	require.Len(t, optionsParsed.ExplicitCmdLine, 3)
+	assert.Equal(t, expected, optionsParsed.CmdLine[2])
+	assert.Equal(t, expected, optionsParsed.ExplicitCmdLine[2])
+	assert.NotContains(t, optionsParsed.CmdLine[2], "OPENSSH PRIVATE KEY")
+	assert.NotContains(t, optionsParsed.ExplicitCmdLine[2], "OPENSSH PRIVATE KEY")
 }
 
-func TestRedactMetadata_NamedSetOfFiles_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	namedSetOfFiles := &bespb.NamedSetOfFiles{
-		Files: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
+func TestRedactCmdLine(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		input  []string
+		expect []string
+	}{
+		{
+			name: "multi line env var",
+			input: []string{
+				"bazel",
+				"build",
+				`--action_env=MULTILINE_VAR=this value has spaces
+and multiple
+lines,
+oddly.
+it even has a
+-----BEGIN OPENSSH PRIVATE KEY-----
+PRIVATEKEYDATA
+-----END OPENSSH PRIVATE KEY-----`,
+			},
+			expect: []string{
+				"bazel",
+				"build",
+				"--action_env=MULTILINE_VAR=<REDACTED>",
+			},
+		},
+		{
+			name: "single line env var",
+			input: []string{
+				"bazel",
+				"test",
+				"--action_env=API_KEY=secret",
+			},
+			expect: []string{
+				"bazel",
+				"test",
+				"--action_env=API_KEY=<REDACTED>",
+			},
+		},
+		{
+			name: "quoted env var",
+			input: []string{
+				"bazel",
+				`--client_env="FOO=bar baz"`,
+			},
+			expect: []string{
+				"bazel",
+				`--client_env="FOO=<REDACTED>"`,
+			},
+		},
+		{
+			name: "remote headers",
+			input: []string{
+				"bazel",
+				"--remote_header=harmless_string_that_should_be_redacted_anyhow",
+				"--remote_cache_header=harmless_string_that_should_be_redacted_anyhow",
+				"--remote_exec_header=harmless_string_that_should_be_redacted_anyhow",
+				"--remote_downloader_header=harmless_string_that_should_be_redacted_anyhow",
+				"--bes_header=harmless_string_that_should_be_redacted_anyhow",
+			},
+			expect: []string{
+				"bazel",
+				"--remote_header=<REDACTED>",
+				"--remote_cache_header=<REDACTED>",
+				"--remote_exec_header=<REDACTED>",
+				"--remote_downloader_header=<REDACTED>",
+				"--bes_header=<REDACTED>",
+			},
+		},
+		{
+			name: "explicit command line",
+			input: []string{
+				"bazel",
+				`--build_metadata=EXPLICIT_COMMAND_LINE=["SECRET"]`,
+			},
+			expect: []string{
+				"bazel",
+				"",
+			},
+		},
+		{
+			name: "known multi flag url secret",
+			input: []string{
+				"--build_metadata=PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:password@domain,BAZ=",
+			},
+			expect: []string{
+				"--build_metadata=PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:<REDACTED>@domain,BAZ=",
+			},
+		},
+		{
+			name: "flag with url secret",
+			input: []string{
+				"bazel",
+				"--some_other_flag=url://username:password@foo",
+			},
+			expect: []string{
+				"bazel",
+				"--some_other_flag=url://username:<REDACTED>@foo",
+			},
+		},
+		{
+			name: "plain token url secret",
+			input: []string{
+				"bazel",
+				"url://username:password@foo",
+			},
+			expect: []string{
+				"bazel",
+				"url://username:<REDACTED>@foo",
+			},
+		},
+		{
+			name: "safe tokens unchanged",
+			input: []string{
+				"bazel",
+				"--flag=@repo//package",
+			},
+			expect: []string{
+				"bazel",
+				"--flag=@repo//package",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tokens := append([]string(nil), tc.input...)
+			redact.RedactCmdLine(tokens)
+			require.Equal(t, tc.expect, tokens)
+		})
 	}
-
-	redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_NamedSetOfFiles{NamedSetOfFiles: namedSetOfFiles},
-	})
-
-	assert.Equal(t, "uri", namedSetOfFiles.Files[0].GetUri())
-}
-
-func TestRedactMetadata_TargetComplete_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	targetComplete := &bespb.TargetComplete{
-		Success:         true,
-		DirectoryOutput: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
-	}
-
-	redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_Completed{Completed: targetComplete},
-	})
-
-	assert.Equal(t, "uri", targetComplete.DirectoryOutput[0].GetUri())
-}
-
-func TestRedactMetadata_TestResult_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	testResult := &bespb.TestResult{
-		Status:           bespb.TestStatus_PASSED,
-		TestActionOutput: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
-	}
-
-	redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_TestResult{TestResult: testResult},
-	})
-
-	assert.Equal(t, "uri", testResult.TestActionOutput[0].GetUri())
-}
-
-func TestRedactMetadata_TestSummary_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	testSummary := &bespb.TestSummary{
-		Passed: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
-		Failed: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
-	}
-
-	redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_TestSummary{TestSummary: testSummary},
-	})
-
-	assert.Equal(t, "uri", testSummary.Passed[0].GetUri())
-	assert.Equal(t, "uri", testSummary.Failed[0].GetUri())
 }
 
 func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor()
 	buildMetadata := &bespb.BuildMetadata{
 		Metadata: map[string]string{
 			"ALLOW_ENV":             "SHELL",
@@ -300,25 +735,27 @@ func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
 		},
 	}
 
-	redactor.RedactMetadata(&bespb.BuildEvent{
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_BuildMetadata{BuildMetadata: buildMetadata},
 	})
+	require.NoError(t, err)
 
 	assert.Equal(t, "https://github.com/buildbuddy-io/metadata_repo_url", buildMetadata.Metadata["REPO_URL"])
 	assert.Equal(t, `["--remote_header=\u003cREDACTED\u003e","--foo=SAFE"]`, buildMetadata.Metadata["EXPLICIT_COMMAND_LINE"])
 }
 
 func TestRedactMetadata_WorkspaceStatus_StripsRepoURLCredentials(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor()
 	workspaceStatus := &bespb.WorkspaceStatus{
 		Item: []*bespb.WorkspaceStatus_Item{
 			{Key: "REPO_URL", Value: "https://USERNAME:PASSWORD@github.com/buildbuddy-io/metadata_repo_url"},
 		},
 	}
 
-	redactor.RedactMetadata(&bespb.BuildEvent{
+	err := redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_WorkspaceStatus{WorkspaceStatus: workspaceStatus},
 	})
+	require.NoError(t, err)
 
 	require.Equal(t, 1, len(workspaceStatus.Item))
 	assert.Equal(t, "https://github.com/buildbuddy-io/metadata_repo_url", workspaceStatus.Item[0].Value)
@@ -363,7 +800,7 @@ func TestRedactAPIKey(t *testing.T) {
 			},
 		}}},
 	}
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor()
 	ctx := context.WithValue(context.Background(), "x-buildbuddy-api-key", apiKey)
 
 	for _, e := range events {
@@ -442,12 +879,12 @@ func TestRedactRunResidual(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+			redactor := redact.NewStreamingRedactor()
 
 			chunkList := &clpb.ChunkList{
 				Chunk: tc.given,
 			}
-			redactor.RedactMetadata(&bespb.BuildEvent{
+			err := redactor.RedactMetadata(&bespb.BuildEvent{
 				Payload: &bespb.BuildEvent_StructuredCommandLine{
 					StructuredCommandLine: &clpb.CommandLine{
 						Sections: []*clpb.CommandLineSection{
@@ -469,8 +906,241 @@ func TestRedactRunResidual(t *testing.T) {
 					},
 				},
 			})
-
+			require.NoError(t, err)
 			require.Equal(t, tc.expected, chunkList.Chunk)
 		})
+	}
+}
+
+func TestRedactTxt(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		txt      string
+		expected string
+	}{
+		{
+			name:     "remote headers",
+			txt:      "ok --remote_header=x-buildbuddy-api-key=secret --flag=ok",
+			expected: "ok --remote_header=<REDACTED> --flag=ok",
+		},
+		{
+			name:     "url secrets",
+			txt:      "ok url://username:password@uri --flag=ok",
+			expected: "ok url://username:<REDACTED>@uri --flag=ok",
+		},
+		{
+			name:     "do not redact rules names",
+			txt:      "ERROR: Error computing the main repository mapping: rules_apple@3.16.1 depends on rules_swift@2.1.1 with compatibility level 2, but <root> depends on rules_swift@1.18.0 with compatibility level 1 which is different",
+			expected: "ERROR: Error computing the main repository mapping: rules_apple@3.16.1 depends on rules_swift@2.1.1 with compatibility level 2, but <root> depends on rules_swift@1.18.0 with compatibility level 1 which is different",
+		},
+		{
+			name: "do not redact diff headers after URL on adjacent line",
+			txt: "INFO: Streaming build results to: https://app.buildbuddy.io/invocation/4e0ee060-5c14-4165-b631-8119e53ecac7\n" +
+				"--- enterprise/server/oci/BUILD\t1970-01-01 00:00:00.000000001 +0000\n" +
+				"+++ enterprise/server/oci/BUILD\t1970-01-01 00:00:00.000000001 +0000\n" +
+				"@@ -14,7 +14,6 @@\n",
+			expected: "INFO: Streaming build results to: https://app.buildbuddy.io/invocation/4e0ee060-5c14-4165-b631-8119e53ecac7\n" +
+				"--- enterprise/server/oci/BUILD\t1970-01-01 00:00:00.000000001 +0000\n" +
+				"+++ enterprise/server/oci/BUILD\t1970-01-01 00:00:00.000000001 +0000\n" +
+				"@@ -14,7 +14,6 @@\n",
+		},
+		{
+			name:     "api key start of line",
+			txt:      "apikeyexactly20chars@mydomain.com",
+			expected: "<REDACTED>@mydomain.com",
+		},
+		{
+			name: "environment variables",
+			txt: "common --repo_env=AWS_ACCESS_KEY_ID=super_secret_access_key_id # gitleaks:allow\n" +
+				"common --repo_env=AWS_SECRET_ACCESS_KEY=super_secret_access_key # gitleaks:allow",
+			expected: "common --repo_env=AWS_ACCESS_KEY_ID=<REDACTED> # gitleaks:allow\n" +
+				"common --repo_env=AWS_SECRET_ACCESS_KEY=<REDACTED> # gitleaks:allow",
+		},
+		{
+			name: "multiline environment variable - single quoted private key",
+			txt: "--test_env='PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n" +
+				"abc123def456ghi789jkl012mno345pqr678stu901vwx234yz\n" +
+				"fooBarBazQuxMultiLineSecretValue123456789ABCDEFGH\n" +
+				"-----END PRIVATE KEY-----' --test_env='OTHER_VAR=safe_value'",
+			expected: "--test_env=PRIVATE_KEY=<REDACTED> --test_env=OTHER_VAR=<REDACTED>",
+		},
+		{
+			name: "multiline environment variable - double quoted certificate",
+			txt: "--action_env=\"MY_CERT=-----BEGIN CERTIFICATE-----\n" +
+				"xYzAbC123dEfGhI456jKlMnO789pQrStU012vWxYz345AbCdE\n" +
+				"fakeMultiLineCertificateDataHereForTestingPurposesOnly\n" +
+				"-----END CERTIFICATE-----\" --action_env=\"NORMAL_VAR=test123\"",
+			expected: "--action_env=MY_CERT=<REDACTED> --action_env=NORMAL_VAR=<REDACTED>",
+		},
+		{
+			name: "multiline environment variable - single quoted with trailing comment",
+			txt: "--repo_env='PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n" +
+				"madeUpSecretKey999888777666555444333222111000ZZZYYY\n" +
+				"-----END PRIVATE KEY-----' # gitleaks:allow",
+			expected: "--repo_env=PRIVATE_KEY=<REDACTED> # gitleaks:allow",
+		},
+		{
+			name: "multiline environment variable - mixed with unquoted",
+			txt: "--test_env=SIMPLE_VAR=simple_value --test_env='MULTILINE_SECRET=line1\n" +
+				"line2\n" +
+				"line3' --action_env=ANOTHER_VAR=another_value",
+			expected: "--test_env=SIMPLE_VAR=<REDACTED> --test_env=MULTILINE_SECRET=<REDACTED> --action_env=ANOTHER_VAR=<REDACTED>",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redacted := redact.RedactText(tc.txt)
+			require.Equal(t, tc.expected, redacted)
+		})
+	}
+}
+
+func TestRedactTextWithValues(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		txt             string
+		redactionValues []string
+		expected        string
+	}{
+		{
+			name:            "applies default redactions and custom values",
+			txt:             "ok --remote_header=x-buildbuddy-api-key=secret token=super_secret and --repo_env=AWS_SECRET_ACCESS_KEY=abc",
+			redactionValues: []string{"super_secret"},
+			expected:        "ok --remote_header=<REDACTED> token=<REDACTED> and --repo_env=AWS_SECRET_ACCESS_KEY=<REDACTED>",
+		},
+		{
+			name:            "redacts overlapping values longest first",
+			txt:             "token=abcdef short=abc",
+			redactionValues: []string{"abc", "abcdef"},
+			expected:        "token=<REDACTED> short=<REDACTED>",
+		},
+		{
+			name:            "ignores empty values and deduplicates",
+			txt:             "x=secret y=secret",
+			redactionValues: []string{"", "secret", "secret"},
+			expected:        "x=<REDACTED> y=<REDACTED>",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redacted := redact.RedactTextWithValues(tc.txt, tc.redactionValues)
+			require.Equal(t, tc.expected, redacted)
+		})
+	}
+}
+
+func TestRedactAPIKeys(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		txt      string
+		expected string
+	}{
+		{
+			name:     "api key after equals",
+			txt:      "MY_SECRET_API_KEY=apikeyexactly20chars@mydomain.com",
+			expected: "MY_SECRET_API_KEY=<REDACTED>@mydomain.com",
+		},
+		{
+			name:     "api key in grpc call",
+			txt:      "grpc://apikeyexactly20chars@mydomain.com",
+			expected: "grpc://<REDACTED>@mydomain.com",
+		},
+		{
+			name:     "api key in http call",
+			txt:      "https://apikeyexactly20chars@mydomain.com",
+			expected: "https://<REDACTED>@mydomain.com",
+		},
+		{
+			name:     "do not redact text before bazel repository name",
+			txt:      "FAILED:exactly20alphanumber@@apple_support++apple_cc_configure_extension+local_config_apple_cc; starting",
+			expected: "FAILED:exactly20alphanumber@@apple_support++apple_cc_configure_extension+local_config_apple_cc; starting",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redacted := redact.RedactText(tc.txt)
+			require.Equal(t, tc.expected, redacted)
+
+			event := &bespb.BuildEvent{
+				Payload: &bespb.BuildEvent_Progress{
+					Progress: &bespb.Progress{
+						Stdout: tc.txt,
+					},
+				},
+			}
+			redactor := redact.NewStreamingRedactor()
+			err := redactor.RedactAPIKeysWithSlowRegexp(context.TODO(), event)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, event.GetProgress().GetStdout())
+		})
+	}
+}
+
+func TestEnvNameLooksSensitive(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		expected bool
+	}{
+		{"MY_SECRET", true},
+		{"SECRET_VALUE", true},
+		{"APP_SECRET_KEY", true},
+		{"API_TOKEN", true},
+		{"GITHUB_TOKEN", true},
+		{"DB_PASSWORD", true},
+		{"AWS_SECRET_ACCESS_KEY", true},
+		{"SSH_KEY", true},
+		{"PRIVATE_KEY", true},
+		{"GCP_CREDENTIALS", true},
+		{"GOOGLE_APPLICATION_CREDENTIALS", true},
+		// Case-insensitive matching
+		{"my_secret", true},
+		{"Api_Token", true},
+		{"db_password", true},
+		// Token-based matching should avoid substring false positives.
+		{"MONKEY", false},
+		{"KEYBOARD_LAYOUT", false},
+		{"SECRETION", false},
+		{"TOKENIZER", false},
+		{"PASSWORDLESS", false},
+		{"CREDENTIALSTORE", false},
+		{"DONKEY_TOKEN", true},
+		// Non-sensitive names
+		{"HOME", false},
+		{"PATH", false},
+		{"USER", false},
+		{"GOPATH", false},
+		{"CI", false},
+		{"GITHUB_REPOSITORY", false},
+		{"REPO_URL", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, redact.EnvNameLooksSensitive(tc.name), "EnvNameLooksSensitive(%q)", tc.name)
+		})
+	}
+}
+
+func TestCollectSensitiveEnvValues(t *testing.T) {
+	environ := []string{
+		"MY_SECRET_TOKEN=super-secret",
+		"DB_PASSWORD=p@ssw0rd",
+		"API_KEY=ak-12345",
+		"GCP_CREDENTIALS={\"type\":\"service_account\"}",
+		"MONKEY=banana",
+		"KEYBOARD_LAYOUT=qwerty",
+		"SECRETION=should-not-redact",
+		"SAFE_VAR=not-a-secret",
+		"EMPTY_SECRET=",
+	}
+
+	values := redact.CollectSensitiveEnvValues(environ)
+
+	assert.Contains(t, values, "super-secret")
+	assert.Contains(t, values, "p@ssw0rd")
+	assert.Contains(t, values, "ak-12345")
+	assert.Contains(t, values, `{"type":"service_account"}`)
+	assert.NotContains(t, values, "banana")
+	assert.NotContains(t, values, "qwerty")
+	assert.NotContains(t, values, "should-not-redact")
+	assert.NotContains(t, values, "not-a-secret")
+	// Empty values should be excluded.
+	for _, v := range values {
+		assert.NotEmpty(t, v)
 	}
 }

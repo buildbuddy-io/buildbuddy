@@ -14,7 +14,6 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
 
 // N.B. This file contains common functions used to format and extract API
@@ -40,67 +39,96 @@ func ActionLabelKey(groupID, iid, targetLabel string) string {
 	return groupID + "/api/a/" + base64.RawURLEncoding.EncodeToString([]byte(iid+targetLabel))
 }
 
-func filesFromOutput(output []*bespb.File) []*apipb.File {
+// FileFromBESFile converts a build event stream File to the public API proto.
+func FileFromBESFile(besFile *bespb.File) *apipb.File {
+	f := &apipb.File{
+		Name: besFile.GetName(),
+	}
+	switch file := besFile.GetFile().(type) {
+	case *bespb.File_Uri:
+		f.Uri = file.Uri
+	case *bespb.File_Contents:
+		f.Contents = file.Contents
+	}
+	return f
+}
+
+func fillFileDigestFromURI(f *apipb.File) {
+	if u, err := url.Parse(f.Uri); err == nil {
+		if r, err := digest.ParseDownloadResourceName(u.Path); err == nil {
+			f.Hash = r.GetDigest().GetHash()
+			f.SizeBytes = r.GetDigest().GetSizeBytes()
+		}
+	}
+}
+
+func filesFromOutput(besFiles []*bespb.File) []*apipb.File {
 	files := []*apipb.File{}
-	for _, output := range output {
-		uri := ""
-		switch file := output.File.(type) {
-		case *bespb.File_Uri:
-			uri = file.Uri
-			// Contents files are not currently supported - only the file name will be appended without a uri.
+	for _, besFile := range besFiles {
+		if besFile == nil {
+			continue
 		}
-		f := &apipb.File{
-			Name: output.Name,
-			Uri:  uri,
-		}
-		if u, err := url.Parse(uri); err == nil {
-			if r, err := digest.ParseDownloadResourceName(u.Path); err == nil {
-				f.Hash = r.GetDigest().GetHash()
-				f.SizeBytes = r.GetDigest().GetSizeBytes()
-			}
-		}
+		f := FileFromBESFile(besFile)
+		fillFileDigestFromURI(f)
 		files = append(files, f)
 	}
 	return files
 }
 
 func FillActionFromBuildEvent(event *bespb.BuildEvent, action *apipb.Action) *apipb.Action {
-	switch event.Payload.(type) {
-	case *bespb.BuildEvent_Completed:
-		{
-			action.TargetLabel = event.GetId().GetTargetCompleted().GetLabel()
-			action.Id.TargetId = event.GetId().GetTargetCompleted().GetLabel()
-			action.Id.ConfigurationId = event.GetId().GetTargetCompleted().GetConfiguration().Id
-			action.Id.ActionId = EncodeID("build")
-			return action
+	switch id := event.GetId().GetId().(type) {
+	case *bespb.BuildEventId_ActionCompleted:
+		action.TargetLabel = id.ActionCompleted.GetLabel()
+		action.Id.TargetId = id.ActionCompleted.GetLabel()
+		action.Id.ConfigurationId = id.ActionCompleted.GetConfiguration().GetId()
+		action.Id.ActionId = EncodeID("build")
+		return action
+	case *bespb.BuildEventId_TargetCompleted:
+		switch p := event.GetPayload().(type) {
+		case *bespb.BuildEvent_Completed:
+			// Don't create an action for failed targets as they don't have any interesting output files
+			// We have already captured them via an ActionCompleted events earlier in the stream.
+			if !p.Completed.GetSuccess() {
+				return nil
+			}
+		case *bespb.BuildEvent_Aborted:
+			// Don't create an action for aborted targets as they were never built and
+			// don't have any interesting output files
+			return nil
 		}
-	case *bespb.BuildEvent_TestResult:
-		{
-			testResultID := event.GetId().GetTestResult()
-			action.TargetLabel = event.GetId().GetTestResult().GetLabel()
-			action.Id.TargetId = event.GetId().GetTestResult().GetLabel()
-			action.Id.ConfigurationId = event.GetId().GetTestResult().GetConfiguration().Id
-			action.Id.ActionId = EncodeID(fmt.Sprintf("test-S_%d-R_%d-A_%d", testResultID.Shard, testResultID.Run, testResultID.Attempt))
-			return action
-		}
+		action.TargetLabel = id.TargetCompleted.GetLabel()
+		action.Id.TargetId = id.TargetCompleted.GetLabel()
+		action.Id.ConfigurationId = id.TargetCompleted.GetConfiguration().GetId()
+		action.Id.ActionId = EncodeID("build")
+		return action
+	case *bespb.BuildEventId_TestResult:
+		action.TargetLabel = id.TestResult.GetLabel()
+		action.Id.TargetId = id.TestResult.GetLabel()
+		action.Id.ConfigurationId = id.TestResult.GetConfiguration().GetId()
+		action.Id.ActionId = EncodeID(fmt.Sprintf("test-S_%d-R_%d-A_%d", id.TestResult.GetShard(), id.TestResult.GetRun(), id.TestResult.GetAttempt()))
+		action.Shard = int64(id.TestResult.GetShard())
+		action.Run = int64(id.TestResult.GetRun())
+		action.Attempt = int64(id.TestResult.GetAttempt())
+		return action
+	default:
+		return nil
 	}
-	return nil
 }
 
 func FillActionOutputFilesFromBuildEvent(event *bespb.BuildEvent, action *apipb.Action) *apipb.Action {
-	switch p := event.Payload.(type) {
+	switch p := event.GetPayload().(type) {
+	case *bespb.BuildEvent_Action:
+		action.File = filesFromOutput([]*bespb.File{p.Action.GetStderr(), p.Action.GetStdout()})
+		return action
 	case *bespb.BuildEvent_Completed:
-		{
-			action.File = filesFromOutput(p.Completed.DirectoryOutput)
-			return action
-		}
+		action.File = filesFromOutput(p.Completed.GetDirectoryOutput())
+		return action
 	case *bespb.BuildEvent_TestResult:
-		{
-			action.File = filesFromOutput(p.TestResult.TestActionOutput)
-			return action
-		}
+		action.File = filesFromOutput(p.TestResult.GetTestActionOutput())
+		return action
+	default:
+		return nil
 	}
-	return nil
 }
 
 func TestStatusToStatus(testStatus bespb.TestStatus) cmnpb.Status {
@@ -126,19 +154,29 @@ func TestStatusToStatus(testStatus bespb.TestStatus) cmnpb.Status {
 	}
 }
 
-type TargetMap map[string]*apipb.Target
+type TargetMap struct {
+	Targets  map[string]*apipb.Target
+	selector *apipb.TargetSelector
+}
 
-func (tm TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
-	switch p := event.Payload.(type) {
+func NewTargetMap(selector *apipb.TargetSelector) *TargetMap {
+	return &TargetMap{
+		Targets:  make(map[string]*apipb.Target),
+		selector: selector,
+	}
+}
+
+func (tm *TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
+	switch p := event.GetPayload().(type) {
 	case *bespb.BuildEvent_Configured:
 		{
-			ruleType := strings.Replace(p.Configured.TargetKind, " rule", "", -1)
+			ruleType := strings.Replace(p.Configured.GetTargetKind(), " rule", "", -1)
 			language := ""
-			if components := strings.Split(p.Configured.TargetKind, "_"); len(components) > 1 {
+			if components := strings.Split(p.Configured.GetTargetKind(), "_"); len(components) > 1 {
 				language = components[0]
 			}
 			label := event.GetId().GetTargetConfigured().GetLabel()
-			tm[label] = &apipb.Target{
+			target := &apipb.Target{
 				Id: &apipb.Target_Id{
 					InvocationId: iid,
 					TargetId:     label,
@@ -147,26 +185,52 @@ func (tm TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
 				Status:   cmnpb.Status_BUILDING,
 				RuleType: ruleType,
 				Language: language,
-				Tag:      p.Configured.Tag,
+				Tag:      p.Configured.GetTag(),
+			}
+			if tm.selector != nil && TargetMatchesSelector(target, tm.selector) {
+				tm.Targets[label] = target
 			}
 		}
 	case *bespb.BuildEvent_Completed:
 		{
-			target := tm[event.GetId().GetTargetCompleted().GetLabel()]
-			target.Status = cmnpb.Status_BUILT
+			if target := tm.Targets[event.GetId().GetTargetCompleted().GetLabel()]; target != nil {
+				if p.Completed.GetSuccess() {
+					target.Status = cmnpb.Status_BUILT
+				} else {
+					target.Status = cmnpb.Status_FAILED_TO_BUILD
+				}
+			}
 		}
 	case *bespb.BuildEvent_TestSummary:
 		{
-			target := tm[event.GetId().GetTestSummary().GetLabel()]
-			target.Status = TestStatusToStatus(p.TestSummary.OverallStatus)
-			target.Timing = TestTimingFromSummary(p.TestSummary)
+			if target := tm.Targets[event.GetId().GetTestSummary().GetLabel()]; target != nil {
+				target.Status = TestStatusToStatus(p.TestSummary.GetOverallStatus())
+				target.Timing = TestTimingFromSummary(p.TestSummary)
+			}
 		}
 	}
 }
 
+// TargetMatchesSelector checks if the target matches the selector.
+func TargetMatchesSelector(target *apipb.Target, selector *apipb.TargetSelector) bool {
+	if selector.GetLabel() != "" {
+		return selector.GetLabel() == target.GetLabel()
+	}
+
+	if selector.GetTag() != "" {
+		for _, tag := range target.GetTag() {
+			if tag == selector.GetTag() {
+				return true
+			}
+		}
+		return false
+	}
+	return selector.GetTargetId() == "" || selector.GetTargetId() == target.GetId().GetTargetId()
+}
+
 func TestTimingFromSummary(testSummary *bespb.TestSummary) *cmnpb.Timing {
-	startTime := timeutil.GetTimeWithFallback(testSummary.FirstStartTime, testSummary.FirstStartTimeMillis)
-	duration := timeutil.GetDurationWithFallback(testSummary.TotalRunDuration, testSummary.TotalRunDurationMillis)
+	startTime := timeutil.GetTimeWithFallback(testSummary.GetFirstStartTime(), testSummary.GetFirstStartTimeMillis())
+	duration := timeutil.GetDurationWithFallback(testSummary.GetTotalRunDuration(), testSummary.GetTotalRunDurationMillis())
 	return &cmnpb.Timing{
 		StartTime: timestamppb.New(startTime),
 		Duration:  durationpb.New(duration),
@@ -180,12 +244,4 @@ func TestResultTiming(testResult *bespb.TestResult) *cmnpb.Timing {
 		StartTime: timestamppb.New(startTime),
 		Duration:  durationpb.New(duration),
 	}
-}
-
-func TargetMapFromInvocation(inv *inpb.Invocation) TargetMap {
-	targetMap := make(TargetMap)
-	for _, event := range inv.GetEvent() {
-		targetMap.ProcessEvent(inv.GetInvocationId(), event.GetBuildEvent())
-	}
-	return targetMap
 }

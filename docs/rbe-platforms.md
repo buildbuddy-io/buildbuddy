@@ -26,7 +26,7 @@ platform(
     ],
     exec_properties = {
         "OSFamily": "Linux",
-        "dockerNetwork": "off",
+        "network": "off",
         "container-image": "docker://gcr.io/YOUR:IMAGE",
     },
 )
@@ -64,6 +64,8 @@ the appropriate credentials for the container registry):
 For the value of `ACCESS_TOKEN`, we recommend generating a short-lived
 token using the command-line tool for your cloud provider.
 
+#### Google Container Registry (GCR)
+
 To generate a short-lived token for GCR (Google Container Registry),
 the username must be `_dcgcloud_token` and the token can be generated with
 `gcloud auth print-access-token`:
@@ -73,6 +75,40 @@ the username must be `_dcgcloud_token` and the token can be generated with
 --remote_exec_header=x-buildbuddy-platform.container-registry-password="$(gcloud auth print-access-token)"
 ```
 
+#### Google Artifact Registry
+
+For Artifact Registry (registries like `LOCATION-docker.pkg.dev`), the username must be
+`oauth2accesstoken` and the token can be generated with `gcloud auth print-access-token`:
+
+```bash
+--remote_exec_header=x-buildbuddy-platform.container-registry-username=oauth2accesstoken
+--remote_exec_header=x-buildbuddy-platform.container-registry-password="$(gcloud auth print-access-token)"
+```
+
+If you need to use a specific service account, generate the token via impersonation, e.g.
+`gcloud auth print-access-token --impersonate-service-account ACCOUNT`.
+The impersonating identity must have `roles/iam.serviceAccountTokenCreator`, and the service
+account must have Artifact Registry read access. See
+[Configure authentication to Artifact Registry for Docker](https://cloud.google.com/artifact-registry/docs/docker/authentication).
+
+If you already have Docker configured with a credential helper, you can reuse its output.
+The helper prints a `Username` and `Secret` (token), which can be passed directly to
+the remote exec headers:
+
+```bash
+# gcloud credential helper (docker-credential-gcloud)
+echo "https://LOCATION-docker.pkg.dev" | docker-credential-gcloud get
+
+# standalone helper (docker-credential-gcr)
+echo "https://LOCATION-docker.pkg.dev" | docker-credential-gcr get
+```
+
+The username is helper-specific (for example `_dcgcloud_token` from `docker-credential-gcloud`
+and `_dcgcr_2_0_0_token` from `docker-credential-gcr`), so prefer the helper output rather
+than hard-coding values.
+
+#### Amazon Elastic Container Registry (ECR)
+
 For Amazon ECR (Elastic Container Registry), the username must be `AWS`
 and a short-lived token can be generated with `aws ecr get-login-password --region REGION`
 (replace `REGION` with the region matching the ECR image URL):
@@ -81,6 +117,18 @@ and a short-lived token can be generated with `aws ecr get-login-password --regi
 --remote_exec_header=x-buildbuddy-platform.container-registry-username=AWS
 --remote_exec_header=x-buildbuddy-platform.container-registry-password="$(aws ecr get-login-password --region REGION)"
 ```
+
+#### Amazon Public Elastic Container Registry (ECR Public)
+
+Amazon Public ECR is distinct from Amazon ECR and uses a different command to generate
+short-lived tokens: `aws ecr-public get-login-password --region REGION`:
+
+```bash
+--remote_exec_header=x-buildbuddy-platform.container-registry-username=AWS
+--remote_exec_header=x-buildbuddy-platform.container-registry-password="$(aws ecr-public get-login-password --region REGION)"
+```
+
+#### Other Registries and long-lived credentials
 
 Some cloud providers may also allow the use of long-lived tokens, which
 can also be used in remote headers. For example, GCR allows setting a
@@ -108,7 +156,7 @@ platform(
     ],
     exec_properties = {
         "OSFamily": "Linux",
-        "dockerNetwork": "off",
+        "network": "off",
         "Pool": "my-gpu-pool",
     },
 )
@@ -124,11 +172,11 @@ You can then pass this configuration to BuildBuddy RBE with the following flag:
 
 This assumes you've placed this rule in your root BUILD file. If you place it elsewhere, make sure to update the path accordingly.
 
-For instructions on how to deploy custom executor pools, we the [RBE Executor Pools docs](rbe-pools.md).
+For instructions on how to deploy custom executor pools, see the [RBE Executor Pools docs](rbe-pools.md).
 
 ## Target level execution properties
 
-If you want different targets to run in different RBE environments, you can specify `exec_properties` at the target level. For example if you want to run one set of tests in a high-memory pool, or another set of targets on executors with GPUs.
+If you want different targets to run in different RBE environments, you can specify `exec_properties` at the target level. For example if you want to run one set of tests in a high-memory pool, or another set of targets on executors with GPUs. In this case, you probably want to set the properties for only a subset of a targets's actions. The most common use case is setting properties for just tests by adding the `test.` prefix.
 
 ```python title="BUILD"
 go_test(
@@ -136,7 +184,7 @@ go_test(
     srcs = ["memory_hogging_test.go"],
     embed = [":go_default_library"],
     exec_properties = {
-        "Pool": "high-memory-pool",
+        "test.Pool": "high-memory-pool",
     },
 )
 ```
@@ -150,11 +198,11 @@ These properties can be used in different ways:
 - Set `exec_properties` in the execution platform definition.
 - Set `exec_properties` in each BUILD target.
 - Set `--remote_default_exec_properties=KEY=VALUE` in `.bazelrc` or at the Bazel command line.
-  Note that these properties are not apply if you are already using a platform.
+  Note that these properties are not applied if a target or a target's platform has any execution properties.
 - Set `--remote_header=x-buildbuddy-platform.KEY=VALUE`. This is
   a BuildBuddy-specific feature and is not generally recommended except
   for certain properties, described in
-  [Setting properties via remote headers][#setting-properties-via-remote-headers]
+  [Setting properties via remote headers](#setting-properties-via-remote-headers).
 
 [Execution groups](https://bazel.build/extending/exec-groups) allow more control over which execution properties can be used for each group of actions in each BUILD target.
 Execution groups are typically implemented by individual rules,
@@ -187,10 +235,10 @@ are not officially supported and can break at any time.
 
 These execution properties affect how BuildBuddy's scheduler selects an executor for action execution:
 
-- `Pool`: selects which [executor pool](./rbe-pools) to use.
+- `Pool`: selects which [executor pool](rbe-pools) to use.
 - `OSFamily`: selects which operating system the executor must be running. Available options are `linux` (default), `darwin`, and `windows` (`darwin` and `windows` are currently only available for self-hosted executors).
 - `Arch`: selects which CPU architecture the executor must be running on. Available options are `amd64` (default) and `arm64`.
-- `use-self-hosted-executors`: use [self-hosted executors](./enterprise-rbe) instead of BuildBuddy's managed executor pool. Available options are `true` and `false`. The default value is configurable from [organization settings](https://app.buildbuddy.io/settings/).
+- `use-self-hosted-executors`: use [self-hosted executors](enterprise-rbe) instead of BuildBuddy's managed executor pool. Available options are `true` and `false`. The default value is configurable from [organization settings](https://app.buildbuddy.io/settings/).
 
 ### Action isolation and hermeticity properties
 
@@ -204,15 +252,20 @@ may also be loosely referred to as **containers** or **sandboxes**.
 
 The following properties allow customizing the behavior of the runner:
 
-- `workload-isolation-type`: selects which isolation technology is the runner should use.
-  When using BuildBuddy Cloud executors, `podman` (the default) and `firecracker` are supported.
-  For self-hosted executors, the available options are `docker`, `podman`, `firecracker`, `sandbox`, and `none`. The executor must have relevant flags enabled.
+- `workload-isolation-type`: selects which isolation technology the runner should use.
+  When using BuildBuddy Cloud executors, `oci` (the default) and `firecracker` are supported.
+  For self-hosted executors, the available options are `oci`, `docker`, `podman`, `firecracker`, `sandbox`, and `none`. The executor must have the relevant flags enabled.
 - `recycle-runner`: whether to retain the runner after action execution
   and reuse it to execute subsequent actions. The runner's container is
   paused between actions, and the workspace is cleaned between actions by
   default. This option may be useful to improve performance in some
   situations, but is not generally recommended for most actions as it
   reduces action hermeticity. Available options are `true` and `false`.
+- `runner-recycling-max-wait`: when recycling a runner, how long to wait for a
+  recycled runner before also trying to schedule on another machine. Values must
+  be formatted as positive durations. For example, `500ms` or `3s`. This is a
+  best-effort mechanism and the server may choose to ignore or clamp this value
+  to a specific range.
 - `preserve-workspace`: only applicable when `"recycle-runner": "true"` is set. Whether to re-use the Workspace directory from the previous action. Available options are `true` and `false`.
 - `clean-workspace-inputs`: a comma-separated list of glob values that
   decides which files in the action's input tree to clean up before the
@@ -220,9 +273,6 @@ The following properties allow customizing the behavior of the runner:
   patterns should follow the specification in
   [gobwas/glob](https://pkg.go.dev/github.com/gobwas/glob#Compile)
   library.
-- `nonroot-workspace`: If set to `true`, the workspace directory will be
-  writable by non-root users (permission `0o777`). Otherwise, it will be
-  read-only to non-root users (permission `0o755`).
 
 ### Runner resource allocation
 
@@ -247,25 +297,53 @@ However, some `exec_properties` are provided as manual overrides:
   - `2GB`: 2 GB
   - `4.5GB`: 4.5 GB
 
+### Execution timeout properties
+
+BuildBuddy supports some execution properties that affect action execution
+timeouts. Timeouts are specified as durations like `1s`, `15m`, or `1h`.
+
+- `default-timeout`: The execution timeout used if a timeout
+  is not otherwise specified. This is useful for specifying timeouts on
+  remotely executed build actions, while Bazel's `--test_timeout` flag
+  can be used to specify timeouts for test actions (both locally and
+  remotely). Note: Bazel's `--remote_timeout` flag does _not_ affect
+  remote action timeouts.
+- `termination-grace-period`: The time to wait between sending a graceful
+  termination signal to the action and forcefully shutting down the
+  action. This is similar to Bazel's `--local_termination_grace_seconds`,
+  which does not apply to remotely executed actions.
+
 ### Remote persistent worker properties
 
-Similar to the local execution environment, the remote execution environment may also retain a long-running process acting as a [persistent worker](https://bazel.build/remote/persistent) to help reduce the total cost of cold-starts for build actions with high startup cost.
+BuildBuddy's remote execution environment supports a feature called
+**remote persistent workers,** which are the remote equivalent of Bazel's
+local [persistent workers](https://bazel.build/remote/persistent).
 
-To use remote persistent workers, the action must have `"recycle-runner": "true"`
-in `exec_properties`.
+Persistent workers help reduce the total cost of cold starts for build
+actions. They are often used to improve the performance of build actions
+running on the JVM (such as Java or Kotlin compile actions), which are
+slow to run initially, but then get faster as Just-In-Time (JIT)
+compilation kicks in and allows the compiler to run using more optimized
+machine code.
 
-The Bazel's flag ["--experimental_remote_mark_tool_inputs"](https://bazel.build/reference/command-line-reference#flag--experimental_remote_mark_tool_inputs) should help set these automatically so you don't have to set them manually. However, we provide these `exec_properties` for rules authors to experiment with.
+To use remote persistent workers, pass the flag
+["--experimental_remote_mark_tool_inputs"](https://bazel.build/reference/command-line-reference#flag--experimental_remote_mark_tool_inputs) to
+your bazel command or add it to your `.bazelrc`.
 
-- `persistentWorkerKey`: unique key for the persistent worker. This should be automatically set by Bazel.
+The `--experimental_remote_mark_tool_inputs` flag sets the following
+properties (it's not normally recommended to set these manually; they are
+noted here only for documentation purposes):
+
+- `persistentWorkerKey`: unique key for the persistent worker.
 - `persistentWorkerProtocol`: the serialization protocol used by the persistent worker. Available options are `proto` (default) and `json`.
 
 ### Runner container support
 
-For `docker`, `podman`, and `firecracker` isolation, the executor supports
+For `oci`, `docker`, `podman`, and `firecracker` isolation, the executor supports
 running actions in user-provided container images.
 
 Some of these have a `docker` prefix. This is just a historical artifact;
-all properties with this prefix also apply to `podman`. Our goal is to
+all properties with this prefix also apply to `oci` and `podman`. Our goal is to
 support all of these for `firecracker` as well, but we are not there yet.
 
 The following execution properties provide more customization.
@@ -280,8 +358,30 @@ The following execution properties provide more customization.
   the container. The default is the user set on the image.
   If setting to a non-root user, you may also need to set
   `nonroot-workspace` to `true`.
+- `network`: controls the network access available in the VM/container.
+  Permitted values are:
+  - `off`: The container/VM has no external network access. It does have access
+    to the localhost network. This is the default setting for `oci`, `podman`,
+    `docker`, and `sandbox` containers.
+  - `external`: The container/VM is allocated its own network namespace through
+    which it can communicate with the internet via the host. This is the default
+    setting for `firecracker` VMs.
+  - `host`: The container has no network isolation and runs in the same
+    networking environment as the host executor, as well as any other containers
+    that are spawned by the executor which are also running with `"host"`
+    network mode. This setting is not available in BuildBuddy cloud or for
+    Firecracker VMs.
+- `shm-size`: for `oci` isolation, sets the size of the `/dev/shm` tmpfs mount,
+  which is typically used for shared memory. Values are byte sizes with optional
+  case-insensitive IEC unit suffixes (powers of 1024 bytes). Examples include:
+  `1b` (1 byte), `1k` (1024 bytes), `1m` (`1024^2` bytes), `1g` (`1024^3`
+  bytes), `1MB` (`1024^2` bytes), `2GB` (`2 * 1024^2` bytes). The default value
+  of this property if it is unspecified or empty is `64000k`. The value `0`
+  removes the limit on `/dev/shm` size. Note that `/dev/shm` memory usage always
+  counts towards process memory and is subject to process memory constraints,
+  regardless of this property's value.
 
-The following properties apply to `podman` and `docker` isolation,
+The following properties apply to `oci`, `podman` and `docker` isolation,
 and are currently unsupported by `firecracker`. (The `docker` prefix is
 just a historical artifact.)
 
@@ -290,22 +390,24 @@ just a historical artifact.)
 - `dockerRunAsRoot`: when set to `true`, forces the container to run as
   root, even the image specification specifies a non-root `USER`.
   Available options are `true` and `false`. Defaults to `false`.
-- `dockerNetwork`: determines which network mode should be used. For
-  `sandbox` isolation, this determines whether the network is enabled or
-  not. Available options are `off` and `bridge`. The default is `bridge`,
-  but we strongly recommend setting this to `off` for faster runner
-  startup time. The latest version of the BuildBuddy toolchain does this
-  for you automatically.
+- `dockerNetwork`: Deprecated, please prefer `network`. Determines network
+  access for `oci`, `podman`, `docker`, and `sandbox` containers. This value has
+  no effect for `firecracker` VMs or if `network` is specified. Permitted values
+  are:
+  - `off`: The container has no network access, not even to the host.
+  - `bridge`: The container can communicate with the internet via the host. This
+    is the default setting.
+    Recent versions of the BuildBuddy toolchain default `dockerNetwork` to `off`.
 
 ### Runner secrets
 
-Please consult [RBE secrets](./secrets) for more information on the related properties.
+Please consult [RBE secrets](secrets) for more information on the related properties.
 
 ### Docker daemon support
 
 For `firecracker` isolation, we support starting a [Docker daemon](https://docs.docker.com/config/daemon/)
 (`dockerd`) which allows actions to run Docker containers.
-Check out our [RBE with Firecracker MicroVMs](./rbe-microvms) doc for examples.
+Check out our [RBE with Firecracker MicroVMs](rbe-microvms) doc for examples.
 
 The following `exec_properties` are supported:
 
@@ -315,3 +417,91 @@ The following `exec_properties` are supported:
 - `enable-dockerd-tcp`: whether `dockerd` should listen on TCP port 2375
   in addition to the default Unix domain socket. Available options are
   `true` and `false`. Defaults to `false`.
+
+### Action command modification
+
+The following properties allow modifying the action's command before it is executed.
+
+- `extra-args`: a comma-separated list of additional arguments to append to
+  the action's command-line arguments. For example, `"extra-args": "--verbose,--output=/tmp/out"`.
+
+- `env-overrides`: a comma-separated list of environment variable assignments
+  (`NAME=VALUE`) to apply to the action, overriding any pre-existing values.
+  For example, `"env-overrides": "FOO=bar,BAZ=qux"`. For sensitive values,
+  use `secret-env-overrides` instead (see below).
+
+- `secret-env-overrides`: like `env-overrides`, but the property value is
+  automatically **redacted** from action cache entries and workflow logs.
+  Use this for any environment variables containing secrets or credentials.
+  For example, `"secret-env-overrides": "API_KEY=sk-abc123"`.
+
+- `secret-env-overrides-base64`: like `secret-env-overrides`, but accepts
+  base64-encoded `NAME=VALUE` pairs (comma-separated). Useful when values
+  contain commas or special characters. Values are redacted from the action
+  cache and workflow logs just like `secret-env-overrides`.
+
+- `run-under`: an executable (and optional arguments) to use as a wrapper
+  for the action's command. The wrapper tokens are prepended to the
+  command's arguments, so the original executable becomes the first
+  argument of the wrapper. For example, if the action normally runs
+  `["my_test", "--test-arg"]`, setting
+  `"run-under": "tools/trace_wrapper.sh --verbose"` will instead run
+  `["tools/trace_wrapper.sh", "--verbose", "my_test", "--test-arg"]`.
+
+  The value is shell-tokenized (using the same rules as a POSIX shell),
+  so quoted strings and spaces are handled intuitively:
+
+  ```
+  "run-under": "tools/wrapper.sh 'arg with spaces'"
+  ```
+
+  becomes `["tools/wrapper.sh", "arg with spaces", ...]`.
+
+  The path to the wrapper executable must be either relative to the
+  action's working directory (execroot), or absolute.
+
+  To restrict wrapping to test actions only, use the `test.` prefix:
+
+  ```python title="BUILD"
+  sh_test(
+      name = "my_test",
+      srcs = ["my_test.sh"],
+      data = ["//tools:trace_wrapper"],
+      exec_properties = {
+          "test.run-under": "tools/trace_wrapper.sh",
+      },
+  )
+  ```
+
+  :::note
+
+  The wrapper executable must be present in the action's input tree (the
+  execroot). Bazel does **not** automatically include files referenced in
+  `exec_properties` values as inputs — you must declare the wrapper as an
+  explicit dependency, typically via `data`:
+
+  ```python
+  sh_test(
+      name = "my_test",
+      srcs = ["my_test.sh"],
+      data = ["//tools:trace_wrapper"],   # stages the wrapper in the execroot
+      exec_properties = {
+          "test.run-under": "tools/trace_wrapper.sh",
+      },
+  )
+  ```
+
+  :::
+
+  :::note
+
+  The value must be a path to the wrapper in the execroot, not a Bazel
+  label. For a source file committed to the repository, this is simply the
+  workspace-relative path (e.g. `tools/trace_wrapper.sh`). For a compiled
+  binary, the path includes the output configuration and must be spelled
+  out explicitly (e.g. `bazel-out/k8-fastbuild/bin/tools/trace_wrapper`).
+  You can obtain the correct path with
+  [`$(execpath //tools:trace_wrapper)`](https://bazel.build/reference/be/make-variables#predefined_label_variables)
+  inside a Starlark macro.
+
+  :::

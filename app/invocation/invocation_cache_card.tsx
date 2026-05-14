@@ -1,11 +1,11 @@
+import { AlertCircle as AlertCircleIcon, PieChart as PieChartIcon } from "lucide-react";
 import React from "react";
-import InvocationModel from "./invocation_model";
-import format from "../format/format";
-import { PieChart as PieChartIcon, AlertCircle as AlertCircleIcon } from "lucide-react";
-import { ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import capabilities from "../capabilities/capabilities";
-import { getChartColor } from "../util/color";
+import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { blaze } from "../../proto/action_cache_ts_proto";
+import capabilities from "../capabilities/capabilities";
+import format from "../format/format";
+import { getChartColor } from "../util/color";
+import InvocationModel from "./invocation_model";
 
 interface Props {
   model: InvocationModel;
@@ -170,8 +170,8 @@ export default class CacheCardComponent extends React.Component<Props> {
                                 };
                               }
                             ),
-                            "Cache miss reasons",
-                            "Reasons why actions missed cache"
+                            "Local invalidation reasons",
+                            "Reasons for missing Bazel's local action cache"
                           )}
                         </div>
                       </div>
@@ -309,9 +309,7 @@ function renderBreakdown(data: any[] | undefined, title: string, subtitle: strin
         <ResponsiveContainer width={80} height={80}>
           <PieChart>
             <Pie data={data} dataKey="value" outerRadius={40} innerRadius={20}>
-              {data?.map((_, index) => (
-                <Cell key={`cell-${index}`} fill={getChartColor(index)} />
-              ))}
+              {data?.map((_, index) => <Cell key={`cell-${index}`} fill={getChartColor(index)} />)}
             </Pie>
           </PieChart>
         </ResponsiveContainer>

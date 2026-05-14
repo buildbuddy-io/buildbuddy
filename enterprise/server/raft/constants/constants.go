@@ -6,18 +6,21 @@ import (
 
 // Gossip (broadcast) constants
 const (
-	NodeHostIDTag  = "node_host_id"
-	RaftAddressTag = "raft_address"
 	GRPCAddressTag = "grpc_address"
 	MetaRangeTag   = "meta_range"
 	ZoneTag        = "zone"
 	StoreUsageTag  = "store_usage"
+	PodIndexTag    = "pod_index"
 
 	RegistryUpdateEvent       = "registry_update_event"
 	RegistryQueryEvent        = "registry_query_event"
 	AutoBringupEvent          = "auto_bringup_event"
 	NodePartitionUsageEvent   = "node_partition_usage_event"
 	PlacementDriverQueryEvent = "placement_driver_query_event"
+
+	CacheName = "raft"
+
+	DefaultPartitionID = "default"
 )
 
 // Key range contants
@@ -41,7 +44,6 @@ const (
 
 // Other constants
 const (
-	InitialShardID   = 1
 	InitialReplicaID = 1
 	InitialRangeID   = 1
 	MetaRangeID      = 1
@@ -69,14 +71,12 @@ var (
 	// descriptors.
 	SystemPrefix = keys.Key{systemPrefixByte}
 
-	// The last shardID that was generated.
-	LastShardIDKey = keys.MakeKey(SystemPrefix, []byte("last_shard_id"))
-
+	// System Keys:
 	// The last replicaID that was generated.
-	LastReplicaIDKey = keys.MakeKey(SystemPrefix, []byte("last_replica_id"))
+	LastReplicaIDKeyPrefix = keys.MakeKey(SystemPrefix, []byte("last_replica_id"))
 
 	// The last rangeID that was generated.
-	LastRangeIDKey = keys.MakeKey(SystemPrefix, []byte("last_range_id"))
+	LastRangeIDKey = keys.MakeKey(SystemPrefix, []byte("last_range_id-"))
 
 	// A prefix to prepend to transaction records. Transaction Records were written
 	// by the transaction coordinator when the transaction state changes. They
@@ -84,6 +84,13 @@ var (
 	// transaction entries written by replicas when preparing the transactions.
 	TxnRecordPrefix = keys.MakeKey(SystemPrefix, []byte("txn-record-"))
 
+	// A prefix to prepend to session keys
+	SessionPrefix = keys.MakeKey(SystemPrefix, []byte("session-"))
+
+	// A prefix to prepend to partition descriptors.
+	PartitionPrefix = keys.MakeKey(SystemPrefix, []byte("partition-"))
+
+	// Local Keys:
 	// When the cluster was created.
 	ClusterSetupTimeKey = keys.MakeKey(LocalPrefix, []byte("cluster_setup_time"))
 
@@ -106,9 +113,18 @@ var (
 
 // Error constants -- sender recognizes these errors.
 var (
-	RangeNotFoundMsg     = "Range not present"   // break
+	RangeNotFoundMsg     = "Range not present"   // continue
 	RangeNotLeasedMsg    = "Range not leased"    // continue
 	RangeNotCurrentMsg   = "Range not current"   // break
 	RangeLeaseInvalidMsg = "Range lease invalid" // continue
 	RangeSplittingMsg    = "Range splitting"
+	ConflictKeyMsg       = "Conflict on key"
+)
+
+type ReplicaState int
+
+const (
+	ReplicaStateUnknown ReplicaState = iota
+	ReplicaStateCurrent
+	ReplicaStateBehind
 )

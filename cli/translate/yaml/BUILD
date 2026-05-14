@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "yaml",
     srcs = ["yaml.go"],
@@ -12,8 +14,6 @@ go_library(
         "@in_gopkg_yaml_v2//:yaml_v2",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])
 
 go_test(
     name = "yaml_test",

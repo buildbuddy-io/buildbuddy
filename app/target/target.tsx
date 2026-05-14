@@ -1,21 +1,23 @@
 import React from "react";
 
-import TargetTestLogCardComponent from "./target_test_log_card";
-import TargetTestDocumentCardComponent from "./target_test_document_card";
-import TargetTestCoverageCardComponent from "./target_test_coverage_card";
-import TargetArtifactsCardComponent from "./target_artifacts_card";
-import ActionCardComponent from "./action_card";
-import router from "../router/router";
-import format from "../format/format";
-import { User } from "../auth/auth_service";
-import { Hash, Target, Box, SkipForward, CheckCircle, XCircle, HelpCircle, Clock, Copy, History } from "lucide-react";
-import { invocation } from "../../proto/invocation_ts_proto";
+import { Box, CheckCircle, Clock, Copy, Hash, HelpCircle, History, SkipForward, Target, XCircle } from "lucide-react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
-import { copyToClipboard } from "../util/clipboard";
+import { invocation } from "../../proto/invocation_ts_proto";
 import alert_service from "../alert/alert_service";
-import { timestampToDateWithFallback } from "../util/proto";
+import { User } from "../auth/auth_service";
+import Breadcrumbs from "../components/breadcrumbs/breadcrumbs";
 import { OutlinedLinkButton } from "../components/button/link_button";
+import Link from "../components/link/link";
+import format from "../format/format";
 import InvocationModel from "../invocation/invocation_model";
+import router, { Path } from "../router/router";
+import { copyToClipboard } from "../util/clipboard";
+import { timestampToDateWithFallback } from "../util/proto";
+import ActionCardComponent from "./action_card";
+import TargetArtifactsCardComponent from "./target_artifacts_card";
+import TargetTestCoverageCardComponent from "./target_test_coverage_card";
+import TargetTestDocumentCardComponent from "./target_test_document_card";
+import TargetTestLogCardComponent from "./target_test_log_card";
 
 interface Props {
   invocationId: string;
@@ -37,15 +39,7 @@ interface Props {
 
 export default class TargetComponent extends React.Component<Props> {
   componentWillMount() {
-    document.title = `Target ${this.props.invocationId} | BuildBuddy`;
-  }
-
-  handleOrganizationClicked() {
-    router.navigateHome();
-  }
-
-  handleInvocationClicked() {
-    router.navigateToInvocation(this.props.invocationId);
+    document.title = `Target ${this.props.targetLabel} | BuildBuddy`;
   }
 
   renderStatusIcon(status: build_event_stream.TestStatus): JSX.Element {
@@ -197,22 +191,22 @@ export default class TargetComponent extends React.Component<Props> {
       <div className="target-page">
         <div className="shelf">
           <div className="container">
-            <div className="breadcrumbs">
+            <Breadcrumbs>
               {this.props.user && (
-                <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
+                <Link className="clickable" href={Path.home}>
                   {this.props.user?.selectedGroupName()}
-                </span>
+                </Link>
               )}
               {this.props.user && (
-                <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
+                <Link className="clickable" href={Path.home}>
                   Builds
-                </span>
+                </Link>
               )}
-              <span onClick={this.handleInvocationClicked.bind(this)} className="clickable">
+              <Link className="clickable" href={router.getInvocationUrl(this.props.invocationId)}>
                 Invocation {this.props.invocationId}
-              </span>
+              </Link>
               <span>Target {this.props.targetLabel}</span>
-            </div>
+            </Breadcrumbs>
             <div className="titles">
               <div className="title">
                 {this.props.targetLabel}{" "}
@@ -263,22 +257,29 @@ export default class TargetComponent extends React.Component<Props> {
         <div className="container nopadding-dense">
           {resultEvents.length > 1 && (
             <div className={`runs ${resultEvents.length > 9 && "run-grid"}`}>
-              {resultEvents.map((result, index) => (
-                <a
-                  href={`#${index + 1}`}
-                  title={this.generateRunName(result.buildEvent?.id?.testResult ?? {})}
-                  className={`run ${this.getStatusClass(
-                    result.buildEvent?.testResult?.status ?? build_event_stream.TestStatus.NO_STATUS
-                  )} ${(this.props.tab || "#1") == `#${index + 1}` ? "selected" : ""}`}>
-                  Run {result.buildEvent?.id?.testResult?.run ?? 0} (Attempt{" "}
-                  {result.buildEvent?.id?.testResult?.attempt ?? 0}, Shard{" "}
-                  {result.buildEvent?.id?.testResult?.shard ?? 0})
-                </a>
-              ))}
+              {resultEvents
+                .map((result) => result.buildEvent)
+                .map((buildEvent, index) => (
+                  <a
+                    href={`#${index + 1}`}
+                    title={this.generateRunName(buildEvent?.id?.testResult ?? {})}
+                    className={`run ${this.getStatusClass(
+                      buildEvent?.testResult?.status ?? build_event_stream.TestStatus.NO_STATUS
+                    )} ${(this.props.tab || "#1") == `#${index + 1}` ? "selected" : ""}`}>
+                    Run {buildEvent?.id?.testResult?.run ?? 0} (Attempt {buildEvent?.id?.testResult?.attempt ?? 0},
+                    Shard {buildEvent?.id?.testResult?.shard ?? 0}
+                    {buildEvent?.testResult?.cachedLocally
+                      ? ", Cached locally"
+                      : buildEvent?.testResult?.executionInfo?.cachedRemotely
+                        ? ", Cached remotely"
+                        : ""}
+                    )
+                  </a>
+                ))}
             </div>
           )}
           {resultEvents
-            .filter((value, index) => `#${index + 1}` == (this.props.tab || "#1"))
+            .filter((_, index) => `#${index + 1}` == (this.props.tab || "#1"))
             .map((result) => (
               <span>
                 <TargetTestDocumentCardComponent
@@ -318,12 +319,13 @@ export default class TargetComponent extends React.Component<Props> {
               (value, index) =>
                 `#${index + 1}` == (this.props.tab || "#1") && value.buildEvent?.testResult?.testActionOutput
             )
-            .map((result) => (
+            .map((result) => result.buildEvent)
+            .map((buildEvent) => (
               <div>
                 <TargetArtifactsCardComponent
-                  name={this.generateRunName(result.buildEvent?.id?.testResult ?? {})}
+                  name={this.generateRunName(buildEvent?.id?.testResult ?? {})}
                   invocationId={this.props.invocationId}
-                  files={result.buildEvent?.testResult?.testActionOutput as build_event_stream.File[]}
+                  files={buildEvent?.testResult?.testActionOutput as build_event_stream.File[]}
                 />
               </div>
             ))}

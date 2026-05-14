@@ -1,11 +1,11 @@
 diff --git a/internal/transport/handler_server.go b/internal/transport/handler_server.go
-index 17f7a21b..93523d73 100644
+index 7ab3422b..49b1af09 100644
 --- a/internal/transport/handler_server.go
 +++ b/internal/transport/handler_server.go
-@@ -457,7 +457,6 @@ func (ht *serverHandlerTransport) IncrMsgSent() {}
- func (ht *serverHandlerTransport) IncrMsgRecv() {}
+@@ -480,7 +480,6 @@ func (ht *serverHandlerTransport) runStream() {
+ func (ht *serverHandlerTransport) incrMsgRecv() {}
  
- func (ht *serverHandlerTransport) Drain(debugData string) {
+ func (ht *serverHandlerTransport) Drain(string) {
 -	panic("Drain() is not implemented")
  }
  

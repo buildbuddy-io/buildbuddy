@@ -13,16 +13,18 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/docker/docker/api/types/registry"
@@ -31,9 +33,8 @@ import (
 	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
-	dockertypes "github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
+	dti "github.com/docker/docker/api/types/image"
 	dockerclient "github.com/docker/docker/client"
 	units "github.com/docker/go-units"
 	gstatus "google.golang.org/grpc/status"
@@ -44,6 +45,7 @@ const (
 	// exec inspect result when an exec process is terminated due to receiving
 	// SIGKILL.
 	dockerExecSIGKILLExitCode = 137
+	dockerExecSIGTERMExitCode = 143
 
 	dockerDaemonErrorCode        = 125
 	containerFinalizationTimeout = 10 * time.Second
@@ -76,20 +78,20 @@ var (
 
 func NewClient() (*dockerclient.Client, error) {
 	initDockerClientOnce.Do(func() {
-		if platform.DockerSocket() == "" {
+		if executorplatform.DockerSocket() == "" {
 			return
 		}
-		_, err := os.Stat(platform.DockerSocket())
+		_, err := os.Stat(executorplatform.DockerSocket())
 		if os.IsNotExist(err) {
-			initErr = status.FailedPreconditionErrorf("Docker socket %q not found", platform.DockerSocket())
+			initErr = status.FailedPreconditionErrorf("Docker socket %q not found", executorplatform.DockerSocket())
 			return
 		}
 		if err != nil {
-			initErr = status.FailedPreconditionErrorf("Failed to stat docker socket %q: %s", platform.DockerSocket(), err)
+			initErr = status.FailedPreconditionErrorf("Failed to stat docker socket %q: %s", executorplatform.DockerSocket(), err)
 			return
 		}
 
-		dockerSocket := platform.DockerSocket()
+		dockerSocket := executorplatform.DockerSocket()
 		if !strings.Contains(dockerSocket, "://") {
 			dockerSocket = fmt.Sprintf("unix://%s", dockerSocket)
 		}
@@ -115,13 +117,18 @@ func NewProvider(env environment.Env, hostBuildRoot string) (*Provider, error) {
 	}, nil
 }
 
-func (p *Provider) New(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (container.CommandContainer, error) {
+func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	network, err := platform.GetEffectiveDockerNetwork(args.Props.Network, args.Props.DockerNetwork)
+	if err != nil {
+		return nil, err
+	}
+
 	opts := &DockerOptions{
-		ForceRoot:               props.DockerForceRoot,
-		DockerInit:              props.DockerInit,
-		DockerUser:              props.DockerUser,
-		DockerNetwork:           props.DockerNetwork,
-		Socket:                  platform.DockerSocket(),
+		ForceRoot:               args.Props.DockerForceRoot,
+		DockerInit:              args.Props.DockerInit,
+		DockerUser:              args.Props.DockerUser,
+		DockerNetwork:           network,
+		Socket:                  executorplatform.DockerSocket(),
 		EnableSiblingContainers: *dockerSiblingContainers,
 		UseHostNetwork:          *dockerNetHost,
 		DockerMountMode:         *dockerMountMode,
@@ -131,7 +138,7 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, task *re
 		Volumes:                 *dockerVolumes,
 		InheritUserIDs:          *dockerInheritUserIDs,
 	}
-	return NewDockerContainer(p.env, p.client, props.ContainerImage, p.buildRoot, opts), nil
+	return NewDockerContainer(p.env, p.client, args.Props.ContainerImage, p.buildRoot, opts), nil
 }
 
 type DockerOptions struct {
@@ -209,15 +216,16 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 
 	// explicitly pull the image before running to avoid the
 	// pull output logs spilling into the execution logs.
-	if err := container.PullImageIfNecessary(ctx, r.env, r, creds, r.image); err != nil {
+	if err := container.PullImageIfNecessary(ctx, r.env, r, creds, r.image, false /*useOCIFetcher*/); err != nil {
 		result.Error = wrapDockerErr(err, fmt.Sprintf("failed to pull docker image %q", r.image))
 		return result
 	}
 
+	effectiveCwd := filepath.Join(workDir, command.GetWorkingDirectory())
 	containerCfg, err := r.containerConfig(
 		command.GetArguments(),
 		commandutil.EnvStringList(command),
-		workDir,
+		effectiveCwd,
 	)
 	if err != nil {
 		result.Error = err
@@ -469,7 +477,7 @@ func errMsg(err error) string {
 }
 
 func (r *dockerCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
-	_, _, err := r.client.ImageInspectWithRaw(ctx, r.image)
+	_, err := r.client.ImageInspect(ctx, r.image, dockerclient.ImageInspectWithRawResponse(nil))
 	if err == nil {
 		return true, nil
 	}
@@ -493,7 +501,7 @@ func PullImage(ctx context.Context, client *dockerclient.Client, image string, c
 		if err != nil {
 			return err
 		}
-		rc, err := client.ImagePull(ctx, image, dockertypes.ImagePullOptions{
+		rc, err := client.ImagePull(ctx, image, dti.PullOptions{
 			RegistryAuth: auth,
 		})
 		if err != nil {
@@ -604,10 +612,10 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		result.Error = err
 		return result
 	}
-	cfg := dockertypes.ExecConfig{
+	cfg := dockercontainer.ExecOptions{
 		Cmd:          command.GetArguments(),
 		Env:          commandutil.EnvStringList(command),
-		WorkingDir:   r.workDir,
+		WorkingDir:   filepath.Join(r.workDir, command.GetWorkingDirectory()),
 		AttachStdout: true,
 		AttachStderr: true,
 		AttachStdin:  stdio.Stdin != nil,
@@ -618,7 +626,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		result.Error = wrapDockerErr(err, "docker exec create failed")
 		return result
 	}
-	attachResp, err := r.client.ContainerExecAttach(ctx, exec.ID, dockertypes.ExecStartCheck{})
+	attachResp, err := r.client.ContainerExecAttach(ctx, exec.ID, dockercontainer.ExecStartOptions{})
 	if err != nil {
 		result.Error = wrapDockerErr(err, "docker exec attach failed")
 		return result
@@ -669,7 +677,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 	// signals for the signals we care about, particularly SIGKILL, and only in
 	// the case where we are expecting a SIGKILL due to the container being
 	// removed.
-	if r.removed && info.ExitCode == dockerExecSIGKILLExitCode {
+	if r.removed && (info.ExitCode == dockerExecSIGKILLExitCode || info.ExitCode == dockerExecSIGTERMExitCode) {
 		result.ExitCode = commandutil.KilledExitCode
 		result.Error = commandutil.ErrSIGKILL
 		return result
@@ -677,6 +685,10 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 
 	result.ExitCode = info.ExitCode
 	return result
+}
+
+func (r *dockerCommandContainer) Signal(ctx context.Context, sig syscall.Signal) error {
+	return status.UnimplementedError("not implemented")
 }
 
 func (r *dockerCommandContainer) Unpause(ctx context.Context) error {
@@ -695,8 +707,11 @@ func (r *dockerCommandContainer) Pause(ctx context.Context) error {
 
 func (r *dockerCommandContainer) Remove(ctx context.Context) error {
 	r.removed = true
-	if err := r.client.ContainerRemove(ctx, r.id, dockercontainer.RemoveOptions{Force: true}); err != nil {
-		return wrapDockerErr(err, fmt.Sprintf("failed to remove docker container %s", r.id))
+	if r.id != "" {
+		if err := r.client.ContainerRemove(ctx, r.id, dockercontainer.RemoveOptions{Force: true}); err != nil {
+			return wrapDockerErr(err, fmt.Sprintf("failed to remove docker container %s", r.id))
+		}
+		r.id = ""
 	}
 	return nil
 }
@@ -723,10 +738,6 @@ func (r *dockerCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 		// See formula here: https://docs.docker.com/engine/api/v1.41/#operation/ContainerStats
 		MemoryBytes: response.MemoryStats.Usage - response.MemoryStats.Stats.Cache,
 	}, nil
-}
-
-func (r *dockerCommandContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
-	return nil, status.UnimplementedError("not implemented")
 }
 
 // See https://docs.docker.com/engine/api/v1.41/#operation/ContainerStats

@@ -8,7 +8,6 @@ import (
 	"io"
 	"math"
 	"math/rand"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -22,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"golang.org/x/sync/errgroup"
@@ -29,7 +29,6 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -54,17 +53,6 @@ var (
 	setRequestMetadata = flag.Bool("set_request_metadata", false, "Whether to set a simulated bazel request metadata header.")
 )
 
-const (
-	byteStreamRead   = "google.bytestream.ByteStream/Read"
-	byteStreamWrite  = "google.bytestream.ByteStream/Write"
-	findMissingBlobs = "build.bazel.remote.execution.v2.ContentAddressableStorage/FindMissingBlobs"
-)
-
-var (
-	digestGenerator *digest.Generator
-	mu              sync.Mutex
-)
-
 var (
 	// Data computed by sampling stored cache blob sizes.
 	histBuckets     = []int{1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
@@ -79,6 +67,8 @@ var (
 	}, []string{
 		metrics.StatusHumanReadableLabel,
 	})
+
+	digestGenerator *digest.Generator
 )
 
 func init() {
@@ -128,33 +118,29 @@ func incrementPromErrorMetric(err error) {
 
 func writeBlob(ctx context.Context, client bspb.ByteStreamClient) (*repb.Digest, error) {
 	d, buf := newRandomDigestBuf(randomBlobSize())
-	resourceName := digest.NewResourceName(d, *instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	resourceName := digest.NewCASResourceName(d, *instanceName, repb.DigestFunction_SHA256)
 	if *writeCompressed {
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
-	retrier := retry.DefaultWithContext(ctx)
-	var err error
-	for retrier.Next() {
-		_, err = cachetools.UploadFromReader(ctx, client, resourceName, bytes.NewReader(buf))
+	return retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (*repb.Digest, error) {
+		_, _, err := cachetools.UploadFromReader(ctx, client, resourceName, bytes.NewReader(buf))
 		incrementPromErrorMetric(err)
 		if err == nil {
 			return d, nil
 		} else if status.IsUnavailableError(err) {
-			continue
+			return nil, err
 		}
-		return nil, err
-	}
-	return nil, err
+		return nil, retry.NonRetryableError(err)
+	})
 }
 
 func readBlob(ctx context.Context, client bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient, d *repb.Digest) error {
-	resourceName := digest.NewResourceName(d, *instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	resourceName := digest.NewCASResourceName(d, *instanceName, repb.DigestFunction_SHA256)
 	if *readCompressed {
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
-	retrier := retry.DefaultWithContext(ctx)
-	var err error
-	for retrier.Next() {
+	return retry.DoVoid(ctx, retry.DefaultOptions(), func(ctx context.Context) error {
+		var err error
 		if *readBatch {
 			_, err = batchReadSingleBlob(ctx, casClient, resourceName)
 		} else {
@@ -164,14 +150,13 @@ func readBlob(ctx context.Context, client bspb.ByteStreamClient, casClient repb.
 		if err == nil {
 			return nil
 		} else if status.IsUnavailableError(err) {
-			continue
+			return err
 		}
-		return err
-	}
-	return err
+		return retry.NonRetryableError(err)
+	})
 }
 
-func batchReadSingleBlob(ctx context.Context, casClient repb.ContentAddressableStorageClient, rn *digest.ResourceName) ([]byte, error) {
+func batchReadSingleBlob(ctx context.Context, casClient repb.ContentAddressableStorageClient, rn *digest.CASResourceName) ([]byte, error) {
 	responses, err := cachetools.BatchReadBlobs(ctx, casClient, &repb.BatchReadBlobsRequest{
 		InstanceName:          rn.GetInstanceName(),
 		AcceptableCompressors: []repb.Compressor_Value{rn.GetCompressor()},
@@ -193,8 +178,8 @@ func main() {
 	digestGenerator = digest.RandomGenerator(time.Now().Unix())
 	ctx := context.Background()
 
-	if *writeQPS == 0 {
-		log.Fatalf("Write QPS cannot be 0 -- data must be written before it can be read")
+	if *writeQPS <= 0 {
+		log.Fatalf("Write QPS (%v) must be > 0 -- data must be written before it can be read.", *writeQPS)
 	}
 	blobSizeDesc := fmt.Sprintf("size %d bytes", *blobSize)
 	if *blobSize < 0 {
@@ -209,6 +194,7 @@ func main() {
 		monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 	}
 
+	log.Printf("Connecting to target: %q", *cacheTarget)
 	conn, err := grpc_client.DialSimple(*cacheTarget, grpc.WithBlock(), grpc.WithTimeout(*timeout))
 	if err != nil {
 		log.Fatalf("Unable to connect to target '%s': %s", *cacheTarget, err)
@@ -236,20 +222,21 @@ func main() {
 	eg, gctx := errgroup.WithContext(ctx)
 
 	writtenDigests := make(chan *repb.Digest, 1_000_000)
-	writeQPSCounter := qps.NewCounter(*qpsAvgWindow)
+	writeQPSCounter := qps.NewCounter(*qpsAvgWindow, clockwork.NewRealClock())
 	defer writeQPSCounter.Stop()
-	readQPSCounter := qps.NewCounter(*qpsAvgWindow)
+	readQPSCounter := qps.NewCounter(*qpsAvgWindow, clockwork.NewRealClock())
 	defer readQPSCounter.Stop()
 
 	readsPerWrite := int(math.Ceil(float64(*readQPS) / float64(*writeQPS)))
 
 	// Periodically print read and write QPS.
 	eg.Go(func() error {
+		ticker := time.NewTicker(time.Second)
 		for {
 			select {
 			case <-gctx.Done():
 				return nil
-			case <-time.After(time.Second):
+			case <-ticker.C:
 				log.Printf("Write: %.1f, Read: %.1f QPS (%s avg)", writeQPSCounter.Get(), readQPSCounter.Get(), *qpsAvgWindow)
 			}
 		}
@@ -258,6 +245,10 @@ func main() {
 	writeOnce := func() {
 		eg.Go(func() error {
 			ctx, cancel := context.WithTimeout(gctx, *timeout)
+			if rand.Int63n(int64(*writeQPS)) == 0 {
+				// trace 1 QPS
+				ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-trace", "force")
+			}
 			d, err := writeBlob(ctx, bsClient)
 			cancel()
 			if err != nil {
@@ -305,6 +296,10 @@ func main() {
 			}
 
 			ctx, cancel := context.WithTimeout(gctx, *timeout)
+			if rand.Int63n(int64(*readQPS)) == 0 {
+				// trace 1 QPS
+				ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-trace", "force")
+			}
 			err := readBlob(ctx, bsClient, casClient, d)
 			cancel()
 			if err != nil {
@@ -315,7 +310,7 @@ func main() {
 				return err
 			}
 			readQPSCounter.Inc()
-			if rand.Intn(10) < int(*recycleRate*10) {
+			if rand.Float64() < *recycleRate {
 				writtenDigests <- d
 			}
 			return nil
@@ -323,6 +318,10 @@ func main() {
 	}
 
 	eg.Go(func() error {
+		if *readQPS <= 0 {
+			return nil
+		}
+
 		ticker := time.NewTicker(time.Second / time.Duration(*readQPS))
 		defer ticker.Stop()
 		for {

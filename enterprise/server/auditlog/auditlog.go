@@ -4,13 +4,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -23,6 +26,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 )
 
 var (
@@ -130,12 +134,12 @@ func (l *Logger) insertLog(ctx context.Context, resource *alpb.ResourceID, actio
 		entry.AuthUserEmail = ui.Email
 	}
 
-	if u.GetAPIKeyID() != "" {
-		ak, err := l.env.GetAuthDB().GetAPIKey(ctx, u.GetAPIKeyID())
+	if id := u.GetAPIKeyInfo().ID; id != "" {
+		ak, err := l.env.GetAuthDB().GetAPIKey(ctx, id)
 		if err != nil {
 			return status.WrapError(err, "could not lookup API key")
 		}
-		entry.AuthAPIKeyID = u.GetAPIKeyID()
+		entry.AuthAPIKeyID = id
 		entry.AuthAPIKeyLabel = ak.Label
 	}
 
@@ -184,6 +188,26 @@ func (l *Logger) LogForSecret(ctx context.Context, secretName string, action alp
 	l.Log(ctx, r, action, request)
 }
 
+func (l *Logger) LogForUserList(ctx context.Context, userListID string, userListName string, action alpb.Action, request proto.Message) {
+	r := &alpb.ResourceID{
+		Type: alpb.ResourceType_USER_LIST,
+		Id:   userListID,
+		Name: userListName,
+	}
+	l.Log(ctx, r, action, request)
+}
+
+// FilterEntry redacts internal BuildBuddy user details from an audit log entry
+// for non-server-admin viewers.
+func FilterEntry(entry *alpb.Entry, userEmail string) {
+	if strings.HasSuffix(userEmail, "@buildbuddy.io") {
+		entry.AuthenticationInfo.User = &alpb.AuthenticatedUser{
+			UserEmail: "Buildbuddy Admin",
+		}
+		entry.AuthenticationInfo.ClientIp = "0.0.0.0"
+	}
+}
+
 // cleanRequest clears out redundant noise from the requests.
 // There are two types of IDs we scrub:
 //  1. group ID -- audit logs are already scoped to groups so including this
@@ -192,25 +216,69 @@ func (l *Logger) LogForSecret(ctx context.Context, secretName string, action alp
 //     so the ID under the request is redundant.
 func cleanRequest(e *alpb.Entry_Request) *alpb.Entry_Request {
 	e = e.CloneVT()
-	if r := e.ApiRequest.CreateApiKey; r != nil {
+	if e.GetApiRequest() == nil {
+		return e
+	}
+	if r := e.GetApiRequest().GetGetApiKeys(); r != nil {
 		r.GroupId = ""
 	}
-	if r := e.ApiRequest.GetApiKeys; r != nil {
-		r.GroupId = ""
-	}
-	if r := e.ApiRequest.UpdateApiKey; r != nil {
+	if r := e.GetApiRequest().GetUpdateApiKey(); r != nil {
 		r.Id = ""
 	}
-	if r := e.ApiRequest.DeleteApiKey; r != nil {
+	if r := e.GetApiRequest().GetDeleteApiKey(); r != nil {
 		r.Id = ""
 	}
-	if r := e.ApiRequest.UpdateGroup; r != nil {
+	if r := e.GetApiRequest().GetUpdateGroup(); r != nil {
 		r.Id = ""
 	}
-	if r := e.ApiRequest.UpdateGroupUsers; r != nil {
+	if r := e.GetApiRequest().GetUpdateGroupUsers(); r != nil {
 		r.GroupId = ""
 	}
 	return e
+}
+
+func EntryFromDBRow(row *schema.AuditLog) (*alpb.Entry, error) {
+	request := &alpb.Entry_Request{}
+	if row.Request != "" {
+		if err := proto.Unmarshal([]byte(row.Request), request); err != nil {
+			return nil, err
+		}
+	}
+
+	resourceType := alpb.ResourceType(row.ResourceType)
+	// If no resource is specified, the resource is implicitly the owning
+	// organization.
+	if resourceType == alpb.ResourceType_UNKNOWN_RESOURCE {
+		resourceType = alpb.ResourceType_GROUP
+	}
+
+	entry := &alpb.Entry{
+		EventTime: timestamppb.New(time.UnixMicro(row.EventTimeUsec)),
+		AuthenticationInfo: &alpb.AuthenticationInfo{
+			ClientIp: row.ClientIP,
+		},
+		Resource: &alpb.ResourceID{
+			Type: resourceType,
+			Id:   row.ResourceID,
+			Name: row.ResourceName,
+		},
+		Action:  alpb.Action(row.Action),
+		Request: cleanRequest(request),
+	}
+	if row.AuthUserID != "" {
+		entry.AuthenticationInfo.User = &alpb.AuthenticatedUser{
+			UserId:    row.AuthUserID,
+			UserEmail: row.AuthUserEmail,
+		}
+	}
+	if row.AuthAPIKeyID != "" {
+		entry.AuthenticationInfo.ApiKey = &alpb.AuthenticatedAPIKey{
+			Id:    row.AuthAPIKeyID,
+			Label: row.AuthAPIKeyLabel,
+		}
+	}
+
+	return entry, nil
 }
 
 func (l *Logger) fillIDDescriptors(ctx context.Context, e *alpb.Entry_Request) error {
@@ -221,9 +289,14 @@ func (l *Logger) fillIDDescriptors(ctx context.Context, e *alpb.Entry_Request) e
 			userIDs[u.GetUserId().GetId()] = struct{}{}
 		}
 	}
+	if r := e.ApiRequest.UpdateUserListMembership; r != nil {
+		for _, u := range r.Update {
+			userIDs[u.GetUserId().GetId()] = struct{}{}
+		}
+	}
 
 	for uid := range userIDs {
-		userData, err := l.env.GetUserDB().GetUserByID(ctx, uid)
+		userData, err := l.env.GetUserDB().GetUserByID(ctx, uid, &interfaces.GetUserOpts{})
 		if err != nil {
 			return err
 		}
@@ -245,9 +318,17 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 	if err != nil {
 		return nil, err
 	}
-
-	if err := authutil.AuthorizeOrgAdmin(u, u.GetGroupID()); err != nil {
+	caps, err := capabilities.ForAuthenticatedUser(ctx, l.env.GetAuthenticator())
+	if err != nil {
 		return nil, err
+	}
+	if !slices.Contains(caps, cappb.Capability_ORG_ADMIN) && !slices.Contains(caps, cappb.Capability_AUDIT_LOG_READ) {
+		return nil, status.PermissionDeniedError("missing required capabilities")
+	}
+
+	isServerAdmin := false
+	if err := claims.AuthorizeServerAdmin(ctx); err == nil {
+		isServerAdmin = true
 	}
 
 	qb := query_builder.NewQuery(`
@@ -270,49 +351,19 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 	rq := l.dbh.NewQuery(ctx, "audit_logs_get_logs").Raw(q, args...)
 	resp := &alpb.GetAuditLogsResponse{}
 	err = db.ScanEach(rq, func(ctx context.Context, e *schema.AuditLog) error {
-		request := &alpb.Entry_Request{}
-		if err := proto.Unmarshal([]byte(e.Request), request); err != nil {
-			return err
-		}
-
 		if len(resp.Entries) == pageSize {
 			resp.NextPageToken = strconv.FormatInt(e.EventTimeUsec, 10)
 			return nil
 		}
 
-		resourceType := alpb.ResourceType(e.ResourceType)
-		// If no resource is specified, the resource is implicitely the owning
-		// organization.
-		if resourceType == alpb.ResourceType_UNKNOWN_RESOURCE {
-			resourceType = alpb.ResourceType_GROUP
+		entry, err := EntryFromDBRow(e)
+		if err != nil {
+			return err
 		}
 
-		entry := &alpb.Entry{
-			EventTime: timestamppb.New(time.UnixMicro(e.EventTimeUsec)),
-			AuthenticationInfo: &alpb.AuthenticationInfo{
-				ClientIp: e.ClientIP,
-			},
-			Resource: &alpb.ResourceID{
-				Type: resourceType,
-				Id:   e.ResourceID,
-				Name: e.ResourceName,
-			},
-			Action:  alpb.Action(e.Action),
-			Request: cleanRequest(request),
+		if !isServerAdmin {
+			FilterEntry(entry, e.AuthUserEmail)
 		}
-		if e.AuthUserID != "" {
-			entry.AuthenticationInfo.User = &alpb.AuthenticatedUser{
-				UserId:    e.AuthUserID,
-				UserEmail: e.AuthUserEmail,
-			}
-		}
-		if e.AuthAPIKeyID != "" {
-			entry.AuthenticationInfo.ApiKey = &alpb.AuthenticatedAPIKey{
-				Id:    e.AuthAPIKeyID,
-				Label: e.AuthAPIKeyLabel,
-			}
-		}
-
 		resp.Entries = append(resp.Entries, entry)
 		return nil
 	})

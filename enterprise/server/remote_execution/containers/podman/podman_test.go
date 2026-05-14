@@ -2,16 +2,18 @@ package podman_test
 
 import (
 	"context"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -25,7 +27,7 @@ type SlowCommandRunner struct {
 }
 
 func (r *SlowCommandRunner) Run(_ context.Context, command *repb.Command, _ string, _ func(*repb.UsageStats), stdio *interfaces.Stdio) *interfaces.CommandResult {
-	if len(command.Arguments) >= 2 && command.Arguments[0] == "podman" && command.Arguments[1] == "version" {
+	if isPodmanVersionCommand(command.GetArguments()) {
 		stdio.Stdout.Write([]byte("1.0.0"))
 	}
 	r.commandsRun.Add(1)
@@ -36,17 +38,17 @@ func (r *SlowCommandRunner) Run(_ context.Context, command *repb.Command, _ stri
 func TestPullsNotDeduped(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
-	commandRunner := SlowCommandRunner{}
-	env.SetCommandRunner(&commandRunner)
+	commandRunner := &SlowCommandRunner{}
+	env.SetCommandRunner(commandRunner)
 	dir := testfs.MakeTempDir(t)
 	provider, err := podman.NewProvider(env, dir)
 	require.NoError(t, err)
 
-	props := platform.Properties{
+	props := &platform.Properties{
 		ContainerImage: "docker.io/library/busybox",
 		DockerNetwork:  "off",
 	}
-	container, err := provider.New(ctx, &props, nil, nil, "")
+	container, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 
 	eg := errgroup.Group{}
@@ -65,28 +67,35 @@ type ControllableCommandRunner struct {
 	nextExitCode *int
 }
 
-func (c ControllableCommandRunner) Run(_ context.Context, command *repb.Command, _ string, _ func(*repb.UsageStats), stdio *interfaces.Stdio) *interfaces.CommandResult {
-	if len(command.Arguments) >= 2 && command.Arguments[0] == "podman" && command.Arguments[1] == "version" {
+func (c *ControllableCommandRunner) Run(_ context.Context, command *repb.Command, _ string, _ func(*repb.UsageStats), stdio *interfaces.Stdio) *interfaces.CommandResult {
+	if isPodmanVersionCommand(command.GetArguments()) {
 		stdio.Stdout.Write([]byte("1.0.0"))
 	}
 	return &interfaces.CommandResult{ExitCode: *c.nextExitCode}
+}
+
+func isPodmanVersionCommand(command []string) bool {
+	i1 := slices.Index(command, "podman")
+	i2 := slices.Index(command, "version")
+	return i1 >= 0 && i2 > i1
 }
 
 func TestImageExists(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	exitCode := 0
-	commandRunner := ControllableCommandRunner{nextExitCode: &exitCode}
+	commandRunner := &ControllableCommandRunner{nextExitCode: &exitCode}
 	env.SetCommandRunner(commandRunner)
 	dir := testfs.MakeTempDir(t)
+
 	provider, err := podman.NewProvider(env, dir)
 	require.NoError(t, err)
 
-	props := platform.Properties{
+	props := &platform.Properties{
 		ContainerImage: "docker.io/library/busybox",
 		DockerNetwork:  "off",
 	}
-	container, err := provider.New(ctx, &props, nil, nil, "")
+	container, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 
 	exitCode = 1

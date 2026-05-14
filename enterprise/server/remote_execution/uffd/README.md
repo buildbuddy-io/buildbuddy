@@ -33,6 +33,37 @@ should be registered to. When you set `Uffd` as the backend_type, you also must 
 Firecracker will send the UFFD object it created on this socket, so the UFFD handler should listen on the socket
 to receive it.
 
+## Memory Ballooning
+
+A memory balloon is a mechanism to control the amount of memory available to a VM.
+
+You can set a target size for the balloon. The balloon will then try to reach that
+target size by allocating memory in the VM. When used in conjunction with UFFD,
+UFFD will receive notifications (EVENT_REMOVE) containing the addresses of pages that the balloon
+has expanded into.
+
+The balloon guarantees that the VM is not using these removed memory pages.
+Typically, ballooning allows the host to re-allocate removed memory to other processes.
+In our case, we use ballooning to manage our memory snapshot size. Because we know
+that removed pages are unused by the VM, we do not need to cache them in our memory
+snapshots.
+
+After a page has been removed, the next time the VM tries to read it and triggers
+a page fault, the page should be 0'd. This can be done with UFFDIO_ZEROPAGE. You should
+not page fault in data from the original snapshot file, as the guest is expecting
+an empty page.
+
+Remove events are considered non-cooperative. Unlike page faults, which cause the faulting
+thread in the guest to sleep until the UFFD handler resolves them with
+UFFDIO_COPY or UFFDIO_ZEROPAGE, no direct action is required by the UFFD handler.
+It only needs to update its internal accounting so subsequent page faults on
+removed pages are handled correctly.
+
+Unfortunately there is no easy way to control the speed of inflation/deflation of the
+balloon, or which memory addresses are removed; this is controlled by the guest kernel driver.
+Also note that inflating the balloon can be a CPU-intensive process in the guest, as the balloon
+may need to allocate a lot of memory. Thus it's recommended to set a realistic target size.
+
 ## Performing UFFD operations (UFFD Macros)
 
 To perform UFFD operations, you make an IOCTL syscall with the address of a macro defined in the

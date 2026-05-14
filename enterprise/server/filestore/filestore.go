@@ -1,0 +1,935 @@
+// Package filestore implements io for reading bytestreams to/from pebble entries.
+package filestore
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"hash/crc32"
+	"io"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/jonboulle/clockwork"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
+)
+
+const (
+	PartitionDirectoryPrefix = "PT"
+	GroupIDPrefix            = "GR"
+
+	// Data owned by the ANON user will be assigned to this groupID. This
+	// ensures that our stored data has a uniform format, which allows
+	// eviction to work correctly. This value should not ever need to
+	// change, but there is little harm in changing it.
+	AnonGroupID = "GR74042147050500190371"
+)
+
+var (
+	ErrMissingKeyInfo = errors.New("missing group ID or hash")
+)
+
+// returns partitionID, groupID, isolation, remote_instance_name, hash
+// callers may choose to use all or some of these elements when constructing
+// a file path or file key. because these strings may be persisted to disk, this
+// function should rarely change and must be kept backwards compatible.
+func fileRecordSegments(r *sgpb.FileRecord) (partID string, groupID string, isolation string, remoteInstanceHash string, digestHash string, err error) {
+	if r.GetIsolation().GetPartitionId() == "" {
+		err = status.FailedPreconditionError("Empty partition ID not allowed in filerecord.")
+		return
+	}
+	partID = r.GetIsolation().GetPartitionId()
+	groupID = r.GetIsolation().GetGroupId()
+
+	if r.GetIsolation().GetCacheType() == rspb.CacheType_CAS {
+		isolation = "cas"
+	} else if r.GetIsolation().GetCacheType() == rspb.CacheType_AC {
+		isolation = "ac"
+		if remoteInstanceName := r.GetIsolation().GetRemoteInstanceName(); remoteInstanceName != "" {
+			remoteInstanceHash = strconv.Itoa(int(crc32.ChecksumIEEE([]byte(remoteInstanceName))))
+		}
+	} else {
+		err = status.FailedPreconditionError("Isolation type must be explicitly set, not UNKNOWN.")
+		return
+	}
+	if len(r.GetDigest().GetHash()) <= 4 {
+		err = status.FailedPreconditionError("Malformed digest; too short.")
+		return
+	}
+	digestHash = r.GetDigest().GetHash()
+	return
+}
+
+type PebbleKeyVersion int
+
+const (
+	// PebbleKeyVersion representing an unspecified key version. When this is
+	// the active key version, the database will select an active key version
+	// to use based on existing database contents and the maximum known key
+	// version.
+	//
+	// This is in a different const block so as not to affect the iota below.
+	UnspecifiedKeyVersion PebbleKeyVersion = -1
+
+	// UndefinedKeyVersion is the version of all keys in the database
+	// that have not yet been versioned.
+	UndefinedKeyVersion PebbleKeyVersion = iota - 1
+
+	// Version1 is the first key version that includes a version in the
+	// key path, to disambiguate reading old keys.
+	Version1
+
+	// Version2 is the same as Version1, plus a change that moves the
+	// remote instance name hash to the end of the key rather than the
+	// beginning. This allows for even sampling across the keyspace,
+	// regardless of remote instance name.
+	Version2
+
+	// Version3 adds an optional encryption key ID for keys that refer to
+	// encrypted data.
+	Version3
+
+	// Version4 includes digest type in the hash and remaps ANON data to a
+	// fixed ANON group ID in GR{20} format.
+	Version4
+
+	// Version5 simplifies the keyspace (to simplify eviction) by encoding
+	// AC keys under a synthetic digest made from their remote instance
+	// name, groupID, and digest.
+	Version5
+
+	// Version6 encodes both AC and CAS keys under a synthetic digest made from
+	// their remote isntance name, groupID, and digest.
+	Version6
+
+	// MaxKeyVersion is always 1 more than the highest defined version, which
+	// allows for tests to iterate across all versions from UndefinedKeyVersion
+	// to MaxKeyVersion and check cross compatibility.
+	MaxKeyVersion
+)
+
+type PebbleKey struct {
+	partID             string
+	groupID            string
+	isolation          string
+	remoteInstanceHash string
+	hash               string
+	encryptionKeyID    string
+	digestFunction     repb.DigestFunction_Value
+
+	// For Version5 keys and beyond, we create a synthetic hash from the above
+	// fields as part of the keys. This is a *lossy* procedure. This means it's
+	// impossible to take a raw key and back out the groupID or other
+	// information. For that reason, when a v5+ key is parsed, the synthetic hash
+	// and the key version are preserved here so that the key can be re-serialized.
+	syntheticHash        string
+	syntheticHashVersion PebbleKeyVersion
+}
+
+func (pmk PebbleKey) EncryptionKeyID() string {
+	return pmk.encryptionKeyID
+}
+
+func (pmk PebbleKey) String() string {
+	fmk, err := pmk.Bytes(UndefinedKeyVersion)
+	if err != nil {
+		return err.Error()
+	}
+	return string(fmk)
+}
+
+func (pmk PebbleKey) LockID() string {
+	if pmk.isolation == "ac" {
+		fmk, err := pmk.Bytes(Version5)
+		if err != nil {
+			return err.Error()
+		}
+		return string(fmk)
+	}
+	return filepath.Join(pmk.isolation, pmk.hash)
+}
+
+func (pmk PebbleKey) CacheType() rspb.CacheType {
+	switch pmk.isolation {
+	case "ac":
+		return rspb.CacheType_AC
+	case "cas":
+		return rspb.CacheType_CAS
+	default:
+		return rspb.CacheType_UNKNOWN_CACHE_TYPE
+	}
+}
+
+func remapANONToFixedGroupID(groupID string) string {
+	if groupID == "ANON" {
+		return AnonGroupID
+	}
+	return groupID
+}
+
+func remapFixedToANONGroupID(groupID string) string {
+	if groupID == AnonGroupID {
+		return "ANON"
+	}
+	return groupID
+}
+
+// FixedWidthGroupID returns a group ID that is zero padded to 20 digits in
+// order to make all key group IDs uniform. This is necessary to be able to
+// sample uniformly across group IDs.
+func FixedWidthGroupID(groupID string) string {
+	// This is only true for the special "ANON" group.
+	if !strings.HasPrefix(groupID, GroupIDPrefix) {
+		return groupID
+	}
+	return fmt.Sprintf("%s%020s", GroupIDPrefix, groupID[2:])
+}
+
+// Undoes the padding added by FixedWidthGroupID to produce the "real" group
+// ID.
+func trimFixedWidthGroupID(groupID string) string {
+	// This is only for true the special "ANON" group.
+	if !strings.HasPrefix(groupID, GroupIDPrefix) {
+		return groupID
+	}
+	return GroupIDPrefix + strings.TrimLeft(groupID[2:], "0")
+}
+
+func (pmk *PebbleKey) createSyntheticHash() (string, error) {
+	if pmk.groupID == "" || pmk.hash == "" {
+		return "", status.FailedPreconditionErrorf("cannot create synthetic hash: %w", ErrMissingKeyInfo)
+	}
+	hashExtra := remapANONToFixedGroupID(pmk.groupID)
+	rih := pmk.remoteInstanceHash
+	if rih == "" {
+		rih = "0"
+	}
+	hashExtra += "|" + rih + "|" + pmk.hash
+	d, err := digest.Compute(bytes.NewReader([]byte(hashExtra)), pmk.digestFunction)
+	if err != nil {
+		return "", err
+	}
+	return d.GetHash(), nil
+}
+
+func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
+	switch version {
+	case UndefinedKeyVersion:
+		filePath := filepath.Join(pmk.isolation, pmk.remoteInstanceHash, pmk.hash)
+		if pmk.isolation == "ac" {
+			filePath = filepath.Join(pmk.groupID, filePath)
+		}
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath)
+
+		return []byte(filePath), nil
+	case Version1:
+		filePath := filepath.Join(pmk.isolation, pmk.remoteInstanceHash, pmk.hash)
+		if pmk.isolation == "ac" {
+			filePath = filepath.Join(pmk.groupID, filePath)
+		}
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath, "v1")
+		return []byte(filePath), nil
+	case Version2:
+		filePath := filepath.Join(pmk.hash, pmk.isolation, pmk.remoteInstanceHash)
+		if pmk.isolation == "ac" {
+			filePath = filepath.Join(FixedWidthGroupID(pmk.groupID), filePath)
+		}
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath, "v2")
+		return []byte(filePath), nil
+	case Version3:
+		rih := pmk.remoteInstanceHash
+		if pmk.isolation == "ac" && rih == "" {
+			rih = "0"
+		}
+		filePath := filepath.Join(pmk.hash, pmk.isolation, rih, pmk.encryptionKeyID)
+		if pmk.isolation == "ac" {
+			filePath = filepath.Join(FixedWidthGroupID(pmk.groupID), filePath)
+		}
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath, "v3")
+		return []byte(filePath), nil
+	case Version4:
+		rih := pmk.remoteInstanceHash
+		if pmk.isolation == "ac" && rih == "" {
+			rih = "0"
+		}
+		filePath := filepath.Join(pmk.hash, strconv.Itoa(int(pmk.digestFunction)), pmk.isolation, rih, pmk.encryptionKeyID)
+		if pmk.isolation == "ac" {
+			filePath = filepath.Join(remapANONToFixedGroupID(FixedWidthGroupID(pmk.groupID)), filePath)
+		}
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath, "v4")
+		return []byte(filePath), nil
+	case Version5:
+		hashStr := ""
+		if pmk.syntheticHash != "" {
+			if pmk.syntheticHashVersion == Version5 {
+				// syntheticHash is only set with AC entries in V5; therefore,
+				// we don't need to check the cache type.
+				hashStr = pmk.syntheticHash
+			} else {
+				return nil, status.FailedPreconditionErrorf("unexpected syntehtic hash version %d", pmk.syntheticHashVersion)
+			}
+		} else {
+			hashStr = pmk.hash
+			if pmk.isolation == "ac" {
+				var err error
+				hashStr, err = pmk.createSyntheticHash()
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		filePath := filepath.Join(hashStr, strconv.Itoa(int(pmk.digestFunction)), pmk.isolation, pmk.encryptionKeyID)
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath, "v5")
+		return []byte(filePath), nil
+	case Version6:
+		hashStr := ""
+		if pmk.syntheticHash != "" {
+			if pmk.syntheticHashVersion == Version6 || pmk.syntheticHashVersion == Version5 {
+				hashStr = pmk.syntheticHash
+			} else {
+				return nil, status.FailedPreconditionErrorf("unexpected synthetic hash version %d", pmk.syntheticHashVersion)
+			}
+		} else {
+			var err error
+			hashStr, err = pmk.createSyntheticHash()
+			if err != nil {
+				return nil, err
+			}
+		}
+		filePath := filepath.Join(hashStr, strconv.Itoa(int(pmk.digestFunction)), pmk.isolation, pmk.encryptionKeyID)
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath, "v6")
+		return []byte(filePath), nil
+	default:
+		return nil, status.FailedPreconditionErrorf("Unknown key version: %v", version)
+	}
+}
+
+func parseError(parts [][]byte) error {
+	return status.InvalidArgumentErrorf("Unable to parse %v to pebble key", string(bytes.Join(parts, []byte("/"))))
+}
+
+func (pmk *PebbleKey) parseUndefinedVersion(parts [][]byte) error {
+	switch len(parts) {
+	case 3:
+		pmk.partID, pmk.isolation, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2])
+	case 4:
+		pmk.partID, pmk.groupID, pmk.isolation, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
+	case 5:
+		pmk.partID, pmk.groupID, pmk.isolation, pmk.remoteInstanceHash, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
+	default:
+		return parseError(parts)
+	}
+	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
+	return nil
+}
+
+func (pmk *PebbleKey) parseVersion1(parts [][]byte) error {
+	switch len(parts) {
+	case 4:
+		pmk.partID, pmk.isolation, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2])
+	case 5:
+		pmk.partID, pmk.groupID, pmk.isolation, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
+	case 6:
+		pmk.partID, pmk.groupID, pmk.isolation, pmk.remoteInstanceHash, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
+	default:
+		return parseError(parts)
+	}
+	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
+	return nil
+}
+
+func (pmk *PebbleKey) parseVersion2(parts [][]byte) error {
+	switch len(parts) {
+	case 4:
+		pmk.partID, pmk.hash, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2])
+	case 5:
+		pmk.partID, pmk.groupID, pmk.hash, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
+	case 6:
+		pmk.partID, pmk.groupID, pmk.hash, pmk.isolation, pmk.remoteInstanceHash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
+	default:
+		return parseError(parts)
+	}
+	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
+	pmk.groupID = trimFixedWidthGroupID(pmk.groupID)
+	return nil
+}
+
+func (pmk *PebbleKey) parseVersion3(parts [][]byte) error {
+	switch len(parts) {
+	// CAS artifact
+	// PTfoo/abcd12345asdasdasd123123123asdasdasd/v3
+	case 4:
+		pmk.partID, pmk.hash, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2])
+	// encrypted CAS artifact
+	// PTfoo/abcd12345asdasdasd123123123asdasdasd/EK123/v3
+	case 5:
+		pmk.partID, pmk.hash, pmk.isolation, pmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
+	// AC artifact
+	// PTfoo/GR123/abcd12345asdasdasd123123123asdasdasd/ac/123/v3
+	case 6:
+		pmk.partID, pmk.groupID, pmk.hash, pmk.isolation, pmk.remoteInstanceHash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
+		if pmk.remoteInstanceHash == "0" {
+			pmk.remoteInstanceHash = ""
+		}
+	// encrypted AC artifact
+	// PTfoo/GR123/abcd12345asdasdasd123123123asdasdasd/ac/123/EK123/v3
+	case 7:
+		pmk.partID, pmk.groupID, pmk.hash, pmk.isolation, pmk.remoteInstanceHash, pmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4]), string(parts[5])
+		if pmk.remoteInstanceHash == "0" {
+			pmk.remoteInstanceHash = ""
+		}
+	default:
+		return parseError(parts)
+	}
+	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
+	pmk.groupID = trimFixedWidthGroupID(pmk.groupID)
+	return nil
+}
+
+func (pmk *PebbleKey) parseVersion4(parts [][]byte) error {
+	digestFunctionString := ""
+
+	switch len(parts) {
+	// CAS artifact
+	// PTfoo/abcd12345asdasdasd123123123asdasdasd/1/v4
+	case 5:
+		pmk.partID, pmk.hash, digestFunctionString, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
+	// encrypted CAS artifact
+	// PTfoo/abcd12345asdasdasd123123123asdasdasd/1/EK123/v4
+	case 6:
+		pmk.partID, pmk.hash, digestFunctionString, pmk.isolation, pmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
+	// AC artifact
+	// PTfoo/GR123/abcd12345asdasdasd123123123asdasdasd/1/ac/123/v4
+	case 7:
+		pmk.partID, pmk.groupID, pmk.hash, digestFunctionString, pmk.isolation, pmk.remoteInstanceHash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4]), string(parts[5])
+		if pmk.remoteInstanceHash == "0" {
+			pmk.remoteInstanceHash = ""
+		}
+	// encrypted AC artifact
+	// PTfoo/GR123/abcd12345asdasdasd123123123asdasdasd/1/ac/123/EK123/v4
+	case 8:
+		pmk.partID, pmk.groupID, pmk.hash, digestFunctionString, pmk.isolation, pmk.remoteInstanceHash, pmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4]), string(parts[5]), string(parts[6])
+		if pmk.remoteInstanceHash == "0" {
+			pmk.remoteInstanceHash = ""
+		}
+	default:
+		return parseError(parts)
+	}
+
+	// Parse hash type string back into a digestFunction enum.
+	intDigestFunction, err := strconv.Atoi(digestFunctionString)
+	if err != nil || intDigestFunction == 0 {
+		// It is an error for a v4 key to have a 0 digestFunction value.
+		return parseError(parts)
+	}
+	pmk.digestFunction = repb.DigestFunction_Value(intDigestFunction)
+
+	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
+	pmk.groupID = remapFixedToANONGroupID(trimFixedWidthGroupID(pmk.groupID))
+	return nil
+}
+
+func (pmk *PebbleKey) parseVersion5(parts [][]byte) error {
+	digestFunctionString := ""
+	hashString := ""
+	switch len(parts) {
+	//"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/1/cas/v5",
+	//"PTFOO/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/9/ac/v5",
+	case 5:
+		pmk.partID, hashString, digestFunctionString, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
+	//"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/EK123/v5",
+	//"PTFOO/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/ac/EK123/v5",
+	case 6:
+		pmk.partID, hashString, digestFunctionString, pmk.isolation, pmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
+	default:
+		return parseError(parts)
+	}
+
+	// For AC entries, we created a synthetic hash when we convert the key to
+	// the bytes, and therefore the original hash of the digest is lost.
+	if pmk.CacheType() == rspb.CacheType_CAS {
+		pmk.hash = hashString
+	} else if pmk.CacheType() == rspb.CacheType_AC {
+		pmk.syntheticHash = hashString
+		pmk.syntheticHashVersion = Version5
+	}
+
+	// Parse hash type string back into a digestFunction enum.
+	intDigestFunction, err := strconv.Atoi(digestFunctionString)
+	if err != nil || intDigestFunction == 0 {
+		// It is an error for a v5 key to have a 0 digestFunction value.
+		return parseError(parts)
+	}
+	pmk.digestFunction = repb.DigestFunction_Value(intDigestFunction)
+	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
+	return nil
+}
+
+func (pmk *PebbleKey) parseVersion6(parts [][]byte) error {
+	digestFunctionString := ""
+	hashString := ""
+	switch len(parts) {
+	//"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/1/cas/v5",
+	//"PTFOO/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/9/ac/v5",
+	case 5:
+		pmk.partID, hashString, digestFunctionString, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
+	//"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/EK123/v5",
+	//"PTFOO/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/ac/EK123/v5",
+	case 6:
+		pmk.partID, hashString, digestFunctionString, pmk.isolation, pmk.encryptionKeyID = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
+	default:
+		return parseError(parts)
+	}
+
+	pmk.syntheticHash = hashString
+	pmk.syntheticHashVersion = Version6
+
+	// Parse hash type string back into a digestFunction enum.
+	intDigestFunction, err := strconv.Atoi(digestFunctionString)
+	if err != nil || intDigestFunction == 0 {
+		// It is an error for a v5 key to have a 0 digestFunction value.
+		return parseError(parts)
+	}
+	pmk.digestFunction = repb.DigestFunction_Value(intDigestFunction)
+	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
+	return nil
+}
+
+func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
+	version := UndefinedKeyVersion
+	slash := []byte{filepath.Separator}
+	parts := bytes.Split(bytes.TrimPrefix(in, slash), slash)
+
+	if len(parts) == 0 {
+		return -1, status.InvalidArgumentErrorf("Unable to parse %q to pebble key", in)
+	}
+
+	// Attempt to read the key version, if one is present. This allows for much
+	// simpler parsing because we can restrict the set of valid parse inputs
+	// instead of having to possibly parse any/all versions at once.
+	if len(parts[0]) > 1 {
+		lastPart := parts[len(parts)-1]
+		if bytes.ContainsRune(lastPart[:1], 'v') {
+			if s, err := strconv.ParseUint(string(lastPart[1:]), 10, 32); err == nil {
+				version = PebbleKeyVersion(s)
+			}
+		}
+	}
+
+	// Before version 4, all digests were assumed to be of type SHA256. So
+	// default to that digestFunction here and in Version4 onward, it will
+	// be overwritten during parsing.
+	pmk.digestFunction = repb.DigestFunction_SHA256
+
+	switch version {
+	case UndefinedKeyVersion:
+		return UndefinedKeyVersion, pmk.parseUndefinedVersion(parts)
+	case Version1:
+		return Version1, pmk.parseVersion1(parts)
+	case Version2:
+		return Version2, pmk.parseVersion2(parts)
+	case Version3:
+		return Version3, pmk.parseVersion3(parts)
+	case Version4:
+		return Version4, pmk.parseVersion4(parts)
+	case Version5:
+		return Version5, pmk.parseVersion5(parts)
+	case Version6:
+		return Version6, pmk.parseVersion6(parts)
+	default:
+		return -1, status.InvalidArgumentErrorf("Unable to parse %q to pebble key", in)
+	}
+}
+
+type Store interface {
+	FilePath(fileDir string, f *sgpb.StorageMetadata_FileMetadata) string
+	PebbleKey(r *sgpb.FileRecord) (PebbleKey, error)
+
+	NewReader(ctx context.Context, fileDir string, md *sgpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error)
+
+	InlineReader(f *sgpb.StorageMetadata_InlineMetadata, offset, limit int64) (io.ReadCloser, error)
+	InlineWriter(ctx context.Context, sizeBytes int64) interfaces.MetadataWriteCloser
+
+	FileReader(ctx context.Context, fileDir string, f *sgpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error)
+	FileWriter(ctx context.Context, fileDir string, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
+
+	BlobReader(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata, offset, limit int64) (io.ReadCloser, error)
+	BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
+	DeleteStoredBlob(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata) error
+	UpdateBlobAtime(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata, t time.Time) error
+
+	DeleteStoredFile(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) error
+	FileExists(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) bool
+}
+
+type PebbleGCSStorage interface {
+	SetBucketCustomTimeTTL(ctx context.Context, ageInDays int64) error
+	Reader(ctx context.Context, blobName string, offset, limit int64) (io.ReadCloser, error)
+	ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time, estimatedSize int64) (interfaces.CommittedWriteCloser, error)
+	DeleteBlob(ctx context.Context, blobName string) error
+	UpdateCustomTime(ctx context.Context, blobName string, t time.Time) error
+}
+
+type Options struct {
+	tmpDir  string
+	gcs     PebbleGCSStorage
+	appName string
+	clock   clockwork.Clock
+}
+
+type Option func(*Options)
+
+func WithGCSBlobstore(gcs PebbleGCSStorage, appName string) Option {
+	return func(o *Options) {
+		o.gcs = gcs
+		o.appName = appName
+	}
+}
+
+func WithClock(c clockwork.Clock) Option {
+	return func(o *Options) {
+		o.clock = c
+	}
+}
+
+func WithTmpDir(tmpDir string) Option {
+	return func(o *Options) {
+		o.tmpDir = tmpDir
+	}
+}
+
+type fileStorer struct {
+	tmpDir  string
+	gcs     PebbleGCSStorage
+	appName string
+	clock   clockwork.Clock
+}
+
+// New creates a new filestorer interface.
+func New(opts ...Option) Store {
+	options := &Options{}
+	for _, opt := range opts {
+		opt(options)
+	}
+	if options.clock == nil {
+		options.clock = clockwork.NewRealClock()
+	}
+	return &fileStorer{
+		tmpDir:  options.tmpDir,
+		gcs:     options.gcs,
+		appName: options.appName,
+		clock:   options.clock,
+	}
+}
+
+func (fs *fileStorer) FilePath(fileDir string, f *sgpb.StorageMetadata_FileMetadata) string {
+	fp := f.GetFilename()
+	if !filepath.IsAbs(fp) {
+		fp = filepath.Join(fileDir, f.GetFilename())
+	}
+	return fp
+}
+
+// fileKey is the partial path where a file will be written.
+// For example, given a fileRecord with fileKey: "foo/bar", the filestore will
+// write the file at a path like "/root/dir/blobs/foo/bar".
+func (fs *fileStorer) fileKey(r *sgpb.FileRecord) (string, error) {
+	// This function cannot change without a data migration.
+	// filekeys look like this:
+	//   // {partitionID}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}
+	//   // for example:
+	//   //   PART123/GR123/ac/44321/abcd/abcd12345asdasdasd123123123asdasdasd
+	//   //   PART123/GR124/cas/abcd/abcd12345asdasdasd123123123asdasdasd
+	partID, groupID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
+	if err != nil {
+		return "", err
+	}
+	if r.GetEncryption().GetKeyId() != "" {
+		hash += "_" + r.GetEncryption().GetKeyId()
+	}
+	partDir := PartitionDirectoryPrefix + partID
+	if r.GetIsolation().GetCacheType() == rspb.CacheType_AC {
+		return filepath.Join(partDir, groupID, isolation, remoteInstanceHash, hash[:4], hash), nil
+	} else {
+		return filepath.Join(partDir, isolation, remoteInstanceHash, hash[:4], hash), nil
+	}
+}
+
+// blobKey is the partial path where a blob will be written.
+// For example, given a fileRecord with FileKey: "foo/bar", the filestore will
+// write the file at a path like "/buildbuddy-app-1/blobs/foo/bar".
+func blobKey(appName string, r *sgpb.FileRecord) ([]byte, error) {
+	// This function cannot change without a data migration.
+	// blobkeys look like this:
+	//   // {appName}/{partitionID}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}
+	//   // for example:
+	//   //   buildbuddy-app-0/PART123/GR123/ac/44321/abcd/abcd12345asdasdasd123123123asdasdasd
+	//   //   buildbuddy-app-0/PART123/GR124/cas/abcd/abcd12345asdasdasd123123123asdasdasd
+	if appName == "" {
+		return nil, status.FailedPreconditionErrorf("Invalid app name: %q (cannot be empty)", appName)
+	}
+	partID, groupID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
+	if err != nil {
+		return nil, err
+	}
+	if r.GetEncryption().GetKeyId() != "" {
+		hash += "_" + r.GetEncryption().GetKeyId()
+	}
+	partDir := PartitionDirectoryPrefix + partID
+	if r.GetIsolation().GetCacheType() == rspb.CacheType_AC {
+		return []byte(filepath.Join(appName, partDir, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil
+	} else {
+		return []byte(filepath.Join(appName, partDir, isolation, remoteInstanceHash, hash[:4], hash)), nil
+	}
+}
+
+func (fs *fileStorer) PebbleKey(r *sgpb.FileRecord) (PebbleKey, error) {
+	if r.GetDigestFunction() == repb.DigestFunction_UNKNOWN {
+		return PebbleKey{}, status.FailedPreconditionError("FileRecord did not have a digestFunction set")
+	}
+
+	partID, groupID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
+	if err != nil {
+		return PebbleKey{}, err
+	}
+	return PebbleKey{
+		partID:             partID,
+		groupID:            groupID,
+		isolation:          isolation,
+		remoteInstanceHash: remoteInstanceHash,
+		hash:               hash,
+		encryptionKeyID:    r.GetEncryption().GetKeyId(),
+		digestFunction:     r.GetDigestFunction(),
+	}, nil
+}
+
+func (fs *fileStorer) NewReader(ctx context.Context, fileDir string, md *sgpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error) {
+	switch {
+	case md.GetFileMetadata() != nil:
+		return fs.FileReader(ctx, fileDir, md.GetFileMetadata(), offset, limit)
+	case md.GetInlineMetadata() != nil:
+		return fs.InlineReader(md.GetInlineMetadata(), offset, limit)
+	case md.GetGcsMetadata() != nil:
+		return fs.BlobReader(ctx, md.GetGcsMetadata(), offset, limit)
+	default:
+		return nil, status.InvalidArgumentErrorf("No stored metadata: %+v", md)
+	}
+}
+
+func (fs *fileStorer) InlineReader(f *sgpb.StorageMetadata_InlineMetadata, offset, limit int64) (io.ReadCloser, error) {
+	data := f.GetData()[offset:]
+	if limit > 0 && limit < int64(len(data)) {
+		data = data[:limit]
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+type inlineWriter struct {
+	*bytes.Buffer
+	writtenAt time.Time
+}
+
+func (iw *inlineWriter) Close() error {
+	return nil
+}
+
+func (iw *inlineWriter) Metadata() *sgpb.StorageMetadata {
+	return &sgpb.StorageMetadata{
+		InlineMetadata: &sgpb.StorageMetadata_InlineMetadata{
+			Data:          iw.Buffer.Bytes(),
+			CreatedAtNsec: iw.writtenAt.UnixNano(),
+		},
+	}
+}
+
+func (fs *fileStorer) InlineWriter(ctx context.Context, sizeBytes int64) interfaces.MetadataWriteCloser {
+	return &inlineWriter{
+		Buffer:    bytes.NewBuffer(make([]byte, 0, sizeBytes)),
+		writtenAt: fs.clock.Now(),
+	}
+}
+
+type fileChunker struct {
+	interfaces.CommittedWriteCloser
+	fileName string
+}
+
+func (c *fileChunker) Metadata() *sgpb.StorageMetadata {
+	return &sgpb.StorageMetadata{
+		FileMetadata: &sgpb.StorageMetadata_FileMetadata{
+			Filename: c.fileName,
+		},
+	}
+}
+
+func (fs *fileStorer) FileReader(ctx context.Context, fileDir string, f *sgpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error) {
+	fp := fs.FilePath(fileDir, f)
+	return disk.FileReader(ctx, fp, offset, limit)
+}
+
+func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
+	file, err := fs.fileKey(fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	fileName := filepath.Join(fileDir, file)
+	tmpDir := fileDir
+	if fs.tmpDir != "" {
+		tmpDir = filepath.Join(fs.tmpDir, fileRecord.GetDigest().GetHash()[:2])
+		if err := disk.EnsureDirectoryExists(tmpDir); err != nil {
+			return nil, err
+		}
+	}
+	wc, err := disk.FileWriterWithTmpDir(ctx, tmpDir, fileName)
+	if err != nil {
+		return nil, err
+	}
+	return &fileChunker{
+		CommittedWriteCloser: wc,
+		fileName:             file,
+	}, nil
+}
+
+func (fs *fileStorer) BlobReader(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata, offset, limit int64) (io.ReadCloser, error) {
+	if fs.gcs == nil || fs.appName == "" {
+		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
+	}
+	return fs.gcs.Reader(ctx, b.GetBlobName(), offset, limit)
+}
+
+type gcsMetadataWriter struct {
+	interfaces.CommittedWriteCloser
+	ctx        context.Context
+	blobName   string
+	customTime time.Time
+}
+
+func (g *gcsMetadataWriter) Commit() error {
+	_, spn := tracing.StartSpan(g.ctx)
+	defer spn.End()
+	err := g.CommittedWriteCloser.Commit()
+
+	switch {
+	case status.IsAlreadyExistsError(err):
+		log.Debugf("Write gcs blob %q (already exists)", g.blobName)
+		return nil
+	case status.IsResourceExhaustedError(err):
+		// gcs.ConditionalWriter returns this when there are too many writes to
+		// the same object. We can assume that another write was successful.
+		log.Debugf("Write gcs blob %q (too many writes)", g.blobName)
+		return nil
+	default:
+		return err
+	}
+}
+
+func (g *gcsMetadataWriter) Close() error {
+	// We're simply cancelling a context in Close() so we don't care about
+	// the value of the returned error. It will have already been returned
+	// and checked in Commit().
+	_ = g.CommittedWriteCloser.Close()
+	return nil
+}
+
+func (g *gcsMetadataWriter) Metadata() *sgpb.StorageMetadata {
+	return &sgpb.StorageMetadata{
+		GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{
+			BlobName:           g.blobName,
+			LastCustomTimeUsec: g.customTime.UnixMicro(),
+		},
+	}
+}
+
+func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
+	if fs.gcs == nil || fs.appName == "" {
+		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
+	}
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	blobNameBytes, err := blobKey(fs.appName, fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	salt, err := random.RandomString(5)
+	if err != nil {
+		return nil, err
+	}
+	blobName := string(blobNameBytes) + "-" + salt
+
+	estimatedSize := fileRecord.GetDigest().GetSizeBytes()
+	if fileRecord.GetCompressor() != repb.Compressor_IDENTITY {
+		// Guess that the compressed data will be 1/5th the size. The estimated
+		// size triggers an optimization for very large files, so it's better to
+		// underestimate.
+		estimatedSize /= 5
+	}
+	customTime := fs.clock.Now()
+	wc, err := fs.gcs.ConditionalWriter(ctx, blobName, true /*=overwriteExisting*/, customTime, estimatedSize)
+	if err != nil {
+		return nil, err
+	}
+	return &gcsMetadataWriter{
+		ctx:                  ctx,
+		CommittedWriteCloser: wc,
+		blobName:             string(blobName),
+		customTime:           customTime,
+	}, nil
+}
+
+func (fs *fileStorer) DeleteStoredBlob(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata) error {
+	if fs.gcs == nil || fs.appName == "" {
+		return status.FailedPreconditionError("gcs blobstore or appName not configured")
+	}
+	err := fs.gcs.DeleteBlob(ctx, b.GetBlobName())
+	log.Debugf("Deleted gcs blob: %q with err: %s", b.GetBlobName(), err)
+	return err
+}
+
+func (fs *fileStorer) UpdateBlobAtime(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata, t time.Time) error {
+	if fs.gcs == nil || fs.appName == "" {
+		return status.FailedPreconditionError("gcs blobstore or appName not configured")
+	}
+	err := fs.gcs.UpdateCustomTime(ctx, b.GetBlobName(), t)
+	log.Debugf("Updated gcs blob: %q atime to %d with err: %s", b.GetBlobName(), t.UnixMicro(), err)
+	return err
+}
+
+func (fs *fileStorer) DeleteStoredFile(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) error {
+	switch {
+	case md.GetFileMetadata() != nil:
+		return os.Remove(fs.FilePath(fileDir, md.GetFileMetadata()))
+	default:
+		return nil
+	}
+}
+
+func (fs *fileStorer) FileExists(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) bool {
+	switch {
+	case md.GetFileMetadata() != nil:
+		exists, err := disk.FileExists(ctx, fs.FilePath(fileDir, md.GetFileMetadata()))
+		return exists && err == nil
+	default:
+		return true
+	}
+}

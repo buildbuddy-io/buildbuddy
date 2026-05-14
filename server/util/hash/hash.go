@@ -2,13 +2,15 @@ package hash
 
 import (
 	"crypto/sha256"
-	"fmt"
+	"encoding/hex"
 	"reflect"
+	"strings"
 	"unsafe"
 )
 
 func Bytes(input []byte) string {
-	return fmt.Sprintf("%x", sha256.Sum256(input))
+	sha := sha256.Sum256(input)
+	return hex.EncodeToString(sha[:])
 }
 
 func String(input string) string {
@@ -16,11 +18,11 @@ func String(input string) string {
 }
 
 func Strings(input ...string) string {
-	h := ""
+	var h strings.Builder
 	for _, s := range input {
-		h += String(s)
+		h.WriteString(String(s))
 	}
-	return String(h)
+	return String(h.String())
 }
 
 //go:noescape

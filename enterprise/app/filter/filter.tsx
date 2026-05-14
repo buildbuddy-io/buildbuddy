@@ -1,71 +1,73 @@
-import moment from "moment";
-import React from "react";
-import { DateRangePicker, OnChangeProps, Range } from "react-date-range";
-import capabilities from "../../../app/capabilities/capabilities";
-import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
-import Popup from "../../../app/components/popup/popup";
-import Slider from "../../../app/components/slider/slider";
 import {
-  Filter,
-  X,
-  Calendar,
+  CircleDot,
   Clock,
-  User,
-  Github,
+  Cloud,
+  Filter,
   GitBranch,
   GitCommit,
+  Github,
   HardDrive,
   LayoutGrid,
-  Wrench,
-  Tag,
   SortAsc,
   SortDesc,
+  Sparkles,
+  Tag,
+  Target,
+  User,
+  Wrench,
+  X,
 } from "lucide-react";
+import React from "react";
+import capabilities from "../../../app/capabilities/capabilities";
+import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Checkbox from "../../../app/components/checkbox/checkbox";
+import TextInput from "../../../app/components/input/input";
+import Popup from "../../../app/components/popup/popup";
 import Radio from "../../../app/components/radio/radio";
-import { compactDurationSec, formatDateRange } from "../../../app/format/format";
+import Slider from "../../../app/components/slider/slider";
+import { compactDurationSec } from "../../../app/format/format";
 import router from "../../../app/router/router";
 import {
-  START_DATE_PARAM_NAME,
-  END_DATE_PARAM_NAME,
-  ROLE_PARAM_NAME,
-  STATUS_PARAM_NAME,
-  LAST_N_DAYS_PARAM_NAME,
-  USER_PARAM_NAME,
-  REPO_PARAM_NAME,
   BRANCH_PARAM_NAME,
-  COMMIT_PARAM_NAME,
-  HOST_PARAM_NAME,
   COMMAND_PARAM_NAME,
-  PATTERN_PARAM_NAME,
-  TAG_PARAM_NAME,
-  MINIMUM_DURATION_PARAM_NAME,
-  MAXIMUM_DURATION_PARAM_NAME,
-  SORT_BY_PARAM_NAME,
-  SORT_ORDER_PARAM_NAME,
+  COMMIT_PARAM_NAME,
   DEFAULT_SORT_BY_VALUE,
   DEFAULT_SORT_ORDER_VALUE,
+  DIMENSION_PARAM_NAME,
+  GENERIC_FILTER_PARAM_NAME,
+  HOST_PARAM_NAME,
+  MAXIMUM_DURATION_PARAM_NAME,
+  MINIMUM_DURATION_PARAM_NAME,
+  PATTERN_PARAM_NAME,
+  REPO_PARAM_NAME,
+  ROLE_PARAM_NAME,
+  SORT_BY_PARAM_NAME,
+  SORT_ORDER_PARAM_NAME,
+  STATUS_PARAM_NAME,
+  TAG_PARAM_NAME,
+  USER_PARAM_NAME,
 } from "../../../app/router/router_params";
 import { invocation_status } from "../../../proto/invocation_status_ts_proto";
+import { stat_filter } from "../../../proto/stat_filter_ts_proto";
+import DatePickerButton from "./date_picker_button";
 import {
-  parseRoleParam,
-  toRoleParam,
-  parseStatusParam,
-  toStatusParam,
-  statusToString,
-  getDisplayDateRange,
-  isAnyNonDateFilterSet,
-  DATE_PARAM_FORMAT,
-  DEFAULT_LAST_N_DAYS,
-  SortBy,
-  SortOrder,
-  DURATION_SLIDER_VALUES,
-  DURATION_SLIDER_MIN_INDEX,
-  DURATION_SLIDER_MIN_VALUE,
   DURATION_SLIDER_MAX_INDEX,
   DURATION_SLIDER_MAX_VALUE,
+  DURATION_SLIDER_MIN_INDEX,
+  DURATION_SLIDER_MIN_VALUE,
+  DURATION_SLIDER_VALUES,
+  getDimensionName,
+  getDimensionParamFromFilters,
+  getFiltersFromDimensionParam,
+  isAnyNonDateFilterSet,
+  parseRoleParam,
+  parseStatusParam,
+  SortBy,
+  SortOrder,
+  statusToString,
+  toRoleParam,
+  toStatusParam,
 } from "./filter_util";
-import TextInput from "../../../app/components/input/input";
 
 export interface FilterProps {
   search: URLSearchParams;
@@ -75,8 +77,6 @@ interface State {
   isDatePickerOpen: boolean;
   isFilterMenuOpen: boolean;
   isSortMenuOpen: boolean;
-
-  isAdvancedFilterOpen: boolean;
 
   user?: string;
   repo?: string;
@@ -89,28 +89,12 @@ interface State {
   minimumDuration?: number;
   maximumDuration?: number;
 
+  dimensions?: string;
+  genericFilterString?: string;
+
   sortBy?: SortBy;
   sortOrder?: SortOrder;
 }
-
-type PresetRange = {
-  label: string;
-  isSelected?: (range: Range) => boolean;
-  range: () => CustomDateRange;
-};
-
-/**
- * CustomDateRange is a react-date-range `Range` extended with some custom properties.
- */
-type CustomDateRange = Range & {
-  /**
-   * For the "last {N} days" options, the number of days to look
-   * back (relative to today).
-   */
-  days?: number;
-};
-
-const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
 
 export default class FilterComponent extends React.Component<FilterProps, State> {
   state: State = this.newFilterState(this.props.search);
@@ -121,23 +105,11 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     }
   }
 
-  newFilterState(search: URLSearchParams) {
+  newFilterState(search: URLSearchParams): State {
     return {
       isDatePickerOpen: false,
       isFilterMenuOpen: false,
       isSortMenuOpen: false,
-      isAdvancedFilterOpen: Boolean(
-        search.get(USER_PARAM_NAME) ||
-          search.get(REPO_PARAM_NAME) ||
-          search.get(BRANCH_PARAM_NAME) ||
-          search.get(COMMIT_PARAM_NAME) ||
-          search.get(HOST_PARAM_NAME) ||
-          search.get(COMMAND_PARAM_NAME) ||
-          (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) ||
-          (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
-          search.get(MINIMUM_DURATION_PARAM_NAME) ||
-          search.get(MAXIMUM_DURATION_PARAM_NAME)
-      ),
       user: search.get(USER_PARAM_NAME) || undefined,
       repo: search.get(REPO_PARAM_NAME) || undefined,
       branch: search.get(BRANCH_PARAM_NAME) || undefined,
@@ -150,23 +122,13 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
       sortBy: (search.get(SORT_BY_PARAM_NAME) as SortBy) || undefined,
       sortOrder: (search.get(SORT_ORDER_PARAM_NAME) as SortOrder) || undefined,
+      dimensions: search.get(DIMENSION_PARAM_NAME) || undefined,
+      genericFilterString: search.get(GENERIC_FILTER_PARAM_NAME) || undefined,
     };
   }
 
   updateFilterState(search: URLSearchParams) {
     return {
-      isAdvancedFilterOpen: Boolean(
-        search.get(USER_PARAM_NAME) ||
-          search.get(REPO_PARAM_NAME) ||
-          search.get(BRANCH_PARAM_NAME) ||
-          search.get(COMMIT_PARAM_NAME) ||
-          search.get(HOST_PARAM_NAME) ||
-          search.get(COMMAND_PARAM_NAME) ||
-          (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) ||
-          (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
-          search.get(MINIMUM_DURATION_PARAM_NAME) ||
-          search.get(MAXIMUM_DURATION_PARAM_NAME)
-      ),
       user: search.get(USER_PARAM_NAME) || undefined,
       repo: search.get(REPO_PARAM_NAME) || undefined,
       branch: search.get(BRANCH_PARAM_NAME) || undefined,
@@ -179,32 +141,9 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
       sortBy: (search.get(SORT_BY_PARAM_NAME) as SortBy) || undefined,
       sortOrder: (search.get(SORT_ORDER_PARAM_NAME) as SortOrder) || undefined,
+      dimensions: search.get(DIMENSION_PARAM_NAME) || undefined,
+      genericFilterString: search.get(GENERIC_FILTER_PARAM_NAME) || undefined,
     };
-  }
-
-  private onOpenDatePicker() {
-    this.setState({ isDatePickerOpen: true });
-  }
-  private onCloseDatePicker() {
-    this.setState({ isDatePickerOpen: false });
-  }
-  private onDateChange(range: OnChangeProps) {
-    const selection = (range as { selection: CustomDateRange }).selection;
-    if (selection.days) {
-      router.setQuery({
-        ...Object.fromEntries(this.props.search.entries()),
-        [START_DATE_PARAM_NAME]: "",
-        [END_DATE_PARAM_NAME]: "",
-        [LAST_N_DAYS_PARAM_NAME]: String(selection.days),
-      });
-      return;
-    }
-    router.setQuery({
-      ...Object.fromEntries(this.props.search.entries()),
-      [START_DATE_PARAM_NAME]: moment(selection.startDate).format(DATE_PARAM_FORMAT),
-      [END_DATE_PARAM_NAME]: moment(selection.endDate).format(DATE_PARAM_FORMAT),
-      [LAST_N_DAYS_PARAM_NAME]: "",
-    });
   }
 
   private onOpenFilterMenu() {
@@ -226,6 +165,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [COMMAND_PARAM_NAME]: "",
       [PATTERN_PARAM_NAME]: "",
       [TAG_PARAM_NAME]: "",
+      [DIMENSION_PARAM_NAME]: "",
+      [GENERIC_FILTER_PARAM_NAME]: "",
       [MINIMUM_DURATION_PARAM_NAME]: "",
       [MAXIMUM_DURATION_PARAM_NAME]: "",
       [SORT_BY_PARAM_NAME]: "",
@@ -314,14 +255,16 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [COMMAND_PARAM_NAME]: this.state.command || "",
       [PATTERN_PARAM_NAME]: this.state.pattern || "",
       [TAG_PARAM_NAME]: this.state.tag || "",
+      [DIMENSION_PARAM_NAME]: this.state.dimensions || "",
       [MINIMUM_DURATION_PARAM_NAME]: this.state.minimumDuration?.toString() || "",
       [MAXIMUM_DURATION_PARAM_NAME]: this.state.maximumDuration?.toString() || "",
+      [GENERIC_FILTER_PARAM_NAME]: this.state.genericFilterString || "",
     });
   }
 
   private renderSortByRadio(label: string, sortBy: string, selected: string) {
     return (
-      <label onClick={this.onSortByChange.bind(this, sortBy, selected)}>
+      <label onClick={this.onSortByChange.bind(this, sortBy)}>
         <Radio checked={selected === sortBy} />
         <span>{label}</span>
       </label>
@@ -330,16 +273,55 @@ export default class FilterComponent extends React.Component<FilterProps, State>
 
   private renderSortOrderRadio(label: string, sortOrder: string, selected: string) {
     return (
-      <label onClick={this.onSortOrderChange.bind(this, sortOrder, selected)}>
+      <label onClick={this.onSortOrderChange.bind(this, sortOrder)}>
         <Radio checked={selected === sortOrder} />
         <span>{label}</span>
       </label>
     );
   }
 
-  render() {
-    const { startDate, endDate } = getDisplayDateRange(this.props.search);
+  updateDimensionFilters(dimension: stat_filter.Dimension, value: string) {
+    const filters = getFiltersFromDimensionParam(this.props.search.get(DIMENSION_PARAM_NAME) ?? "")
+      .map((f) => {
+        if (f.dimension?.execution === dimension.execution && f.dimension?.invocation === dimension.invocation) {
+          if (!value) {
+            return undefined;
+          }
+          return new stat_filter.DimensionFilter({ dimension, value });
+        }
+        return f;
+      })
+      .filter((f) => f !== undefined);
+    this.setState({ dimensions: getDimensionParamFromFilters(filters) });
+  }
 
+  maybeRenderDimensionFilterInputs() {
+    const existingFilters = getFiltersFromDimensionParam(this.props.search.get(DIMENSION_PARAM_NAME) ?? "");
+    const pendingFilters = getFiltersFromDimensionParam(this.state.dimensions ?? "");
+    return existingFilters.map((f) => {
+      const dimension = f.dimension;
+      if (!dimension) {
+        return <></>;
+      }
+      const pendingFilter = pendingFilters.find(
+        (f) => f.dimension?.execution === dimension.execution && f.dimension?.invocation === dimension.invocation
+      );
+      return (
+        <>
+          <div className="option-group-title">{getDimensionName(dimension)}</div>
+          <div className="option-group-input">
+            <TextInput
+              placeholder={""}
+              value={pendingFilter?.value ?? ""}
+              onChange={(e) => this.updateDimensionFilters(dimension, e.target.value)}
+            />
+          </div>
+        </>
+      );
+    });
+  }
+
+  render() {
     const roleValue = this.props.search.get(ROLE_PARAM_NAME) || "";
     const statusValue = this.props.search.get(STATUS_PARAM_NAME) || "";
     const userValue = this.props.search.get(USER_PARAM_NAME) || "";
@@ -356,32 +338,10 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const isSorting = Boolean(
       this.props.search.get(SORT_BY_PARAM_NAME) || this.props.search.get(SORT_ORDER_PARAM_NAME)
     );
+    const dimensions = getFiltersFromDimensionParam(this.props.search.get(DIMENSION_PARAM_NAME) ?? "");
     const selectedRoles = new Set(parseRoleParam(roleValue));
     const selectedStatuses = new Set(parseStatusParam(statusValue));
-
-    const isDateRangeSelected =
-      this.props.search.get(LAST_N_DAYS_PARAM_NAME) ||
-      this.props.search.get(START_DATE_PARAM_NAME) ||
-      this.props.search.get(END_DATE_PARAM_NAME);
-
-    const presetDateRanges: PresetRange[] = LAST_N_DAYS_OPTIONS.map((n) => {
-      const now = new Date();
-      const start = moment(now)
-        .add(-n + 1, "days")
-        .startOf("day")
-        .toDate();
-      return {
-        label: formatDateRange(start, undefined, { now }),
-        isSelected: () =>
-          this.props.search.get(LAST_N_DAYS_PARAM_NAME) === String(n) ||
-          (!isDateRangeSelected && n === DEFAULT_LAST_N_DAYS),
-        range: () => ({
-          startDate: start,
-          endDate: now,
-          days: n,
-        }),
-      };
-    });
+    const genericFilterString = this.props.search.get(GENERIC_FILTER_PARAM_NAME) || "";
 
     const sortByValue: SortBy = (this.props.search.get(SORT_BY_PARAM_NAME) || DEFAULT_SORT_BY_VALUE) as SortBy;
     const sortOrderValue: SortOrder = (this.props.search.get(SORT_ORDER_PARAM_NAME) ||
@@ -410,6 +370,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             {selectedRoles.has("") && <span className="role-badge DEFAULT">Default</span>}
             {selectedRoles.has("CI") && <span className="role-badge CI">CI</span>}
             {selectedRoles.has("CI_RUNNER") && <span className="role-badge CI_RUNNER">Workflow</span>}
+            {selectedRoles.has("HOSTED_BAZEL") && <span className="role-badge HOSTED_BAZEL">Remote Bazel</span>}
             {userValue && (
               <span className="advanced-badge">
                 <User /> {userValue}
@@ -456,22 +417,126 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                 {compactDurationSec(Number(maximumDurationValue))}
               </span>
             )}
+            {genericFilterString && (
+              <span className="advanced-badge">
+                <Sparkles /> {genericFilterString}
+              </span>
+            )}
+            {dimensions.map(
+              (v) =>
+                v.dimension && (
+                  <span className="advanced-badge" title={getDimensionName(v.dimension)}>
+                    {getDimensionIcon(v.dimension)} {v.value}
+                  </span>
+                )
+            )}
           </OutlinedButton>
           <Popup
+            anchor="center-right"
             isOpen={this.state.isFilterMenuOpen}
             onRequestClose={this.onCloseFilterMenu.bind(this)}
             className="filter-menu-popup">
-            <div className="option-groups-row">
+            <form className="option-groups-row">
+              <div className="option-group">
+                <div className="option-group-title">User</div>
+                <div className="option-group-input">
+                  <TextInput
+                    placeholder={"e.g. tylerw"}
+                    value={this.state.user}
+                    onChange={(e) => this.setState({ user: e.target.value })}
+                  />
+                </div>
+                <div className="option-group-title">Repo</div>
+                <div className="option-group-input">
+                  <TextInput
+                    placeholder={"e.g. github.com/buildbuddy-io/buildbuddy"}
+                    value={this.state.repo}
+                    onChange={(e) => this.setState({ repo: e.target.value })}
+                  />
+                </div>
+                <div className="option-group-title">Branch</div>
+                <div className="option-group-input">
+                  <TextInput
+                    placeholder={"e.g. main"}
+                    value={this.state.branch}
+                    onChange={(e) => this.setState({ branch: e.target.value })}
+                  />
+                </div>
+                <div className="option-group-title">Commit</div>
+                <div className="option-group-input">
+                  <TextInput
+                    placeholder={"e.g. 115a0cdbe816b8cb80089dd200247752fef723fe"}
+                    value={this.state.commit}
+                    onChange={(e) => this.setState({ commit: e.target.value })}
+                  />
+                </div>
+                <div className="option-group-title">Host</div>
+                <div className="option-group-input">
+                  <TextInput
+                    placeholder={"e.g. lunchbox"}
+                    value={this.state.host}
+                    onChange={(e) => this.setState({ host: e.target.value })}
+                  />
+                </div>
+                <div className="option-group-title">Command</div>
+                <div className="option-group-input">
+                  <TextInput
+                    placeholder={"e.g. test"}
+                    value={this.state.command}
+                    onChange={(e) => this.setState({ command: e.target.value })}
+                  />
+                </div>
+
+                {capabilities.config.patternFilterEnabled && (
+                  <>
+                    <div className="option-group-title">Pattern</div>
+                    <div className="option-group-input">
+                      <TextInput
+                        placeholder={"e.g. //foo/..."}
+                        value={this.state.pattern}
+                        onChange={(e) => this.setState({ pattern: e.target.value })}
+                      />
+                    </div>
+                  </>
+                )}
+                {capabilities.config.tagsUiEnabled && (
+                  <>
+                    <div className="option-group-title">Tag</div>
+                    <div className="option-group-input">
+                      <TextInput
+                        placeholder={"e.g. coverage-build"}
+                        value={this.state.tag}
+                        onChange={(e) => this.setState({ tag: e.target.value })}
+                      />
+                    </div>
+                  </>
+                )}
+                {this.maybeRenderDimensionFilterInputs()}
+                {genericFilterString && (
+                  <>
+                    <div className="option-group-title">Advanced</div>
+                    <div className="option-group-input">
+                      <TextInput
+                        placeholder={"e.g., branch:main -command:test"}
+                        value={this.state.genericFilterString}
+                        onChange={(e) => this.setState({ genericFilterString: e.target.value })}
+                      />
+                    </div>
+                  </>
+                )}
+                <div className="option-group-input">
+                  <FilledButton onClick={this.handleFilterApplyClicked.bind(this)}>Apply</FilledButton>
+                </div>
+              </div>
               <div className="option-group">
                 <div className="option-group-title">Role</div>
                 <div className="option-group-options">
                   {this.renderRoleCheckbox("Default", "", selectedRoles)}
                   {this.renderRoleCheckbox("CI", "CI", selectedRoles)}
                   {this.renderRoleCheckbox("Workflow", "CI_RUNNER", selectedRoles)}
+                  {this.renderRoleCheckbox("Remote Bazel", "HOSTED_BAZEL", selectedRoles)}
                 </div>
-              </div>
-              <div className="option-group">
-                <div className="option-group-title">Status</div>
+                <div className="option-group-section-title">Status</div>
                 <div className="option-group-options">
                   {this.renderStatusCheckbox("Succeeded", invocation_status.OverallStatus.SUCCESS, selectedStatuses)}
                   {this.renderStatusCheckbox("Failed", invocation_status.OverallStatus.FAILURE, selectedStatuses)}
@@ -486,122 +551,35 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                     selectedStatuses
                   )}
                 </div>
-              </div>
-            </div>
-            <div
-              className="filter-menu-advanced-filter-toggle"
-              onClick={() => this.setState({ isAdvancedFilterOpen: !this.state.isAdvancedFilterOpen })}>
-              {this.state.isAdvancedFilterOpen ? "Hide advanced filters" : "Show advanced filters"}
-            </div>
-            {this.state.isAdvancedFilterOpen && (
-              <form className="option-groups-row">
-                <div className="option-group">
-                  <div className="option-group-title">User</div>
-                  <div className="option-group-input">
-                    <TextInput
-                      placeholder={"e.g. tylerw"}
-                      value={this.state.user}
-                      onChange={(e) => this.setState({ user: e.target.value })}
-                    />
-                  </div>
-                  <div className="option-group-title">Repo</div>
-                  <div className="option-group-input">
-                    <TextInput
-                      placeholder={"e.g. github.com/buildbuddy-io/buildbuddy"}
-                      value={this.state.repo}
-                      onChange={(e) => this.setState({ repo: e.target.value })}
-                    />
-                  </div>
-                  <div className="option-group-title">Branch</div>
-                  <div className="option-group-input">
-                    <TextInput
-                      placeholder={"e.g. main"}
-                      value={this.state.branch}
-                      onChange={(e) => this.setState({ branch: e.target.value })}
-                    />
-                  </div>
-                  <div className="option-group-title">Commit</div>
-                  <div className="option-group-input">
-                    <TextInput
-                      placeholder={"e.g. 115a0cdbe816b8cb80089dd200247752fef723fe"}
-                      value={this.state.commit}
-                      onChange={(e) => this.setState({ commit: e.target.value })}
-                    />
-                  </div>
-                  <div className="option-group-title">Host</div>
-                  <div className="option-group-input">
-                    <TextInput
-                      placeholder={"e.g. lunchbox"}
-                      value={this.state.host}
-                      onChange={(e) => this.setState({ host: e.target.value })}
-                    />
-                  </div>
-                  <div className="option-group-title">Command</div>
-                  <div className="option-group-input">
-                    <TextInput
-                      placeholder={"e.g. test"}
-                      value={this.state.command}
-                      onChange={(e) => this.setState({ command: e.target.value })}
-                    />
-                  </div>
-
-                  {capabilities.config.patternFilterEnabled && (
-                    <>
-                      <div className="option-group-title">Pattern</div>
-                      <div className="option-group-input">
-                        <TextInput
-                          placeholder={"e.g. //foo/..."}
-                          value={this.state.pattern}
-                          onChange={(e) => this.setState({ pattern: e.target.value })}
-                        />
-                      </div>
-                    </>
-                  )}
-                  {capabilities.config.tagsUiEnabled && (
-                    <>
-                      <div className="option-group-title">Tag</div>
-                      <div className="option-group-input">
-                        <TextInput
-                          placeholder={"e.g. coverage-build"}
-                          value={this.state.tag}
-                          onChange={(e) => this.setState({ tag: e.target.value })}
-                        />
-                      </div>
-                    </>
-                  )}
-                  <div className="option-group-title">Duration</div>
-                  <div className="option-group-input">
-                    <Slider
-                      value={[
-                        DURATION_SLIDER_VALUES.indexOf(this.state.minimumDuration || DURATION_SLIDER_MIN_VALUE),
-                        DURATION_SLIDER_VALUES.indexOf(this.state.maximumDuration || DURATION_SLIDER_MAX_VALUE),
-                      ]}
-                      renderThumb={(props, state) => (
-                        <div {...props}>
-                          <div className="slider-thumb-circle"></div>
-                          <div className="slider-thumb-value">
-                            {compactDurationSec(DURATION_SLIDER_VALUES[state.valueNow])}
-                          </div>
+                <div className="option-group-section-title">Duration</div>
+                <div className="option-group-input">
+                  <Slider
+                    value={[
+                      DURATION_SLIDER_VALUES.indexOf(this.state.minimumDuration || DURATION_SLIDER_MIN_VALUE),
+                      DURATION_SLIDER_VALUES.indexOf(this.state.maximumDuration || DURATION_SLIDER_MAX_VALUE),
+                    ]}
+                    renderThumb={(props, state) => (
+                      <div {...props}>
+                        <div className="slider-thumb-circle"></div>
+                        <div className="slider-thumb-value">
+                          {compactDurationSec(DURATION_SLIDER_VALUES[state.valueNow])}
                         </div>
-                      )}
-                      min={DURATION_SLIDER_MIN_INDEX}
-                      max={DURATION_SLIDER_MAX_INDEX}
-                      pearling
-                      minDistance={1}
-                      onChange={(e) =>
-                        this.setState({
-                          minimumDuration: DURATION_SLIDER_VALUES[e[0]],
-                          maximumDuration: DURATION_SLIDER_VALUES[e[1]],
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="option-group-input">
-                    <FilledButton onClick={this.handleFilterApplyClicked.bind(this)}>Apply</FilledButton>
-                  </div>
+                      </div>
+                    )}
+                    min={DURATION_SLIDER_MIN_INDEX}
+                    max={DURATION_SLIDER_MAX_INDEX}
+                    pearling
+                    minDistance={1}
+                    onChange={(e) =>
+                      this.setState({
+                        minimumDuration: DURATION_SLIDER_VALUES[e[0]],
+                        maximumDuration: DURATION_SLIDER_VALUES[e[1]],
+                      })
+                    }
+                  />
                 </div>
-              </form>
-            )}
+              </div>
+            </form>
           </Popup>
         </div>
         <div className="popup-wrapper">
@@ -650,38 +628,27 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             </div>
           </Popup>
         </div>
-        <div className="popup-wrapper">
-          <OutlinedButton className="date-picker-button icon-text-button" onClick={this.onOpenDatePicker.bind(this)}>
-            <Calendar className="icon" />
-            <span>{formatDateRange(startDate, endDate)}</span>
-          </OutlinedButton>
-          <Popup
-            isOpen={this.state.isDatePickerOpen}
-            onRequestClose={this.onCloseDatePicker.bind(this)}
-            className="date-picker-popup">
-            <DateRangePicker
-              // Just for rendering's sake, treat undefined endDate as "now"--this has
-              // no impact on the user's actual selection.
-              ranges={[{ startDate, endDate: endDate ?? new Date(), key: "selection" }]}
-              onChange={this.onDateChange.bind(this)}
-              // When showing "All time" we don't want to set the currently
-              // visible month to the Unix epoch... so always show the end
-              // date when initially rendering the component
-              shownDate={endDate}
-              // We want our `CustomDateRange` type here, which is compatible
-              // with the `StaticRange` type, so the cast to `any` is OK here.
-              staticRanges={presetDateRanges as any}
-              // Disable textbox inputs, like "days from today", or "days until today".
-              inputRanges={[]}
-              editableDateInputs
-              color="#212121"
-              rangeColors={["#212121"]}
-              startDatePlaceholder="Start date"
-              endDatePlaceholder="End date"
-            />
-          </Popup>
-        </div>
+        <DatePickerButton search={this.props.search}></DatePickerButton>
       </div>
     );
   }
+}
+
+function getDimensionIcon(f: stat_filter.Dimension) {
+  if (f.execution) {
+    switch (f.execution) {
+      case stat_filter.ExecutionDimensionType.WORKER_EXECUTION_DIMENSION:
+        return <Cloud />;
+      case stat_filter.ExecutionDimensionType.TARGET_LABEL_EXECUTION_DIMENSION:
+        return <Target />;
+      case stat_filter.ExecutionDimensionType.ACTION_MNEMONIC_EXECUTION_DIMENSION:
+        return <CircleDot />;
+    }
+  } else if (f.invocation) {
+    switch (f.invocation) {
+      case stat_filter.InvocationDimensionType.BRANCH_INVOCATION_DIMENSION:
+        return <GitBranch />;
+    }
+  }
+  return undefined;
 }

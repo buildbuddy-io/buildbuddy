@@ -6,14 +6,14 @@
 .code-search .result-title-bar {
   display: flex;
   align-items: center;
-  background: #e1f5fe;
+  background: var(--color-search-result-header-bg);
   padding: 2px 32px;
 }
 
 .code-search .repo-name {
   font-size: 14px;
   margin: 0 12px;
-  color: #757575;
+  color: var(--color-search-muted-text);
 }
 
 .code-search .filename {
@@ -21,8 +21,12 @@
   font-weight: 600;
 }
 
+.code-search .filename:hover {
+  text-decoration: underline;
+}
+
 .code-search .snippet {
-  border-bottom: solid #e5e5e5 1px;
+  border-bottom: solid var(--color-search-snippet-border) 1px;
   padding: 2px 32px;
 }
 
@@ -33,6 +37,7 @@
 .code-search .title-bar {
   display: flex;
   align-items: center;
+  gap: 24px;
 }
 
 .code-search .search-input {
@@ -52,7 +57,7 @@
 }
 
 .code-search .highlight {
-  background-color: #64ffda;
+  background-color: var(--color-search-highlight-bg);
 }
 
 .code-search .cs-title {
@@ -64,4 +69,87 @@
 .code-search .form-bs {
   margin: 0;
   margin-block-end: 0;
+  display: contents;
+}
+
+.code-search .searchbox {
+  display: block;
+  width: 400px;
+  max-width: 100%;
+  height: 40px;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 16px;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--color-search-input-border);
+  border-radius: 2px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+}
+
+.code-search .no-results {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.code-search .icon {
+  width: 180px;
+  height: 180px;
+}
+
+.code-search .circle {
+  width: 400px;
+  height: 400px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.code-search ul {
+  list-style: initial;
+  margin: 16px 0;
+  list-style-type: none;
+}
+
+.code-search ul li {
+  margin-bottom: 16px;
+}
+
+.code-search .code-line:hover {
+  background: var(--color-search-item-hover-bg);
+}
+
+.code-search .more-button {
+  background: var(--color-search-more-button-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.code-search .more-button svg {
+  width: 12px;
+  height: 12px;
+}
+
+.code-search .more-button:hover {
+  background: var(--color-search-item-hover-bg);
+}
+
+.code-search .statsForNerds {
+  color: var(--color-text-tertiary);
+  font-size: 0.8em;
+  padding: 10px 10px 10px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
 }

@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+import "proto/git.proto";
+import "proto/search.proto";
+
+message IdealResult {
+  // The owner of the repo in which the match was found.
+  string owner = 1;
+
+  // The url of the repo in which the match was found.
+  string repo = 2;
+
+  // The name of the file in which the match was found.
+  string filename = 3;
+
+  // The expected number of matches in the file.
+  int32 match_count = 4;
+
+  // The line numbers expected in the result snippets.
+  // Currently not used for scoring.
+  repeated int32 snippet_line_numbers = 5;
+
+  // A relative relevance for this result. A match with high relevance early in
+  // the result set will contribute more to the score than a match with high
+  // relevance later in the result set.
+  float relevance = 6;
+
+  // Not used programatically, but to aid annotation
+  string notes = 7;
+}
+
+// A single test case.
+message Case {
+  // The query to run
+  search.Query query = 1;
+
+  // The "ideal results", representing the subjectively best result ranking for
+  // the given query. Note that scoring uses Discounted Cumulative Gain (DCG)
+  // (https://en.wikipedia.org/wiki/Discounted_cumulative_gain).
+  // This means that ideal_results does not necessarily need to list all
+  // possible matches - extra actual results are not penalized by default. This
+  // is important when trying to score a query with many results - ideal_results
+  // may only contain the first few expected matches, and if the actual results
+  // contain those matches high in the result set, the query will score well
+  // without the need to list out all expected matches when constructing
+  // ideal_results.
+  //
+  // The order of ideal_results is irrelevant to scoring, the ideal results are
+  // ordered by IdealResult.relevance when computing normalized DCG.
+  repeated IdealResult ideal_results = 2;
+
+  // If true, actual results that don't appear in ideal_results are penalized.
+  // This should be set if the expected result set is small and fully specified
+  // in ideal_results. This is useful for queries that should return a very
+  // small number of results - setting this to true will make those queries
+  // score lower if they include false positives, even if those false positives
+  // are at the end of the results. Note that DCG does not typically incorporate
+  // this concept, because it is often used in search domains where there are
+  // virtually always large numbers of results (e.g. web search). Codesearch, on
+  // the other hand, values precision much more highly in some situations.
+  bool penalize_unmatched = 3;
+}
+
+message Repo {
+  // repo.repo_url is required
+  git.GitRepo repo = 1;
+
+  // repo_state.commit_sha is required
+  git.RepoState repo_state = 2;
+}
+
+// A Suite represents a suite of quality tests.
+// Running a suite would involve indexing the given repos, then running and
+// scoring each test case.
+message Suite {
+  repeated Repo repos = 1;
+  repeated Case cases = 2;
+}

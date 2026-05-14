@@ -2,11 +2,8 @@
 slug: introducing-rules_xcodeproj-1-0
 title: "Introducing rules_xcodeproj 1.0"
 description: How we got here and what’s next.
-author: Brentley Jones
-author_title: "Developer Evangelist @ BuildBuddy"
+authors: brentley
 date: 2023-02-06:9:00:00
-author_url: https://brentleyjones.com
-author_image_url: https://avatars.githubusercontent.com/u/158658?v=4
 image: /img/rules_xcodeproj_1_0.png
 tags: [rules_xcodeproj]
 ---

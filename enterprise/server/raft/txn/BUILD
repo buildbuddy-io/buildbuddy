@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "txn",
     srcs = ["txn.go"],
@@ -8,14 +10,15 @@ go_library(
     deps = [
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/header",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",
-        "//enterprise/server/raft/registry",
         "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
-        "//proto:raft_service_go_proto",
+        "//server/metrics",
         "//server/util/log",
         "//server/util/proto",
+        "//server/util/retry",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
     ],
@@ -24,33 +27,23 @@ go_library(
 go_test(
     name = "txn_test",
     srcs = ["txn_test.go"],
+    exec_properties = {
+        "test.EstimatedComputeUnits": "8",
+        "test.workload-isolation-type": "firecracker",
+    },
+    tags = ["block-network"],
     deps = [
         ":txn",
-        "//enterprise/server/raft/bringup",
-        "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/keys",
-        "//enterprise/server/raft/listener",
         "//enterprise/server/raft/logger",
-        "//enterprise/server/raft/rangecache",
         "//enterprise/server/raft/rbuilder",
-        "//enterprise/server/raft/registry",
         "//enterprise/server/raft/sender",
-        "//enterprise/server/raft/store",
-        "//enterprise/server/util/pebble",
+        "//enterprise/server/raft/testutil",
         "//proto:raft_go_proto",
-        "//server/gossip",
-        "//server/testutil/testenv",
-        "//server/testutil/testfs",
-        "//server/testutil/testport",
-        "//server/util/disk",
+        "//server/util/proto",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
-        "@com_github_lni_dragonboat_v4//:dragonboat",
-        "@com_github_lni_dragonboat_v4//config",
-        "@com_github_lni_dragonboat_v4//raftio",
         "@com_github_stretchr_testify//require",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

@@ -1,5 +1,10 @@
 syntax = "proto3";
 
+import "kythe/proto/common.proto";
+import "kythe/proto/filetree.proto";
+import "kythe/proto/graph.proto";
+import "kythe/proto/xref.proto";
+
 import "proto/context.proto";
 
 package search;
@@ -13,9 +18,16 @@ message Snippet {
   string lines = 1;
 }
 
+// Next tag: 8
 message Result {
   // The repository this result came from.
+  string owner = 6;
+
+  // The repository this result came from.
   string repo = 1;
+
+  // The commit sha of the file.
+  string sha = 5;
 
   // The name of the file the match was found in.
   string filename = 2;
@@ -25,16 +37,140 @@ message Result {
 
   // Snippets that can be displayed showing matching context.
   repeated Snippet snippets = 4;
+
+  // Full file content.
+  bytes content = 7;
 }
 
 message SearchRequest {
   context.RequestContext request_context = 1;
 
   Query query = 2;
+
+  // Required. The search namespace to operate in. Namespaces are logically
+  // distinct domains. Documents indexed in one namespace are not visible from
+  // another. The search server does not itself apply restrictions on who can
+  // query -- so the application should enforce separation by putting users into
+  // different namespaces.
+  //
+  // Ex. "gr12345" or "anon", or "public" or "foobarbaz".
+  string namespace = 3;
+
+  // The maximum number of results to send back.
+  int32 num_results = 4;
+
+  // The offset to start sending results back from.
+  int32 offset = 5;
+
+  // Include the file content in the response.
+  bool include_content = 6;
+}
+
+message ParsedQuery {
+  // raw query is the string entered by the user.
+  // Ex. "case:y lang:java System.out.println\(.*"
+  string raw_query = 1;
+
+  // parsed_query is the raw_query with all atoms extracted. For example, the
+  // parsed query, given the raw query above, would be:
+  // Ex. "System.out.println\(.*"
+  string parsed_query = 2;
+
+  // squery is the s-expression query evaluated against the index along with the
+  // parsed query.
+  // Ex. (:and (:eq * \"_ca\") (:eq * \"ach\") (:eq * \"bbl\"))
+  string squery = 3;
+}
+
+message Metric {
+  string name = 1;
+  int64 value = 2;
+}
+
+message PerformanceMetrics {
+  repeated Metric metrics = 1;
 }
 
 message SearchResponse {
   context.ResponseContext response_context = 1;
 
   repeated Result results = 2;
+
+  ParsedQuery parsed_query = 3;
+
+  PerformanceMetrics performance_metrics = 4;
+}
+
+// "Extended" xrefs are cross-references that are needed by the code browser UI,
+// but that are not available via a single kythe CrossReferences request. The
+// returned data requires navigating the annotation graph to find additional
+// nodes and fetch their cross-references. This request/reply are intended to
+// provide the data needed to populate the "References" panel in the UI.
+message ExtendedXrefsRequest {
+  repeated string tickets = 1;
+}
+
+// See https://kythe.io/docs/schema/ for Kythe schema details.
+message ExtendedXrefsReply {
+  // Definitions of the requested ticket
+  repeated kythe.proto.CrossReferencesReply.RelatedAnchor definitions = 1;
+
+  // Overrides of the requested ticket.
+  // See /kythe/edge/overrides[/transitive]
+  repeated kythe.proto.CrossReferencesReply.RelatedAnchor overrides = 2;
+
+  // Places where the requested ticket is overridden. The inverse of
+  // `overrides`. See /kythe/edge/overrides[/transitive]
+  repeated kythe.proto.CrossReferencesReply.RelatedAnchor overridden_by = 3;
+
+  // References to entities which the requested ticket extends.
+  // See /kythe/edge/extends and /kythe/edge/satisfies.
+  repeated kythe.proto.CrossReferencesReply.RelatedAnchor extends = 4;
+
+  // References to entities which extend the requested ticket. The inverse of
+  // `extends`. See /kythe/edge/extends and /kythe/edge/satisfies.
+  repeated kythe.proto.CrossReferencesReply.RelatedAnchor extended_by = 5;
+
+  // Extended references to the requested ticket. This will include references
+  // to super/sub-classes and overridden/overriding methods.
+  repeated kythe.proto.CrossReferencesReply.RelatedAnchor references = 6;
+  repeated kythe.proto.CrossReferencesReply.RelatedAnchor generated_by = 7;
+}
+
+message ExtendedDocumentationRequest {
+  string ticket = 1;
+}
+
+message ExtendedDocumentationReply {
+  string docstring = 1;
+  kythe.proto.common.NodeInfo node_info = 2;
+  kythe.proto.CrossReferencesReply.RelatedAnchor definition = 3;
+}
+
+message KytheRequest {
+  context.RequestContext request_context = 1;
+
+  oneof value {
+    kythe.proto.NodesRequest nodes_request = 2;
+    kythe.proto.DecorationsRequest decorations_request = 3;
+    kythe.proto.CrossReferencesRequest cross_references_request = 4;
+    kythe.proto.CorpusRootsRequest corpus_roots_request = 5;
+    kythe.proto.DirectoryRequest directory_request = 6;
+    ExtendedXrefsRequest extended_xrefs_request = 7;
+    ExtendedDocumentationRequest docs_request = 8;
+  }
+}
+
+message KytheResponse {
+  context.ResponseContext response_context = 1;
+
+  oneof value {
+    kythe.proto.NodesReply nodes_reply = 2;
+    kythe.proto.DecorationsReply decorations_reply = 3;
+    kythe.proto.CrossReferencesReply cross_references_reply = 4;
+    kythe.proto.CorpusRootsReply corpus_roots_reply = 5;
+    kythe.proto.DirectoryReply directory_reply = 6;
+    ExtendedXrefsReply extended_xrefs_reply = 7;
+    ExtendedDocumentationReply docs_reply = 8;
+  }
 }

@@ -1,10 +1,10 @@
+import { Boxes, ChevronDown } from "lucide-react";
 import React from "react";
 import { OutlinedButton } from "../../../app/components/button/button";
 import { OutlinedButtonGroup } from "../../../app/components/button/button_group";
 import Menu, { MenuItem } from "../../../app/components/menu/menu";
 import Popup, { PopupContainer } from "../../../app/components/popup/popup";
 import Spinner from "../../../app/components/spinner/spinner";
-import { Boxes, ChevronDown } from "lucide-react";
 
 export interface CodeBuildButtonProps {
   onCommandClicked: (args: string) => void;
@@ -82,7 +82,7 @@ export default class CodeBuildButton extends React.Component<CodeBuildButtonProp
                 {this.getConfig()}
               </MenuItem>
             ))}
-            <MenuItem onClick={this.handleDefaultConfigClicked.bind(this, undefined)}>Set default config...</MenuItem>
+            <MenuItem onClick={this.handleDefaultConfigClicked.bind(this)}>Set default config...</MenuItem>
             <MenuItem onClick={this.handleCustomClicked.bind(this, this.props.commands[0])}>Edit...</MenuItem>
             <MenuItem onClick={this.handleCustomClicked.bind(this, "")}>New...</MenuItem>
           </Menu>

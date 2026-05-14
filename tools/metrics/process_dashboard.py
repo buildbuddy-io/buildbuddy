@@ -7,6 +7,7 @@ reverting changes which are most likely unintended.
 
 import argparse
 import collections
+import hashlib
 import json
 import sys
 
@@ -18,7 +19,7 @@ DASHBOARD_REFRESH_INTERVAL = "1m"
 
 
 def main(args):
-    dashboard = json.load(sys.stdin)["dashboard"]
+    dashboard = json.load(sys.stdin)
 
     # Remove volatile versioning info since we use Git for versioning.
     if "version" in dashboard:
@@ -55,6 +56,11 @@ def main(args):
     # Note: ensure_ascii=False keeps strings like "µs" as-is.
     json.dump(dashboard, sys.stdout, indent=2, ensure_ascii=False)
     sys.stdout.write("\n")
+
+def sha256(text):
+    h = hashlib.sha256()
+    h.update(text.encode('utf-8'))
+    return h.hexdigest()
 
 
 def get_file_tag(dash):

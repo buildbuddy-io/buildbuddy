@@ -126,6 +126,19 @@ func TestExpansion(t *testing.T) {
 		require.Equal(t, "BAR", *secretFlag)
 	}
 
+	// Basic secret expansion w/o config file.
+	{
+		flags := replaceFlagsForTesting(t)
+		secretFlag := flag.String("secret_flag", "", "", flag.Secret)
+		flags.Set("secret_flag", "${SECRET:FOO}")
+		config.SecretProvider = &fakeSecretProvider{
+			secrets: map[string]string{"FOO": "BAR"},
+		}
+		err := config.Load()
+		require.NoError(t, err)
+		require.Equal(t, "BAR", *secretFlag)
+	}
+
 	// Basic secret expansion via flag.
 	{
 		flags := replaceFlagsForTesting(t)
@@ -225,6 +238,20 @@ secret_struct_slice_flag:
 		require.Equal(t, []secretHolder{{Secret: "FIRST\nSECRET"}, {Secret: "SECOND\nSECRET"}}, *secretStructSliceFlag)
 	}
 
+	// Secrets inside a struct.
+	{
+		replaceFlagsForTesting(t)
+		config.SecretProvider = &fakeSecretProvider{
+			secrets: map[string]string{"FOO": "FIRST\nSECRET"},
+		}
+		secretStructFlag := flag.Struct("secret_struct_flag", secretHolder{}, "")
+		err := config.LoadFromData(strings.TrimSpace(`
+secret_struct_flag: 
+  secret: ${SECRET:FOO}
+	`))
+		require.NoError(t, err)
+		require.Equal(t, secretHolder{Secret: "FIRST\nSECRET"}, *secretStructFlag)
+	}
 }
 
 func TestLoadFromData(t *testing.T) {

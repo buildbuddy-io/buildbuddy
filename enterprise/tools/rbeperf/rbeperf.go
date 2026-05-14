@@ -11,10 +11,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/csv"
 	"flag"
 	"fmt"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -297,7 +297,7 @@ func prepareCommand(ctx context.Context, rbeClient *rbeclient.Client, byteStream
 		Arguments: commandArgs,
 		Platform:  &repb.Platform{Properties: platformProps},
 	}
-	cmd, err := rbeClient.PrepareCommand(ctx, *remoteInstanceName, name, inputRootDigest, command, 0 /*=timeout*/)
+	cmd, err := rbeClient.PrepareCommand(ctx, *remoteInstanceName, name, inputRootDigest, command, 0 /*=timeout*/, false /*=doNotCache*/)
 	if err != nil {
 		return nil, status.UnknownErrorf("could not prepare command %q: %v", name, err)
 	}
@@ -808,8 +808,6 @@ func (c *ClientSource) GetByteStreamClient() bspb.ByteStreamClient {
 
 func main() {
 	flag.Parse()
-	rand.Seed(time.Now().UnixNano())
-
 	if *verbose {
 		*log.LogLevel = "debug"
 	}

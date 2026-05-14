@@ -1,23 +1,26 @@
-import React from "react";
-import format from "../format/format";
-import InvocationModel from "./invocation_model";
-import { Download, Info, MoreVertical } from "lucide-react";
-import { build } from "../../proto/remote_execution_ts_proto";
+import {
+  ArrowRight,
+  Copy,
+  Download,
+  File,
+  FileQuestion,
+  FileSymlink,
+  Folder,
+  History,
+  Info,
+  MoreVertical,
+} from "lucide-react";
+import React, { ReactElement } from "react";
+import { cache } from "../../proto/cache_ts_proto";
+import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
-import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
-import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
-import rpcService from "../service/rpc_service";
-import DigestComponent from "../components/digest/digest";
-import { TextLink } from "../components/link/link";
-import TerminalComponent from "../terminal/terminal";
-import { parseActionDigest, digestToString } from "../util/cache";
-import UserPreferences from "../preferences/preferences";
-import alert_service from "../alert/alert_service";
-import Popup from "../components/popup/popup";
-import Menu, { MenuItem } from "../components/menu/menu";
+import { build } from "../../proto/remote_execution_ts_proto";
+import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { workflow } from "../../proto/workflow_ts_proto";
-import errorService from "../errors/error_service";
+import alert_service from "../alert/alert_service";
+import capabilities from "../capabilities/capabilities";
+import Button, { OutlinedButton } from "../components/button/button";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -25,11 +28,35 @@ import Dialog, {
   DialogHeader,
   DialogTitle,
 } from "../components/dialog/dialog";
-import Button, { OutlinedButton } from "../components/button/button";
+import DigestComponent from "../components/digest/digest";
+import { TextLink } from "../components/link/link";
+import Menu, { MenuItem } from "../components/menu/menu";
 import Modal from "../components/modal/modal";
+import Popup from "../components/popup/popup";
+import Spinner from "../components/spinner/spinner";
+import errorService from "../errors/error_service";
+import format, { durationUsec } from "../format/format";
+import UserPreferences from "../preferences/preferences";
+import router from "../router/router";
+import { Cancelable, CancelablePromise, default as rpcService } from "../service/rpc_service";
+import TerminalComponent from "../terminal/terminal";
+import { Profile, readProfile } from "../trace/trace_events";
+import TraceViewer from "../trace/trace_viewer";
+import { digestToString, parseActionDigest } from "../util/cache";
+import { copyToClipboard } from "../util/clipboard";
+import { BuildBuddyError, HTTPStatusError } from "../util/errors";
+import { MessageClass, timestampToDate } from "../util/proto";
+import { getErrorReason } from "../util/rpc";
+import { quote } from "../util/shlex";
+import ActionCompareButtonComponent from "./action_compare_button";
+import { ExecuteOperation, executionStatusLabel, waitExecution } from "./execution_status";
+import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
+import InvocationModel from "./invocation_model";
 
-type Timestamp = google_timestamp.protobuf.Timestamp;
+type IDigest = build.bazel.remote.execution.v2.IDigest;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
+
+const executionDownloadsPageSize = 100;
 
 interface Props {
   model: InvocationModel;
@@ -40,6 +67,11 @@ interface Props {
 interface State {
   action?: build.bazel.remote.execution.v2.Action;
   loadingAction: boolean;
+  /**
+   * The execution fetched from the `getExecution` API.
+   * At minimum this should include the basic metadata that we store in the DB.
+   */
+  execution?: execution_stats.Execution | null;
   executeResponse?: build.bazel.remote.execution.v2.ExecuteResponse;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
   // The first entry in the tuple is the size, the second is the number of files.
@@ -47,14 +79,21 @@ interface State {
   command?: build.bazel.remote.execution.v2.Command;
   error?: string;
   inputRoot?: build.bazel.remote.execution.v2.Directory;
-  inputDirs: InputNode[];
+  inputNodes: TreeNode[];
   isMenuOpen: boolean;
   showInvalidateSnapshotModal: boolean;
+  showSnapshotMenu: boolean;
   treeShaToExpanded: Map<string, boolean>;
-  treeShaToChildrenMap: Map<string, InputNode[]>;
+  treeShaToChildrenMap: Map<string, TreeNode[]>;
   stderr?: string;
   stdout?: string;
   serverLogs?: ServerLog[];
+  lastOperation?: ExecuteOperation;
+  profileLoading: boolean;
+  profile?: Profile;
+  executionDownloads: cache.ExecutionDownload[];
+  executionDownloadsLoading: boolean;
+  executionDownloadsNextPageToken: string;
 }
 
 interface ServerLog {
@@ -65,36 +104,47 @@ interface ServerLog {
 export default class InvocationActionCardComponent extends React.Component<Props, State> {
   state: State = {
     treeShaToExpanded: new Map<string, boolean>(),
-    treeShaToChildrenMap: new Map<string, InputNode[]>(),
+    treeShaToChildrenMap: new Map<string, TreeNode[]>(),
     treeShaToTotalSizeMap: new Map<string, [Number, Number]>(),
     serverLogs: [],
-    inputDirs: [],
+    inputNodes: [],
     loadingAction: true,
     isMenuOpen: false,
     showInvalidateSnapshotModal: false,
+    showSnapshotMenu: false,
+    profileLoading: false,
+    executionDownloads: [],
+    executionDownloadsLoading: false,
+    executionDownloadsNextPageToken: "",
   };
+
+  private executionDownloadsContainerRef = React.createRef<HTMLDivElement>();
 
   componentDidMount() {
     this.fetchAction();
-    // Prefer executeResponseDigest since it is always specific to the current
-    // invocation (later executions of the same action digest don't overwrite
-    // it) and also has additional useful info such as gRPC status.
-    if (this.props.search.has("executeResponseDigest")) {
-      this.fetchExecuteResponse();
-    } else {
-      this.fetchActionResult();
+    this.fetchExecuteResponseOrActionResult();
+    if (this.getExecutionId()) {
+      this.fetchExecutionDownloads("");
     }
   }
 
-  componentDidUpdate(prevProps: Readonly<Props>, prevState: Readonly<State>, snapshot?: any): void {
-    if (prevProps.search.get("actionDigest") != this.props.search.get("actionDigest")) {
+  componentDidUpdate(prevProps: Readonly<Props>, prevState: Readonly<State>): void {
+    if (prevProps.search.get("actionDigest") !== this.props.search.get("actionDigest")) {
       this.fetchAction();
-      if (!this.props.search.has("executeResponseDigest")) {
-        this.fetchActionResult();
-      }
+      this.fetchExecuteResponseOrActionResult();
+      this.fetchExecutionDownloads("");
+      return;
     }
-    if (prevProps.search.get("executeResponseDigest") != this.props.search.get("executeResponseDigest")) {
-      this.fetchExecuteResponse();
+    if (prevProps.search.get("executeResponseDigest") !== this.props.search.get("executeResponseDigest")) {
+      this.fetchExecuteResponseOrActionResult();
+      this.fetchExecutionDownloads("");
+      return;
+    }
+
+    const prevExecutionId = prevProps.search.get("executionId") || prevState.execution?.executionId;
+    const executionId = this.getExecutionId();
+    if (prevExecutionId !== executionId) {
+      this.fetchExecutionDownloads("");
     }
   }
 
@@ -106,6 +156,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
       return;
     }
     const digest = parseActionDigest(digestParam);
+    if (!digest) {
+      alert_service.error("Missing action digest URL param");
+      return;
+    }
     const actionUrl = this.props.model.getBytestreamURL(digest);
     rpcService
       .fetchBytestreamFile(actionUrl, this.props.model.getInvocationId(), "arraybuffer")
@@ -122,9 +176,56 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .finally(() => this.setState({ loadingAction: false }));
   }
 
+  private operationStream?: Cancelable;
+
+  streamExecution() {
+    if (!capabilities.config.streamingHttpEnabled) return;
+
+    this.operationStream?.cancel();
+    this.setState({ lastOperation: undefined });
+    const executionId = this.props.search.get("executionId");
+    if (!executionId) return;
+
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
+
+    this.operationStream = waitExecution(service, executionId, {
+      next: (operation) => {
+        // If the execution response is unavailable due to the pubsub channel
+        // having gone away, then we can't rely on the execution stream for the
+        // latest status, so just cancel the stream.
+        if (operation.response?.status && getErrorReason(operation.response.status) == "PUBSUB_CHANNEL_ERROR") {
+          this.operationStream?.cancel();
+          return;
+        }
+
+        this.setState({ lastOperation: operation });
+        if (operation.response && !this.state.executeResponse) {
+          this.setState({ executeResponse: operation.response });
+          console.log(operation.response);
+        }
+        if (operation.response?.result) {
+          this.setState({ actionResult: operation.response.result });
+        }
+        // Fetch the full response from cache, since it contains some additional
+        // metadata not sent on the stream. Disallow stream fallback since at
+        // this point we're already in the stream.
+        if (operation.done && !this.state.actionResult) {
+          this.fetchExecuteResponseOrActionResult({ streamFallback: false });
+        }
+      },
+      error: (error) => {
+        // TODO: better error handling
+        console.log(error);
+      },
+      complete: () => {},
+    });
+  }
+
   fetchDirectorySizes(rootDigest: build.bazel.remote.execution.v2.Digest) {
     const remoteInstanceName = this.props.model.optionsMap.get("remote_instance_name") || undefined;
-    rpcService.service
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_cache"));
+
+    service
       .getTreeDirectorySizes({
         rootDigest: rootDigest,
         instanceName: remoteInstanceName,
@@ -137,7 +238,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         });
         this.setState({ treeShaToTotalSizeMap: sizes });
       })
-      .catch((e) => {
+      .catch(() => {
         this.setState({ treeShaToTotalSizeMap: new Map<string, [Number, Number]>() });
       });
   }
@@ -148,24 +249,32 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .fetchBytestreamFile(inputRootURL, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
         let inputRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
-        let inputDirs: InputNode[] = inputRoot.directories.map((node) => ({
+        let inputFiles: TreeNode[] = inputRoot.files.map((node) => ({
+          obj: node,
+          type: "file",
+        }));
+        let inputDirectories: TreeNode[] = inputRoot.directories.map((node) => ({
           obj: node,
           type: "dir",
         }));
-        this.setState({ inputRoot, inputDirs });
+        let inputSymlinks: TreeNode[] = inputRoot.symlinks.map((node) => ({
+          obj: node,
+          type: "symlink",
+        }));
+        const inputNodes = [...inputDirectories, ...inputFiles, ...inputSymlinks];
+        this.setState({ inputRoot, inputNodes });
       })
       .catch((e) => console.error("Failed to fetch input root:", e));
   }
 
-  fetchActionResult() {
-    let digestParam = this.props.search.get("actionResultDigest") ?? this.props.search.get("actionDigest");
-    if (!digestParam) {
-      alert_service.error("Missing action digest in URL");
-      return;
-    }
-    const digest = parseActionDigest(digestParam);
-    const actionResultUrl = this.props.model.getActionCacheURL(digest);
-    rpcService
+  /**
+   * Fetches the latest ActionResult from AC as a fallback in case we couldn't
+   * locate the ExecuteResponse that was returned for this particular
+   * invocation.
+   */
+  fetchActionResult(actionDigest: IDigest) {
+    const actionResultUrl = this.props.model.getActionCacheURL(actionDigest);
+    this.actionResultRPC = rpcService
       .fetchBytestreamFile(actionResultUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
         const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer));
@@ -173,20 +282,133 @@ export default class InvocationActionCardComponent extends React.Component<Props
         this.fetchStdout(actionResult);
         this.fetchStderr(actionResult);
       })
-      .catch((e) => console.error("Failed to fetch action result:", e));
+      .catch((e) => {
+        const error = BuildBuddyError.parse(e);
+        if (error.code !== "NotFound") {
+          console.error("Error during AC fallback:", e);
+          // Optionally handle other non-NotFound errors from AC fetch.
+        } else {
+          console.debug("Action result not found in AC.");
+        }
+      });
   }
 
-  fetchExecuteResponse() {
-    this.setState({ executeResponse: undefined });
-    const digestParam = this.props.search.get("executeResponseDigest");
-    if (!digestParam) {
-      alert_service.error("Missing execute response digest in URL");
+  private executeResponseRPC?: CancelablePromise<build.bazel.remote.execution.v2.ExecuteResponse | null>;
+  private executionRPC?: CancelablePromise<execution_stats.Execution | null>;
+  private actionResultRPC?: Cancelable;
+  private stdoutRPC?: Cancelable;
+  private stderrRPC?: Cancelable;
+  private serverLogsRPCs?: Cancelable[];
+  private profileRPC?: Cancelable;
+
+  fetchExecuteResponseOrActionResult({ streamFallback = true } = {}) {
+    this.executeResponseRPC?.cancel();
+    this.executionRPC?.cancel();
+    this.actionResultRPC?.cancel();
+    this.stdoutRPC?.cancel();
+    this.stderrRPC?.cancel();
+    this.serverLogsRPCs?.forEach((rpc) => rpc.cancel());
+    this.profileRPC?.cancel();
+
+    this.setState({
+      executeResponse: undefined,
+      execution: undefined,
+      actionResult: undefined,
+      stdout: undefined,
+      stderr: undefined,
+      serverLogs: undefined,
+      profile: undefined,
+    });
+
+    const actionDigestParam = this.props.search.get("actionDigest");
+    if (!actionDigestParam) {
+      alert_service.error("Missing action digest in URL");
       return;
     }
-    const digest = parseActionDigest(digestParam);
-    rpcService
+
+    const executeResponseDigestParam = this.props.search.get("executeResponseDigest");
+    if (executeResponseDigestParam) {
+      const executeResponseDigest = parseActionDigest(executeResponseDigestParam);
+      if (!executeResponseDigest) {
+        alert_service.error("Invalid execute response digest in URL");
+        return;
+      }
+      // TODO: once all servers support executionId filtering, request
+      // inlineExecuteResponse from the server instead of fetching the
+      // ExecuteResponse separately on the client.
+      this.fetchExecuteResponseByDigest(executeResponseDigest);
+      // If we have an execution ID, also fetch the execution metadata from the DB.
+      const executionId = this.getExecutionId();
+      if (executionId) {
+        this.fetchExecution(executionId);
+      }
+    } else {
+      const actionDigest = parseActionDigest(actionDigestParam);
+      if (!actionDigest) {
+        alert_service.error("Missing action digest in URL");
+        return;
+      }
+      // If we have an execution ID, it means that this was certainly an RBE action
+      // and we can fetch the ExecuteResponse directly by action digest.
+      //
+      // If we don't have an execution ID, we can fall back to fetching the
+      // ActionResult from the action cache.
+      //
+      // TODO: we should display a warning if we fetched the ActionResult from AC,
+      // since the AC entry could potentially be from a newer invocation, not the
+      // current one we're looking at, which is probably confusing.
+      this.getExecutionId()
+        ? this.fetchExecuteResponseByActionDigest(actionDigest)
+        : this.fetchActionResult(actionDigest);
+    }
+
+    if (!this.executeResponseRPC) {
+      return;
+    }
+
+    let executionFound = false;
+    this.executeResponseRPC
+      .then((executeResponse) => {
+        if (!executeResponse) {
+          return;
+        }
+        // If we found an execution, we can cancel the direct AC fetch.
+        this.actionResultRPC?.cancel();
+        executionFound = true;
+        this.setState({ executeResponse });
+        if (executeResponse.result) {
+          const actionResult = executeResponse.result;
+          this.setState({ actionResult });
+          this.fetchStdout(actionResult);
+          this.fetchStderr(actionResult);
+          this.fetchServerLogs(executeResponse);
+          const executionId = this.getExecutionId();
+          if (executionId) {
+            this.fetchProfile(executionId);
+          }
+        }
+      })
+      .catch((e) => {
+        const error = BuildBuddyError.parse(e);
+        if (error.code === "NotFound") {
+          return;
+        }
+        errorService.handleError(e);
+      })
+      .finally(() => {
+        if (executionFound) return;
+
+        if (streamFallback) {
+          console.debug("Falling back to WaitExecution");
+          this.streamExecution();
+        }
+      });
+  }
+
+  fetchExecuteResponseByDigest(executeResponseDigest: build.bazel.remote.execution.v2.Digest) {
+    this.executeResponseRPC = rpcService
       .fetchBytestreamFile(
-        this.props.model.getActionCacheURL(digest),
+        this.props.model.getActionCacheURL(executeResponseDigest),
         this.props.model.getInvocationId(),
         "arraybuffer"
       )
@@ -196,23 +418,126 @@ export default class InvocationActionCardComponent extends React.Component<Props
         // proto field docs on `Execution.execute_response_digest`.
         const executeResponseBytes = actionResult.stdoutRaw;
         const executeResponse = build.bazel.remote.execution.v2.ExecuteResponse.decode(executeResponseBytes);
-        this.setState({ executeResponse });
-        if (executeResponse.result) {
-          const actionResult = executeResponse.result;
-          this.setState({ actionResult });
-          this.fetchStdout(actionResult);
-          this.fetchStderr(actionResult);
-          this.fetchServerLogs(executeResponse);
-        }
+        return executeResponse;
+      });
+  }
+
+  fetchExecution(executionId: string) {
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
+    // TODO: remove redundant actionDigestHash filtering once all servers
+    // support executionId filtering.
+    const actionDigestHash = parseActionDigestHashFromExecutionId(executionId);
+    this.executionRPC = service
+      .getExecution({
+        executionLookup: new execution_stats.ExecutionLookup({
+          invocationId: this.props.model.getInvocationId(),
+          executionId,
+          actionDigestHash,
+        }),
       })
-      .catch((e) => console.error("Failed to fetch execute response:", e));
+      .then((response) => {
+        const execution = response.execution?.[0];
+        if (execution) {
+          this.setState({ execution });
+        }
+        return execution;
+      });
+  }
+
+  private executionDownloadsRPC?: Cancelable;
+
+  private fetchExecutionDownloads(pageToken = this.state.executionDownloadsNextPageToken) {
+    this.executionDownloadsRPC?.cancel();
+    this.executionDownloadsRPC = undefined;
+
+    const executionId = this.getExecutionId();
+    if (!executionId) {
+      this.setState({
+        executionDownloads: [],
+        executionDownloadsLoading: false,
+        executionDownloadsNextPageToken: "",
+      });
+      return;
+    }
+
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
+    this.setState({ executionDownloadsLoading: true });
+    if (!pageToken) {
+      this.setState({ executionDownloads: [] });
+    }
+    this.executionDownloadsRPC = service
+      .getExecutionDownloads({
+        invocationId: this.props.model.getInvocationId(),
+        executionId,
+        pageSize: executionDownloadsPageSize,
+        pageToken,
+      })
+      .then((response) => {
+        this.setState((prevState) => ({
+          executionDownloads: [...(pageToken ? prevState.executionDownloads : []), ...(response.downloads ?? [])],
+          executionDownloadsNextPageToken: response.nextPageToken || "",
+        }));
+        return response;
+      })
+      .catch((e) => {
+        const error = BuildBuddyError.parse(e);
+        // If we're fetching a subsequent page, surface the error loudly (since
+        // the user is actively trying to fetch); otherwise silently log it.
+        if (pageToken) {
+          errorService.handleError(error);
+        } else {
+          console.error(e);
+        }
+        // Clear the page token so we don't keep trying to fetch pages after we
+        // hit an error.
+        this.setState({ executionDownloadsNextPageToken: "" });
+      })
+      .finally(() => {
+        // Mark the RPC done, and then check whether we need to fetch the next
+        // page (if the user is scrolled to the bottom).
+        this.executionDownloadsRPC = undefined;
+        this.setState({ executionDownloadsLoading: false }, () => this.maybeFetchMoreExecutionDownloads());
+      });
+  }
+
+  private maybeFetchMoreExecutionDownloads() {
+    if (this.executionDownloadsRPC || !this.state.executionDownloadsNextPageToken) {
+      return;
+    }
+    const container = this.executionDownloadsContainerRef.current;
+    if (!container) {
+      return;
+    }
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (container.scrollHeight <= container.clientHeight + 1 || distanceFromBottom <= 1) {
+      this.fetchExecutionDownloads();
+    }
+  }
+
+  fetchExecuteResponseByActionDigest(actionDigest: build.bazel.remote.execution.v2.Digest) {
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
+    this.executeResponseRPC = service
+      .getExecution({
+        executionLookup: new execution_stats.ExecutionLookup({
+          invocationId: this.props.model.getInvocationId(),
+          actionDigestHash: actionDigest.hash,
+        }),
+        inlineExecuteResponse: true,
+      })
+      .then((response) => {
+        const execution = response.execution?.[0];
+        if (execution) {
+          this.setState({ execution });
+        }
+        return execution?.executeResponse ?? null;
+      });
   }
 
   fetchStdout(actionResult: build.bazel.remote.execution.v2.ActionResult) {
     if (!actionResult.stdoutDigest) return;
 
     let stdoutUrl = this.props.model.getBytestreamURL(actionResult.stdoutDigest);
-    rpcService
+    this.stdoutRPC = rpcService
       .fetchBytestreamFile(stdoutUrl, this.props.model.getInvocationId())
       .then((stdout) => this.setState({ stdout }))
       .catch((e) => console.error("Failed to fetch stdout:", e));
@@ -222,17 +547,18 @@ export default class InvocationActionCardComponent extends React.Component<Props
     if (!actionResult.stderrDigest) return;
 
     let stderrUrl = this.props.model.getBytestreamURL(actionResult.stderrDigest);
-    rpcService
+    this.stderrRPC = rpcService
       .fetchBytestreamFile(stderrUrl, this.props.model.getInvocationId())
       .then((stderr) => this.setState({ stderr }))
       .catch((e) => console.error("Failed to fetch stderr:", e));
   }
 
   fetchServerLogs(executeResponse: build.bazel.remote.execution.v2.ExecuteResponse) {
+    this.serverLogsRPCs = [];
     for (const [name, file] of Object.entries(executeResponse.serverLogs)) {
       if (!file.digest) continue;
       const logsURL = this.props.model.getBytestreamURL(file.digest);
-      rpcService
+      const rpc = rpcService
         .fetchBytestreamFile(logsURL, this.props.model.getInvocationId())
         .then((text) => {
           const log: ServerLog = { name, text };
@@ -241,6 +567,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           this.setState({ serverLogs: serverLogs });
         })
         .catch((e) => console.error(`Failed to fetch server log ${name}: ${e}`));
+      this.serverLogsRPCs.push(rpc);
     }
   }
 
@@ -256,6 +583,41 @@ export default class InvocationActionCardComponent extends React.Component<Props
         });
       })
       .catch((e) => console.error("Failed to fetch command:", e));
+  }
+
+  fetchProfile(executionId: string) {
+    this.profileRPC = rpcService
+      .fetchFile(
+        rpcService.getDownloadUrl({
+          invocation_id: this.props.model.getInvocationId(),
+          execution_id: executionId,
+          artifact: "execution_profile",
+        }),
+        "stream"
+      )
+      .then((response) => {
+        if (response.body === null) {
+          throw new Error("failed to read profile: response body is null");
+        }
+        return readProfile(response.body);
+      })
+      .then((profile) => this.setState({ profile }))
+      .catch((e) => {
+        // Ignore NotFound
+        if (e instanceof HTTPStatusError && e.code === 404) {
+          return;
+        }
+        console.log("fetch profile failed", e);
+        errorService.handleError(e);
+      })
+      .finally(() => this.setState({ profileLoading: false }));
+  }
+
+  getExecutionId(): string | undefined {
+    // If we got here from the executions page then we'll have the execution ID
+    // in the URL; otherwise the execution ID gets fetched from the executions
+    // linked to the invocation matching the actionDigest in the URL.
+    return this.props.search.get("executionId") || this.state.execution?.executionId;
   }
 
   displayList(list: string[]) {
@@ -279,109 +641,251 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
-  private renderTimelines() {
-    const metadata = this.state.actionResult?.executionMetadata;
-
-    type TimelineEvent = {
-      name: string;
-      color: string;
-      timestamp?: Timestamp | null;
-    };
-    const events: TimelineEvent[] = [
-      {
-        name: "Queued",
-        color: "#3F51B5",
-        timestamp: metadata?.queuedTimestamp,
-      },
-      {
-        name: "Initializing",
-        color: "#673AB7",
-        timestamp: metadata?.workerStartTimestamp,
-      },
-      {
-        name: "Downloading inputs",
-        color: "#FF6F00",
-        timestamp: metadata?.inputFetchStartTimestamp,
-      },
-      {
-        name: "Preparing runner",
-        color: "#673AB7",
-        timestamp: metadata?.inputFetchCompletedTimestamp,
-      },
-      {
-        name: "Executing",
-        color: "#1E88E5",
-        timestamp: metadata?.executionStartTimestamp,
-      },
-      {
-        name: "Preparing for upload",
-        color: "#673AB7",
-        timestamp: metadata?.executionCompletedTimestamp,
-      },
-      {
-        name: "Uploading outputs",
-        color: "#FF6F00",
-        timestamp: metadata?.outputUploadStartTimestamp,
-      },
-      // End marker -- not actually rendered.
-      {
-        name: "Upload complete",
-        color: "",
-        timestamp: metadata?.outputUploadCompletedTimestamp,
-      },
-    ];
-
-    const filteredEvents = events.filter((event) => event && event.timestamp);
-    if (filteredEvents.length == 0) {
-      return null;
+  private renderTiming(metadata: build.bazel.remote.execution.v2.ExecutedActionMetadata) {
+    let timingDescription = null;
+    if (metadata.queuedTimestamp && metadata.workerStartTimestamp && metadata.workerCompletedTimestamp) {
+      const queuedDurationMillis = Math.max(
+        0,
+        timestampToDate(metadata.workerStartTimestamp).getTime() - timestampToDate(metadata.queuedTimestamp).getTime()
+      );
+      const workerDurationMillis =
+        timestampToDate(metadata.workerCompletedTimestamp).getTime() -
+        timestampToDate(metadata.workerStartTimestamp).getTime();
+      timingDescription = (
+        <div>
+          <div>
+            Queued for {format.durationMillis(queuedDurationMillis)} @{" "}
+            {format.formatTimestamp(metadata.queuedTimestamp)}
+          </div>
+          <div>
+            Executed in {format.durationMillis(workerDurationMillis)} @{" "}
+            {format.formatTimestamp(metadata.workerStartTimestamp)}
+          </div>
+          <div>Completed @ {format.formatTimestamp(metadata.workerCompletedTimestamp)}</div>
+        </div>
+      );
     }
 
-    const totalDuration = durationSeconds(
-      filteredEvents[0].timestamp!,
-      filteredEvents[filteredEvents.length - 1].timestamp!
-    );
-
     return (
-      <div>
-        {filteredEvents.map((event, i) => {
-          // Don't render the end marker.
-          if (i == filteredEvents.length - 1) return null;
-
-          const next = filteredEvents[i + 1];
-          const duration = durationSeconds(event.timestamp!, next.timestamp!);
-          const weight = duration / totalDuration;
-          return (
-            <div>
-              <div className="metadata-detail">
-                <span className="label">
-                  {event.name}
-                  {event.timestamp && <>@ {format.formatTimestamp(event.timestamp)}</>}
-                </span>
-                <span className="bar-description">
-                  {format.compactDurationSec(duration)} ({(weight * 100).toFixed(1)}%)
-                </span>
-              </div>
-              <div className="action-timeline">
-                <div
-                  className="timeline-event"
-                  title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
-                  style={{ flex: `${weight} 0 0`, backgroundColor: event.color }}></div>
-                <div
-                  className="timeline-event-gray"
-                  title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
-                  style={{ flex: `${1 - weight} 0 0`, backgroundColor: `rgba(0, 0, 0, .1)` }}></div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <>
+        <div className="metadata-title">Timing</div>
+        {timingDescription}
+        <div>
+          {this.state.profileLoading ? (
+            <Spinner />
+          ) : this.state.profile ? (
+            <TraceViewer
+              profile={this.state.profile}
+              fitToContent
+              filterHidden
+              dark={this.props.preferences.darkModeEnabled}
+            />
+          ) : null}
+        </div>
+      </>
     );
   }
 
-  handleFileClicked(node: InputNode) {
+  private renderExecutionDownloads() {
+    const ioStats = this.state.actionResult?.executionMetadata?.ioStats;
+    const fetchSummary = ioStats && (
+      <div className="action-downloads-summary">
+        Downloaded {format.bytes(ioStats.fileDownloadSizeBytes ?? 0)} ({format.count(ioStats.fileDownloadCount ?? 0)}{" "}
+        cache misses, {format.count(ioStats.localCacheHits ?? 0)} cache hits)
+      </div>
+    );
+    if (!fetchSummary && !this.state.executionDownloadsLoading && !this.state.executionDownloads.length) {
+      return null;
+    }
+    return (
+      <>
+        <div className="metadata-title">Inputs fetched</div>
+        <div className="action-downloads">
+          {fetchSummary}
+          {this.state.executionDownloadsLoading && !this.state.executionDownloads.length ? (
+            <div className="action-downloads-loading">
+              <Spinner />
+            </div>
+          ) : this.state.executionDownloads.length ? (
+            <>
+              <div
+                className="action-downloads-table-container"
+                onScroll={() => this.maybeFetchMoreExecutionDownloads()}
+                ref={this.executionDownloadsContainerRef}>
+                <table className="action-downloads-table">
+                  <thead>
+                    <tr>
+                      <th>Size</th>
+                      <th>Path</th>
+                      <th>Digest</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {this.state.executionDownloads.map((download) => (
+                      <tr key={`${download.path}|${download.digest?.hash}`}>
+                        <td className="action-downloads-size" title={`${download.digest?.sizeBytes ?? 0}`}>
+                          {format.bytes(download.digest?.sizeBytes ?? 0)}
+                        </td>
+                        <td className="action-downloads-path">
+                          <div className="action-downloads-path-content">
+                            <span className="action-downloads-path-text">{download.path}</span>
+                            {download.digest?.hash && (
+                              <a
+                                className="action-downloads-download-link"
+                                href={rpcService.getBytestreamUrl(
+                                  this.props.model.getBytestreamURL(download.digest),
+                                  this.props.model.getInvocationId(),
+                                  { filename: download.path }
+                                )}
+                                title="Download">
+                                <Download className="download-button icon" />
+                              </a>
+                            )}
+                          </div>
+                        </td>
+                        <td className="action-downloads-digest">
+                          <DigestComponent
+                            digest={{ hash: download.digest?.hash, sizeBytes: null }}
+                            hashWidth="112px"
+                            expandOnHover={false}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                    {this.state.executionDownloadsLoading && (
+                      <tr className="action-downloads-loading-row">
+                        <td colSpan={3}>
+                          <Spinner />
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : null}
+        </div>
+      </>
+    );
+  }
+
+  /** Build a fully-formed `bb execute` command for this action. */
+  private buildBbExecuteCommand(): string {
+    const { action, command } = this.state;
+    if (!action || !command) return "";
+
+    const unquotedIndexes = new Set();
+
+    const parts: string[] = ["bb", "execute"];
+    parts.push("--remote_header=x-buildbuddy-api-key=${BB_API_KEY?}");
+    // Don't quote this arg, since we want ${BB_API_KEY?} to be evaluated by
+    // the shell.
+    unquotedIndexes.add(parts.length - 1);
+
+    // Remote executor / instance (derived from invocation options if present)
+    const remoteExec = this.props.model.stringCommandLineOption("remote_executor");
+    if (remoteExec) parts.push(`--remote_executor=${remoteExec}`);
+
+    const digestFn =
+      build.bazel.remote.execution.v2.DigestFunction.Value[this.props.model.getDigestFunction()].toLowerCase();
+    if (digestFn === "blake3" || digestFn === "sha256") parts.push(`--digest_function=${digestFn}`);
+
+    const invocationId = this.props.model.getInvocationId();
+    if (invocationId) parts.push(`--invocation_id=${invocationId}`);
+
+    const remoteInstance = this.props.model.optionsMap.get("remote_instance_name");
+    if (remoteInstance) parts.push(`--remote_instance_name=${remoteInstance}`);
+
+    // Timeout
+    if (action.timeout?.seconds) parts.push(`--remote_timeout=${action.timeout.seconds}s`);
+
+    if (action.inputRootDigest) parts.push(`--input_root_digest=${digestToString(action.inputRootDigest)}`);
+
+    // Env vars
+    for (const env of command.environmentVariables) {
+      parts.push(`--action_env=${env.name}=${env.value}`);
+    }
+
+    // Platform props
+    for (const prop of command.platform?.properties ?? []) {
+      parts.push(`--exec_properties=${prop.name}=${prop.value}`);
+    }
+
+    // Expected outputs
+    const addOutPath = (p: string) => parts.push(`--output_path=${p}`);
+    if (command.outputPaths.length) {
+      command.outputPaths.forEach(addOutPath);
+    } else {
+      command.outputFiles.forEach(addOutPath);
+      command.outputDirectories.forEach(addOutPath);
+    }
+
+    // Separator and original argv
+    parts.push("--", ...command.arguments);
+
+    return parts.map((arg, i) => (unquotedIndexes.has(i) ? arg : quote(arg))).join(" \\\n\t");
+  }
+
+  /** Copy the command to clipboard and toast the user. */
+  private onClickCopyBbExecute = () => {
+    const cmd = this.buildBbExecuteCommand();
+    if (!cmd) return alert_service.error("Unable to build command");
+    copyToClipboard(cmd);
+    alert_service.success("`bb execute` command copied to clipboard");
+  };
+
+  private fetchAndExpandDir(node: TreeNode): Promise<TreeNode[]> {
+    if (!("digest" in node.obj) || !node.obj?.digest) return Promise.resolve([]);
+
+    const dirUrl = this.props.model.getBytestreamURL(node.obj.digest);
+    const digestString = node.obj.digest.hash ?? "";
+
+    return rpcService
+      .fetchBytestreamFile(dirUrl, this.props.model.getInvocationId(), "arraybuffer")
+      .then((buffer: ArrayBuffer) => new Uint8Array(buffer))
+      .then((array: Uint8Array) =>
+        node.type == "tree"
+          ? build.bazel.remote.execution.v2.Tree.decode(array).root
+          : build.bazel.remote.execution.v2.Directory.decode(array)
+      )
+      .then((dir: build.bazel.remote.execution.v2.Directory | null | undefined) => {
+        if (!dir) return [];
+
+        this.state.treeShaToExpanded.set(digestString, true);
+        const nodes = dir.directories
+          .map<TreeNode>((node) => ({
+            obj: node,
+            type: "dir",
+          }))
+          .concat(
+            dir.files.map((node) => ({
+              obj: node,
+              type: "file",
+            }))
+          )
+          .concat(
+            dir.symlinks.map((node) => ({
+              obj: node,
+              type: "symlink",
+            }))
+          );
+        this.state.treeShaToChildrenMap.set(digestString, nodes);
+        return nodes;
+      });
+  }
+
+  private autoExpandSingleChildDirs(nodes: TreeNode[]): Promise<void> {
+    const dirNodes = nodes.filter((n) => n.type === "dir" || n.type === "tree");
+    if (dirNodes.length === 1 && dirNodes.length === nodes.length) {
+      return this.fetchAndExpandDir(dirNodes[0]).then((children) => this.autoExpandSingleChildDirs(children));
+    }
+    return Promise.resolve();
+  }
+
+  handleFileClicked(node: TreeNode) {
+    if (!("digest" in node.obj)) return;
     if (!node.obj?.digest) return;
 
-    let dirUrl = this.props.model.getBytestreamURL(node.obj.digest);
     let digestString = node.obj.digest.hash ?? "";
     if (this.state.treeShaToExpanded.get(digestString)) {
       this.state.treeShaToExpanded.set(digestString, false);
@@ -389,45 +893,32 @@ export default class InvocationActionCardComponent extends React.Component<Props
       return;
     }
     if (node.type == "file") {
+      let dirUrl = this.props.model.getBytestreamURL(node.obj.digest);
       rpcService.downloadBytestreamFile(node.obj.name, dirUrl, this.props.model.getInvocationId());
       return;
     }
-    rpcService
-      .fetchBytestreamFile(dirUrl, this.props.model.getInvocationId(), "arraybuffer")
-      .then((buffer) => {
-        let dir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
-        this.state.treeShaToExpanded.set(digestString, true);
-        let dirs: InputNode[] = dir.directories.map((child) => ({
-          obj: child,
-          type: "dir",
-        }));
-        let files: InputNode[] = dir.files.map((child) => ({
-          obj: child,
-          type: "file",
-        }));
-        this.state.treeShaToChildrenMap.set(digestString, dirs.concat(files));
-        this.forceUpdate();
-      })
+
+    this.fetchAndExpandDir(node)
+      .then((children) => this.autoExpandSingleChildDirs(children))
+      .then(() => this.forceUpdate())
       .catch((e) => console.error(e));
   }
 
-  // For firecracker actions, VM metadata is stored in the auxiliary metadata field
-  // of the execution metadata. Try to decode it into an object if it exists.
-  private getFirecrackerVMMetadata(): firecracker.VMMetadata | null | undefined {
-    const auxiliaryMetadata = this.state.actionResult?.executionMetadata?.auxiliaryMetadata;
-    if (!auxiliaryMetadata || auxiliaryMetadata.length == 0) {
-      return null;
-    }
-    for (const metadata of auxiliaryMetadata) {
-      if (metadata.typeUrl === "type.googleapis.com/firecracker.VMMetadata") {
-        return firecracker.VMMetadata.decode(metadata.value);
+  /**
+   * Looks for the given message type in auxiliary metadata and returns the
+   * decoded message if found.
+   */
+  private getAuxiliaryMetadata<T>(messageClass: MessageClass<T>): T | null | undefined {
+    for (const metadata of this.state.actionResult?.executionMetadata?.auxiliaryMetadata ?? []) {
+      if (metadata.typeUrl === messageClass.getTypeUrl()) {
+        return messageClass.decode(metadata.value);
       }
     }
     return null;
   }
 
   private getVMPreviousTaskHref(): string {
-    const vmMetadata = this.getFirecrackerVMMetadata();
+    const vmMetadata = this.getAuxiliaryMetadata(firecracker.VMMetadata);
     const task = vmMetadata?.lastExecutedTask;
     if (!task?.executeResponseDigest || !task?.invocationId || !task?.actionDigest) return "";
     return `/invocation/${task.invocationId}?actionDigest=${digestToString(
@@ -488,9 +979,301 @@ export default class InvocationActionCardComponent extends React.Component<Props
       });
   }
 
+  private onClickCopySnapshotKey(vmMetadata: firecracker.VMMetadata) {
+    const snapshotKey = this.getSnapshotKeyForSnapshotID(vmMetadata);
+    copyToClipboard(JSON.stringify(snapshotKey));
+    alert_service.success("Snapshot key copied to clipboard");
+    this.setState({ showSnapshotMenu: false });
+  }
+
+  private onClickCopyRemoteBazelCommand(
+    vmMetadata: firecracker.VMMetadata,
+    executionMetadata: build.bazel.remote.execution.v2.ExecutedActionMetadata
+  ) {
+    const snapshotKey = this.getSnapshotKeyForSnapshotID(vmMetadata);
+    const snapshotKeyJSON = JSON.stringify(snapshotKey);
+    const cmd = `bb remote --run_from_snapshot='${snapshotKeyJSON}' --runner_exec_properties=debug-executor-id=${executionMetadata.executorId} --script='echo "My custom bash command!"'`;
+    copyToClipboard(cmd);
+    alert_service.success("Command copied to clipboard");
+    this.setState({ showSnapshotMenu: false });
+  }
+
+  // Rather than using the snapshot key from the VMMetadata, which refers to the
+  // master key that can be overridden by future workflow runs, use a snapshot
+  // key containing the snapshot ID, which will guarantee the key refers to the
+  // specific snapshot saved by this invocation.
+  private getSnapshotKeyForSnapshotID(vmMetadata: firecracker.VMMetadata): firecracker.SnapshotKey {
+    return new firecracker.SnapshotKey({
+      snapshotId: vmMetadata.snapshotId,
+      instanceName: vmMetadata.snapshotKey?.instanceName,
+    });
+  }
+
+  private renderOutputDirectories(actionsResult: build.bazel.remote.execution.v2.ActionResult) {
+    return (
+      <div className="action-section">
+        <div className="action-property-title">Output directories</div>
+        {actionsResult.outputDirectories.length ? (
+          <div className="action-list">
+            {actionsResult.outputDirectories.map((dir) => (
+              <TreeNodeComponent
+                node={{
+                  obj: new build.bazel.remote.execution.v2.DirectoryNode({ name: dir.path, digest: dir.treeDigest }),
+                  type: "tree",
+                }}
+                treeShaToExpanded={this.state.treeShaToExpanded}
+                treeShaToChildrenMap={this.state.treeShaToChildrenMap}
+                treeShaToTotalSizeMap={this.state.treeShaToTotalSizeMap}
+                handleFileClicked={this.handleFileClicked.bind(this)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div>None</div>
+        )}
+      </div>
+    );
+  }
+
+  private renderOutputSymlinks(actionsResult: build.bazel.remote.execution.v2.ActionResult) {
+    const symlinks = actionsResult.outputSymlinks.length
+      ? actionsResult.outputSymlinks
+      : [...actionsResult.outputFileSymlinks, ...actionsResult.outputDirectorySymlinks];
+
+    return (
+      <div className="action-section">
+        <div className="action-property-title">Output symlinks</div>
+        {symlinks.length ? (
+          <div className="action-list">
+            {symlinks.map((symlink) => (
+              <div className="tree-node-symlink">
+                <span>
+                  <FileSymlink className="icon symlink-icon" />
+                </span>{" "}
+                <span>{symlink.path}</span>{" "}
+                <span>
+                  <ArrowRight className="icon arrow-right-icon" />
+                </span>{" "}
+                <span>{symlink.target}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div>None</div>
+        )}
+      </div>
+    );
+  }
+
+  private renderExpectedOutputs(command: build.bazel.remote.execution.v2.Command) {
+    const useOutputPaths =
+      command.outputPaths.length && !(command.outputFiles.length + command.outputDirectories.length);
+
+    const renderOutputPaths = () => (
+      <>
+        {command.outputPaths.map((expectedOutput) => (
+          <div className="expected-output">
+            <span>
+              <FileQuestion className="icon file-question-icon" />
+            </span>
+            <span className="expected-output-label">{expectedOutput}</span>
+          </div>
+        ))}
+      </>
+    );
+
+    const renderOutputFilesAndDirs = () => (
+      <>
+        {command.outputDirectories.map((expectedDir) => (
+          <div className="expected-output">
+            <span>
+              <Folder className="icon folder-icon" />
+            </span>
+            <span className="expected-output-label">{expectedDir}</span>
+          </div>
+        ))}
+        {command.outputFiles.map((expectedFile) => (
+          <div className="expected-output">
+            <span>
+              <File className="icon file-icon" />
+            </span>
+            <span className="expected-output-label">{expectedFile}</span>
+          </div>
+        ))}
+      </>
+    );
+
+    return (
+      <div className="action-section">
+        <div className="action-property-title">Expected Outputs</div>
+        <div className="action-list">{useOutputPaths ? renderOutputPaths() : renderOutputFilesAndDirs()}</div>
+      </div>
+    );
+  }
+
+  private renderMissingOutputs(
+    command: build.bazel.remote.execution.v2.Command,
+    actionResult: build.bazel.remote.execution.v2.ActionResult
+  ) {
+    const useOutputPaths =
+      command.outputPaths.length && !(command.outputFiles.length + command.outputDirectories.length);
+
+    const renderMissingOutputPaths = (missingOutputs: Array<string>) => (
+      <>
+        {missingOutputs.map((missingOutput) => (
+          <div className="missing-output">
+            <span>
+              <FileQuestion className="icon file-question-icon red" />
+            </span>
+            <span className="missing-output-label">{missingOutput}</span>
+          </div>
+        ))}
+      </>
+    );
+
+    const renderMissingOutputFilesAndDirs = (missingFiles: Array<string>, missingDirs: Array<string>) => (
+      <>
+        {missingDirs.map((missingDir) => (
+          <div className="missing-output">
+            <span>
+              <Folder className="icon file-question-icon red" />
+            </span>
+            <span className="missing-output-label">{missingDir}</span>
+          </div>
+        ))}
+        {missingFiles.map((missingFile) => (
+          <div className="missing-output">
+            <span>
+              <FileQuestion className="icon file-question-icon red" />
+            </span>
+            <span className="missing-output-label">{missingFile}</span>
+          </div>
+        ))}
+      </>
+    );
+
+    const renderOutline = (content: ReactElement) => (
+      <div className="action-section">
+        <div className="action-property-title">Missing Outputs</div>
+        <div className="action-list">{content}</div>
+      </div>
+    );
+
+    if (useOutputPaths) {
+      const actualOutputs = [
+        ...actionResult.outputFiles,
+        ...actionResult.outputDirectories,
+        ...actionResult.outputSymlinks,
+      ].map((output) => output.path);
+      const missingOutputs = command.outputPaths.filter((expected) => !actualOutputs.includes(expected));
+      return !!missingOutputs.length && renderOutline(renderMissingOutputPaths(missingOutputs));
+    }
+
+    const actualFiles = [
+      ...actionResult.outputFiles,
+      ...actionResult.outputFileSymlinks,
+      ...actionResult.outputDirectorySymlinks,
+    ].map((file) => file.path);
+    const missingFiles = command.outputFiles.filter((expected) => !actualFiles.includes(expected));
+    // In practice, Bazel creates the expected directories inside the input tree.
+    // So it's unlikely that any of the expected dirs is missing.
+    const actualDirs = actionResult.outputDirectories.map((dir) => dir.path);
+    const missingDirs = command.outputDirectories.filter((expected) => !actualDirs.includes(expected));
+    return (
+      missingFiles.length + missingDirs.length > 0 &&
+      renderOutline(renderMissingOutputFilesAndDirs(missingFiles, missingDirs))
+    );
+  }
+
+  private renderUsageStats(usageStats: build.bazel.remote.execution.v2.UsageStats) {
+    return (
+      <>
+        <div className="metadata-title">Resource usage</div>
+        <div>
+          <div>Peak memory: {format.bytesIEC(usageStats.peakMemoryBytes)}</div>
+          <div>MilliCPU: {computeMilliCpu(this.state.actionResult!)}</div>
+          {usageStats.peakFileSystemUsage?.map((fs) => (
+            <div>
+              Peak disk usage: {fs.target} ({fs.fstype}): {format.bytesIEC(fs.usedBytes)} of{" "}
+              {format.bytesIEC(fs.totalBytes)}
+            </div>
+          ))}
+          {usageStats.cgroupIoStats && (
+            <>
+              <div>Disk bytes read: {format.bytesIEC(usageStats.cgroupIoStats.rbytes)}</div>
+              <div>Disk read operations: {format.count(usageStats.cgroupIoStats.rios)}</div>
+              <div>Disk bytes written: {format.bytesIEC(usageStats.cgroupIoStats.wbytes)}</div>
+              <div>Disk write operations: {format.count(usageStats.cgroupIoStats.wios)}</div>
+            </>
+          )}
+          {usageStats.networkStats && (
+            <>
+              <div>Network bytes received: {format.bytesIEC(usageStats.networkStats.bytesReceived)}</div>
+              <div>Network packets received: {format.count(usageStats.networkStats.packetsReceived)}</div>
+              <div>Network bytes sent: {format.bytesIEC(usageStats.networkStats.bytesSent)}</div>
+              <div>Network packets sent: {format.count(usageStats.networkStats.packetsSent)}</div>
+            </>
+          )}
+        </div>
+        {usageStats.cpuPressure && this.renderPSI("CPU", usageStats.cpuPressure)}
+        {usageStats.memoryPressure && this.renderPSI("Memory", usageStats.memoryPressure)}
+        {usageStats.ioPressure && this.renderPSI("IO", usageStats.ioPressure)}
+      </>
+    );
+  }
+
+  private renderPSI(resource: string, psi: build.bazel.remote.execution.v2.PSI) {
+    const metadata = this.state.actionResult?.executionMetadata;
+    if (!metadata) return null;
+    const execDurationSeconds = durationSeconds(
+      metadata.executionStartTimestamp!,
+      metadata.executionCompletedTimestamp!
+    );
+    if (!execDurationSeconds) return null;
+    const execDurationUsec = execDurationSeconds * 1e6;
+    const partialStallUsec = Number(psi.some?.total ?? 0);
+    if (!partialStallUsec) return null;
+    const completeStallUsec = Number(psi.full?.total ?? 0);
+
+    // TODO: render percentages using a color scale corresponding to how bad the stalling is
+    return (
+      <>
+        <div className="metadata-title">{resource} pressure stall duration</div>
+        <div>
+          Partially stalled: {durationUsec(partialStallUsec)} (
+          {((partialStallUsec / execDurationUsec) * 100).toFixed(1)}
+          %)
+        </div>
+        <div>
+          Fully stalled: {durationUsec(completeStallUsec)} ({((completeStallUsec / execDurationUsec) * 100).toFixed(1)}
+          %)
+        </div>
+      </>
+    );
+  }
+
+  private getPlatformOverrides(): Map<string, string> {
+    const overrides = new Map<string, string>();
+    const executionAuxiliaryMetadata = this.getAuxiliaryMetadata(execution_stats.ExecutionAuxiliaryMetadata);
+    for (const prop of executionAuxiliaryMetadata?.platformOverrides?.properties ?? []) {
+      let value = prop.value ?? "";
+      // TODO: this redaction is also done on the server and can be removed
+      // after some time.
+      const nameLower = prop.name.toLowerCase();
+      if (nameLower.includes("username") || nameLower.includes("password") || nameLower.includes("env-overrides")) {
+        value = "<REDACTED>";
+      }
+      overrides.set(prop.name, value);
+    }
+    return overrides;
+  }
+
   render() {
     const digest = parseActionDigest(this.props.search.get("actionDigest") ?? "");
-    const vmMetadata = this.getFirecrackerVMMetadata();
+    if (!digest) return <></>;
+    const vmMetadata = this.getAuxiliaryMetadata(firecracker.VMMetadata);
+    const executionId = this.getExecutionId();
+    const platformOverrides = this.getPlatformOverrides();
 
     return (
       <div className="invocation-action-card">
@@ -503,7 +1286,90 @@ export default class InvocationActionCardComponent extends React.Component<Props
           <div className="card">
             <Info className="icon purple" />
             <div className="content">
-              <div className="title">Action details</div>
+              {executionId && (
+                <>
+                  <div className="action-header">
+                    <div className="title">Execution details</div>
+                    {this.state.execution?.targetLabel && this.state.execution?.actionMnemonic && (
+                      <OutlinedButton
+                        className="view-history-button"
+                        onClick={() =>
+                          router.navigateTo(
+                            getDrilldownUrl(this.state.execution?.targetLabel, this.state.execution?.actionMnemonic)
+                          )
+                        }>
+                        <History className="icon" />
+                        <span>View history</span>
+                      </OutlinedButton>
+                    )}
+                  </div>
+                  <div className="details">
+                    {this.state.execution?.targetLabel && (
+                      <div className="action-section">
+                        <div className="action-property-title">Target label</div>
+                        <div debug-id="target-label">
+                          <TextLink
+                            className="target-label-link"
+                            href={`/invocation/${this.props.model.getInvocationId()}?${new URLSearchParams({
+                              target: this.state.execution.targetLabel,
+                            })}`}>
+                            {this.state.execution.targetLabel}
+                          </TextLink>
+                        </div>
+                      </div>
+                    )}
+                    {this.state.execution?.actionMnemonic && (
+                      <div className="action-section">
+                        <div className="action-property-title">Action mnemonic</div>
+                        <div>{this.state.execution?.actionMnemonic}</div>
+                      </div>
+                    )}
+                    <div className="action-section">
+                      <div className="action-property-title">Execution ID</div>
+                      <div debug-id="execution-id">{executionId}</div>
+                    </div>
+                    <div className="action-section">
+                      <div className="action-property-title">Stage</div>
+                      <div>
+                        {this.state.executeResponse
+                          ? "Completed"
+                          : this.state.lastOperation
+                            ? executionStatusLabel(this.state.lastOperation)
+                            : "Unknown"}
+                      </div>
+                    </div>
+                    {this.state.executeResponse && (
+                      <>
+                        <div className="action-section">
+                          <div className="action-property-title">RPC status</div>
+                          <div
+                            className={(this.state.executeResponse.status?.code ?? 0) !== 0 ? "grpc-status-error" : ""}>
+                            {this.state.executeResponse
+                              ? grpcStatusCodeToString(this.state.executeResponse.status?.code ?? 0)
+                              : "Unknown"}
+                            {this.state.executeResponse?.status?.message && (
+                              <>: {this.state.executeResponse?.status.message}</>
+                            )}
+                          </div>
+                        </div>
+                        <div className="action-section">
+                          <div className="action-property-title">Served from cache</div>
+                          <div>{this.state.executeResponse.cachedResult ? "Yes" : "No"}</div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+              <div className="action-header">
+                <div className="action-title">Action details</div>
+                {digest && (
+                  <ActionCompareButtonComponent
+                    invocationId={this.props.model.getInvocationId()}
+                    actionDigest={digestToString(digest)}
+                  />
+                )}
+              </div>
               {this.state.action ? (
                 <div className="details">
                   <div>
@@ -521,10 +1387,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
                     )}
                     <div className="action-section">
                       <div className="action-property-title">Input files</div>
-                      {this.state.inputDirs.length ? (
+                      {this.state.inputNodes.length ? (
                         <div className="input-tree">
-                          {this.state.inputDirs.map((node) => (
-                            <InputNodeComponent
+                          {this.state.inputNodes.map((node) => (
+                            <TreeNodeComponent
                               node={node}
                               treeShaToExpanded={this.state.treeShaToExpanded}
                               treeShaToChildrenMap={this.state.treeShaToChildrenMap}
@@ -547,7 +1413,15 @@ export default class InvocationActionCardComponent extends React.Component<Props
                     </div>
                   </div>
                   <div className="action-line">
-                    <div className="action-title">Command details</div>
+                    <div className="action-header">
+                      <div className="action-title">Command details</div>
+                      {this.state.command && (
+                        <OutlinedButton className="copy-bb-execute-button" onClick={this.onClickCopyBbExecute}>
+                          <Copy className="icon copy-icon" />
+                          Copy as bb-execute
+                        </OutlinedButton>
+                      )}
+                    </div>
                     {this.state.command ? (
                       <div>
                         <div className="action-section">
@@ -556,27 +1430,52 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         </div>
                         <div className="action-section">
                           <div className="action-property-title">Environment variables</div>
-                          <div className="action-list">
-                            {this.state.command.environmentVariables.map((variable) => (
-                              <div>
-                                <span className="prop-name">{variable.name}</span>
-                                <span className="prop-value">={variable.value}</span>
-                              </div>
-                            ))}
-                          </div>
+                          {this.state.command.environmentVariables.length ? (
+                            <div className="action-list">
+                              {this.state.command.environmentVariables.map((variable) => (
+                                <div>
+                                  <span className="prop-name">{variable.name}</span>
+                                  <span className="prop-value">={variable.value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div>None</div>
+                          )}
                         </div>
                         <div className="action-section">
                           <div className="action-property-title">Platform properties</div>
-                          <div className="action-list">
-                            {this.state.command?.platform?.properties.map((property) => (
-                              <div>
-                                <span className="prop-name">{property.name}</span>
-                                <span className="prop-value">={property.value}</span>
-                              </div>
-                            ))}
-                            {!this.state.command?.platform?.properties.length && <div>(Default)</div>}
-                          </div>
+                          {this.state.command.platform?.properties.length ? (
+                            <div className="action-list">
+                              {this.state.command.platform?.properties.map((property) => (
+                                <div
+                                  className={
+                                    platformOverrides.has(property?.name ?? "") ? "platform-property-overridden" : ""
+                                  }>
+                                  <span className="prop-name">{property.name}</span>
+                                  <span className="prop-value">={property.value}</span>
+                                  {platformOverrides.has(property?.name ?? "") && <span> (overridden)</span>}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div>None</div>
+                          )}
                         </div>
+                        {platformOverrides.size > 0 && (
+                          <div className="action-section">
+                            <div className="action-property-title">Platform overrides</div>
+                            <div className="action-list">
+                              {[...platformOverrides.entries()].map(([name, value]) => (
+                                <div>
+                                  <span className="prop-name">{name}</span>
+                                  <span className="prop-value">={value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {!this.state.actionResult && this.renderExpectedOutputs(this.state.command)}
                       </div>
                     ) : (
                       <div>No command details were found.</div>
@@ -624,83 +1523,98 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                   </>
                                 )}
                                 {vmMetadata.snapshotId && (
-                                  <>
-                                    <div className="metadata-title">Saved to snapshot ID</div>
-                                    <div className="snapshot-container">
-                                      <div className="metadata-detail">{vmMetadata.snapshotId}</div>
-                                      {vmMetadata.snapshotKey && (
-                                        <div className="invocation-menu-container">
-                                          <a
-                                            className="invalidate-button"
-                                            onClick={() => this.setState({ showInvalidateSnapshotModal: true })}>
-                                            Invalidate VM snapshot
-                                          </a>
-                                          <Modal
-                                            isOpen={this.state.showInvalidateSnapshotModal}
-                                            onRequestClose={() =>
-                                              this.setState({ showInvalidateSnapshotModal: false, isMenuOpen: false })
-                                            }>
-                                            <Dialog>
-                                              <DialogHeader>
-                                                <DialogTitle>Confirm invalidate VM snapshot</DialogTitle>
-                                              </DialogHeader>
-                                              <DialogBody>
-                                                <p>
-                                                  Are you sure you want to invalidate the VM snapshot used for this
-                                                  action?
-                                                </p>
-                                                <p>
-                                                  A new VM, instead of a recycled VM, will be used for the next run of
-                                                  this action, which may result in longer execution time.
-                                                </p>
-                                              </DialogBody>
-                                              <DialogFooter>
-                                                <DialogFooterButtons>
-                                                  <OutlinedButton
-                                                    onClick={() =>
-                                                      this.setState({
-                                                        showInvalidateSnapshotModal: false,
-                                                        isMenuOpen: false,
-                                                      })
-                                                    }>
-                                                    Cancel
-                                                  </OutlinedButton>
-                                                  <Button
-                                                    onClick={this.onClickInvalidateSnapshot.bind(
-                                                      this,
-                                                      vmMetadata.snapshotKey
-                                                    )}>
-                                                    Invalidate
-                                                  </Button>
-                                                </DialogFooterButtons>
-                                              </DialogFooter>
-                                            </Dialog>
-                                          </Modal>
-                                        </div>
+                                  <div className="snapshot-id-container">
+                                    <div className="snapshot-id-details">
+                                      {vmMetadata.savedLocalSnapshot || vmMetadata.savedRemoteSnapshot ? (
+                                        <>
+                                          <div className="metadata-title">Saved to snapshot ID</div>
+                                          <div className="metadata-detail">{vmMetadata.snapshotId}</div>
+                                        </>
+                                      ) : (
+                                        <div className="metadata-title">No snapshot saved for this run</div>
                                       )}
                                     </div>
-                                  </>
-                                )}
-                              </>
-                            )}
-                            {this.state.actionResult.executionMetadata.usageStats && (
-                              <>
-                                <div className="metadata-title">Resource usage</div>
-                                <div>
-                                  <div>
-                                    Peak memory:{" "}
-                                    {format.bytes(this.state.actionResult.executionMetadata.usageStats.peakMemoryBytes)}
+                                    <div>
+                                      {vmMetadata.snapshotKey &&
+                                        (vmMetadata.savedLocalSnapshot || vmMetadata.savedRemoteSnapshot) && (
+                                          <div className="invocation-menu-container">
+                                            <a
+                                              className="invalidate-button"
+                                              onClick={() => this.setState({ showInvalidateSnapshotModal: true })}>
+                                              Invalidate VM snapshot
+                                            </a>
+                                            <OutlinedButton
+                                              title="Snapshot options"
+                                              className="snapshot-more-button"
+                                              onClick={() => this.setState({ showSnapshotMenu: true })}>
+                                              <MoreVertical />
+                                            </OutlinedButton>
+                                            <Popup
+                                              isOpen={this.state.showSnapshotMenu}
+                                              onRequestClose={() => this.setState({ showSnapshotMenu: false })}>
+                                              <Menu className="workflow-dropdown-menu">
+                                                <MenuItem onClick={this.onClickCopySnapshotKey.bind(this, vmMetadata)}>
+                                                  Copy snapshot key
+                                                </MenuItem>
+                                                <MenuItem
+                                                  onClick={this.onClickCopyRemoteBazelCommand.bind(
+                                                    this,
+                                                    vmMetadata,
+                                                    this.state.actionResult.executionMetadata
+                                                  )}>
+                                                  Copy Remote Bazel command to run commands in snapshot
+                                                </MenuItem>
+                                              </Menu>
+                                            </Popup>
+                                            <Modal
+                                              isOpen={this.state.showInvalidateSnapshotModal}
+                                              onRequestClose={() =>
+                                                this.setState({
+                                                  showInvalidateSnapshotModal: false,
+                                                  isMenuOpen: false,
+                                                })
+                                              }>
+                                              <Dialog>
+                                                <DialogHeader>
+                                                  <DialogTitle>Confirm invalidate VM snapshot</DialogTitle>
+                                                </DialogHeader>
+                                                <DialogBody>
+                                                  <p>
+                                                    Are you sure you want to invalidate the VM snapshot used for this
+                                                    action?
+                                                  </p>
+                                                  <p>
+                                                    A new VM, instead of a recycled VM, will be used for the next run of
+                                                    this action, which may result in longer execution time.
+                                                  </p>
+                                                </DialogBody>
+                                                <DialogFooter>
+                                                  <DialogFooterButtons>
+                                                    <OutlinedButton
+                                                      onClick={() =>
+                                                        this.setState({
+                                                          showInvalidateSnapshotModal: false,
+                                                          isMenuOpen: false,
+                                                        })
+                                                      }>
+                                                      Cancel
+                                                    </OutlinedButton>
+                                                    <Button
+                                                      onClick={this.onClickInvalidateSnapshot.bind(
+                                                        this,
+                                                        vmMetadata.snapshotKey
+                                                      )}>
+                                                      Invalidate
+                                                    </Button>
+                                                  </DialogFooterButtons>
+                                                </DialogFooter>
+                                              </Dialog>
+                                            </Modal>
+                                          </div>
+                                        )}
+                                    </div>
                                   </div>
-                                  <div>MilliCPU: {computeMilliCpu(this.state.actionResult)}</div>
-                                  {this.state.actionResult.executionMetadata.usageStats.peakFileSystemUsage?.map(
-                                    (fs) => (
-                                      <div>
-                                        Peak disk usage: {fs.target} ({fs.fstype}): {format.bytes(fs.usedBytes)} of{" "}
-                                        {format.bytes(fs.totalBytes)}
-                                      </div>
-                                    )
-                                  )}
-                                </div>
+                                )}
                               </>
                             )}
                             {this.state.actionResult.executionMetadata.estimatedTaskSize && (
@@ -709,7 +1623,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 <div>
                                   <div>
                                     Peak memory:{" "}
-                                    {format.bytes(
+                                    {format.bytesIEC(
                                       this.state.actionResult.executionMetadata.estimatedTaskSize.estimatedMemoryBytes
                                     )}
                                   </div>
@@ -720,8 +1634,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 </div>
                               </>
                             )}
-                            <div className="metadata-title">Timeline</div>
-                            {this.renderTimelines()}
+                            {this.state.actionResult.executionMetadata.usageStats &&
+                              this.renderUsageStats(this.state.actionResult.executionMetadata.usageStats)}
+                            {this.renderExecutionDownloads()}
+                            {this.state.actionResult.executionMetadata &&
+                              this.renderTiming(this.state.actionResult.executionMetadata)}
                           </div>
                         ) : (
                           <div>None found</div>
@@ -748,20 +1665,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
                           <div>None found</div>
                         )}
                       </div>
-                      <div className="action-section">
-                        <div className="action-property-title">Output directories</div>
-                        {this.state.actionResult.outputDirectories.length ? (
-                          <div className="action-list">
-                            {this.state.actionResult.outputDirectories.map((dir) => (
-                              <div>
-                                <span>{dir.path}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div>None</div>
-                        )}
-                      </div>
+                      {this.renderOutputDirectories(this.state.actionResult)}
+                      {this.renderOutputSymlinks(this.state.actionResult)}
+                      {this.state.command && this.renderMissingOutputs(this.state.command, this.state.actionResult)}
                       <div className="action-section">
                         <div className="action-property-title">Stderr</div>
                         <div>
@@ -808,17 +1714,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
                   ) : (
                     !this.state.executeResponse && <div>{this.renderNotFoundDetails({ result: true })}</div>
                   )}
-                  {this.state.executeResponse?.status && (
-                    <div className="action-section">
-                      <div className="action-property-title">Status</div>
-                      <div className={this.state.executeResponse.status.code !== 0 ? "grpc-status-error" : ""}>
-                        <b>{grpcStatusCodeToString(this.state.executeResponse.status.code)}</b>
-                        {this.state.executeResponse.status.message && (
-                          <>: {this.state.executeResponse.status.message}</>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
@@ -845,9 +1740,30 @@ function computeMilliCpu(result: build.bazel.remote.execution.v2.ActionResult): 
 }
 
 function durationSeconds(t1: ITimestamp, t2: ITimestamp): number {
-  return timestampToUnixSeconds(t2) - timestampToUnixSeconds(t1);
+  return Math.max(0, timestampToUnixSeconds(t2) - timestampToUnixSeconds(t1));
 }
 
 function timestampToUnixSeconds(timestamp: ITimestamp): number {
   return Number(timestamp.seconds) + Number(timestamp.nanos) / 1e9;
+}
+
+function parseActionDigestHashFromExecutionId(executionId: string): string | undefined {
+  const parts = executionId.split("/");
+  return parts[parts.length - 2];
+}
+
+function getDrilldownUrl(targetLabel?: string, actionMnemonic?: string): string {
+  if (!targetLabel || !actionMnemonic) {
+    return "";
+  }
+  const dimensionParam = `${encodeTargetLabelUrlParam(targetLabel)}|${encodeActionMnemonicUrlParam(actionMnemonic)}`;
+  return `/trends/?d=${encodeURIComponent(dimensionParam)}&ddMetric=e4#drilldown`;
+}
+
+export function encodeTargetLabelUrlParam(targetLabel: string): string {
+  return `e2|${targetLabel.length}|${targetLabel}`;
+}
+
+export function encodeActionMnemonicUrlParam(actionMnemonic: string): string {
+  return `e3|${actionMnemonic.length}|${actionMnemonic}`;
 }

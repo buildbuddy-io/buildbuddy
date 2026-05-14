@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -7,11 +7,9 @@ go_library(
     srcs = ["githubapp.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp",
     deps = [
-        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/webhooks/github",
         "//enterprise/server/webhooks/webhook_data",
         "//proto:github_go_proto",
-        "//proto:remote_execution_go_proto",
         "//proto:repo_go_proto",
         "//proto:workflow_go_proto",
         "//server/backends/github",
@@ -19,6 +17,7 @@ go_library(
         "//server/interfaces",
         "//server/real_environment",
         "//server/tables",
+        "//server/util/alert",
         "//server/util/authutil",
         "//server/util/db",
         "//server/util/flag",
@@ -26,22 +25,34 @@ go_library(
         "//server/util/log",
         "//server/util/perms",
         "//server/util/retry",
-        "//server/util/rexec",
         "//server/util/scratchspace",
         "//server/util/status",
-        "//server/util/uuid",
         "@com_github_go_git_go_git_v5//:go-git",
         "@com_github_go_git_go_git_v5//config",
         "@com_github_go_git_go_git_v5//plumbing",
         "@com_github_go_git_go_git_v5//plumbing/object",
         "@com_github_go_git_go_git_v5//plumbing/transport",
         "@com_github_go_git_go_git_v5//plumbing/transport/http",
-        "@com_github_golang_jwt_jwt//:jwt",
+        "@com_github_golang_jwt_jwt_v4//:jwt",
         "@com_github_google_go_github_v59//github",
         "@com_github_shurcool_githubv4//:githubv4",
-        "@org_golang_google_grpc//metadata",
-        "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_x_oauth2//:oauth2",
         "@org_golang_x_sync//errgroup",
+    ],
+)
+
+go_test(
+    name = "githubapp_test",
+    size = "small",
+    srcs = ["githubapp_test.go"],
+    embed = [":githubapp"],
+    deps = [
+        "//enterprise/server/testutil/enterprise_testenv",
+        "//server/tables",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
+        "//server/util/status",
+        "@com_github_google_go_github_v59//github",
+        "@com_github_stretchr_testify//require",
     ],
 )

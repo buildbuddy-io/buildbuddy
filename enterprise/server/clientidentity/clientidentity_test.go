@@ -1,22 +1,22 @@
 package clientidentity_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 )
 
-func newService(t *testing.T, clock clockwork.Clock) *clientidentity.Service {
+func newService(t testing.TB, clock clockwork.Clock) *clientidentity.Service {
 	key, err := random.RandomString(16)
 	require.NoError(t, err)
 	flags.Set(t, "app.client_identity.key", string(key))
@@ -37,7 +37,7 @@ func TestIdentity(t *testing.T) {
 	}, clientidentity.DefaultExpiration)
 	require.NoError(t, err)
 
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(clientidentity.IdentityHeaderName, headerValue))
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(authutil.ClientIdentityHeaderName, headerValue))
 	ctx, err = sis.ValidateIncomingIdentity(ctx)
 	require.NoError(t, err)
 
@@ -60,9 +60,9 @@ func TestDuplicateHeaders(t *testing.T) {
 	require.NoError(t, err)
 
 	headers := metadata.Pairs(
-		clientidentity.IdentityHeaderName, headerValue,
-		clientidentity.IdentityHeaderName, headerValue)
-	ctx := metadata.NewIncomingContext(context.Background(), headers)
+		authutil.ClientIdentityHeaderName, headerValue,
+		authutil.ClientIdentityHeaderName, headerValue)
+	ctx := metadata.NewIncomingContext(t.Context(), headers)
 	ctx, err = sis.ValidateIncomingIdentity(ctx)
 	require.NoError(t, err)
 
@@ -77,9 +77,9 @@ func TestMultipleHeaders(t *testing.T) {
 	sis := newService(t, clock)
 
 	headers := metadata.Pairs(
-		clientidentity.IdentityHeaderName, "value1",
-		clientidentity.IdentityHeaderName, "value2")
-	ctx := metadata.NewIncomingContext(context.Background(), headers)
+		authutil.ClientIdentityHeaderName, "value1",
+		authutil.ClientIdentityHeaderName, "value2")
+	ctx := metadata.NewIncomingContext(t.Context(), headers)
 	_, err := sis.ValidateIncomingIdentity(ctx)
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
@@ -105,7 +105,104 @@ func TestStaleIdentity(t *testing.T) {
 
 	clock.Advance(clientidentity.DefaultExpiration + time.Second)
 
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(clientidentity.IdentityHeaderName, headerValue))
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(authutil.ClientIdentityHeaderName, headerValue))
 	_, err = sis.ValidateIncomingIdentity(ctx)
 	require.Error(t, err)
+}
+
+func TestRequired(t *testing.T) {
+	flags.Set(t, "app.client_identity.required", true)
+
+	clock := clockwork.NewFakeClock()
+	sis := newService(t, clock)
+
+	origin := "space"
+	client := "aliens"
+	headerValue, err := sis.IdentityHeader(&interfaces.ClientIdentity{
+		Origin: origin,
+		Client: client,
+	}, clientidentity.DefaultExpiration)
+	require.NoError(t, err)
+
+	headers := metadata.Pairs(
+		authutil.ClientIdentityHeaderName, headerValue)
+	ctx := metadata.NewIncomingContext(t.Context(), headers)
+	_, err = sis.ValidateIncomingIdentity(ctx)
+	require.NoError(t, err)
+
+	ctx = metadata.NewIncomingContext(t.Context(), nil)
+	_, err = sis.ValidateIncomingIdentity(ctx)
+	require.Error(t, err)
+}
+
+func TestClearIdentity(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	sis := newService(t, clock)
+
+	headerValue, err := sis.IdentityHeader(&interfaces.ClientIdentity{
+		Origin: "origin",
+		Client: "client",
+	}, clientidentity.DefaultExpiration)
+	require.NoError(t, err)
+
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(authutil.ClientIdentityHeaderName, headerValue))
+	ctx, err = sis.ValidateIncomingIdentity(ctx)
+	require.NoError(t, err)
+	_, err = sis.IdentityFromContext(ctx)
+	require.NoError(t, err)
+
+	ctx = clientidentity.ClearIdentity(ctx)
+	_, err = sis.IdentityFromContext(ctx)
+	require.Error(t, err)
+}
+
+func TestAddIdentityToContext_PreservesExisting(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	sis := newService(t, clock)
+
+	existingHeader, err := sis.IdentityHeader(&interfaces.ClientIdentity{
+		Origin: "upstream-origin",
+		Client: "upstream",
+	}, clientidentity.DefaultExpiration)
+	require.NoError(t, err)
+
+	ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs(authutil.ClientIdentityHeaderName, existingHeader))
+	ctx, err = sis.AddIdentityToContext(ctx)
+	require.NoError(t, err)
+
+	md, ok := metadata.FromOutgoingContext(ctx)
+	require.True(t, ok)
+	vals := md.Get(authutil.ClientIdentityHeaderName)
+	require.Equal(t, 1, len(vals), "expected only the original header")
+	require.Equal(t, existingHeader, vals[0])
+}
+
+func TestAddIdentityToContext_AddsWhenMissing(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	sis := newService(t, clock)
+	flags.Set(t, "app.client_identity.client", "local")
+	flags.Set(t, "app.client_identity.origin", "local-origin")
+
+	ctx := t.Context()
+	ctx, err := sis.AddIdentityToContext(ctx)
+	require.NoError(t, err)
+
+	md, ok := metadata.FromOutgoingContext(ctx)
+	require.True(t, ok)
+	vals := md.Get(authutil.ClientIdentityHeaderName)
+	require.Equal(t, 1, len(vals), "expected a new header to be added")
+}
+
+func BenchmarkAddIdentityToContext(b *testing.B) {
+	sis := newService(b, clockwork.NewRealClock())
+
+	ctx := b.Context()
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, err := sis.AddIdentityToContext(ctx)
+			require.NoError(b, err)
+		}
+	})
 }

@@ -36,7 +36,7 @@ func makeTagSlice(args ...string) []*inpb.Invocation_Tag {
 }
 
 func TestSplitAndTrimAndDedupeTags(t *testing.T) {
-	longTag := "l" + strings.Repeat("o", 158) + "ng"
+	longTag := "l" + strings.Repeat("o", 253) + "ng"
 	lotsOfWhitespace := strings.Repeat(" ", 255)
 	tooLong := status.InvalidArgumentError("Tag list is too long.")
 	for _, testCase := range []struct {

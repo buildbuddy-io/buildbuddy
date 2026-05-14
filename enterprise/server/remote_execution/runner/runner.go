@@ -1,32 +1,36 @@
 package runner
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/binary"
-	"encoding/json"
+	"encoding/hex"
 	"fmt"
-	"io"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
-	"regexp"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
+	mrand "math/rand/v2"
+
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -38,37 +42,44 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/docker/go-units"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/types/known/durationpb"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 )
 
 var (
 	rootDirectory          = flag.String("executor.root_directory", "/tmp/buildbuddy/remote_build", "The root directory to use for build files.")
 	hostRootDirectory      = flag.String("executor.host_root_directory", "", "Path on the host where the executor container root directory is mounted.")
 	warmupTimeoutSecs      = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
+	warmupDefaultImages    = flag.Bool("executor.warmup_default_images", false, "Whether to warm up default container images on executor startup.")
 	warmupWorkflowImages   = flag.Bool("executor.warmup_workflow_images", false, "Whether to warm up the Linux workflow images (firecracker only).")
 	warmupAdditionalImages = flag.Slice[string]("executor.warmup_additional_images", []string{}, "List of container images to warm up alongside the executor default images on executor start up.")
 	maxRunnerCount         = flag.Int("executor.runner_pool.max_runner_count", 0, "Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory.")
+
+	runnerPoolMaxTotalMemoryUsage = flag.Int64("executor.runner_pool.max_total_memory_usage_bytes", 0, "Max total memory usage for pooled runners.")
 	// How big a runner's workspace is allowed to get before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
-	maxRunnerDiskSizeBytes = flag.Int64("executor.runner_pool.max_runner_disk_size_bytes", 16e9, "Maximum disk size for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 16GB.")
+	maxRunnerDiskSizeBytes    = flag.Int64("executor.runner_pool.max_runner_disk_size_bytes", 16e9, "Maximum disk size for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 16GB.")
+	runnerDiskUsageSampleRate = flag.Float64("executor.runner_pool.runner_disk_usage_sample_rate", 1.0, "Sample rate of runner disk usage. Setting this to a lower value can reduce CPU usage due to runner disk space checking, but may increase the risk of running out of disk space.")
 	// How much memory a runner is allowed to use before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", 0, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled.")
-	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
+	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", false, "Whether to warmup the default podman images or not.")
+	ociWarmupDefaultImages    = flag.Bool("executor.oci.warmup_default_images", false, "Whether to warmup the default oci images or not.")
+	resolveImageDigests       = flag.Bool("executor.resolve_image_digests", false, "Whether to resolve image names with tags to digests.")
 
 	overlayfsEnabled = flag.Bool("executor.workspace.overlayfs_enabled", false, "Enable overlayfs support for anonymous action workspaces. ** UNSTABLE **")
 )
@@ -91,10 +102,7 @@ const (
 	// How long to spend waiting for a runner to be removed before giving up.
 	runnerCleanupTimeout = 30 * time.Second
 	// Allowed time to spend trying to pause a runner and add it to the pool.
-	runnerRecycleTimeout = 3 * time.Minute
-	// How long to spend waiting for a persistent worker process to terminate
-	// after we send the shutdown signal before giving up.
-	persistentWorkerShutdownTimeout = 10 * time.Second
+	runnerRecycleTimeout = 10 * time.Minute
 
 	// Default value of maxRunnerMemoryUsageBytes.
 	defaultMaxRunnerMemoryUsageBytes = 2e9 // 2GiB
@@ -107,22 +115,17 @@ const (
 	// giving up and creating a new runner.
 	maxUnpauseAttempts = 5
 
-	// Value for persisent workers that support the JSON persistent worker protocol.
-	workerProtocolJSONValue = "json"
-	// Value for persisent workers that support the protobuf persistent worker protocol.
-	workerProtocolProtobufValue = "proto"
-
-	// Where to store the RunnerPoolState proto, relative to rootDirectory.
-	stateFileName = "_runner_pool_state.bin"
-
 	// If a runner exceeds this percentage of its total memory or disk allocation,
 	// it should not be recycled, because it may cause failures if it's reused
 	maxRecyclableResourceUtilization = .99
-)
 
-var (
-	flagFilePattern           = regexp.MustCompile(`^(?:@|--?flagfile=)(.+)`)
-	externalRepositoryPattern = regexp.MustCompile(`^@.*//.*`)
+	// Special file that actions can create in the workspace directory to
+	// prevent the runner from being recycled.
+	doNotRecycleMarkerFile = ".BUILDBUDDY_DO_NOT_RECYCLE"
+	// Special file that actions can create in the workspace directory to
+	// invalidate the snapshot the action was run in. This can be written
+	// if the action detects that the snapshot was corrupted upon startup.
+	invalidateSnapshotMarkerFile = ".BUILDBUDDY_INVALIDATE_SNAPSHOT"
 )
 
 func GetBuildRoot() string {
@@ -142,7 +145,7 @@ type WarmupConfig struct {
 }
 
 // state indicates the current state of a taskRunner.
-type state int
+type state int32
 
 func (s state) String() string {
 	switch s {
@@ -156,6 +159,21 @@ func (s state) String() string {
 		return "removed"
 	default:
 		return "unknown"
+	}
+}
+
+func (s state) ShortString() string {
+	switch s {
+	case initial:
+		return "I"
+	case paused:
+		return "P"
+	case ready:
+		return "R"
+	case removed:
+		return "X"
+	default:
+		return "?"
 	}
 }
 
@@ -176,11 +194,16 @@ type taskRunner struct {
 	// key controls which tasks can execute on this runner.
 	key *rnpb.RunnerKey
 
+	// metadata holds metadata about the runner.
+	metadata *espb.RunnerMetadata
+
 	// PlatformProperties holds the parsed platform properties for the last task
 	// executed by this runner.
 	PlatformProperties *platform.Properties
-	// debugID is a short debug ID used to identify this runner.
-	// It is not necessarily globally unique.
+	// debugID is a short debug ID used to identify this runner in logs without
+	// adding too much noise. It is not necessarily globally unique (see
+	// metadata.RunnerId for a unique id), but is highly likely to be unique
+	// within each executor.
 	debugID string
 
 	// Container is the handle on the container (possibly the bare /
@@ -188,37 +211,18 @@ type taskRunner struct {
 	Container *container.TracedCommandContainer
 	// Workspace holds the data which is used by this runner.
 	Workspace *workspace.Workspace
-	// VFS holds the FUSE-backed virtual filesystem, if it's enabled.
-	VFS *vfs.VFS
-	// VFSServer holds the RPC server that serves FUSE filesystem requests.
-	VFSServer *vfs_server.Server
 
 	// task is the current task assigned to the runner.
 	task *repb.ExecutionTask
-	// taskNumber starts at 1 and is incremented each time the runner is
-	// assigned a new task. Note: this is not necessarily the same as the number
-	// of tasks that have actually been executed.
-	taskNumber int64
-	// State is the current state of the runner as it pertains to reuse.
-	state state
+	// State is the current state of the runner as it pertains to reuse. It is
+	// atomic because in some cases we want to print runner metadata for debug
+	// purposes but without having to hold the pool lock.
+	state atomic.Int32
 
-	// TODO(bduffany): encapsulate persistent worker fields in their own struct
-	// in a separate package.
+	worker *persistentworker.Worker
 
-	// Stdin handle to send persistent WorkRequests to.
-	stdinWriter io.Writer
-	// Stdout handle to read persistent WorkResponses from.
-	// N.B. This is a bufio.Reader to support ByteReader required by ReadUvarint.
-	stdoutReader *bufio.Reader
-	stderr       lockingbuffer.LockingBuffer
-	// Stops the persistent worker associated with this runner. If this is nil,
-	// there is no persistent worker associated.
-	stopPersistentWorker func() error
 	// Keeps track of whether or not we encountered any errors that make the runner non-reusable.
 	doNotReuse bool
-
-	// Decoder used when reading streamed JSON values from stdout.
-	jsonDecoder *json.Decoder
 
 	// A function that is invoked after the runner is removed. Controlled by the
 	// runner pool.
@@ -231,15 +235,19 @@ type taskRunner struct {
 	diskUsageBytes   int64
 }
 
+func (r *taskRunner) Metadata() *espb.RunnerMetadata {
+	return r.metadata.CloneVT()
+}
+
 func (r *taskRunner) String() string {
-	ph, err := platformHash(r.key.Platform)
-	if err != nil {
-		ph = "<ERR!>"
-	}
-	return fmt.Sprintf(
-		"%s:%s:%d:%s:%s:%s",
-		r.debugID, r.state, r.taskNumber, r.key.GetGroupId(),
-		truncate(r.key.InstanceName, 8, "..."), truncate(ph, 8, ""))
+	return fmt.Sprintf("%s:%s:%d:%s", r.debugID, r.getState().ShortString(), r.metadata.GetTaskNumber(), keyString(r.key))
+}
+
+func (r *taskRunner) setState(s state) {
+	r.state.Store(int32(s))
+}
+func (r *taskRunner) getState() state {
+	return state(r.state.Load())
 }
 
 func (r *taskRunner) pullCredentials() (oci.Credentials, error) {
@@ -257,7 +265,7 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 		}
 	}
 	if err := r.Workspace.CreateOutputDirs(); err != nil {
-		return status.UnavailableErrorf("Error creating output directory: %s", err.Error())
+		return status.UnavailableErrorf("Error creating output directory: %s", err)
 	}
 
 	// Pull the container image before Run() is called, so that we don't
@@ -269,6 +277,7 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 	err = container.PullImageIfNecessary(
 		ctx, r.env,
 		r.Container, creds, r.PlatformProperties.ContainerImage,
+		r.PlatformProperties.UseOCIFetcher,
 	)
 	if err != nil {
 		return status.UnavailableErrorf("Error pulling container: %s", err)
@@ -277,63 +286,133 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 	return nil
 }
 
-func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
-	rootInstanceDigest := digest.NewResourceName(
+func fillStatsFromTransferInfo(ioStats *repb.IOStats, rxInfo *dirtools.TransferInfo) {
+	ioStats.FileDownloadCount = rxInfo.FileCount
+	ioStats.FileDownloadDurationUsec = rxInfo.TransferDuration.Microseconds()
+	ioStats.FileDownloadSizeBytes = rxInfo.BytesTransferred
+	ioStats.LocalCacheHits = rxInfo.LinkCount
+	ioStats.LocalCacheLinkDuration = durationpb.New(rxInfo.LinkDuration)
+}
+
+func (r *taskRunner) DownloadInputs(ctx context.Context) error {
+	rootInstanceDigest := digest.NewCASResourceName(
 		r.task.GetAction().GetInputRootDigest(),
 		r.task.GetExecuteRequest().GetInstanceName(),
-		rspb.CacheType_CAS, r.task.GetExecuteRequest().GetDigestFunction())
-	inputTree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, r.env.GetContentAddressableStorageClient(), rootInstanceDigest)
+		r.task.GetExecuteRequest().GetDigestFunction())
+	// NOTE: If we switch this code path to download inputs incrementally from
+	// GetTree instead of buffering the full GetTree response from the server,
+	// the downloadsBitmap implementation will probably break. The
+	// implementation currently depends on the tree being fully buffered in
+	// memory, in order for the bitmap indexes to be
+	// deterministic (so that they can be interpreted properly by both clients
+	// and servers)
+	inputTree, err := cachetools.GetAndMaybeCacheTreeFromRootDirectoryDigest(
+		ctx, r.env.GetContentAddressableStorageClient(), rootInstanceDigest, r.env.GetFileCache(), r.env.GetByteStreamClient())
 	if err != nil {
-		return err
+		return status.WrapError(err, "could not get input tree")
 	}
 
 	layout := &container.FileSystemLayout{
 		RemoteInstanceName: r.task.GetExecuteRequest().GetInstanceName(),
 		DigestFunction:     r.task.GetExecuteRequest().GetDigestFunction(),
 		Inputs:             inputTree,
-		OutputDirs:         r.task.GetCommand().GetOutputDirectories(),
-		OutputFiles:        r.task.GetCommand().GetOutputFiles(),
 	}
 
 	if err := r.prepareVFS(ctx, layout); err != nil {
 		return err
 	}
-
-	// Don't download inputs or add the CI runner if the FUSE-based filesystem is
-	// enabled.
-	// TODO(vadim): integrate VFS stats
-	if r.VFS != nil {
-		return nil
-	}
-
-	rxInfo, err := r.Workspace.DownloadInputs(ctx, inputTree)
+	err = r.Workspace.DownloadInputs(ctx, layout)
 	if err != nil {
 		return err
 	}
-	if r.PlatformProperties.WorkflowID != "" {
-		if err := r.Workspace.AddCIRunner(ctx); err != nil {
+	if platform.IsCICommand(r.task.GetCommand(), platform.GetProto(r.task.GetAction(), r.task.GetCommand())) &&
+		!ci_runner_util.CanInitFromCache(r.PlatformProperties.OS, r.PlatformProperties.Arch) {
+		if err := r.Workspace.AddRemoteRunnerBinaries(ctx); err != nil {
 			return err
 		}
 	}
-	if args := r.task.GetCommand().GetArguments(); len(args) > 0 && args[0] == "./buildbuddy_github_actions_runner" {
-		if err := r.Workspace.AddActionsRunner(ctx); err != nil {
-			return err
-		}
-	}
-	ioStats.FileDownloadCount = rxInfo.FileCount
-	ioStats.FileDownloadDurationUsec = rxInfo.TransferDuration.Microseconds()
-	ioStats.FileDownloadSizeBytes = rxInfo.BytesTransferred
 	return nil
 }
 
 // Run runs the task that is currently bound to the command runner.
-func (r *taskRunner) Run(ctx context.Context) *interfaces.CommandResult {
-	wsPath := r.Workspace.Path()
-	if r.VFS != nil {
-		wsPath = r.VFS.GetMountDir()
-	}
+func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *interfaces.CommandResult) {
+	start := time.Now()
+	defer func() {
+		// Discard nonsensical PSI full-stall durations which are greater
+		// than the execution duration by a significant amount.
+		// See https://bugzilla.kernel.org/show_bug.cgi?id=219194
+		// TL;DR: very rarely, a kernel bug causes UINT32_MAX to be reported
+		// instead of the actual value.
+		// Also, skip recycling in this case, because the nonsensical result
+		// will persist across tasks.
+		runDuration := time.Since(start)
+		stats := res.UsageStats
+		const psiCheckDurationThreshold = 1 * time.Second
+		// TODO(bduffany): remove this durationThreshold. This is needed because
+		// we technically track stats for slightly longer than the execution
+		// stage, because we reset the stats baseline relative to the last
+		// measurement, not the current value at the start of the execution. We
+		// should fix TrackExecution to take an initial baseline measurement
+		// instead, but need to fix some container implementations to support
+		// it. Podman in particular runs into a deadlock if we try to do this.
+		if cpuStallDuration := time.Duration(stats.GetCpuPressure().GetFull().GetTotal()) * time.Microsecond; cpuStallDuration > runDuration && cpuStallDuration > psiCheckDurationThreshold {
+			log.CtxWarningf(ctx, "Discarding CPU PSI stats: full-stall duration %s exceeds execution duration %s", cpuStallDuration, runDuration)
+			stats.CpuPressure = nil
+			res.DoNotRecycle = true
+		}
+		if memStallDuration := time.Duration(stats.GetMemoryPressure().GetFull().GetTotal()) * time.Microsecond; memStallDuration > runDuration && memStallDuration > psiCheckDurationThreshold {
+			log.CtxWarningf(ctx, "Discarding memory PSI stats: full-stall duration %s exceeds execution duration %s", memStallDuration, runDuration)
+			stats.MemoryPressure = nil
+			res.DoNotRecycle = true
+		}
+		if ioStallDuration := time.Duration(stats.GetIoPressure().GetFull().GetTotal()) * time.Microsecond; ioStallDuration > runDuration && ioStallDuration > psiCheckDurationThreshold {
+			log.CtxWarningf(ctx, "Discarding IO PSI stats: full-stall duration %s exceeds execution duration %s", ioStallDuration, runDuration)
+			stats.IoPressure = nil
+			res.DoNotRecycle = true
+		}
+		if slices.Contains(r.PlatformProperties.RunnerCrashedExitCodes, res.ExitCode) {
+			log.CtxInfof(ctx, "Exit code is in runner-crashed-exit-codes list %v - not recycling", r.PlatformProperties.RunnerCrashedExitCodes)
+			res.DoNotRecycle = true
+		}
+		if slices.Contains(r.PlatformProperties.TransientErrorExitCodes, res.ExitCode) {
+			res.Error = status.UnavailableErrorf("command exited with code %d (listed in transient-error-exit-codes)", res.ExitCode)
+			// Clear the exit code - should either return an exit code or an
+			// error but not both.
+			res.ExitCode = commandutil.NoExitCode
+		}
 
+		// Allow tasks to create a special file to skip recycling.
+		exists, err := disk.FileExists(ctx, filepath.Join(r.Workspace.Path(), doNotRecycleMarkerFile))
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to check existence of %s: %s", doNotRecycleMarkerFile, err)
+		} else if exists {
+			log.CtxInfof(ctx, "Action created %q file in workspace root; not recycling", doNotRecycleMarkerFile)
+			res.DoNotRecycle = true
+		} else {
+			exists, err = disk.FileExists(ctx, filepath.Join(r.Workspace.Path(), invalidateSnapshotMarkerFile))
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to check existence of %s: %s", invalidateSnapshotMarkerFile, err)
+			} else if exists {
+				log.CtxInfof(ctx, "Action created %q file in workspace root; not recycling", invalidateSnapshotMarkerFile)
+				res.DoNotRecycle = true
+			}
+		}
+	}()
+
+	wsPath := r.Workspace.Path()
 	command := r.task.GetCommand()
+
+	defer func() {
+		txInfo, err := r.Workspace.TaskFinished()
+		if err != nil {
+			log.CtxWarningf(ctx, "failed to finish task: %s", err)
+		}
+		if txInfo != nil {
+			fillStatsFromTransferInfo(ioStats, txInfo)
+			res.InputFetchMetadata = txInfo.InputFetchMetadata
+		}
+		res.VfsStats = r.Workspace.ComputeVFSStats()
+	}()
 
 	if !r.PlatformProperties.RecycleRunner {
 		// If the container is not recyclable, then use `Run` to walk through
@@ -347,13 +426,8 @@ func (r *taskRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.
-	//
-	// TODO(bduffany): Make this access to r.state thread-safe. The pool can be
-	// shutdown while this func is executing, which concurrently sets the runner
-	// state to "removed". This doesn't cause any known issues right now, but is
-	// error prone.
 	r.p.mu.RLock()
-	s := r.state
+	s := r.getState()
 	r.p.mu.RUnlock()
 	switch s {
 	case initial:
@@ -364,6 +438,7 @@ func (r *taskRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		err = container.PullImageIfNecessary(
 			ctx, r.env,
 			r.Container, creds, r.PlatformProperties.ContainerImage,
+			r.PlatformProperties.UseOCIFetcher,
 		)
 		if err != nil {
 			return commandutil.ErrorResult(err)
@@ -372,16 +447,16 @@ func (r *taskRunner) Run(ctx context.Context) *interfaces.CommandResult {
 			return commandutil.ErrorResult(err)
 		}
 		r.p.mu.Lock()
-		r.state = ready
+		r.setState(ready)
 		r.p.mu.Unlock()
 	case ready:
 	case removed:
 		return commandutil.ErrorResult(status.UnavailableErrorf("Not starting new task since executor is shutting down"))
 	default:
-		return commandutil.ErrorResult(status.InternalErrorf("unexpected runner state %d; this should never happen", r.state))
+		return commandutil.ErrorResult(status.InternalErrorf("unexpected runner state %d; this should never happen", s))
 	}
 
-	if r.supportsPersistentWorkers(ctx, command) {
+	if _, ok := persistentworker.Key(r.PlatformProperties, command.GetArguments()); ok {
 		return r.sendPersistentWorkRequest(ctx, command)
 	}
 
@@ -392,6 +467,28 @@ func (r *taskRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	}
 
 	return execResult
+}
+
+func (r *taskRunner) GracefulTerminate(ctx context.Context) error {
+	return r.Container.Signal(ctx, syscall.SIGTERM)
+}
+
+func (r *taskRunner) sendPersistentWorkRequest(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+	// Mark the runner as doNotReuse until the task is completed without error.
+	r.doNotReuse = true
+	if r.worker == nil {
+		log.CtxInfof(ctx, "Starting persistent worker")
+		w, err := persistentworker.Start(r.env.GetServerContext(), r.Workspace, r.Container, r.PlatformProperties.PersistentWorkerProtocol, command)
+		if err != nil {
+			return commandutil.ErrorResult(status.WrapError(err, "start persistent worker"))
+		}
+		r.worker = w
+	}
+	res := r.worker.Exec(ctx, command)
+	if res.Error == nil {
+		r.doNotReuse = false
+	}
+	return res
 }
 
 func (r *taskRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, executeResponse *repb.ExecuteResponse, cmdResult *interfaces.CommandResult) error {
@@ -433,8 +530,8 @@ func (r *taskRunner) shutdown(ctx context.Context) error {
 
 func (r *taskRunner) Remove(ctx context.Context) error {
 	r.p.mu.Lock()
-	s := r.state
-	r.state = removed
+	s := r.getState()
+	r.setState(removed)
 	r.p.mu.Unlock()
 	if s == removed {
 		return nil
@@ -448,15 +545,12 @@ func (r *taskRunner) Remove(ctx context.Context) error {
 	if err := r.shutdown(ctx); err != nil {
 		errs = append(errs, err)
 	}
-	if r.stopPersistentWorker != nil {
-		if err := r.stopPersistentWorker(); err != nil {
+	if r.worker != nil {
+		if err := r.worker.Stop(); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	if err := r.Container.Remove(ctx); err != nil {
-		errs = append(errs, err)
-	}
-	if err := r.removeVFS(); err != nil {
 		errs = append(errs, err)
 	}
 	if err := r.Workspace.Remove(ctx); err != nil {
@@ -469,15 +563,15 @@ func (r *taskRunner) Remove(ctx context.Context) error {
 }
 
 func (r *taskRunner) RemoveWithTimeout(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, runnerCleanupTimeout)
+	ctx, cancel := background.ExtendContextForFinalization(ctx, runnerCleanupTimeout)
 	defer cancel()
 	return r.Remove(ctx)
 }
 
-func (r *taskRunner) RemoveInBackground() {
+func (r *taskRunner) RemoveInBackground(ctx context.Context) {
 	// TODO: Add to a cleanup queue instead of spawning a goroutine here.
 	go func() {
-		if err := r.RemoveWithTimeout(context.Background()); err != nil {
+		if err := r.RemoveWithTimeout(ctx); err != nil {
 			log.Errorf("Failed to remove runner %s: %s", r.String(), err)
 		}
 	}()
@@ -488,11 +582,10 @@ func (r *taskRunner) RemoveInBackground() {
 func (r *taskRunner) isCIRunner() bool {
 	r.p.mu.RLock()
 	task := r.task
-	props := r.PlatformProperties
 	r.p.mu.RUnlock()
 
 	args := task.GetCommand().GetArguments()
-	return props.WorkflowID != "" && len(args) > 0 && args[0] == "./buildbuddy_ci_runner"
+	return len(args) > 0 && args[0] == "./buildbuddy_ci_runner"
 }
 
 func (r *taskRunner) cleanupCIRunner(ctx context.Context) error {
@@ -511,18 +604,27 @@ type PoolOptions struct {
 	// ContainerProvider is an optional implementation overriding
 	// newContainerImpl.
 	ContainerProvider container.Provider
+
+	// CgroupParent is the parent cgroup under which all runner containers are
+	// placed.
+	CgroupParent string
 }
 
 type pool struct {
 	env                environment.Env
 	podID              string
 	buildRoot          string
+	caseInsensitiveFS  bool
+	cgroupParent       string
+	blockDevice        *block_io.Device
+	cacheRoot          string
 	overrideProvider   container.Provider
 	containerProviders map[platform.ContainerType]container.Provider
 
-	maxRunnerCount            int
-	maxRunnerMemoryUsageBytes int64
-	maxRunnerDiskUsageBytes   int64
+	maxRunnerCount                 int
+	maxTotalRunnerMemoryUsageBytes int64
+	maxRunnerMemoryUsageBytes      int64
+	maxRunnerDiskUsageBytes        int64
 
 	// pendingRemovals keeps track of which runners are pending removal.
 	pendingRemovals sync.WaitGroup
@@ -531,9 +633,16 @@ type pool struct {
 	isShuttingDown bool
 	// runners holds all runners managed by the pool.
 	runners []*taskRunner
+
+	resolver *oci.Resolver
 }
 
-func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
+func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, error) {
+	// Validate configured isolation types.
+	if err := executorplatform.ValidateIsolationTypes(); err != nil {
+		return nil, status.WrapError(err, "invalid configuration")
+	}
+
 	hc := env.GetHealthChecker()
 	if hc == nil {
 		return nil, status.FailedPreconditionError("Missing health checker")
@@ -542,18 +651,31 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("Failed to determine k8s pod ID: %s", err)
 	}
-
+	resolver, err := oci.NewResolver(env)
+	if err != nil {
+		return nil, status.InternalErrorf("Could not create OCI resolver: %s", err)
+	}
 	p := &pool{
-		env:       env,
-		podID:     podID,
-		buildRoot: *rootDirectory,
-		runners:   []*taskRunner{},
+		env:          env,
+		podID:        podID,
+		buildRoot:    *rootDirectory,
+		cacheRoot:    cacheRoot,
+		cgroupParent: opts.CgroupParent,
+		runners:      []*taskRunner{},
+		resolver:     resolver,
+	}
+	if err := os.MkdirAll(p.buildRoot, fs.FileMode(0755)); err != nil {
+		return nil, status.InternalErrorf("Failed to create build root directory %q: %s", p.buildRoot, err)
+	}
+	p.caseInsensitiveFS, err = fspath.IsCaseInsensitiveFS(p.buildRoot)
+	if err != nil {
+		return nil, status.InternalErrorf("test build root case sensitivity at path %q: %s", p.buildRoot, err)
 	}
 	if opts.ContainerProvider != nil {
 		p.overrideProvider = opts.ContainerProvider
 	} else {
 		providers := map[platform.ContainerType]container.Provider{}
-		if err := p.registerContainerProviders(providers, platform.GetExecutorProperties()); err != nil {
+		if err := p.registerContainerProviders(env.GetServerContext(), providers, executorplatform.GetExecutorProperties()); err != nil {
 			return nil, err
 		}
 		if len(providers) == 0 {
@@ -562,13 +684,16 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 		p.containerProviders = providers
 	}
 
-	p.setLimits()
-	hc.RegisterShutdownFunction(p.Shutdown)
-
-	if err := p.initializeFromSavedState(env.GetServerContext()); err != nil {
-		log.Warningf("Failed to initialize runner pool from saved state: %s", err)
+	dev, err := block_io.LookupDevice(*rootDirectory)
+	if err != nil {
+		log.Warningf("Failed to locate block device for build root directory %q - IO stats may not work properly: %s", *rootDirectory, err)
+	} else {
+		log.Infof("Detected block device %s from build root directory %q", dev, *rootDirectory)
+		p.blockDevice = dev
 	}
 
+	p.setLimits()
+	hc.RegisterShutdownFunction(p.Shutdown)
 	return p, nil
 }
 
@@ -603,9 +728,10 @@ func (p *pool) checkAddPreconditions(r *taskRunner) *labeledError {
 	}
 	// Note: shutdown can change the state to removed, so we need the lock to be
 	// held for this check.
-	if r.state != ready {
+	if r.getState() != ready {
+		alert.UnexpectedEvent("unexpected_runner_state", "Unexpected runner state %d during add()", r.getState())
 		return &labeledError{
-			status.InternalErrorf("unexpected runner state %d; this should never happen", r.state),
+			status.InternalErrorf("unexpected runner state %d; this should never happen", r.getState()),
 			"unexpected_runner_state",
 		}
 	}
@@ -644,18 +770,23 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 			"max_memory_exceeded",
 		}
 	}
-	du, err := r.Workspace.DiskUsageBytes()
-	if err != nil {
-		return &labeledError{
-			status.WrapError(err, "failed to compute runner disk usage"),
-			"compute_disk_usage_failed",
+
+	var diskUsageBytes int64
+	if *runnerDiskUsageSampleRate >= 1.0 || mrand.Float64() < *runnerDiskUsageSampleRate {
+		du, err := r.Workspace.DiskUsageBytes()
+		if err != nil {
+			return &labeledError{
+				status.WrapError(err, "failed to compute runner disk usage"),
+				"compute_disk_usage_failed",
+			}
 		}
-	}
-	if du > p.maxRunnerDiskUsageBytes {
-		return &labeledError{
-			status.ResourceExhaustedErrorf("runner disk usage of %d bytes exceeds limit of %d bytes", du, p.maxRunnerDiskUsageBytes),
-			"max_disk_usage_exceeded",
+		if du > p.maxRunnerDiskUsageBytes {
+			return &labeledError{
+				status.ResourceExhaustedErrorf("runner disk usage of %d bytes exceeds limit of %d bytes", du, p.maxRunnerDiskUsageBytes),
+				"max_disk_usage_exceeded",
+			}
 		}
+		diskUsageBytes = du
 	}
 
 	p.mu.Lock()
@@ -664,7 +795,7 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 	// hold the lock while pausing since it is relatively slow, so need to re-check
 	// whether the pool shut down here.
 	if p.isShuttingDown {
-		r.RemoveInBackground()
+		r.RemoveInBackground(ctx)
 		return nil
 	}
 
@@ -675,11 +806,29 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 		}
 	}
 
-	for p.pausedRunnerCount() >= p.maxRunnerCount {
+	shouldEvict := func() (bool, string) {
+		// If pooling this runner would put us over the max number of pooled
+		// runners, we need to evict a runner.
+		if p.maxRunnerCount > 0 && p.pausedRunnerCount()+1 > p.maxRunnerCount {
+			return true, fmt.Sprintf("max runner count exceeded (max=%d)", p.maxRunnerCount)
+		}
+		// If pooling this runner would put us over the total memory limit,
+		// we need to evict a runner.
+		if p.maxTotalRunnerMemoryUsageBytes > 0 && p.pausedRunnerMemoryUsageBytes()+stats.MemoryBytes > p.maxTotalRunnerMemoryUsageBytes {
+			return true, fmt.Sprintf("max runner memory usage exceeded (max=%s)", units.BytesSize(float64(p.maxTotalRunnerMemoryUsageBytes)))
+		}
+		// Otherwise, we don't need to evict.
+		return false, ""
+	}
+	for {
+		evict, reason := shouldEvict()
+		if !evict {
+			break
+		}
 		// Evict the oldest (first) paused runner to make room for the new one.
 		evictIndex := -1
 		for i, r := range p.runners {
-			if r.state == paused {
+			if r.getState() == paused {
 				evictIndex = i
 				break
 			}
@@ -692,11 +841,7 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 		}
 
 		r := p.runners[evictIndex]
-		if p.pausedRunnerCount() >= p.maxRunnerCount {
-			log.Infof("Evicting runner %s (pool max count %d exceeded).", r, p.maxRunnerCount)
-		} else if p.pausedRunnerMemoryUsageBytes()+stats.MemoryBytes > p.maxRunnerMemoryUsageBytes {
-			log.Infof("Evicting runner %s (max memory %d exceeded).", r, p.maxRunnerMemoryUsageBytes)
-		}
+		log.Infof("Evicting runner %s (%s)", r, reason)
 		p.runners = append(p.runners[:evictIndex], p.runners[evictIndex+1:]...)
 
 		metrics.RunnerPoolEvictions.Inc()
@@ -704,7 +849,7 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 		metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))
 		metrics.RunnerPoolMemoryUsageBytes.Sub(float64(r.memoryUsageBytes))
 
-		r.RemoveInBackground()
+		r.RemoveInBackground(ctx)
 	}
 
 	// Shift this runner to the end of the list since we want to keep the list
@@ -715,14 +860,14 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 	// Cache resource usage values so we don't need to recompute them when
 	// updating metrics upon removal.
 	r.memoryUsageBytes = stats.MemoryBytes
-	r.diskUsageBytes = du
+	r.diskUsageBytes = diskUsageBytes
 
 	metrics.RunnerPoolDiskUsageBytes.Add(float64(r.diskUsageBytes))
 	metrics.RunnerPoolMemoryUsageBytes.Add(float64(r.memoryUsageBytes))
 	metrics.RunnerPoolCount.Inc()
 
 	// Officially mark this runner paused and ready for reuse.
-	r.state = paused
+	r.setState(paused)
 
 	return nil
 }
@@ -743,9 +888,26 @@ func (p *pool) hostBuildRoot() string {
 	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
 }
 
+// resolveImageDigest replaces the ContainerImage property with an image name that includes a digest.
+// This makes the ContainerImage property safe to use as a cache key.
+func (p *pool) resolveImageDigest(ctx context.Context, props *platform.Properties) error {
+	if props.ContainerImage == "" {
+		return nil
+	}
+	creds, err := oci.CredentialsFromProperties(props)
+	if err != nil {
+		return err
+	}
+	imageNameWithDigest, err := p.resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds)
+	if err != nil {
+		return err
+	}
+	props.ContainerImage = imageNameWithDigest
+	return nil
+}
+
 func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	start := time.Now()
-	log.Infof("Warming up %s image %q", cfg.Isolation, cfg.Image)
 	plat := &repb.Platform{
 		Properties: []*repb.Platform_Property{
 			{Name: "container-image", Value: platform.DockerPrefix + cfg.Image},
@@ -762,35 +924,47 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	if err != nil {
 		return err
 	}
-	platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), platProps, task.GetCommand())
+	executorplatform.ApplyOverrides(p.env, executorplatform.GetExecutorProperties(), platProps, task.GetCommand())
+	if *resolveImageDigests {
+		if err := p.resolveImageDigest(ctx, platProps); err != nil {
+			return err
+		}
+	}
+	log.Infof("Warming up %s image %q", cfg.Isolation, platProps.ContainerImage)
 	st := &repb.ScheduledTask{
 		SchedulingMetadata: &scpb.SchedulingMetadata{
 			// Note: this will use the default task size estimates and not
 			// measurement-based task sizing, which requires the app.
-			TaskSize: tasksize.Estimate(task),
+			TaskSize: tasksize.ApplyLimits(ctx, p.env.GetExperimentFlagProvider(), task.GetCommand(), platProps, tasksize.Default(task)),
 		},
 		ExecutionTask: task,
 	}
 
-	state := &rnpb.RunnerState{
-		// Note: warmup runner is not tied to a group or instance name
-		RunnerKey: &rnpb.RunnerKey{Platform: plat},
-	}
-
-	ws, err := workspace.New(p.env, p.GetBuildRoot(), &workspace.Opts{})
+	ws, err := workspace.New(p.env, p.GetBuildRoot(), &workspace.Opts{
+		CaseInsensitive: p.caseInsensitiveFS,
+	})
 	if err != nil {
 		return err
 	}
 	defer func() {
 		ctx, cancel := background.ExtendContextForFinalization(ctx, runnerCleanupTimeout)
 		defer cancel()
-		_ = ws.Remove(ctx)
+		if err := ws.Remove(ctx); err != nil {
+			log.CtxErrorf(ctx, "Failed to remove warmup workspace: %s", err)
+		}
 	}()
-	c, err := p.newContainer(ctx, platProps, st, state, ws.Path())
+	c, err := p.newContainer(ctx, platProps, st, ws.Path())
 	if err != nil {
-		log.Errorf("Error warming up %q image %q: %s", cfg.Isolation, cfg.Image, err)
+		log.Errorf("Error warming up %q image %q: %s", cfg.Isolation, platProps.ContainerImage, err)
 		return err
 	}
+	defer func() {
+		ctx, cancel := background.ExtendContextForFinalization(ctx, runnerCleanupTimeout)
+		defer cancel()
+		if err := c.Remove(ctx); err != nil {
+			log.CtxErrorf(ctx, "Failed to remove warmup container: %s", err)
+		}
+	}()
 
 	creds, err := oci.CredentialsFromProperties(platProps)
 	if err != nil {
@@ -799,10 +973,25 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	// Note: intentionally bypassing PullImageIfNecessary here to avoid caching
 	// the auth result, since it makes it tricker to debug per-action
 	// misconfiguration.
-	if err := c.PullImage(ctx, creds); err != nil {
-		return err
+	onDisk, _ := c.IsImageCached(ctx)
+	pullStart := time.Now()
+	pullErr := c.PullImage(ctx, creds)
+	pullDuration := time.Since(pullStart)
+	container.RecordImageFetchMetrics(
+		c.IsolationType(),
+		oci.RegistryETLDPlusOne(platProps.ContainerImage),
+		metrics.ImageFetchTriggerWarmup,
+		onDisk,
+		!creds.IsEmpty(),
+		platProps.UseOCIFetcher,
+		pullErr,
+		pullDuration,
+	)
+	container.LogImagePullError(ctx, platProps.ContainerImage, c.IsolationType(), metrics.ImageFetchTriggerWarmup, platProps.UseOCIFetcher, pullErr, pullDuration)
+	if pullErr != nil {
+		return pullErr
 	}
-	log.Infof("Warmup: %s pulled image %q in %s", cfg.Isolation, cfg.Image, time.Since(start))
+	log.Infof("Warmup: %s pulled image %q in %s", cfg.Isolation, platProps.ContainerImage, time.Since(start))
 	return nil
 }
 
@@ -821,7 +1010,7 @@ func (p *pool) Warmup(ctx context.Context) {
 	defer cancel()
 
 	eg, ctx := errgroup.WithContext(ctx)
-	for _, cfg := range p.warmupConfigs() {
+	for _, cfg := range WarmupConfigs() {
 		cfg := cfg
 		eg.Go(func() error {
 			return p.warmupImage(ctx, &cfg)
@@ -832,9 +1021,15 @@ func (p *pool) Warmup(ctx context.Context) {
 	}
 }
 
-func (p *pool) warmupConfigs() []WarmupConfig {
+// WarmupConfigs returns the images configured for executor startup warmup.
+func WarmupConfigs() []WarmupConfig {
 	var out []WarmupConfig
-	for _, isolation := range platform.GetExecutorProperties().SupportedIsolationTypes {
+	for _, isolation := range executorplatform.GetExecutorProperties().SupportedIsolationTypes {
+		// Bare/sandbox isolation types don't support container images.
+		if isolation == platform.BareContainerType || isolation == platform.SandboxContainerType {
+			continue
+		}
+
 		for _, image := range *warmupAdditionalImages {
 			out = append(out, WarmupConfig{
 				Image:     image,
@@ -842,14 +1037,20 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 			})
 		}
 
-		if isolation == platform.PodmanContainerType && !*podmanWarmupDefaultImages {
+		if (isolation == platform.OCIContainerType) && !*ociWarmupDefaultImages {
+			continue
+		}
+		if (isolation == platform.PodmanContainerType) && !*podmanWarmupDefaultImages {
+			continue
+		}
+		if (isolation == platform.DockerContainerType || isolation == platform.FirecrackerContainerType) && !*warmupDefaultImages {
 			continue
 		}
 
 		// Warm up the default execution image for all isolation types, as well
 		// as the new Ubuntu 20.04 image.
 		out = append(out, WarmupConfig{
-			Image:     platform.DefaultImage(),
+			Image:     executorplatform.DefaultImage(),
 			Isolation: string(isolation),
 		})
 		out = append(out, WarmupConfig{
@@ -872,14 +1073,19 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 	return out
 }
 
-func (p *pool) effectivePlatform(task *repb.ExecutionTask) (*platform.Properties, error) {
+func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) (*platform.Properties, error) {
 	props, err := platform.ParseProperties(task)
 	if err != nil {
 		return nil, err
 	}
 	// TODO: This mutates the task; find a cleaner way to do this.
-	if err := platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
+	if err := executorplatform.ApplyOverrides(p.env, executorplatform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
 		return nil, err
+	}
+	if *resolveImageDigests {
+		if err := p.resolveImageDigest(ctx, props); err != nil {
+			return nil, err
+		}
 	}
 	return props, nil
 }
@@ -895,7 +1101,7 @@ func (p *pool) effectivePlatform(task *repb.ExecutionTask) (*platform.Properties
 // executor is shut down.
 func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runner, error) {
 	task := st.ExecutionTask
-	props, err := p.effectivePlatform(task)
+	props, err := p.effectivePlatform(ctx, task)
 	if err != nil {
 		return nil, err
 	}
@@ -907,20 +1113,18 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	if user != nil {
 		groupID = user.GetGroupID()
 	}
-	if !*container.DebugEnableAnonymousRecycling && (props.RecycleRunner && err != nil) {
+	if !container.AnonymousRecyclingEnabled() && (props.RecycleRunner && err != nil) {
 		return nil, status.InvalidArgumentError(
 			"runner recycling is not supported for anonymous builds " +
 				`(recycling was requested via platform property "recycle-runner=true")`)
 	}
-	if props.RecycleRunner && props.EnableVFS {
-		return nil, status.InvalidArgumentError("VFS is not yet supported for recycled runners")
-	}
 
+	persistentWorkerKey, _ := persistentworker.Key(props, task.GetCommand().GetArguments())
 	key := &rnpb.RunnerKey{
 		GroupId:             groupID,
 		InstanceName:        task.GetExecuteRequest().GetInstanceName(),
-		Platform:            task.GetCommand().GetPlatform(),
-		PersistentWorkerKey: effectivePersistentWorkerKey(props, task.GetCommand().GetArguments()),
+		Platform:            platform.GetProto(task.GetAction(), task.GetCommand()),
+		PersistentWorkerKey: persistentWorkerKey,
 	}
 
 	// If snapshot sharing is enabled, a firecracker VM can be cloned from the
@@ -932,13 +1136,13 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	// workload is for branch `feature_two`, we should create a new runner intended
 	// for `feature_two`, rather than reuse the runner for branch `feature_one`, which would be more stale
 	snapshotEnabledRunner := platform.ContainerType(props.WorkloadIsolationType) == platform.FirecrackerContainerType &&
-		(*snaputil.EnableRemoteSnapshotSharing || *snaputil.EnableLocalSnapshotSharing)
+		snaputil.IsChunkedSnapshotSharingEnabled()
 	if props.RecycleRunner && !snapshotEnabledRunner {
 		r := p.takeWithRetry(ctx, key)
 		if r != nil {
 			p.mu.Lock()
 			r.task = task
-			r.taskNumber += 1
+			r.metadata.TaskNumber++
 			r.PlatformProperties = props
 			p.mu.Unlock()
 			log.CtxInfof(ctx, "Reusing existing runner %s for task", r)
@@ -957,14 +1161,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		}).Inc()
 	}
 
-	debugID, _ := random.RandomString(8)
-	state := &rnpb.RunnerState{
-		RunnerKey:         key,
-		DebugId:           debugID,
-		AssignedTaskCount: 1,
-	}
-
-	r, err := p.newRunner(ctx, props, st, state)
+	r, err := p.newRunner(ctx, key, props, st)
 	if err != nil {
 		return nil, err
 	}
@@ -974,10 +1171,12 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 
 // newRunner creates a runner either for the given task (if set) or restores the
 // runner from the given state.ContainerState.
-func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *repb.ScheduledTask, state *rnpb.RunnerState) (*taskRunner, error) {
-	if st == nil && state.GetContainerState() == nil {
-		return nil, status.FailedPreconditionError("either a task or saved container state is required to create a runner")
+func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platform.Properties, st *repb.ScheduledTask) (*taskRunner, error) {
+	platformSHA256, err := digest.ComputeForMessage(key.GetPlatform(), repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, status.UnavailableErrorf("compute platform hash: %s", err)
 	}
+
 	useOverlayfs, err := isOverlayfsEnabledForAction(ctx, props)
 	if err != nil {
 		return nil, err
@@ -985,35 +1184,34 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 	wsOpts := &workspace.Opts{
 		Preserve:        props.PreserveWorkspace,
 		CleanInputs:     props.CleanWorkspaceInputs,
-		NonrootWritable: props.NonrootWorkspace || props.DockerUser != "",
+		CaseInsensitive: p.caseInsensitiveFS,
 		UseOverlayfs:    useOverlayfs,
+		UseVFS:          props.EnableVFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType,
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	if err != nil {
 		return nil, err
 	}
-	ctr, err := p.newContainer(ctx, props, st, state, ws.Path())
+	ctr, err := p.newContainer(ctx, props, st, ws.Path())
 	if err != nil {
 		return nil, err
 	}
+	runnerID := uuid.New()
 	r := &taskRunner{
-		env:                p.env,
-		p:                  p,
-		key:                state.GetRunnerKey(),
-		debugID:            state.GetDebugId(),
-		taskNumber:         state.GetAssignedTaskCount(),
+		env:     p.env,
+		p:       p,
+		key:     key,
+		debugID: strings.ReplaceAll(runnerID, "-", "")[:8],
+		metadata: &espb.RunnerMetadata{
+			RunnerId:            runnerID,
+			TaskNumber:          1,
+			PlatformHash:        platformSHA256.GetHash(),
+			PersistentWorkerKey: key.GetPersistentWorkerKey(),
+		},
 		task:               st.GetExecutionTask(),
 		PlatformProperties: props,
 		Container:          ctr,
 		Workspace:          ws,
-	}
-	if err := r.startVFS(); err != nil {
-		return nil, err
-	}
-	// If we restored a paused container from state, the initial state should be
-	// set to "paused" rather than the usual "init".
-	if state.GetContainerState() != nil {
-		r.state = paused
 	}
 
 	p.mu.Lock()
@@ -1026,14 +1224,23 @@ func (p *pool) newRunner(ctx context.Context, props *platform.Properties, st *re
 	r.removeCallback = func() {
 		p.pendingRemovals.Done()
 	}
-	log.CtxInfof(ctx, "Created new %s runner %s for task", props.WorkloadIsolationType, r)
+
+	log.CtxInfof(ctx, "Created new runner for task (runner=%q, type=%s, recyclable=%v)", r, props.WorkloadIsolationType, props.RecycleRunner)
 	return r, nil
 }
 
-func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, state *rnpb.RunnerState, workingDir string) (*container.TracedCommandContainer, error) {
+func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, workingDir string) (*container.TracedCommandContainer, error) {
+	args := &container.Init{
+		Props:        props,
+		Task:         task,
+		WorkDir:      workingDir,
+		BlockDevice:  p.blockDevice,
+		CgroupParent: p.cgroupParent,
+	}
+
 	// Overriding in tests.
 	if p.overrideProvider != nil {
-		c, err := p.overrideProvider.New(ctx, props, task, state, workingDir)
+		c, err := p.overrideProvider.New(ctx, args)
 		if err != nil {
 			return nil, err
 		}
@@ -1041,16 +1248,13 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 	}
 
 	isolationType := platform.ContainerType(props.WorkloadIsolationType)
-	if state.GetContainerState() != nil && isolationType != platform.FirecrackerContainerType {
-		return nil, status.UnimplementedErrorf("restoring container state is not implemented for %q isolation", isolationType)
-	}
-
 	containerProvider, ok := p.containerProviders[isolationType]
 	if !ok {
 		return nil, status.UnimplementedErrorf("no container provider registered for %q isolation", isolationType)
 	}
 
-	c, err := containerProvider.New(ctx, props, task, state, workingDir)
+	log.CtxDebugf(ctx, "creating new container for %q image", props.ContainerImage)
+	c, err := containerProvider.New(ctx, args)
 	if err != nil {
 		return nil, err
 	}
@@ -1082,15 +1286,21 @@ func isOverlayfsEnabledForAction(ctx context.Context, props *platform.Properties
 }
 
 func keyString(k *rnpb.RunnerKey) string {
-	ph, err := platformHash(k.Platform)
+	ph, err := platformHash(k.GetPlatform())
 	if err != nil {
 		ph = "<ERR!>"
 	}
+	pwk := ""
+	if k.GetPersistentWorkerKey() != "" {
+		pwk = ":w-" + truncate(k.GetPersistentWorkerKey(), 4, "")
+	}
 	return fmt.Sprintf(
-		"%s:%s:%s",
+		"%s:%s:%s%s",
 		k.GetGroupId(),
 		truncate(k.InstanceName, 8, "..."),
-		truncate(ph, 8, ""))
+		truncate(ph, 8, ""),
+		pwk,
+	)
 }
 
 func (p *pool) String() string {
@@ -1118,7 +1328,7 @@ func (p *pool) takeWithRetry(ctx context.Context, key *rnpb.RunnerKey) *taskRunn
 			p.mu.Lock()
 			p.remove(r)
 			p.mu.Unlock()
-			r.RemoveInBackground()
+			r.RemoveInBackground(ctx)
 			continue
 		}
 
@@ -1143,7 +1353,7 @@ func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) *taskRunner {
 
 	for i := len(p.runners) - 1; i >= 0; i-- {
 		r := p.runners[i]
-		if key.GroupId != r.key.GroupId || r.state != paused {
+		if key.GroupId != r.key.GroupId || r.getState() != paused {
 			continue
 		}
 		// Check for an exact match on the runner pool keys.
@@ -1156,7 +1366,7 @@ func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) *taskRunner {
 			continue
 		}
 
-		r.state = ready
+		r.setState(ready)
 
 		metrics.RunnerPoolCount.Dec()
 		metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))
@@ -1192,7 +1402,7 @@ func (p *pool) ActiveRunnerCount() int {
 func (p *pool) pausedRunnerCount() int {
 	n := 0
 	for _, r := range p.runners {
-		if r.state == paused {
+		if r.getState() == paused {
 			n++
 		}
 	}
@@ -1202,71 +1412,11 @@ func (p *pool) pausedRunnerCount() int {
 func (p *pool) pausedRunnerMemoryUsageBytes() int64 {
 	b := int64(0)
 	for _, r := range p.runners {
-		if r.state == paused {
+		if r.getState() == paused {
 			b += r.memoryUsageBytes
 		}
 	}
 	return b
-}
-
-func (p *pool) stateFilePath() string {
-	return filepath.Join(*rootDirectory, stateFileName)
-}
-
-func (p *pool) loadState(ctx context.Context) (*rnpb.RunnerPoolState, error) {
-	b, err := disk.ReadFile(ctx, p.stateFilePath())
-	if err != nil {
-		return nil, status.WrapErrorf(err, "failed to read state file %s", p.stateFilePath())
-	}
-	state := &rnpb.RunnerPoolState{}
-	if err := proto.Unmarshal(b, state); err != nil {
-		return nil, status.WrapError(err, "failed to unmarshal state")
-	}
-	if err := os.Remove(p.stateFilePath()); err != nil {
-		return nil, status.InternalErrorf("failed to remove state file %s: %s", p.stateFilePath(), err)
-	}
-	return state, nil
-}
-
-func (p *pool) saveState(ctx context.Context, state *rnpb.RunnerPoolState) error {
-	if len(state.RunnerStates) == 0 {
-		return nil
-	}
-	b, err := proto.Marshal(state)
-	if err != nil {
-		return status.WrapError(err, "failed to marshal state")
-	}
-	if _, err := disk.WriteFile(ctx, p.stateFilePath(), b); err != nil {
-		return status.WrapErrorf(err, "failed to write %s", p.stateFilePath())
-	}
-	return nil
-}
-
-func (p *pool) initializeFromSavedState(ctx context.Context) error {
-	state, err := p.loadState(ctx)
-	if err != nil {
-		if status.IsNotFoundError(err) {
-			log.Infof("Runner state file not found at %s", p.stateFilePath())
-			return nil
-		}
-		return err
-	}
-	for _, rs := range state.RunnerStates {
-		nopTask := &repb.ExecutionTask{Command: &repb.Command{Platform: rs.GetRunnerKey().GetPlatform()}}
-		props, err := p.effectivePlatform(nopTask)
-		if err != nil {
-			log.Warningf("Failed to restore runner state: %s", err)
-			continue
-		}
-		r, err := p.newRunner(ctx, props, nil /*=scheduledTask*/, rs)
-		if err != nil {
-			log.Warningf("Failed to restore runner state: %s", err)
-			continue
-		}
-		log.Infof("Restored runner %s from state", r)
-	}
-	log.Infof("Restored %d runner(s) from state file %s", len(p.runners), p.stateFilePath())
-	return nil
 }
 
 // Shutdown removes all runners from the pool and prevents new ones from
@@ -1275,13 +1425,12 @@ func (p *pool) Shutdown(ctx context.Context) error {
 	p.mu.Lock()
 	p.isShuttingDown = true
 	var runnersToRemove []*taskRunner
-	persistedState := &rnpb.RunnerPoolState{}
 	// Remove only paused runners, since active runners should be removed only
 	// after their currently assigned task is canceled due to the shutdown
 	// grace period expiring.
 	var pausedRunners, activeRunners []*taskRunner
 	for _, r := range p.runners {
-		if r.state == paused {
+		if r.getState() == paused {
 			pausedRunners = append(pausedRunners, r)
 		} else {
 			activeRunners = append(activeRunners, r)
@@ -1292,32 +1441,6 @@ func (p *pool) Shutdown(ctx context.Context) error {
 	if len(runnersToRemove) > 0 {
 		log.Infof("Runner pool: removing %s", runnerSlice(runnersToRemove))
 	}
-
-	for _, r := range pausedRunners {
-		// TODO: figure out how/whether to preserve the workspace dir during
-		// executor restarts, and remove this check. We exclude this check
-		// for firecracker workflows because they don't use the workspace
-		// disk.
-		if r.PlatformProperties.PreserveWorkspace && !(r.PlatformProperties.WorkflowID != "" && r.PlatformProperties.WorkloadIsolationType == string(platform.FirecrackerContainerType)) {
-			continue
-		}
-
-		containerState, err := r.Container.State(ctx)
-		if status.IsUnimplementedError(err) {
-			continue
-		}
-		if err != nil {
-			log.Warningf("Failed to persist state for runner %s: %s", r, err)
-			continue
-		}
-		runnerState := &rnpb.RunnerState{
-			RunnerKey:      r.key,
-			DebugId:        r.debugID,
-			ContainerState: containerState,
-		}
-		persistedState.RunnerStates = append(persistedState.RunnerStates, runnerState)
-		log.Infof("Persisting state for runner %s", r)
-	}
 	p.mu.Unlock()
 
 	removeResults := make(chan error)
@@ -1326,17 +1449,9 @@ func (p *pool) Shutdown(ctx context.Context) error {
 		// to finish (if applicable). A single runner that takes a long time to
 		// upload its outputs should not block other runners from working on
 		// workspace removal in the meantime.
-		r := r
 		go func() {
 			removeResults <- r.RemoveWithTimeout(ctx)
 		}()
-	}
-
-	// Write runner pool state file.
-	if err := p.saveState(ctx, persistedState); err != nil {
-		log.Errorf("Failed to save runner pool state: %s", err)
-	} else {
-		log.Infof("Wrote runner pool state to %s", p.stateFilePath())
 	}
 
 	// Now wait for runners to finish removing.
@@ -1367,16 +1482,18 @@ func (p *pool) remove(r *taskRunner) {
 	}
 }
 
-func (p *pool) finalize(r *taskRunner) {
+func (p *pool) finalize(ctx context.Context, r *taskRunner) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.remove(r)
-	r.RemoveInBackground()
+	r.RemoveInBackground(ctx)
 }
 
 // TryRecycle either adds r back to the pool if appropriate, or removes it,
 // freeing up any resources it holds.
 func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedCleanly bool) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	ctx, cancel := background.ExtendContextForFinalization(ctx, runnerRecycleTimeout)
 	defer cancel()
 
@@ -1389,20 +1506,29 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 	recycled := false
 	defer func() {
 		if !recycled {
-			p.finalize(cr)
+			p.finalize(ctx, cr)
 		}
 	}()
 
 	if !cr.PlatformProperties.RecycleRunner {
 		return
 	}
-	if !finishedCleanly || cr.doNotReuse {
+	p.mu.Lock()
+	state := cr.getState()
+	p.mu.Unlock()
+	if !finishedCleanly || cr.doNotReuse || state != ready {
 		log.CtxWarningf(ctx, "Failed to recycle runner %s due to previous execution error", cr)
+		metrics.RunnerPoolFailedRecycleAttempts.With(prometheus.Labels{
+			metrics.RunnerPoolFailedRecycleReason: "execution_error",
+		}).Inc()
 		return
 	}
 	// Clean the workspace before recycling the runner (to save on disk space).
 	if err := cr.Workspace.Clean(); err != nil {
 		log.CtxErrorf(ctx, "Failed to recycle runner %s: failed to clean workspace: %s", cr, err)
+		metrics.RunnerPoolFailedRecycleAttempts.With(prometheus.Labels{
+			metrics.RunnerPoolFailedRecycleReason: "clean_workspace_failed",
+		}).Inc()
 		return
 	}
 
@@ -1410,9 +1536,10 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 	// the pool logic for them. Just save the snapshot with `Container.Pause`,
 	// which also removes the container.
 	snapshotEnabledRunner := platform.ContainerType(cr.PlatformProperties.WorkloadIsolationType) == platform.FirecrackerContainerType &&
-		(*snaputil.EnableRemoteSnapshotSharing || *snaputil.EnableLocalSnapshotSharing)
+		snaputil.IsChunkedSnapshotSharingEnabled()
 	if snapshotEnabledRunner {
 		if err := cr.Container.Pause(ctx); err != nil {
+			// TODO(vanja) maybe recycled should be set to true here?
 			log.CtxErrorf(ctx, "Failed to save snapshot for runner %s: %s", cr, err)
 			return
 		}
@@ -1470,6 +1597,7 @@ func (p *pool) setLimits() {
 	}
 
 	p.maxRunnerCount = count
+	p.maxTotalRunnerMemoryUsageBytes = *runnerPoolMaxTotalMemoryUsage
 	p.maxRunnerMemoryUsageBytes = mem
 	p.maxRunnerDiskUsageBytes = disk
 	log.Infof(
@@ -1486,7 +1614,8 @@ func platformHash(p *repb.Platform) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%x", sha256.Sum256(b)), nil
+	sha := sha256.Sum256(b)
+	return hex.EncodeToString(sha[:]), nil
 }
 
 type labeledError struct {
@@ -1507,251 +1636,6 @@ func (es errSlice) Error() string {
 		msgs = append(msgs, err.Error())
 	}
 	return fmt.Sprintf("[multiple errors: %s]", strings.Join(msgs, "; "))
-}
-
-func effectivePersistentWorkerKey(props *platform.Properties, commandArgs []string) string {
-	if props.PersistentWorkerKey != "" {
-		return props.PersistentWorkerKey
-	}
-	if !props.PersistentWorker {
-		return ""
-	}
-	workerArgs, _ := SplitArgsIntoWorkerArgsAndFlagFiles(commandArgs)
-	return strings.Join(workerArgs, " ")
-}
-
-func SplitArgsIntoWorkerArgsAndFlagFiles(args []string) ([]string, []string) {
-	workerArgs := make([]string, 0)
-	flagFiles := make([]string, 0)
-	for _, arg := range args {
-		if flagFilePattern.MatchString(arg) {
-			flagFiles = append(flagFiles, arg)
-		} else {
-			workerArgs = append(workerArgs, arg)
-		}
-	}
-	return workerArgs, flagFiles
-}
-
-func (r *taskRunner) supportsPersistentWorkers(ctx context.Context, command *repb.Command) bool {
-	if r.PlatformProperties.PersistentWorkerKey != "" {
-		return true
-	}
-
-	if !r.PlatformProperties.PersistentWorker {
-		return false
-	}
-
-	_, flagFiles := SplitArgsIntoWorkerArgsAndFlagFiles(command.GetArguments())
-	return len(flagFiles) > 0
-}
-
-func (r *taskRunner) startPersistentWorker(command *repb.Command, workerArgs, flagFiles []string) {
-	// Note: Using the server context since this worker will stick around for
-	// other tasks.
-	ctx, cancel := context.WithCancel(r.env.GetServerContext())
-	workerTerminated := make(chan struct{})
-	r.stopPersistentWorker = func() error {
-		// Canceling the worker context should terminate the worker process.
-		cancel()
-		// Wait for the worker to terminate. This is needed since canceling the
-		// context doesn't block until the worker is killed. This helps ensure that
-		// the worker is killed if we are shutting down. The shutdown case is also
-		// why we use ExtendContextForFinalization here.
-		ctx, cancel := background.ExtendContextForFinalization(r.env.GetServerContext(), persistentWorkerShutdownTimeout)
-		defer cancel()
-		select {
-		case <-workerTerminated:
-			return nil
-		case <-ctx.Done():
-			return status.DeadlineExceededError("Timed out waiting for persistent worker to shut down.")
-		}
-	}
-	stdinReader, stdinWriter := io.Pipe()
-	stdoutReader, stdoutWriter := io.Pipe()
-	r.stdinWriter = stdinWriter
-	r.stdoutReader = bufio.NewReader(stdoutReader)
-	r.jsonDecoder = json.NewDecoder(r.stdoutReader)
-
-	command = command.CloneVT()
-	command.Arguments = append(workerArgs, "--persistent_worker")
-
-	go func() {
-		defer close(workerTerminated)
-		defer stdinReader.Close()
-		defer stdoutWriter.Close()
-
-		stdio := &interfaces.Stdio{
-			Stdin:  stdinReader,
-			Stdout: stdoutWriter,
-			Stderr: &r.stderr,
-		}
-		res := r.Container.Exec(ctx, command, stdio)
-		log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, flagFiles, workerArgs)
-	}()
-}
-
-func (r *taskRunner) sendPersistentWorkRequest(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
-	// Clear any stderr that might be associated with a previous request.
-	r.stderr.Reset()
-
-	result := &interfaces.CommandResult{
-		CommandDebugString: fmt.Sprintf("(persistentworker) %s", command.GetArguments()),
-		ExitCode:           commandutil.NoExitCode,
-	}
-
-	workerArgs, flagFiles := SplitArgsIntoWorkerArgsAndFlagFiles(command.GetArguments())
-
-	// If it's our first rodeo, create the persistent worker.
-	if r.stopPersistentWorker == nil {
-		r.startPersistentWorker(command, workerArgs, flagFiles)
-	}
-
-	r.doNotReuse = true
-
-	// We've got a worker - now let's build a work request.
-	requestProto := &wkpb.WorkRequest{
-		Inputs: make([]*wkpb.Input, 0, len(r.Workspace.Inputs)),
-	}
-
-	expandedArguments, err := r.expandArguments(flagFiles)
-	if err != nil {
-		result.Error = status.WrapError(err, "expanding arguments")
-		return result
-	}
-	requestProto.Arguments = expandedArguments
-
-	// Collect all of the input digests
-	for path, digest := range r.Workspace.Inputs {
-		digestBytes, err := proto.Marshal(digest)
-		if err != nil {
-			result.Error = status.WrapError(err, "marshalling input digest")
-			return result
-		}
-		requestProto.Inputs = append(requestProto.Inputs, &wkpb.Input{
-			Digest: digestBytes,
-			Path:   path,
-		})
-	}
-
-	// Encode the work requests
-	err = r.marshalWorkRequest(requestProto, r.stdinWriter)
-	if err != nil {
-		result.Error = status.UnavailableErrorf(
-			"failed to send persistent work request: %s\npersistent worker stderr:\n%s",
-			err, r.workerStderrDebugString())
-		return result
-	}
-
-	// Now we've sent a work request, let's collect our response.
-	responseProto := &wkpb.WorkResponse{}
-	err = r.unmarshalWorkResponse(responseProto, r.stdoutReader)
-	if err != nil {
-		result.Error = status.UnavailableErrorf(
-			"failed to read persistent work response: %s\npersistent worker stderr:\n%s",
-			err, r.workerStderrDebugString())
-		return result
-	}
-
-	// Populate the result from the response proto.
-	result.Stderr = []byte(responseProto.Output)
-	result.ExitCode = int(responseProto.ExitCode)
-	r.doNotReuse = false
-	return result
-}
-
-func (r *taskRunner) workerStderrDebugString() string {
-	stderr, _ := r.stderr.ReadAll()
-	str := string(stderr)
-	if str == "" {
-		return "<empty>"
-	}
-	return str
-}
-
-func (r *taskRunner) marshalWorkRequest(requestProto *wkpb.WorkRequest, writer io.Writer) error {
-	protocol := r.PlatformProperties.PersistentWorkerProtocol
-	if protocol == workerProtocolJSONValue {
-		marshaler := &protojson.MarshalOptions{EmitUnpopulated: true}
-		out, err := marshaler.Marshal(requestProto)
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintf(writer, "%s\n", string(out))
-		return err
-	}
-	if protocol != "" && protocol != workerProtocolProtobufValue {
-		return status.FailedPreconditionErrorf("unsupported persistent worker type %s", protocol)
-	}
-	// Write the proto length (in varint encoding), then the proto itself
-	buf := protowire.AppendVarint(nil, uint64(proto.Size(requestProto)))
-	var err error
-	buf, err = proto.MarshalOptions{}.MarshalAppend(buf, requestProto)
-	if err != nil {
-		return err
-	}
-	_, err = writer.Write(buf)
-	return err
-}
-
-func (r *taskRunner) unmarshalWorkResponse(responseProto *wkpb.WorkResponse, reader io.Reader) error {
-	protocol := r.PlatformProperties.PersistentWorkerProtocol
-	if protocol == workerProtocolJSONValue {
-		raw := json.RawMessage{}
-		if err := r.jsonDecoder.Decode(&raw); err != nil {
-			return err
-		}
-		return protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(raw, responseProto)
-	}
-	if protocol != "" && protocol != workerProtocolProtobufValue {
-		return status.FailedPreconditionErrorf("unsupported persistent worker type %s", protocol)
-	}
-	// Read the response size from stdout as a unsigned varint.
-	size, err := binary.ReadUvarint(r.stdoutReader)
-	if err != nil {
-		return err
-	}
-	data := make([]byte, size)
-	// Read the response proto from stdout.
-	if _, err := io.ReadFull(r.stdoutReader, data); err != nil {
-		return err
-	}
-	if err := proto.Unmarshal(data, responseProto); err != nil {
-		return err
-	}
-	return nil
-}
-
-// Recursively expands arguments by replacing @filename args with the contents of the referenced
-// files. The @ itself can be escaped with @@. This deliberately does not expand --flagfile= style
-// arguments, because we want to get rid of the expansion entirely at some point in time.
-// Based on: https://github.com/bazelbuild/bazel/blob/e9e6978809b0214e336fee05047d5befe4f4e0c3/src/main/java/com/google/devtools/build/lib/worker/WorkerSpawnRunner.java#L324
-func (r *taskRunner) expandArguments(args []string) ([]string, error) {
-	expandedArgs := make([]string, 0)
-	for _, arg := range args {
-		if strings.HasPrefix(arg, "@") && !strings.HasPrefix(arg, "@@") && !externalRepositoryPattern.MatchString(arg) {
-			file, err := os.Open(filepath.Join(r.Workspace.Path(), arg[1:]))
-			if err != nil {
-				return nil, err
-			}
-			defer file.Close()
-			scanner := bufio.NewScanner(file)
-			for scanner.Scan() {
-				args, err := r.expandArguments([]string{scanner.Text()})
-				if err != nil {
-					return nil, err
-				}
-				expandedArgs = append(expandedArgs, args...)
-			}
-			if err := scanner.Err(); err != nil {
-				return nil, err
-			}
-		} else {
-			expandedArgs = append(expandedArgs, arg)
-		}
-	}
-
-	return expandedArgs, nil
 }
 
 func truncate(text string, n int, truncateWith string) string {

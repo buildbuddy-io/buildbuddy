@@ -10,8 +10,8 @@ go_library(
 go_test(
     name = "lockmap_test",
     srcs = ["lockmap_test.go"],
+    embed = [":lockmap"],
     deps = [
-        ":lockmap",
         "//server/util/random",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",

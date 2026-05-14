@@ -1,10 +1,10 @@
-import React from "react";
 import Layout from "@theme/Layout";
+import React from "react";
 import common from "../css/common.module.css";
 
-import Hero from "../components/hero/hero";
 import CTA from "../components/cta/cta";
-import Terminal, { Prompt, Info, Error, Question, Detail } from "../components/terminal/terminal";
+import Hero from "../components/hero/hero";
+import Terminal, { Detail, Error, Info, Prompt, Question } from "../components/terminal/terminal";
 
 function Component() {
   return (
@@ -85,7 +85,7 @@ function Component() {
           }
           bigImage={true}
           lessPadding={true}
-          snippet={"curl -fsSL install.buildbuddy.io | bash"}
+          snippet={"curl -fsSL https://install.buildbuddy.io | bash"}
           primaryButtonText=""
           secondaryButtonText="View docs"
           secondaryButtonHref="/docs/cli"
@@ -331,13 +331,13 @@ function Component() {
                 <>
                   <div>
                     <Prompt />
-                    <span>{`echo "$(echo "buildbuddy-io/5.0.25"; cat .bazelversion)" > .bazelversion`}</span>
+                    <span>{`echo "$(echo "buildbuddy-io/5.0.321"; cat .bazelversion)" > .bazelversion`}</span>
                   </div>
                 </>,
                 <>
                   <div>
                     <Prompt />
-                    <span>{`echo "$(echo "buildbuddy-io/5.0.25"; cat .bazelversion)" > .bazelversion`}</span>
+                    <span>{`echo "$(echo "buildbuddy-io/5.0.321"; cat .bazelversion)" > .bazelversion`}</span>
                   </div>
                   <div>
                     <Prompt />
@@ -346,7 +346,7 @@ function Component() {
                 <>
                   <div>
                     <Prompt />
-                    <span>{`echo "$(echo "buildbuddy-io/5.0.25"; cat .bazelversion)" > .bazelversion`}</span>
+                    <span>{`echo "$(echo "buildbuddy-io/5.0.321"; cat .bazelversion)" > .bazelversion`}</span>
                   </div>
                   <div>
                     <Prompt />
@@ -356,7 +356,7 @@ function Component() {
                 <>
                   <div>
                     <Prompt />
-                    <span>{`echo "$(echo "buildbuddy-io/5.0.25"; cat .bazelversion)" > .bazelversion`}</span>
+                    <span>{`echo "$(echo "buildbuddy-io/5.0.321"; cat .bazelversion)" > .bazelversion`}</span>
                   </div>
                   <div>
                     <Prompt />
@@ -370,7 +370,7 @@ function Component() {
           bigImage={true}
           lessPadding={true}
           flipped={false}
-          snippet={`echo "$(echo "buildbuddy-io/5.0.25"; cat .bazelversion)" > .bazelversion`}
+          snippet={`echo "$(echo "buildbuddy-io/5.0.321"; cat .bazelversion)" > .bazelversion`}
           primaryButtonText=""
           secondaryButtonText=""
         />

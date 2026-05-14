@@ -12,7 +12,6 @@ filegroup(
     ]),
 )
 
-# gazelle:ignore
 go_library(
     name = "bundle",
     srcs = ["bundle.go"],

@@ -98,6 +98,8 @@ message GetCacheScoreCardRequest {
     ORDER_BY_DURATION = 2;
     // Order by digest size.
     ORDER_BY_SIZE = 3;
+    // Order by cache savings.
+    ORDER_BY_CPU_SAVINGS = 4;
   }
 
   // OrderBy specifies how to group results.
@@ -220,6 +222,9 @@ message ScoreCard {
     google.protobuf.Timestamp execution_start_timestamp = 15;
     // When the worker completed executing the action command.
     google.protobuf.Timestamp execution_completed_timestamp = 16;
+
+    // The invocation that originally uploaded this result to the action cache.
+    string origin_invocation_id = 17;
   }
 
   // In the interest of saving space, we only show cache misses.
@@ -255,6 +260,65 @@ message DirectoryWithDigest {
 
 message TreeCache {
   repeated DirectoryWithDigest children = 1;
+
+  // Some directories (node_modules, etc.) are so large that storing them
+  // directly inside of all cached trees is cost-prohibitive.  In those
+  // cases, we store a reference to another TreeCache in this list and fetch
+  // it as part of constructing a GetTree response.  There's nothing
+  // preventing it, but for performance reasons, these entries *should not*
+  // recursively specify tree_cache_children of their own.
+  repeated resource.ResourceName tree_cache_children = 2;
+}
+
+// Fetch a directory tree from the CAS.
+message GetTreeRequest {
+  context.RequestContext request_context = 1;
+
+  string instance_name = 2;
+
+  build.bazel.remote.execution.v2.Digest root_digest = 3;
+
+  int32 page_size = 4;
+
+  string page_token = 5;
+
+  build.bazel.remote.execution.v2.DigestFunction.Value digest_function = 6;
+}
+
+message GetTreeResponse {
+  context.ResponseContext response_context = 1;
+
+  repeated build.bazel.remote.execution.v2.Directory directories = 2;
+
+  string next_page_token = 3;
+}
+
+message ExecutionDownload {
+  string path = 1;
+
+  build.bazel.remote.execution.v2.Digest digest = 2;
+
+  bool is_executable = 3;
+}
+
+message GetExecutionDownloadsRequest {
+  context.RequestContext request_context = 1;
+
+  string invocation_id = 2;
+
+  string execution_id = 3;
+
+  int32 page_size = 4;
+
+  string page_token = 5;
+}
+
+message GetExecutionDownloadsResponse {
+  context.ResponseContext response_context = 1;
+
+  repeated ExecutionDownload downloads = 2;
+
+  string next_page_token = 3;
 }
 
 // Fetch the cumulative sizes of all of the directories beneath the specified

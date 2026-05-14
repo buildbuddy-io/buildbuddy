@@ -6,11 +6,12 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:api_key_go_proto",
+        "//proto:capability_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:semver_go_proto",
         "//server/environment",
         "//server/real_environment",
+        "//server/remote_cache/chunking",
         "//server/remote_cache/config",
         "//server/remote_cache/digest",
         "//server/util/bazel_request",

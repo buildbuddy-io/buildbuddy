@@ -49,7 +49,6 @@ import (
 	gomysql "github.com/go-sql-driver/mysql"
 	gopostgreserr "github.com/jackc/pgerrcode"
 	gopostgresconn "github.com/jackc/pgx/v5/pgconn"
-	gormutils "gorm.io/gorm/utils"
 )
 
 const (
@@ -365,6 +364,29 @@ func (dbh *DBHandle) gormHandleForOpts(ctx context.Context, opts interfaces.DBOp
 	return db
 }
 
+func (dbh *DBHandle) Close() error {
+	var errs []error
+	if dbh.db != nil {
+		db, err := dbh.db.DB()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("error getting DB from gorm handle: %w", err))
+		}
+		if err := db.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("error closing DB: %w", err))
+		}
+	}
+	if dbh.readReplicaDB != nil {
+		db, err := dbh.readReplicaDB.DB()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("error getting read replica DB from gorm handle: %w", err))
+		}
+		if err := db.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("error closing read replica DB: %w", err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 func IsRecordNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
 }
@@ -527,7 +549,7 @@ func openDB(ctx context.Context, dataSource string, advancedConfig *AdvancedConf
 		return nil, "", fmt.Errorf("unsupported database driver %s", ds.DriverName())
 	}
 
-	l := &sqlLogger{
+	l := &gormutil.Logger{
 		SlowThreshold: *slowQueryThreshold,
 		LogLevel:      logger.Warn,
 	}
@@ -678,64 +700,13 @@ func ParseDatasource(ctx context.Context, datasource string, advancedConfig *Adv
 				cfg.Params["sql_mode"] += ","
 			}
 			cfg.Params["sql_mode"] += "ANSI_QUOTES"
+			cfg.InterpolateParams = true
 			connString = cfg.FormatDSN()
 		}
 		return &fixedDSNDataSource{driver: driverName, dsn: connString}, nil
 	}
 
 	return nil, status.FailedPreconditionError("no database configured -- please specify at least one in the config")
-}
-
-// sqlLogger implements GORM's logger.Interface using zerolog.
-//
-// TODO: maybe implement the optional ParamsFilter interface so that we only log
-// parameterized queries.
-type sqlLogger struct {
-	SlowThreshold time.Duration
-	LogLevel      logger.LogLevel
-}
-
-func (l *sqlLogger) Info(ctx context.Context, format string, args ...any) {
-	log.CtxInfof(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
-}
-func (l *sqlLogger) Warn(ctx context.Context, format string, args ...any) {
-	log.CtxWarningf(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
-}
-func (l *sqlLogger) Error(ctx context.Context, format string, args ...any) {
-	log.CtxErrorf(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
-}
-
-// Trace is called after every SQL query. If `database.log_queries` is true then
-// it will always log the query. Otherwise it will only log slow or failed
-// queries. NotFound errors are ignored.
-func (l *sqlLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
-	if l.LogLevel <= logger.Silent {
-		return
-	}
-	duration := time.Since(begin)
-	getInfo := func() string {
-		sql, rows := fc()
-		rowsVal := any(rows)
-		if rows <= 0 {
-			// rows < 0 means the query does not have an associated row count.
-			rowsVal = "-"
-		}
-		return fmt.Sprintf("(duration: %s) (rows: %v) %s", duration, rowsVal, sql)
-	}
-	switch {
-	case err != nil && l.LogLevel >= logger.Error && !IsRecordNotFound(err):
-		log.CtxErrorf(ctx, "SQL: error (%s): %s %s", gormutils.FileWithLineNum(), err, getInfo())
-	case duration > l.SlowThreshold && l.SlowThreshold != 0 && l.LogLevel >= logger.Warn:
-		log.CtxWarningf(ctx, "SQL: slow query (over %s) (%s): %s", l.SlowThreshold, gormutils.FileWithLineNum(), getInfo())
-	case l.LogLevel == logger.Info:
-		log.CtxInfof(ctx, "SQL: OK (%s) %s", gormutils.FileWithLineNum(), getInfo())
-	}
-}
-
-func (l *sqlLogger) LogMode(level logger.LogLevel) logger.Interface {
-	clone := *l
-	clone.LogLevel = level
-	return &clone
 }
 
 func setDBOptions(driver string, gdb *gorm.DB) error {
@@ -904,24 +875,6 @@ func GetConfiguredDatabase(ctx context.Context, env environment.Env) (interfaces
 // UTC, or do an explicit timezone conversion here from `@@session.time_zone`
 // to UTC.
 
-// UTCMonthFromUsecTimestamp returns an SQL expression that converts the value
-// of the given field from a Unix timestamp (in microseconds since the Unix
-// Epoch) to a month in UTC time, formatted as "YYYY-MM".
-func (h *DBHandle) UTCMonthFromUsecTimestamp(fieldName string) string {
-	timestampExpr := fieldName + `/1000000`
-	switch h.driver {
-	case sqliteDriver:
-		return `STRFTIME('%Y-%m', ` + timestampExpr + `, 'unixepoch')`
-	case mysqlDriver:
-		return `DATE_FORMAT(FROM_UNIXTIME(` + timestampExpr + `), '%Y-%m')`
-	case postgresDriver:
-		return `TO_CHAR(TO_TIMESTAMP(` + timestampExpr + `), 'YYYY-MM')`
-	default:
-		log.Errorf("Driver %s is not supported by UTCMonthFromUsecTimestamp.", h.driver)
-		return `UNIMPLEMENTED`
-	}
-}
-
 // DateFromUsecTimestamp returns an SQL expression that converts the value
 // of the given field from a Unix timestamp (in microseconds since the Unix
 // Epoch) to a date offset by the given UTC offset. The offset is defined
@@ -936,7 +889,7 @@ func (h *DBHandle) DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes
 	case mysqlDriver:
 		return fmt.Sprintf("DATE(FROM_UNIXTIME(%s))", timestampExpr)
 	case postgresDriver:
-		return `TO_TIMESTAMP(` + timestampExpr + `)::DATE`
+		return `TO_CHAR(TO_TIMESTAMP(` + timestampExpr + `)::DATE, 'YYYY-MM-DD')`
 	default:
 		log.Errorf("Driver %s is not supported by DateFromUsecTimestamp.", h.driver)
 		return `UNIMPLEMENTED`
@@ -954,7 +907,11 @@ func (h *DBHandle) SelectForUpdateModifier() string {
 	if h.driver == sqliteDriver {
 		return ""
 	}
-	return "FOR UPDATE"
+	return " FOR UPDATE"
+}
+
+func (h *DBHandle) DialectName() string {
+	return h.db.Name()
 }
 
 func (h *DBHandle) NowFunc() time.Time {
@@ -1052,6 +1009,10 @@ func (q *query) Raw(sql string, values ...interface{}) interfaces.DBRawQuery {
 type transaction struct {
 	tx  *gorm.DB
 	ctx context.Context
+}
+
+func (t *transaction) DialectName() string {
+	return t.tx.Name()
 }
 
 func (t *transaction) NewQuery(ctx context.Context, name string) interfaces.DBQuery {

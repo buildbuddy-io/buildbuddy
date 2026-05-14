@@ -2,8 +2,8 @@ import React from "react";
 
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import rpcService from "../service/rpc_service";
-import TargetTestCasesCardComponent from "./target_test_cases_card";
 import TargetLogCardComponent from "./target_log_card";
+import TargetTestCasesCardComponent from "./target_test_cases_card";
 
 interface Props {
   buildEvent?: build_event_stream.BuildEvent;
@@ -34,8 +34,9 @@ export default class TargetTestDocumentCardComponent extends React.Component<Pro
   }
 
   fetchTestXML() {
-    let testXMLUrl = this.props.buildEvent?.testResult?.testActionOutput.find((log: any) => log.name == "test.xml")
-      ?.uri;
+    let testXMLUrl = this.props.buildEvent?.testResult?.testActionOutput.find(
+      (log: any) => log.name == "test.xml"
+    )?.uri;
 
     if (!testXMLUrl) {
       this.setState({ testDocument: undefined });
@@ -105,7 +106,9 @@ export default class TargetTestDocumentCardComponent extends React.Component<Pro
                       <div className="stat">Run {this.props.buildEvent.id.testResult.run}</div>
                       <div className="stat-label">
                         (Attempt {this.props.buildEvent.id.testResult.attempt}, Shard{" "}
-                        {this.props.buildEvent.id.testResult.shard})
+                        {this.props.buildEvent.id.testResult.shard}
+                        {this.props.buildEvent?.testResult?.cachedLocally && <>, Cached Locally</>}
+                        {this.props.buildEvent?.testResult?.executionInfo?.cachedRemotely && <>, Cached Remotely</>})
                       </div>
                     </div>
                   )}

@@ -4,33 +4,29 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_test(
     name = "ci_runner_test",
-    size = "small",
+    size = "medium",
     srcs = ["ci_runner_test.go"],
     data = [
         "//enterprise/server/cmd/ci_runner",
     ],
-    # Run the ci_runner_test in the same environment that the CI runner uses in prod,
-    # since we invoke the ci runner binary directly.
-    # TODO(bduffany): Add an ubuntu 20.04-based CI runner image and use that
-    # here.
-    # exec_properties = {
-    #     "container-image": "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.3.0",
-    # },
     exec_properties = {
-        # TODO: remove network dependency.
-        "test.dockerNetwork": "bridge",
+        "test.EstimatedComputeUnits": "3",
     },
-    shard_count = 13,
+    shard_count = 31,
+    tags = ["block-network"],
     x_defs = {
         "ciRunnerRunfilePath": "$(rlocationpath //enterprise/server/cmd/ci_runner)",
     },
     deps = [
+        "//enterprise/server/workflow/config",
         "//proto:build_event_stream_go_proto",
+        "//proto:command_line_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:remote_execution_log_go_proto",
+        "//proto:runner_go_proto",
         "//server/remote_cache/cachetools",
         "//server/testutil/app",
         "//server/testutil/buildbuddy",
@@ -41,7 +37,8 @@ go_test(
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@io_bazel_rules_go//go/runfiles:go_default_library",
+        "@in_gopkg_yaml_v2//:yaml_v2",
+        "@io_bazel_rules_go//go/runfiles",
         "@org_golang_google_protobuf//encoding/protodelim",
     ],
 )

@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -30,7 +31,7 @@ var (
 	EnableStructuredLogging = flag.Bool("app.enable_structured_logging", false, "If true, log messages will be json-formatted.")
 	IncludeShortFileName    = flag.Bool("app.log_include_short_file_name", false, "If true, log messages will include shortened originating file name.")
 	EnableGCPLoggingFormat  = flag.Bool("app.log_enable_gcp_logging_format", false, "If true, the output structured logs will be compatible with format expected by GCP Logging.")
-	LogErrorStackTraces     = flag.Bool("app.log_error_stack_traces", false, "If true, stack traces will be printed for errors that have them.")
+	EnableLogGRPCRequest    = flag.Bool("app.log_enable_grpc_request", true, "If true, log grpc request when log level is debug")
 )
 
 const (
@@ -76,7 +77,7 @@ func fmtErr(err error) string {
 }
 
 func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, err error) {
-	if log.Logger.GetLevel() > zerolog.DebugLevel {
+	if log.Logger.GetLevel() > zerolog.DebugLevel || !*EnableLogGRPCRequest {
 		return
 	}
 	// ByteStream and DistributedCache services share some method names.
@@ -84,15 +85,15 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 	fullMethod = strings.Replace(fullMethod, "distributed_cache.DistributedCache/", "D", 1)
 	shortPath := "/" + path.Base(fullMethod)
 	CtxDebugf(ctx, "%s %s %s [%s]", "gRPC", shortPath, fmtErr(err), formatDuration(dur))
-	if *LogErrorStackTraces {
+	if *status.LogErrorStackTraces {
 		if se, ok := err.(interface {
 			StackTrace() status.StackTrace
 		}); ok {
-			stackBuf := ""
+			var stackBuf strings.Builder
 			for _, f := range se.StackTrace() {
-				stackBuf += fmt.Sprintf("%+s:%d\n", f, f)
+				stackBuf.WriteString(fmt.Sprintf("%+s:%d\n", f, f))
 			}
-			CtxDebugf(ctx, stackBuf)
+			CtxDebug(ctx, stackBuf.String())
 		}
 	}
 }
@@ -205,6 +206,9 @@ func (l *Logger) Debugf(format string, args ...interface{}) {
 // (e.g. invocation_id, request_id)
 func (l *Logger) CtxDebugf(ctx context.Context, format string, args ...interface{}) {
 	e := l.zl.Debug()
+	if e == nil {
+		return
+	}
 	enrichEventFromContext(ctx, e)
 	e.Msgf(format, args...)
 }
@@ -287,6 +291,13 @@ func (l *Logger) CtxErrorf(ctx context.Context, format string, args ...interface
 	}).Inc()
 }
 
+// Level creates a child logger with the minimum accepted level set to level.
+func (l *Logger) Level(lvl zerolog.Level) Logger {
+	return Logger{
+		zl: l.zl.Level(lvl),
+	}
+}
+
 // Fatal logs to the FATAL log. Arguments are handled in the manner of fmt.Print.
 // It calls os.Exit() with exit code 1.
 func (l *Logger) Fatal(message string) {
@@ -307,6 +318,61 @@ func (l *Logger) Fatalf(format string, args ...interface{}) {
 	}).Inc()
 	// Make sure fatal logs will exit.
 	os.Exit(1)
+}
+
+// EveryN returns a new logger that will only emit a log every N times it is
+// called. This can be used to reduce the frequency of logs that are similar and
+// frequent.
+func (l Logger) EveryN(n uint32) Logger {
+	return Logger{
+		zl: l.zl.Sample(&zerolog.LevelSampler{
+			TraceSampler: &zerolog.BasicSampler{N: n},
+			DebugSampler: &zerolog.BasicSampler{N: n},
+			InfoSampler:  &zerolog.BasicSampler{N: n},
+			WarnSampler:  &zerolog.BasicSampler{N: n},
+			ErrorSampler: &zerolog.BasicSampler{N: n},
+		}),
+	}
+}
+
+// durationSampler is a sampler that will send every time.Duration, regardless
+// of level.
+type durationSampler struct {
+	LastSampleNanos atomic.Int64
+	PeriodNanos     int64
+}
+
+func newDurationSampler(d time.Duration) *durationSampler {
+	return &durationSampler{
+		PeriodNanos: d.Nanoseconds(),
+	}
+}
+
+// Sample implements the Sampler interface.
+func (s *durationSampler) Sample(lvl zerolog.Level) bool {
+	lastSampleNanos := s.LastSampleNanos.Load()
+	nowNanos := time.Now().UnixNano()
+
+	if nowNanos-s.PeriodNanos > lastSampleNanos {
+		s.LastSampleNanos.Store(nowNanos)
+		return true
+	}
+	return false
+}
+
+// EveryDuration returns a new logger that will only log anew after every
+// duration d has passed. This can be useful if you want to limit the
+// frequency of some logging to once per second or something.
+func (l Logger) EveryDuration(d time.Duration) Logger {
+	return Logger{
+		zl: l.zl.Sample(&zerolog.LevelSampler{
+			TraceSampler: newDurationSampler(d),
+			DebugSampler: newDurationSampler(d),
+			InfoSampler:  newDurationSampler(d),
+			WarnSampler:  newDurationSampler(d),
+			ErrorSampler: newDurationSampler(d),
+		}),
+	}
 }
 
 func NamedSubLogger(name string) Logger {
@@ -367,6 +433,9 @@ func Debugf(format string, args ...interface{}) {
 // (e.g. invocation_id, request_id)
 func CtxDebug(ctx context.Context, message string) {
 	e := log.Debug()
+	if e == nil {
+		return
+	}
 	enrichEventFromContext(ctx, e)
 	e.Msg(message)
 }
@@ -377,6 +446,9 @@ func CtxDebug(ctx context.Context, message string) {
 // (e.g. invocation_id, request_id)
 func CtxDebugf(ctx context.Context, format string, args ...interface{}) {
 	e := log.Debug()
+	if e == nil {
+		return
+	}
 	enrichEventFromContext(ctx, e)
 	e.Msgf(format, args...)
 }
@@ -536,8 +608,8 @@ type logWriter struct {
 }
 
 func (w *logWriter) Write(b []byte) (int, error) {
-	lines := strings.Split(string(b), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(b), "\n")
+	for line := range lines {
 		if line == "" {
 			continue
 		}

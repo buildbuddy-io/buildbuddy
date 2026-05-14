@@ -1,17 +1,22 @@
 package service_test
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"net/http"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
@@ -22,35 +27,67 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-github/v59/github"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
+	mockGithubAppID = int64(98765)
+
 	configWithLinuxWorkflow = `
 actions:
   - name: "Test (linux_amd64)"
     triggers: { pull_request: { branches: [ "*" ] }, push: { branches: [ "*" ] } }
     bazel_commands: [ "test //..." ]
 `
+
+	configWithLinuxWorkflowWithPrivateVisibility = `
+actions:
+  - name: "Test (linux_amd64)"
+    triggers: { pull_request: { branches: [ "*" ] }, push: { branches: [ "*" ] } }
+    bazel_commands: [ "test //..." ]
+    visibility: "PRIVATE"
+`
+
+	configWithTagWorkflow = `
+actions:
+  - name: "Release (linux_amd64)"
+    triggers: { push: { tags: [ "v*" ] } }
+    bazel_commands: [ "test //..." ]
+`
+)
+
+var (
+	threePM = time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
+	sevenPM = time.Date(2026, 1, 2, 19, 0, 0, 0, time.UTC)
 )
 
 func newTestEnv(t *testing.T) *testenv.TestEnv {
+	// Avoid uploading embedded CI runner binaries to the in-memory cache in
+	// each test because it's very slow. The executor will add these binaries locally instead.
+	flags.Set(t, "remote_execution.init_ci_runner_from_cache", false)
+
+	flags.Set(t, "github.app.enabled", true)
 	te := enterprise_testenv.New(t)
 	enterprise_testauth.Configure(t, te)
 	tu := &tables.User{
@@ -69,6 +106,9 @@ func newTestEnv(t *testing.T) *testenv.TestEnv {
 	require.NoError(t, err)
 	te.SetRepoDownloader(repo_downloader.NewRepoDownloader())
 	te.SetWorkflowService(workflow.NewWorkflowService(te))
+	gh, err := githubapp.NewAppService(te, &testgit.FakeGitHubApp{MockAppID: mockGithubAppID}, nil)
+	require.NoError(t, err)
+	te.SetGitHubAppService(gh)
 
 	execClient := NewFakeExecutionClient()
 	te.SetRemoteExecutionClient(execClient)
@@ -98,20 +138,19 @@ func setupFakeGitProvider(t *testing.T, te *testenv.TestEnv) *testgit.FakeProvid
 	return provider
 }
 
-func runBBServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc.ClientConn {
+func runBBServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
 	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(env /*sslService=*/, nil)
 	require.NoError(t, err)
 	bsServer, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
 
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(env)
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 	bspb.RegisterByteStreamServer(grpcServer, bsServer)
 
 	go runFunc()
-	t.Cleanup(func() { grpcServer.GracefulStop() })
 
-	clientConn, err := testenv.LocalGRPCConn(ctx, env)
+	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
 	if err != nil {
 		t.Error(err)
 	}
@@ -127,16 +166,65 @@ func makeTempRepo(t *testing.T) string {
 	return fmt.Sprintf("file://%s", path)
 }
 
-// pingWebhook makes an empty request to the given webhook URL. The fake git
+func createWorkflow(t *testing.T, env *testenv.TestEnv, repoURL, groupID string, useDefaultWorkflowConfig bool) *tables.GitRepository {
+	dbh := env.GetDBHandle()
+	require.NotNil(t, dbh)
+	repo := &tables.GitRepository{
+		RepoURL:                  repoURL,
+		GroupID:                  groupID,
+		AppID:                    mockGithubAppID,
+		Perms:                    perms.GROUP_READ | perms.GROUP_WRITE,
+		UseDefaultWorkflowConfig: useDefaultWorkflowConfig,
+	}
+	err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(repo)
+	require.NoError(t, err)
+	appInstallation := &tables.GitHubAppInstallation{
+		GroupID: groupID,
+		AppID:   mockGithubAppID,
+	}
+	err = dbh.NewQuery(context.Background(), "create_app_installation_for_test").Create(appInstallation)
+	require.NoError(t, err)
+	return repo
+}
+
+func insertScheduledRun(t *testing.T, te *testenv.TestEnv, sr *tables.ScheduledRun) {
+	err := te.GetDBHandle().NewQuery(context.Background(), "create_scheduled_run_for_test").Create(sr)
+	require.NoError(t, err)
+}
+
+func updateGroupStatus(t *testing.T, te *testenv.TestEnv, groupID string, groupStatus grpb.Group_GroupStatus) {
+	err := te.GetDBHandle().NewQuery(context.Background(), "update_group_status_for_test").Raw(`
+		UPDATE "Groups" SET status = ? WHERE group_id = ?`,
+		int32(groupStatus), groupID).Exec().Error
+	require.NoError(t, err)
+}
+
+func getScheduledRun(t *testing.T, te *testenv.TestEnv, actionName string) *tables.ScheduledRun {
+	sr := &tables.ScheduledRun{}
+	err := te.GetDBHandle().NewQuery(context.Background(), "get_scheduled_run_for_test").Raw(`
+		SELECT * FROM "ScheduledRuns" WHERE action_name = ?`, actionName).Take(sr)
+	require.NoError(t, err)
+	return sr
+}
+
+func getExecutedActionName(t *testing.T, ctx context.Context, te *testenv.TestEnv, executeRequest *repb.ExecuteRequest) string {
+	exec := getExecution(t, ctx, te, executeRequest)
+	for _, arg := range exec.Command.GetArguments() {
+		if actionName, ok := strings.CutPrefix(arg, "--action_name="); ok {
+			return actionName
+		}
+	}
+	t.Fatalf("no action name found in execute request: %+v", executeRequest)
+	return ""
+}
+
+// pingLegacyWorkflowWebhook makes an empty request to the given webhook URL. The fake git
 // provider's WebhookData field determines the webhook data parsed from the
 // request.
-func pingWebhook(t *testing.T, url string) {
-	res, err := http.Post(url, "", bytes.NewReader([]byte{}))
+func pingLegacyWorkflowWebhook(t *testing.T, env *testenv.TestEnv, url string) {
+	req, err := http.NewRequest("POST", url, nil /*=body*/)
 	require.NoError(t, err)
-	// Log the response body for debug purposes.
-	body, _ := io.ReadAll(res.Body)
-	t.Log(string(body))
-	require.Equal(t, 200, res.StatusCode)
+	env.GetWorkflowService().ServeHTTP(testhttp.NewResponseWriter(t), req)
 }
 
 type execution struct {
@@ -148,12 +236,12 @@ type execution struct {
 // getExecution fetches digest contents of an ExecuteRequest.
 func getExecution(t *testing.T, ctx context.Context, te *testenv.TestEnv, executeRequest *repb.ExecuteRequest) *execution {
 	instanceName := executeRequest.GetInstanceName()
-	ar := digest.NewResourceName(executeRequest.GetActionDigest(), instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	ar := digest.NewCASResourceName(executeRequest.GetActionDigest(), instanceName, repb.DigestFunction_BLAKE3)
 	action := &repb.Action{}
 	err := cachetools.GetBlobAsProto(ctx, te.GetByteStreamClient(), ar, action)
 	require.NoError(t, err)
 	command := &repb.Command{}
-	cr := digest.NewResourceName(action.GetCommandDigest(), instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	cr := digest.NewCASResourceName(action.GetCommandDigest(), instanceName, repb.DigestFunction_BLAKE3)
 	err = cachetools.GetBlobAsProto(ctx, te.GetByteStreamClient(), cr, command)
 	require.NoError(t, err)
 	return &execution{
@@ -173,6 +261,8 @@ func envVars(cmd *repb.Command) map[string]string {
 type fakeExecutionClient struct {
 	repb.ExecutionClient
 	executeRequests chan *executeRequest
+
+	FakeExecuteError error
 }
 
 type executeRequest struct {
@@ -192,6 +282,9 @@ func (c *fakeExecutionClient) Execute(ctx context.Context, req *repb.ExecuteRequ
 		Metadata: md,
 		Payload:  req,
 	}
+	if c.FakeExecuteError != nil {
+		return nil, c.FakeExecuteError
+	}
 	return &fakeExecuteStream{}, nil
 }
 
@@ -199,10 +292,20 @@ func (c *fakeExecutionClient) NextExecuteRequest() *executeRequest {
 	return <-c.executeRequests
 }
 
+func (c *fakeExecutionClient) WaitExecution(ctx context.Context, req *repb.WaitExecutionRequest, opts ...grpc.CallOption) (repb.Execution_WaitExecutionClient, error) {
+	return &fakeExecuteStream{}, nil
+}
+
 type fakeExecuteStream struct{ grpc.ClientStream }
 
-func (*fakeExecuteStream) Recv() (*longrunning.Operation, error) {
-	return &longrunning.Operation{Name: "fake-operation-name"}, nil
+func (*fakeExecuteStream) Recv() (*longrunningpb.Operation, error) {
+	metadata, err := anypb.New(&repb.ExecuteOperationMetadata{
+		Stage: repb.ExecutionStage_COMPLETED,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &longrunningpb.Operation{Name: "fake-operation-name", Metadata: metadata}, nil
 }
 
 func authenticate(t *testing.T, ctx context.Context, env environment.Env) (authCtx context.Context, uid, gid string) {
@@ -218,117 +321,17 @@ func authenticateAsUser(t *testing.T, ctx context.Context, env environment.Env, 
 	gid = tu.Groups[0].Group.GroupID
 	jwt, err := auth.TestJWTForUserID(userID)
 	require.NoError(t, err)
-	authCtx = metadata.AppendToOutgoingContext(authCtx, "x-buildbuddy-jwt", jwt)
+	authCtx = metadata.AppendToOutgoingContext(authCtx, authutil.ContextTokenStringKey, jwt)
 	return authCtx, tu.UserID, gid
 }
 
-func TestCreate_SuccessfullyRegisterWebhook(t *testing.T) {
-	ctx := context.Background()
-	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
-	provider := setupFakeGitProvider(t, te)
-	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, te, t)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		Name:           "BuildBuddy OS Workflow",
-		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
-	}
-	rsp, err := bbClient.CreateWorkflow(ctx, req)
-
-	require.NoError(t, err)
-	assert.Regexp(t, "^WF.*", rsp.GetId(), "workflow ID should exist and match WF.*")
-	assert.Regexp(t, "^.*/webhooks/workflow/.*", rsp.GetWebhookUrl(), "workflow webhook URL should exist and match /webhooks/workflow/.*")
-	assert.True(t, rsp.GetWebhookRegistered())
-
-	var row tables.Workflow
-	err = te.GetDBHandle().NewQuery(ctx, "get_worflow").Raw(`SELECT * FROM "Workflows"`).Take(&row)
-	require.NoError(t, err)
-	assert.Equal(t, rsp.GetId(), row.WorkflowID, "inserted table workflow ID should match create response")
-	assert.Equal(t, gid, row.UserID, "inserted table workflow user should match auth")
-	assert.Equal(t, gid, row.GroupID, "inserted table workflow group should match auth")
-	assert.Equal(
-		t, testgit.FakeWebhookID, row.GitProviderWebhookID,
-		"inserted table workflow git provider webhook ID should be set based on git provider response",
-	)
-	assert.NotEmpty(t, row.WebhookID, "webhook ID in DB should be nonempty")
-	assert.Contains(t, rsp.GetWebhookUrl(), row.WebhookID, "webhook ID in DB should match the URL")
-	assert.Equal(t, rsp.GetWebhookUrl(), provider.RegisteredWebhookURL, "returned webhook URL should be registered to the provider")
-}
-
-func TestCreate_NoWebhookPermissions(t *testing.T) {
-	ctx := context.Background()
-	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
-	provider := setupFakeGitProvider(t, te)
-	provider.RegisterWebhookError = fmt.Errorf("(fake error) You do not have permissions to register webhooks!")
-	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, te, t)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		Name:           "BuildBuddy OS Workflow",
-		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
-	}
-	rsp, err := bbClient.CreateWorkflow(ctx, req)
-
-	require.NoError(t, err)
-	assert.Regexp(t, "^WF.*", rsp.GetId(), "workflow ID should exist and match WF.*")
-	assert.Regexp(t, "^.*/webhooks/workflow/.*", rsp.GetWebhookUrl(), "workflow webhook URL should exist and match /webhooks/workflow/.*")
-	assert.False(t, rsp.GetWebhookRegistered(), "webhook should have failed to register")
-
-	var row tables.Workflow
-	err = te.GetDBHandle().NewQuery(ctx, "get_worflow").Raw(`SELECT * FROM "Workflows"`).Take(&row)
-	require.NoError(t, err)
-	assert.Equal(t, rsp.GetId(), row.WorkflowID, "inserted table workflow ID should match create response")
-	assert.Equal(t, repoURL, row.RepoURL)
-	assert.Equal(t, gid, row.UserID, "inserted table workflow user should match auth")
-	assert.Equal(t, gid, row.GroupID, "inserted table workflow group should match auth")
-	assert.NotEmpty(t, row.WebhookID, "webhook ID in DB should be nonempty")
-	assert.Contains(t, rsp.GetWebhookUrl(), row.WebhookID, "webhook ID in DB should match the URL")
-	assert.Equal(t, "", row.GitProviderWebhookID, "git provider should not have returned a webhook ID")
-}
-
-func TestCreate_NonNormalizedRepoURL(t *testing.T) {
-	ctx := context.Background()
-	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
-	// We are using a github.com URL to test normalization, so disable the repo
-	// downloader just for this test so that it doesn't depend on GitHub.
-	te.SetRepoDownloader(nil)
-	setupFakeGitProvider(t, te)
-	repoURL := "git@github.com:/foo/bar"
-	clientConn := runBBServer(ctx, te, t)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo: &gitpb.GitRepo{
-			// Access token is required for GitHub URLs
-			AccessToken: "test-access-token",
-			RepoUrl:     repoURL,
-		},
-	}
-	_, err := bbClient.CreateWorkflow(ctx, req)
-
-	require.NoError(t, err)
-
-	var row tables.Workflow
-	err = te.GetDBHandle().NewQuery(ctx, "get_worflow").Raw(`SELECT * FROM "Workflows"`).Take(&row)
-	assert.NoError(t, err)
-	assert.Equal(t, "https://github.com/foo/bar", row.RepoURL, "repo URL stored in DB should be normalized")
-}
-
-func TestDelete(t *testing.T) {
+func TestDeleteLegacyWorkflow(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
 	ctx, _, gid := authenticate(t, ctx, te)
 	provider := setupFakeGitProvider(t, te)
 
-	clientConn := runBBServer(ctx, te, t)
+	clientConn := runBBServer(ctx, t, te)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 
 	// Create a single workflow row.
@@ -345,7 +348,6 @@ func TestDelete(t *testing.T) {
 
 	req := &wfpb.DeleteWorkflowRequest{Id: "WF1"}
 	_, err = bbClient.DeleteWorkflow(ctx, req)
-
 	require.NoError(t, err)
 	assert.Equal(t, testgit.FakeWebhookID, provider.UnregisteredWebhookID, "should unregister webhook upon deletion")
 
@@ -353,13 +355,13 @@ func TestDelete(t *testing.T) {
 	assert.True(t, db.IsRecordNotFound(err))
 }
 
-func TestList(t *testing.T) {
+func TestListLegacyWorkflows(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
 
 	ctx1, uid1, gid1 := authenticate(t, ctx, te)
 
-	clientConn := runBBServer(ctx, te, t)
+	clientConn := runBBServer(ctx, t, te)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 
 	// Write 2 workflows for US1
@@ -424,21 +426,16 @@ func TestWebhook_UntrustedPullRequest_StartsUntrustedWorkflow(t *testing.T) {
 	flags.Set(t, "app.build_buddy_url", *u)
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
+	ctx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, te, t)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
-	}
-	wfRes, err := bbClient.CreateWorkflow(ctx, req)
-	require.NoError(t, err)
-	webhookURL := wfRes.GetWebhookUrl()
+	runBBServer(ctx, t, te)
+
+	repo := createWorkflow(t, te, repoURL, gid, false)
+
 	provider.TrustedUsers = []string{"acme-inc-user-1"}
 	provider.WebhookData = &interfaces.WebhookData{
 		EventName:          "pull_request",
@@ -452,7 +449,8 @@ func TestWebhook_UntrustedPullRequest_StartsUntrustedWorkflow(t *testing.T) {
 	}
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
 
-	pingWebhook(t, webhookURL)
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
 
 	execReq := execClient.NextExecuteRequest()
 	exec := getExecution(t, ctx, te, execReq.Payload)
@@ -473,21 +471,14 @@ func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
 	flags.Set(t, "app.build_buddy_url", *u)
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
+	ctx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, te, t)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
-	}
-	wfRes, err := bbClient.CreateWorkflow(ctx, req)
-	require.NoError(t, err)
-	webhookURL := wfRes.GetWebhookUrl()
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
 	provider.TrustedUsers = []string{"acme-inc-user-1"}
 	provider.WebhookData = &interfaces.WebhookData{
 		EventName:          "pull_request",
@@ -501,7 +492,8 @@ func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
 	}
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
 
-	pingWebhook(t, webhookURL)
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
 
 	execReq := execClient.NextExecuteRequest()
 	exec := getExecution(t, ctx, te, execReq.Payload)
@@ -511,7 +503,7 @@ func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
 		env, "BUILDBUDDY_API_KEY",
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
-		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
 		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
 }
@@ -522,21 +514,15 @@ func TestWebhook_TrustedApprovalOnUntrustedPullRequest_StartsTrustedWorkflow(t *
 	flags.Set(t, "app.build_buddy_url", *u)
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
+	ctx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, te, t)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
-	}
-	wfRes, err := bbClient.CreateWorkflow(ctx, req)
-	require.NoError(t, err)
-	webhookURL := wfRes.GetWebhookUrl()
+	clientConn := runBBServer(ctx, t, te)
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+	repo := createWorkflow(t, te, repoURL, gid, false)
 	provider.TrustedUsers = []string{"acme-inc-user-1"}
 	provider.WebhookData = &interfaces.WebhookData{
 		EventName:           "pull_request",
@@ -551,7 +537,8 @@ func TestWebhook_TrustedApprovalOnUntrustedPullRequest_StartsTrustedWorkflow(t *
 	}
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
 
-	pingWebhook(t, webhookURL)
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
 
 	execReq := execClient.NextExecuteRequest()
 	exec := getExecution(t, ctx, te, execReq.Payload)
@@ -561,7 +548,7 @@ func TestWebhook_TrustedApprovalOnUntrustedPullRequest_StartsTrustedWorkflow(t *
 		env, "BUILDBUDDY_API_KEY",
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
-		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
 		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
 }
@@ -572,21 +559,15 @@ func TestWebhook_TrustedApprovalOnAlreadyTrustedPullRequest_NOP(t *testing.T) {
 	flags.Set(t, "app.build_buddy_url", *u)
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
+	ctx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, te, t)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
-	}
-	wfRes, err := bbClient.CreateWorkflow(ctx, req)
-	require.NoError(t, err)
-	webhookURL := wfRes.GetWebhookUrl()
+	clientConn := runBBServer(ctx, t, te)
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+	repo := createWorkflow(t, te, repoURL, gid, false)
 	provider.TrustedUsers = []string{"acme-inc-user-1", "acme-inc-user-2"}
 	provider.WebhookData = &interfaces.WebhookData{
 		EventName:           "pull_request",
@@ -601,7 +582,8 @@ func TestWebhook_TrustedApprovalOnAlreadyTrustedPullRequest_NOP(t *testing.T) {
 	}
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
 
-	pingWebhook(t, webhookURL)
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
 }
 
 func TestWebhook_UntrustedApprovalOnUntrustedPullRequest_NOP(t *testing.T) {
@@ -610,21 +592,15 @@ func TestWebhook_UntrustedApprovalOnUntrustedPullRequest_NOP(t *testing.T) {
 	flags.Set(t, "app.build_buddy_url", *u)
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
+	ctx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, te, t)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
-	}
-	wfRes, err := bbClient.CreateWorkflow(ctx, req)
-	require.NoError(t, err)
-	webhookURL := wfRes.GetWebhookUrl()
+	clientConn := runBBServer(ctx, t, te)
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+	repo := createWorkflow(t, te, repoURL, gid, false)
 	provider.TrustedUsers = []string{"acme-inc-user-1"}
 	provider.WebhookData = &interfaces.WebhookData{
 		EventName:           "pull_request",
@@ -639,7 +615,8 @@ func TestWebhook_UntrustedApprovalOnUntrustedPullRequest_NOP(t *testing.T) {
 	}
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
 
-	pingWebhook(t, webhookURL)
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
 }
 
 func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
@@ -648,21 +625,15 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 	flags.Set(t, "app.build_buddy_url", *u)
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
+	ctx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, te, t)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
-	}
-	wfRes, err := bbClient.CreateWorkflow(ctx, req)
-	require.NoError(t, err)
-	webhookURL := wfRes.GetWebhookUrl()
+	clientConn := runBBServer(ctx, t, te)
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+	repo := createWorkflow(t, te, repoURL, gid, false)
 	provider.TrustedUsers = []string{"acme-inc-user-1"}
 	provider.WebhookData = &interfaces.WebhookData{
 		EventName:          "push",
@@ -675,17 +646,1301 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 	}
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
 
-	pingWebhook(t, webhookURL)
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
 
 	execReq := execClient.NextExecuteRequest()
 	exec := getExecution(t, ctx, te, execReq.Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
+	assert.Contains(t, exec.Command.GetArguments(), "--visibility=PUBLIC")
+	assert.NotContains(t, exec.Command.GetArguments(), "--visibility=PRIVATE")
 	env := envVars(exec.Command)
 	assert.NotContains(t,
 		env, "BUILDBUDDY_API_KEY",
 		"action env should not contain BUILDBUDDY_API_KEY env var")
 	assert.Regexp(t,
-		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
 		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
+}
+
+func TestWebhook_TrustedTagPush_StartsTrustedWorkflow(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	clientConn := runBBServer(ctx, t, te)
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:          "push",
+		TargetRepoURL:      "https://github.com/acme-inc/acme",
+		PushedRepoURL:      "https://github.com/acme-inc/acme",
+		PushedTag:          "v1.0.0",
+		SHA:                "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic: true,
+	}
+	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithTagWorkflow}
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	execReq := execClient.NextExecuteRequest()
+	exec := getExecution(t, ctx, te, execReq.Payload)
+	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
+	env := envVars(exec.Command)
+	assert.Equal(t, "v1.0.0", env["GIT_TAG"])
+	assert.Equal(t, "", env["GIT_BRANCH"])
+}
+
+func TestWebhook_RespectsVisibility(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	clientConn := runBBServer(ctx, t, te)
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:     "push",
+		TargetRepoURL: "https://github.com/acme-inc/acme",
+		TargetBranch:  "main",
+		PushedRepoURL: "https://github.com/acme-inc/acme",
+		PushedBranch:  "main",
+		SHA:           "c04d68571cb519e095772c865847007ed3e7fea9",
+		// Target repo is public, but this is overridden by bb.yaml
+		IsTargetRepoPublic: true,
+	}
+	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflowWithPrivateVisibility}
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	execReq := execClient.NextExecuteRequest()
+	exec := getExecution(t, ctx, te, execReq.Payload)
+	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
+	assert.Contains(t, exec.Command.GetArguments(), "--visibility=PRIVATE")
+	assert.NotContains(t, exec.Command.GetArguments(), "--visibility=PUBLIC")
+	env := envVars(exec.Command)
+	assert.NotContains(t,
+		env, "BUILDBUDDY_API_KEY",
+		"action env should not contain BUILDBUDDY_API_KEY env var")
+	assert.Regexp(t,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
+		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
+		"API key should be set via env-overrides")
+}
+
+func TestWebhook_NoWorkflowConfig_NOP(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	clientConn := runBBServer(ctx, t, te)
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+
+	// When `useDefaultWorkflowConfig` is false, if there is not a config file
+	// in the repo, we expect webhooks to trigger a no-op.
+	repo := createWorkflow(t, te, repoURL, gid, false /*useDefaultWorkflowConfig*/)
+
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:               "push",
+		TargetRepoURL:           "https://github.com/acme-inc/acme",
+		TargetBranch:            "main",
+		TargetRepoDefaultBranch: "main",
+		PushedRepoURL:           "https://github.com/acme-inc/acme",
+		PushedBranch:            "main",
+		SHA:                     "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic:      true,
+	}
+	// Do not return a buildbuddy.yaml config file in the repo contents.
+	provider.FileContents = map[string]string{}
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	// Give the workflow service a moment to asynchronously handle the request.
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify that no execution requests were triggered.
+	require.Zero(t, len(execClient.executeRequests))
+}
+
+func TestWebhook_FailedToStart_PublishesStatus(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	// Disable execution retries so that the test completes more quickly.
+	flags.Set(t, "remote_execution.workflows_max_execute_retries", 0)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	// Have workflow execution always fail.
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	execClient.FakeExecuteError = status.UnavailableErrorf("no executors registered")
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:          "pull_request",
+		TargetRepoURL:      "https://github.com/acme-inc/acme",
+		TargetBranch:       "main",
+		PushedRepoURL:      "https://github.com/untrusteduser/acme",
+		PushedBranch:       "feature",
+		SHA:                "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic: true,
+		PullRequestAuthor:  "acme-inc-user-1",
+	}
+	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	// Expect an execution attempt
+	_ = execClient.NextExecuteRequest()
+
+	// Expect a status update with  the failed attempt
+	status := <-provider.Statuses
+	targetURL := status.Payload.(*github.RepoStatus).GetTargetURL()
+	require.Regexp(t, `http://localhost:\d+/invocation/[0-9a-f\-]+\?runnerStartError=.*?no\+executors\+registered`, targetURL)
+	require.NotContains(t, targetURL, "rpc+error")
+}
+
+func TestWebhook_UseDefaultWorkflowConfig(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	clientConn := runBBServer(ctx, t, te)
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+
+	// When `useDefaultWorkflowConfig` is true, even though the repo doesn't have
+	// a buildbuddy.yaml, we should use the default config and still trigger an execution.
+	repo := createWorkflow(t, te, repoURL, gid, true /*useDefaultWorkflowConfig*/)
+
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:               "push",
+		TargetRepoURL:           "https://github.com/acme-inc/acme",
+		TargetBranch:            "main",
+		TargetRepoDefaultBranch: "main",
+		PushedRepoURL:           "https://github.com/acme-inc/acme",
+		PushedBranch:            "main",
+		SHA:                     "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic:      true,
+	}
+	// Do not return a buildbuddy.yaml config file in the repo contents.
+	provider.FileContents = map[string]string{}
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	execReq := execClient.NextExecuteRequest()
+	exec := getExecution(t, ctx, te, execReq.Payload)
+	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
+}
+
+func TestWebhook_LegacyWorkflow_UseDefaultWorkflowConfig(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	clientConn := runBBServer(ctx, t, te)
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+
+	// Create a legacy workflow and register it for webhooks
+	webhookID := "webhook1"
+	legacyWF := &tables.Workflow{
+		WorkflowID:           "WF1",
+		WebhookID:            webhookID,
+		UserID:               gid,
+		GroupID:              gid,
+		Perms:                48,
+		RepoURL:              repoURL,
+		GitProviderWebhookID: testgit.FakeWebhookID,
+	}
+	err := te.GetDBHandle().NewQuery(context.Background(), "create_legacy_wf_for_test").Create(legacyWF)
+	require.NoError(t, err)
+	webhookURL := fmt.Sprintf("%s/webhooks/workflow/%s", build_buddy_url.WithPath("").String(), webhookID)
+
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:               "push",
+		TargetRepoURL:           "https://github.com/acme-inc/acme",
+		TargetBranch:            "main",
+		TargetRepoDefaultBranch: "main",
+		PushedRepoURL:           "https://github.com/acme-inc/acme",
+		PushedBranch:            "main",
+		SHA:                     "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic:      true,
+	}
+	// Do not return a buildbuddy.yaml config file in the repo contents.
+	provider.FileContents = map[string]string{}
+	provider.RegisteredWebhookURL = webhookURL
+
+	pingLegacyWorkflowWebhook(t, te, webhookURL)
+
+	execReq := execClient.NextExecuteRequest()
+	exec := getExecution(t, ctx, te, execReq.Payload)
+	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
+}
+
+func TestExecuteWorkflow_CrossOrgAccessDenied(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+
+	// Set up a workflow for one group.
+	_, _, gid1 := authenticate(t, ctx, te)
+	repoURL := makeTempRepo(t)
+	createWorkflow(t, te, repoURL, gid1, true /*useDefaultWorkflowConfig*/)
+	_ = setupFakeGitProvider(t, te)
+
+	// Authenticate as a user from a different org.
+	ctx2, uid2, gid2 := authenticateAsUser(t, ctx, te, "US2")
+	reqCtx := testauth.RequestContext(uid2, gid2)
+
+	clientConn := runBBServer(ctx, t, te)
+	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
+
+	for _, tc := range []struct {
+		name    string
+		repoURL string
+	}{
+		{
+			name:    "existing repo",
+			repoURL: repoURL,
+		},
+		{
+			name:    "nonexistent repo",
+			repoURL: "file:///nonexistent",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			workflowID := te.GetWorkflowService().GetLegacyWorkflowIDForGitRepository(gid1, tc.repoURL)
+			_, err := bbClient.ExecuteWorkflow(ctx2, &wfpb.ExecuteWorkflowRequest{
+				RequestContext: reqCtx,
+				WorkflowId:     workflowID,
+				PushedRepoUrl:  tc.repoURL,
+				PushedBranch:   "main",
+			})
+			assert.True(t, status.IsPermissionDeniedError(err))
+		})
+	}
+}
+
+func TestExecuteWorkflow_BlockedGroupDoesNotStartWorkflow(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+
+	te := newTestEnv(t)
+	ctx, uid, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	_ = setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	createWorkflow(t, te, repoURL, gid, true /*useDefaultWorkflowConfig*/)
+	updateGroupStatus(t, te, gid, grpb.Group_BLOCKED_GROUP_STATUS)
+
+	clientConn := runBBServer(ctx, t, te)
+	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
+	workflowID := te.GetWorkflowService().GetLegacyWorkflowIDForGitRepository(gid, repoURL)
+	rsp, err := bbClient.ExecuteWorkflow(ctx, &wfpb.ExecuteWorkflowRequest{
+		RequestContext: testauth.RequestContext(uid, gid),
+		WorkflowId:     workflowID,
+		PushedRepoUrl:  repoURL,
+		PushedBranch:   "main",
+		CommitSha:      "c04d68571cb519e095772c865847007ed3e7fea9",
+	})
+	require.NoError(t, err)
+	require.Len(t, rsp.GetActionStatuses(), 1)
+	require.Equal(t, int32(codes.PermissionDenied), rsp.GetActionStatuses()[0].GetStatus().GetCode())
+	require.Zero(t, len(execClient.executeRequests))
+}
+
+func TestAPIDispatch_ActionFiltering(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+
+	te := newTestEnv(t)
+	ctx, uid, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	_ = setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	clientConn := runBBServer(ctx, t, te)
+	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
+	reqCtx := testauth.RequestContext(uid, gid)
+	createWorkflow(t, te, repoURL, gid, true /*useDefaultWorkflowConfig*/)
+
+	testCases := []struct {
+		name                      string
+		actionFilter              []string
+		codesearchEnabledForGroup bool
+		codesearchFlagEnabled     bool
+		kytheFlagEnabled          bool
+		expectedActions           []string
+	}{
+		{
+			name:                      "no action filter, kythe disabled",
+			actionFilter:              nil,
+			codesearchEnabledForGroup: false,
+			codesearchFlagEnabled:     true,
+			kytheFlagEnabled:          true,
+			expectedActions:           []string{"Test all targets"},
+		},
+		{
+			name:                      "no action filter, kythe enabled",
+			actionFilter:              nil,
+			codesearchEnabledForGroup: true,
+			codesearchFlagEnabled:     true,
+			kytheFlagEnabled:          true,
+			expectedActions:           []string{"Test all targets", config.CSIncrementalUpdateName, config.KytheActionName},
+		},
+		{
+			name:                      "action filter, kythe disabled",
+			actionFilter:              []string{"Test all targets"},
+			codesearchEnabledForGroup: false,
+			codesearchFlagEnabled:     true,
+			kytheFlagEnabled:          true,
+			expectedActions:           []string{"Test all targets"},
+		},
+		{
+			name:                      "action filter, kythe enabled",
+			actionFilter:              []string{"Test all targets"},
+			codesearchEnabledForGroup: true,
+			codesearchFlagEnabled:     true,
+			kytheFlagEnabled:          true,
+			expectedActions:           []string{"Test all targets"},
+		},
+		{
+			name:                      "kythe-only action filter",
+			actionFilter:              []string{config.KytheActionName},
+			codesearchEnabledForGroup: true,
+			codesearchFlagEnabled:     true,
+			kytheFlagEnabled:          true,
+			expectedActions:           []string{config.KytheActionName},
+		},
+		{
+			name:                      "all codesearch action filter",
+			actionFilter:              []string{config.CSIncrementalUpdateName, config.KytheActionName},
+			codesearchEnabledForGroup: true,
+			codesearchFlagEnabled:     true,
+			kytheFlagEnabled:          true,
+			expectedActions:           []string{config.CSIncrementalUpdateName, config.KytheActionName},
+		},
+		{
+			name:                      "no action filter, cs indexing only enabled",
+			actionFilter:              nil,
+			codesearchEnabledForGroup: true,
+			codesearchFlagEnabled:     true,
+			kytheFlagEnabled:          false,
+			expectedActions:           []string{"Test all targets", config.CSIncrementalUpdateName},
+		},
+		{
+			name:                      "all codesearch action filter, cs indexing only enabled",
+			actionFilter:              []string{config.CSIncrementalUpdateName, config.KytheActionName},
+			codesearchEnabledForGroup: true,
+			codesearchFlagEnabled:     true,
+			kytheFlagEnabled:          false,
+			expectedActions:           []string{config.CSIncrementalUpdateName},
+		},
+		{
+			name:                      "all codesearch action filter, kythe indexing only enabled",
+			actionFilter:              []string{config.CSIncrementalUpdateName, config.KytheActionName},
+			codesearchEnabledForGroup: true,
+			codesearchFlagEnabled:     false,
+			kytheFlagEnabled:          true,
+			expectedActions:           []string{config.KytheActionName},
+		},
+	}
+
+	for _, tc := range testCases {
+		g, err := te.GetUserDB().GetGroupByID(ctx, gid)
+		require.NoError(t, err)
+		g.URLIdentifier = "mustbeset"
+		g.CodeSearchEnabled = tc.codesearchEnabledForGroup
+		_, err = te.GetUserDB().UpdateGroup(ctx, g)
+		require.NoError(t, err)
+
+		flags.Set(t, "remote_execution.enable_codesearch_indexing", tc.codesearchFlagEnabled)
+		flags.Set(t, "remote_execution.enable_kythe_indexing", tc.kytheFlagEnabled)
+
+		workflowID := te.GetWorkflowService().GetLegacyWorkflowIDForGitRepository(gid, repoURL)
+		rsp, err := bbClient.ExecuteWorkflow(ctx, &wfpb.ExecuteWorkflowRequest{
+			RequestContext: reqCtx,
+			WorkflowId:     workflowID,
+			CommitSha:      "c04d68571cb519e095772c865847007ed3e7fea9",
+			PushedRepoUrl:  "https://github.com/acme-inc/acme",
+			PushedBranch:   "main",
+			ActionNames:    tc.actionFilter,
+		})
+		require.NoError(t, err, tc.name)
+		executedActionNames := make([]string, 0, len(rsp.ActionStatuses))
+		for _, a := range rsp.ActionStatuses {
+			executedActionNames = append(executedActionNames, a.ActionName)
+		}
+		require.ElementsMatch(t, tc.expectedActions, executedActionNames, tc.name)
+
+		for range tc.expectedActions {
+			_ = execClient.NextExecuteRequest()
+		}
+	}
+}
+
+func TestScheduledWorkflow(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	_ = runBBServer(ctx, t, te)
+	authCtx, _, gid := authenticate(t, ctx, te)
+	createWorkflow(t, te, repoURL, gid, false)
+	provider.FileContents = map[string]string{
+		config.FilePath: `
+actions:
+  - name: "Should Run"
+    bazel_commands: [ "test //..." ]
+  - name: "Should Run 2"
+    bazel_commands: [ "test //..." ]
+  - name: "Expired Lease"
+    bazel_commands: [ "test //..." ]
+`,
+	}
+
+	now := threePM
+	fiveMinutesAgo := now.Add(-5 * time.Minute)
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID: "should-run",
+		GroupID:    gid,
+		RepoURL:    repoURL,
+		ActionName: "Should Run",
+		// Run every hour, on the hour.
+		CronExpr:    "0 * * * *",
+		NextRunUsec: now.UnixMicro(),
+	})
+
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID: "should-run-2",
+		GroupID:    gid,
+		RepoURL:    repoURL,
+		ActionName: "Should Run 2",
+		// Run every hour, 5 minutes before the hour.
+		CronExpr:    "55 * * * *",
+		NextRunUsec: fiveMinutesAgo.UnixMicro(),
+	})
+
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID: "not-time-yet",
+		GroupID:    gid,
+		RepoURL:    repoURL,
+		ActionName: "Not Time Yet",
+		// Run every day at 7PM UTC.
+		CronExpr:    "0 19 * * *",
+		NextRunUsec: sevenPM.UnixMicro(),
+	})
+
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID: "already-leased",
+		GroupID:    gid,
+		RepoURL:    repoURL,
+		ActionName: "Already Leased",
+		// Run every hour, on the hour.
+		CronExpr:         "0 * * * *",
+		NextRunUsec:      now.UnixMicro(),
+		LeaseExpiresUsec: now.Add(1 * time.Minute).UnixMicro(),
+	})
+
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID: "expired-lease",
+		GroupID:    gid,
+		RepoURL:    repoURL,
+		ActionName: "Expired Lease",
+		// Run every hour, on the hour.
+		CronExpr:         "0 * * * *",
+		NextRunUsec:      now.UnixMicro(),
+		LeaseExpiresUsec: now.Add(-1 * time.Minute).UnixMicro(),
+	})
+
+	// Intentionally use a non-authenticated context, like the cron scheduler would.
+	err := te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	expectedActionNames := []string{"Should Run", "Should Run 2", "Expired Lease"}
+	executedActionNames := make([]string, 0, len(expectedActionNames))
+	for range expectedActionNames {
+		select {
+		case execReq := <-execClient.executeRequests:
+			// When fetching the executions, make sure to use the authenticated context.
+			actionName := getExecutedActionName(t, authCtx, te, execReq.Payload)
+			executedActionNames = append(executedActionNames, actionName)
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for scheduled workflow execution")
+		}
+	}
+	require.ElementsMatch(t, expectedActionNames, executedActionNames)
+	require.Zero(t, len(execClient.executeRequests))
+
+	// Check that next run times are correct
+	shouldRun := getScheduledRun(t, te, "Should Run")
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), shouldRun.NextRunUsec)
+	require.Equal(t, int64(0), shouldRun.LeaseExpiresUsec)
+
+	shouldRun2 := getScheduledRun(t, te, "Should Run 2")
+	require.Equal(t, fiveMinutesAgo.Add(1*time.Hour).UnixMicro(), shouldRun2.NextRunUsec)
+	require.Equal(t, int64(0), shouldRun2.LeaseExpiresUsec)
+
+	expiredLease := getScheduledRun(t, te, "Expired Lease")
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), expiredLease.NextRunUsec)
+	require.Equal(t, int64(0), expiredLease.LeaseExpiresUsec)
+
+	// Non-leased tasks should not have been touched.
+	alreadyLeased := getScheduledRun(t, te, "Already Leased")
+	require.Equal(t, now.UnixMicro(), alreadyLeased.NextRunUsec)
+	require.Equal(t, now.Add(1*time.Minute).UnixMicro(), alreadyLeased.LeaseExpiresUsec)
+
+	notTimeYet := getScheduledRun(t, te, "Not Time Yet")
+	require.Equal(t, sevenPM.UnixMicro(), notTimeYet.NextRunUsec)
+	require.Equal(t, int64(0), notTimeYet.LeaseExpiresUsec)
+}
+
+func TestScheduledWorkflow_NoEligibleSchedules(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	_, _, gid := authenticate(t, ctx, te)
+	repoURL := makeTempRepo(t)
+	_ = runBBServer(ctx, t, te)
+	createWorkflow(t, te, repoURL, gid, false)
+
+	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	// All next run times are in the future.
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID:  "future-1",
+		GroupID:     gid,
+		RepoURL:     repoURL,
+		ActionName:  "Some Action",
+		CronExpr:    "0 19 * * *",
+		NextRunUsec: now.Add(1 * time.Hour).UnixMicro(),
+	})
+
+	// Intentionally use a non-authenticated context, like the cron scheduler would.
+	err := te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	// No executions should have been started.
+	require.Zero(t, len(te.GetRemoteExecutionClient().(*fakeExecutionClient).executeRequests))
+
+	// Schedule rows should be untouched.
+	future1 := getScheduledRun(t, te, "Some Action")
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), future1.NextRunUsec)
+	require.Equal(t, int64(0), future1.LeaseExpiresUsec)
+}
+
+func TestScheduledWorkflow_ConcurrentServers(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	authCtx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	_ = runBBServer(ctx, t, te)
+	createWorkflow(t, te, repoURL, gid, false)
+	provider.FileContents = map[string]string{
+		config.FilePath: `
+actions:
+  - name: "Test"
+    bazel_commands: [ "test //..." ]
+  - name: "Test 2"
+    bazel_commands: [ "test //..." ]
+`,
+	}
+
+	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC) // 3PM UTC
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID: "test",
+		GroupID:    gid,
+		RepoURL:    repoURL,
+		ActionName: "Test",
+		// Run every hour, on the hour.
+		CronExpr:    "0 * * * *",
+		NextRunUsec: now.UnixMicro(),
+	})
+
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID: "test-2",
+		GroupID:    gid,
+		RepoURL:    repoURL,
+		ActionName: "Test 2",
+		// Run every hour, on the hour.
+		CronExpr:    "0 * * * *",
+		NextRunUsec: now.UnixMicro(),
+	})
+
+	// Simulate multiple servers simultaneously trying to schedule workflows.
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Intentionally use a non-authenticated context, like the cron scheduler would.
+			errCh <- te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		require.NoError(t, err)
+	}
+
+	// Check that each task was only scheduled once.
+	executedActionNames := make([]string, 0, 2)
+	for range 2 {
+		select {
+		case execReq := <-execClient.executeRequests:
+			// When fetching the executions, make sure to use the authenticated context.
+			actionName := getExecutedActionName(t, authCtx, te, execReq.Payload)
+			executedActionNames = append(executedActionNames, actionName)
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for scheduled workflow execution")
+		}
+	}
+	require.ElementsMatch(t, []string{"Test", "Test 2"}, executedActionNames)
+
+	scheduled := getScheduledRun(t, te, "Test")
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), scheduled.NextRunUsec)
+	require.Equal(t, int64(0), scheduled.LeaseExpiresUsec)
+
+	scheduled2 := getScheduledRun(t, te, "Test 2")
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), scheduled2.NextRunUsec)
+	require.Equal(t, int64(0), scheduled2.LeaseExpiresUsec)
+}
+
+func listScheduledRuns(t *testing.T, te *testenv.TestEnv, groupID, repoURL string) []*tables.ScheduledRun {
+	runs, err := db.ScanAll(
+		te.GetDBHandle().NewQuery(context.Background(), "list_scheduled_runs_for_test").Raw(`
+			SELECT * FROM "ScheduledRuns" WHERE group_id = ? AND repo_url = ? ORDER BY next_run_usec ASC
+		`, groupID, repoURL),
+		&tables.ScheduledRun{},
+	)
+	require.NoError(t, err)
+	return runs
+}
+
+func pushToDefaultBranch(t *testing.T, te *testenv.TestEnv, repo *tables.GitRepository, provider *testgit.FakeProvider, configYAML string) {
+	provider.FileContents = map[string]string{config.FilePath: configYAML}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:               "push",
+		TargetRepoURL:           repo.RepoURL,
+		TargetBranch:            "main",
+		TargetRepoDefaultBranch: "main",
+		PushedRepoURL:           repo.RepoURL,
+		PushedBranch:            "main",
+		SHA:                     "abc123",
+		IsTargetRepoPublic:      true,
+		ChangedFiles:            []string{config.FilePath},
+	}
+	err := te.GetWorkflowService().HandleRepositoryEvent(context.Background(), repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+}
+
+func TestCreateScheduledWorkflow(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	te.SetClock(clockwork.NewFakeClockAt(threePM))
+	ctx, _, gid := authenticate(t, ctx, te)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+
+	pushToDefaultBranch(t, te, repo, provider, `
+actions:
+  - name: "Hourly"
+    triggers:
+      schedule:
+        crons: ["0 * * * *"]
+    bazel_commands: ["test //..."]
+`)
+
+	time.Sleep(1 * time.Second)
+
+	var runs []*tables.ScheduledRun
+	require.Eventually(t, func() bool {
+		runs = listScheduledRuns(t, te, gid, repoURL)
+		return len(runs) == 1
+	}, 1*time.Second, 100*time.Millisecond)
+	require.Equal(t, "Hourly", runs[0].ActionName)
+	require.Equal(t, "0 * * * *", runs[0].CronExpr)
+	require.Equal(t, threePM.Add(1*time.Hour).UnixMicro(), runs[0].NextRunUsec)
+}
+
+func TestCreateScheduledWorkflow_MultipleSchedules(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+
+	now := threePM
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	pushToDefaultBranch(t, te, repo, provider, `
+actions:
+  - name: "Schedule 1"
+    triggers:
+      schedule:
+        crons: ["0 0 * * *", "0 12 * * *"]
+    bazel_commands: ["test //..."]
+  - name: "Schedule 2"
+    triggers:
+      schedule:
+        crons: ["0 3 * * *", "0 16 * * *"]
+    bazel_commands: ["test //..."]
+`)
+
+	// These runs should be sorted by next run time.
+	var runs []*tables.ScheduledRun
+	require.Eventually(t, func() bool {
+		runs = listScheduledRuns(t, te, gid, repoURL)
+		return len(runs) == 4
+	}, 1*time.Second, 100*time.Millisecond)
+
+	// Should be triggered daily at 4PM.
+	run1 := runs[0]
+	require.Equal(t, "Schedule 2", run1.ActionName)
+	require.Equal(t, "0 16 * * *", run1.CronExpr)
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), run1.NextRunUsec)
+
+	// Should be triggered daily at midnight.
+	run2 := runs[1]
+	require.Equal(t, "Schedule 1", run2.ActionName)
+	require.Equal(t, "0 0 * * *", run2.CronExpr)
+	require.Equal(t, now.Add(9*time.Hour).UnixMicro(), run2.NextRunUsec)
+
+	// Should be triggered daily at 3AM.
+	run3 := runs[2]
+	require.Equal(t, "Schedule 2", run3.ActionName)
+	require.Equal(t, "0 3 * * *", run3.CronExpr)
+	require.Equal(t, now.Add(12*time.Hour).UnixMicro(), run3.NextRunUsec)
+
+	// Should be triggered daily at 12PM.
+	run4 := runs[3]
+	require.Equal(t, "Schedule 1", run4.ActionName)
+	require.Equal(t, "0 12 * * *", run4.CronExpr)
+	require.Equal(t, now.Add(21*time.Hour).UnixMicro(), run4.NextRunUsec)
+}
+
+func TestCreateScheduledWorkflow_ConcurrentPushes(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	te.SetClock(clockwork.NewFakeClockAt(threePM))
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+
+	provider.FileContents = map[string]string{config.FilePath: `
+actions:
+  - name: "Nightly"
+    triggers:
+      push:
+        branches: ["main"]
+      schedule:
+        crons: ["0 0 * * *"]
+    bazel_commands: ["test //..."]
+`}
+	webhookData := &interfaces.WebhookData{
+		EventName:               "push",
+		TargetRepoURL:           repo.RepoURL,
+		TargetBranch:            "main",
+		TargetRepoDefaultBranch: "main",
+		PushedRepoURL:           repo.RepoURL,
+		PushedBranch:            "main",
+		SHA:                     "abc123",
+		IsTargetRepoPublic:      true,
+		ChangedFiles:            []string{config.FilePath},
+	}
+	provider.WebhookData = webhookData
+
+	// Simulate two concurrent default-branch pushes.
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errCh <- te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, webhookData, "faketoken")
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		require.NoError(t, err)
+	}
+
+	// Both pushes should have dispatched the workflow.
+	for range 2 {
+		select {
+		case <-execClient.executeRequests:
+		case <-time.After(1 * time.Minute):
+			t.Fatal("timed out waiting for workflow execution")
+		}
+	}
+
+	// Despite the concurrent pushes, exactly one schedule should exist.
+	var runs []*tables.ScheduledRun
+	require.Eventually(t, func() bool {
+		runs = listScheduledRuns(t, te, gid, repoURL)
+		return len(runs) == 1
+	}, 1*time.Second, 100*time.Millisecond)
+	require.Equal(t, "Nightly", runs[0].ActionName)
+	require.Equal(t, "0 0 * * *", runs[0].CronExpr)
+}
+
+func TestUpdateScheduledWorkflows(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+
+	now := threePM
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	// Pre-insert a schedule that matches what's in the config.
+	atMidnight := "0 0 * * *"
+	existingScheduleID := fmt.Sprintf("WFS:%s:%s:%s:%s", gid, repoURL, "Schedule", atMidnight)
+	midnightUsec := now.Add(9 * time.Hour).UnixMicro()
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID:  existingScheduleID,
+		GroupID:     gid,
+		RepoURL:     repoURL,
+		ActionName:  "Schedule",
+		CronExpr:    atMidnight,
+		NextRunUsec: midnightUsec,
+	})
+
+	// Insert a schedule for the same action that doesn't match what's in the new config.
+	atNoon := "0 12 * * *"
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID:  fmt.Sprintf("WFS:%s:%s:%s:%s", gid, repoURL, "Schedule", atNoon),
+		GroupID:     gid,
+		RepoURL:     repoURL,
+		ActionName:  "Schedule",
+		CronExpr:    atNoon,
+		NextRunUsec: now.Add(21 * time.Hour).UnixMicro(),
+	})
+
+	// Insert a schedule for a different action that doesn't exist in the new config.
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID:  fmt.Sprintf("WFS:%s:%s:%s:%s", gid, repoURL, "Should Be Deleted", atMidnight),
+		GroupID:     gid,
+		RepoURL:     repoURL,
+		ActionName:  "Should Be Deleted",
+		CronExpr:    atMidnight,
+		NextRunUsec: midnightUsec,
+	})
+
+	pushToDefaultBranch(t, te, repo, provider, `
+actions:
+  - name: "Schedule"
+    triggers:
+      schedule:
+        crons: ["0 0 * * *", "0 16 * * *"]
+    bazel_commands: ["test //..."]
+`)
+
+	// These runs should be sorted by next run time.
+	var runs []*tables.ScheduledRun
+	require.Eventually(t, func() bool {
+		runs = listScheduledRuns(t, te, gid, repoURL)
+		return len(runs) == 2
+	}, 1*time.Second, 100*time.Millisecond)
+
+	// Based on the most recent config push, there should be a scheduled run at 4PM.
+	run1 := runs[0]
+	require.Equal(t, "Schedule", run1.ActionName)
+	require.Equal(t, "0 16 * * *", run1.CronExpr)
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), run1.NextRunUsec)
+
+	// The midnight schedule should be the same.
+	run2 := runs[1]
+	require.Equal(t, "Schedule", run2.ActionName)
+	require.Equal(t, "0 0 * * *", run2.CronExpr)
+	require.Equal(t, midnightUsec, run2.NextRunUsec)
+
+}
+
+func TestUpdateScheduledWorkflows_SkipsNonDefaultBranchPush(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+
+	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	// Pre-insert a schedule.
+	cron := "0 15 * * *"
+	existingScheduleID := fmt.Sprintf("WFS:%s:%s:%s:%s", gid, repoURL, "Schedule", threePM)
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID:  existingScheduleID,
+		GroupID:     gid,
+		RepoURL:     repoURL,
+		ActionName:  "Schedule",
+		CronExpr:    cron,
+		NextRunUsec: threePM.UnixMicro(),
+	})
+
+	provider.FileContents = map[string]string{
+		config.FilePath: `
+actions:
+  - name: "Nightly"
+    triggers:
+      schedule:
+        crons: ["0 0 * * *"]
+    bazel_commands: ["test //..."]
+`,
+	}
+	// Push to a feature branch, not the default branch.
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:               "push",
+		TargetRepoURL:           repoURL,
+		TargetBranch:            "main",
+		TargetRepoDefaultBranch: "main",
+		PushedRepoURL:           repoURL,
+		PushedBranch:            "feature",
+		SHA:                     "abc123",
+		IsTargetRepoPublic:      true,
+	}
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	var runs []*tables.ScheduledRun
+	require.Eventually(t, func() bool {
+		runs = listScheduledRuns(t, te, gid, repoURL)
+		return len(runs) == 1
+	}, 1*time.Second, 100*time.Millisecond)
+
+	run := runs[0]
+	require.Equal(t, "Schedule", run.ActionName)
+	require.Equal(t, "0 15 * * *", run.CronExpr)
+	require.Equal(t, threePM.UnixMicro(), run.NextRunUsec)
+}
+
+func TestUpdateScheduledWorkflows_SkipsWithoutConfigChange(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+
+	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	// Pre-insert a schedule.
+	cron := "0 15 * * *"
+	existingScheduleID := fmt.Sprintf("WFS:%s:%s:%s:%s", gid, repoURL, "Schedule", threePM)
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID:  existingScheduleID,
+		GroupID:     gid,
+		RepoURL:     repoURL,
+		ActionName:  "Schedule",
+		CronExpr:    cron,
+		NextRunUsec: threePM.UnixMicro(),
+	})
+
+	provider.FileContents = map[string]string{
+		config.FilePath: `
+actions:
+  - name: "Nightly"
+    triggers:
+      schedule:
+        crons: ["0 0 * * *"]
+    bazel_commands: ["test //..."]
+`,
+	}
+	// Push to the default branch, but without buildbuddy.yaml in the changed files.
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:               "push",
+		TargetRepoURL:           repoURL,
+		TargetBranch:            "main",
+		TargetRepoDefaultBranch: "main",
+		PushedRepoURL:           repoURL,
+		PushedBranch:            "main",
+		SHA:                     "abc123",
+		IsTargetRepoPublic:      true,
+		ChangedFiles:            []string{"README.md"},
+	}
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	// The pre-existing schedule should be untouched.
+	var runs []*tables.ScheduledRun
+	require.Eventually(t, func() bool {
+		runs = listScheduledRuns(t, te, gid, repoURL)
+		return len(runs) == 1
+	}, 1*time.Second, 100*time.Millisecond)
+
+	run := runs[0]
+	require.Equal(t, "Schedule", run.ActionName)
+	require.Equal(t, cron, run.CronExpr)
+	require.Equal(t, threePM.UnixMicro(), run.NextRunUsec)
+}
+
+func TestUpdateScheduledWorkflows_ConfigFileDeleted(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	te.SetClock(clockwork.NewFakeClockAt(threePM))
+	ctx, _, gid := authenticate(t, ctx, te)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+
+	// Push a config that has a scheduled workflow.
+	pushToDefaultBranch(t, te, repo, provider, `
+actions:
+  - name: "Scheduled"
+    triggers:
+      schedule:
+        crons: ["0 0 * * *"]
+`)
+
+	// Wait for scheduled runs to be created.
+	require.Eventually(t, func() bool {
+		return len(listScheduledRuns(t, te, gid, repoURL)) == 1
+	}, 1*time.Second, 100*time.Millisecond)
+
+	// Simulate the user deleting their buildbuddy.yaml file.
+	provider.FileContents = map[string]string{}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:               "push",
+		TargetRepoURL:           repo.RepoURL,
+		TargetBranch:            "main",
+		TargetRepoDefaultBranch: "main",
+		PushedRepoURL:           repo.RepoURL,
+		PushedBranch:            "main",
+		SHA:                     "def456",
+		IsTargetRepoPublic:      true,
+		ChangedFiles:            []string{config.FilePath},
+	}
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	// The previously created scheduled run should be deleted.
+	require.Eventually(t, func() bool {
+		return len(listScheduledRuns(t, te, gid, repoURL)) == 0
+	}, 1*time.Second, 100*time.Millisecond)
+}
+
+func TestScheduledWorkflow_DispatchFailure(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	authCtx, _, gid := authenticate(t, ctx, te)
+	repoURL := makeTempRepo(t)
+	provider := setupFakeGitProvider(t, te)
+	_ = runBBServer(ctx, t, te)
+
+	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	// Use a RepoURL with no matching GitRepository to cause a dispatch failure.
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID:  "test-backoff",
+		GroupID:     gid,
+		RepoURL:     repoURL,
+		ActionName:  "Test",
+		CronExpr:    "0 * * * *",
+		NextRunUsec: now.UnixMicro(),
+	})
+
+	err := te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	sr := getScheduledRun(t, te, "Test")
+	require.Equal(t, int64(1), sr.FailedAttemptCount)
+	require.Equal(t, now.Add(30*time.Second).UnixMicro(), sr.NextRunUsec)
+	require.Equal(t, int64(0), sr.LeaseExpiresUsec)
+
+	// Advance clock past the first backoff and trigger a second failure.
+	// The backoff should be twice as long (i.e. 1 min).
+	now2 := now.Add(31 * time.Second)
+	te.SetClock(clockwork.NewFakeClockAt(now2))
+
+	err = te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	sr = getScheduledRun(t, te, "Test")
+	require.Equal(t, int64(2), sr.FailedAttemptCount)
+	require.Equal(t, now2.Add(60*time.Second).UnixMicro(), sr.NextRunUsec)
+
+	// Create a matching GitRepository to allow the workflow to be scheduled.
+	createWorkflow(t, te, repoURL, gid, false)
+	provider.FileContents = map[string]string{
+		config.FilePath: `
+actions:
+  - name: "Test"
+    bazel_commands: [ "test //..." ]
+`,
+	}
+
+	// Advance clock to the next scheduled time and verify the workflow is scheduled.
+	now3 := now2.Add(61 * time.Second)
+	te.SetClock(clockwork.NewFakeClockAt(now3))
+
+	err = te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	select {
+	case execReq := <-execClient.executeRequests:
+		// When fetching the executions, make sure to use the authenticated context.
+		actionName := getExecutedActionName(t, authCtx, te, execReq.Payload)
+		require.Equal(t, "Test", actionName)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for scheduled workflow execution")
+	}
+
+	sr = getScheduledRun(t, te, "Test")
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), sr.NextRunUsec)
+	require.Equal(t, int64(0), sr.FailedAttemptCount)
+	require.Equal(t, int64(0), sr.LeaseExpiresUsec)
+}
+
+func TestScheduledWorkflow_FailedMaxAttempts(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	_ = runBBServer(ctx, t, te)
+
+	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	// Use a RepoURL with no matching GitRepository to cause a dispatch failure.
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID: "test-max-retries",
+		GroupID:    "some-group",
+		RepoURL:    "https://github.com/nonexistent/repo",
+		ActionName: "Test",
+		// Run every hour, on the hour.
+		CronExpr:           "0 * * * *",
+		NextRunUsec:        now.UnixMicro(),
+		FailedAttemptCount: workflow.ScheduledWorkflowMaxRetries - 1, // The next failure will trigger the retry limit
+	})
+
+	err := te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	// The schedule should advance to the next cron window (4PM), not apply backoff.
+	sr := getScheduledRun(t, te, "Test")
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), sr.NextRunUsec)
+	require.Equal(t, int64(0), sr.FailedAttemptCount)
+	require.Equal(t, int64(1), sr.ConsecutiveScheduleFailureCount)
+	require.Equal(t, int64(0), sr.LeaseExpiresUsec)
+}
+
+func TestScheduledWorkflow_MaxConsecutiveFailures(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	_ = runBBServer(ctx, t, te)
+
+	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	// Pre-populate counters so the next failure triggers a pause.
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID:                      "test",
+		GroupID:                         "some-group",
+		RepoURL:                         "https://github.com/nonexistent/repo",
+		ActionName:                      "Test",
+		CronExpr:                        "0 * * * *",
+		NextRunUsec:                     now.UnixMicro(),
+		FailedAttemptCount:              workflow.ScheduledWorkflowMaxRetries - 1,
+		ConsecutiveScheduleFailureCount: workflow.ScheduledWorkflowMaxConsecutiveFailures - 1,
+	})
+
+	err := te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	sr := getScheduledRun(t, te, "Test")
+	require.Equal(t, int64(workflow.ScheduledWorkflowMaxConsecutiveFailures), sr.ConsecutiveScheduleFailureCount)
+	require.Equal(t, int64(0), sr.FailedAttemptCount)
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), sr.NextRunUsec)
+
+	// Advance the clock to the next scheduled time and verify the workflow is not scheduled.
+	// It should be untouched.
+	te.SetClock(clockwork.NewFakeClockAt(now.Add(1 * time.Hour)))
+
+	err = te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	sr = getScheduledRun(t, te, "Test")
+	require.Equal(t, int64(workflow.ScheduledWorkflowMaxConsecutiveFailures), sr.ConsecutiveScheduleFailureCount)
+	require.Equal(t, int64(0), sr.FailedAttemptCount)
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), sr.NextRunUsec)
 }

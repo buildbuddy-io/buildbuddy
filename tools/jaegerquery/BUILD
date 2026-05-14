@@ -11,7 +11,6 @@ go_library(
         "//server/util/grpc_client",
         "//server/util/log",
         "@org_golang_google_protobuf//types/known/timestamppb",
-        "@org_golang_x_exp//maps",
     ],
 )
 

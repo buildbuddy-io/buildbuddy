@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sys/windows"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -95,6 +96,10 @@ func (p *process) wait() (*espb.Rusage, error) {
 	defer close(p.terminated)
 	err := p.cmd.Wait()
 	return nil, err
+}
+
+func (p *process) signal(sig syscall.Signal) error {
+	return status.UnimplementedError("not implemented")
 }
 
 // killProcessTree kills the given pid as well as any descendant processes.

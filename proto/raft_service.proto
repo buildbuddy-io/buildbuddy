@@ -13,12 +13,22 @@ service Api {
   rpc AddReplica(raft.AddReplicaRequest) returns (raft.AddReplicaResponse);
   rpc RemoveReplica(raft.RemoveReplicaRequest)
       returns (raft.RemoveReplicaResponse);
-  rpc ListReplicas(raft.ListReplicasRequest)
-      returns (raft.ListReplicasResponse);
   rpc TransferLeadership(TransferLeadershipRequest)
       returns (TransferLeadershipResponse);
 
   // Metadata API.
   rpc SyncPropose(SyncProposeRequest) returns (SyncProposeResponse);
   rpc SyncRead(SyncReadRequest) returns (SyncReadResponse);
+
+  // Registry API.
+  rpc GetRegistry(GetRegistryRequest) returns (GetRegistryResponse);
+
+  // Debug API
+  rpc GetRangeDebugInfo(raft.GetRangeDebugInfoRequest)
+      returns (raft.GetRangeDebugInfoResponse);
+  rpc AdminUpdateDescriptor(raft.AdminUpdateDescriptorRequest)
+      returns (raft.AdminUpdateDescriptorResponse);
+
+  rpc CheckRangeOverlaps(raft.CheckRangeOverlapsRequest)
+      returns (raft.CheckRangeOverlapsResponse);
 }

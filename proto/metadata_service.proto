@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+import "proto/metadata.proto";
+
+package metadata.service;
+
+option go_package = "metadata_service";
+
+service MetadataService {
+  rpc Get(metadata.GetRequest) returns (metadata.GetResponse);
+  rpc Set(metadata.SetRequest) returns (metadata.SetResponse);
+  rpc Delete(metadata.DeleteRequest) returns (metadata.DeleteResponse);
+  rpc Find(metadata.FindRequest) returns (metadata.FindResponse);
+}

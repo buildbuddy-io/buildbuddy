@@ -1,0 +1,6 @@
+# Keep in sync with oci.MODULE.bazel
+
+NET_TOOLS_IMAGE_REPO = "gcr.io/flame-public/net-tools"
+NET_TOOLS_IMAGE_DIGEST = "sha256:04210e04de235983e50ed5150ff99431cf1151e2da6bff201cd856dedb5dfc85"
+
+NET_TOOLS_IMAGE = NET_TOOLS_IMAGE_REPO + "@" + NET_TOOLS_IMAGE_DIGEST

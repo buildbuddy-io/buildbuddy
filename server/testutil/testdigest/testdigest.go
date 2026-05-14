@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/stretchr/testify/require"
@@ -16,8 +15,7 @@ import (
 )
 
 var (
-	randomSeedOnce sync.Once
-	randomGen      *digest.Generator
+	randomGen = sync.OnceValue(func() *digest.Generator { return digest.RandomGenerator(0) })
 )
 
 func compressibleBlobOfSize(sizeBytes int) []byte {
@@ -36,11 +34,8 @@ func compressibleBlobOfSize(sizeBytes int) []byte {
 	return out
 }
 
-func NewRandomDigestReader(t testing.TB, sizeBytes int64) (*repb.Digest, io.ReadSeeker) {
-	randomSeedOnce.Do(func() {
-		randomGen = digest.RandomGenerator(time.Now().Unix())
-	})
-	d, r, err := randomGen.RandomDigestReader(sizeBytes)
+func NewReader(t testing.TB, sizeBytes int64) (*repb.Digest, io.ReadSeeker) {
+	d, r, err := randomGen().RandomDigestReader(sizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,17 +51,11 @@ func newRandomCompressibleDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest
 	return d, blob
 }
 
-func newRandomDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
-	d, rs := NewRandomDigestReader(t, sizeBytes)
-	buf, err := io.ReadAll(rs)
+func NewRandomResourceAndBuf(t testing.TB, sizeBytes int64, cacheType rspb.CacheType, instanceName string) (*rspb.ResourceName, []byte) {
+	d, buf, err := randomGen().RandomDigestBuf(sizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return d, buf
-}
-
-func NewRandomResourceAndBuf(t testing.TB, sizeBytes int64, cacheType rspb.CacheType, instanceName string) (*rspb.ResourceName, []byte) {
-	d, buf := newRandomDigestBuf(t, sizeBytes)
 	return digest.NewResourceName(d, instanceName, cacheType, repb.DigestFunction_SHA256).ToProto(), buf
 }
 

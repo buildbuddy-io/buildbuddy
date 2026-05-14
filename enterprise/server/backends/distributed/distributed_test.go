@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -13,7 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -22,9 +23,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,6 +35,12 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 var (
@@ -46,9 +55,9 @@ var (
 
 func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticator, context.Context) {
 	te := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(userMap)
+	ta := testauth.NewTestAuthenticator(t, userMap)
 	te.SetAuthenticator(ta)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -77,12 +86,14 @@ func waitForShutdown(c *Cache) {
 	cancel()
 }
 
-func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCache interfaces.Cache) *Cache {
+func startNewDCache(t *testing.T, te environment.Env, config Options, baseCache interfaces.Cache) *Cache {
 	c, err := NewDistributedCache(te, baseCache, config, te.GetHealthChecker())
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.StartListening()
+	if err := c.StartListening(); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
 		waitForShutdown(c)
 	})
@@ -105,7 +116,7 @@ func TestBasicReadWrite(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -163,8 +174,8 @@ func TestBasicReadWrite(t *testing.T) {
 	assert.Equal(t, []testmetrics.HistogramValues{
 		{
 			Labels: map[string]string{
-				"op":     "Reader",
-				"status": "hit",
+				"op":                       "Reader",
+				metrics.CacheHitMissStatus: metrics.HitStatusLabel,
 			},
 			// For each of the 100 objects, we did a Read on all 3 distributed
 			// caches, which should have done only 1 lookup each (from the local
@@ -210,7 +221,7 @@ func TestReadWrite_Compression(t *testing.T) {
 			peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 			peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 			peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-			baseConfig := CacheConfig{
+			baseConfig := Options{
 				ReplicationFactor:  3,
 				Nodes:              []string{peer1, peer2, peer3},
 				DisableLocalLookup: true,
@@ -278,7 +289,7 @@ func TestContains(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -329,7 +340,7 @@ func TestContains_NotWritten(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -377,7 +388,7 @@ func TestReadMaxOffset(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -426,7 +437,7 @@ func TestReadOffsetLimit(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -480,7 +491,7 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer4 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3, peer4},
 		DisableLocalLookup: true,
@@ -520,10 +531,7 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 	// or distributedCaches so they should not be referenced
 	// below when reading / writing, although the running nodes
 	// still have reference to them via the Nodes list.
-	shutdownCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
-	err := dc3.Shutdown(shutdownCtx)
-	cancel()
-	assert.Nil(t, err)
+	waitForShutdown(dc3)
 
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
@@ -542,13 +550,14 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 }
 
 func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
+	flags.Set(t, "grpc_client.pool_size", 1)
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer4 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3, peer4},
 		DisableLocalLookup: true,
@@ -588,7 +597,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	// or distributedCaches so they should not be referenced
 	// below when reading / writing, although the running nodes
 	// still have reference to them via the Nodes list.
-	shutdownCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	err := dc3.Shutdown(shutdownCtx)
 	cancel()
 	assert.Nil(t, err)
@@ -598,20 +607,19 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
-		if err := distributedCaches[j].Set(ctx, rn, buf); err != nil {
-			t.Fatal(err)
-		}
+		err := distributedCaches[j].Set(ctx, rn, buf)
+		require.NoError(t, err, "Set failed for %v on distributedCache %d", rn, j)
 		resourcesWritten = append(resourcesWritten, rn)
-		for _, baseCache := range baseCaches {
+		for i, baseCache := range baseCaches {
 			exists, err := baseCache.Contains(ctx, rn)
-			assert.Nil(t, err)
-			assert.True(t, exists)
+			assert.Nil(t, err, "baseCache %d Contains failed for %v", i, rn)
+			assert.True(t, exists, "baseCache %d doesn't contain %v", i, rn)
 			readAndCompareDigest(t, ctx, baseCache, rn)
 		}
 	}
 
 	distributedCaches = append(distributedCaches, dc3)
-	dc3.StartListening()
+	require.NoError(t, dc3.StartListening())
 	waitForReady(t, config3.ListenAddr)
 	for _, r := range resourcesWritten {
 		for _, distributedCache := range distributedCaches {
@@ -629,7 +637,7 @@ func TestBackfill(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:    3,
 		Nodes:                []string{peer1, peer2, peer3},
 		DisableLocalLookup:   true,
@@ -702,13 +710,52 @@ func TestBackfill(t *testing.T) {
 	}
 }
 
+func TestCopyFileDoesNotMutateResourceNameCompressor(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:            2,
+		Nodes:                        []string{peer1, peer2},
+		DisableLocalLookup:           true,
+		EnableLocalCompressionLookup: true,
+	}
+
+	sourceCache := &testcompression.CompressionCache{Cache: newMemoryCache(t, singleCacheSizeBytes)}
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, sourceCache)
+
+	destCache := &testcompression.CompressionCache{Cache: newMemoryCache(t, singleCacheSizeBytes)}
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	_ = startNewDCache(t, env, config2, destCache)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+
+	// Note: the value `200` here is intentionally greater than
+	// cache.pebble.min_bytes_auto_zstd_compression
+	rn, buf := testdigest.RandomCASResourceBuf(t, 200)
+	require.Equal(t, repb.Compressor_IDENTITY, rn.GetCompressor())
+	require.NoError(t, sourceCache.Set(ctx, rn, buf))
+
+	require.NoError(t, dc1.copyFile(ctx, rn, peer1, peer2))
+	require.Equal(t, repb.Compressor_IDENTITY, rn.GetCompressor(), "copyFile should not mutate the caller's resource name")
+
+	got, err := destCache.Get(ctx, rn)
+	require.NoError(t, err)
+	require.Equal(t, buf, got)
+}
+
 func TestContainsMulti(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -770,7 +817,7 @@ func TestMetadata(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -824,7 +871,7 @@ func TestFindMissing(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -893,8 +940,8 @@ func TestFindMissing(t *testing.T) {
 	assert.Equal(t, []testmetrics.HistogramValues{
 		{
 			Labels: map[string]string{
-				"op":     "FindMissing",
-				"status": "hit",
+				"op":                       "FindMissing",
+				metrics.CacheHitMissStatus: metrics.HitStatusLabel,
 			},
 			// Each hit only requires 1 peer lookup, and we did 3 FindMissing
 			// calls (loop count above) * 100 hits for each call (number of
@@ -903,8 +950,8 @@ func TestFindMissing(t *testing.T) {
 		},
 		{
 			Labels: map[string]string{
-				"op":     "FindMissing",
-				"status": "miss",
+				"op":                       "FindMissing",
+				metrics.CacheHitMissStatus: metrics.MissStatusLabel,
 			},
 			// Each miss should result in 3 peer lookups (replication factor),
 			// and we did 3 FindMissing calls (loop count above) * 70 misses
@@ -920,7 +967,7 @@ func TestGetMulti(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -987,6 +1034,10 @@ func TestGetMulti(t *testing.T) {
 }
 
 func TestHintedHandoff(t *testing.T) {
+	// Using gRPC client pooling results in a inconsistent view of peer health.
+	// This means that sometimes the hinted handoff will fail because one of the
+	// pooled channels still thinks that the peer is unhealthy.
+	flags.Set(t, "grpc_client.pool_size", 1)
 	env, authenticator, ctx := getEnvAuthAndCtx(t)
 
 	// Authenticate as user1.
@@ -994,7 +1045,7 @@ func TestHintedHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, env)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -1004,7 +1055,7 @@ func TestHintedHandoff(t *testing.T) {
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer4 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3, peer4},
 		DisableLocalLookup: true,
@@ -1044,7 +1095,7 @@ func TestHintedHandoff(t *testing.T) {
 	// or distributedCaches so they should not be referenced
 	// below when reading / writing, although the running nodes
 	// still have reference to them via the Nodes list.
-	shutdownCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	err = dc3.Shutdown(shutdownCtx)
 	cancel()
 	assert.Nil(t, err)
@@ -1054,14 +1105,13 @@ func TestHintedHandoff(t *testing.T) {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
-		if err := distributedCaches[j].Set(ctx, rn, buf); err != nil {
-			t.Fatal(err)
-		}
+		err := distributedCaches[j].Set(ctx, rn, buf)
+		require.NoError(t, err, "Set failed for %v on distributedCache %d", rn, j)
 		digestsWritten = append(digestsWritten, rn)
-		for _, baseCache := range baseCaches {
+		for i, baseCache := range baseCaches {
 			exists, err := baseCache.Contains(ctx, rn)
-			assert.Nil(t, err)
-			assert.True(t, exists)
+			assert.Nil(t, err, "baseCache %d Contains failed for %v", i, rn)
+			assert.True(t, exists, "baseCache %d doesn't contain %v", i, rn)
 			readAndCompareDigest(t, ctx, baseCache, rn)
 		}
 	}
@@ -1069,19 +1119,18 @@ func TestHintedHandoff(t *testing.T) {
 	// Restart the downed node -- as soon as it's back up, it should
 	// receive hinted handoffs from the other peers.
 	distributedCaches = append(distributedCaches, dc3)
-	dc3.StartListening()
+	require.NoError(t, dc3.StartListening())
 	waitForReady(t, config3.ListenAddr)
 
 	// Wait for all peers to finish their backfill requests.
 	for _, distributedCache := range distributedCaches {
+		distributedCache.hintedHandoffsMu.RLock()
 		for _, backfillChannel := range distributedCache.hintedHandoffsByPeer {
-			if backfillChannel == nil {
-				continue
-			}
 			for len(backfillChannel) > 0 {
 				time.Sleep(10 * time.Millisecond)
 			}
 		}
+		distributedCache.hintedHandoffsMu.RUnlock()
 	}
 
 	// Figure out the set of digests that were hinted-handoffs. We'll verify
@@ -1100,8 +1149,8 @@ func TestHintedHandoff(t *testing.T) {
 	// Ensure that dc3 successfully received all the hinted handoffs.
 	for _, r := range hintedHandoffs {
 		exists, err := memoryCache3.Contains(ctx, r)
-		assert.Nil(t, err)
-		assert.True(t, exists)
+		assert.Nil(t, err, "memoryCache3.Contains failed for %v", r)
+		assert.True(t, exists, "memoryCache3 doesn't contain %v", r)
 		readAndCompareDigest(t, ctx, dc3, r)
 	}
 }
@@ -1112,7 +1161,7 @@ func TestDelete(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -1175,7 +1224,7 @@ func TestDelete_NonExistentFile(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -1251,7 +1300,7 @@ func TestSupportsCompressor(t *testing.T) {
 			// Setup distributed cache
 			peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 			peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-			baseConfig := CacheConfig{
+			baseConfig := Options{
 				ReplicationFactor:            2,
 				Nodes:                        []string{peer1, peer2},
 				DisableLocalLookup:           true,
@@ -1287,7 +1336,7 @@ func TestExtraNodes(t *testing.T) {
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -1301,7 +1350,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc1.StartListening()
+	require.NoError(t, dc1.StartListening())
 
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
@@ -1310,7 +1359,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc2.StartListening()
+	require.NoError(t, dc2.StartListening())
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
@@ -1319,7 +1368,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc3.StartListening()
+	require.NoError(t, dc3.StartListening())
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
@@ -1352,7 +1401,7 @@ func TestExtraNodes(t *testing.T) {
 	peer8 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer9 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 
-	baseConfig = CacheConfig{
+	baseConfig = Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		NewNodes:           []string{peer1, peer2, peer3, peer4, peer5, peer6, peer7, peer8, peer9},
@@ -1365,7 +1414,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc1.StartListening()
+	require.NoError(t, dc1.StartListening())
 
 	config2 = baseConfig
 	config2.ListenAddr = peer2
@@ -1373,7 +1422,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc2.StartListening()
+	require.NoError(t, dc2.StartListening())
 
 	config3 = baseConfig
 	config3.ListenAddr = peer3
@@ -1381,7 +1430,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc3.StartListening()
+	require.NoError(t, dc3.StartListening())
 
 	// Now bring up the new nodes
 	memoryCache4 := newMemoryCache(t, singleCacheSizeBytes)
@@ -1391,7 +1440,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc4.StartListening()
+	require.NoError(t, dc4.StartListening())
 
 	memoryCache5 := newMemoryCache(t, singleCacheSizeBytes)
 	config5 := baseConfig
@@ -1400,7 +1449,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc5.StartListening()
+	require.NoError(t, dc5.StartListening())
 
 	memoryCache6 := newMemoryCache(t, singleCacheSizeBytes)
 	config6 := baseConfig
@@ -1409,7 +1458,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc6.StartListening()
+	require.NoError(t, dc6.StartListening())
 
 	memoryCache7 := newMemoryCache(t, singleCacheSizeBytes)
 	config7 := baseConfig
@@ -1418,7 +1467,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc7.StartListening()
+	require.NoError(t, dc7.StartListening())
 
 	memoryCache8 := newMemoryCache(t, singleCacheSizeBytes)
 	config8 := baseConfig
@@ -1427,7 +1476,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc8.StartListening()
+	require.NoError(t, dc8.StartListening())
 
 	memoryCache9 := newMemoryCache(t, singleCacheSizeBytes)
 	config9 := baseConfig
@@ -1436,7 +1485,7 @@ func TestExtraNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc9.StartListening()
+	require.NoError(t, dc9.StartListening())
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
@@ -1496,7 +1545,7 @@ func TestExtraNodesReadOnly(t *testing.T) {
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -1566,7 +1615,7 @@ func TestExtraNodesReadOnly(t *testing.T) {
 	peer5 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer6 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 
-	baseConfig = CacheConfig{
+	baseConfig = Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		NewNodes:           []string{peer1, peer2, peer3, peer4, peer5, peer6},
@@ -1672,7 +1721,7 @@ func TestExtraNodesReadWrite(t *testing.T) {
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		DisableLocalLookup: true,
@@ -1742,7 +1791,7 @@ func TestExtraNodesReadWrite(t *testing.T) {
 	peer5 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer6 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 
-	baseConfig = CacheConfig{
+	baseConfig = Options{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
 		NewNodes:           []string{peer1, peer2, peer3, peer4, peer5, peer6},
@@ -1830,7 +1879,7 @@ func TestReadThroughLookaside(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:       3,
 		Nodes:                   []string{peer1, peer2, peer3},
 		DisableLocalLookup:      true,
@@ -1913,13 +1962,55 @@ func TestReadThroughLookaside(t *testing.T) {
 	assert.Equal(t, opCountBefore[peer3], len(memoryCache3.ops))
 }
 
+func TestAbandonedReadDoesntWriteToLookaside(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	config := Options{
+		ReplicationFactor:       1,
+		Nodes:                   []string{peer},
+		DisableLocalLookup:      true,
+		LookasideCacheSizeBytes: 100_000,
+		ListenAddr:              peer,
+	}
+
+	memoryCache := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	dc := startNewDCache(t, env, config, memoryCache)
+	waitForReady(t, config.ListenAddr)
+
+	// Write an entry with 100 bytes
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	if err := dc.Set(ctx, rn, buf); err != nil {
+		t.Fatal(err)
+	}
+
+	// Read just the first 3 bytes
+	r, err := dc.Reader(ctx, rn, 0, 0)
+	require.NoError(t, err)
+	readBuf := make([]byte, 3)
+	n, err := r.Read(readBuf)
+	assert.Equal(t, 3, n)
+	assert.NoError(t, err)
+	assert.Equal(t, buf[:3], readBuf)
+	// closing the reader shouldn't write to the lookaside cache.
+	assert.NoError(t, r.Close())
+
+	// Read the whole thing and make sure we get the whole 100 bytes.
+	data, err := dc.Get(ctx, rn)
+	require.NoError(t, err)
+	assert.Len(t, data, 100)
+	assert.Equal(t, buf, data)
+
+	assert.Equal(t, 4, len(memoryCache.ops), "Ops were %v", memoryCache.ops)
+}
+
 func TestGetMultiLookaside(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:       3,
 		Nodes:                   []string{peer1, peer2, peer3},
 		DisableLocalLookup:      true,
@@ -1960,7 +2051,7 @@ func TestGetMultiLookaside(t *testing.T) {
 
 	for _, distributedCache := range distributedCaches {
 		gotMap, err := distributedCache.GetMulti(ctx, resourcesWritten)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		for _, r := range resourcesWritten {
 			d := r.GetDigest()
 			buf, ok := gotMap[d]
@@ -1979,7 +2070,7 @@ func TestGetMultiLookaside(t *testing.T) {
 	// be served from the lookaside cache.
 	for _, distributedCache := range distributedCaches {
 		gotMap, err := distributedCache.GetMulti(ctx, resourcesWritten)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		for _, r := range resourcesWritten {
 			d := r.GetDigest()
 			buf, ok := gotMap[d]
@@ -1991,6 +2082,25 @@ func TestGetMultiLookaside(t *testing.T) {
 	assert.Equal(t, opCountBefore[peer1], len(memoryCache1.ops))
 	assert.Equal(t, opCountBefore[peer2], len(memoryCache2.ops))
 	assert.Equal(t, opCountBefore[peer3], len(memoryCache3.ops))
+
+	// Now read again, with one extra resource that's missing
+	missingRN, _ := testdigest.RandomCASResourceBuf(t, 100)
+	resourcesWritten = append(resourcesWritten, missingRN)
+	for _, distributedCache := range distributedCaches {
+		gotMap, err := distributedCache.GetMulti(ctx, resourcesWritten)
+		assert.NoError(t, err)
+		assert.Equal(t, len(resourcesWritten)-1, len(gotMap))
+		for _, r := range resourcesWritten[:len(resourcesWritten)-1] {
+			d := r.GetDigest()
+			buf, ok := gotMap[d]
+			assert.True(t, ok)
+			assert.Equal(t, d.GetSizeBytes(), int64(len(buf)))
+		}
+		assert.NotContains(t, gotMap, missingRN.GetDigest())
+	}
+	assert.Equal(t, opCountBefore[peer1]+3, len(memoryCache1.ops))
+	assert.Equal(t, opCountBefore[peer2]+3, len(memoryCache2.ops))
+	assert.Equal(t, opCountBefore[peer3]+3, len(memoryCache3.ops))
 }
 
 func TestLookasideLimits(t *testing.T) {
@@ -1999,7 +2109,7 @@ func TestLookasideLimits(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:       3,
 		Nodes:                   []string{peer1, peer2, peer3},
 		DisableLocalLookup:      true,
@@ -2070,7 +2180,7 @@ func TestTreeCacheLookaside(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	baseConfig := CacheConfig{
+	baseConfig := Options{
 		ReplicationFactor:       3,
 		Nodes:                   []string{peer1, peer2, peer3},
 		DisableLocalLookup:      true,
@@ -2102,7 +2212,7 @@ func TestTreeCacheLookaside(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
-		rn.InstanceName = content_addressable_storage_server.TreeCacheRemoteInstanceName
+		rn.InstanceName = digest.TreeCacheRemoteInstanceName
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}
@@ -2170,13 +2280,467 @@ func TestTreeCacheLookaside(t *testing.T) {
 	assert.NotEqual(t, opCountBefore[peer3], len(memoryCache3.ops))
 }
 
+func TestReadThroughLocalCache(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:     1,
+		Nodes:                 []string{peer1, peer2, peer3},
+		DisableLocalLookup:    true,
+		ReadThroughLocalCache: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 1.
+	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	baseCaches := []interfaces.Cache{
+		memoryCache1,
+		memoryCache2,
+		memoryCache3,
+	}
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+	allResources := make([]*rspb.ResourceName, 0)
+
+	for i := 0; i < 100; i++ {
+		// Do a write, and ensure we can read it back from each node,
+		// both via the base cache and distributed cache for each node.
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
+			t.Fatal(err)
+		}
+		allResources = append(allResources, rn)
+		for _, distributedCache := range distributedCaches {
+			exists, err := distributedCache.Contains(ctx, rn)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+		for _, baseCache := range baseCaches {
+			exists, err := baseCache.Contains(ctx, rn)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, baseCache, rn)
+		}
+	}
+
+	opCountBefore := map[string]int{
+		peer1: len(memoryCache1.ops),
+		peer2: len(memoryCache2.ops),
+		peer3: len(memoryCache3.ops),
+	}
+
+	// Now read all of the digests again -- all should be served
+	// directly from the local cache.
+	for _, rn := range allResources {
+		for _, distributedCache := range distributedCaches {
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+	}
+
+	assert.Equal(t, opCountBefore[peer1]+len(allResources), len(memoryCache1.ops))
+	assert.Equal(t, opCountBefore[peer2]+len(allResources), len(memoryCache2.ops))
+	assert.Equal(t, opCountBefore[peer3]+len(allResources), len(memoryCache3.ops))
+
+}
+
+func TestReadThroughPeers(t *testing.T) {
+	// Zone map: A = zone-a, B = zone-b, "" = unknown.
+	zones := map[string]string{
+		"a1": "A", "a2": "A", "a3": "A",
+		"b1": "B", "b2": "B", "b3": "B",
+	}
+	zoneOf := func(p string) string {
+		return zones[p]
+	}
+
+	for _, tc := range []struct {
+		name               string
+		primary            []string
+		secondary          []string
+		self               string
+		myZone             string
+		wantPrimary        []string
+		wantSecondary      []string
+		wantBlockBackfills []string
+	}{
+		{
+			// A same-zone primary already exists, so we leave both lists
+			// alone. The unsorted primary is returned as-is; readPeers
+			// applies the locality sort afterward.
+			name:               "same-zone primary exists, no promotion",
+			primary:            []string{"a1", "a2", "b1"},
+			secondary:          []string{"a3", "b2", "b3"},
+			self:               "a1",
+			myZone:             "A",
+			wantPrimary:        []string{"a1", "a2", "b1"},
+			wantSecondary:      []string{"a3", "b2", "b3"},
+			wantBlockBackfills: nil,
+		},
+		{
+			// Self is a same-zone secondary, but another same-zone peer is
+			// already in primary, so no promotion happens. Self stays in
+			// secondary.
+			name:               "same-zone primary exists, self in secondary",
+			primary:            []string{"a1", "b1", "b2"},
+			secondary:          []string{"a2", "a3", "b3"},
+			self:               "a2",
+			myZone:             "A",
+			wantPrimary:        []string{"a1", "b1", "b2"},
+			wantSecondary:      []string{"a2", "a3", "b3"},
+			wantBlockBackfills: nil,
+		},
+		{
+			// Self is already a primary peer. No promotion needed; the
+			// short-circuit catches `peer == self` even though self's
+			// zone may be unknown.
+			name:               "self is a primary",
+			primary:            []string{"a1", "b1", "b2"},
+			secondary:          []string{"a2", "a3", "b3"},
+			self:               "a1",
+			myZone:             "A",
+			wantPrimary:        []string{"a1", "b1", "b2"},
+			wantSecondary:      []string{"a2", "a3", "b3"},
+			wantBlockBackfills: nil,
+		},
+		{
+			// No same-zone primary, no self in primary. All same-zone
+			// secondaries get appended to primary and reported as
+			// promoted (so callers can block them from backfill).
+			name:               "no same-zone primary, all secondaries are sz",
+			primary:            []string{"b1", "b2", "b3"},
+			secondary:          []string{"a1", "a2", "a3"},
+			self:               "stranger",
+			myZone:             "A",
+			wantPrimary:        []string{"b1", "b2", "b3", "a1", "a2", "a3"},
+			wantSecondary:      []string{},
+			wantBlockBackfills: []string{"a1", "a2", "a3"},
+		},
+		{
+			// Only the same-zone secondaries are promoted; other-zone and
+			// unknown-zone secondaries stay behind in the new secondary.
+			name:               "no same-zone primary, mixed secondary",
+			primary:            []string{"b1", "b2", "b3"},
+			secondary:          []string{"a1", "c1", "a2"},
+			self:               "stranger",
+			myZone:             "A",
+			wantPrimary:        []string{"b1", "b2", "b3", "a1", "a2"},
+			wantSecondary:      []string{"c1"},
+			wantBlockBackfills: []string{"a1", "a2"},
+		},
+		{
+			// No same-zone primary and no same-zone secondary either.
+			// Nothing to promote, but we still return a fresh secondary
+			// slice since the function entered the promotion path.
+			name:               "no same-zone peers anywhere",
+			primary:            []string{"b1", "b2", "b3"},
+			secondary:          []string{"c1", "c2"},
+			self:               "stranger",
+			myZone:             "A",
+			wantPrimary:        []string{"b1", "b2", "b3"},
+			wantSecondary:      []string{"c1", "c2"},
+			wantBlockBackfills: nil,
+		},
+		{
+			// All peer zones are unknown (zoneOf returns ""). The
+			// short-circuit fires because `peer == self` matches x1.
+			name:               "all peers unknown zone, self in primary",
+			primary:            []string{"x1", "x2", "x3"},
+			secondary:          []string{"x4", "x5", "x6"},
+			self:               "x1",
+			myZone:             "A",
+			wantPrimary:        []string{"x1", "x2", "x3"},
+			wantSecondary:      []string{"x4", "x5", "x6"},
+			wantBlockBackfills: nil,
+		},
+		{
+			// myZone is unknown — short-circuit on the first condition.
+			name:               "myZone unknown, no-op",
+			primary:            []string{"a1", "a2", "b1"},
+			secondary:          []string{"a3", "b2", "b3"},
+			self:               "stranger",
+			myZone:             "",
+			wantPrimary:        []string{"a1", "a2", "b1"},
+			wantSecondary:      []string{"a3", "b2", "b3"},
+			wantBlockBackfills: nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			primary, secondary, blockBackfills := readThroughPeers(tc.primary, tc.secondary, tc.self, tc.myZone, zoneOf)
+			assert.Equal(t, tc.wantPrimary, primary, "primary")
+			assert.Equal(t, tc.wantSecondary, secondary, "secondary")
+			assert.Equal(t, tc.wantBlockBackfills, blockBackfills, "blockBackfills")
+		})
+	}
+}
+
+func TestEnsureSameZonePrimary(t *testing.T) {
+	zones := map[string]string{
+		"a1": "A", "a2": "A", "a3": "A",
+		"b1": "B", "b2": "B", "b3": "B",
+	}
+	zoneOf := func(p string) string {
+		return zones[p]
+	}
+
+	for _, tc := range []struct {
+		name          string
+		peers         []string
+		primaryCount  int
+		self          string
+		myZone        string
+		wantPrimary   []string
+		wantSecondary []string
+	}{
+		{
+			name:          "primary already covers self zone",
+			peers:         []string{"a1", "b1", "b2", "a2", "a3", "b3"},
+			primaryCount:  3,
+			self:          "a3",
+			myZone:        "A",
+			wantPrimary:   []string{"a1", "b1", "b2"},
+			wantSecondary: []string{"a2", "a3", "b3"},
+		},
+		{
+			name:          "no same-zone primary, self not in any set",
+			peers:         []string{"b1", "b2", "b3", "a1", "a2", "a3"},
+			primaryCount:  3,
+			self:          "outsider",
+			myZone:        "A",
+			wantPrimary:   []string{"b1", "b2", "b3", "outsider"},
+			wantSecondary: []string{"a1", "a2", "a3"},
+		},
+		{
+			name:          "no same-zone primary, self in secondary (removed)",
+			peers:         []string{"b1", "b2", "b3", "a1", "a2", "a3"},
+			primaryCount:  3,
+			self:          "a2",
+			myZone:        "A",
+			wantPrimary:   []string{"b1", "b2", "b3", "a2"},
+			wantSecondary: []string{"a1", "a3"},
+		},
+		{
+			name:          "self already a primary (no-op)",
+			peers:         []string{"a1", "b1", "b2", "a2", "b3"},
+			primaryCount:  3,
+			self:          "a1",
+			myZone:        "A",
+			wantPrimary:   []string{"a1", "b1", "b2"},
+			wantSecondary: []string{"a2", "b3"},
+		},
+		{
+			name:          "self zone unknown (no-op)",
+			peers:         []string{"b1", "b2", "b3", "a1", "a2"},
+			primaryCount:  3,
+			self:          "outsider",
+			myZone:        "",
+			wantPrimary:   []string{"b1", "b2", "b3"},
+			wantSecondary: []string{"a1", "a2"},
+		},
+		{
+			name:          "all peer zones unknown, self in named zone",
+			peers:         []string{"x1", "x2", "x3", "x4", "x5"},
+			primaryCount:  3,
+			self:          "self",
+			myZone:        "A",
+			wantPrimary:   []string{"x1", "x2", "x3", "self"},
+			wantSecondary: []string{"x4", "x5"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ps := ensureSameZonePrimary(tc.peers, tc.primaryCount, tc.self, tc.myZone, zoneOf)
+			assert.Equal(t, tc.wantPrimary, ps.PreferredPeers, "primary")
+			assert.Equal(t, tc.wantSecondary, ps.FallbackPeers, "secondary")
+		})
+	}
+}
+
+func TestNoEncryptedContentsInLookaside(t *testing.T) {
+	// Configure the authenticator and environment with a single user with
+	// encryption enabled: "user"
+	env := testenv.GetTestEnv(t)
+	tu := testauth.User("user", "group")
+	tu.CacheEncryptionEnabled = true
+	ta := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{"user": tu})
+	env.SetAuthenticator(ta)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), ta)
+	require.NoError(t, err)
+	ctx, err = ta.WithAuthenticatedUser(ctx, "user")
+	require.NoError(t, err)
+
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:       1,
+		Nodes:                   []string{peer1, peer2, peer3},
+		LookasideCacheSizeBytes: 100_000,
+		DisableLocalLookup:      true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 1.
+	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+	allResources := make([]*rspb.ResourceName, 0)
+
+	for i := 0; i < 100; i++ {
+		// Do a write, and ensure we can read it back from each node via the
+		// distributed cache.
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
+			t.Fatal(err)
+		}
+		allResources = append(allResources, rn)
+		for _, distributedCache := range distributedCaches {
+			exists, err := distributedCache.Contains(ctx, rn)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+	}
+
+	// Now read all of the digests again -- each should only be served from one
+	// local cache (no lookaside caching).
+	for _, rn := range allResources {
+		opCountBefore := map[string]int{
+			peer1: len(memoryCache1.ops),
+			peer2: len(memoryCache2.ops),
+			peer3: len(memoryCache3.ops),
+		}
+		for _, distributedCache := range distributedCaches {
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+		if opCountBefore[peer1] == len(memoryCache1.ops) && opCountBefore[peer2] == len(memoryCache2.ops) {
+			assert.Equal(t, opCountBefore[peer3]+len(distributedCaches), len(memoryCache3.ops))
+		} else if opCountBefore[peer1] == len(memoryCache1.ops) && opCountBefore[peer3] == len(memoryCache3.ops) {
+			assert.Equal(t, opCountBefore[peer2]+len(distributedCaches), len(memoryCache2.ops))
+		} else if opCountBefore[peer2] == len(memoryCache2.ops) && opCountBefore[peer3] == len(memoryCache3.ops) {
+			assert.Equal(t, opCountBefore[peer1]+len(distributedCaches), len(memoryCache1.ops))
+		} else {
+			assert.Fail(t, "!!!")
+		}
+	}
+}
+
+func TestLookasidePartitionIsolation(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, userMap)
+	env.SetAuthenticator(ta)
+
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:       1,
+		Nodes:                   []string{peer1},
+		LookasideCacheSizeBytes: 100_000,
+		DisableLocalLookup:      true,
+	}
+
+	partition1 := traceCache(newMemoryCache(t, int64(1000000)))
+	partition2 := traceCache(newMemoryCache(t, int64(1000000)))
+	partitionedCache := partitionedCache{
+		t:             t,
+		authenticator: ta,
+		partitions: map[string]interfaces.Cache{
+			"group1": partition1,
+			"group2": partition2,
+		},
+	}
+	config := baseConfig
+	config.ListenAddr = peer1
+	dc := startNewDCache(t, env, config, &partitionedCache)
+
+	waitForReady(t, config.ListenAddr)
+
+	ctx1, err := ta.WithAuthenticatedUser(t.Context(), "user1")
+	if err != nil {
+		require.NoError(t, err)
+	}
+	ctx1, err = prefix.AttachUserPrefixToContext(ctx1, env.GetAuthenticator())
+	if err != nil {
+		require.NoError(t, err)
+	}
+	ctx2, err := ta.WithAuthenticatedUser(t.Context(), "user2")
+	if err != nil {
+		require.NoError(t, err)
+	}
+	ctx2, err = prefix.AttachUserPrefixToContext(ctx2, env.GetAuthenticator())
+	if err != nil {
+		require.NoError(t, err)
+	}
+
+	// Generate some test data and write it only to partition 1.
+	dataA := []byte("data")
+	digestA, err := digest.Compute(bytes.NewReader(dataA), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	rnA := digest.NewResourceName(digestA, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+	err = dc.Set(ctx1, rnA, dataA)
+	require.NoError(t, err)
+
+	// Read from partition A multiple times to populate the lookaside cache.
+	for i := 0; i < 5; i++ {
+		reader, err := dc.Reader(ctx1, rnA, 0, 0)
+		require.NoError(t, err)
+		gotA, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		require.NoError(t, reader.Close())
+		assert.Equal(t, dataA, gotA, "partition A should return dataA")
+	}
+
+	// Verify the data is absent (even in the lookaside cache) for partition 2.
+	_, err = dc.Reader(ctx2, rnA, 0, 0)
+	require.True(t, status.IsNotFoundError(err))
+}
+
 type Op int
 
 const (
 	Read Op = iota
+	Get
+	GetMulti
 	Write
+	Set
+	SetMulti
 	Delete
 	Contains
+	FindMissing
 	Metadata
 )
 
@@ -2184,12 +2748,22 @@ func (o Op) String() string {
 	switch o {
 	case Read:
 		return "READ"
+	case Get:
+		return "GET"
+	case GetMulti:
+		return "GET_MULTI"
 	case Write:
 		return "WRITE"
+	case Set:
+		return "SET"
+	case SetMulti:
+		return "SET_MULTI"
 	case Delete:
 		return "DELETE"
 	case Contains:
 		return "CONTAINS"
+	case FindMissing:
+		return "FIND_MISSING"
 	case Metadata:
 		return "METADATA"
 	default:
@@ -2242,19 +2816,19 @@ func (t *tracedCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 	return t.Cache.Metadata(ctx, r)
 }
 func (t *tracedCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
-	t.addOps(Contains, resources...)
+	t.addOps(FindMissing, resources...)
 	return t.Cache.FindMissing(ctx, resources)
 }
 func (t *tracedCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
-	t.addOps(Read, r)
+	t.addOps(Get, r)
 	return t.Cache.Get(ctx, r)
 }
 func (t *tracedCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
-	t.addOps(Read, resources...)
+	t.addOps(GetMulti, resources...)
 	return t.Cache.GetMulti(ctx, resources)
 }
 func (t *tracedCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
-	t.addOps(Write, r)
+	t.addOps(Set, r)
 	return t.Cache.Set(ctx, r, data)
 }
 func (t *tracedCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
@@ -2262,7 +2836,7 @@ func (t *tracedCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][
 	for rn := range kvs {
 		resources = append(resources, rn)
 	}
-	t.addOps(Write, resources...)
+	t.addOps(SetMulti, resources...)
 	return t.Cache.SetMulti(ctx, kvs)
 }
 func (t *tracedCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
@@ -2276,4 +2850,270 @@ func (t *tracedCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 func (t *tracedCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	t.addOps(Write, r)
 	return t.Cache.Writer(ctx, r)
+}
+
+func (t *tracedCache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
+	return "", nil
+}
+
+// TODO(go/b/6456): use memory cache here
+type partitionContextKey struct{}
+type partitionedCache struct {
+	t             *testing.T
+	authenticator interfaces.Authenticator
+	partitions    map[string]interfaces.Cache
+}
+
+func (pc *partitionedCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
+	return pc.partition(ctx).Contains(ctx, r)
+}
+func (pc *partitionedCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
+	return pc.partition(ctx).Metadata(ctx, r)
+}
+func (pc *partitionedCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+	return pc.partition(ctx).FindMissing(ctx, resources)
+}
+func (pc *partitionedCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
+	return pc.partition(ctx).Get(ctx, r)
+}
+func (pc *partitionedCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	return pc.partition(ctx).GetMulti(ctx, resources)
+}
+func (pc *partitionedCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
+	return pc.partition(ctx).Set(ctx, r, data)
+}
+func (pc *partitionedCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
+	return pc.partition(ctx).SetMulti(ctx, kvs)
+}
+func (pc *partitionedCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
+	return pc.partition(ctx).Delete(ctx, r)
+}
+func (pc *partitionedCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	return pc.partition(ctx).Reader(ctx, r, uncompressedOffset, limit)
+}
+func (pc *partitionedCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	return pc.partition(ctx).Writer(ctx, r)
+}
+func (pc *partitionedCache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
+	userInfo, err := pc.authenticator.AuthenticatedUser(ctx)
+	if err != nil {
+		return "", err
+	}
+	return userInfo.GetGroupID(), nil
+}
+func (pc *partitionedCache) partition(ctx context.Context) interfaces.Cache {
+	partitionID, err := pc.Partition(ctx, "")
+	require.NoError(pc.t, err)
+	return pc.partitions[partitionID]
+}
+func (pc *partitionedCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
+	for _, partition := range pc.partitions {
+		if !partition.SupportsCompressor(compressor) {
+			return false
+		}
+	}
+	return true
+}
+func (pc *partitionedCache) RegisterAtimeUpdater(updater interfaces.DigestOperator) error {
+	for _, partition := range pc.partitions {
+		if err := partition.RegisterAtimeUpdater(updater); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func fakeKubePod(name, namespace, ip string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    map[string]string{"app": "cache"},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "apps/v1",
+					Kind:       "ReplicaSet",
+					Name:       "cache-rs",
+					Controller: func() *bool { b := true; return &b }(),
+				},
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: name,
+		},
+		Status: corev1.PodStatus{
+			PodIP: ip,
+			Phase: corev1.PodRunning,
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+			},
+		},
+	}
+}
+
+func fakeKubeReplicaSet(namespace string) *appsv1.ReplicaSet {
+	return &appsv1.ReplicaSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cache-rs",
+			Namespace: namespace,
+		},
+		Spec: appsv1.ReplicaSetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "cache"},
+			},
+		},
+	}
+}
+
+func newPeerWatcher(t *testing.T, portStr, ns, podName string, client kubernetes.Interface) *kubediscovery.PeerWatcher {
+	pw, err := kubediscovery.NewPeerWatcher(&kubediscovery.Config{
+		Port:      portStr,
+		Namespace: ns,
+		PodName:   podName,
+		Client:    client,
+	})
+	require.NoError(t, err)
+	return pw
+}
+
+func TestKubeDiscoveryReadWrite(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires multiple loopback addresses (127.0.0.x), only available on Linux")
+	}
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+
+	// Each node uses a different loopback IP on the same port, matching
+	// how kubediscovery constructs addresses (podIP:port).
+	port := testport.FindFree(t)
+	peer1 := fmt.Sprintf("127.0.0.1:%d", port)
+	peer2 := fmt.Sprintf("127.0.0.2:%d", port)
+	peer3 := fmt.Sprintf("127.0.0.3:%d", port)
+
+	ns := "test-ns"
+	fakeClient := fake.NewClientset(
+		fakeKubePod("cache-0", ns, "127.0.0.1"),
+		fakeKubePod("cache-1", ns, "127.0.0.2"),
+		fakeKubePod("cache-2", ns, "127.0.0.3"),
+		fakeKubeReplicaSet(ns),
+	)
+	portStr := fmt.Sprintf("%d", port)
+	baseConfig := Options{
+		ReplicationFactor:  3,
+		DisableLocalLookup: true,
+	}
+
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	config1.KubePeerWatcher = newPeerWatcher(t, portStr, ns, "cache-0", fakeClient)
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	config2.KubePeerWatcher = newPeerWatcher(t, portStr, ns, "cache-1", fakeClient)
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	config3.KubePeerWatcher = newPeerWatcher(t, portStr, ns, "cache-2", fakeClient)
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, peer1)
+	waitForReady(t, peer2)
+	waitForReady(t, peer3)
+
+	// Wait for kubediscovery to populate the hash ring.
+	require.Eventually(t, func() bool {
+		return len(dc1.consistentHash.GetItems()) == 3 &&
+			len(dc2.consistentHash.GetItems()) == 3 &&
+			len(dc3.consistentHash.GetItems()) == 3
+	}, 5*time.Second, 50*time.Millisecond, "timed out waiting for peer discovery")
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2, memoryCache3}
+
+	for i := 0; i < 100; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		err := distributedCaches[i%3].Set(ctx, rn, buf)
+		require.NoError(t, err)
+
+		for _, baseCache := range baseCaches {
+			exists, err := baseCache.Contains(ctx, rn)
+			assert.NoError(t, err)
+			assert.True(t, exists)
+		}
+		for _, distributedCache := range distributedCaches {
+			exists, err := distributedCache.Contains(ctx, rn)
+			assert.NoError(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+	}
+}
+
+func TestKubeDiscoveryPodJoins(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires multiple loopback addresses (127.0.0.x), only available on Linux")
+	}
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+
+	port := testport.FindFree(t)
+	peer1 := fmt.Sprintf("127.0.0.1:%d", port)
+	peer2 := fmt.Sprintf("127.0.0.2:%d", port)
+
+	ns := "test-ns"
+	fakeClient := fake.NewClientset(
+		fakeKubePod("cache-0", ns, "127.0.0.1"),
+		fakeKubeReplicaSet(ns),
+	)
+	portStr := fmt.Sprintf("%d", port)
+	baseConfig := Options{
+		ReplicationFactor:  1,
+		DisableLocalLookup: true,
+	}
+
+	// Start with one node.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	config1.KubePeerWatcher = newPeerWatcher(t, portStr, ns, "cache-0", fakeClient)
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+	waitForReady(t, peer1)
+
+	require.Eventually(t, func() bool {
+		return len(dc1.consistentHash.GetItems()) == 1
+	}, 5*time.Second, 50*time.Millisecond)
+
+	// Write some data via dc1.
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, dc1.Set(ctx, rn, buf))
+
+	// Add a second pod to the fake K8s cluster and start a second cache.
+	_, err := fakeClient.CoreV1().Pods(ns).Create(
+		context.Background(),
+		fakeKubePod("cache-1", ns, "127.0.0.2"),
+		metav1.CreateOptions{},
+	)
+	require.NoError(t, err)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	config2.KubePeerWatcher = newPeerWatcher(t, portStr, ns, "cache-1", fakeClient)
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+	waitForReady(t, peer2)
+
+	// dc1 should discover the new peer.
+	require.Eventually(t, func() bool {
+		return len(dc1.consistentHash.GetItems()) == 2
+	}, 5*time.Second, 50*time.Millisecond, "dc1 should discover 2 peers")
+
+	// dc2 should also have both peers.
+	require.Eventually(t, func() bool {
+		return len(dc2.consistentHash.GetItems()) == 2
+	}, 5*time.Second, 50*time.Millisecond, "dc2 should discover 2 peers")
 }

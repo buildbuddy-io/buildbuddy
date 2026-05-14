@@ -9,15 +9,27 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/query",
     visibility = ["//visibility:public"],
     deps = [
+        "//codesearch/dfa",
+        "//codesearch/filters",
+        "//codesearch/token",
         "//codesearch/types",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_go_enry_go_enry_v2//:go-enry",
     ],
 )
 
 go_test(
     name = "query_test",
-    srcs = ["regexp_test.go"],
+    srcs = [
+        "regexp_query_test.go",
+        "regexp_test.go",
+    ],
     embed = [":query"],
+    deps = [
+        "//codesearch/schema",
+        "//codesearch/token",
+        "//codesearch/types",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
 )

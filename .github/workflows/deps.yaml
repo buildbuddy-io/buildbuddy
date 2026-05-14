@@ -15,12 +15,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
         with:
           path: buildbuddy
 
       - name: Checkout internal
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
         with:
           repository: "buildbuddy-io/buildbuddy-internal"
           ref: "master"
@@ -31,30 +31,47 @@ jobs:
         run: |
           cp buildbuddy/deps.bzl buildbuddy-internal/deps.bzl
           cp buildbuddy/.bazelversion buildbuddy-internal/.bazelversion
+          cp buildbuddy/shared.bazelrc buildbuddy-internal/shared.bazelrc
+          cp buildbuddy/bazel_downloader.cfg buildbuddy-internal/bazel_downloader.cfg
+          mkdir -p buildbuddy-internal/buildpatches/bazel_dep
+          cp buildbuddy/buildpatches/bazel_dep/* buildbuddy-internal/buildpatches/bazel_dep/
+          mkdir -p buildbuddy-internal/deps
+          cp buildbuddy/deps/* buildbuddy-internal/deps/
+          cp buildbuddy/MODULE.bazel.lock buildbuddy-internal/MODULE.bazel.lock
 
-      - name: Update SHA
+      - name: Update SHA and lockfile
         run: |
           cd "$GITHUB_WORKSPACE"/buildbuddy-internal
-          sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" WORKSPACE
+          sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" MODULE.bazel
+          bazel mod deps --lockfile_mode=update
 
       - name: Commit
+        env:
+          AUTHOR_EMAIL: ${{ github.event.head_commit.author.email }}
+          AUTHOR_NAME: ${{ github.event.head_commit.author.name }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          COMMIT_URL: ${{ github.event.head_commit.url }}
         run: |
           cd "$GITHUB_WORKSPACE"/buildbuddy-internal
-          git config --local user.email '${{ github.event.head_commit.author.email }}'
-          git config --local user.name '${{ github.event.head_commit.author.name }}'
-          git add WORKSPACE
+          git config --local user.email "$AUTHOR_EMAIL"
+          git config --local user.name "$AUTHOR_NAME"
           git add deps.bzl
           git add .bazelversion
+          git add shared.bazelrc
+          git add bazel_downloader.cfg
+          git add buildpatches
+          git add deps
+          git add MODULE.bazel.lock
           cat <<EOF > message.txt
-          🔄 ${{ github.event.head_commit.message }}
+          🔄 $COMMIT_MESSAGE
           Update buildbuddy-io/buildbuddy commit SHA
 
-          🔗 ${{ github.event.head_commit.url }}
+          🔗 $COMMIT_URL
           EOF
           git commit -F message.txt -a
 
       - name: Push changes
-        uses: ad-m/github-push-action@v0.6.0
+        uses: ad-m/github-push-action@40bf560936a8022e68a3c00e7d2abefaf01305a6 # v0.6.0
         with:
           directory: buildbuddy-internal
           repository: buildbuddy-io/buildbuddy-internal

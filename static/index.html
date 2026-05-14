@@ -14,26 +14,19 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-icon-180x180.png" />
     <link id="favicon" rel="icon" type="image/svg" href="/favicon/favicon_black.svg" />
     <link rel="manifest" href="/favicon/manifest.json" />
+    <meta name="robots" content="noindex" />
     <meta name="msapplication-TileColor" content="#212121" />
     <meta name="msapplication-TileImage" content="/favicon/ms-icon-144x144.png" />
     <meta name="theme-color" content="#212121" />
     <meta charset="UTF-8" />
 
-    <style>
-      body {
-        background-color: #fff;
-      }
-    </style>
-
-    <script>
+    <script nonce="{{.Nonce}}">
       window.buildbuddyConfig = {{.Config}};
-      {{/* Monaco loads some libraries using require(), ignore these for now. */}}
-      window.require = () => { };
     </script>
 
     {{if .GaEnabled}}
-    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-156160991-2"></script>
-    <script>
+    <script nonce="{{.Nonce}}" async src="https://www.googletagmanager.com/gtag/js?id=UA-156160991-2"></script>
+    <script nonce="{{.Nonce}}">
       window.dataLayer = window.dataLayer || [];
       function gtag() {
         dataLayer.push(arguments);
@@ -48,5 +41,5 @@
       <div class="loading"></div>
     </div>
   </body>
-  <script type="module" src="{{.JsEntryPointPath}}"></script>
+  <script nonce="{{.Nonce}}" type="module" src="{{.JsEntryPointPath}}"></script>
 </html>

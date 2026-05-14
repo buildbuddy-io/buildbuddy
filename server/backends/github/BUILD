@@ -1,4 +1,14 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_test(
+    name = "github_test",
+    srcs = ["github_test.go"],
+    deps = [
+        ":github",
+        "//server/testutil/testenv",
+        "@com_github_stretchr_testify//require",
+    ],
+)
 
 go_library(
     name = "github",
@@ -9,10 +19,14 @@ go_library(
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/http/interceptors",
+        "//server/interfaces",
+        "//server/real_environment",
         "//server/tables",
         "//server/util/authutil",
         "//server/util/cookie",
+        "//server/util/db",
         "//server/util/flag",
+        "//server/util/git",
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",

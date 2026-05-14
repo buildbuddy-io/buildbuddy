@@ -110,7 +110,7 @@ describe("bytes", () => {
   it("should abbreviate large numbers", () => {
     expect(format.bytes(0)).toEqual("0B");
     expect(format.bytes(99)).toEqual("99B");
-    expect(format.bytes(100)).toEqual("0.1KB");
+    expect(format.bytes(100)).toEqual("100B");
     expect(format.bytes(1020)).toEqual("1.02KB");
     expect(format.bytes(1023)).toEqual("1.023KB");
     expect(format.bytes(1e6 - 1)).toEqual("1000KB");
@@ -121,6 +121,16 @@ describe("bytes", () => {
     expect(format.bytes(1e12)).toEqual("1TB");
     expect(format.bytes(1e15 - 1)).toEqual("1000TB");
     expect(format.bytes(1e15)).toEqual("1PB");
+  });
+});
+
+describe("bytesIEC", () => {
+  it("should abbreviate large numbers", () => {
+    expect(format.bytesIEC(0)).toEqual("0B");
+    expect(format.bytesIEC(1)).toEqual("1B");
+    expect(format.bytesIEC(1023)).toEqual("1023B");
+    expect(format.bytesIEC(1024)).toEqual("1KB");
+    expect(format.bytesIEC(1024 + 512)).toEqual("1.5KB");
   });
 });
 

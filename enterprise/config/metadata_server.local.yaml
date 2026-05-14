@@ -1,0 +1,9 @@
+gossip:
+  join: ["127.0.0.1:9201", "127.0.0.1:9202", "127.0.0.1:9203"]
+cache:
+  raft:
+    atime_update_threshold: 1m
+    enable_registry_preload: true
+auth:
+  remote:
+    target: "grpc://127.0.0.1:1985"

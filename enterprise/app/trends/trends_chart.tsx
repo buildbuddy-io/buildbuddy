@@ -1,20 +1,21 @@
 import React from "react";
 
 import {
-  ResponsiveContainer,
-  ComposedChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
   Bar,
-  Line,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
   Legend,
+  Line,
+  ReferenceArea,
+  ResponsiveContainer,
   Tooltip,
   TooltipProps,
-  Cell,
-  ReferenceArea,
+  XAxis,
+  YAxis,
 } from "recharts";
-import { CategoricalChartState } from "recharts/types/chart/generateCategoricalChart";
+import { CategoricalChartState } from "recharts/types/chart/types";
+import { TrendsChartId } from "../../../app/router/router";
 
 interface ChartDataSeries {
   name: string;
@@ -36,7 +37,8 @@ interface Props {
   title: string;
   data: number[];
   ticks: number[];
-  id?: string;
+  id?: TrendsChartId;
+  standaloneChart?: boolean;
 
   formatXAxisLabel: (datum: number) => string;
   formatHoverXAxisLabel: (datum: number) => string;
@@ -61,8 +63,17 @@ interface TrendsChartTooltipProps extends TooltipProps<any, any> {
 export enum ChartColor {
   GREEN = "#8BC34A",
   RED = "#F44336",
+  ORANGE = "#FF6F00",
   BLUE = "#03A9F4",
   GREY = "#AAAAAA",
+  BASICALLY_BLACK = "#212121",
+}
+
+function getResolvedColor(color: ChartColor): string {
+  if (color === ChartColor.BASICALLY_BLACK) {
+    return getComputedStyle(document.documentElement).getPropertyValue("--color-chart-black").trim() || color;
+  }
+  return color;
 }
 
 function chartColorToCssClass(c: ChartColor): string {
@@ -73,8 +84,12 @@ function chartColorToCssClass(c: ChartColor): string {
       return "grey";
     case ChartColor.RED:
       return "red";
+    case ChartColor.ORANGE:
+      return "orange";
     case ChartColor.GREEN:
       return "green";
+    case ChartColor.BASICALLY_BLACK:
+      return "black";
   }
   return "";
 }
@@ -157,7 +172,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
           dot={false}
           dataKey={ds.extractValue}
           isAnimationActive={false}
-          stroke={ds.color ?? ChartColor.BLUE}
+          stroke={getResolvedColor(ds.color ?? ChartColor.BLUE)}
         />
       );
     }
@@ -172,7 +187,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
         dataKey={ds.extractValue}
         isAnimationActive={false}
         stackId={ds.stackId}
-        fill={color}>
+        fill={getResolvedColor(color)}>
         {this.props.data.map((date, index) => (
           <Cell
             cursor={ds.onClick ? "pointer" : "default"}
@@ -188,7 +203,11 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
     const hasSecondaryAxis = this.props.secondaryYAxis !== undefined;
 
     return (
-      <div id={this.props.id} className={`trend-chart ${this.props.onZoomSelection ? "zoomable" : ""}`}>
+      <div
+        id={this.props.id}
+        className={`trend-chart ${this.props.onZoomSelection ? "zoomable" : ""} ${
+          this.props.standaloneChart ? "standalone" : ""
+        }`}>
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart

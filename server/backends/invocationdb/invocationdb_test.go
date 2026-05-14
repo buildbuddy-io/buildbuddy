@@ -22,9 +22,9 @@ var (
 
 func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticator, context.Context) {
 	te := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(userMap)
+	ta := testauth.NewTestAuthenticator(t, userMap)
 	te.SetAuthenticator(ta)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}

@@ -3,7 +3,7 @@ package role
 import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 )
 
@@ -41,6 +41,22 @@ const (
 	adminString     = "admin"
 	writerString    = "writer"
 	readerString    = "reader"
+)
+
+var (
+	AdminCapabilities = []cappb.Capability{
+		cappb.Capability_CACHE_WRITE,
+		cappb.Capability_CAS_WRITE,
+		cappb.Capability_ORG_ADMIN,
+	}
+	DeveloperCapabilities = []cappb.Capability{
+		cappb.Capability_CAS_WRITE,
+	}
+	WriterCapabilities = []cappb.Capability{
+		cappb.Capability_CACHE_WRITE,
+		cappb.Capability_CAS_WRITE,
+	}
+	ReaderCapabilities []cappb.Capability
 )
 
 // Role represents a user's role within a group.
@@ -114,25 +130,16 @@ func FromProto(role grpb.Group_Role) (Role, error) {
 
 // ToCapabilities returns the maximum set of allowed capabilities that can be
 // granted to a user with the given role.
-func ToCapabilities(role Role) ([]akpb.ApiKey_Capability, error) {
+func ToCapabilities(role Role) ([]cappb.Capability, error) {
 	switch role {
 	case Developer:
-		return []akpb.ApiKey_Capability{
-			akpb.ApiKey_CAS_WRITE_CAPABILITY,
-		}, nil
+		return DeveloperCapabilities, nil
 	case Admin:
-		return []akpb.ApiKey_Capability{
-			akpb.ApiKey_CAS_WRITE_CAPABILITY,
-			akpb.ApiKey_CACHE_WRITE_CAPABILITY,
-			akpb.ApiKey_ORG_ADMIN_CAPABILITY,
-		}, nil
+		return AdminCapabilities, nil
 	case Writer:
-		return []akpb.ApiKey_Capability{
-			akpb.ApiKey_CAS_WRITE_CAPABILITY,
-			akpb.ApiKey_CACHE_WRITE_CAPABILITY,
-		}, nil
+		return WriterCapabilities, nil
 	case Reader:
-		return nil, nil
+		return ReaderCapabilities, nil
 	default:
 		return nil, status.InternalErrorf("unexpected role %d", role)
 	}

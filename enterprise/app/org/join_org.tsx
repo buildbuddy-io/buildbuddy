@@ -1,10 +1,10 @@
 import React from "react";
-import router from "../../../app/router/router";
-import { grp } from "../../../proto/group_ts_proto";
 import authService, { User } from "../../../app/auth/auth_service";
-import rpcService from "../../../app/service/rpc_service";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
+import router from "../../../app/router/router";
+import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
+import { grp } from "../../../proto/group_ts_proto";
 
 export interface JoinOrgComponentProps {
   user: User;
@@ -118,7 +118,8 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
             <div className="submit-result request-submitted">
               <div>
                 Your request to join <span className="org-name">{org.name}</span> has been submitted.
-                <br />A member of this organization can approve your request.
+                <br />
+                An organization admin can approve your request by visiting the organization members page.
               </div>
             </div>
           </div>

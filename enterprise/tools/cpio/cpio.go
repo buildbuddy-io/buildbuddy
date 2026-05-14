@@ -26,6 +26,9 @@ func check(err error) {
 func main() {
 	flag.Parse()
 	inputPaths := flag.Args()
+	if err := log.Configure(); err != nil {
+		log.Fatalf("Failed to configure logs: %s", err)
+	}
 	if *outPath == "" {
 		log.Fatalf("Missing -out path")
 	}

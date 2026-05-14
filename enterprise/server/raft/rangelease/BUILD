@@ -9,7 +9,6 @@ go_library(
     deps = [
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
-        "//enterprise/server/raft/keys",
         "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/replica",
@@ -18,6 +17,8 @@ go_library(
         "//server/util/proto",
         "//server/util/rangemap",
         "//server/util/status",
+        "//server/util/tracing",
+        "@io_opentelemetry_go_otel//attribute",
     ],
 )
 
@@ -27,21 +28,18 @@ go_test(
     srcs = ["rangelease_test.go"],
     deps = [
         ":rangelease",
+        "//enterprise/server/raft/client",
+        "//enterprise/server/raft/constants",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/replica",
         "//enterprise/server/raft/sender",
-        "//enterprise/server/util/pebble",
+        "//enterprise/server/raft/testutil",
         "//proto:raft_go_proto",
-        "//server/testutil/testfs",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/random",
         "//server/util/status",
-        "@com_github_lni_dragonboat_v4//:dragonboat",
-        "@com_github_lni_dragonboat_v4//client",
-        "@com_github_lni_dragonboat_v4//statemachine",
-        "@com_github_lni_goutils//random",
         "@com_github_stretchr_testify//require",
     ],
 )

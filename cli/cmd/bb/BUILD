@@ -1,5 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
+# NOTE: //tools/lint uses a prebuilt bb binary (//tools/bb) instead of this
+# target. If you make CLI changes that affect `bb fix` or `bb mod deps`,
+# run `bazel run //tools/bb:update_version` after your release to pick them up.
+
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "bb_lib",
     srcs = ["bb.go"],
@@ -10,19 +16,28 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//cli/arg",
-        "//cli/ask",
         "//cli/bazelisk",
         "//cli/cli_command",
+        "//cli/cli_command/register",
         "//cli/cmd/sidecar",
         "//cli/help",
+        "//cli/help/option_definitions",
         "//cli/log",
+        "//cli/log/option_definitions",
         "//cli/metadata",
         "//cli/parser",
+        "//cli/parser/arguments",
+        "//cli/parser/options",
+        "//cli/parser/parsed",
         "//cli/picker",
         "//cli/plugin",
+        "//cli/runscript",
         "//cli/setup",
-        "//cli/shortcuts",
+        "//cli/stream_run_logs",
+        "//cli/stream_run_logs/option_definitions",
         "//cli/watcher",
+        "//cli/watcher/option_definitions",
+        "//server/util/lib/seq",
         "//server/util/rlimit",
         "//server/util/status",
     ],
@@ -104,5 +119,3 @@ go_binary(
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

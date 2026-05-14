@@ -1,0 +1,21 @@
+# Keep in sync with tools/metrics/prometheus/prometheus.yml
+
+global:
+  scrape_interval: 1s
+
+scrape_configs:
+  - job_name: buildbuddy-app
+    static_configs:
+      - targets: ["host.docker.internal:9090"]
+  - job_name: executor
+    static_configs:
+      - targets: ["host.docker.internal:9091"]
+  - job_name: redis
+    static_configs:
+      - targets: ["host.docker.internal:9121"]
+  - job_name: jaeger
+    static_configs:
+      - targets: ["host.docker.internal:14269"]
+  - job_name: node-exporter
+    static_configs:
+      - targets: ["host.docker.internal:9200"]

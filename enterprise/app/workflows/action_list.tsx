@@ -1,12 +1,12 @@
-import React from "react";
-import router from "../../../app/router/router";
-import { invocation_status } from "../../../proto/invocation_status_ts_proto";
-import { workflow } from "../../../proto/workflow_ts_proto";
-import format from "../../../app/format/format";
-import { durationToMillis } from "../../../app/util/proto";
 import { GitCommit } from "lucide-react";
+import React from "react";
 import Link from "../../../app/components/link/link";
 import { MouseCoords, Tooltip, pinBottomLeftOffsetFromMouse } from "../../../app/components/tooltip/tooltip";
+import format from "../../../app/format/format";
+import router from "../../../app/router/router";
+import { durationToMillis } from "../../../app/util/proto";
+import { invocation_status } from "../../../proto/invocation_status_ts_proto";
+import { workflow } from "../../../proto/workflow_ts_proto";
 
 export type ActionListComponentProps = {
   repoUrl: string;
@@ -117,8 +117,16 @@ function renderTooltipContent(
   }
 }
 
-function renderHistoryChart(actionHistory: workflow.ActionHistory): JSX.Element {
+function getHistoryExplainerText(actionHistory: workflow.ActionHistory): string {
   const branchName = findLatestCompletedRun(actionHistory)?.branchName ?? "main";
+  if (branchName !== "master" && branchName !== "main") {
+    return "all branches";
+  }
+  return branchName;
+}
+
+function renderHistoryChart(actionHistory: workflow.ActionHistory): JSX.Element {
+  const explainerText = getHistoryExplainerText(actionHistory);
   const emptyEntries = Math.max(0, 30 - actionHistory.entries.length);
 
   let maxDuration = 0;
@@ -129,7 +137,7 @@ function renderHistoryChart(actionHistory: workflow.ActionHistory): JSX.Element 
   });
   return (
     <div className="action-history-chart">
-      <div className="action-history-explainer-text">{branchName}</div>
+      <div className="action-history-explainer-text">{explainerText}</div>
       <Tooltip
         pin={pinBottomLeftOffsetFromMouse}
         renderContent={(c: MouseCoords) => renderTooltipContent(actionHistory, invocationLookupMap, c)}>
@@ -174,7 +182,7 @@ export default class ActionListComponent extends React.Component<ActionListCompo
                       {format.formatCommitHash(latestCompletedRun.commitSha)}
                     </div>
                   )}
-                  {!latestCompletedRun && <div className="subtitle">No runs on main in last 7 days.</div>}
+                  {!latestCompletedRun && <div className="subtitle">No runs in last 7 days.</div>}
                 </div>
                 <div className="action-history-section">{renderHistoryChart(h)}</div>
                 <div className="action-history-section action-stats-section">

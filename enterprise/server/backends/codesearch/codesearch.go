@@ -5,6 +5,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -20,6 +21,7 @@ var (
 
 type CodesearchService struct {
 	client csspb.CodesearchServiceClient
+	env    environment.Env
 }
 
 func Register(realEnv *real_environment.RealEnv) error {
@@ -35,12 +37,13 @@ func Register(realEnv *real_environment.RealEnv) error {
 }
 
 func New(env environment.Env) (*CodesearchService, error) {
-	conn, err := grpc_client.DialInternal(env, *codesearchBackend)
+	conn, err := grpc_client.DialInternalWithPoolSize(env, *codesearchBackend, 2)
 	if err != nil {
 		return nil, status.UnavailableErrorf("could not dial codesearch backend %q: %s", *codesearchBackend, err)
 	}
 	return &CodesearchService{
 		client: csspb.NewCodesearchServiceClient(conn),
+		env:    env,
 	}, nil
 }
 
@@ -50,5 +53,46 @@ func (css *CodesearchService) Search(ctx context.Context, req *srpb.SearchReques
 }
 
 func (css *CodesearchService) Index(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
+	claims, err := claims.ClaimsFromContext(ctx)
+	if err != nil {
+		return nil, status.UnauthenticatedErrorf("failed to get claims from context: %s", err)
+	}
+
+	g, err := css.env.GetUserDB().GetGroupByID(ctx, claims.GroupID)
+	if err != nil {
+		return nil, err
+	}
+	if !g.CodeSearchEnabled {
+		return nil, status.FailedPreconditionError("codesearch is not enabled")
+	}
+
+	if req.GetReplacementStrategy() == inpb.ReplacementStrategy_REPLACE_REPO {
+		gh := css.env.GetGitHubAppService()
+		if gh == nil {
+			return nil, status.UnimplementedError("No GitHub app configured")
+		}
+		app, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
+		if err != nil {
+			return nil, err
+		}
+		token, err := app.GetRepositoryInstallationToken(ctx, claims.GroupID, req.GetGitRepo().GetRepoUrl())
+		if err != nil {
+			return nil, err
+		}
+		req.GetGitRepo().AccessToken = token
+	}
+
 	return css.client.Index(ctx, req)
+}
+
+func (css *CodesearchService) RepoStatus(ctx context.Context, req *inpb.RepoStatusRequest) (*inpb.RepoStatusResponse, error) {
+	return css.client.RepoStatus(ctx, req)
+}
+
+func (css *CodesearchService) IngestAnnotations(ctx context.Context, req *inpb.IngestAnnotationsRequest) (*inpb.IngestAnnotationsResponse, error) {
+	return css.client.IngestAnnotations(ctx, req)
+}
+
+func (css *CodesearchService) KytheProxy(ctx context.Context, req *srpb.KytheRequest) (*srpb.KytheResponse, error) {
+	return css.client.KytheProxy(ctx, req)
 }

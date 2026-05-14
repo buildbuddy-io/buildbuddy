@@ -2,6 +2,7 @@ package common
 
 import (
 	"flag"
+	"fmt"
 	"reflect"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 
 var (
 	// Used for type conversions between flags and normal go types
-	flagTypeMap = map[reflect.Type]reflect.Type{
+	flagTypeToGoTypeMap = map[reflect.Type]reflect.Type{
 		flagTypeFromFlagFuncName("Bool"):     reflect.TypeOf((*bool)(nil)),
 		flagTypeFromFlagFuncName("Duration"): reflect.TypeOf((*time.Duration)(nil)),
 		flagTypeFromFlagFuncName("Float64"):  reflect.TypeOf((*float64)(nil)),
@@ -21,9 +22,12 @@ var (
 		flagTypeFromFlagFuncName("Uint64"):   reflect.TypeOf((*uint64)(nil)),
 		flagTypeFromFlagFuncName("String"):   reflect.TypeOf((*string)(nil)),
 	}
+	goTypeToFlagTypeMap = invertMap(flagTypeToGoTypeMap)
 
 	// Change only for testing purposes
 	DefaultFlagSet = flag.CommandLine
+
+	usageSubstitutions = make(map[*flag.FlagSet]*func())
 )
 
 func flagTypeFromFlagFuncName(name string) reflect.Type {
@@ -37,12 +41,36 @@ func flagTypeFromFlagFuncName(name string) reflect.Type {
 	return reflect.TypeOf(fs.Lookup("").Value)
 }
 
+func invertMap[K comparable, V comparable](m map[K]V) map[V]K {
+	inverse := make(map[V]K, len(m))
+	for k, v := range m {
+		inverse[v] = k
+	}
+	return inverse
+}
+
+func ZeroFlagValueFromType[T any]() flag.Value {
+	t, ok := goTypeToFlagTypeMap[reflect.TypeOf(Zero[T]())]
+	if !ok || t.Kind() != reflect.Pointer {
+		return nil
+	}
+	zero, ok := reflect.New(t.Elem()).Interface().(flag.Value)
+	if !ok {
+		return nil
+	}
+	return zero
+}
+
 type TypeAliased interface {
 	// AliasedType returns the type this flag.Value aliases.
 	AliasedType() reflect.Type
 }
 
-type IsNameAliasing interface {
+type NameAliasable interface {
+	// IsNameAliasing returns whether or not this flag.Value is aliasing another
+	// flag.
+	IsNameAliasing() bool
+
 	// AliasedName returns the flag name this flag.Value aliases.
 	AliasedName() string
 }
@@ -52,9 +80,14 @@ type WrappingValue interface {
 	WrappedValue() flag.Value
 }
 
-type Appendable interface {
-	// AppendSlice appends the passed slice to this flag.Value.
-	AppendSlice(any) error
+// Accumulable may be implemented by collection-backed flag types (slices, maps)
+// to indicate that they accumulate entries across repeated set-operations
+// rather than being replaced. When the caller requests append semantics (e.g.
+// append=true on SetValueForFlagName), flags implementing Accumulable have
+// Accumulate called on them with the new value: slice flags append, map flags
+// merge later-wins on key conflicts.
+type Accumulable interface {
+	Accumulate(any) error
 }
 
 // Expandable may be implemented by custom flag types to indicate that they
@@ -65,6 +98,10 @@ type Expandable interface {
 
 type Secretable interface {
 	IsSecret() bool
+}
+
+type MaybeInternal interface {
+	Internal() bool
 }
 
 type DocumentNodeOption interface {
@@ -87,7 +124,7 @@ func GetTypeForFlagValue(value flag.Value) (reflect.Type, error) {
 	if v, ok := value.(WrappingValue); ok {
 		return GetTypeForFlagValue(v.WrappedValue())
 	}
-	if t, ok := flagTypeMap[reflect.TypeOf(value)]; ok {
+	if t, ok := flagTypeToGoTypeMap[reflect.TypeOf(value)]; ok {
 		return t, nil
 	} else if v, ok := value.(TypeAliased); ok {
 		return v.AliasedType(), nil
@@ -127,65 +164,68 @@ func ConvertFlagValue(value flag.Value) (any, error) {
 
 // SetValueForFlagName sets the value for a flag by name. setFlags is the set of
 // flags that have already been set on the command line; those flags will not be
-// set again except to append to them, in the case of slices. To force the
-// setting of a flag, pass a nil map. If appendSlice is true, a slice value will
-// be appended to the current slice value; otherwise, a slice value will replace
-// the current slice value. appendSlice has no effect if the values in question
-// are not slices.
-func SetValueForFlagName(flagset *flag.FlagSet, name string, newValue any, setFlags map[string]struct{}, appendSlice bool) error {
-	flg := DefaultFlagSet.Lookup(name)
+// set again except to accumulate into them, in the case of collection flags. To
+// force the setting of a flag, pass a nil map. If accumulate is true, a slice
+// value will be appended to the current slice value and a map value will be
+// merged into the current map value; otherwise, the value will replace the
+// current value. accumulate has no effect if the flag is not Accumulable.
+func SetValueForFlagName(flagset *flag.FlagSet, name string, newValue any, setFlags map[string]struct{}, accumulate bool) error {
+	flg := flagset.Lookup(name)
 	if flg == nil {
 		return status.NotFoundErrorf("Undefined flag: %s", name)
 	}
-	return setValueFromFlagName(flagset, flg.Value, name, newValue, setFlags, appendSlice)
+	return setValueFromFlagName(flagset, flg.Value, name, newValue, setFlags, accumulate)
 }
 
-func setValueFromFlagName(flagset *flag.FlagSet, flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setHooks ...func()) error {
+func setValueFromFlagName(flagset *flag.FlagSet, flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, accumulate bool, setHooks ...func()) error {
 	if v, ok := flagValue.(SetValueForFlagNameHooked); ok {
 		setHooks = append(setHooks, v.SetValueForFlagNameHook)
 	}
-	return SetValueWithCustomIndirectBehavior(flagset, flagValue, name, newValue, setFlags, appendSlice, setValueFromFlagName, setHooks...)
+	return SetValueWithCustomIndirectBehavior(flagset, flagValue, name, newValue, setFlags, accumulate, setValueFromFlagName, setHooks...)
 }
 
-type SetValueForIndirectFxn func(flagset *flag.FlagSet, flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setHooks ...func()) error
+type SetValueForIndirectFxn func(flagset *flag.FlagSet, flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, accumulate bool, setHooks ...func()) error
 
 // SetValueWithCustomIndirectBehavior sets the value for a flag, but if the flag
 // passed is an alias for another flag or wraps another flag.Value, it instead
 // calls setValueForIndirect with the new flag.Value. setFlags is the set of
 // flags that have already been set on the command line; those flags will not be
-// set again except to append to them, in the case of slices. To force the
-// setting of a flag, pass a nil map. If appendSlice is true, a slice value will
-// be appended to the current slice value; otherwise, a slice value will replace
-// the current slice value. appendSlice has no effect if the values in question
-// are not slices. setHooks is a slice of functions to call in order if the
-// flag.Value will be set.
-func SetValueWithCustomIndirectBehavior(flagset *flag.FlagSet, flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setValueForIndirect SetValueForIndirectFxn, setHooks ...func()) error {
-	if v, ok := flagValue.(IsNameAliasing); ok {
+// set again except to accumulate into them, in the case of collection flags. To
+// force the setting of a flag, pass a nil map. If accumulate is true, a slice
+// value will be appended to the current slice value and a map value will be
+// merged into the current map value; otherwise, the value will replace the
+// current value. accumulate has no effect if the flag is not Accumulable.
+// setHooks is a slice of functions to call in order if the flag.Value will be
+// set.
+func SetValueWithCustomIndirectBehavior(flagset *flag.FlagSet, flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, accumulate bool, setValueForIndirect SetValueForIndirectFxn, setHooks ...func()) error {
+	if v, ok := flagValue.(NameAliasable); ok && v.IsNameAliasing() {
 		aliasedFlag := flagset.Lookup(v.AliasedName())
 		if aliasedFlag == nil {
 			return status.NotFoundErrorf("Flag %s aliases undefined flag: %s", name, v.AliasedName())
 		}
-		return setValueForIndirect(flagset, aliasedFlag.Value, v.AliasedName(), newValue, setFlags, appendSlice, setHooks...)
+		return setValueForIndirect(flagset, aliasedFlag.Value, v.AliasedName(), newValue, setFlags, accumulate, setHooks...)
 	}
 	// Unwrap any wrapper values (e.g. DeprecatedFlag)
 	if v, ok := flagValue.(WrappingValue); ok {
-		return setValueForIndirect(flagset, v.WrappedValue(), name, newValue, setFlags, appendSlice, setHooks...)
+		return setValueForIndirect(flagset, v.WrappedValue(), name, newValue, setFlags, accumulate, setHooks...)
 	}
-	var appendFlag Appendable
-	// For slice flags, append the values to the existing values if appendSlice is true
-	if v, ok := flagValue.(Appendable); ok && appendSlice {
-		appendFlag = v
+	var accumulateFlag Accumulable
+	if accumulate {
+		// For collection flags (slices, maps), accumulate into the existing value.
+		if v, ok := flagValue.(Accumulable); ok {
+			accumulateFlag = v
+		}
 	}
-	// For non-append flags, skip the value if it has already been set
-	if _, ok := setFlags[name]; appendFlag == nil && ok {
+	// For non-accumulable flags, skip the value if it has already been set
+	if _, ok := setFlags[name]; accumulateFlag == nil && ok {
 		return nil
 	}
 	for _, setHook := range setHooks {
 		setHook()
 	}
-	if appendFlag != nil {
-		if err := appendFlag.AppendSlice(newValue); err != nil {
-			return status.InternalErrorf("Error encountered appending to flag %s: %s", name, err)
+	if accumulateFlag != nil {
+		if err := accumulateFlag.Accumulate(newValue); err != nil {
+			return status.InternalErrorf("Error encountered accumulating into flag %s: %s", name, err)
 		}
 		return nil
 	}
@@ -213,8 +253,11 @@ func GetDereferencedValue[T any](flagset *flag.FlagSet, name string) (T, error) 
 }
 
 func getDereferencedValueFrom[T any](flagset *flag.FlagSet, value flag.Value, name string) (T, error) {
-	if v, ok := value.(IsNameAliasing); ok {
-		return GetDereferencedValue[T](flagset, v.AliasedName())
+	for v, ok := value.(WrappingValue); ok; v, ok = value.(WrappingValue) {
+		if a, ok := v.(NameAliasable); ok && a.IsNameAliasing() {
+			return GetDereferencedValue[T](flagset, a.AliasedName())
+		}
+		value = v.WrappedValue()
 	}
 	converted, err := ConvertFlagValue(value)
 	if err != nil {
@@ -314,8 +357,64 @@ func setWithOverride(flagset *flag.FlagSet, flagValue flag.Value, name, newValue
 	return nil
 }
 
+// Expand updates the flag value to replace any placeholders in format ${FOO}
+// with the content of calling the mapper function with the placeholder name.
+func Expand(v flag.Value, mapper func(string) (string, error)) error {
+	// If the flag type wants to handle expansion, let it.
+	if r, ok := v.(Expandable); ok {
+		if err := r.Expand(mapper); err != nil {
+			return err
+		}
+		return nil
+	}
+	// Otherwise, expand directly using String/Set.
+	val := v.String()
+	exp, err := mapper(val)
+	if err != nil {
+		return err
+	}
+	// If the value is the same after expansion then don't update the flag.
+	// Some third-party flags fail on v.Set(v.String())
+	if val == exp {
+		return nil
+	}
+	return v.Set(exp)
+}
+
+// SubstituteUsage substitutes flagutil's custom Usage function for the current
+// one in the given flagset, or performing a no-op if the custom Usage function
+// is already present. It returns whether or not it performed the substitution.
+func SubstituteUsage(flagset *flag.FlagSet) bool {
+	if usage, ok := usageSubstitutions[flagset]; !ok {
+		flagset.Usage = func() {
+			// This Usage function is patterned off of flag.FlagSet.defaultUsage(),
+			// but uses a FlagSet that has had any internal flags filtered out.
+			if flagset.Name() == "" {
+				fmt.Fprintf(flagset.Output(), "Usage:\n")
+			} else {
+				fmt.Fprintf(flagset.Output(), "Usage of %s:\n", flagset.Name())
+			}
+			filtered := flag.NewFlagSet(flagset.Name(), flagset.ErrorHandling())
+			flagset.VisitAll(func(f *flag.Flag) {
+				if h, ok := f.Value.(MaybeInternal); ok && h.Internal() {
+					return
+				}
+				filtered.Var(f.Value, f.Name, f.Usage)
+			})
+			filtered.PrintDefaults()
+		}
+		usageSubstitutions[flagset] = &flagset.Usage
+		return true
+	} else if &flagset.Usage != usage {
+		flagset.Usage = *usageSubstitutions[flagset]
+		usageSubstitutions[flagset] = &flagset.Usage
+		return true
+	}
+	return false
+}
+
 // AddTestFlagTypeForTesting adds a type correspondence to the internal
 // flagTypeMap.
 func AddTestFlagTypeForTesting(flagValue, value any) {
-	flagTypeMap[reflect.TypeOf(flagValue)] = reflect.TypeOf(value)
+	flagTypeToGoTypeMap[reflect.TypeOf(flagValue)] = reflect.TypeOf(value)
 }

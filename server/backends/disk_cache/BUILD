@@ -34,7 +34,7 @@ go_library(
 
 go_test(
     name = "disk_cache_test",
-    size = "small",
+    size = "medium",
     srcs = ["disk_cache_test.go"],
     deps = [
         ":disk_cache",

@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -31,6 +32,7 @@ func singleFiles() []*build_event_stream.File {
 }
 
 func TestFillInvocation(t *testing.T) {
+	flags.Set(t, "app.tags_enabled", true)
 	events := make([]*build_event_stream.BuildEvent, 0)
 
 	progress := &build_event_stream.Progress{
@@ -161,6 +163,10 @@ func TestFillInvocation(t *testing.T) {
 				Key:   "BUILD_USER",
 				Value: "WORKSPACE_STATUS_BUILD_USER",
 			},
+			{
+				Key:   "TAGS",
+				Value: "el, barto, was,here",
+			},
 		},
 	}
 	events = append(events, &build_event_stream.BuildEvent{
@@ -252,7 +258,252 @@ func TestFillInvocation(t *testing.T) {
 	assert.Equal(t, "https://github.com/buildbuddy-io/metadata_repo_url", invocation.RepoUrl, "repo URL should be normalized")
 	assert.Equal(t, false, invocation.GetUploadLocalResultsEnabled())
 	assert.Equal(t, false, invocation.GetRemoteExecutionEnabled())
+	outputTags := make([]string, 0)
+	for _, t := range invocation.Tags {
+		outputTags = append(outputTags, t.Name)
+	}
+	assert.Equal(t, []string{"el", "barto", "was", "here"}, outputTags)
 	assert.Equal(t, inpb.DownloadOutputsOption_MINIMAL, invocation.GetDownloadOutputsOption())
+}
+
+func TestBuildMetadataWithTagPrefix(t *testing.T) {
+	flags.Set(t, "app.tags_enabled", true)
+
+	tests := []struct {
+		name     string
+		metadata map[string]string
+		wantTags []string
+	}{
+		{
+			name: "TAG_ prefix creates tags",
+			metadata: map[string]string{
+				"TAG_FOO": "BAR",
+				"TAG_ENV": "production",
+			},
+			wantTags: []string{"ENV=production", "FOO=BAR"},
+		},
+		{
+			name: "TAG_ prefix combined with TAGS",
+			metadata: map[string]string{
+				"TAGS":      "existing,tags",
+				"TAG_BUILD": "v1.2.3",
+				"TAG_TYPE":  "release",
+			},
+			wantTags: []string{"BUILD=v1.2.3", "TYPE=release", "existing", "tags"},
+		},
+		{
+			name: "Empty TAG_ values create tags without equals",
+			metadata: map[string]string{
+				"TAG_EMPTY": "",
+				"TAG_VALID": "value",
+			},
+			wantTags: []string{"EMPTY", "VALID=value"},
+		},
+		{
+			name: "Non-TAG_ prefixed keys are ignored for tags",
+			metadata: map[string]string{
+				"ROLE":      "CI",
+				"TAG_STAGE": "beta",
+			},
+			wantTags: []string{"STAGE=beta"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			invocation := &inpb.Invocation{
+				InvocationId: "test-invocation",
+			}
+			parser := event_parser.NewStreamingEventParser(invocation)
+
+			buildMetadata := &build_event_stream.BuildMetadata{
+				Metadata: tt.metadata,
+			}
+			event := &build_event_stream.BuildEvent{
+				Payload: &build_event_stream.BuildEvent_BuildMetadata{BuildMetadata: buildMetadata},
+			}
+
+			parser.ParseEvent(event)
+
+			outputTags := make([]string, 0)
+			for _, tag := range invocation.Tags {
+				outputTags = append(outputTags, tag.Name)
+			}
+
+			assert.ElementsMatch(t, tt.wantTags, outputTags)
+		})
+	}
+}
+func TestTagMerging(t *testing.T) {
+	flags.Set(t, "app.tags_enabled", true)
+
+	tests := []struct {
+		name            string
+		metadata        map[string]string
+		workspaceStatus string
+		wantTags        []string
+	}{
+		{
+			name: "Just metadata tags",
+			metadata: map[string]string{
+				"TAG_metadata_tag_a": "",
+				"TAG_metadata_tag_b": "test",
+				"TAGS":               "metadata_tag_c,metadata_tag_d",
+			},
+			workspaceStatus: "",
+			wantTags:        []string{"metadata_tag_a", "metadata_tag_b=test", "metadata_tag_c", "metadata_tag_d"},
+		},
+		{
+			name:            "Just workspace status tags",
+			metadata:        map[string]string{},
+			workspaceStatus: "workspace_tag_a,workspace_tag_b",
+			wantTags:        []string{"workspace_tag_a", "workspace_tag_b"},
+		},
+		{
+			name: "Tags merge",
+			metadata: map[string]string{
+				"TAGS": "metadata_tag_a,metadata_tag_b",
+			},
+			workspaceStatus: "workspace_tag_a,workspace_tag_b",
+			wantTags:        []string{"metadata_tag_a", "metadata_tag_b", "workspace_tag_a", "workspace_tag_b"},
+		},
+
+		{
+			name: "Tag prefix merge",
+			metadata: map[string]string{
+				"TAG_metadata_tag_a": "",
+				"TAG_metadata_tag_b": "test",
+				"TAGS":               "metadata_tag_c,metadata_tag_d",
+			},
+			workspaceStatus: "workspace_tag_a,workspace_tag_b",
+			wantTags:        []string{"metadata_tag_a", "metadata_tag_b=test", "metadata_tag_c", "metadata_tag_d", "workspace_tag_a", "workspace_tag_b"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			invocation := &inpb.Invocation{
+				InvocationId: "test-invocation",
+			}
+			parser := event_parser.NewStreamingEventParser(invocation)
+
+			metadataEvent := &build_event_stream.BuildEvent{
+				Payload: &build_event_stream.BuildEvent_BuildMetadata{BuildMetadata: &build_event_stream.BuildMetadata{
+					Metadata: tt.metadata,
+				}},
+			}
+			parser.ParseEvent(metadataEvent)
+
+			workspaceStatusEvent := &build_event_stream.BuildEvent{
+				Payload: &build_event_stream.BuildEvent_WorkspaceStatus{WorkspaceStatus: &build_event_stream.WorkspaceStatus{
+					Item: []*build_event_stream.WorkspaceStatus_Item{
+						{Key: "TAGS", Value: tt.workspaceStatus},
+					},
+				}},
+			}
+			parser.ParseEvent(workspaceStatusEvent)
+
+			outputTags := make([]string, 0)
+			for _, tag := range invocation.Tags {
+				outputTags = append(outputTags, tag.Name)
+			}
+
+			assert.ElementsMatch(t, tt.wantTags, outputTags)
+		})
+	}
+}
+
+func TestEnvVarDiscovery(t *testing.T) {
+	tests := []struct {
+		name      string
+		envVars   map[string]string
+		repoUrl   string
+		branch    string
+		commitSha string
+		role      string
+	}{
+		{
+			name:    "GITHUB_REPOSITORY sets repo URL defaulting to github.com",
+			envVars: map[string]string{"GITHUB_REPOSITORY": "buildbuddy-io/buildbuddy"},
+			repoUrl: "https://github.com/buildbuddy-io/buildbuddy",
+		},
+		{
+			name:    "GITHUB_REF sets branch for heads ref",
+			envVars: map[string]string{"GITHUB_REF": "refs/heads/my-feature"},
+			branch:  "my-feature",
+		},
+		{
+			name:    "GITHUB_REF ignored for non-heads ref",
+			envVars: map[string]string{"GITHUB_REF": "refs/tags/v1.0"},
+		},
+		{
+			name:    "GITHUB_HEAD_REF sets branch",
+			envVars: map[string]string{"GITHUB_HEAD_REF": "pr-branch"},
+			branch:  "pr-branch",
+		},
+		{
+			name:      "GITHUB_SHA sets commit",
+			envVars:   map[string]string{"GITHUB_SHA": "abc123"},
+			commitSha: "abc123",
+		},
+		{
+			name:      "Multiple GitHub env vars",
+			envVars:   map[string]string{"GITHUB_REPOSITORY": "owner/repo", "GITHUB_SHA": "deadbeef", "GITHUB_HEAD_REF": "main"},
+			repoUrl:   "https://github.com/owner/repo",
+			commitSha: "deadbeef",
+			branch:    "main",
+		},
+		{
+			name:    "CI sets role",
+			envVars: map[string]string{"CI": "true"},
+			role:    "CI",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			options := make([]*command_line.Option, 0, len(tc.envVars))
+			for k, v := range tc.envVars {
+				options = append(options, &command_line.Option{
+					OptionName:  "client_env",
+					OptionValue: k + "=" + v,
+				})
+			}
+			invocation := &inpb.Invocation{
+				InvocationId: "test-invocation",
+			}
+			parser := event_parser.NewStreamingEventParser(invocation)
+			parser.ParseEvent(&build_event_stream.BuildEvent{
+				Payload: &build_event_stream.BuildEvent_StructuredCommandLine{
+					StructuredCommandLine: &command_line.CommandLine{
+						CommandLineLabel: "canonical",
+						Sections: []*command_line.CommandLineSection{
+							{
+								SectionType: &command_line.CommandLineSection_OptionList{
+									OptionList: &command_line.OptionList{
+										Option: options,
+									},
+								},
+							},
+						},
+					},
+				},
+			})
+
+			if tc.repoUrl != "" {
+				assert.Equal(t, tc.repoUrl, invocation.RepoUrl)
+			}
+			if tc.branch != "" {
+				assert.Equal(t, tc.branch, invocation.BranchName)
+			}
+			if tc.commitSha != "" {
+				assert.Equal(t, tc.commitSha, invocation.CommitSha)
+			}
+			if tc.role != "" {
+				assert.Equal(t, tc.role, invocation.Role)
+			}
+		})
+	}
 }
 
 func TestRemoteCacheOptions(t *testing.T) {

@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "githubauth",
     srcs = ["githubauth.go"],
@@ -15,9 +17,7 @@ go_library(
         "//server/util/cookie",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_golang_jwt_jwt//:jwt",
+        "@com_github_golang_jwt_jwt_v4//:jwt",
         "@com_github_google_uuid//:uuid",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

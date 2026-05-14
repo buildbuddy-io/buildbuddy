@@ -38,13 +38,14 @@ func runBazelVersion(args []string) (int, error) {
 	// the command to bazel
 	args = append([]string{"version"}, args...)
 
-	plugins, bazelArgs, execArgs, err := setup.Setup(args, tempDir)
+	setupResult, err := setup.Setup(args, tempDir)
 	if err != nil {
 		return 1, status.WrapError(err, "bazel setup")
 	}
 
 	outputPath := filepath.Join(tempDir, "bazel.log")
+	// TODO(#7216): Use the forwarded args here.
 	return plugin.RunBazeliskWithPlugins(
-		arg.JoinExecutableArgs(bazelArgs, execArgs),
-		outputPath, plugins)
+		arg.JoinExecutableArgs(setupResult.BazelArgs.Resolved, setupResult.ExecArgs),
+		outputPath, setupResult.Plugins)
 }

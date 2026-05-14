@@ -1,13 +1,27 @@
 apiVersion: 1
 
 datasources:
-  - name: Prometheus
+  - name: VictoriaMetrics
     type: prometheus
     access: proxy
-    uid: prom
+    uid: vm
     isDefault: true
-    url: http://host.docker.internal:9100
+    url: ${GF_DATASOURCE_URL}
     version: 1
     editable: false
     jsonData:
       timeInterval: 1s
+  - name: ClickHouse
+    type: grafana-clickhouse-datasource
+    uid: clickhouse
+    jsonData:
+      port: ${CLICKHOUSE_PORT}
+      host: host.docker.internal
+      username: ${CLICKHOUSE_USERNAME}
+      traces:
+        defaultDatabase: otel_local
+        defaultTable: otel_traces
+        otelEnabled: true
+        otelVersion: latest # TODO: pin?
+    secureJsonData:
+      password: ${CLICKHOUSE_PASSWORD}

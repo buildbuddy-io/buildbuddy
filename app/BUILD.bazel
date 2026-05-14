@@ -1,13 +1,16 @@
-load("//rules/typescript:index.bzl", "ts_library")
-load("@npm//@bazel/esbuild:index.bzl", "esbuild")
-load("//rules/sha:index.bzl", "sha")
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//rules/sha:index.bzl", "sha")
+load("//rules/typescript:index.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
 esbuild(
     name = "app_bundle",
-    args = {
+    # Causes splitting to be very slow and fail on unused references to "crypto" and "fs".
+    # https://github.com/aspect-build/rules_esbuild/issues/190
+    bazel_sandbox_plugin = False,
+    config = {
         "resolveExtensions": [
             ".mjs",
             ".js",
@@ -29,26 +32,29 @@ ts_library(
     name = "app",
     srcs = ["app.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
         "//app/root",
-        "@npm//@types/react",
-        "@npm//@types/react-dom",
-        "@npm//react",
-        "@npm//react-dom",
     ],
 )
 
 genrule(
     name = "style",
     srcs = [
+        "//app/root:colors.css",
         "//app/root:root.css",
         "//app/alert:alert.css",
         "//app/picker:picker.css",
+        "//app/components/search_bar:search_bar.css",
         "//app/compare:compare.css",
         "//app/invocation:invocation.css",
         "//app/trace:trace_viewer.css",
         "//app/terminal:terminal.css",
         "//app/components/banner:banner.css",
         "//app/components/button:button.css",
+        "//app/components/breadcrumbs:breadcrumbs.css",
         "//app/components/dialog:dialog.css",
         "//app/components/digest:digest.css",
         "//app/components/input:input.css",
@@ -62,6 +68,8 @@ genrule(
         "//app/components/radio:radio.css",
         "//app/components/checkbox:checkbox.css",
         "//app/components/spinner:spinner.css",
+        "//app/components/tooltip:tooltip.css",
+        "//app/profile:profile.css",
     ],
     outs = ["style.css"],
     cmd_bash = """
@@ -89,7 +97,6 @@ genrule(
     cmd_bash = "touch $@",
 )
 
-# gazelle:ignore
 go_library(
     name = "bundle",
     srcs = ["bundle.go"],

@@ -51,22 +51,23 @@ func CacheDir() (string, error) {
 	return cacheDir, nil
 }
 
-var repoRootPath = sync.OnceValues(func() (string, error) {
+var RepoRootPath = sync.OnceValues(func() (string, error) {
 	dir, err := exec.Command("git", "rev-parse", "--show-toplevel").CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to run git rev-parse: %s", err)
+		return "", fmt.Errorf("git rev-parse --show-toplevel: %w", err)
 	}
 	return strings.TrimSpace(string(dir)), nil
 })
 
 // ReadRepoConfig reads a repository-local configuration setting.
+// It returns an empty string if the configuration value is not set.
 func ReadRepoConfig(key string) (string, error) {
-	dir, err := repoRootPath()
+	dir, err := RepoRootPath()
 	if err != nil {
 		return "", err
 	}
 	fullKey := gitConfigSection + "." + key
-	cmd := exec.Command("git", "config", "--local", "--get", fullKey)
+	cmd := exec.Command("git", "config", "--local", "--get", "--default=", fullKey)
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -74,22 +75,17 @@ func ReadRepoConfig(key string) (string, error) {
 	if err := cmd.Run(); err != nil {
 		msg := stderr.String()
 		if msg == "" {
-			return "", nil
+			return "", fmt.Errorf("failed to read %q from .git/config: 'git config' command failed: %w", fullKey, err)
 		}
 		return "", fmt.Errorf("failed to read %q from .git/config: %s", fullKey, msg)
 	}
 
-	out := strings.TrimSpace(stdout.String())
-	if out == "" {
-		return out, fmt.Errorf("empty value for %s", key)
-	}
-
-	return out, nil
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 // WriteRepoConfig writes a repository-local configuration setting.
 func WriteRepoConfig(key, value string) error {
-	dir, err := repoRootPath()
+	dir, err := RepoRootPath()
 	if err != nil {
 		return err
 	}

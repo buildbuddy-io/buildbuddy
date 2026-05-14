@@ -3,9 +3,12 @@ syntax = "proto3";
 package api.v1;
 
 import "proto/api/v1/action.proto";
+import "proto/api/v1/api_key.proto";
+import "proto/api/v1/audit_log.proto";
 import "proto/api/v1/file.proto";
 import "proto/api/v1/invocation.proto";
 import "proto/api/v1/log.proto";
+import "proto/api/v1/remote_runner.proto";
 import "proto/api/v1/target.proto";
 import "proto/api/v1/workflow.proto";
 
@@ -36,6 +39,9 @@ service ApiService {
   // Retrieves the logs for a specific invocation.
   rpc GetLog(GetLogRequest) returns (GetLogResponse);
 
+  // Retrieves a page of audit log entries.
+  rpc GetAuditLog(GetAuditLogRequest) returns (GetAuditLogResponse);
+
   // Retrieves a list of targets or a specific target matching the given
   // request selector.
   rpc GetTarget(GetTargetRequest) returns (GetTargetResponse);
@@ -49,6 +55,10 @@ service ApiService {
   // - Over HTTP this simply returns the requested file.
   rpc GetFile(GetFileRequest) returns (stream GetFileResponse);
 
+  // Retrieves a byte range from the CAS blob with the given digest. Supports
+  // ranges up to 16 MiB in size.
+  rpc GetFileRange(GetFileRangeRequest) returns (GetFileRangeResponse);
+
   // Delete the File with the given uri.
   rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
 
@@ -56,4 +66,15 @@ service ApiService {
   // Github App authentication is required. The API does not support running
   // legacy workflows.
   rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecuteWorkflowResponse);
+
+  // Run a command (typically a Bazel command) on a remote runner.
+  rpc Run(RunRequest) returns (RunResponse);
+
+  // Creates an API key (authentication token) for a given user. To create API
+  // keys for users within an organization, this API must be called with an Org
+  // admin key. Org admin keys can be created via the BuildBuddy UI by
+  // navigating to Settings > Org API keys, then creating a new key with the
+  // "Org admin" capability.
+  rpc CreateUserApiKey(CreateUserApiKeyRequest)
+      returns (CreateUserApiKeyResponse);
 }

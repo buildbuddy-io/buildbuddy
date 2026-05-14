@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     if: "!contains(github.event.head_commit.message, 'release skip')"
     steps:
-      - uses: "marvinpinto/action-automatic-releases@v1.2.1"
+      - uses: "marvinpinto/action-automatic-releases@919008cf3f741b179569b7a6fb4d8860689ab7f0" # v1.2.1
         with:
           repo_token: "${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}"
           prerelease: false
@@ -78,7 +78,7 @@ jobs:
     if: ${{ always() && contains(needs.*.result, 'failure') }}
     steps:
       - name: Slack
-        uses: 8398a7/action-slack@v3
+        uses: 8398a7/action-slack@77eaa4f1c608a7d68b38af4e3f739dcd8cba273e # v3
         with:
           status: custom
           custom_payload: |

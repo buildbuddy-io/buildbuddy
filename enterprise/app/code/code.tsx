@@ -1,20 +1,22 @@
-import React from "react";
-import rpcService from "../../../app/service/rpc_service";
-import { User } from "../../../app/auth/auth_service";
-import SidebarNodeComponent, { compareNodes } from "./code_sidebar_node";
-import { Subscription } from "rxjs";
-import * as monaco from "monaco-editor";
 import * as diff from "diff";
-import { runner } from "../../../proto/runner_ts_proto";
+import { ArrowLeft, ArrowUpCircle, ChevronRight, Download, Key, Pencil, Send, XCircle } from "lucide-react";
+import * as monaco from "monaco-editor";
+import React from "react";
+import { Subscription } from "rxjs";
+import alert_service from "../../../app/alert/alert_service";
+import { User } from "../../../app/auth/auth_service";
+import { FilledButton, OutlinedButton } from "../../../app/components/button/button";
+import Spinner from "../../../app/components/spinner/spinner";
+import rpcService from "../../../app/service/rpc_service";
 import { git } from "../../../proto/git_ts_proto";
+import { runner } from "../../../proto/runner_ts_proto";
 import CodeBuildButton from "./code_build_button";
 import CodeEmptyStateComponent from "./code_empty";
-import { ArrowLeft, ArrowUpCircle, ChevronRight, Download, Key, Send, XCircle } from "lucide-react";
-import Spinner from "../../../app/components/spinner/spinner";
-import { OutlinedButton, FilledButton } from "../../../app/components/button/button";
 import { createPullRequest, updatePullRequest } from "./code_pull_request";
-import alert_service from "../../../app/alert/alert_service";
+import SidebarNodeComponent, { compareNodes } from "./code_sidebar_node";
 
+import Long from "long";
+import capabilities from "../../../app/capabilities/capabilities";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -23,21 +25,22 @@ import Dialog, {
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
 import Modal from "../../../app/components/modal/modal";
+import SearchBar from "../../../app/components/search_bar/search_bar";
+import error_service from "../../../app/errors/error_service";
+import { GithubIcon } from "../../../app/icons/github";
+import picker_service, { PickerModel } from "../../../app/picker/picker_service";
+import router from "../../../app/router/router";
+import { linkReadWriteGitHubAppURL } from "../../../app/util/github";
 import { parseLcov } from "../../../app/util/lcov";
 import { github } from "../../../proto/github_ts_proto";
-import Long from "long";
-import ModuleSidekick from "../sidekick/module/module";
-import BazelVersionSidekick from "../sidekick/bazelversion/bazelversion";
-import BazelrcSidekick from "../sidekick/bazelrc/bazelrc";
-import BuildFileSidekick from "../sidekick/buildfile/buildfile";
-import error_service from "../../../app/errors/error_service";
 import { build } from "../../../proto/remote_execution_ts_proto";
 import { search } from "../../../proto/search_ts_proto";
+import { getLangHintFromFilePath } from "../monaco/monaco";
 import OrgPicker from "../org_picker/org_picker";
-import capabilities from "../../../app/capabilities/capabilities";
-import router from "../../../app/router/router";
-import picker_service, { PickerModel } from "../../../app/picker/picker_service";
-import { GithubIcon } from "../../../app/icons/github";
+import BazelrcSidekick from "../sidekick/bazelrc/bazelrc";
+import BazelVersionSidekick from "../sidekick/bazelversion/bazelversion";
+import BuildFileSidekick from "../sidekick/buildfile/buildfile";
+import ModuleSidekick from "../sidekick/module/module";
 
 interface Props {
   user: User;
@@ -67,6 +70,8 @@ interface State {
   prBranch: string;
   prTitle: string;
   prBody: string;
+
+  loading: boolean;
 
   requestingReview: boolean;
   updatingPR: boolean;
@@ -116,6 +121,8 @@ export default class CodeComponent extends React.Component<Props, State> {
     prBranch: "",
     prNumber: new Long(0),
 
+    loading: false,
+
     requestingReview: false,
     updatingPR: false,
     reviewRequestModalVisible: false,
@@ -158,8 +165,16 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.diffEditor?.layout();
   }
 
+  needsGithubLink() {
+    return this.currentRepo() && (!this.isSingleFile() || this.isLcov()) && !this.props.user.githubLinked;
+  }
+
+  isLcov() {
+    return Boolean(this.props.search.get("lcov"));
+  }
+
   isSingleFile() {
-    return Boolean(this.props.search.get("bytestream_url")) || Boolean(this.props.search.get("lcov"));
+    return Boolean(this.props.search.get("bytestream_url")) || this.isLcov();
   }
 
   componentDidMount() {
@@ -206,15 +221,22 @@ export default class CodeComponent extends React.Component<Props, State> {
     }
     picker_service.show(picker);
     picker_service.picked.subscribe((path) => {
-      this.navigateToPath(path);
-      if (this.state.fullPathToModelMap.has(path)) {
-        this.setModel(path, this.state.fullPathToModelMap.get(path));
-      } else {
-        this.fetchContentForPath(path).then((response) => {
-          this.navigateToContent(path, response.content);
-        });
+      if (!path) {
+        return;
       }
+      this.fetchIfNeededAndNavigate(path);
     });
+  }
+
+  fetchIfNeededAndNavigate(path: string, additionalParams = "") {
+    this.navigateToPath(path + additionalParams);
+    if (this.state.fullPathToModelMap.has(path)) {
+      this.setModel(path, this.state.fullPathToModelMap.get(path));
+    } else {
+      this.fetchContentForPath(path).then((response) => {
+        this.navigateToContent(path, response.content);
+      });
+    }
   }
 
   parseGithubUrl(githubUrl: string) {
@@ -255,11 +277,15 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   getRef() {
-    return this.state.commitSHA || this.getBranch();
+    return this.props.search.get("commit") || this.state.commitSHA || this.getBranch();
   }
 
   getBranch() {
     return this.props.search.get("branch") || this.state.repoResponse?.defaultBranch;
+  }
+
+  getQuery() {
+    return this.props.search.get("pq");
   }
 
   fetchInitialContent() {
@@ -271,80 +297,44 @@ export default class CodeComponent extends React.Component<Props, State> {
     if (!this.currentRepo() && !this.isSingleFile()) {
       return;
     }
-
     window.addEventListener("resize", () => this.handleWindowResize());
-    window.addEventListener("hashchange", () => this.focusLineNumber());
+    window.addEventListener("hashchange", () => this.focusLineNumberAndHighlightQuery());
 
     this.editor = monaco.editor.create(this.codeViewer.current!, {
-      value: ["// Welcome to BuildBuddy Code!", "", "// Click on a file to the left to get start editing."].join("\n"),
-      theme: "vs",
-      readOnly: this.isSingleFile(),
+      value: "",
+      theme: document.documentElement.classList.contains("dark") ? "vs-dark" : "vs",
+      readOnly: this.isSingleFile() || Boolean(this.getQuery()),
     });
+
     this.forceUpdate();
 
     const bytestreamURL = this.props.search.get("bytestream_url") || "";
-    const invocationID = this.props.search.get("invocation_id") || "";
-    const zip = this.props.search.get("z") || undefined;
-    let filename = this.props.search.get("filename");
-    if (this.isSingleFile() && bytestreamURL) {
-      rpcService.fetchBytestreamFile(bytestreamURL, invocationID, "text", { zip }).then((result) => {
-        let path = monaco.Uri.file(filename || "file");
-        this.setModel(path.path, monaco.editor.createModel(result, langFromPath(path.path), path));
-      });
+    const compareBytestreamURL = this.props.search.get("compare_bytestream_url") || "";
+    if (compareBytestreamURL) {
+      this.showBytestreamCompare();
+      return;
+    } else if (this.isSingleFile() && bytestreamURL) {
+      this.showBytestreamFile();
       return;
     }
-
-    const lcovURL = this.props.search.get("lcov");
-    const commit = this.props.search.get("commit");
-    if (this.isSingleFile() && lcovURL) {
-      rpcService.service
-        .getGithubContent(
-          new github.GetGithubContentRequest({
-            owner: this.currentOwner(),
-            repo: this.currentRepo(),
-            path: this.currentPath(),
-            ref: commit || this.getRef(),
-          })
-        )
-        .then((response) => {
-          this.navigateToContent(this.currentPath(), response.content);
-          rpcService.fetchBytestreamFile(lcovURL, invocationID, "text").then((result) => {
-            let records = parseLcov(result);
-            for (let record of records) {
-              if (record.sourceFile == this.currentPath()) {
-                this.editor?.deltaDecorations(
-                  [],
-                  record.data.map((r) => {
-                    const parts = r.split(",");
-                    const lineNum = parseInt(parts[0]);
-                    const hit = parts[1] == "1";
-                    return {
-                      range: new monaco.Range(lineNum, 0, lineNum, 0),
-                      options: {
-                        isWholeLine: true,
-                        className: hit ? "codeCoverageHit" : "codeCoverageMiss",
-                        marginClassName: hit ? "codeCoverageHit" : "codeCoverageMiss",
-                        minimap: { color: hit ? "#c5e1a5" : "#ef9a9a", position: 1 },
-                      },
-                    };
-                  })
-                );
-              }
-            }
-            console.log(result);
-          });
-        });
+    if (this.isSingleFile() && this.isLcov()) {
+      this.showLcov();
       return;
     }
 
     if (this.currentPath()) {
       if (!this.state.fullPathToModelMap.has(this.currentPath())) {
-        this.fetchContentForPath(this.currentPath()).then((response) => {
-          this.navigateToContent(this.currentPath(), response.content);
-        });
+        this.setState({ loading: true });
+        this.fetchContentForPath(this.currentPath())
+          .then((response) => {
+            this.navigateToContent(this.currentPath(), response.content);
+            this.focusLineNumberAndHighlightQuery();
+          })
+          .catch((e) => error_service.handleError(e))
+          .finally(() => this.setState({ loading: false }));
+      } else {
+        this.focusLineNumberAndHighlightQuery();
       }
-
-      this.focusLineNumber();
 
       if (this.state.mergeConflicts.has(this.currentPath())) {
         this.handleViewConflictClicked(
@@ -357,19 +347,51 @@ export default class CodeComponent extends React.Component<Props, State> {
       } else {
         this.editor.setModel(this.state.fullPathToModelMap.get(this.currentPath()) || null);
       }
+    } else {
+      this.editor.setValue(
+        ["// Welcome to BuildBuddy Code!", "", "// Click on a file to the left to get start editing."].join("\n")
+      );
     }
 
     this.editor.onDidChangeModelContent(() => {
       this.handleContentChanged();
+      this.highlightQuery();
     });
   }
 
-  focusLineNumber() {
+  highlightQuery() {
+    if (this.getQuery()) {
+      let ranges = this.editor
+        ?.getModel()
+        ?.findMatches(
+          this.getQuery()!,
+          /* searchOnlyEditableRanges= */ false,
+          /* isRegex= */ true,
+          /* matchCase= */ false,
+          /* wordSeparators= */ null,
+          /* captureMatches= */ false
+        );
+      this.editor?.removeDecorations(
+        this.editor
+          ?.getModel()
+          ?.getAllDecorations()
+          .map((d) => d.id) || []
+      );
+      this.editor?.createDecorationsCollection(
+        ranges?.map((r) => {
+          return { range: r.range, options: { inlineClassName: "code-query-highlight" } };
+        })
+      );
+    }
+  }
+
+  focusLineNumberAndHighlightQuery() {
     let focusedLineNumber = window.location.hash.startsWith("#L") ? parseInt(window.location.hash.substr(2)) : 0;
     setTimeout(() => {
       this.editor?.setSelection(new monaco.Selection(focusedLineNumber, 0, focusedLineNumber, 0));
       this.editor?.revealLinesInCenter(focusedLineNumber, focusedLineNumber);
       this.editor?.focus();
+      this.highlightQuery();
     });
   }
 
@@ -454,7 +476,8 @@ export default class CodeComponent extends React.Component<Props, State> {
       .then((treeResponse) => {
         console.log(treeResponse);
         this.updateState({ repoResponse: repoResponse, treeResponse: treeResponse, commitSHA: treeResponse.sha });
-      });
+      })
+      .catch((e) => error_service.handleError(e));
   }
 
   isNewFile(node: github.TreeNode) {
@@ -463,6 +486,103 @@ export default class CodeComponent extends React.Component<Props, State> {
 
   isDirectory(node: github.TreeNode | undefined) {
     return node?.type === "tree";
+  }
+
+  async modelForBytestreamUrl(bytestreamURL: string, invocationID: string, path: string, zip?: string) {
+    let model = getOrCreateModel(path + "-error", "File not found in cache.");
+    await rpcService
+      .fetchBytestreamFile(bytestreamURL, invocationID, "text", { zip })
+      .then((result) => {
+        model = getOrCreateModel(path, result);
+      })
+      .catch(() => {});
+    return model;
+  }
+
+  async showBytestreamCompare() {
+    this.setState({ loading: true });
+    const bytestreamURL = this.props.search.get("bytestream_url") || "";
+    const invocationID = this.props.search.get("invocation_id") || "";
+    const zip = this.props.search.get("z") || undefined;
+    let filename = this.props.search.get("filename") || "file";
+
+    const compareBytestreamURL = this.props.search.get("compare_bytestream_url") || "";
+    const compareInvocationID = this.props.search.get("compare_invocation_id") || "";
+    let compareFilename = this.props.search.get("compare_filename") || "";
+
+    let modelA = this.modelForBytestreamUrl(bytestreamURL, invocationID, filename, zip);
+    let modelB = this.modelForBytestreamUrl(compareBytestreamURL, compareInvocationID, "diff-" + compareFilename, zip);
+
+    if (!this.diffEditor) {
+      this.diffEditor = monaco.editor.createDiffEditor(this.diffViewer.current!);
+    }
+    let diffModel = { original: await modelA, modified: await modelB };
+    this.diffEditor?.setModel(diffModel);
+    this.state.fullPathToDiffModelMap.set(filename, diffModel);
+    this.updateState({ loading: false, fullPathToDiffModelMap: this.state.fullPathToDiffModelMap }, () => {
+      this.diffEditor?.layout();
+    });
+  }
+
+  async showBytestreamFile() {
+    this.setState({ loading: true });
+    const bytestreamURL = this.props.search.get("bytestream_url") || "";
+    const invocationID = this.props.search.get("invocation_id") || "";
+    const zip = this.props.search.get("z") || undefined;
+    let filename = this.props.search.get("filename") || "file";
+
+    let modelA = await this.modelForBytestreamUrl(bytestreamURL, invocationID, filename, zip);
+    this.setState({ loading: false });
+
+    this.setModel(filename, modelA);
+  }
+
+  async showLcov() {
+    this.setState({ loading: true });
+    const commit = this.props.search.get("commit");
+    const lcovURL = this.props.search.get("lcov")!;
+    const invocationID = this.props.search.get("invocation_id") || "";
+
+    rpcService.service
+      .getGithubContent(
+        new github.GetGithubContentRequest({
+          owner: this.currentOwner(),
+          repo: this.currentRepo(),
+          path: this.currentPath(),
+          ref: commit || this.getRef(),
+        })
+      )
+      .then((response) => {
+        this.navigateToContent(this.currentPath(), response.content);
+        rpcService.fetchBytestreamFile(lcovURL, invocationID, "text").then((result) => {
+          let records = parseLcov(result);
+          for (let record of records) {
+            if (record.sourceFile == this.currentPath()) {
+              this.editor?.deltaDecorations(
+                [],
+                record.data.map((r) => {
+                  const parts = r.split(",");
+                  const lineNum = parseInt(parts[0]);
+                  const hit = parseInt(parts[1]) > 0;
+                  return {
+                    range: new monaco.Range(lineNum, 0, lineNum, 0),
+                    options: {
+                      isWholeLine: true,
+                      className: hit ? "codeCoverageHit" : "codeCoverageMiss",
+                      marginClassName: hit ? "codeCoverageHit" : "codeCoverageMiss",
+                      minimap: { color: hit ? "#c5e1a5" : "#ef9a9a", position: 1 },
+                    },
+                  };
+                })
+              );
+            }
+          }
+          console.log(result);
+        });
+      })
+      .finally(() => {
+        this.setState({ loading: false });
+      });
   }
 
   // TODO(siggisim): Support moving files around
@@ -529,7 +649,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     });
     let model = this.state.fullPathToModelMap.get(fullPath);
     if (!model) {
-      model = monaco.editor.createModel(fileContents, langFromPath(fullPath), monaco.Uri.file(fullPath));
+      model = monaco.editor.createModel(fileContents, getLangHintFromFilePath(fullPath), monaco.Uri.file(fullPath));
       this.state.fullPathToModelMap.set(fullPath, model);
       this.updateState({ fullPathToModelMap: this.state.fullPathToModelMap });
     }
@@ -548,7 +668,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   setModel(fullPath: string, model: monaco.editor.ITextModel | undefined) {
     this.state.tabs.set(fullPath, fullPath);
     this.editor?.setModel(model || null);
-    this.updateState({ tabs: this.state.tabs });
+    this.updateState({ tabs: this.state.tabs }, () => this.focusLineNumberAndHighlightQuery());
   }
 
   navigateToPath(path: string) {
@@ -725,7 +845,7 @@ export default class CodeComponent extends React.Component<Props, State> {
 
     let model = this.state.fullPathToModelMap.get(path);
     if (!model) {
-      model = monaco.editor.createModel(contents, langFromPath(path), monaco.Uri.file(path));
+      model = monaco.editor.createModel(contents, getLangHintFromFilePath(path), monaco.Uri.file(path));
       this.state.fullPathToModelMap.set(path, model);
     }
     this.navigateToPath(path);
@@ -764,12 +884,11 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.updateState({ temporaryFiles: this.state.temporaryFiles });
   }
 
+  // TODO: Have a better way to manage which features require write permissions
+  // and gate them for users that have installed the read-only app.
   handleGitHubClicked() {
-    const params = new URLSearchParams({
-      redirect_url: window.location.href,
-      ...(this.props.user.displayUser.userId && { user_id: this.props.user.displayUser.userId.id }),
-    });
-    window.location.href = `/auth/github/app/link/?${params}`;
+    const userID = this.props.user.displayUser.userId?.id || "";
+    window.location.href = linkReadWriteGitHubAppURL(userID, "");
   }
 
   handleUpdatePR() {
@@ -1082,6 +1201,12 @@ export default class CodeComponent extends React.Component<Props, State> {
     event.stopPropagation();
   }
 
+  handleEditClicked() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("pq");
+    window.location.href = url.href;
+  }
+
   updateState(newState: Partial<State>, callback?: VoidFunction) {
     this.setState(newState as State, () => {
       this.saveState();
@@ -1138,7 +1263,19 @@ export default class CodeComponent extends React.Component<Props, State> {
               </a>
             )}
             <a href="/">
-              <img alt="BuildBuddy Code" src="/image/b_dark.svg" className="logo" />
+              <svg
+                className="logo"
+                width="68"
+                height="56"
+                viewBox="0 0 68 56"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M62.8577 29.2897C61.8246 27.7485 60.4825 26.5113 58.8722 25.5604C59.7424 24.8245 60.493 23.998 61.1109 23.0756C62.5071 21.0593 63.1404 18.6248 63.1404 15.8992C63.1404 13.4509 62.7265 11.2489 61.7955 9.37839C60.9327 7.5562 59.6745 6.07124 58.0282 4.96992C56.4328 3.85851 54.5665 3.09733 52.4736 2.64934C50.4289 2.21166 48.1997 2 45.7961 2H4H2V4V52V54H4H46.4691C48.7893 54 51.0473 53.7102 53.2377 53.1272C55.5055 52.5357 57.5444 51.6134 59.3289 50.3425C61.2008 49.0417 62.6877 47.3709 63.7758 45.3524L63.7808 45.3431L63.7857 45.3338C64.9054 43.2032 65.4286 40.7655 65.4286 38.084C65.4286 34.7488 64.6031 31.7823 62.8577 29.2897Z"
+                  stroke-width="4"
+                  shape-rendering="geometricPrecision"
+                />
+              </svg>
             </a>
           </div>
           <div className="code-menu-breadcrumbs">
@@ -1151,15 +1288,19 @@ export default class CodeComponent extends React.Component<Props, State> {
               <>
                 <div className="code-menu-breadcrumbs-environment">
                   {/* <a href="#">my-workspace</a> /{" "} TODO: add workspace to breadcrumb */}
-                  <a target="_blank" href={`http://github.com/${this.currentOwner()}`}>
-                    {this.currentOwner()}
-                  </a>{" "}
-                  <ChevronRight />
+                  {!this.getQuery() && (
+                    <>
+                      <a target="_blank" href={`http://github.com/${this.currentOwner()}`}>
+                        {this.currentOwner()}
+                      </a>{" "}
+                      <ChevronRight />
+                    </>
+                  )}
                   <a target="_blank" href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}`}>
                     {this.currentRepo()}
                   </a>
                 </div>
-                {this.getBranch() && this.state.commitSHA != this.getBranch() && (
+                {this.getBranch() && !this.getQuery() && this.getRef() != this.getBranch() && (
                   <>
                     <ChevronRight />
                     <a
@@ -1170,20 +1311,20 @@ export default class CodeComponent extends React.Component<Props, State> {
                     </a>
                   </>
                 )}
-                {this.state.commitSHA && (
+                {this.getRef() && !this.getQuery() && (
                   <>
                     <ChevronRight />
                     <a
                       target="_blank"
-                      title={this.state.commitSHA}
-                      href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/commit/${
-                        this.state.commitSHA
-                      }`}>
-                      {this.state.commitSHA?.slice(0, 7)}
+                      title={this.getRef()}
+                      href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/commit/${this.getRef()}`}>
+                      {this.getRef()?.slice(0, 7)}
                     </a>{" "}
-                    <span onClick={this.handleUpdateCommitSha.bind(this, undefined)}>
-                      <ArrowUpCircle className="code-update-commit" />
-                    </span>{" "}
+                    {!this.getQuery() && (
+                      <span onClick={this.handleUpdateCommitSha.bind(this, undefined)}>
+                        <ArrowUpCircle className="code-update-commit" />
+                      </span>
+                    )}{" "}
                   </>
                 )}
                 {this.currentPath() && (
@@ -1197,6 +1338,49 @@ export default class CodeComponent extends React.Component<Props, State> {
               </>
             )}
           </div>
+          {Boolean(this.getQuery()) && (
+            <SearchBar<search.Result>
+              placeholder="Search..."
+              title="Results"
+              fetchResults={async (query) => {
+                return (
+                  await rpcService.service.search(
+                    new search.SearchRequest({ query: new search.Query({ term: query }) })
+                  )
+                ).results;
+              }}
+              onResultPicked={(result: any, query: string) => {
+                this.fetchIfNeededAndNavigate(result.filename, `?pq=${query}&commit=${result.sha}`);
+              }}
+              emptyState={
+                <div className="code-editor-search-bar-empty-state">
+                  <div className="code-editor-search-bar-empty-state-description">Search for files and code.</div>
+                  <div className="code-editor-search-bar-empty-state-examples">Examples</div>
+                  <ul>
+                    <li>
+                      <code>case:yes Hello World</code>
+                    </li>
+                    <li>
+                      <code>lang:css padding-(left|right)</code>
+                    </li>
+                    <li>
+                      <code>lang:go flag.String</code>
+                    </li>
+                    <li>
+                      <code>filepath:package.json</code>
+                    </li>
+                  </ul>
+                </div>
+              }
+              renderResult={(r) => (
+                <div className="code-editor-search-bar-result">
+                  <div>{r.filename}</div>
+                  <pre>{r.snippets.map((s) => s.lines).pop()}</pre>
+                </div>
+              )}
+            />
+          )}
+          {!this.getQuery() && <div className="search-bar-container"></div>}
           <OrgPicker user={this.props.user} floating={true} inline={true} />
           {this.isSingleFile() && (
             <div className="code-menu-actions">
@@ -1205,26 +1389,47 @@ export default class CodeComponent extends React.Component<Props, State> {
                 onClick={() => {
                   const bsUrl = this.props.search.get("bytestream_url");
                   const invocationId = this.props.search.get("invocation_id");
+                  const filename = this.props.search.get("filename") || "";
                   if (!bsUrl || !invocationId) {
                     return;
                   }
                   const zip = this.props.search.get("z");
                   if (zip) {
-                    rpcService.downloadBytestreamZipFile(
-                      this.props.search.get("filename") || "",
-                      bsUrl,
-                      zip,
-                      invocationId
-                    );
+                    rpcService.downloadBytestreamZipFile(filename, bsUrl, zip, invocationId);
                   } else {
-                    rpcService.downloadBytestreamFile(this.props.search.get("filename") || "", bsUrl, invocationId);
+                    rpcService.downloadBytestreamFile(filename, bsUrl, invocationId);
                   }
                 }}>
-                <Download /> Download File
+                <Download /> Download File {this.props.search.get("compare_filename") ? "A" : ""}
+              </OutlinedButton>
+              {this.props.search.get("compare_bytestream_url") && (
+                <OutlinedButton
+                  className="code-menu-download-button"
+                  onClick={() => {
+                    const filename = this.props.search.get("filename") || "";
+                    const invocationId = this.props.search.get("invocation_id") || "";
+                    const compareUrl = this.props.search.get("compare_bytestream_url") || "";
+                    const compareInvocationID = this.props.search.get("compare_invocation_id");
+                    const compareFilename = this.props.search.get("compare_filename") || "";
+                    rpcService.downloadBytestreamFile(
+                      filename == compareFilename ? filename + ".modified" : compareFilename,
+                      compareUrl,
+                      compareInvocationID || invocationId
+                    );
+                  }}>
+                  <Download /> Download File B
+                </OutlinedButton>
+              )}
+            </div>
+          )}
+          {Boolean(this.getQuery()) && (
+            <div className="code-menu-actions">
+              <OutlinedButton className="request-review-button" onClick={this.handleEditClicked.bind(this)}>
+                <Pencil className="icon green" /> Edit
               </OutlinedButton>
             </div>
           )}
-          {!this.isSingleFile() && this.currentRepo() && (
+          {!this.isSingleFile() && this.currentRepo() && !this.getQuery() && (
             <div className="code-menu-actions">
               {this.state.changes.size > 0 && !this.state.prBranch && (
                 <OutlinedButton
@@ -1294,7 +1499,7 @@ export default class CodeComponent extends React.Component<Props, State> {
             </div>
           )}
           <div className="code-container">
-            {!this.isSingleFile() && (
+            {!this.isSingleFile() && !this.getQuery() && (
               <div className="code-viewer-tabs">
                 {[...this.state.tabs.keys()].reverse().map((t) => (
                   <div
@@ -1314,17 +1519,28 @@ export default class CodeComponent extends React.Component<Props, State> {
             )}
             <div className="code-viewer-container">
               {!this.currentRepo() && !this.isSingleFile() && <CodeEmptyStateComponent />}
-              {this.currentRepo() && !this.isSingleFile() && !this.props.user.githubLinked && (
+              {this.needsGithubLink() && (
                 <div className="code-editor-link-github github-button">
                   <button onClick={this.handleGitHubClicked.bind(this)}>
                     <GithubIcon /> Continue with GitHub
                   </button>
                 </div>
               )}
-              <div className={`code-viewer ${showDiffView ? "hidden-viewer" : ""}`} ref={this.codeViewer} />
-              <div className={`diff-viewer ${showDiffView ? "" : "hidden-viewer"}`} ref={this.diffViewer} />
+              {this.state.loading && <Spinner className="code-spinner" />}
+              <div
+                className={`code-viewer ${this.state.loading || this.needsGithubLink() ? "hidden-viewer" : ""} ${
+                  showDiffView ? "hidden-viewer" : ""
+                }`}
+                ref={this.codeViewer}
+              />
+              <div
+                className={`diff-viewer ${this.state.loading || this.needsGithubLink() ? "hidden-viewer" : ""} ${
+                  showDiffView ? "" : "hidden-viewer"
+                }`}
+                ref={this.diffViewer}
+              />
             </div>
-            {this.state.changes.size > 0 && (
+            {this.state.changes.size > 0 && !this.getQuery() && (
               <div className="code-diff-viewer">
                 <div className="code-diff-viewer-title">
                   Changes{" "}
@@ -1397,16 +1613,22 @@ export default class CodeComponent extends React.Component<Props, State> {
               </div>
             )}
           </div>
-          {this.editor && (this.currentPath()?.endsWith("MODULE.bazel") || this.currentPath()?.endsWith("MODULE")) && (
-            <ModuleSidekick editor={this.editor} />
+          {!this.getQuery() && (
+            <>
+              {this.editor &&
+                (this.currentPath()?.endsWith("MODULE.bazel") || this.currentPath()?.endsWith("MODULE")) && (
+                  <ModuleSidekick editor={this.editor} />
+                )}
+              {this.editor &&
+                (this.currentPath()?.endsWith("BUILD.bazel") || this.currentPath()?.endsWith("BUILD")) && (
+                  <BuildFileSidekick editor={this.editor} onBazelCommand={(c) => this.handleBuildClicked(c)} />
+                )}
+              {this.editor && this.currentPath()?.endsWith(".bazelversion") && (
+                <BazelVersionSidekick editor={this.editor} />
+              )}
+              {this.editor && this.currentPath()?.endsWith(".bazelrc") && <BazelrcSidekick editor={this.editor} />}
+            </>
           )}
-          {this.editor && (this.currentPath()?.endsWith("BUILD.bazel") || this.currentPath()?.endsWith("BUILD")) && (
-            <BuildFileSidekick editor={this.editor} onBazelCommand={(c) => this.handleBuildClicked(c)} />
-          )}
-          {this.editor && this.currentPath()?.endsWith(".bazelversion") && (
-            <BazelVersionSidekick editor={this.editor} />
-          )}
-          {this.editor && this.currentPath()?.endsWith(".bazelrc") && <BazelrcSidekick editor={this.editor} />}
         </div>
         {this.state.showContextMenu && (
           <div className="context-menu-container">
@@ -1536,11 +1758,14 @@ function getOrCreateModel(url: string, value: string) {
     existingModel.setValue(value);
     return existingModel;
   }
-  return monaco.editor.createModel(value, langFromPath(url), monaco.Uri.file(url));
+  return monaco.editor.createModel(value, getLangHintFromFilePath(url), monaco.Uri.file(url));
 }
 
 // This revives any non-serializable objects in state from their seralized form.
 function stateReviver(key: string, value: any) {
+  if (key == "loading") {
+    return false;
+  }
   if (typeof value === "object" && value !== null) {
     if (value.dataType === "Map") {
       return new Map(value.value);
@@ -1567,20 +1792,4 @@ function stateReviver(key: string, value: any) {
     }
   }
   return value;
-}
-
-function langFromPath(path: string) {
-  if (!path) {
-    return undefined;
-  }
-  if (
-    path.endsWith(".bazel") ||
-    path.endsWith("WORKSPACE") ||
-    path.endsWith("BUILD") ||
-    path.endsWith("MODULE") ||
-    path.endsWith(".bzl")
-  ) {
-    return "python";
-  }
-  return undefined;
 }

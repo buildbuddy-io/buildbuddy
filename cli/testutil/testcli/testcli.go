@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,17 +30,21 @@ var (
 	bbRunfilePath string
 
 	streamOutputs = flag.Bool("test_stream_cli_output", false, "Show live CLI output during test execution.")
-	verbose       = flag.Bool("test_cli_verbose", false, "Whether to add --verbose=1 to the CLI.")
+	verbose       = flag.Bool("test_cli_verbose", false, "Whether to add --verbose to the CLI.")
 
 	initEnvOnce sync.Once
 )
 
 // BinaryPath returns the path to the CLI binary.
+// It's usually preferable to use Command() instead.
 func BinaryPath(t *testing.T) string {
 	return testfs.RunfilePath(t, bbRunfilePath)
 }
 
 // Command returns an *exec.Cmd for the CLI binary.
+//
+// Prefer using BazelCommand for bazel-specific commands, such as build, test, query
+// as the additional flags will help improve hermeticity of the tests.
 func Command(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
 	initEnvOnce.Do(func() {
 		// Need a HOME dir for .cache and .config dirs.
@@ -51,7 +56,7 @@ func Command(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
 		require.NoError(t, err)
 	})
 	if *verbose {
-		args = append(args, "--verbose=1")
+		args = append([]string{"--verbose"}, args...)
 	}
 	cmd := exec.Command(BinaryPath(t), args...)
 	cmd.Dir = workspacePath
@@ -62,8 +67,16 @@ func Command(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
 	return cmd
 }
 
+// BazelCommand returns a bazel-specific command with system and home bazelrc ignored
+// to ensure hermetic testing result.
+func BazelCommand(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
+	return Command(t, workspacePath, append([]string{"--nosystem_rc", "--nohome_rc"}, args...)...)
+}
+
 // BazeliskCommand returns a bazelisk command to invoke the CLI via the
 // .bazelversion trick.
+// It's usually preferable to use BazelCommand() except when specifically
+// testing bazelisk integration.
 func BazeliskCommand(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
 	cmd := Command(t, workspacePath, args...)
 	cmd.Args[0] = testbazelisk.BinaryPath(t)
@@ -84,6 +97,25 @@ func Output(cmd *exec.Cmd) ([]byte, error) {
 	return buf.Bytes(), err
 }
 
+// SplitOutput runs the command and returns stdout and stderr in separate
+// buffers. It allows streaming CLI outputs for debugging purposes.
+func SplitOutput(cmd *exec.Cmd) (stdout, stderr []byte, _ error) {
+	stdoutBuf := bytes.NewBuffer(nil)
+	var stdoutW io.Writer = stdoutBuf
+	if *streamOutputs {
+		stdoutW = io.MultiWriter(stdoutW, os.Stderr)
+	}
+	stderrBuf := bytes.NewBuffer(nil)
+	var stderrW io.Writer = stderrBuf
+	if *streamOutputs {
+		stderrW = io.MultiWriter(stderrW, os.Stderr)
+	}
+	cmd.Stdout = stdoutW
+	cmd.Stderr = stderrW
+	err := cmd.Run()
+	return stdoutBuf.Bytes(), stderrBuf.Bytes(), err
+}
+
 // CombinedOutput is like cmd.CombinedOutput() except that it allows streaming
 // CLI outputs for debugging purposes.
 func CombinedOutput(cmd *exec.Cmd) ([]byte, error) {
@@ -101,8 +133,7 @@ func CombinedOutput(cmd *exec.Cmd) ([]byte, error) {
 // NewWorkspace creates a new bazel workspace with .bazelversion configured
 // to use the pre-downloaded bazel binary from test runfiles.
 func NewWorkspace(t *testing.T) string {
-	ws := testbazel.MakeTempWorkspace(t, map[string]string{
-		"WORKSPACE":     "",
+	ws := testbazel.MakeTempModule(t, map[string]string{
 		".bazelversion": testbazel.BinaryPath(t),
 	})
 	// Make it a git workspace to test git metadata.
@@ -133,6 +164,10 @@ type Terminal struct {
 	output *lockingbuffer.LockingBuffer
 	// File is the file used for writing to the terminal.
 	File *os.File
+
+	// copyDone is closed when the io.Copy goroutine that reads from the
+	// PTY controller (ptmx) finishes (either EOF or error).
+	copyDone chan struct{}
 }
 
 // PTY returns a pseudoterminal for use in tests.
@@ -145,21 +180,29 @@ func PTY(t *testing.T) *Terminal {
 	})
 	term := &Terminal{
 		t: t, File: tty, output: lockingbuffer.New(),
+		copyDone: make(chan struct{}),
 	}
 	w := io.Writer(term.output)
 	if *streamOutputs {
 		w = io.MultiWriter(term.output, os.Stderr)
 	}
-	go io.Copy(w, ptmx)
+	go func() {
+		defer close(term.copyDone)
+		io.Copy(w, ptmx)
+	}()
 	return term
 }
 
 // Run runs the given command, writing the output to the terminal.
-func (t *Terminal) Run(cmd *exec.Cmd) {
+func (t *Terminal) Run(cmd *exec.Cmd) (int, error) {
 	cmd.Stdout = t.File
 	cmd.Stderr = t.File
 	err := cmd.Run()
-	require.NoError(t.t, err)
+	// Close the tty so the ptmx reader gets EOF, then wait for the
+	// io.Copy goroutine to finish draining all output.
+	_ = t.File.Close()
+	<-t.copyDone
+	return cmd.ProcessState.ExitCode(), err
 }
 
 // Raw returns the raw terminal content.
@@ -171,8 +214,9 @@ func (t *Terminal) Raw() string {
 // screen. For example, if the raw contents contain an ANSI sequence to delete a
 // line, that line will not be returned by this function.
 func (t *Terminal) Render() string {
-	screen := terminal.NewScreenWriter()
-	_, err := screen.Write([]byte(t.Raw()))
+	screen, err := terminal.NewScreenWriter(math.MaxInt, 0)
 	require.NoError(t.t, err)
-	return string(screen.Render())
+	_, err = screen.Write([]byte(t.Raw()))
+	require.NoError(t.t, err)
+	return string(screen.OutputAccumulator.String() + screen.Render())
 }

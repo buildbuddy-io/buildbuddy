@@ -1,6 +1,8 @@
 syntax = "proto3";
 
+import "proto/capability.proto";
 import "proto/context.proto";
+import "google/protobuf/duration.proto";
 
 package api_key;
 
@@ -17,25 +19,8 @@ message ApiKey {
   // remember what it's for.
   string label = 3;
 
-  // A capability associated with an API key.
-  //
-  // Values are powers of 2 so that bitmask operations can be used
-  // to check capabilities.
-  enum Capability {
-    UNKNOWN_CAPABILITY = 0;
-    // Allows writing to the content-addressable store and action cache.
-    CACHE_WRITE_CAPABILITY = 1;  // 2^0
-    // Allows registering an executor with the scheduler.
-    REGISTER_EXECUTOR_CAPABILITY = 2;  // 2^1
-    // Allows writing to the content-addressable store only.
-    CAS_WRITE_CAPABILITY = 4;  // 2^2
-    // Allows changing org-level settings and managing org users, such as via
-    // the settings UI or via the SCIM API.
-    ORG_ADMIN_CAPABILITY = 8;  // 2^3
-  }
-
   // Capabilities associated with this API key.
-  repeated Capability capability = 4;
+  repeated capability.Capability capability = 4;
 
   // True if this API key is visible to developers.
   bool visible_to_developers = 5;
@@ -45,24 +30,42 @@ message ApiKey {
 
   // Optional time after which this API key is no longer valid.
   int64 expiry_usec = 7;
+
+  // Optional certificate corresponding to this API key, if
+  // requested.
+  Certificate certificate = 8;
+}
+
+message Certificate {
+  // String representation of certificate file.
+  string cert = 1;
+
+  // String representation of key file.
+  string key = 2;
 }
 
 message CreateApiKeyRequest {
   context.RequestContext request_context = 1;
 
-  // The ID of the group to create the API key for.
-  // ex: "GR123456789"
-  string group_id = 2;
+  reserved 2;  // group_id
+
+  // The ID of the user to create the API key for.
+  // Requires ORG_ADMIN capability if different than the authenticated
+  // user.
+  string user_id = 6;
 
   // Optional. The user-specified label of this API key that helps them
   // remember what it's for.
   string label = 3;
 
   // Optional. Capabilities granted to this API key.
-  repeated ApiKey.Capability capability = 4;
+  repeated capability.Capability capability = 4;
 
   // True if this API key should be visible to developers.
   bool visible_to_developers = 5;
+
+  // Optional. Duration after which the API key should no longer be valid.
+  google.protobuf.Duration expires_in = 7;
 }
 
 message CreateApiKeyResponse {
@@ -74,6 +77,10 @@ message CreateApiKeyResponse {
 
 message GetApiKeysRequest {
   context.RequestContext request_context = 1;
+
+  // The ID of the user to get API keys for.
+  // ex: "US123456789"
+  string user_id = 3;
 
   // The ID of the group to get API keys for.
   // ex: "GR123456789"
@@ -93,6 +100,9 @@ message GetApiKeyRequest {
   // The ID of the API key to retrieve.
   // ex: "AK123456789"
   string api_key_id = 2;
+
+  // Whether to populate the certificate for the returned API key.
+  bool include_certificate = 3;
 }
 
 message GetApiKeyResponse {
@@ -118,7 +128,7 @@ message UpdateApiKeyRequest {
   //
   // NOTE: If this is empty, all capabilities will be removed as part of
   // this update.
-  repeated ApiKey.Capability capability = 4;
+  repeated capability.Capability capability = 4;
 
   // True if this API key should be visible to developers.
   bool visible_to_developers = 5;

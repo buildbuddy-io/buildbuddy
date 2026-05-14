@@ -1,19 +1,24 @@
-import React from "react";
-import SetupCodeComponent from "../docs/setup_code";
-import { Profile, readProfile } from "../trace/trace_events";
-import rpcService, { FileEncoding } from "../service/rpc_service";
-import InvocationModel from "./invocation_model";
-import Button from "../components/button/button";
 import { Clock } from "lucide-react";
+import React from "react";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import capabilities from "../capabilities/capabilities";
+import Button from "../components/button/button";
+import LinkButton from "../components/button/link_button";
+import { TextLink } from "../components/link/link";
+import SetupCodeComponent from "../docs/setup_code";
 import errorService from "../errors/error_service";
 import format from "../format/format";
-import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
-import { getTimingDataSuggestion, SuggestionComponent } from "./invocation_suggestion_card";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import rpcService, { FileEncoding } from "../service/rpc_service";
+import TimingProfileDropTarget from "../trace/timing_profile_drop_target";
+import { Profile, readProfile } from "../trace/trace_events";
 import TraceViewer from "../trace/trace_viewer";
+import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
+import InvocationModel from "./invocation_model";
+import { getTimingDataSuggestion, SuggestionComponent } from "./invocation_suggestion_card";
 
 interface Props {
   model: InvocationModel;
+  dark: boolean;
 }
 
 interface State {
@@ -28,6 +33,8 @@ interface State {
   groupBy: string;
   threadPageSize: number;
   eventPageSize: number;
+  localProfileName: string;
+  viewerKey: number;
 }
 
 interface Thread {
@@ -46,8 +53,8 @@ const sortByDurationDescStorageValue = "duration-desc";
 const groupByThreadStorageValue = "thread";
 const groupByAllStorageValue = "all";
 
-export default class InvocationTimingCardComponent extends React.Component<Props, State> {
-  state: State = {
+function createEmptyProfileState() {
+  return {
     profile: null,
     loading: true,
     threadNumPages: 1,
@@ -55,10 +62,18 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     threadMap: new Map<number, Thread>(),
     durationByNameMap: new Map<string, number>(),
     durationByCategoryMap: new Map<string, number>(),
+    localProfileName: "",
+  };
+}
+
+export default class InvocationTimingCardComponent extends React.Component<Props, State> {
+  state: State = {
+    ...createEmptyProfileState(),
     sortBy: window.localStorage[sortByStorageKey] || sortByTimeAscStorageValue,
     groupBy: window.localStorage[groupByStorageKey] || groupByThreadStorageValue,
     threadPageSize: window.localStorage[threadPageSizeStorageKey] || 10,
     eventPageSize: window.localStorage[eventPageSizeStorageKey] || 100,
+    viewerKey: 0,
   };
 
   private progressRef = React.createRef<HTMLDivElement>();
@@ -69,16 +84,26 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
   componentDidUpdate(prevProps: Props) {
     if (this.props.model !== prevProps.model) {
-      this.fetchProfile();
+      this.setState(createEmptyProfileState(), () => this.fetchProfile());
     }
   }
 
   getProfileFile(): build_event_stream.File | undefined {
-    const profileName =
+    // Bazel 8 semi-fixed the profile name with: https://github.com/bazelbuild/bazel/pull/22345
+    const version = this.props.model?.getBazelVersion();
+    if (version && version.major >= 8) {
+      return this.props.model.buildToolLogs?.log.find(
+        (log: build_event_stream.File) => log.name.startsWith("command.profile.") && log.uri
+      );
+    }
+
+    const profilePath =
       this.props.model.structuredCommandLine
         ?.find((scl) => scl.commandLineLabel == "canonical")
         ?.sections?.find((s) => s.sectionLabel == "command options")
-        ?.optionList?.option?.find((o) => o.optionName == "profile")?.optionValue ?? "command.profile.gz";
+        ?.optionList?.option?.find((o) => o.optionName == "profile")
+        ?.optionValue.replaceAll("\\", "/") ?? "command.profile.gz";
+    const profileName = profilePath.substring(profilePath.lastIndexOf("/") + 1);
 
     return this.props.model.buildToolLogs?.log.find(
       (log: build_event_stream.File) => log.name == profileName && log.uri
@@ -124,6 +149,11 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     let profileFile = this.getProfileFile();
     if (!profileFile?.uri) return;
 
+    if (isProfileTooLarge(profileFile)) {
+      this.setState({ loading: false });
+      return;
+    }
+
     let compressionOption = this.props.model.optionsMap.get("json_trace_compression");
     let storedEncoding: FileEncoding = "";
     if (compressionOption === "1" || (profileFile?.name ?? "").endsWith(".gz")) {
@@ -139,32 +169,22 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     };
     rpcService
       .fetchBytestreamFile(profileFile.uri, this.props.model.getInvocationId(), "stream", { init })
-      .then((body) => {
-        if (body === null) throw new Error("response body is null");
-        return readProfile(body, (n) => this.setProgress(n, digestSize, storedEncoding));
+      .then((response) => {
+        if (!response.body) throw new Error("response body is null");
+        return readProfile(response.body, (n) => this.setProgress(n, digestSize, storedEncoding));
       })
       .then((profile) => this.updateProfile(profile))
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ loading: false }));
   }
 
-  downloadProfile() {
-    let profileFile = this.getProfileFile();
-    if (!profileFile?.uri) {
-      return;
-    }
+  private buildDerivedProfileState(profile: Profile) {
+    const threadMap = new Map<number, Thread>();
+    const durationByNameMap = new Map<string, number>();
+    const durationByCategoryMap = new Map<string, number>();
 
-    try {
-      rpcService.downloadBytestreamFile("timing_profile.gz", profileFile.uri, this.props.model.getInvocationId());
-    } catch {
-      console.error("Error downloading bytestream timing profile");
-    }
-  }
-
-  updateProfile(profile: Profile) {
-    this.state.profile = profile;
-    for (let event of this.state.profile?.traceEvents || []) {
-      let thread = this.state.threadMap.get(event.tid) || {
+    for (let event of profile.traceEvents || []) {
+      let thread = threadMap.get(event.tid) || {
         name: "",
         totalDuration: 0,
         id: event.tid,
@@ -172,11 +192,8 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       };
 
       if (event.dur) {
-        this.state.durationByNameMap.set(event.name, (this.state.durationByNameMap.get(event.name) || 0) + event.dur);
-        this.state.durationByCategoryMap.set(
-          event.cat,
-          (this.state.durationByCategoryMap.get(event.cat) || 0) + event.dur
-        );
+        durationByNameMap.set(event.name, (durationByNameMap.get(event.name) || 0) + event.dur);
+        durationByCategoryMap.set(event.cat, (durationByCategoryMap.get(event.cat) || 0) + event.dur);
       }
 
       if (event.ph == "X") {
@@ -188,9 +205,52 @@ export default class InvocationTimingCardComponent extends React.Component<Props
         thread.name = event.args.name;
       }
 
-      this.state.threadMap.set(event.tid, thread);
+      threadMap.set(event.tid, thread);
     }
-    this.setState(this.state);
+
+    return {
+      profile,
+      threadNumPages: 1,
+      threadToNumEventPagesMap: new Map<number, number>(),
+      threadMap,
+      durationByNameMap,
+      durationByCategoryMap,
+      viewerKey: this.state.viewerKey + 1,
+    };
+  }
+
+  updateProfile(profile: Profile, localProfileName = "") {
+    this.setState({
+      ...this.buildDerivedProfileState(profile),
+      loading: false,
+      localProfileName,
+    });
+  }
+
+  private restoreInvocationProfile() {
+    this.setState(createEmptyProfileState(), () => this.fetchProfile());
+  }
+
+  private renderTraceViewer() {
+    return (
+      <TimingProfileDropTarget
+        className="timing-profile-drop-target"
+        onProfileLoaded={this.updateProfile.bind(this)}
+        onProfileLoadError={(e) => errorService.handleError(e)}>
+        {({ dragActive, loadingMessage }) => (
+          <>
+            <TraceViewer key={this.state.viewerKey} profile={this.state.profile!} dark={this.props.dark} />
+            {(dragActive || loadingMessage) && (
+              <div className="timing-profile-drop-overlay">
+                <div className="timing-profile-drop-overlay-text">
+                  {loadingMessage || "Drop a timing profile to render it"}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </TimingProfileDropTarget>
+    );
   }
 
   sortIdAsc(a: any, b: any) {
@@ -273,6 +333,20 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       );
     }
 
+    const profileFile = this.getProfileFile();
+    if (isProfileTooLarge(profileFile)) {
+      const sizeBytes = getProfileSizeBytes(profileFile);
+      const downloadHref = getProfileDownloadHref(profileFile, this.props.model.getInvocationId());
+      return (
+        <>
+          Timing profile is too large to display{sizeBytes ? <> ({format.bytes(sizeBytes)})</> : null}.{" "}
+          <TextLink href={downloadHref} target="_blank">
+            Download profile
+          </TextLink>
+        </>
+      );
+    }
+
     return (
       <>
         <p>Profiling isn't enabled for this invocation. To enable profiling you must add gRPC remote caching.</p>
@@ -311,9 +385,20 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       );
     }
 
+    const profileFile = this.getProfileFile();
+    const downloadHref = getProfileDownloadHref(profileFile, this.props.model.getInvocationId());
+
     return (
       <>
-        <TraceViewer profile={this.state.profile} />
+        {this.state.localProfileName && (
+          <div className="timing-profile-local-banner">
+            <div>
+              Showing local profile <span className="inline-code">{this.state.localProfileName}</span>.
+            </div>
+            <Button onClick={this.restoreInvocationProfile.bind(this)}>Show invocation profile</Button>
+          </div>
+        )}
+        {this.renderTraceViewer()}
         <InvocationBreakdownCardComponent
           durationByNameMap={this.state.durationByNameMap}
           durationByCategoryMap={this.state.durationByCategoryMap}
@@ -326,11 +411,11 @@ export default class InvocationTimingCardComponent extends React.Component<Props
           <div className="content">
             <div className="header">
               <div className="title">All events</div>
-              {Boolean(this.getProfileFile()?.uri) && (
+              {downloadHref && (
                 <div className="button">
-                  <Button className="download-gz-file" onClick={this.downloadProfile.bind(this)}>
-                    Download profile
-                  </Button>
+                  <LinkButton className="download-gz-file" href={downloadHref} target="_blank">
+                    {this.state.localProfileName ? "Download invocation profile" : "Download profile"}
+                  </LinkButton>
                 </div>
               )}
             </div>
@@ -511,4 +596,23 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       </>
     );
   }
+}
+
+function getProfileSizeBytes(profileFile?: build_event_stream.File): number | null {
+  if (!profileFile?.uri) return null;
+  const sizeBytesString = profileFile.uri.split("/").pop();
+  if (!sizeBytesString) return null;
+  const sizeBytes = Number(sizeBytesString);
+  return Number.isFinite(sizeBytes) ? sizeBytes : null;
+}
+
+function isProfileTooLarge(profileFile?: build_event_stream.File) {
+  const maxSizeBytes = Number(capabilities.config.timingProfileMaxSizeBytes || 0);
+  const sizeBytes = getProfileSizeBytes(profileFile);
+  return sizeBytes !== null && maxSizeBytes > 0 && sizeBytes > maxSizeBytes;
+}
+
+function getProfileDownloadHref(profileFile: build_event_stream.File | undefined, invocationId: string) {
+  if (!profileFile?.uri) return "";
+  return rpcService.getBytestreamUrl(profileFile.uri, invocationId, { filename: "timing_profile.gz" });
 }

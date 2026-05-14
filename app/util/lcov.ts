@@ -1,11 +1,26 @@
 /**
  * Takes an lcov file an input and returns a structured lcov object
  */
-export function parseLcov(input: string) {
+
+export interface LcovItem {
+  sourceFile: string;
+  testName: string;
+  functionName: string;
+  numFunctionsFound: number;
+  numFunctionsHit: number;
+  branchData: string[];
+  branchesFound: number;
+  branchesHit: number;
+  data: string[];
+  numLinesFound: number;
+  numLinesHit: number;
+}
+
+export function parseLcov(input: string): Array<LcovItem> {
   const records = input.split("end_of_record");
-  let items = [];
+  let items: Array<LcovItem> = [];
   for (let record of records) {
-    let item = {
+    let item: LcovItem = {
       sourceFile: "",
       testName: "",
       functionName: "",

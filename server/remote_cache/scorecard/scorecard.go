@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -16,7 +16,6 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 )
 
@@ -24,10 +23,6 @@ const (
 	// Default page size for the scorecard when a page token is not included in
 	// the request.
 	defaultScoreCardPageSize = 100
-)
-
-var (
-	bytestreamURIPattern = regexp.MustCompile(`^bytestream://.*/blobs/([a-z0-9]{64})/\d+$`)
 )
 
 // GetCacheScoreCard returns a list of detailed, per-request cache stats.
@@ -58,14 +53,14 @@ func GetCacheScoreCard(ctx context.Context, env environment.Env, req *capb.GetCa
 				// it's okay for scorecards to be missing for prior attempts
 				continue
 			}
-			return nil, err
+			return nil, status.WrapErrorf(err, "read cache scorecard for invocation %s attempt %d", req.GetInvocationId(), attempt)
 		}
 		scorecard.Misses = append(scorecard.Misses, sc.Misses...)
 		scorecard.Results = append(scorecard.Results, sc.Results...)
 	}
 	sc, err := Read(ctx, env, req.InvocationId, invocation.Attempt)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapErrorf(err, "read cache scorecard for invocation %s attempt %d", req.GetInvocationId(), invocation.Attempt)
 	}
 	scorecard.Misses = append(scorecard.Misses, sc.Misses...)
 	scorecard.Results = append(scorecard.Results, sc.Results...)
@@ -207,6 +202,13 @@ func sortResults(results []*capb.ScoreCard_Result, opts *sortOpts) {
 		orderFunc = func(result *capb.ScoreCard_Result) int64 {
 			return result.Digest.GetSizeBytes()
 		}
+	case capb.GetCacheScoreCardRequest_ORDER_BY_CPU_SAVINGS:
+		orderFunc = func(result *capb.ScoreCard_Result) int64 {
+			if result.GetExecutionStartTimestamp().AsTime().UnixNano() <= 0 || result.GetExecutionCompletedTimestamp().AsTime().Sub(result.GetExecutionStartTimestamp().AsTime()).Nanoseconds() <= 0 {
+				return -1
+			}
+			return result.GetExecutionCompletedTimestamp().AsTime().Sub(result.GetExecutionStartTimestamp().AsTime()).Nanoseconds()
+		}
 	case capb.GetCacheScoreCardRequest_ORDER_BY_START_TIME:
 		fallthrough
 	default:
@@ -298,63 +300,11 @@ func blobNameDeprecated(invocationID string) string {
 	return filepath.Join(invocationID, blobFileName)
 }
 
-// ExtractFiles extracts any files from invocation BES events which may be
-// associated with bes-upload cache requests, such as the timing profile or
-// other uploads that weren't directly tied to an action execution. The returned
-// mapping is keyed by digest hash.
-func ExtractFiles(invocation *inpb.Invocation) map[string]*bespb.File {
-	out := map[string]*bespb.File{}
-
-	maybeAddToMap := func(files ...*bespb.File) {
-		for _, file := range files {
-			if file == nil {
-				continue
-			}
-			if file.GetName() == "" {
-				continue
-			}
-			if uri, ok := file.File.(*bespb.File_Uri); ok {
-				m := bytestreamURIPattern.FindStringSubmatch(uri.Uri)
-				if len(m) >= 1 {
-					digestHash := m[1]
-					out[digestHash] = file
-				}
-			}
-		}
-	}
-
-	for _, event := range invocation.Event {
-		switch p := event.BuildEvent.Payload.(type) {
-		case *bespb.BuildEvent_NamedSetOfFiles:
-			maybeAddToMap(p.NamedSetOfFiles.GetFiles()...)
-		case *bespb.BuildEvent_BuildToolLogs:
-			maybeAddToMap(p.BuildToolLogs.GetLog()...)
-		case *bespb.BuildEvent_TestResult:
-			maybeAddToMap(p.TestResult.GetTestActionOutput()...)
-		case *bespb.BuildEvent_TestSummary:
-			maybeAddToMap(p.TestSummary.GetPassed()...)
-			maybeAddToMap(p.TestSummary.GetFailed()...)
-		case *bespb.BuildEvent_RunTargetAnalyzed:
-			maybeAddToMap(p.RunTargetAnalyzed.GetRunfiles()...)
-		case *bespb.BuildEvent_Action:
-			maybeAddToMap(p.Action.GetStdout())
-			maybeAddToMap(p.Action.GetStderr())
-			maybeAddToMap(p.Action.GetPrimaryOutput())
-			maybeAddToMap(p.Action.GetActionMetadataLogs()...)
-		case *bespb.BuildEvent_Completed:
-			maybeAddToMap(p.Completed.GetImportantOutput()...)
-			maybeAddToMap(p.Completed.GetDirectoryOutput()...)
-		}
-	}
-
-	return out
-}
-
 // FillBESMetadata populates file metadata in the scorecard results for files
 // uploaded via BEP.
 func FillBESMetadata(sc *capb.ScoreCard, files map[string]*bespb.File) {
 	for _, result := range sc.Results {
-		if result.ActionId != "bes-upload" {
+		if result.ActionId != bazel_request.BESUploadActionID {
 			continue
 		}
 		f := files[result.Digest.GetHash()]
@@ -382,7 +332,7 @@ func Read(ctx context.Context, env environment.Env, invocationID string, invocat
 
 	sc := &capb.ScoreCard{}
 	if err := proto.Unmarshal(buf, sc); err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "unmarshal cache scorecard")
 	}
 	return sc, nil
 }

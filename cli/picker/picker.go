@@ -12,34 +12,36 @@ import (
 	"github.com/manifoldco/promptui"
 )
 
-func HandlePicker(args []string) []string {
+func HandlePicker(args *arg.BazelArgs) (*arg.BazelArgs, error) {
 	// If targets are already specified, don't do anything.
-	if len(arg.GetTargets(args)) > 0 {
-		return args
+	if len(args.GetTargets()) > 0 {
+		return args, nil
 	}
 
 	// If the command is build, test, or query without a specified target - apply to all targets.
-	command := arg.GetCommand(args)
+	command := args.GetCommand()
 
 	// Skip using the picker if the user has specified a query file.
-	if strings.Contains(command, "query") && arg.Has(args, "query_file") {
-		return args
+	if strings.Contains(command, "query") && args.Has("query_file") {
+		return args, nil
 	}
 
 	// Skip using the picker if the user has specified a target pattern file.
-	if (command == "build" || command == "test") && arg.Has(args, "target_pattern_file") {
-		return args
+	if (command == "build" || command == "test") && args.Has("target_pattern_file") {
+		return args, nil
 	}
 
 	// If it's a build, test, or query - apply to all targets.
 	if command == "build" || command == "test" || command == "query" {
-		args = append(args, "//...")
-		return args
+		if err := args.Append("//..."); err != nil {
+			return nil, err
+		}
+		return args, nil
 	}
 
 	// If it's not a run command, we're done here.
 	if command != "run" {
-		return args
+		return args, nil
 	}
 
 	// If it's a run, query executable targets.
@@ -54,18 +56,20 @@ func HandlePicker(args []string) []string {
 	// We didn't find any executable targets to run.
 	if len(targets) == 0 || targets[0] == "" {
 		log.Printf("No runnable targets found!")
-		return args
+		return args, nil
 	}
 
 	// If there is only one executable target, run it.
 	if len(targets) == 1 {
-		args = append(args, targets[0])
-		return args
+		if err := args.Append(targets[0]); err != nil {
+			return nil, err
+		}
+		return args, nil
 	}
 
 	// If not running interactively, we can't show a prompt.
 	if !terminal.IsTTY(os.Stdin) || !terminal.IsTTY(os.Stderr) {
-		return args
+		return args, nil
 	}
 
 	// If there are more than one executable targets, show a picker.
@@ -87,11 +91,12 @@ func HandlePicker(args []string) []string {
 	_, result, err := prompt.Run()
 	if err != nil {
 		log.Printf("Failed to select target: %v", err)
-		return args
+		return args, nil
 	}
-	args = append(args, result)
-
-	return args
+	if err := args.Append(result); err != nil {
+		return nil, err
+	}
+	return args, nil
 }
 
 func searcher(targets []string) func(input string, index int) bool {

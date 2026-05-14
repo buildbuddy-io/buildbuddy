@@ -1,17 +1,22 @@
+import { ChevronRight } from "lucide-react";
 import React from "react";
-import format from "../format/format";
-import {
-  getExecutionStatus,
-  totalDuration,
-  queuedDuration,
-  downloadDuration,
-  executionDuration,
-  uploadDuration,
-} from "./invocation_execution_util";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import DigestComponent from "../components/digest/digest";
 import Link from "../components/link/link";
+import format from "../format/format";
 import { digestToString } from "../util/cache";
+import { joinReactNodes } from "../util/react";
+import ActionCompareButtonComponent from "./action_compare_button";
+import {
+  downloadDuration,
+  executionDuration,
+  getActionPageLink,
+  getExecutionStatus,
+  queuedDuration,
+  totalDuration,
+  uploadDuration,
+  workerDuration,
+} from "./invocation_execution_util";
 
 interface Props {
   executions: execution_stats.Execution[];
@@ -19,23 +24,6 @@ interface Props {
 }
 
 export default class InvocationExecutionTable extends React.Component<Props> {
-  getActionPageLink(execution: execution_stats.Execution) {
-    const search = new URLSearchParams();
-    if (execution.actionDigest) {
-      search.set("actionDigest", digestToString(execution.actionDigest));
-    }
-    // Prefer executeResponseDigest if present, since it represents the action
-    // response that was returned for this specific invocation, and also
-    // contains additional useful info such as gRPC status. Otherwise, try the
-    // (deprecated) actionResultDigest.
-    if (execution.executeResponseDigest) {
-      search.set("executeResponseDigest", digestToString(execution.executeResponseDigest));
-    } else if (execution.actionResultDigest) {
-      search.set("actionResultDigest", digestToString(execution.actionResultDigest));
-    }
-    return `/invocation/${this.props.invocationIdProvider(execution)}?${search}#action`;
-  }
-
   render() {
     return (
       <div className="invocation-execution-table">
@@ -44,16 +32,47 @@ export default class InvocationExecutionTable extends React.Component<Props> {
           if (!execution.actionDigest) {
             return;
           }
+          const workerDurationUsec = workerDuration(execution);
+          const durationSuffix = workerDurationUsec ? <> in {format.durationUsec(workerDurationUsec)}</> : null;
           return (
-            <Link key={index} className="invocation-execution-row" href={this.getActionPageLink(execution)}>
+            <Link
+              key={index}
+              className="invocation-execution-row"
+              href={getActionPageLink(this.props.invocationIdProvider(execution), execution)}>
               <div className="invocation-execution-row-image">{status.icon}</div>
               <div>
-                <div className="invocation-execution-row-header">
-                  <span className="invocation-execution-row-header-status">{status.name}</span>
-                  <DigestComponent digest={execution.actionDigest} expanded={true} />
+                <div className="execution-header">
+                  {renderExecutionLabel(execution)}
+                  <DigestComponent digest={execution.actionDigest} expanded={execution.targetLabel === ""} />
                 </div>
-                <div>{execution.commandSnippet}</div>
+                <div className="command-snippet">$ {execution.commandSnippet}</div>
+                <div className="status">
+                  {!execution.status?.code && (
+                    <span>
+                      <span className={`status-name ${execution.exitCode ? "failed" : "success"}`}>{status.name}</span>
+                      {durationSuffix}
+                    </span>
+                  )}
+                  {!!execution.status?.code && (
+                    <span className="status-code">
+                      <span className="status-name error">{status.name}:</span> {execution.status.message}
+                    </span>
+                  )}
+                </div>
+                <ActionCompareButtonComponent
+                  invocationId={this.props.invocationIdProvider(execution)}
+                  actionDigest={digestToString(execution.actionDigest)}
+                  mini={true}
+                />
                 <div className="invocation-execution-row-stats">
+                  {!!execution.primaryOutputPath && (
+                    <div>
+                      Primary output:{" "}
+                      <span className="primary-output" title={execution.primaryOutputPath}>
+                        {formatPrimaryOutput(execution.primaryOutputPath)}
+                      </span>
+                    </div>
+                  )}
                   <div>Executor Host ID: {execution.executedActionMetadata?.worker}</div>
                   <div>Total duration: {format.durationUsec(totalDuration(execution))}</div>
                   <div>Queued duration: {format.durationUsec(queuedDuration(execution))}</div>
@@ -69,9 +88,6 @@ export default class InvocationExecutionTable extends React.Component<Props> {
                     {format.formatWithCommas(execution?.executedActionMetadata?.ioStats?.fileUploadCount)} files)
                   </div>
                 </div>
-                {execution.status?.code !== 0 && execution.status?.message && (
-                  <div className="invocation-execution-row-status-message">{execution.status.message}</div>
-                )}
               </div>
             </Link>
           );
@@ -79,4 +95,28 @@ export default class InvocationExecutionTable extends React.Component<Props> {
       </div>
     );
   }
+}
+
+function renderExecutionLabel(execution: execution_stats.Execution) {
+  const nodes = [
+    execution.targetLabel && <span className="target-label">{execution.targetLabel}</span>,
+    execution.actionMnemonic && <span className="action-mnemonic">{execution.actionMnemonic}</span>,
+  ].filter((node) => node);
+  if (!nodes.length) {
+    return null;
+  }
+  return (
+    <span className="execution-label">
+      {joinReactNodes(nodes, <ChevronRight className="icon breadcrumb-separator" />)}
+    </span>
+  );
+}
+
+function formatPrimaryOutput(path: string) {
+  const segments = path.split("/").filter(Boolean);
+  if (segments.length <= 2) {
+    return path;
+  }
+  const tail = segments.slice(-2).join("/");
+  return `…/${tail}`;
 }

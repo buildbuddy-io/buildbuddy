@@ -1,10 +1,10 @@
-import React from "react";
 import { Slash as SlashIcon } from "lucide-react";
-import Spinner from "../components/spinner/spinner";
-import { OutlinedButton } from "../components/button/button";
-import rpcService from "../service/rpc_service";
+import React from "react";
 import { invocation } from "../../proto/invocation_ts_proto";
+import { OutlinedButton } from "../components/button/button";
+import Spinner from "../components/spinner/spinner";
 import errorService from "../errors/error_service";
+import rpcService from "../service/rpc_service";
 
 export interface InvocationCancelButtonComponentProps {
   invocationId: string;

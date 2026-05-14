@@ -3,6 +3,8 @@ syntax = "proto3";
 package usage;
 
 import "proto/context.proto";
+import "proto/user_id.proto";
+import "google/protobuf/timestamp.proto";
 
 message GetUsageRequest {
   // Request context.
@@ -20,6 +22,9 @@ message GetUsageResponse {
   // Usage numbers for the requested UTC month.
   Usage usage = 2;
 
+  // Daily usage numbers for the requested UTC month.
+  repeated Usage daily_usage = 4;
+
   // The available usage periods that may be specified in a subsequent
   // GetUsageRequest.
   repeated string available_usage_periods = 3;
@@ -28,7 +33,7 @@ message GetUsageResponse {
 // Usage represents a count of BuildBuddy resources used for a particular time
 // period.
 message Usage {
-  // Usage period in UTC, in "YYYY-MM" format.
+  // Usage period in UTC, in "YYYY-MM" or "YYYY-MM-DD" format.
   string period = 1;
 
   // The number of invocations.
@@ -52,4 +57,175 @@ message Usage {
   // The sum of approximate time savings of builds based on
   // the sum of execution time of cached objects.
   int64 total_cached_action_exec_usec = 8;
+
+  // The number of bytes downloaded from outside of BuildBuddy-owned servers.
+  int64 total_external_download_size_bytes = 9;
+
+  // The number of bytes downloaded from within BuildBuddy-owned servers,
+  // excluding workflows.
+  int64 total_internal_download_size_bytes = 10;
+
+  // The number of bytes downloaded from BuildBuddy-owned workflow servers.
+  int64 total_workflow_download_size_bytes = 11;
+
+  // The number of bytes uploaded from outside of BuildBuddy-owned servers.
+  int64 total_external_upload_size_bytes = 12;
+
+  // The number of bytes uploaded from within BuildBuddy-owned servers,
+  // excluding workflows.
+  int64 total_internal_upload_size_bytes = 13;
+
+  // The number of bytes uploaded from BuildBuddy-owned workflow servers.
+  int64 total_workflow_upload_size_bytes = 14;
+
+  // Total raw cpu time (2 cpus for 1 minutes = 2 minutes) used on
+  // BuildBuddy-owned executors and workflow runners.  Idle time is uncounted.
+  int64 cloud_cpu_nanos = 15;
+
+  // Total raw cpu time (2 cpus for 1 minutes = 2 minutes) used on
+  // BuildBuddy-owned executors.  Idle time is uncounted.
+  int64 cloud_rbe_cpu_nanos = 16;
+
+  // Total raw cpu time (2 cpus for 1 minutes = 2 minutes) used on
+  // BuildBuddy-owned workflow runners.  Idle time is uncounted.
+  int64 cloud_workflow_cpu_nanos = 17;
+
+  // Total wall time of tasks run on BuildBuddy-owned executors, ignoring cpu
+  // utilization.  Idle time is counted.
+  int64 cloud_rbe_linux_execution_duration_usec = 18;
+
+  // Total wall time of tasks run on BuildBuddy-owned workflow runners,
+  // ignoring cpu utilization.  Idle time is counted.
+  int64 cloud_workflow_linux_execution_duration_usec = 19;
+}
+
+// Alerting rule for usage-based alerts.
+message UsageAlertingRule {
+  // Server-controlled metadata about the rule.
+  UsageAlertingRuleMetadata metadata = 1;
+
+  // User-configured alerting rule configuration.
+  UsageAlertingRuleConfiguration configuration = 2;
+
+  // Evaluator-controlled status for this rule.
+  UsageAlertingRuleStatus status = 3;
+}
+
+// Usage alerting rule metadata.
+message UsageAlertingRuleMetadata {
+  // Unique alerting rule ID (matches a DB row).
+  string usage_alerting_rule_id = 1;
+
+  // User that created the alerting rule.
+  user_id.DisplayUser created_by_user = 2;
+
+  // When the alerting rule was created.
+  google.protobuf.Timestamp created_timestamp = 3;
+}
+
+// Usage metrics that org admins can alert on. One alerting metric is defined
+// for each metric reported in the Usage proto, so customers can alert on the
+// same values shown on the Usage page.
+message UsageAlertingMetric {
+  enum Value {
+    UNKNOWN = 0;
+
+    INVOCATIONS = 1;
+    ACTION_CACHE_HITS = 2;
+    TOTAL_CACHED_ACTION_EXEC_USEC = 3;
+    CAS_CACHE_HITS = 4;
+    TOTAL_DOWNLOAD_SIZE_BYTES = 5;
+    TOTAL_EXTERNAL_DOWNLOAD_SIZE_BYTES = 6;
+    TOTAL_INTERNAL_DOWNLOAD_SIZE_BYTES = 7;
+    TOTAL_WORKFLOW_DOWNLOAD_SIZE_BYTES = 8;
+    TOTAL_UPLOAD_SIZE_BYTES = 9;
+    TOTAL_EXTERNAL_UPLOAD_SIZE_BYTES = 10;
+    TOTAL_INTERNAL_UPLOAD_SIZE_BYTES = 11;
+    TOTAL_WORKFLOW_UPLOAD_SIZE_BYTES = 12;
+    LINUX_EXECUTION_DURATION_USEC = 13;
+    CLOUD_RBE_LINUX_EXECUTION_DURATION_USEC = 14;
+    CLOUD_WORKFLOW_LINUX_EXECUTION_DURATION_USEC = 15;
+    CLOUD_CPU_NANOS = 16;
+    CLOUD_RBE_CPU_NANOS = 17;
+    CLOUD_WORKFLOW_CPU_NANOS = 18;
+  }
+}
+
+// Usage windows that org admins can apply to alerting rules.
+message UsageAlertingWindow {
+  enum Value {
+    UNKNOWN = 0;
+
+    // UTC day (00:00:00 up to and excluding 00:00:00 the following day).
+    DAY = 1;
+
+    // UTC business week (Monday at 00:00:00 up to and excluding the following
+    // Monday at 00:00:00).
+    WEEK = 2;
+
+    // UTC calendar month (the first day of the month at 00:00:00 up to and
+    // excluding the first day of the following month at 00:00:00).
+    MONTH = 3;
+  }
+}
+
+// User-configurable alerting rule fields. Represents a user-facing usage metric
+// as well as a threshold and usage window. If the threshold is exceeded, org
+// admins receive an alert stating that the threshold was exceeded.
+message UsageAlertingRuleConfiguration {
+  // Usage metric to alert on.
+  UsageAlertingMetric.Value metric = 1;
+
+  // Alerts are triggered if the usage exceeds this exact value.
+  int64 absolute_threshold = 2;
+
+  // Usage window over which the alerting threshold applies. This is distinct
+  // from the server-side evaluation cadence, which is intentionally not
+  // specified in these API protos.
+  UsageAlertingWindow.Value window = 3;
+}
+
+// Usage alerting rule status.
+message UsageAlertingRuleStatus {
+  // When the alerting rule was last evaluated.
+  google.protobuf.Timestamp last_evaluation_timestamp = 1;
+
+  // When the alerting rule last fired.
+  google.protobuf.Timestamp last_fired_timestamp = 2;
+}
+
+message GetUsageAlertingRulesRequest {
+  context.RequestContext request_context = 1;
+}
+
+message GetUsageAlertingRulesResponse {
+  context.ResponseContext response_context = 1;
+
+  // Usage alerting rules owned by the authenticated org.
+  repeated UsageAlertingRule usage_alerting_rule = 2;
+}
+
+message CreateUsageAlertingRuleRequest {
+  context.RequestContext request_context = 1;
+
+  // Alerting rule configuration to create.
+  UsageAlertingRuleConfiguration configuration = 2;
+}
+
+message CreateUsageAlertingRuleResponse {
+  context.ResponseContext response_context = 1;
+
+  // The usage alerting rule that was created.
+  UsageAlertingRule usage_alerting_rule = 2;
+}
+
+message DeleteUsageAlertingRuleRequest {
+  context.RequestContext request_context = 1;
+
+  // Unique alerting rule ID to delete.
+  string usage_alerting_rule_id = 2;
+}
+
+message DeleteUsageAlertingRuleResponse {
+  context.ResponseContext response_context = 1;
 }

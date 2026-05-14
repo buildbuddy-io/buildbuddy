@@ -2,19 +2,25 @@ package download
 
 import (
 	"context"
-	"flag"
+	"fmt"
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/storage"
+	"github.com/buildbuddy-io/buildbuddy/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/mdutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/docker/go-units"
 	"github.com/mattn/go-isatty"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -25,10 +31,14 @@ import (
 
 var (
 	flags = flag.NewFlagSet("download", flag.ContinueOnError)
+	Flags = flags
 
-	target     = flags.String("target", "grpcs://remote.buildbuddy.io", "Cache gRPC target")
-	blobType   = flags.String("type", "", "Type of blob (used to interpret): Action, Command, Directory")
-	outputFile = flags.String("output_file", "", "A destination file where the output should be written; stdout will be used if not set")
+	target          = flags.String("target", login.DefaultApiTarget, "Cache gRPC target")
+	blobType        = flags.String("type", "", "Type of blob (used to interpret): Action, Command, Directory")
+	outputDirectory = flags.String("output_directory", "", "A directory where Directory contents will be recursively extracted. Implies --type=Directory.")
+	outputFile      = flags.String("output_file", "", "A destination file where the output should be written; stdout will be used if not set")
+	remoteHeader    = flag.New(flags, "remote_header", []string{}, "Arbitrary remote headers to set on the request, in `KEY=VALUE` format. Can be specified multiple times.")
+	apiKey          = flags.String("api_key", "", "Optionally override the API key with this value")
 
 	usage = `
 usage: bb ` + flags.Name() + ` {digest}/{size}
@@ -51,14 +61,14 @@ Example of dumping a Command to a file:
 )
 
 type newlineStdoutCloser struct {
-	*os.File
+	io.WriteCloser
 }
 
 func (n *newlineStdoutCloser) Close() error {
-	if isatty.IsTerminal(n.File.Fd()) {
-		n.File.Write([]byte{'\n'})
+	if f, ok := n.WriteCloser.(*os.File); ok && isatty.IsTerminal(f.Fd()) {
+		n.WriteCloser.Write([]byte{'\n'})
 	}
-	return n.File.Close()
+	return n.WriteCloser.Close()
 }
 
 func getOutput() (io.WriteCloser, error) {
@@ -77,21 +87,7 @@ func printProtoToOutput(msg proto.Message, output io.Writer) error {
 	return err
 }
 
-func downloadFile(uri string) error {
-	if !strings.HasPrefix(uri, "/blobs") {
-		uri = "/blobs/" + uri
-	}
-	ind, err := digest.ParseDownloadResourceName(uri)
-	if err != nil {
-		return err
-	}
-
-	conn, err := grpc_client.DialSimple(*target)
-	if err != nil {
-		return err
-	}
-	bsClient := bspb.NewByteStreamClient(conn)
-
+func downloadFile(ctx context.Context, ind *digest.CASResourceName, bsClient bspb.ByteStreamClient) error {
 	var msg proto.Message
 	switch *blobType {
 	case "":
@@ -106,11 +102,6 @@ func downloadFile(uri string) error {
 		return status.InvalidArgumentErrorf(`Invalid --type: %q (allowed values: Action, Command, Directory, "")`, *blobType)
 	}
 
-	ctx := context.Background()
-	if apiKey, err := storage.ReadRepoConfig("api-key"); err == nil && apiKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
-	}
-
 	wc, err := getOutput()
 	if err != nil {
 		return err
@@ -119,7 +110,7 @@ func downloadFile(uri string) error {
 
 	if msg != nil {
 		if err := cachetools.GetBlobAsProto(ctx, bsClient, ind, msg); err != nil {
-			return err
+			return fmt.Errorf("get blob as %T proto: %w", msg, err)
 		}
 		return printProtoToOutput(msg, wc)
 	}
@@ -144,11 +135,72 @@ func HandleDownload(args []string) (int, error) {
 		log.Printf("A non-empty --target must be specified")
 		return 1, nil
 	}
+	if *outputDirectory != "" && *blobType == "" {
+		*blobType = "Directory"
+	}
+	if *outputDirectory != "" && *blobType != "Directory" {
+		log.Printf("blob type %q is not compatible with output_directory option", *blobType)
+		return 1, nil
+	}
 
+	ctx := context.Background()
+	if *apiKey != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
+	} else if apiKey, err := login.GetAPIKey(); err == nil && apiKey != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
+	}
+	if len(*remoteHeader) > 0 {
+		md, err := mdutil.Parse(*remoteHeader...)
+		if err != nil {
+			return -1, fmt.Errorf("parse remote headers: %w", err)
+		}
+		for key, values := range md {
+			ctx = metadata.AppendToOutgoingContext(ctx, key, values[len(values)-1])
+		}
+	}
 	uri := flags.Args()[0]
-	if err := downloadFile(uri); err != nil {
+	if !strings.HasPrefix(uri, "/blobs") {
+		// Interpret HASH/SIZE as a resource name using the default digest
+		// function (SHA256).
+		uri = "/blobs/" + uri
+	}
+	rn, err := digest.ParseDownloadResourceName(uri)
+	if err != nil {
+		return -1, fmt.Errorf("parse resource name: %w", err)
+	}
+
+	conn, err := grpc_client.DialSimple(*target)
+	if err != nil {
+		return -1, fmt.Errorf("dial %q: %w", *target, err)
+	}
+	bsClient := bspb.NewByteStreamClient(conn)
+	casClient := repb.NewContentAddressableStorageClient(conn)
+	capsClient := repb.NewCapabilitiesClient(conn)
+
+	if err := downloadFile(ctx, rn, bsClient); err != nil {
 		log.Print(err)
 		return 1, nil
 	}
+
+	if *outputDirectory != "" {
+		log.Printf("Downloading directory contents to %q", *outputDirectory)
+		inputTree, err := cachetools.GetAndMaybeCacheTreeFromRootDirectoryDigest(
+			ctx, casClient, rn, nil, bsClient)
+		if err != nil {
+			return -1, fmt.Errorf("get tree: %w", err)
+		}
+		env := real_environment.NewBatchEnv()
+		// TODO: remove env dependency from DownloadTree
+		env.SetContentAddressableStorageClient(casClient)
+		env.SetByteStreamClient(bsClient)
+		env.SetCapabilitiesClient(capsClient)
+		start := time.Now()
+		if txInfo, err := dirtools.DownloadTree(ctx, env, rn.GetInstanceName(), rn.GetDigestFunction(), inputTree, &dirtools.DownloadTreeOpts{RootDir: *outputDirectory}); err != nil {
+			return -1, fmt.Errorf("download directory tree to %q: %w", *outputDirectory, err)
+		} else {
+			log.Printf("Downloaded %d files (%s) in %s", txInfo.FileCount, units.HumanSize(float64(txInfo.BytesTransferred)), time.Since(start))
+		}
+	}
+
 	return 0, nil
 }

@@ -1,0 +1,9 @@
+actions:
+  - name: "Build and test"
+    triggers:
+      push:
+        branches: [main]
+    steps:
+      - run: |
+          echo "This is a multi-line run block"
+          echo "Should still parse!"

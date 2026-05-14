@@ -1,7 +1,7 @@
 import React from "react";
+import format from "../../../app/format/format";
 import rpcService from "../../../app/service/rpc_service";
 import { invocation } from "../../../proto/invocation_ts_proto";
-import format from "../../../app/format/format";
 
 interface State {
   reposWithStats: string[];
@@ -39,7 +39,7 @@ export default class CodeEmptyStateComponent extends React.Component<{}, State> 
 
     rpcService.service.getLinkedGitHubRepos({}).then((response) => {
       console.log(response);
-      this.setState({ linkedRepos: response.repoUrls });
+      this.setState({ linkedRepos: response.repos.map((repo) => repo.repoUrl) });
     });
 
     return;

@@ -9,6 +9,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockstore"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestChunkName(t *testing.T) {
@@ -448,4 +450,21 @@ func TestWriter(t *testing.T) {
 	if !cmp.Equal(m.GetBlobMap(), test_map) {
 		t.Fatalf("Map contents are incorrect for multi-chunk file after close, which should flush the tail:\n\n%v\n\nshould be:\n\n%v", m.GetBlobMap(), test_map)
 	}
+}
+
+func TestWriteInvalidChunk(t *testing.T) {
+	m := mockstore.New()
+	c := New(m, &ChunkstoreOptions{})
+	mtx := &mockstore.Context{}
+
+	// Write uint16_max chunks.
+	writer := c.Writer(mtx, "test", &ChunkstoreWriterOptions{WriteBlockSize: 1})
+	n, err := writer.Write(mtx, make([]byte, 65535))
+	require.NoError(t, err)
+	assert.Equal(t, 65535, n)
+
+	n, err = writer.Write(mtx, []byte{0})
+	assert.Equal(t, 0, n)
+	assert.Error(t, err)
+	assert.True(t, status.IsResourceExhaustedError(err))
 }

@@ -2,26 +2,32 @@ package tracing
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"go.opentelemetry.io/contrib/detectors/aws/ec2/v2"
 	"go.opentelemetry.io/contrib/detectors/gcp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/trace"
@@ -34,17 +40,20 @@ import (
 
 var (
 	// TODO: use this project ID or deprecate it. It is currently unreferenced.
-	traceProjectID            = flag.String("app.trace_project_id", "", "Optional GCP project ID to export traces to. If not specified, determined from default credentials or metadata server if running on GCP.")
-	traceJaegerCollector      = flag.String("app.trace_jaeger_collector", "", "Address of the Jager collector endpoint where traces will be sent.")
-	traceServiceName          = flag.String("app.trace_service_name", "", "Name of the service to associate with traces.")
+	traceJaegerCollector      = flag.String("app.trace_jaeger_collector", "", "Address of the Jaeger collector HTTP endpoint where traces will be sent, e.g. http://jaeger.svc.cluster.local:14268")
+	traceOTLPCollector        = flag.String("app.trace_otlp_grpc_collector", "", "Address of the OTLP gRPC collector endpoint where traces will be sent, e.g. otel-collector.svc.cluster.local:4317")
+	traceOTLPHTTPCollector    = flag.String("app.trace_otlp_http_collector", "", "Address of the OTLP HTTP collector endpoint where traces will be sent, e.g. http://otel-collector.svc.cluster.local:4318")
+	traceServiceName          = flag.String("app.trace_service_name", "", "Name of the service to associate with traces (maps to the standard 'service.name' attribute, like the OTEL_SERVICE_NAME environment variable, but allows for env substitution).")
+	traceResourceDetectors    = flag.Slice("app.trace_resource_detectors", []string{}, "Trace resource detectors to run. Supported values: gcp (GCE), gke, ec2, eks. If empty, defaults to [gcp, gke].")
+	traceResourceAttributes   = flag.Slice("app.trace_resource_attributes", []ResourceAttribute{}, "Resource attributes to add to all traces (similar to the OTEL_RESOURCE_ATTRIBUTES environment variable, but more structured, and allows for env substitution). Where possible, follow the resource semantic conventions: https://opentelemetry.io/docs/specs/semconv/resource/")
 	traceFraction             = flag.Float64("app.trace_fraction", 0, "Fraction of requests to sample for tracing.")
 	traceFractionOverrides    = flag.Slice("app.trace_fraction_overrides", []string{}, "Tracing fraction override based on name in format name=fraction.")
 	ignoreForcedTracingHeader = flag.Bool("app.ignore_forced_tracing_header", false, "If set, we will not honor the forced tracing header.")
-
-	// bound overrides are parsed from the traceFractionOverrides flag.
-	initOverrideFractions sync.Once
-	overrideFractions     map[string]float64
 )
+
+// Re-initialized in Configure. Set here so tests that don't call Configure
+// still work.
+var tracer = otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName)
 
 const (
 	resourceDetectionTimeout      = 5 * time.Second
@@ -53,6 +62,11 @@ const (
 	traceParentHeader             = "traceparent"
 	forceTraceHeaderValue         = "force"
 )
+
+type ResourceAttribute struct {
+	Key   string `json:"key" yaml:"key"`
+	Value string `json:"value" yaml:"value"`
+}
 
 // fractionSampler allows specifying a default sampling fraction as well as overrides based on the span name.
 // Based on TraceIDRatioBased sampler from the OpenTelemetry library.
@@ -64,17 +78,18 @@ type fractionSampler struct {
 }
 
 func newFractionSampler(fraction float64, fractionOverrides map[string]float64, ignoreForcedTracingHeader bool) *fractionSampler {
-	configDescription := fmt.Sprintf("default=%f", fraction)
+	var configDescription strings.Builder
+	configDescription.WriteString(fmt.Sprintf("default=%f", fraction))
 	boundOverrides := make(map[string]uint64)
 	for n, f := range fractionOverrides {
 		boundOverrides[n] = uint64(f * math.MaxInt64)
-		configDescription += fmt.Sprintf(",%s=%f", n, f)
+		configDescription.WriteString(fmt.Sprintf(",%s=%f", n, f))
 	}
 
 	return &fractionSampler{
 		traceIDUpperBound:          uint64(fraction * math.MaxInt64),
 		traceIDUpperBoundOverrides: boundOverrides,
-		description:                fmt.Sprintf("FractionSampler(%s)", configDescription),
+		description:                fmt.Sprintf("FractionSampler(%s)", configDescription.String()),
 		ignoreForcedTracingHeader:  ignoreForcedTracingHeader,
 	}
 }
@@ -121,20 +136,110 @@ func (s *fractionSampler) Description() string {
 	return s.description
 }
 
+// noopExporter is a span exporter that does nothing, used for testing/benchmarking.
+type noopExporter struct{}
+
+func (e *noopExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+	return nil
+}
+
+func (e *noopExporter) Shutdown(ctx context.Context) error {
+	return nil
+}
+
+func configuredTraceResourceDetectors(names []string) ([]resource.Detector, error) {
+	names = slices.Clone(names)
+	for i := range names {
+		names[i] = strings.TrimSpace(strings.ToLower(names[i]))
+	}
+	slices.Sort(names)
+	names = slices.Compact(names)
+	if len(names) == 0 {
+		names = []string{"gcp", "gke"}
+	}
+
+	detectors := make([]resource.Detector, 0, len(names))
+	for _, name := range names {
+		switch name {
+		case "gcp":
+			detectors = append(detectors, &gcp.GCE{})
+		case "gke":
+			detectors = append(detectors, &gcp.GKE{})
+		case "ec2":
+			detectors = append(detectors, ec2.NewResourceDetector())
+		default:
+			return nil, status.InvalidArgumentErrorf("unknown trace resource detector %q (supported values: gcp, gke, ec2)", name)
+		}
+	}
+	return detectors, nil
+}
+
 func Configure(env environment.Env) error {
 	if *traceFraction <= 0 {
 		return nil
 	}
 
-	if *traceJaegerCollector == "" {
-		return status.InvalidArgumentErrorf("Tracing enabled but Jaeger collector endpoint is not set.")
+	// Check early that exactly one collector is configured
+	numCollectorsSet := 0
+	if *traceJaegerCollector != "" {
+		numCollectorsSet++
+	}
+	if *traceOTLPCollector != "" {
+		numCollectorsSet++
+	}
+	if *traceOTLPHTTPCollector != "" {
+		numCollectorsSet++
 	}
 
-	traceExporter, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(*traceJaegerCollector)))
-	if err != nil {
-		log.Warningf("Could not initialize Cloud Trace exporter: %s", err)
+	if numCollectorsSet > 1 {
+		return status.InvalidArgumentErrorf("only one trace collector ('app.trace_*_collector') can be configured at a time.")
+	}
+
+	var traceExporter sdktrace.SpanExporter
+	var err error
+
+	if *traceJaegerCollector != "" {
+		traceExporter, err = jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(*traceJaegerCollector)))
+		if err != nil {
+			log.Warningf("Could not initialize Jaeger exporter: %s", err)
+			return nil
+		}
+	} else if *traceOTLPCollector != "" {
+		traceExporter, err = otlptracegrpc.New(env.GetServerContext(), otlptracegrpc.WithEndpoint(*traceOTLPCollector), otlptracegrpc.WithInsecure())
+		if err != nil {
+			log.Warningf("Could not initialize OTEL exporter: %s", err)
+			return nil
+		}
+	} else if *traceOTLPHTTPCollector != "" {
+		opts, err := parseHTTPOptions(*traceOTLPHTTPCollector)
+		if err != nil {
+			return status.InvalidArgumentErrorf("parse OTEL HTTP collector endpoint: %s", err)
+		}
+		traceExporter, err = otlptracehttp.New(env.GetServerContext(), opts...)
+		if err != nil {
+			log.Warningf("Could not initialize OTEL exporter: %s", err)
+			return nil
+		}
+	}
+
+	if traceExporter == nil {
+		return status.InvalidArgumentErrorf("no trace collector ('app.trace_{jaeger,otlp_grpc,otlp_http}_collector') configured")
+	}
+
+	return setupTracingWithExporter(env, traceExporter)
+}
+
+// ConfigureWithNoopExporter configures tracing with a no-op exporter for testing/benchmarking.
+func ConfigureWithNoopExporter(env environment.Env) error {
+	if *traceFraction <= 0 {
 		return nil
 	}
+
+	return setupTracingWithExporter(env, &noopExporter{})
+}
+
+// setupTracingWithExporter sets up the tracing infrastructure with the provided exporter.
+func setupTracingWithExporter(env environment.Env, traceExporter sdktrace.SpanExporter) error {
 
 	fractionOverrides := make(map[string]float64)
 	for _, override := range *traceFractionOverrides {
@@ -150,8 +255,15 @@ func Configure(env environment.Env) error {
 		fractionOverrides[name] = fraction
 	}
 	sampler := newFractionSampler(*traceFraction, fractionOverrides, *ignoreForcedTracingHeader)
+	resourceDetectors, err := configuredTraceResourceDetectors(*traceResourceDetectors)
+	if err != nil {
+		return err
+	}
 
 	var resourceAttrs []attribute.KeyValue
+	for _, attr := range *traceResourceAttributes {
+		resourceAttrs = append(resourceAttrs, attribute.String(attr.Key, attr.Value))
+	}
 	if *traceServiceName != "" {
 		resourceAttrs = append(resourceAttrs, semconv.ServiceNameKey.String(*traceServiceName))
 	}
@@ -164,7 +276,7 @@ func Configure(env environment.Env) error {
 	ctx, cancel := context.WithTimeout(env.GetServerContext(), resourceDetectionTimeout)
 	defer cancel()
 	res, err := resource.New(ctx,
-		resource.WithDetectors(&gcp.GKE{}, &gcp.GCE{}),
+		resource.WithDetectors(resourceDetectors...),
 		resource.WithAttributes(resourceAttrs...))
 	if err != nil {
 		log.Warningf("Could not automatically detect resource information for tracing: %s", err)
@@ -173,7 +285,7 @@ func Configure(env environment.Env) error {
 
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSpanProcessor(bsp),
-		sdktrace.WithSampler(sdktrace.ParentBased(sampler)),
+		sdktrace.WithSampler(sdktrace.ParentBased(sampler, sdktrace.WithRemoteParentNotSampled(sampler))),
 		sdktrace.WithResource(res))
 	otel.SetTracerProvider(tp)
 	// Re-enable this if GCS tracing is fixed to not include blob names in span names
@@ -184,8 +296,27 @@ func Configure(env environment.Env) error {
 	// octrace.DefaultTracer = opencensus.NewTracer(tracer)
 	propagator := propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{})
 	otel.SetTextMapPropagator(propagator)
-	log.Infof("Tracing enabled with sampler: %s", sampler.Description())
+	log.Infof("Tracing enabled with sampler: %s, resource detectors: %s", sampler.Description(), strings.Join(*traceResourceDetectors, ", "))
+	tracer = otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName)
 	return nil
+}
+
+func parseHTTPOptions(s string) ([]otlptracehttp.Option, error) {
+	u, err := url.Parse(s)
+	if err != nil {
+		return nil, fmt.Errorf("parse URL: %w", err)
+	}
+	var opts []otlptracehttp.Option
+	opts = append(opts, otlptracehttp.WithEndpoint(u.Host))
+	if u.Scheme == "http" {
+		opts = append(opts, otlptracehttp.WithInsecure())
+	}
+	if user := u.User.String(); user != "" {
+		opts = append(opts, otlptracehttp.WithHeaders(map[string]string{
+			"Authorization": fmt.Sprintf("Basic %s", base64.StdEncoding.EncodeToString([]byte(user))),
+		}))
+	}
+	return opts, nil
 }
 
 type SetMetadata func(m *tpb.Metadata)
@@ -287,8 +418,14 @@ func (m *HttpServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // StartSpan starts a new span named after the calling function.
+// Note:
+// (1) StartSpan doesn't support --app.trace_fraction_overrides, if you would
+// like to override the trace fraction with a specified function, please use
+// StartNamedSpan instead.
+// (2) If you want to record a trace inside a loop, or in a performance-critical
+// path, please use StartNamedSpan instead.
 func StartSpan(ctx context.Context, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	ctx, span := otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, "unknown_go_function", opts...)
+	ctx, span := tracer.Start(ctx, "unknown_go_function", opts...)
 	if !span.IsRecording() {
 		return ctx, span
 	}
@@ -302,10 +439,30 @@ func StartSpan(ctx context.Context, opts ...trace.SpanStartOption) (context.Cont
 	return ctx, span
 }
 
+// StartNamedSpan is like StartSpan, expect the caller specifies the name
+// instead of using the call stack.
+func StartNamedSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+	return tracer.Start(ctx, name, opts...)
+}
+
 func AddStringAttributeToCurrentSpan(ctx context.Context, key, value string) {
 	span := trace.SpanFromContext(ctx)
 	if !span.IsRecording() {
 		return
 	}
 	span.SetAttributes(attribute.String(key, value))
+}
+
+// RecordErrorToSpan records a non-nil error to the span; and does nothing if
+// span is not recording or err is nil.
+func RecordErrorToSpan(span trace.Span, err error) {
+	if err == nil {
+		return
+	}
+	if !span.IsRecording() {
+		return
+	}
+
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
 }

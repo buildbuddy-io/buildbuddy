@@ -3,6 +3,9 @@ package ssl
 import (
 	"bytes"
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -13,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -22,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
@@ -76,7 +81,7 @@ type SSLService struct {
 	grpcTLSConfig   *tls.Config
 	autocertManager *autocert.Manager
 	AuthorityCert   *x509.Certificate
-	AuthorityKey    *rsa.PrivateKey
+	AuthorityKey    crypto.Signer
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -109,37 +114,13 @@ func (s *SSLService) populateTLSConfig() error {
 	clientCACertPool := x509.NewCertPool()
 
 	if (*clientCACertFile != "" || *clientCACert != "") && (*clientCAKeyFile != "" || *clientCAKey != "") {
-		if *clientCACertFile != "" && *clientCACert != "" {
-			return status.FailedPreconditionError("Authority cert should be specified as a file or directly, but not both")
-		}
-		if *clientCAKeyFile != "" && *clientCAKey != "" {
-			return status.FailedPreconditionError("Authority key should be specified as a file or directly, but not both")
-		}
-
-		var certData []byte
-		if *clientCACert != "" {
-			certData = []byte(*clientCACert)
-		} else {
-			data, err := os.ReadFile(*clientCACertFile)
-			if err != nil {
-				return err
-			}
-			certData = data
-		}
-		var keyData []byte
-		if *clientCAKey != "" {
-			keyData = []byte(*clientCAKey)
-		} else {
-			data, err := os.ReadFile(*clientCAKeyFile)
-			if err != nil {
-				return err
-			}
-			keyData = data
-		}
-
-		cert, key, err := loadX509KeyPair(certData, keyData)
+		cert, err := LoadCertificate(*clientCACertFile, *clientCACert)
 		if err != nil {
-			return err
+			return status.FailedPreconditionErrorf("could not load CA certificate for mTLS: %s", err)
+		}
+		key, err := LoadCertificateKey(*clientCAKeyFile, *clientCAKey)
+		if err != nil {
+			return status.FailedPreconditionErrorf("could not load CA certificate key for mTLS: %s", err)
 		}
 		s.AuthorityCert = cert
 		s.AuthorityKey = key
@@ -202,7 +183,7 @@ func (s *SSLService) populateTLSConfig() error {
 		s.httpTLSConfig = httpTLSConfig
 		s.grpcTLSConfig = grpcTLSConfig
 	} else if *selfSigned {
-		cert, key, err := generateCert(pkix.Name{CommonName: "Server"}, nil)
+		cert, key, err := GenerateCert(pkix.Name{CommonName: "Server"}, nil, *clientCertExp)
 		if err != nil {
 			return err
 		}
@@ -280,20 +261,20 @@ func (s *SSLService) GetGRPCSTLSCreds() (credentials.TransportCredentials, error
 }
 
 type CACert struct {
-	cert *x509.Certificate
-	key  *rsa.PrivateKey
+	Cert *x509.Certificate
+	Key  crypto.Signer
 }
 
-// generateCert generates a cert and returns the cert + private key pair.
+// GenerateCert generates a cert and returns the cert + private key pair.
 // An optional CA cert may be specified to sign the generated cert. If omitted,
 // the returned cert will be self-signed.
-func generateCert(subject pkix.Name, caCert *CACert) (string, string, error) {
+func GenerateCert(subject pkix.Name, caCert *CACert, validity time.Duration) (string, string, error) {
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return "", "", err
 	}
 	notBefore := time.Now()
-	notAfter := notBefore.Add(*clientCertExp)
+	notAfter := notBefore.Add(validity)
 
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
@@ -311,12 +292,12 @@ func generateCert(subject pkix.Name, caCert *CACert) (string, string, error) {
 
 	if caCert == nil {
 		caCert = &CACert{
-			cert: &template,
-			key:  priv,
+			Cert: &template,
+			Key:  priv,
 		}
 	}
 
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, caCert.cert, &priv.PublicKey, caCert.key)
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, caCert.Cert, &priv.PublicKey, caCert.Key)
 	if err != nil {
 		return "", "", err
 	}
@@ -346,7 +327,7 @@ func (s *SSLService) GenerateCerts(apiKeyID string) (string, string, error) {
 		CommonName:   "BuildBuddy ID",
 		SerialNumber: apiKeyID,
 	}
-	return generateCert(subject, &CACert{cert: s.AuthorityCert, key: s.AuthorityKey})
+	return GenerateCert(subject, &CACert{Cert: s.AuthorityCert, Key: s.AuthorityKey}, *clientCertExp)
 }
 
 func (s *SSLService) ValidateCert(certString string) (string, string, error) {
@@ -379,18 +360,109 @@ func (s *SSLService) ValidateCert(certString string) (string, string, error) {
 	return cert.Subject.CommonName, cert.Subject.SerialNumber, nil
 }
 
-func loadX509KeyPair(certData, keyData []byte) (*x509.Certificate, *rsa.PrivateKey, error) {
+// LoadCertificate loads a certificate and its key either from files or from
+// raw bytes.
+func LoadCertificate(certFile, cert string) (*x509.Certificate, error) {
+	if certFile == "" && cert == "" {
+		return nil, status.FailedPreconditionErrorf("certificate must be specified either as file or directly")
+	}
+	if certFile != "" && cert != "" {
+		return nil, status.FailedPreconditionError("certificate should be specified as a file or directly, but not both")
+	}
+
+	var certData []byte
+	if cert != "" {
+		certData = []byte(cert)
+	} else {
+		data, err := os.ReadFile(certFile)
+		if err != nil {
+			return nil, status.UnknownErrorf("could not read certificate from %q: %s", certFile, err)
+		}
+		certData = data
+	}
+
 	cpb, _ := pem.Decode(certData)
-	kpb, _ := pem.Decode(keyData)
-	crt, err := x509.ParseCertificate(cpb.Bytes)
+	if cpb == nil {
+		return nil, status.InvalidArgumentErrorf("certificate did not contain valid PEM data")
+	}
+	loadedCert, err := x509.ParseCertificate(cpb.Bytes)
 	if err != nil {
-		return nil, nil, err
+		return nil, status.UnknownErrorf("could not parse certificate: %s", err)
+	}
+	return loadedCert, nil
+}
+
+func LoadCertificateKey(keyFile, key string) (crypto.Signer, error) {
+	if keyFile == "" && key == "" {
+		return nil, status.FailedPreconditionError("certificate key must be specified either as a file or directly")
+	}
+	if keyFile != "" && key != "" {
+		return nil, status.FailedPreconditionError("certificate key should be specified as a file or directly, but not both")
 	}
 
-	key, err := x509.ParsePKCS8PrivateKey(kpb.Bytes)
-	if err != nil {
-		return nil, nil, err
+	var keyData []byte
+	if key != "" {
+		keyData = []byte(key)
+	} else {
+		data, err := os.ReadFile(keyFile)
+		if err != nil {
+			return nil, status.UnknownErrorf("could not read certificate key from %q: %s", keyFile, err)
+		}
+		keyData = data
 	}
 
-	return crt, key.(*rsa.PrivateKey), nil
+	block, rest := pem.Decode(keyData)
+	if block == nil {
+		return nil, status.InvalidArgumentErrorf("certificate key did not contain valid PEM data")
+	}
+
+	keyLocation := "certificate key"
+	if keyFile != "" {
+		keyLocation = "certificate key from " + keyFile
+	}
+
+	for ; block != nil; block, rest = pem.Decode(rest) {
+		// Some key files include leading PEM blocks like "EC PARAMETERS". Skip
+		// non-key blocks and keep scanning until we find a private key block.
+		if !strings.HasSuffix(block.Type, "PRIVATE KEY") {
+			continue
+		}
+		if block.Type == "ENCRYPTED PRIVATE KEY" {
+			return nil, status.FailedPreconditionError("encrypted private keys are not supported")
+		}
+
+		// Attempt to parse the given private key DER block. OpenSSL 0.9.8 generates
+		// PKCS #1 private keys by default, while OpenSSL 1.0.0 generates PKCS #8 keys.
+		// OpenSSL ecparam generates SEC1 EC private keys for ECDSA. We try all three.
+		der := block.Bytes
+		pkcs1Key, pkcs1Err := x509.ParsePKCS1PrivateKey(der)
+		if pkcs1Err == nil {
+			return pkcs1Key, nil
+		}
+		log.Debugf("Failed to parse %s as PKCS1 private key: %s", keyLocation, pkcs1Err)
+
+		pkcs8Key, pkcs8Err := x509.ParsePKCS8PrivateKey(der)
+		if pkcs8Err == nil {
+			switch key := pkcs8Key.(type) {
+			case *rsa.PrivateKey, *ecdsa.PrivateKey, ed25519.PrivateKey:
+				signer, ok := key.(crypto.Signer)
+				if !ok {
+					return nil, status.FailedPreconditionError("unsupported private key type")
+				}
+				return signer, nil
+			default:
+				return nil, status.FailedPreconditionError("unsupported private key type")
+			}
+		}
+		log.Debugf("Failed to parse %s as PKCS8 private key: %s", keyLocation, pkcs8Err)
+
+		ecKey, ecErr := x509.ParseECPrivateKey(der)
+		if ecErr == nil {
+			return ecKey, nil
+		}
+		log.Debugf("Failed to parse %s as SEC1 EC private key: %s", keyLocation, ecErr)
+
+		return nil, status.FailedPreconditionError("could not parse certificate key")
+	}
+	return nil, status.InvalidArgumentErrorf("certificate key did not contain a PEM private key block")
 }

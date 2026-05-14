@@ -1,7 +1,6 @@
 package types
 
 import (
-	"fmt"
 	"io"
 )
 
@@ -9,65 +8,98 @@ type FieldType int32
 
 const (
 	TrigramField FieldType = iota
-	StringTokenField
+	KeywordField
+	SparseNgramField
 
-	DocIDField = "docid"
-	AllFields  = "*"
+	DocIDField   = "_id"
+	DeletesField = "_del"
 )
 
 func (ft FieldType) String() string {
 	switch ft {
 	case TrigramField:
 		return "TrigramToken"
-	case StringTokenField:
-		return "StringToken"
+	case KeywordField:
+		return "KeywordToken"
+	case SparseNgramField:
+		return "SparseNgramToken"
 	default:
 		return "UNKNOWN FIELD TYPE"
 	}
 }
 
-type Field interface {
+type FieldSchema interface {
 	Type() FieldType
 	Name() string
-	Contents() []byte
 	Stored() bool
+	MakeTokenizer() Tokenizer
+	MakeField([]byte) Field
+	String() string
+}
+
+type DocumentSchema interface {
+	Fields() []FieldSchema
+	Field(name string) FieldSchema
+	MakeDocument(map[string][]byte) (Document, error)
+	MustMakeDocument(map[string][]byte) Document
+}
+
+type Field interface {
+	Contents() []byte
+	Type() FieldType
+	Name() string
+	Schema() FieldSchema
 }
 
 type Document interface {
-	ID() uint64
 	Fields() []string
 	Field(string) Field
 	// TODO(tylerw): add Boost() float64
 }
 
-type Token interface {
-	Type() FieldType
-	Ngram() []byte
+type Posting interface {
+	Docid() uint64
+	Positions() []uint64
+	Merge(Posting)
+}
+
+type DocumentMatch interface {
+	Docid() uint64
+	FieldNames() []string
+	Posting(fieldName string) Posting
 }
 
 type Tokenizer interface {
 	Reset(io.Reader)
-	Next() (Token, error)
+	Next() error
+
+	Type() FieldType
+	Ngram() []byte
 }
 
 type IndexWriter interface {
 	AddDocument(doc Document) error
+	UpdateDocument(matchField Field, newDoc Document) error
 	DeleteDocument(docID uint64) error
+	DeleteDocumentByMatchField(matchField Field) error
 	Flush() error
 }
 
 type IndexReader interface {
-	GetStoredDocument(docID uint64, fieldNames ...string) (Document, error)
-	RawQuery(squery []byte) ([]uint64, error)
+	GetStoredDocument(docID uint64) Document
+	RawQuery(squery string) ([]DocumentMatch, error)
 }
 
 type Scorer interface {
-	Score(doc Document) float64
+	Skip() bool
+	Score(docMatch DocumentMatch, doc Document) float64
 }
 
 type HighlightedRegion interface {
 	FieldName() string
 	String() string
+	Line() int
+	CustomSnippet(linesBefore, linesAfter int) string
 }
 
 type Highlighter interface {
@@ -75,59 +107,10 @@ type Highlighter interface {
 }
 
 type Query interface {
-	SQuery() []byte
-	NumResults() int
-	GetScorer() Scorer
-	GetHighlighter() Highlighter
+	SQuery() string
+	Scorer() Scorer
 }
 
 type Searcher interface {
-	Search(q Query) ([]Document, error)
-}
-
-type NamedField struct {
-	ftype  FieldType
-	name   string
-	buf    []byte
-	stored bool
-}
-
-func (f NamedField) Type() FieldType  { return f.ftype }
-func (f NamedField) Name() string     { return f.name }
-func (f NamedField) Contents() []byte { return f.buf }
-func (f NamedField) Stored() bool     { return f.stored }
-func (f NamedField) String() string {
-	var snippet string
-	if len(f.buf) < 10 {
-		snippet = string(f.buf)
-	} else {
-		snippet = string(f.buf[:10])
-	}
-	return fmt.Sprintf("field<type: %v, name: %q, buf: %q>", f.ftype, f.name, snippet)
-}
-func NewNamedField(ftype FieldType, name string, buf []byte, stored bool) NamedField {
-	return NamedField{
-		ftype:  ftype,
-		name:   name,
-		buf:    buf,
-		stored: stored,
-	}
-}
-
-type MapDocument struct {
-	id     uint64
-	fields map[string]NamedField
-}
-
-func (d MapDocument) ID() uint64              { return d.id }
-func (d MapDocument) Field(name string) Field { return d.fields[name] }
-func (d MapDocument) Fields() []string {
-	fieldNames := make([]string, 0, len(d.fields))
-	for name := range d.fields {
-		fieldNames = append(fieldNames, name)
-	}
-	return fieldNames
-}
-func NewMapDocument(id uint64, fieldMap map[string]NamedField) MapDocument {
-	return MapDocument{id, fieldMap}
+	Search(q Query, numResults, offset int) ([]Document, error)
 }

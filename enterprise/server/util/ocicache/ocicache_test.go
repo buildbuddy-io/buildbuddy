@@ -1,0 +1,514 @@
+package ocicache_test
+
+import (
+	"bytes"
+	"context"
+	"io"
+	"testing"
+
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-containerregistry/pkg/crane"
+	"github.com/stretchr/testify/require"
+
+	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
+	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	gcrname "github.com/google/go-containerregistry/pkg/name"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
+)
+
+func TestCacheSecret(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		imageName   string
+		writeSecret string
+		fetchSecret string
+		canFetch    bool
+	}{
+		{
+			name:        "secrets match, can fetch",
+			imageName:   "secrets_match_can_fetch",
+			writeSecret: "not very secret secret",
+			fetchSecret: "not very secret secret",
+			canFetch:    true,
+		},
+		{
+			name:        "secrets do not match, cannot fetch",
+			imageName:   "secrets_do_not_match_cannot_fetch",
+			writeSecret: "not very secret secret",
+			fetchSecret: "completey different not very secret secret",
+			canFetch:    false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			image, err := crane.Image(map[string][]byte{
+				"/tmp/" + tc.imageName: []byte(tc.imageName),
+			})
+			require.NoError(t, err)
+			raw, err := image.RawManifest()
+			require.NoError(t, err)
+
+			te := setupTestEnv(t)
+
+			ctx := context.Background()
+			mediaType, err := image.MediaType()
+			require.NoError(t, err)
+			contentType := string(mediaType)
+			hash, err := image.Digest()
+			require.NoError(t, err)
+
+			acClient := te.GetActionCacheClient()
+			ref, err := gcrname.ParseReference("buildbuddy.io/" + tc.imageName)
+			require.NoError(t, err)
+
+			flags.Set(t, "oci.cache.secret", tc.writeSecret)
+			err = ocicache.WriteManifestToAC(ctx, raw, acClient, ref.Context(), hash, contentType, ref)
+			require.NoError(t, err)
+
+			flags.Set(t, "oci.cache.secret", tc.fetchSecret)
+			mc, err := ocicache.FetchManifestFromAC(ctx, acClient, ref.Context(), hash, ref)
+			if !tc.canFetch {
+				require.Error(t, err)
+				require.Nil(t, mc)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, mc)
+
+			require.Equal(t, contentType, mc.ContentType)
+			require.Empty(t, cmp.Diff(raw, mc.Raw))
+		})
+	}
+}
+
+func setupTestEnv(t *testing.T) *testenv.TestEnv {
+	te := testenv.GetTestEnv(t)
+	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityApp)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+	return te
+}
+
+// TestManifestWrittenOnlyToAC sets the byte stream server and client to nil,
+// writes a manifest to the AC, and fetches it. If that path were to touch the CAS
+// at all, there would be an error trying to write to a nil client or server.
+func TestManifestWithRecordActionResultOrigin(t *testing.T) {
+	// When cache.record_action_result_origin is enabled, the action cache server
+	// appends OriginMetadata to AuxiliaryMetadata. This test verifies that
+	// FetchManifestFromAC correctly handles manifests that have additional
+	// auxiliary metadata entries beyond the OCIManifestContent.
+	flags.Set(t, "cache.record_action_result_origin", true)
+
+	te := setupTestEnv(t)
+
+	imageName := "test_manifest_with_record_origin"
+	image, err := crane.Image(map[string][]byte{
+		"/tmp/" + imageName: []byte(imageName),
+	})
+	require.NoError(t, err)
+	raw, err := image.RawManifest()
+	require.NoError(t, err)
+
+	// Add request metadata with an invocation ID to trigger OriginMetadata recording
+	ctx, err := bazel_request.WithRequestMetadata(context.Background(), &repb.RequestMetadata{
+		ToolInvocationId: "f5b5e1f7-7e91-4e3f-88f6-aaaaaaaaaaaa",
+	})
+	require.NoError(t, err)
+
+	mediaType, err := image.MediaType()
+	require.NoError(t, err)
+	contentType := string(mediaType)
+	hash, err := image.Digest()
+	require.NoError(t, err)
+
+	acClient := te.GetActionCacheClient()
+	ref, err := gcrname.ParseReference("buildbuddy.io/" + imageName)
+	require.NoError(t, err)
+
+	err = ocicache.WriteManifestToAC(ctx, raw, acClient, ref.Context(), hash, contentType, ref)
+	require.NoError(t, err)
+
+	mc, err := ocicache.FetchManifestFromAC(ctx, acClient, ref.Context(), hash, ref)
+	require.NoError(t, err)
+	require.NotNil(t, mc)
+
+	require.Equal(t, contentType, mc.ContentType)
+	require.Empty(t, cmp.Diff(raw, mc.Raw))
+}
+
+func TestManifestWrittenOnlyToAC(t *testing.T) {
+	te := setupTestEnv(t)
+
+	imageName := "test_manifest_written_only_to_ac"
+	image, err := crane.Image(map[string][]byte{
+		"/tmp/" + imageName: []byte(imageName),
+	})
+	require.NoError(t, err)
+	raw, err := image.RawManifest()
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	mediaType, err := image.MediaType()
+	require.NoError(t, err)
+	contentType := string(mediaType)
+	hash, err := image.Digest()
+	require.NoError(t, err)
+
+	acClient := te.GetActionCacheClient()
+	ref, err := gcrname.ParseReference("buildbuddy.io/" + imageName)
+	require.NoError(t, err)
+
+	var out bytes.Buffer
+	err = ocicache.WriteBlobOrManifestToCacheAndWriter(ctx,
+		bytes.NewReader(raw),
+		&out,
+		nil, // explicitly pass nil bytestream client
+		acClient,
+		ref.Context(),
+		ocipb.OCIResourceType_MANIFEST,
+		hash,
+		contentType,
+		int64(len(raw)),
+		ref,
+	)
+	require.NoError(t, err)
+	require.Equal(t, len(raw), out.Len())
+	require.Empty(t, cmp.Diff(raw, out.Bytes()))
+
+	mc, err := ocicache.FetchManifestFromAC(ctx, acClient, ref.Context(), hash, ref)
+	require.NoError(t, err)
+	require.NotNil(t, mc)
+
+	require.Equal(t, contentType, mc.ContentType)
+	require.Empty(t, cmp.Diff(raw, mc.Raw))
+}
+
+func TestWriteAndFetchBlob(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "write_and_fetch_blob", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+	r := bytes.NewReader(layerBuf)
+
+	err := ocicache.WriteBlobToCache(ctx, r, bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+}
+
+func TestBlobUploader(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "blob_uploader", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	up, err := ocicache.NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+
+	written, err := up.Write(layerBuf[:256])
+	require.NoError(t, err)
+	require.Equal(t, 256, written)
+	blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
+
+	written, err = up.Write(layerBuf[256:])
+	require.NoError(t, err)
+	require.Equal(t, len(layerBuf)-256, written)
+	blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
+
+	err = up.Commit()
+	require.NoError(t, err)
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+
+	// Second commit fails, but can still fetch blob.
+	err = up.Commit()
+	require.Error(t, err)
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+
+	err = up.Close()
+	require.NoError(t, err)
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+
+	// Second close fails, but can still fetch blob.
+	err = up.Close()
+	require.Error(t, err)
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+}
+
+func TestBlobUploader_PartialWriteFails(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "blob_uploader_partial_write", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	up, err := ocicache.NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+	written, err := up.Write(layerBuf[:256])
+	require.NoError(t, err)
+	require.Equal(t, 256, written)
+	err = up.Close()
+	require.NoError(t, err)
+
+	blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
+}
+
+func blobDoesNotExist(t *testing.T, ctx context.Context, te *testenv.TestEnv, repo gcrname.Repository, hash gcr.Hash, contentLength int64) {
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
+	require.Error(t, err)
+	require.Nil(t, metadata)
+
+	out := &bytes.Buffer{}
+	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
+	require.Error(t, err)
+}
+
+func TestBlobUploader_BlobExists(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "blob_uploader_blob_exists", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	for i := 0; i < 2; i++ {
+		up, err := ocicache.NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
+		require.NoError(t, err)
+
+		written, err := up.Write(layerBuf)
+		require.NoError(t, err)
+		require.Equal(t, len(layerBuf), written)
+
+		err = up.Commit()
+		require.NoError(t, err)
+
+		fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+
+		err = up.Close()
+		require.NoError(t, err)
+
+		fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+	}
+}
+
+func TestReadThroughCacher(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "read_through_cacher", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+	r := io.NopCloser(bytes.NewReader(layerBuf))
+
+	cacher, err := ocicache.NewBlobReadThroughCacher(ctx, r, bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+
+	readout, err := io.ReadAll(cacher)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(layerBuf, readout))
+
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+
+	err = cacher.Close()
+	require.NoError(t, err)
+
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+}
+
+func TestReadThroughCacher_PartialReadPreventsCommit(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "read_through_cacher_partial_read", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+	rc := io.NopCloser(bytes.NewReader(layerBuf))
+
+	cacher, err := ocicache.NewBlobReadThroughCacher(ctx, rc, bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+
+	readbuf := make([]byte, 256)
+	n, err := cacher.Read(readbuf)
+	require.NoError(t, err)
+	require.Equal(t, 256, n)
+
+	err = cacher.Close()
+	require.NoError(t, err)
+
+	blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
+}
+
+func TestReadThroughCacher_ReturnsEOF(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "read_through_cacher", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+	r := io.NopCloser(bytes.NewReader(layerBuf))
+
+	cacher, err := ocicache.NewBlobReadThroughCacher(ctx, r, bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+
+	readout := &bytes.Buffer{}
+	readbuf := make([]byte, 128)
+	for {
+		n, err := cacher.Read(readbuf)
+		if err != nil {
+			require.ErrorIs(t, err, io.EOF)
+			fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+			break
+		}
+		require.Greater(t, n, 0)
+		blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
+		_, err = readout.Write(readbuf[:n])
+		require.NoError(t, err)
+	}
+	require.Empty(t, cmp.Diff(layerBuf, readout.Bytes()))
+
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+
+	err = cacher.Close()
+	require.NoError(t, err)
+
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+}
+
+func createLayer(t *testing.T, imageName string, filesize int64) ([]byte, gcrname.Repository, gcr.Hash, string) {
+	_, filebuf := testdigest.RandomCASResourceBuf(t, filesize)
+	filename, err := random.RandomString(32)
+	require.NoError(t, err)
+	image, err := crane.Image(map[string][]byte{
+		"/tmp/" + filename: filebuf,
+	})
+	require.NoError(t, err)
+	imageRef, err := gcrname.ParseReference("buildbuddy.io/" + imageName)
+	require.NoError(t, err)
+	layers, err := image.Layers()
+	require.NoError(t, err)
+	require.Len(t, layers, 1)
+	layer := layers[0]
+	hash, err := layer.Digest()
+	require.NoError(t, err)
+	layerRef := imageRef.Context().Digest(hash.String())
+	mediaType, err := layer.MediaType()
+	require.NoError(t, err)
+	contentType := string(mediaType)
+	rc, err := layer.Compressed()
+	require.NoError(t, err)
+	defer rc.Close()
+	layerBuf, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	return layerBuf, layerRef.Context(), hash, contentType
+}
+
+func fetchAndCheckBlob(t *testing.T, te *testenv.TestEnv, layerBuf []byte, repo gcrname.Repository, hash gcr.Hash, contentType string) {
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
+	require.NoError(t, err)
+	require.Equal(t, contentType, metadata.GetContentType())
+	require.Equal(t, contentLength, metadata.GetContentLength())
+
+	out := &bytes.Buffer{}
+	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(layerBuf, out.Bytes()))
+}
+
+func mustRepo(t *testing.T, name string) gcrname.Repository {
+	t.Helper()
+	repo, err := gcrname.NewRepository(name)
+	require.NoError(t, err)
+	return repo
+}
+
+func mustHash(t *testing.T, s string) gcr.Hash {
+	t.Helper()
+	h, err := gcr.NewHash(s)
+	require.NoError(t, err)
+	return h
+}
+
+const (
+	testDigest1 = "sha256:0000000000000000000000000000000000000000000000000000000000000001"
+	testDigest2 = "sha256:0000000000000000000000000000000000000000000000000000000000000002"
+)
+
+func TestNewBlobFetchKey_NilCreds(t *testing.T) {
+	key := ocicache.NewBlobFetchKey(
+		mustRepo(t, "registry.example.com/repo"),
+		mustHash(t, testDigest1),
+		nil,
+	)
+	// Smoke test: key should be usable as a map key.
+	m := map[ocicache.BlobFetchKey]bool{key: true}
+	require.True(t, m[key])
+}
+
+func TestNewBlobFetchKey_DifferentCredsDifferentKeys(t *testing.T) {
+	repo := mustRepo(t, "registry.example.com/repo")
+	hash := mustHash(t, testDigest1)
+	key1 := ocicache.NewBlobFetchKey(repo, hash, nil)
+	key2 := ocicache.NewBlobFetchKey(repo, hash, &rgpb.Credentials{Username: "user", Password: "pass"})
+	require.NotEqual(t, key1, key2, "different credentials must produce different keys")
+}
+
+func TestNewBlobFetchKey_SameInputsSameKeys(t *testing.T) {
+	repo := mustRepo(t, "registry.example.com/repo")
+	hash := mustHash(t, testDigest1)
+	creds := &rgpb.Credentials{Username: "user", Password: "pass"}
+	key1 := ocicache.NewBlobFetchKey(repo, hash, creds)
+	key2 := ocicache.NewBlobFetchKey(repo, hash, creds)
+	require.Equal(t, key1, key2)
+}
+
+func TestNewBlobFetchKey_NilCredsMatchesEmptyCreds(t *testing.T) {
+	repo := mustRepo(t, "registry.example.com/repo")
+	hash := mustHash(t, testDigest1)
+	nilKey := ocicache.NewBlobFetchKey(repo, hash, nil)
+	emptyKey := ocicache.NewBlobFetchKey(repo, hash, &rgpb.Credentials{})
+	require.Equal(t, nilKey, emptyKey, "nil creds should produce the same key as empty creds")
+}
+
+func TestNewBlobFetchKey_DifferentReposDifferentKeys(t *testing.T) {
+	hash := mustHash(t, testDigest1)
+	creds := &rgpb.Credentials{Username: "user", Password: "pass"}
+	key1 := ocicache.NewBlobFetchKey(mustRepo(t, "registry.example.com/repo1"), hash, creds)
+	key2 := ocicache.NewBlobFetchKey(mustRepo(t, "registry.example.com/repo2"), hash, creds)
+	require.NotEqual(t, key1, key2, "different repos must produce different keys")
+}
+
+func TestNewBlobFetchKey_DifferentDigestsDifferentKeys(t *testing.T) {
+	repo := mustRepo(t, "registry.example.com/repo")
+	creds := &rgpb.Credentials{Username: "user", Password: "pass"}
+	key1 := ocicache.NewBlobFetchKey(repo, mustHash(t, testDigest1), creds)
+	key2 := ocicache.NewBlobFetchKey(repo, mustHash(t, testDigest2), creds)
+	require.NotEqual(t, key1, key2, "different digests must produce different keys")
+}

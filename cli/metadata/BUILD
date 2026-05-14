@@ -1,4 +1,6 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//cli:__subpackages__"])
 
 go_library(
     name = "metadata",
@@ -7,10 +9,21 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/log",
-        "//cli/parser",
         "//cli/workspace",
         "//server/util/git",
     ],
 )
 
-package(default_visibility = ["//cli:__subpackages__"])
+go_test(
+    name = "metadata_test",
+    srcs = ["metadata_test.go"],
+    embed = [":metadata"],
+    deps = [
+        "//cli/arg",
+        "//cli/parser",
+        "//cli/parser/test_data",
+        "//cli/workspace",
+        "//server/testutil/testgit",
+        "@com_github_stretchr_testify//require",
+    ],
+)

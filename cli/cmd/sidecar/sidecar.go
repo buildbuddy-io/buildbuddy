@@ -1,3 +1,15 @@
+// Package sidecar is the entrypoint for the bb CLI's sidecar binary: the
+// long-lived helper process that bazel talks to in place of the configured
+// BES and remote cache backends. It wires up the gRPC services and listens on
+// a unix socket; the CLI side that starts and manages this process lives in
+// cli/sidecar.
+//
+// Related packages:
+//   - cli/sidecar — CLI-side lifecycle management (start, reuse, argv rewrite)
+//     for the sidecar process built from this package.
+//   - cli/sidecar_proxy — the gRPC services (ByteStream/CAS/AC/Capabilities)
+//     this binary exposes to bazel.
+//
 // TODO: Move this out of `cmd` since it is no longer a cmd.
 package sidecar
 
@@ -10,15 +22,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/config"
 	"github.com/buildbuddy-io/buildbuddy/cli/devnull"
+	"github.com/buildbuddy-io/buildbuddy/cli/sidecar_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
-	"github.com/buildbuddy-io/buildbuddy/server/cache_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -48,7 +61,7 @@ var (
 	cacheDir          = flag.String("cache_dir", "", "Root directory to use for local cache")
 	cacheMaxSizeBytes = flag.Int64("cache_max_size_bytes", 0, "Max cache size, in bytes")
 	inactivityTimeout = flag.Duration("inactivity_timeout", 5*time.Minute, "Sidecar will terminate after this much inactivity")
-	besSynchronous    = flag.Bool("bes_synchronous", false, "If true, wait until ackowledged")
+	besSynchronous    = flag.Bool("bes_synchronous", false, "If true, wait until acknowledged")
 )
 
 var (
@@ -115,8 +128,8 @@ func initializeEnv() *real_environment.RealEnv {
 func initializeGRPCServer(env *real_environment.RealEnv) (*grpc.Server, net.Listener) {
 	var lis net.Listener
 	var err error
-	if strings.HasPrefix(*listenAddr, "unix://") {
-		sockPath := strings.TrimPrefix(*listenAddr, "unix://")
+	if after, ok := strings.CutPrefix(*listenAddr, "unix://"); ok {
+		sockPath := after
 		lis, err = net.Listen("unix", sockPath)
 	} else {
 		lis, err = net.Listen("tcp", *listenAddr)
@@ -128,9 +141,10 @@ func initializeGRPCServer(env *real_environment.RealEnv) (*grpc.Server, net.List
 	grpcOptions := []grpc.ServerOption{
 		interceptors.GetUnaryInterceptor(env),
 		interceptors.GetStreamInterceptor(env),
-		grpc.ChainUnaryInterceptor(inactivityUnaryInterceptor(), interceptors.PropagateAPIKeyUnaryInterceptor()),
-		grpc.ChainStreamInterceptor(inactivityStreamInterceptor(), interceptors.PropagateAPIKeyStreamInterceptor()),
+		grpc.ChainUnaryInterceptor(inactivityUnaryInterceptor(), interceptors.PropagateMetadataUnaryInterceptor(authutil.APIKeyHeader)),
+		grpc.ChainStreamInterceptor(inactivityStreamInterceptor(), interceptors.PropagateMetadataStreamInterceptor(authutil.APIKeyHeader)),
 		grpc.MaxRecvMsgSize(grpc_server.MaxRecvMsgSizeBytes()),
+		grpc_server.KeepaliveEnforcementPolicy(),
 	}
 	grpcServer := grpc.NewServer(grpcOptions...)
 	reflection.Register(grpcServer)
@@ -140,7 +154,7 @@ func initializeGRPCServer(env *real_environment.RealEnv) (*grpc.Server, net.List
 func registerBESProxy(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	buildEventProxyClients := make([]pepb.PublishBuildEventClient, 0)
 	targets := make([]string, 0)
-	for _, besBE := range strings.Split(*besBackend, ",") {
+	for besBE := range strings.SplitSeq(*besBackend, ",") {
 		besTarget := normalizeGrpcTarget(besBE)
 		targets = append(targets, besTarget)
 		buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(env, besTarget, *besSynchronous))
@@ -162,7 +176,7 @@ func registerCacheProxy(ctx context.Context, env *real_environment.RealEnv, grpc
 	if err != nil {
 		log.Fatalf("Error dialing remote cache: %s", err.Error())
 	}
-	cacheProxy, err := cache_proxy.NewCacheProxy(ctx, env, conn)
+	cacheProxy, err := sidecar_proxy.NewCacheProxy(ctx, env, conn)
 	if err != nil {
 		log.Fatalf("Error initializing cache proxy: %s", err.Error())
 	}
@@ -206,12 +220,10 @@ func initializeDiskCache(env *real_environment.RealEnv) {
 }
 
 func Handle() {
-	sc, args := arg.Pop(os.Args, "sidecar")
-	if sc != "1" {
+	if os.Getenv(config.BbIsSidecar) != "1" {
 		return
 	}
 	defer os.Exit(0)
-	os.Args = args
 
 	flag.Parse()
 	ctx, cancel := context.WithCancel(context.Background())

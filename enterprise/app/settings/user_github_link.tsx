@@ -1,7 +1,9 @@
-import React from "react";
 import { User as UserIcon } from "lucide-react";
+import React from "react";
 import alertService from "../../../app/alert/alert_service";
+import authService from "../../../app/auth/auth_service";
 import { User } from "../../../app/auth/user";
+import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Dialog, {
   DialogBody,
@@ -10,13 +12,14 @@ import Dialog, {
   DialogHeader,
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
+import { TextLink } from "../../../app/components/link/link";
 import Modal from "../../../app/components/modal/modal";
 import Spinner from "../../../app/components/spinner/spinner";
-import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import errorService from "../../../app/errors/error_service";
-import authService from "../../../app/auth/auth_service";
-import { TextLink } from "../../../app/components/link/link";
+import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
+import { linkReadOnlyGitHubAppURL, linkReadWriteGitHubAppURL } from "../../../app/util/github";
 import { github } from "../../../proto/github_ts_proto";
+import GitHubTooltip from "./github_tooltip";
 
 export interface Props {
   user: User;
@@ -53,13 +56,6 @@ export default class UserGitHubLink extends React.Component<Props, State> {
     this.fetchGitHubAccount();
   }
 
-  private gitHubLinkUrl(): string {
-    const params = new URLSearchParams({
-      user_id: this.props.user.displayUser?.userId?.id || "",
-      redirect_url: window.location.href,
-    });
-    return `/auth/github/app/link/?${params}`;
-  }
   private fetchGitHubAccount() {
     this.accountFetch?.cancel();
 
@@ -93,13 +89,9 @@ export default class UserGitHubLink extends React.Component<Props, State> {
   private onConfirmDelete() {
     this.setState({ isDeleting: true });
     rpcService.service
-      .unlinkGitHubAccount(github.UnlinkGitHubAccountRequest.create({ unlinkUserAccount: true }))
+      .unlinkUserGitHubAccount({})
       .then((response) => {
-        if (response.warning.length) {
-          alertService.warning("Warnings encountered while deleting GitHub account:\n" + response.warning.join("\n"));
-        } else {
-          alertService.success("Successfully unlinked GitHub account");
-        }
+        alertService.success("Successfully unlinked GitHub account");
         this.setState({ deleteModalVisible: false });
         this.refreshUser();
       })
@@ -119,11 +111,23 @@ export default class UserGitHubLink extends React.Component<Props, State> {
 
     return (
       <div className="github-account-link">
-        <div className="settings-option-title">GitHub account link</div>
+        <div className="settings-option-title github-settings-title">
+          GitHub account link
+          <GitHubTooltip />
+        </div>
         <div className="settings-option-description">
           <p>
-            Linking a GitHub account allows you to configure BuildBuddy integrations for your GitHub repositories
-            directly in the BuildBuddy UI.
+            Linking your GitHub account to BuildBuddy lets you manage the BuildBuddy GitHub app directly in the
+            BuildBuddy UI.
+          </p>
+          <p>
+            Even if you login to BuildBuddy using your GitHub account, this must be explicitly granted to access
+            GitHub-related features.
+          </p>
+          <p>
+            Unlinking your account will prevent you from managing the BuildBuddy GitHub app in our UI, but it will not
+            disable the app and related features. To manage the app installation itself, go to the "GitHub
+            installations" tab under "Organization settings".
           </p>
         </div>
         {this.props.user.githubLinked ? (
@@ -148,9 +152,20 @@ export default class UserGitHubLink extends React.Component<Props, State> {
             </OutlinedButton>
           </div>
         ) : (
-          <FilledButton className="settings-button settings-link-button">
-            <a href={this.gitHubLinkUrl()}>Link GitHub account</a>
-          </FilledButton>
+          <div className="setup-button-container">
+            <FilledButton className="settings-button settings-link-button left-aligned-button">
+              <a href={linkReadWriteGitHubAppURL(this.props.user.displayUser?.userId?.id || "", "")}>
+                Link GitHub account (full access)
+              </a>
+            </FilledButton>
+            {capabilities.readOnlyGitHubApp && (
+              <FilledButton className="settings-button settings-link-button left-aligned-button">
+                <a href={linkReadOnlyGitHubAppURL(this.props.user.displayUser?.userId?.id || "", "")}>
+                  Link GitHub account (read-only)
+                </a>
+              </FilledButton>
+            )}
+          </div>
         )}
         {this.state.deleteModalVisible && (
           <Modal
@@ -164,7 +179,10 @@ export default class UserGitHubLink extends React.Component<Props, State> {
               <DialogBody>
                 <p>
                   After unlinking, you can also revoke app access via{" "}
-                  <TextLink href="https://github.com/settings/applications">GitHub OAuth app settings</TextLink>.
+                  <TextLink href="https://github.com/settings/apps/authorizations">
+                    GitHub Applications settings
+                  </TextLink>
+                  .
                 </p>
               </DialogBody>
               <DialogFooter>

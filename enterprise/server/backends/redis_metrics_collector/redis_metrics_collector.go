@@ -8,11 +8,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/go-redis/redis/v8"
-)
 
-const (
-	// How long until counts expire from Redis.
-	countExpiration = 1 * 24 * time.Hour
+	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
 
 type collector struct {
@@ -53,7 +50,7 @@ func (c *collector) IncrementCountsWithExpiry(ctx context.Context, key string, c
 }
 
 func (c *collector) IncrementCounts(ctx context.Context, key string, counts map[string]int64) error {
-	return c.IncrementCountsWithExpiry(ctx, key, counts, countExpiration)
+	return c.IncrementCountsWithExpiry(ctx, key, counts, cache_config.CountTTL())
 }
 
 func (c *collector) IncrementCountWithExpiry(ctx context.Context, key, field string, n int64, expiry time.Duration) error {
@@ -67,7 +64,7 @@ func (c *collector) IncrementCountWithExpiry(ctx context.Context, key, field str
 }
 
 func (c *collector) IncrementCount(ctx context.Context, key, field string, n int64) error {
-	return c.IncrementCountWithExpiry(ctx, key, field, n, countExpiration)
+	return c.IncrementCountWithExpiry(ctx, key, field, n, cache_config.CountTTL())
 }
 
 func (c *collector) SetAddWithExpiry(ctx context.Context, key string, expiry time.Duration, members ...string) error {
@@ -85,7 +82,7 @@ func (c *collector) SetAddWithExpiry(ctx context.Context, key string, expiry tim
 }
 
 func (c *collector) SetAdd(ctx context.Context, key string, members ...string) error {
-	return c.SetAddWithExpiry(ctx, key, countExpiration, members...)
+	return c.SetAddWithExpiry(ctx, key, cache_config.CountTTL(), members...)
 }
 
 func (c *collector) SetGetMembers(ctx context.Context, key string) ([]string, error) {

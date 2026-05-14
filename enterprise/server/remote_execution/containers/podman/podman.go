@@ -12,14 +12,14 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/soci_store"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -40,7 +41,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
 var (
@@ -52,20 +52,18 @@ var (
 	// then look at the output of
 	//     find /sys/fs/cgroup | grep libpod-$(podman container inspect sleepy | jq -r '.[0].Id')
 
-	memUsagePathTemplate = flag.String("executor.podman.memory_usage_path_template", "", "Go template specifying a path pointing to a container's current memory usage, in bytes. {{.ContainerID}} will be replaced by the containerID.", flag.Deprecated("This is now detected automatically. If paths aren't detected properly, please report a bug."))
-	cpuUsagePathTemplate = flag.String("executor.podman.cpu_usage_path_template", "", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. {{.ContainerID}} will be replaced by the containerID.", flag.Deprecated("This is now detected automatically. If paths aren't detected properly, please report a bug."))
-
-	privateImageStreamingEnabled = flag.Bool("executor.podman.enable_private_image_streaming", false, "If set and --executor.podman.enable_image_streaming is set, all private (authenticated) podman images are streamed using soci artifacts generated and stored in the apps.")
+	_ = flag.Bool("executor.podman.enable_private_image_streaming", false, "If set and --executor.podman.enable_image_streaming is set, all private (authenticated) podman images are streamed using soci artifacts generated and stored in the apps.", flag.Deprecated("Image streaming support via soci-snapshotter has been removed."))
 
 	pullTimeout   = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 	parallelPulls = flag.Int("executor.podman.parallel_pulls", 0, "The system-wide maximum number of image layers to be pulled from remote container registries simultaneously. If set to 0, no value is set and podman will use its default value.")
 
 	podmanRuntime       = flag.String("executor.podman.runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
 	podmanStorageDriver = flag.String("executor.podman.storage_driver", "overlay", "The podman storage driver to use.")
-	podmanEnableStats   = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
+	podmanEnableStats   = flag.Bool("executor.podman.enable_stats", true, "Whether to enable cgroup-based podman stats.")
 	transientStore      = flag.Bool("executor.podman.transient_store", false, "Enables --transient-store for podman commands.", flag.Deprecated("--transient-store is now always applied if the podman version supports it"))
 	podmanDNS           = flag.String("executor.podman.dns", "8.8.8.8", "Specifies a custom DNS server for podman to use. Defaults to 8.8.8.8. If set to empty, no --dns= flag will be passed to podman.")
 	podmanGPU           = flag.String("executor.podman.gpus", "", "Specifies the value of the --gpus= flag to pass to podman. Set to 'all' to pass all GPUs.")
+	podmanPidsLimit     = flag.String("executor.podman.pids_limit", "", "Specifies the value of the --pids-limit= flag to pass to podman. Set to '-1' for unlimited PIDs. The default is 2048 on systems that support pids cgroup controller.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -78,6 +76,8 @@ var (
 
 	// A map from image name to pull status. This is used to avoid parallel pulling of the same image.
 	pullOperations sync.Map
+
+	databaseLockedRegexp = regexp.MustCompile("transaction.*: database is locked")
 )
 
 const (
@@ -85,10 +85,12 @@ const (
 	podmanInternalExitCode           = 125
 	podmanCommandNotRunnableExitCode = 126
 	podmanCommandNotFoundExitCode    = 127
+	podmanCommandOutOfRangeExitCode  = 255
 
 	// podmanExecSIGKILLExitCode is the exit code returned by `podman exec` when the exec
 	// process is killed due to the parent container being removed.
 	podmanExecSIGKILLExitCode = 137
+	podmanExecSIGTERMExitCode = 143
 
 	podmanDefaultNetworkIPRange = "10.88.0.0/16"
 	podmanDefaultNetworkGateway = "10.88.0.1"
@@ -96,9 +98,6 @@ const (
 
 	// --cidfile to be written by podman before we give up.
 	pollCIDTimeout = 15 * time.Second
-	// statsPollInterval controls how often we will poll the cgroupfs to determine
-	// a container's resource usage.
-	statsPollInterval = 50 * time.Millisecond
 
 	// How long to cache the result of `podman image exists` when it returns
 	// true. A short duration is used to help recover from rare scenarios in
@@ -115,11 +114,10 @@ type pullStatus struct {
 
 type Provider struct {
 	env              environment.Env
-	podmanVersion    semver.Version
+	podmanVersion    *semver.Version
 	cgroupPaths      *cgroup.Paths
 	buildRoot        string
-	sociStore        soci_store.Store
-	imageExistsCache *imageExistsCache
+	imageExistsCache lru.LRU[struct{}]
 }
 
 func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
@@ -132,12 +130,12 @@ func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
 		log.Warningf("Detected podman version %s does not support --transient-store option, which significantly improves performance. Consider upgrading podman.", podmanVersion)
 	}
 
-	sociStore, err := soci_store.Init(env)
-	if err != nil {
-		return nil, err
-	}
-
-	imageExistsCache, err := newImageExistsCache()
+	imageExistsCache, err := lru.New(&lru.Config[struct{}]{
+		TTL:        imageExistsCacheTTL,
+		MaxSize:    imageExistsCacheSize,
+		SizeFn:     func(struct{}) int64 { return 1 },
+		ThreadSafe: true,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -157,13 +155,9 @@ image_parallel_copies = %d`, *parallelPulls)
 	}
 
 	return &Provider{
-		env:           env,
-		podmanVersion: *podmanVersion,
-		cgroupPaths: &cgroup.Paths{
-			MemoryTemplate: *memUsagePathTemplate,
-			CPUTemplate:    *cpuUsagePathTemplate,
-		},
-		sociStore:        sociStore,
+		env:              env,
+		podmanVersion:    podmanVersion,
+		cgroupPaths:      &cgroup.Paths{},
 		buildRoot:        buildRoot,
 		imageExistsCache: imageExistsCache,
 	}, nil
@@ -171,25 +165,19 @@ image_parallel_copies = %d`, *parallelPulls)
 
 func getPodmanVersion(ctx context.Context, commandRunner interfaces.CommandRunner) (*semver.Version, error) {
 	var stdout, stderr bytes.Buffer
-	stdio := interfaces.Stdio{Stdout: &stdout, Stderr: &stderr}
-	command := []string{"podman", "version", fmt.Sprintf("--storage-driver=%s", *podmanStorageDriver), "--format={{.Client.Version}}"}
-	result := commandRunner.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, &stdio)
+	stdio := &interfaces.Stdio{Stdout: &stdout, Stderr: &stderr}
+	result := runPodman(ctx, commandRunner, nil /*=version*/, "version", stdio, "--format={{.Client.Version}}")
 	if result.Error != nil || result.ExitCode != 0 {
 		return nil, status.InternalErrorf("command failed: %s: %s", result.Error, stderr.String())
 	}
-	return semver.NewVersion(strings.TrimSpace(stdout.String()))
+	v, err := semver.NewVersion(strings.TrimSpace(stdout.String()))
+	if err != nil {
+		return nil, status.InternalErrorf("parse podman version output %q: %s (stderr: %q)", stdout.String(), err, stderr.String())
+	}
+	return v, nil
 }
 
-func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.ScheduledTask, _ *rnpb.RunnerState, _ string) (container.CommandContainer, error) {
-	imageIsPublic := props.ContainerRegistryUsername == "" && props.ContainerRegistryPassword == ""
-	imageIsStreamable := (imageIsPublic || *privateImageStreamingEnabled)
-	if imageIsStreamable {
-		if err := p.sociStore.WaitUntilReady(); err != nil {
-			return nil, status.UnavailableErrorf("soci-store unavailable: %s", err)
-		}
-
-	}
-
+func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
 	// Re-use docker flags for podman.
 	networkMode, err := flagutil.GetDereferencedValue[string]("executor.docker_network")
 	if err != nil {
@@ -207,26 +195,35 @@ func (p *Provider) New(ctx context.Context, props *platform.Properties, _ *repb.
 	if err != nil {
 		return nil, err
 	}
+	containerName, err := generateContainerName()
+	if err != nil {
+		return nil, status.UnavailableErrorf("failed to generate podman container name: %s", err)
+	}
+
+	network, err := platform.GetEffectiveDockerNetwork(args.Props.Network, args.Props.DockerNetwork)
+	if err != nil {
+		return nil, err
+	}
 
 	return &podmanCommandContainer{
 		env:               p.env,
+		name:              containerName,
 		podmanVersion:     p.podmanVersion,
 		cgroupPaths:       p.cgroupPaths,
-		image:             props.ContainerImage,
-		imageIsStreamable: imageIsStreamable,
-		sociStore:         p.sociStore,
+		image:             args.Props.ContainerImage,
+		imageIsStreamable: false,
 		imageExistsCache:  p.imageExistsCache,
 		buildRoot:         p.buildRoot,
+		blockDevice:       args.BlockDevice,
 		options: &PodmanOptions{
-			ForceRoot:          props.DockerForceRoot,
-			Init:               props.DockerInit,
-			User:               props.DockerUser,
-			Network:            props.DockerNetwork,
+			ForceRoot:          args.Props.DockerForceRoot,
+			Init:               args.Props.DockerInit,
+			User:               args.Props.DockerUser,
+			Network:            network,
 			DefaultNetworkMode: networkMode,
 			CapAdd:             capAdd,
 			Devices:            devices,
 			Volumes:            volumes,
-			Runtime:            *podmanRuntime,
 			EnableStats:        *podmanEnableStats,
 		},
 	}, nil
@@ -241,7 +238,6 @@ type PodmanOptions struct {
 	CapAdd             string
 	Devices            []container.DockerDeviceMapping
 	Volumes            []string
-	Runtime            string
 	// EnableStats determines whether to enable the stats API. This also enables
 	// resource monitoring while tasks are in progress.
 	EnableStats bool
@@ -250,23 +246,23 @@ type PodmanOptions struct {
 // podmanCommandContainer containerizes a single command's execution using a Podman container.
 type podmanCommandContainer struct {
 	env              environment.Env
-	podmanVersion    semver.Version
-	imageExistsCache *imageExistsCache
+	podmanVersion    *semver.Version
+	imageExistsCache lru.LRU[struct{}]
 	cgroupPaths      *cgroup.Paths
 
-	image     string
-	buildRoot string
-	workDir   string
+	image       string
+	buildRoot   string
+	workDir     string
+	blockDevice *block_io.Device
 
 	imageIsStreamable bool
-	sociStore         soci_store.Store
 
 	options *PodmanOptions
 
 	// name is the container name.
 	name string
 
-	stats containerStats
+	stats container.UsageStats
 
 	// cid contains the container ID read from the cidfile.
 	cid atomic.Value
@@ -298,15 +294,14 @@ func addUserArgs(args []string, options *PodmanOptions) []string {
 	return args
 }
 
-func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
+func (c *podmanCommandContainer) getPodmanRunArgs(workDir, cwd string) []string {
 	args := []string{
 		"--hostname",
 		"localhost",
 		"--workdir",
-		workDir,
+		cwd,
 		"--name",
 		c.name,
-		"--rm",
 		"--cidfile",
 		c.cidFilePath(),
 		"--volume",
@@ -344,6 +339,9 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	if *podmanGPU != "" {
 		args = append(args, "--gpus="+*podmanGPU)
 	}
+	if *podmanPidsLimit != "" {
+		args = append(args, "--pids-limit="+*podmanPidsLimit)
+	}
 	for _, device := range c.options.Devices {
 		deviceSpecs := make([]string, 0)
 		if device.PathOnHost != "" {
@@ -360,15 +358,6 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	for _, volume := range c.options.Volumes {
 		args = append(args, "--volume="+volume)
 	}
-	if c.options.Runtime != "" {
-		args = append(args, "--runtime="+c.options.Runtime)
-		if filepath.Base(c.options.Runtime) == "runsc" {
-			// gVisor will attempt to setup cgroups, but podman has
-			// already done that, so tell gVisor not to.
-			args = append(args, "--runtime-flag=ignore-cgroups")
-		}
-	}
-	args = append(args, c.sociStore.GetPodmanArgs()...)
 	if c.options.Init {
 		args = append(args, "--init")
 	}
@@ -386,59 +375,84 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		CommandDebugString: fmt.Sprintf("(podman) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
 	}
-	containerName, err := generateContainerName()
-	c.name = containerName
-	if err != nil {
-		result.Error = status.UnavailableErrorf("failed to generate podman container name: %s", err)
-		return result
-	}
 
-	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.image); err != nil {
+	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.image, false /*useOCIFetcher*/); err != nil {
 		result.Error = status.UnavailableErrorf("failed to pull docker image: %s", err)
 		return result
 	}
 
-	stopMonitoring, statsCh := c.monitor(ctx)
-	defer stopMonitoring()
-
-	podmanRunArgs := c.getPodmanRunArgs(workDir)
+	podmanRunArgs := c.getPodmanRunArgs(workDir, filepath.Join(workDir, command.GetWorkingDirectory()))
 	for _, envVar := range command.GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
 	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, command.Arguments...)
-	result = c.runPodman(ctx, "run", &interfaces.Stdio{}, podmanRunArgs...)
+	result = c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
+		return c.runPodman(ctx, "run", &interfaces.Stdio{}, podmanRunArgs...)
+	})
 
 	if result.ExitCode == podmanCommandNotRunnableExitCode {
 		log.CtxInfof(ctx, "podman failed to run command")
 	} else if result.ExitCode == podmanCommandNotFoundExitCode {
 		log.CtxInfof(ctx, "podman failed to find command")
+	} else if result.ExitCode == podmanExecSIGKILLExitCode {
+		log.CtxInfof(ctx, "podman receieved SIGKILL")
+		result.ExitCode = commandutil.KilledExitCode
+		result.Error = commandutil.ErrSIGKILL
+	} else if result.ExitCode == podmanExecSIGTERMExitCode {
+		log.CtxInfof(ctx, "podman receieved SIGTERM")
+		result.ExitCode = commandutil.KilledExitCode
+		result.Error = commandutil.ErrSIGKILL
 	}
-
-	// Stop monitoring so that we can get stats.
-	stopMonitoring()
-	result.UsageStats = <-statsCh
 
 	if err := c.maybeCleanupCorruptedImages(ctx, result); err != nil {
 		log.Warningf("Failed to remove corrupted image: %s", err)
 	}
 	if exitedCleanly := result.ExitCode >= 0; !exitedCleanly {
-		if err = c.killContainerIfRunning(ctx); err != nil {
+		if err := c.killContainerIfRunning(ctx); err != nil {
 			log.Warningf("Failed to shut down podman container: %s", err)
 		}
 	}
 	return result
 }
 
-func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) error {
-	containerName, err := generateContainerName()
-	if err != nil {
-		return status.UnavailableErrorf("failed to generate podman container name: %s", err)
+// Wraps a function call with container.TrackStats, ensuring that prometheus
+// metrics are updated while the function is executing, and that the UsageStats
+// field is populated after execution.
+func (c *podmanCommandContainer) doWithStatsTracking(ctx context.Context, runPodmanFn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
+	stop := c.stats.TrackExecution(ctx, func(ctx context.Context) (*repb.UsageStats, error) {
+		if !c.options.EnableStats {
+			return nil, nil
+		}
+		cid, err := c.getCID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return c.cgroupPaths.Stats(ctx, cid, c.blockDevice)
+	})
+	res := runPodmanFn(ctx)
+	stop()
+	// statsCh will report stats for processes inside the container, and
+	// res.UsageStats will report stats for the podman process itself.
+	// Combine these stats to get the total usage.
+	podmanProcessStats := res.UsageStats
+	taskStats := c.stats.TaskStats()
+	if taskStats == nil {
+		taskStats = &repb.UsageStats{}
 	}
-	c.name = containerName
+	combinedStats := taskStats.CloneVT()
+	combinedStats.CpuNanos += podmanProcessStats.GetCpuNanos()
+	if podmanProcessStats.GetPeakMemoryBytes() > taskStats.GetPeakMemoryBytes() {
+		combinedStats.PeakMemoryBytes = podmanProcessStats.GetPeakMemoryBytes()
+	}
+	res.UsageStats = combinedStats
+	return res
+}
+
+func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) error {
 	c.workDir = workDir
 
-	podmanRunArgs := c.getPodmanRunArgs(workDir)
+	podmanRunArgs := c.getPodmanRunArgs(workDir, workDir)
 	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, "sleep", "infinity")
 	createResult := c.runPodman(ctx, "create", &interfaces.Stdio{}, podmanRunArgs...)
@@ -446,7 +460,7 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 		log.Warningf("Failed to remove corrupted image: %s", err)
 	}
 
-	if err = createResult.Error; err != nil {
+	if err := createResult.Error; err != nil {
 		return status.UnavailableErrorf("failed to create container: %s", err)
 	}
 
@@ -465,13 +479,8 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 }
 
 func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	// Reset usage stats since we're running a new task. Note: This throws away
-	// any resource usage between the initial "Create" call and now, but that's
-	// probably fine for our needs right now.
-	c.stats.Reset()
-	stopMonitoring, statsCh := c.monitor(ctx)
-	defer stopMonitoring()
 	podmanRunArgs := make([]string, 0, 2*len(cmd.GetEnvironmentVariables())+len(cmd.Arguments)+1)
+	podmanRunArgs = append(podmanRunArgs, "--workdir", filepath.Join(c.workDir, cmd.GetWorkingDirectory()))
 	for _, envVar := range cmd.GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
@@ -481,27 +490,41 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 	}
 	podmanRunArgs = append(podmanRunArgs, c.name)
 	podmanRunArgs = append(podmanRunArgs, cmd.Arguments...)
+	res := c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
+		return c.runPodman(ctx, "exec", stdio, podmanRunArgs...)
+	})
 	// Podman doesn't provide a way to find out whether an exec process was
 	// killed. Instead, `podman exec` returns 137 (= 128 + SIGKILL(9)). However,
 	// this exit code is also valid as a regular exit code returned by a command
 	// during a normal execution, so we are overly cautious here and only
 	// interpret this code specially when the container was removed and we are
 	// expecting a SIGKILL as a result.
-	res := c.runPodman(ctx, "exec", stdio, podmanRunArgs...)
-	stopMonitoring()
-	res.UsageStats = <-statsCh
 	c.mu.Lock()
 	removed := c.removed
 	c.mu.Unlock()
-	if removed && res.ExitCode == podmanExecSIGKILLExitCode {
+	if removed && (res.ExitCode == podmanExecSIGKILLExitCode || res.ExitCode == podmanExecSIGTERMExitCode) {
 		res.ExitCode = commandutil.KilledExitCode
 		res.Error = commandutil.ErrSIGKILL
 	}
 	return res
 }
 
+func (c *podmanCommandContainer) Signal(ctx context.Context, sig syscall.Signal) error {
+	if c.name == "" {
+		return status.FailedPreconditionError("container is not created")
+	}
+	res := c.runPodman(ctx, "kill", nil, c.name, "--signal", fmt.Sprintf("%d", sig))
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.ExitCode != 0 {
+		return status.UnavailableErrorf("failed to signal container: exit code %d: %q", res.ExitCode, string(res.Stderr))
+	}
+	return nil
+}
+
 func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
-	if c.imageExistsCache.Exists(c.image) {
+	if c.imageExistsCache.Contains(c.image) {
 		return true, nil
 	}
 
@@ -519,7 +542,7 @@ func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error
 		return false, nil
 	}
 
-	c.imageExistsCache.Add(c.image)
+	c.imageExistsCache.Add(c.image, struct{}{})
 	return true, nil
 }
 
@@ -541,9 +564,6 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds oci.Creden
 
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	if c.imageIsStreamable {
-		c.sociStore.GetArtifacts(ctx, c.env, c.image, creds)
-	}
 
 	startTime := time.Now()
 	if err := c.pullImage(ctx, creds); err != nil {
@@ -567,58 +587,6 @@ func (c *podmanCommandContainer) cidFilePath() string {
 	return c.workDir + ".cid"
 }
 
-// monitor starts a goroutine to monitor the container's resource usage. The
-// returned func stops monitoring. It must be called, or else a goroutine leak
-// may occur. Monitoring can safely be stopped more than once. The returned
-// channel should be received from at most once, *after* calling the returned
-// stop function. The received value can be nil if stats were not successfully
-// sampled at least once.
-func (c *podmanCommandContainer) monitor(ctx context.Context) (context.CancelFunc, chan *repb.UsageStats) {
-	ctx, cancel := context.WithCancel(ctx)
-	result := make(chan *repb.UsageStats, 1)
-	go func() {
-		defer close(result)
-		if !c.options.EnableStats {
-			return
-		}
-		defer container.Metrics.Unregister(c)
-		var last *repb.UsageStats
-		var lastErr error
-
-		start := time.Now()
-		defer func() {
-			// Only log an error if the task ran long enough that we could
-			// reasonably expect to sample stats at least once while it was
-			// executing. Note that we can't sample stats until podman creates
-			// the container, which can take a few hundred ms or possibly longer
-			// if the executor is heavily loaded.
-			dur := time.Since(start)
-			if last == nil && dur > 1*time.Second && lastErr != nil {
-				log.Warningf("Failed to read container stats: %s", lastErr)
-			}
-		}()
-
-		timer := time.NewTicker(statsPollInterval)
-		defer timer.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				result <- last
-				return
-			case <-timer.C:
-				stats, err := c.Stats(ctx)
-				if err != nil {
-					lastErr = err
-					continue
-				}
-				container.Metrics.Observe(c, stats)
-				last = stats
-			}
-		}
-	}()
-	return cancel, result
-}
-
 func (c *podmanCommandContainer) getCID(ctx context.Context) (string, error) {
 	if cid := c.cid.Load(); cid != nil {
 		return cid.(string), nil
@@ -626,7 +594,7 @@ func (c *podmanCommandContainer) getCID(ctx context.Context) (string, error) {
 	cidPath := c.cidFilePath()
 	waitOpts := disk.WaitOpts{Timeout: pollCIDTimeout}
 	if err := disk.WaitUntilExists(ctx, cidPath, waitOpts); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get CID: %w", err)
 	}
 	var cid string
 	// Retry in case the cidfile is empty, to avoid relying on podman to
@@ -651,16 +619,6 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds oci.Creden
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	podmanArgs := make([]string, 0, 2)
-
-	if c.imageIsStreamable {
-		// Make the image credentials available to the soci-store
-		c.sociStore.PutCredentials(ctx, c.image, creds)
-
-		// We still need to run "podman pull" even when image streaming is
-		// enabled to populate the layer info and avoid spitting a bunch of
-		// pull-time logging into the run-time logs.
-		podmanArgs = append(podmanArgs, c.sociStore.GetPodmanArgs()...)
-	}
 
 	if !creds.IsEmpty() {
 		podmanArgs = append(podmanArgs, fmt.Sprintf("--creds=%s", creds.String()))
@@ -692,7 +650,7 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds oci.Creden
 
 	// Since we just pulled the image, we can skip the next call to 'podman
 	// image exists'.
-	c.imageExistsCache.Add(c.image)
+	c.imageExistsCache.Add(c.image, struct{}{})
 	return nil
 }
 
@@ -701,7 +659,7 @@ func (c *podmanCommandContainer) Remove(ctx context.Context) error {
 	c.removed = true
 	c.mu.Unlock()
 	os.RemoveAll(c.cidFilePath()) // intentionally ignoring error.
-	res := c.runPodman(ctx, "kill", &interfaces.Stdio{}, "--signal=KILL", c.name)
+	res := c.runPodman(ctx, "rm", &interfaces.Stdio{}, "-f", c.name)
 	if res.Error != nil {
 		return res.Error
 	}
@@ -731,57 +689,55 @@ func (c *podmanCommandContainer) Unpause(ctx context.Context) error {
 }
 
 func (c *podmanCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
-	if !c.options.EnableStats {
-		return nil, nil
-	}
-
-	cid, err := c.getCID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	current, err := c.cgroupPaths.Stats(ctx, cid)
-	if err != nil {
-		return nil, err
-	}
-
-	c.stats.mu.Lock()
-	defer c.stats.mu.Unlock()
-
-	stats := current.CloneVT()
-	stats.CpuNanos = stats.CpuNanos - c.stats.baselineCPUNanos
-	if current.MemoryBytes > c.stats.peakMemoryUsageBytes {
-		c.stats.peakMemoryUsageBytes = current.MemoryBytes
-	}
-	stats.PeakMemoryBytes = c.stats.peakMemoryUsageBytes
-	c.stats.last = current
-	return stats, nil
-}
-
-func (c *podmanCommandContainer) State(ctx context.Context) (*rnpb.ContainerState, error) {
-	return nil, status.UnimplementedError("not implemented")
+	return c.stats.TaskStats(), nil
 }
 
 func (c *podmanCommandContainer) runPodman(ctx context.Context, subCommand string, stdio *interfaces.Stdio, args ...string) *interfaces.CommandResult {
 	return runPodman(ctx, c.env.GetCommandRunner(), c.podmanVersion, subCommand, stdio, args...)
 }
 
-func runPodman(ctx context.Context, commandRunner interfaces.CommandRunner, podmanVersion semver.Version, subCommand string, stdio *interfaces.Stdio, args ...string) *interfaces.CommandResult {
+func runPodman(ctx context.Context, commandRunner interfaces.CommandRunner, podmanVersion *semver.Version, subCommand string, stdio *interfaces.Stdio, args ...string) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx)
 	tracing.AddStringAttributeToCurrentSpan(ctx, "podman.subcommand", subCommand)
 	defer span.End()
 	command := []string{"podman"}
-	if !podmanVersion.LessThan(transientStoreMinVersion) {
+
+	// Append "global" podman args, which come before any subcommand.
+
+	if podmanVersion != nil && !podmanVersion.LessThan(transientStoreMinVersion) {
 		// Use transient store to reduce contention.
 		// See https://github.com/containers/podman/issues/19824
 		command = append(command, "--transient-store")
 	}
 	command = append(command, fmt.Sprintf("--storage-driver=%s", *podmanStorageDriver))
+	if *podmanRuntime != "" {
+		command = append(command, fmt.Sprintf("--runtime=%s", *podmanRuntime))
+	}
+	if filepath.Base(*podmanRuntime) == "runsc" {
+		// gVisor will attempt to setup cgroups, but podman has
+		// already done that, so tell gVisor not to.
+		command = append(command, "--runtime-flag=ignore-cgroups")
+	}
+
+	// Append subcommand and args.
+
 	command = append(command, subCommand)
 	command = append(command, args...)
 	// Note: we don't collect stats on the podman process, and instead use
 	// cgroups for stats accounting.
 	result := commandRunner.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, stdio)
+
+	// If the disk is under heavy load, podman may fail with "database is
+	// locked". Detect these and return a retryable error.
+	if (result.ExitCode == podmanCommandNotRunnableExitCode ||
+		result.ExitCode == podmanInternalExitCode ||
+		result.ExitCode == podmanCommandNotFoundExitCode ||
+		result.ExitCode == podmanCommandOutOfRangeExitCode) &&
+		databaseLockedRegexp.Match(result.Stderr) {
+		result.ExitCode = commandutil.NoExitCode
+		result.Error = status.UnavailableErrorf("podman failed: %q", strings.TrimSpace(string(result.Stderr)))
+	}
+
 	return result
 }
 
@@ -837,21 +793,6 @@ func (c *podmanCommandContainer) removeImage(ctx context.Context, imageName stri
 }
 
 func configureSecondaryNetwork(ctx context.Context) error {
-	podmanVersion, err := getPodmanVersion(ctx, commandutil.CommandRunner{})
-	if err != nil {
-		return status.WrapError(err, "podman version")
-	}
-	// Hack: run a dummy podman container to setup default podman bridge network in ip route.
-	// "podman run --rm busybox sh". This should setup the following in ip route:
-	// "10.88.0.0/16 dev cni-podman0 proto kernel scope link src 10.88.0.1 linkdown"
-	result := runPodman(ctx, commandutil.CommandRunner{}, *podmanVersion, "run", &interfaces.Stdio{}, "--rm", "busybox", "sh")
-	if result.Error != nil {
-		return status.UnknownErrorf("failed to setup podman default network: podman run failed: %s (stderr: %q)", result.Error, string(result.Stderr))
-	}
-	if result.ExitCode != 0 {
-		return status.UnknownErrorf("failed to setup podman default network: podman run exited with code %d: %q", result.ExitCode, string(result.Stderr))
-	}
-
 	// Add ip rule to lookup rt1
 	// Equivalent to "ip rule add to 10.88.0.0/16 lookup rt1"
 	if err := networking.AddIPRuleIfNotPresent(ctx, []string{"to", podmanDefaultNetworkIPRange}); err != nil {
@@ -876,81 +817,28 @@ func configureSecondaryNetwork(ctx context.Context) error {
 // network interface or private IP range blackholing, depending on config
 // options.
 func ConfigureIsolation(ctx context.Context) error {
+	if !networking.IsSecondaryNetworkEnabled() {
+		return nil
+	}
+
+	// Run a dummy container so that the podman network gets initialized.
+	// This is to make sure that any iptables rules that we add get added
+	// earlier in the chain than the podman ones.
+	podmanVersion, err := getPodmanVersion(ctx, commandutil.CommandRunner{})
+	if err != nil {
+		return status.WrapError(err, "podman version")
+	}
+	result := runPodman(ctx, commandutil.CommandRunner{}, podmanVersion, "run", &interfaces.Stdio{}, "--rm", "busybox", "sh")
+	if result.Error != nil {
+		return status.UnknownErrorf("failed to setup podman default network: podman run failed: %s (stderr: %q)", result.Error, string(result.Stderr))
+	}
+	if result.ExitCode != 0 {
+		return status.UnknownErrorf("failed to setup podman default network: podman run exited with code %d: %q", result.ExitCode, string(result.Stderr))
+	}
+
 	if networking.IsSecondaryNetworkEnabled() {
 		return configureSecondaryNetwork(ctx)
 	}
 
-	if networking.IsPrivateRangeBlackholingEnabled() {
-		for _, r := range networking.PrivateIPRanges {
-			if err := networking.AddIPRuleIfNotPresent(ctx, []string{"from", podmanDefaultNetworkIPRange, "to", r}); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
 	return nil
-}
-
-type containerStats struct {
-	mu sync.Mutex
-	// last is the last recorded stats.
-	last *repb.UsageStats
-	// peakMemoryUsageBytes is the max memory usage from the last task execution.
-	// This is reset between tasks so that we can determine a task's peak memory
-	// usage when using a recycled runner.
-	peakMemoryUsageBytes int64
-	// baselineCPUNanos is the CPU usage from when a task last finished executing.
-	// This is needed so that we can determine a task's CPU usage when using a
-	// recycled runner.
-	baselineCPUNanos int64
-}
-
-// Reset resets resource usage counters in preparation for a new task, so that
-// the new task's resource usage can be accounted for. It should be called
-// at the beginning of Exec() in the container lifecycle.
-func (s *containerStats) Reset() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.last == nil {
-		s.baselineCPUNanos = 0
-	} else {
-		s.baselineCPUNanos = s.last.CpuNanos
-	}
-	s.last = nil
-	s.peakMemoryUsageBytes = 0
-}
-
-type imageExistsCache struct {
-	mu  sync.Mutex
-	lru *lru.LRU[time.Time]
-}
-
-func newImageExistsCache() (*imageExistsCache, error) {
-	l, err := lru.NewLRU(&lru.Config[time.Time]{
-		MaxSize: imageExistsCacheSize,
-		SizeFn:  func(time.Time) int64 { return 1 },
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &imageExistsCache{lru: l}, nil
-}
-
-func (c *imageExistsCache) Exists(image string) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	t, ok := c.lru.Get(image)
-	return ok && time.Since(t) < imageExistsCacheTTL
-}
-
-func (c *imageExistsCache) Add(image string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.lru.Add(image, time.Now())
-}
-
-func (c *imageExistsCache) Remove(image string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.lru.Remove(image)
 }

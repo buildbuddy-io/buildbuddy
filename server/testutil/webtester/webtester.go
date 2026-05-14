@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -13,22 +14,43 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tebeka/selenium"
 	"github.com/tebeka/selenium/chrome"
+
+	selenium_log "github.com/tebeka/selenium/log"
 )
 
 var (
 	// To debug webdriver tests visually in your local environment:
 	//
-	// 1. Run the test with --config=webdriver-debug, which sets the
-	//   --webdriver_debug flag below as well as some other necessary flags.
+	// 1. Run the test with --config=webdriver-debug, which causes the test
+	//    browser to be displayed while the test is running.
 	//
-	// 2. Optionally, set --webdriver_end_of_test_delay=1h to extend the
-	//    end-of-test wait duration, and set --test_filter=NameOfTest to debug
-	//    a specific failing test.
+	// 2. Optionally, set --test_arg=--webdriver_end_of_test_delay=1h to extend
+	//    the end-of-test wait duration so that you have enough time to look at
+	//    devtools etc. at the moment the test fails.
+	//
+	// 3. Optionally, set --test_filter=NameOfTest to debug only a single test.
+	//
+	// 4. Optionally, set --test_arg=--webdriver_verbose for more verbose logs.
+	//    This can be useful for trying to understand what the webdriver is
+	//    doing under the hood, as well as debugging browser crashes.
 
-	debug               = flag.Bool("webdriver_debug", false, "Enable debug mode for webdriver tests.")
-	endOfTestDelay      = flag.Duration("webdriver_end_of_test_delay", 3*time.Second, "How long to wait at the end of failed webdriver tests. Has no effect if --webdriver_debug is not set.")
+	headless            = flag.Bool("webdriver_headless", true, "Run webdriver in headless mode (no GUI). Can be set to false for local debugging.")
+	verbose             = flag.Bool("webdriver_verbose", false, "Show verbose logs from the browser.")
+	endOfTestDelay      = flag.Duration("webdriver_end_of_test_delay", 0, "How long to wait at the end of failed webdriver tests. Useful in combination with -webdriver_headless=false, so that the browser window doesn't immediately close upon failure.")
 	implicitWaitTimeout = flag.Duration("webdriver_implicit_wait_timeout", 1*time.Second, "Max time webtester should wait to find an element.")
 )
+
+// ShortcutModifierKey is the modifier key for most shortcuts such as
+// cut/copy/paste: Control on Windows/Linux or Command on macOS.
+var ShortcutModifierKey string
+
+func init() {
+	if runtime.GOOS == "darwin" {
+		ShortcutModifierKey = selenium.MetaKey
+	} else {
+		ShortcutModifierKey = selenium.ControlKey
+	}
+}
 
 // WebTester wraps selenium.WebDriver, failing the test instead of returning
 // errors for all of its API methods.
@@ -48,14 +70,21 @@ func New(t *testing.T) *WebTester {
 		// `SetWindowSize` returning an error in headless mode
 		// https://github.com/yukinying/chrome-headless-browser-docker/issues/11
 		"--window-size=1920,1000",
+		// When these tests are run inside containers on RBE, the size of
+		// /dev/shm is limited to 64MB, which is not enough for chrome, and can
+		// cause page crashes. Disable /dev/shm usage to fix this.
+		// See https://stackoverflow.com/questions/53902507/unknown-error-session-deleted-because-of-page-crash-from-unknown-error-cannot/53970825#53970825
+		"--disable-dev-shm-usage",
 	}
 	chromedriverArgs := []string{}
-	if *debug {
+	if !*headless {
 		// Remove the --headless arg applied to the "chromium-local" browser
 		// that we import from rules_webtesting.
 		// Note, the "REMOVE:" syntax is a feature of rules_webtesting, not
 		// chrome.
 		chromeArgs = append(chromeArgs, "REMOVE:--headless")
+	}
+	if *verbose {
 		// Add --verbose to chromedriver so that if it fails to start, we can
 		// see the logs from Chrome with the root cause (e.g. missing system
 		// deps, missing DISPLAY environment variable for X server, etc.)
@@ -66,6 +95,10 @@ func New(t *testing.T) *WebTester {
 		chrome.CapabilitiesKey: chrome.Capabilities{Args: chromeArgs},
 		"google:wslConfig":     map[string]any{"args": chromedriverArgs},
 	}
+	// Set the log level so that we can retrieve everything that was printed
+	// to the console.
+	capabilities.SetLogLevel(selenium_log.Browser, selenium_log.All)
+
 	driver, err := webtest.NewWebDriverSession(capabilities)
 	require.NoError(t, err, "failed to create webdriver session")
 	// Allow webdriver to wait a short period before giving up on finding an
@@ -80,18 +113,34 @@ func New(t *testing.T) *WebTester {
 	driver.SetImplicitWaitTimeout(*implicitWaitTimeout)
 	wt := &WebTester{t, driver}
 	t.Cleanup(func() {
+		assertErrorBannerNeverShown(wt)
+
 		err := wt.screenshot("END_OF_TEST")
 		// NOTE: `assert` here instead of `require` so that we still close down
 		// the webdriver if the screenshot fails.
 		assert.NoError(t, err, "failed to take end-of-test screenshot")
 
-		if *debug && t.Failed() {
+		if *endOfTestDelay > 0 {
+			t.Logf("Sleeping for %s (-webdriver_end_of_test_delay)", *endOfTestDelay)
 			time.Sleep(*endOfTestDelay)
 		}
 		err = driver.Quit()
 		require.NoError(t, err)
 	})
 	return wt
+}
+
+// LogString returns the browser's console logs as a flat string.
+// This can be useful for checking that certain events did not occur, which
+// may otherwise be difficult to test using only the UI.
+func (wt *WebTester) LogString() string {
+	var builder strings.Builder
+	logs, err := wt.driver.Log(selenium_log.Browser)
+	require.NoError(wt.t, err)
+	for _, log := range logs {
+		builder.WriteString(fmt.Sprintf("[%s] %s\n", log.Level, log.Message))
+	}
+	return builder.String()
 }
 
 // Get navigates to the given URL.
@@ -107,12 +156,9 @@ func (wt *WebTester) CurrentURL() string {
 	return url
 }
 
-// Returns the <body> element of the current page. Exactly one body element
-// must exist, otherwise the test fails.
-func (wt *WebTester) FindBody() *Element {
-	el, err := wt.driver.FindElement(selenium.ByTagName, "body")
-	require.NoError(wt.t, err)
-	return &Element{wt.t, el}
+// Refresh reloads the page.
+func (wt *WebTester) Refresh() {
+	wt.Get(wt.CurrentURL())
 }
 
 // Find returns the element matching the given CSS selector. Exactly one
@@ -123,7 +169,33 @@ func (wt *WebTester) Find(cssSelector string) *Element {
 	return &Element{wt.t, el}
 }
 
+// FindWithTimeout is like Find but polls for the element with the given
+// timeout. Use this in cases where the page may still be transitioning and
+// the default --webdriver_implicit_wait_timeout may not be long enough.
+func (wt *WebTester) FindWithTimeout(cssSelector string, timeout time.Duration) *Element {
+	var els []*Element
+	require.Eventually(wt.t, func() bool {
+		els = wt.FindAll(cssSelector)
+		return len(els) > 0
+	}, timeout, 50*time.Millisecond)
+	require.Len(wt.t, els, 1, "selector %q matched more than one element", cssSelector)
+	return els[0]
+}
+
 // FindAll returns all elements matching the given CSS selector.
+//
+// FindAll does not wait for elements matching the selector to be created, since
+// it's valid for the selector to match 0 elements.
+//
+// NOTE: Because FindAll() does not wait for elements matching the selector to
+// be created, locating a list of items requires two steps. First locate the
+// parent list container using Find(), which will wait for the list to be
+// created. Then, call FindAll() with a selector matching the list items.
+// Example:
+//
+//	for _, item := range wt.Find(".list").FindAll(".list-item") {
+//		// ...
+//	}
 func (wt *WebTester) FindAll(cssSelector string) []*Element {
 	els, err := wt.driver.FindElements(selenium.ByCSSSelector, cssSelector)
 	require.NoError(wt.t, err)
@@ -207,11 +279,36 @@ func (el *Element) IsSelected() bool {
 	return val
 }
 
+// SetChecked sets whether a checkbox is checked or not. It returns whether the
+// state was changed. It fails the test if the checkbox did not respond to the
+// click.
+func (el *Element) SetChecked(checked bool) (changed bool) {
+	if el.IsSelected() != checked {
+		el.Click()
+		if el.IsSelected() != checked {
+			require.FailNow(el.t, "checkbox state did not update after click")
+		}
+		return true
+	}
+	return false
+}
+
 // GetAttribute returns the named attribute of the element.
 func (el *Element) GetAttribute(name string) string {
 	val, err := el.webElement.GetAttribute(name)
 	require.NoError(el.t, err)
 	return val
+}
+
+// Clear clears the element.
+func (el *Element) Clear() {
+	// el.webElement.Clear() appears to be unreliable in some cases - see
+	// https://stackoverflow.com/questions/50677760/selenium-clear-command-doesnt-clear-the-element
+	// https://github.com/SeleniumHQ/selenium/issues/11739
+	//
+	// Instead, select all text and delete it.
+	el.SendKeys(ShortcutModifierKey + "a")
+	el.SendKeys(selenium.DeleteKey)
 }
 
 // SendKeys types into the element.
@@ -228,6 +325,20 @@ func (el *Element) Find(cssSelector string) *Element {
 	return &Element{t: el.t, webElement: child}
 }
 
+// FindAll returns all elements matching the given CSS selector.
+//
+// FindAll does not wait for elements matching the selector to be created, since
+// it's valid for the selector to match 0 elements.
+func (el *Element) FindAll(cssSelector string) []*Element {
+	els, err := el.webElement.FindElements(selenium.ByCSSSelector, cssSelector)
+	require.NoError(el.t, err)
+	out := make([]*Element, len(els))
+	for i, c := range els {
+		out[i] = &Element{el.t, c}
+	}
+	return out
+}
+
 func (el *Element) FirstSelectedOption() *Element {
 	options, err := el.webElement.FindElements(selenium.ByCSSSelector, "option")
 	require.NoError(el.t, err)
@@ -235,7 +346,7 @@ func (el *Element) FirstSelectedOption() *Element {
 		selected, err := option.IsSelected()
 		require.NoError(el.t, err)
 		if selected {
-			return &Element{t: el.t, webElement: option}
+			return &Element{el.t, option}
 		}
 	}
 	require.FailNow(el.t, "no options were selected")
@@ -248,8 +359,8 @@ func (el *Element) FirstSelectedOption() *Element {
 
 // HasClass returns whether an element has the given class name.
 func HasClass(el *Element, class string) bool {
-	classes := strings.Split(el.GetAttribute("class"), " ")
-	for _, c := range classes {
+	classes := strings.SplitSeq(el.GetAttribute("class"), " ")
+	for c := range classes {
 		if c == class {
 			return true
 		}
@@ -295,6 +406,14 @@ func Login(wt *WebTester, target Target) {
 func Logout(wt *WebTester) {
 	ExpandSidebarOptions(wt)
 	wt.FindByDebugID("logout-button").Click()
+}
+
+// Fails the test if the error banner was shown at any point during the test.
+func assertErrorBannerNeverShown(wt *WebTester) {
+	logs := wt.LogString()
+	if strings.Contains(logs, "Displaying error banner") {
+		assert.Fail(wt.t, "Error banner was displayed during test", "%s", logs)
+	}
 }
 
 // ExpandSidebarOptions expands the sidebar options, exposing the section
@@ -353,6 +472,7 @@ func WithAPIKeySelection(label string) SetupPageOption {
 	return func(wt *WebTester) {
 		picker := wt.Find(`.credential-picker`)
 		picker.SendKeys(label)
+		picker = wt.Find(`.credential-picker`)
 		selectedOption := picker.FirstSelectedOption()
 		require.Equal(wt.t, label, selectedOption.Text())
 	}
@@ -376,9 +496,84 @@ func GetBazelBuildFlags(wt *WebTester, appBaseURL string, opts ...SetupPageOptio
 			line = parts[0]
 		}
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "build ") {
-			buildFlags = append(buildFlags, strings.TrimPrefix(line, "build "))
+		if after, ok := strings.CutPrefix(line, "build "); ok {
+			buildFlags = append(buildFlags, after)
+		} else if after, ok := strings.CutPrefix(line, "common "); ok {
+			buildFlags = append(buildFlags, after)
 		}
 	}
 	return buildFlags
+}
+
+// OrgOption controls how the org form is filled out (create or update).
+type OrgOption func(wt *WebTester)
+
+var EnableUserOwnedAPIKeys OrgOption = func(wt *WebTester) {
+	wt.Find(`[name="userOwnedKeysEnabled"]`).SetChecked(true)
+}
+
+// UpdateSelectedOrg updates org details for the currently selected org.
+func UpdateSelectedOrg(wt *WebTester, appBaseURL, name, slug string, options ...OrgOption) {
+	wt.Get(appBaseURL + "/settings/org/details")
+	SubmitOrgForm(wt, name, slug, options...)
+	wt.Find(`.form-success-message`)
+}
+
+// CreateOrg creates a new BuildBuddy organization with the given settings.
+func CreateOrg(wt *WebTester, appBaseURL, name, slug string, options ...OrgOption) {
+	wt.Get(appBaseURL + "/org/create")
+	SubmitOrgForm(wt, name, slug, options...)
+}
+
+// SubmitOrgForm fills in the org form with the given details and submits it.
+func SubmitOrgForm(wt *WebTester, name, slug string, options ...OrgOption) {
+	nameField := wt.Find(`[name="name"]`)
+	nameField.Clear()
+	nameField.SendKeys(name)
+	slugField := wt.Find(`[name="urlIdentifier"]`)
+	slugField.Clear()
+	slugField.SendKeys(slug)
+	for _, option := range options {
+		option(wt)
+	}
+	wt.Find(`.organization-form-submit-button`).Click()
+}
+
+// LeaveSelectedOrg removes the currently logged in user from whichever org
+// they've selected. It fails the test if no user is logged in or the logged
+// in user is not a member if any org.
+func LeaveSelectedOrg(wt *WebTester, appBaseURL string) {
+	wt.Get(appBaseURL + "/settings/org/members")
+	for _, listItem := range wt.Find(`.org-members-list`).FindAll(`.org-members-list-item`) {
+		if strings.Contains(listItem.Text(), "(You)") {
+			listItem.Click()
+			wt.Find(`.org-member-remove-button`).Click()
+			wt.Find(`.org-members-edit-modal button.destructive`).Click()
+			return
+		}
+	}
+	require.FailNow(wt.t, "could not find org member list item labeled with '(You)'")
+}
+
+func GetOrCreatePersonalAPIKey(wt *WebTester, appBaseURL string) string {
+	wt.Get(appBaseURL + "/settings/personal/api-keys")
+	existingKeys := wt.FindAll(`.api-key-value`)
+	if len(existingKeys) == 0 {
+		wt.FindByDebugID("create-new-api-key").Click()
+		wt.Find(`.dialog-wrapper [name="label"]`).SendKeys("test-personal-key")
+		wt.FindByDebugID("cas-only-radio-button").Click()
+		wt.Find(`.dialog-wrapper button[type="submit"]`).Click()
+	}
+	wt.Find(`.api-key-value-hide`).Click()
+	apiKey := ""
+	for i := 0; i < 5; i++ {
+		apiKey = wt.Find(".api-key-value").Text()
+		// Wait for the API key value to load
+		if !strings.Contains(apiKey, "••••") {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	require.NotContains(wt.t, apiKey, "••••")
+	return apiKey
 }

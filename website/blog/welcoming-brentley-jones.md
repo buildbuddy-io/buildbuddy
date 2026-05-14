@@ -1,11 +1,8 @@
 ---
 slug: welcoming-brentley-jones
 title: Welcoming Brentley Jones
-author: Siggi Simonarson
-author_title: "Co-founder @ BuildBuddy"
+authors: siggi
 date: 2021-12-13:12:00:00
-author_url: https://www.linkedin.com/in/siggisim/
-author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
 image: /img/welcome_brentley.png
 tags: [company, team]
 ---
@@ -23,3 +20,5 @@ Brentley joins us from Lyft, where he was a Staff Software Engineer on their Cli
 We look forward to working alongside Brentley to build the future of developer tools.
 
 Welcome to BuildBuddy, Brentley!
+
+<!--truncate-->

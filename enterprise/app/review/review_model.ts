@@ -261,6 +261,7 @@ interface State {
   pullId: string;
   branch: string;
   baseCommitSha: string;
+  commits: github.Commit[];
   githubUrl: string;
   viewerLogin: string;
   author: string;
@@ -331,6 +332,18 @@ export class ReviewModel {
 
   getBranch(): string {
     return this.state.branch;
+  }
+
+  getBaseCommitSha(): string {
+    return this.state.baseCommitSha;
+  }
+
+  getHeadCommitSha(): string {
+    return this.state.commits[this.state.commits.length - 1].sha;
+  }
+
+  getCommits(): readonly github.Commit[] {
+    return this.state.commits;
   }
 
   isSubmitted(): boolean {
@@ -490,6 +503,7 @@ export class ReviewModel {
       pullId: response.pullId,
       branch: response.branch,
       baseCommitSha: response.baseCommitSha,
+      commits: response.commits,
       submitted: response.submitted,
       mergeable: response.mergeable,
       createdAtUsec: +response.createdAtUsec,

@@ -3,42 +3,59 @@ package grpc_client
 import (
 	"context"
 	"math"
+	"math/rand/v2"
 	"net/url"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
-	"google.golang.org/grpc/credentials/google"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/mem"
 )
 
 const (
 	// Log a warning if a new streaming RPC cannot be initialized within
 	// this time.
 	stuckStreamWarningPeriod = 15 * time.Second
+
+	// Default protocol to use when a target is missing a protocol.
+	defaultProtocol = "grpcs://"
 )
 
 var (
-	poolSize = flag.Int("grpc_client.pool_size", 10, "Number of connections to create to each target.")
+	poolSize = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
+
+	idsMu sync.Mutex
+	ids   = map[string]int{}
 )
 
 type clientConn struct {
 	*grpc.ClientConn
+	index        string
 	wasEverReady atomic.Bool
 }
 
 type ClientConnPool struct {
-	conns []*clientConn
-	idx   atomic.Uint64
+	targetForLogging string
+	id               string
+	conns            []*clientConn
+	idx              atomic.Uint64
 }
 
 func (p *ClientConnPool) Check(ctx context.Context) error {
@@ -56,9 +73,18 @@ func (p *ClientConnPool) Check(ctx context.Context) error {
 		}
 	}
 	if goodConns == 0 {
+		logConnPoolState(p.targetForLogging, p.conns)
 		return status.UnavailableError("No ready connections in gRPC connection pool")
 	}
 	return nil
+}
+
+func logConnPoolState(target string, conns []*clientConn) {
+	states := map[string]int{}
+	for _, c := range conns {
+		states[c.GetState().String()]++
+	}
+	log.Infof("gRPC client connection pool for %s has %d connections in states: %v", target, len(conns), states)
 }
 
 func (p *ClientConnPool) Close() error {
@@ -71,9 +97,13 @@ func (p *ClientConnPool) Close() error {
 	return nil
 }
 
-func (p *ClientConnPool) getConn() *grpc.ClientConn {
+func (p *ClientConnPool) getConn() *clientConn {
 	idx := p.idx.Add(1)
-	return p.conns[idx%uint64(len(p.conns))].ClientConn
+	return p.conns[idx%uint64(len(p.conns))]
+}
+
+func (p *ClientConnPool) WaitForConn() *grpc.ClientConn {
+	return p.getConn().ClientConn
 }
 
 // GetReadyConnection returns a connection from the pool that is known to be
@@ -106,7 +136,11 @@ func (p *ClientConnPool) GetReadyConnection() (*grpc.ClientConn, error) {
 }
 
 func (p *ClientConnPool) Invoke(ctx context.Context, method string, args any, reply any, opts ...grpc.CallOption) error {
-	return p.getConn().Invoke(ctx, method, args, reply, opts...)
+	conn := p.getConn()
+	gauge := metrics.PendingClientRPCsPerConnection.WithLabelValues(p.targetForLogging, p.id, method, conn.index)
+	gauge.Inc()
+	defer gauge.Dec()
+	return conn.Invoke(ctx, method, args, reply, opts...)
 }
 
 func (p *ClientConnPool) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
@@ -120,7 +154,84 @@ func (p *ClientConnPool) NewStream(ctx context.Context, desc *grpc.StreamDesc, m
 		},
 	)
 	defer cancel()
-	return p.getConn().NewStream(ctx, desc, method, opts...)
+	conn := p.getConn()
+	gauge := metrics.PendingClientRPCsPerConnection.WithLabelValues(p.targetForLogging, p.id, method, conn.index)
+	decFn := sync.OnceFunc(func() { gauge.Dec() })
+	opts = append(opts, grpc.OnFinish(func(_ error) { decFn() }))
+	stream, err := conn.NewStream(ctx, desc, method, opts...)
+	if err != nil {
+		return stream, err
+	}
+	gauge.Inc()
+	return stream, nil
+}
+
+// ClientConnPoolSplitter wraps two (or more) ClientConnPools and routes
+// traffic randomly to different pools based on a client-provided traffic
+// allocation.
+type ClientConnPoolSplitter struct {
+	pools       [100]*ClientConnPool
+	uniquePools []*ClientConnPool
+}
+
+// Creates a new ClientConnPoolSplitter with the provided traffic allocation.
+// The traffic allocation is a map from a ClientConnPool to the percent of
+// traffic (as an integer in [0, 100]) that should be sent to that pool. E.g.:
+//
+//	*pool 1*: 25
+//	*pool 2*: 25
+//	*pool 3*: 50
+//
+// Will send 25% of traffic to pool 1, 25% to pool 2, and 50% to pool 3.
+//
+// TODO(iain): Support decimal percentages (e.g. 1/3 of traffic) by keeping a
+// list of pools and float cumulative traffic proportions and then generating
+// random floats and selecting the pool corresponding to that random float.
+func NewClientConnPoolSplitter(trafficAllocation map[*ClientConnPool]int) (*ClientConnPoolSplitter, error) {
+	totalTrafficPercent := 0
+	poolIdx := 0
+	pools := [100]*ClientConnPool{}
+	uniquePools := make([]*ClientConnPool, 0, len(trafficAllocation))
+	for pool, trafficPercent := range trafficAllocation {
+		totalTrafficPercent += trafficPercent
+		for i := 0; i < trafficPercent; i++ {
+			pools[poolIdx] = pool
+			poolIdx++
+		}
+		uniquePools = append(uniquePools, pool)
+	}
+	if totalTrafficPercent != 100 {
+		return nil, status.InvalidArgumentErrorf("ClientConnPoolSplitter traffic percentages must add to 100 (was %d)", totalTrafficPercent)
+	}
+	return &ClientConnPoolSplitter{pools: pools, uniquePools: uniquePools}, nil
+}
+
+func (p *ClientConnPoolSplitter) Check(ctx context.Context) error {
+	for _, pool := range p.uniquePools {
+		if err := pool.Check(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *ClientConnPoolSplitter) Close() error {
+	for _, pool := range p.uniquePools {
+		pool.Close()
+	}
+	return nil
+}
+
+func (p *ClientConnPoolSplitter) getPool() *ClientConnPool {
+	return p.pools[rand.IntN(100)]
+}
+
+func (p *ClientConnPoolSplitter) Invoke(ctx context.Context, method string, args any, reply any, opts ...grpc.CallOption) error {
+	return p.getPool().getConn().Invoke(ctx, method, args, reply, opts...)
+}
+
+func (p *ClientConnPoolSplitter) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+	return p.getPool().getConn().NewStream(ctx, desc, method, opts...)
 }
 
 // DialSimple handles some of the logic around detecting the correct GRPC
@@ -130,18 +241,24 @@ func (p *ClientConnPool) NewStream(ctx context.Context, desc *grpc.StreamDesc, m
 // such as from cli tools and the like. When dialing from BuildBuddy servers
 // (app, executor) you should use DialInternal.
 func DialSimple(target string, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
+	return DialSimpleWithPoolSize(target, fixedPoolSize(target), extraOptions...)
+}
+
+// DialSimpleWithPoolSize is like DialSimple, but with a specified pool size
+// instead of the default.
+func DialSimpleWithPoolSize(target string, poolSize int, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
 	var mu sync.Mutex
 	var conns []*clientConn
 
 	eg, _ := errgroup.WithContext(context.Background())
-	for i := 0; i < *poolSize; i++ {
+	for range poolSize {
 		eg.Go(func() error {
 			conn, err := DialSimpleWithoutPooling(target, extraOptions...)
 			if err != nil {
 				return err
 			}
 			mu.Lock()
-			conns = append(conns, &clientConn{ClientConn: conn})
+			conns = append(conns, &clientConn{ClientConn: conn, index: strconv.Itoa(len(conns))})
 			mu.Unlock()
 			return nil
 		})
@@ -149,7 +266,15 @@ func DialSimple(target string, extraOptions ...grpc.DialOption) (*ClientConnPool
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-	return &ClientConnPool{conns: conns}, nil
+
+	// Increment an index per-target to disambiguate between multiple
+	// connection pools to the same target.
+	idsMu.Lock()
+	id := ids[target]
+	ids[target] = id + 1
+	idsMu.Unlock()
+
+	return &ClientConnPool{targetForLogging: target, id: strconv.Itoa(id), conns: conns}, nil
 }
 
 // DialSimpleWithoutPooling is a variant of DialSimple that disables connection
@@ -159,6 +284,8 @@ func DialSimple(target string, extraOptions ...grpc.DialOption) (*ClientConnPool
 // This function should not be used outside of tests and currently remains to
 // integrate with a third-party library (grpc-proxy).
 func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
+	target = normalizeTarget(target)
+
 	dialOptions := CommonGRPCClientOptions()
 	dialOptions = append(dialOptions, extraOptions...)
 	u, err := url.Parse(target)
@@ -167,7 +294,7 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 			dialOptions = append(dialOptions, grpc.WithPerRPCCredentials(newRPCCredentials(u.User.String())))
 		}
 		if u.Scheme == "grpcs" {
-			dialOptions = append(dialOptions, grpc.WithTransportCredentials(google.NewDefaultCredentials().TransportCredentials()))
+			dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewTLS(nil)))
 		} else {
 			dialOptions = append(dialOptions, grpc.WithInsecure())
 		}
@@ -176,7 +303,7 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 			u.Host += ":443"
 		}
 
-		if u.Scheme != "unix" {
+		if u.Scheme != "unix" && u.Scheme != "kube" && u.Scheme != "xds" {
 			target = u.Host
 		}
 	}
@@ -190,9 +317,15 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 //
 // Outside of BuildBuddy servers, DialSimple should be used instead.
 func DialInternal(env environment.Env, target string, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
+	return DialInternalWithPoolSize(env, target, fixedPoolSize(target), extraOptions...)
+}
+
+// DialInternalWithPoolSize is similar to DialInternal, but with a specified
+// pool size instead of the default.
+func DialInternalWithPoolSize(env environment.Env, target string, poolSize int, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
 	opts := []grpc.DialOption{interceptors.GetUnaryClientIdentityInterceptor(env), interceptors.GetStreamClientIdentityInterceptor(env)}
 	opts = append(opts, extraOptions...)
-	return DialSimple(target, opts...)
+	return DialSimpleWithPoolSize(target, poolSize, opts...)
 }
 
 // DialInternalWithoutPooling is a variant of DialInternal that disables
@@ -205,6 +338,24 @@ func DialInternalWithoutPooling(env environment.Env, target string, extraOptions
 	opts := []grpc.DialOption{interceptors.GetUnaryClientIdentityInterceptor(env), interceptors.GetStreamClientIdentityInterceptor(env)}
 	opts = append(opts, extraOptions...)
 	return DialSimpleWithoutPooling(target, opts...)
+}
+
+func fixedPoolSize(target string) int {
+	if strings.HasPrefix(target, "xds:") {
+		// With xDS, gRPC creates multiple connections to the same target under
+		// the hood and load balances between them, so can reduce our pool size.
+		// Also, there's no proxy in between us and the server, so we don't have
+		// to worry about hitting max concurrent stream limits on the proxy.
+		return 2
+	}
+	return *poolSize
+}
+
+func normalizeTarget(target string) string {
+	if strings.Contains(target, "://") {
+		return target
+	}
+	return defaultProtocol + target
 }
 
 type rpcCredentials struct {
@@ -229,10 +380,11 @@ func (c *rpcCredentials) RequireTransportSecurity() bool {
 
 func CommonGRPCClientOptions() []grpc.DialOption {
 	return []grpc.DialOption{
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler(otelgrpc.WithMeterProvider(rpcutil.MeterProvider()), otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents))),
 		interceptors.GetUnaryClientInterceptor(),
 		interceptors.GetStreamClientInterceptor(),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),
-		grpc.WithRecvBufferPool(grpc.NewSharedBufferPool()),
+		experimental.WithBufferPool(mem.DefaultBufferPool()),
 		grpc.WithSharedWriteBuffer(true),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			// After a duration of this time if the client doesn't see any activity it

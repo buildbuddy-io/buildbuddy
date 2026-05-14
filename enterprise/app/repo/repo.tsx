@@ -1,23 +1,24 @@
-import React from "react";
-import error_service from "../../../app/errors/error_service";
-import rpc_service from "../../../app/service/rpc_service";
-import { github } from "../../../proto/github_ts_proto";
-import { repo } from "../../../proto/repo_ts_proto";
-import Spinner from "../../../app/components/spinner/spinner";
 import { BookCopy, ChevronRightSquare, FolderInput, Folders, Github } from "lucide-react";
-import { workflow } from "../../../proto/workflow_ts_proto";
-import Select from "../../../app/components/select/select";
+import React from "react";
+import auth_service, { User } from "../../../app/auth/auth_service";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import TextInput from "../../../app/components/input/input";
-import { encryptAndUpdate } from "../secrets/secret_util";
-import auth_service, { User } from "../../../app/auth/auth_service";
-import { secrets } from "../../../proto/secrets_ts_proto";
-import router from "../../../app/router/router";
-import popup from "../../../app/util/popup";
-import picker_service from "../../../app/picker/picker_service";
+import Select from "../../../app/components/select/select";
+import Spinner from "../../../app/components/spinner/spinner";
+import error_service from "../../../app/errors/error_service";
 import { GithubIcon } from "../../../app/icons/github";
 import { GoogleIcon } from "../../../app/icons/google";
+import picker_service from "../../../app/picker/picker_service";
+import router from "../../../app/router/router";
+import rpc_service from "../../../app/service/rpc_service";
+import { installReadWriteGitHubAppURL } from "../../../app/util/github";
+import popup from "../../../app/util/popup";
+import { github } from "../../../proto/github_ts_proto";
+import { repo } from "../../../proto/repo_ts_proto";
+import { secrets } from "../../../proto/secrets_ts_proto";
+import { workflow } from "../../../proto/workflow_ts_proto";
 import OrgPicker from "../org_picker/org_picker";
+import { encryptAndUpdate } from "../secrets/secret_util";
 
 export interface RepoComponentProps {
   path: string;
@@ -170,15 +171,15 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
       .then(() => auth_service.refreshUser());
   }
 
+  // TODO: Have a better way to manage which features require write permissions
+  // and gate them for users that have installed the read-only app.
   linkGithubAccount() {
     return popup
       .open(
-        `/auth/github/app/link/?${new URLSearchParams({
-          group_id: this.props.user?.selectedGroup.id || "",
-          user_id: this.props.user?.displayUser.userId?.id || "",
-          redirect_url: window.location.href,
-          install: "true",
-        })}`
+        installReadWriteGitHubAppURL(
+          this.props.user?.displayUser.userId?.id || "",
+          this.props.user?.selectedGroup.id || ""
+        )
       )
       .then(() => this.fetchSecrets())
       .then(() => {
@@ -206,9 +207,8 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   hasPermissions() {
-    let selectedInstallation = this.state.githubInstallationsResponse?.installations[
-      this.state.selectedInstallationIndex
-    ];
+    let selectedInstallation =
+      this.state.githubInstallationsResponse?.installations[this.state.selectedInstallationIndex];
     if (!selectedInstallation) {
       return true;
     }
@@ -228,22 +228,21 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   linkInstallation() {
-    let selectedInstallation = this.state.githubInstallationsResponse?.installations[
-      this.state.selectedInstallationIndex
-    ];
+    let selectedInstallation =
+      this.state.githubInstallationsResponse?.installations[this.state.selectedInstallationIndex];
     rpc_service.service
       .linkGitHubAppInstallation(
         github.LinkAppInstallationRequest.create({
           installationId: selectedInstallation?.id,
+          appId: selectedInstallation?.appId,
         })
       )
       .catch((e) => error_service.handleError(e));
   }
 
   createOrUpdateRepo(update?: boolean) {
-    let selectedInstallation = this.state.githubInstallationsResponse?.installations[
-      this.state.selectedInstallationIndex
-    ];
+    let selectedInstallation =
+      this.state.githubInstallationsResponse?.installations[this.state.selectedInstallationIndex];
     let r = new repo.CreateRepoRequest();
     r.name = this.state.repoName;
     r.private = this.state.private;
@@ -410,9 +409,8 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   showPermissions() {
-    let selectedInstallation = this.state.githubInstallationsResponse?.installations[
-      this.state.selectedInstallationIndex
-    ];
+    let selectedInstallation =
+      this.state.githubInstallationsResponse?.installations[this.state.selectedInstallationIndex];
     return popup.open(selectedInstallation?.url + `/permissions/update`).catch((e) => {
       // Log an error here, but let's keep going since sometimes the Github UI
       // doesn't redirect after a permissions change, and the user has to X out

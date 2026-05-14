@@ -12,11 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
@@ -40,6 +40,10 @@ const (
 	// minMilliCPUPrediction is the minimum CPU value to be returned from
 	// Predict().
 	minMilliCPUPrediction = 1 // 1ms
+
+	// maxMilliCPUPrediction is the maximum CPU value to be returned from
+	// Predict().
+	maxMilliCPUPrediction = 8_000
 
 	// How much time to allow for initializing the model (connecting to the
 	// TF server and making a test prediction).
@@ -105,7 +109,7 @@ func New(env environment.Env) (*Model, error) {
 	}
 
 	// Connect to TF serving.
-	conn, err := grpc_client.DialSimple(*servingAddress)
+	conn, err := grpc_client.DialSimpleWithPoolSize(*servingAddress, 2)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to dial TensorFlow serving at %s: %s", *servingAddress, err)
 	}
@@ -134,7 +138,7 @@ func (m *Model) makeTestPrediction(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, initTimeout)
 	defer cancel()
 
-	x := m.featureVector(&repb.ExecutionTask{})
+	x := m.featureVector(nil, nil)
 	if _, err := m.callModel(ctx, memModelName, x); err != nil {
 		return status.InternalErrorf("saved memory model test prediction failed: %s", err)
 	}
@@ -183,19 +187,8 @@ func (m *Model) callModel(ctx context.Context, model string, x []float32) (float
 
 // Predict predicts the resource usage of a task based on the configured
 // model parameters. It returns nil if the model is not configured.
-func (m *Model) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
+func (m *Model) Predict(ctx context.Context, action *repb.Action, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize {
 	if !m.isReady() {
-		return nil
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, predictionTimeout)
-	defer cancel()
-
-	// Don't use predicted task sizes for Firecracker tasks for now, since task
-	// sizes are used as hard limits on allowed resources.
-	props, err := platform.ParseProperties(task)
-	if err != nil {
-		log.CtxInfof(ctx, "Failed to parse task properties: %s", err)
 		return nil
 	}
 	// If a task size is explicitly requested, measured task size is not used.
@@ -211,20 +204,22 @@ func (m *Model) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 		return nil
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, predictionTimeout)
+	defer cancel()
 	start := time.Now()
-	s, err := m.predict(ctx, task)
+	s, err := m.predict(ctx, action, cmd)
 	metrics.RemoteExecutionTaskSizePredictionDurationUsec.With(prometheus.Labels{
 		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
 	}).Observe(float64(time.Since(start).Microseconds()))
 	if err != nil {
-		log.Warningf("Failed to predict task size: %s", err)
+		log.CtxWarningf(ctx, "Failed to predict task size: %s", err)
 		return nil
 	}
 	return s
 }
 
-func (m *Model) predict(ctx context.Context, task *repb.ExecutionTask) (*scpb.TaskSize, error) {
-	x := m.featureVector(task)
+func (m *Model) predict(ctx context.Context, action *repb.Action, cmd *repb.Command) (*scpb.TaskSize, error) {
+	x := m.featureVector(action, cmd)
 
 	eg, ctx := errgroup.WithContext(ctx)
 	var mem, cpu int64
@@ -263,12 +258,15 @@ func (m *Model) predict(ctx context.Context, task *repb.ExecutionTask) (*scpb.Ta
 	if size.EstimatedMilliCpu < minMilliCPUPrediction {
 		size.EstimatedMilliCpu = minMilliCPUPrediction
 	}
+	if size.EstimatedMilliCpu > maxMilliCPUPrediction {
+		log.CtxInfof(ctx, "Limiting task size milli-CPU prediction %d to %d", size.EstimatedMilliCpu, maxMilliCPUPrediction)
+		size.EstimatedMilliCpu = maxMilliCPUPrediction
+	}
 	return size, nil
 }
 
 // featureVector converts a command to a fixed-length numeric feature vector.
-func (m *Model) featureVector(task *repb.ExecutionTask) []float32 {
-	cmd := task.GetCommand()
+func (m *Model) featureVector(action *repb.Action, cmd *repb.Command) []float32 {
 	argCount := len(cmd.GetArguments())
 	tool := ""
 	if len(cmd.GetArguments()) > 0 {
@@ -282,13 +280,14 @@ func (m *Model) featureVector(task *repb.ExecutionTask) []float32 {
 
 	features = append(features,
 		float32(argCount),
-		float32(task.GetAction().GetInputRootDigest().GetSizeBytes()),
-		float32(task.GetAction().GetCommandDigest().GetSizeBytes()),
+		float32(action.GetInputRootDigest().GetSizeBytes()),
+		float32(action.GetCommandDigest().GetSizeBytes()),
 		envFloat32(cmd, "TEST_TIMEOUT", 300),
 		envFloat32(cmd, "TEST_TOTAL_SHARDS", 1),
 	)
-	features = appendOneHot(features, m.config.OSValues, platform.FindValue(cmd.GetPlatform(), "OSFamily"))
-	features = appendOneHot(features, m.config.ArchValues, platform.FindValue(cmd.GetPlatform(), "Arch"))
+	platformProto := platform.GetProto(action, cmd)
+	features = appendOneHot(features, m.config.OSValues, platform.FindValue(platformProto, "OSFamily"))
+	features = appendOneHot(features, m.config.ArchValues, platform.FindValue(platformProto, "Arch"))
 	features = appendOneHot(features, m.config.Tools, tool)
 	features = appendOneHot(features, m.config.TestSizes, envValue(cmd, "TEST_SIZE"))
 	features = m.appendExtensionCounts(features, cmd)

@@ -2,7 +2,6 @@
 ## Copy to your user-specific user.bazelrc (which is in .gitignore) with the following command:
 ## cp template-user.bazelrc user.bazelrc
 
-
 ################
 # Windows only #
 ################
@@ -16,23 +15,40 @@
 ## 2) Following the Quickstart guide here: https://app.buildbuddy.io/docs/setup/
 ## 3) Update and uncomment the line below accordingly
 #common --remote_header=x-buildbuddy-api-key=YOUR_API_KEY
+## Like above, but follow https://app.buildbuddy.dev/docs/setup/
+#common:remote-dev-shared --remote_header=x-buildbuddy-api-key=YOUR_DEV_API_KEY
 
 #################################
 ## Local toolchain development ##
 #################################
 ## Use when developing the toolchain repo
 ## Uncomment the line below and update the path to point to your local toolchain directory
-#common --override_repository=io_buildbuddy_buildbuddy_toolchain=/ABSOLUTE_PATH_TO_YOUR_TOOLCHAIN_DIRECTORY/buildbuddy-toolchain/
+#common --override_module=toolchains_buildbuddy=/ABSOLUTE_PATH_TO_YOUR_TOOLCHAIN_DIRECTORY/buildbuddy-toolchain/
 
 ##########
 ## Misc ##
 ##########
 # Cache your external dependencies downloads
 #common --repository_cache=~/.bazel/repository_cache/
+#common --experimental_repository_cache_hardlinks
+#
+# Cache your Go module downloads using the host Go module cache
+#common --repo_env=GO_REPOSITORY_USE_HOST_MODCACHE=1
+#common --repo_env=GOMODCACHE=/ABSOLUTE_PATH_TO_YOUR_GO_MODULE_CACHE
 #
 # Print out test logs if there is any error
-#common--test_output=errors
+#common --test_output=errors
 #
 # Show more actions in the terminal output.
 # When execute build remotely, up-to 100 actions could be running in parallel.
 #common --ui_actions_shown=32
+#
+# Enable disk cache and garbage collection
+#common --disk_cache=~/.bazel/disk_cache/
+#common --experimental_disk_cache_gc_max_age=7d
+#
+# Always build Go sources from protobuf
+# Always build nogo lint fix patches when available
+#common --output_groups=+go_generated_srcs,+nogo_fix
+# Download nogo patch files to bazel-out
+#common:remote-minimal --remote_download_regex=.*_nogo/nogo.patch$

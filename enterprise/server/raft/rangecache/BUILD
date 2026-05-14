@@ -12,7 +12,9 @@ go_library(
         "//server/util/log",
         "//server/util/rangemap",
         "//server/util/status",
+        "//server/util/tracing",
         "@com_github_prometheus_client_golang//prometheus",
+        "@io_opentelemetry_go_otel//attribute",
     ],
 )
 

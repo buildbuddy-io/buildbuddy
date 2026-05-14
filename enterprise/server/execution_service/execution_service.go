@@ -1,20 +1,54 @@
 package execution_service
 
 import (
+	"cmp"
 	"context"
+	"encoding/hex"
+	"flag"
+	"io"
+	"path"
+	"slices"
 	"sort"
+	"strings"
+	"time"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeseries"
+	"github.com/buildbuddy-io/buildbuddy/server/util/trace_events"
 	"golang.org/x/sync/errgroup"
 
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
+	tspb "google.golang.org/protobuf/types/known/timestamppb"
+)
+
+var (
+	primaryDBReadsEnabled = flag.Bool("remote_execution.primary_db_reads_enabled", true, "Whether to read executions from the primary database.")
+	olapReadsEnabled      = flag.Bool("remote_execution.olap_reads_enabled", false, "Whether to read executions from the OLAP database (and read in-progress execution info from Redis).")
+)
+
+const (
+	defaultExecutionDownloadsPageSize = 100
+	maxExecutionDownloadsPageSize     = 1000
 )
 
 type ExecutionService struct {
@@ -34,7 +68,11 @@ func checkPreconditions(req *espb.GetExecutionRequest) error {
 	return status.FailedPreconditionError("An execution lookup with invocation_id must be provided")
 }
 
-func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocationID string) ([]*tables.Execution, error) {
+func (es *ExecutionService) getInvocationExecutionsFromPrimaryDB(ctx context.Context, lookup *espb.ExecutionLookup) ([]*tables.Execution, error) {
+	invocationID := lookup.GetInvocationId()
+	actionDigestHash := lookup.GetActionDigestHash()
+	executionID := lookup.GetExecutionId()
+
 	// Note: the invocation row may not be created yet because workflow
 	// invocations are created by the execution itself.
 	q := query_builder.NewQuery(`
@@ -43,6 +81,12 @@ func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocat
 		LEFT JOIN "Invocations" i ON i.invocation_id = e.invocation_id
 	`)
 	q.AddWhereClause(`ie.invocation_id = ?`, invocationID)
+	if actionDigestHash != "" {
+		q.AddWhereClause(`e.execution_id LIKE ?`, "%/"+actionDigestHash+"/%")
+	}
+	if executionID != "" {
+		q.AddWhereClause(`e.execution_id = ?`, executionID)
+	}
 	dbh := es.env.GetDBHandle()
 
 	permClauses, err := perms.GetPermissionsCheckClauses(ctx, es.env, q, "e")
@@ -60,7 +104,207 @@ func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocat
 
 	queryStr, args := q.Build()
 	rq := dbh.NewQuery(ctx, "execution_server_get_executions").Raw(queryStr, args...)
-	return db.ScanAll(rq, &tables.Execution{})
+	executions, err := db.ScanAll(rq, &tables.Execution{})
+	if err != nil {
+		return nil, err
+	}
+	// It's unlikely, but our digest predicate might return false positives
+	// since we aren't doing a strict match on the hash part of the execution
+	// ID. Filter out false positives here.
+	if actionDigestHash != "" {
+		executions = slices.DeleteFunc(executions, func(e *tables.Execution) bool {
+			parts := strings.Split(e.ExecutionID, "/")
+			return len(parts) < 2 || parts[len(parts)-2] != actionDigestHash
+		})
+	}
+	return executions, nil
+}
+
+func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Context, lookup *espb.ExecutionLookup) ([]*olaptables.Execution, error) {
+	var eg errgroup.Group
+
+	invocationID := lookup.GetInvocationId()
+	actionDigestHash := lookup.GetActionDigestHash()
+	executionID := lookup.GetExecutionId()
+	targetLabel := lookup.GetTargetLabel()
+
+	// If executions.write_execution_progress_state_to_redis is enabled,
+	// executions that are still in progress will be buffered in Redis.
+	//
+	// If the invocation is still in progress, completed executions will also be
+	// buffered, waiting to be flushed to the OLAP database as part of a batch
+	// of writes. So, we read both buffered and flushed executions here.
+	var inProgressExecutions []*olaptables.Execution
+	var bufferedExecutions []*olaptables.Execution
+	var flushedExecutions []*olaptables.Execution
+	eg.Go(func() error {
+		ex, err := es.env.GetExecutionCollector().GetInProgressExecutions(ctx, invocationID)
+		if err != nil {
+			return err
+		}
+		// Respect filters.
+		if actionDigestHash != "" {
+			ex = slices.DeleteFunc(ex, func(e *repb.StoredExecution) bool {
+				parts := strings.Split(e.ExecutionId, "/")
+				return len(parts) < 2 || parts[len(parts)-2] != actionDigestHash
+			})
+		}
+		if executionID != "" {
+			ex = slices.DeleteFunc(ex, func(e *repb.StoredExecution) bool {
+				return e.ExecutionId != executionID
+			})
+		}
+		if targetLabel != "" {
+			ex = slices.DeleteFunc(ex, func(e *repb.StoredExecution) bool {
+				return e.TargetLabel != targetLabel
+			})
+		}
+		// Convert buffered representation to OLAP table representation.
+		inProgressExecutions = make([]*olaptables.Execution, len(ex))
+		for i, e := range ex {
+			entry, err := clickhouse.ExecutionFromProto(e, nil /*=invocation*/)
+			if err != nil {
+				return status.WrapError(err, "convert in-progress execution to OLAP row")
+			}
+			inProgressExecutions[i] = entry
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		ex, err := es.env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
+		if err != nil {
+			return err
+		}
+		// Respect filters.
+		if actionDigestHash != "" {
+			ex = slices.DeleteFunc(ex, func(e *repb.StoredExecution) bool {
+				parts := strings.Split(e.ExecutionId, "/")
+				return len(parts) < 2 || parts[len(parts)-2] != actionDigestHash
+			})
+		}
+		if executionID != "" {
+			ex = slices.DeleteFunc(ex, func(e *repb.StoredExecution) bool {
+				return e.ExecutionId != executionID
+			})
+		}
+		if targetLabel != "" {
+			ex = slices.DeleteFunc(ex, func(e *repb.StoredExecution) bool {
+				return e.TargetLabel != targetLabel
+			})
+		}
+		// Convert buffered representation to OLAP table representation.
+		bufferedExecutions = make([]*olaptables.Execution, len(ex))
+		for i, e := range ex {
+			entry, err := clickhouse.ExecutionFromProto(e, nil /*=invocation*/)
+			if err != nil {
+				return status.WrapError(err, "convert buffered execution to OLAP row")
+			}
+			bufferedExecutions[i] = entry
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		// The Executions table is optimized for trends, so the primary key
+		// doesn't allow efficient querying by invocation ID. To mitigate this,
+		// we filter the timestamp range based on the start/end timestamps of
+		// the invocation, which requires looking up the invocation from the
+		// primary DB.
+		inv, err := es.env.GetInvocationDB().LookupInvocation(ctx, invocationID)
+		if err != nil {
+			return status.WrapError(err, "lookup invocation")
+		}
+		// Execution runtime is capped at 24 hours currently
+		// (execution.max_task_timeout), and because of action merging,
+		// executions for an invocation could have started hours prior to the
+		// invocation being created. So we need to look back prior to when the
+		// invocation was created.
+		//
+		// This might seem like a very large window, but ClickHouse should be
+		// able to handle this with no problem in most cases; we're really just
+		// trying to get a coarse-grained limit here to avoid scanning the full
+		// execution history.
+		rangeStartUsec := inv.Model.CreatedAtUsec - 25*time.Hour.Microseconds()
+		// If the invocation is completed, we can scan up to the invocation end
+		// timestamp, plus a few minutes just to be safe. Otherwise, use the
+		// current time as the end of the range, but limit to 24h since the
+		// invocation was last updated in the primary DB.
+		var rangeEndUsec int64
+		if inv.InvocationStatus == int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS) {
+			rangeEndUsec = inv.Model.UpdatedAtUsec + 10*time.Minute.Microseconds()
+		} else {
+			rangeEndUsec = time.Now().UnixMicro() + 30*time.Minute.Microseconds()
+			// Safeguard against scanning too long of a range.
+			if rangeEndUsec-inv.Model.UpdatedAtUsec > 24*time.Hour.Microseconds() {
+				rangeEndUsec = inv.Model.UpdatedAtUsec + 24*time.Hour.Microseconds()
+			}
+		}
+		// group_id ACL check should have been done in LookupInvocation, but
+		// check it again here just to be explicit.
+		// TODO(bduffany): do this OTHERS_READ check in AuthorizeRead instead.
+		if inv.Perms&perms.OTHERS_READ == 0 {
+			u, err := es.env.GetAuthenticator().AuthenticatedUser(ctx)
+			if err != nil {
+				return err
+			}
+			if err := perms.AuthorizeRead(u, perms.ToACLProto(&uidpb.UserId{Id: inv.UserID}, inv.GroupID, inv.Perms)); err != nil {
+				return err
+			}
+		}
+		// Select only the execution fields that will be shown on the Executions
+		// page.
+		q := query_builder.NewQuery(`
+			SELECT ` + strings.Join(execution.ExecutionListingColumns(), ", ") + `
+			FROM "Executions"
+		`)
+		q.AddWhereClause(`group_id = ?`, inv.GroupID)
+		q.AddWhereClause(`invocation_uuid = ?`, strings.ReplaceAll(invocationID, "-", ""))
+		if actionDigestHash != "" {
+			hashBytes, err := hex.DecodeString(actionDigestHash)
+			if err != nil {
+				return status.InvalidArgumentErrorf("invalid action digest hash %q: %s", actionDigestHash, err)
+			}
+			q.AddWhereClause(`action_digest_hash = ?`, string(hashBytes))
+		}
+		if executionID != "" {
+			_, executionUUID, err := digest.ParseUploadResourceNameWithUUID(executionID)
+			if err != nil {
+				return status.InvalidArgumentErrorf("invalid execution ID %q: %s", executionID, err)
+			}
+			q.AddWhereClause(`execution_uuid = ?`, executionUUID)
+		}
+		if targetLabel != "" {
+			q.AddWhereClause(`target_label = ?`, targetLabel)
+		}
+		q.AddWhereClause(`updated_at_usec >= ?`, rangeStartUsec)
+		q.AddWhereClause(`updated_at_usec <= ?`, rangeEndUsec)
+		queryStr, args := q.Build()
+		rq := es.env.GetOLAPDBHandle().NewQuery(ctx, "execution_server_get_executions").Raw(queryStr, args...)
+		rows, err := db.ScanAll(rq, &olaptables.Execution{})
+		if err != nil {
+			return err
+		}
+		flushedExecutions = rows
+		return nil
+	})
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	// Combine the in-progress, buffered and flushed executions. Dedupe by
+	// execution UUID, since an execution's transitions between these lists are
+	// not atomic. Prefer flushed executions, then buffered, then in-progress.
+	executions := slices.Concat(flushedExecutions, bufferedExecutions, inProgressExecutions)
+	executionIDs := make(map[string]bool)
+	dedupedExecutions := make([]*olaptables.Execution, 0, len(executions))
+	for _, e := range executions {
+		if executionIDs[e.ExecutionUUID] {
+			continue
+		}
+		executionIDs[e.ExecutionUUID] = true
+		dedupedExecutions = append(dedupedExecutions, e)
+	}
+
+	return dedupedExecutions, nil
 }
 
 func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error) {
@@ -70,29 +314,30 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 	if err := checkPreconditions(req); err != nil {
 		return nil, err
 	}
-	executions, err := es.getInvocationExecutions(ctx, req.GetExecutionLookup().GetInvocationId())
+	executions, err := es.lookupExecutions(ctx, req.GetExecutionLookup())
 	if err != nil {
 		return nil, err
 	}
-	// Sort the executions by start time.
-	sort.Slice(executions, func(i, j int) bool {
-		return executions[i].Model.CreatedAtUsec < executions[j].Model.CreatedAtUsec
-	})
-	rsp := &espb.GetExecutionResponse{}
-	for _, ex := range executions {
-		protoExec, err := execution.TableExecToClientProto(ex)
-		if err != nil {
-			return nil, err
-		}
-		rsp.Execution = append(rsp.Execution, protoExec)
+
+	rsp := &espb.GetExecutionResponse{
+		Execution: executions,
 	}
+
 	if req.GetInlineExecuteResponse() {
 		// If inlined responses are requested, fetch them now.
 		var eg errgroup.Group
 		for _, ex := range rsp.Execution {
 			ex := ex
+			// The execute response is only cached once the execution completes.
+			if ex.GetStage() != repb.ExecutionStage_COMPLETED {
+				continue
+			}
 			eg.Go(func() error {
-				res, err := execution.GetCachedExecuteResponse(ctx, es.env, ex.ExecutionId)
+				// TODO: if the authenticated user has access to the group
+				// that owns the execution, switch to that group's ctx.
+				// Also if the execution was done anonymously, switch to
+				// anonymous ctx.
+				res, err := execution.GetCachedExecuteResponse(ctx, es.env.GetActionCacheClient(), ex.ExecutionId)
 				if err != nil {
 					return err
 				}
@@ -104,5 +349,622 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 			log.CtxInfof(ctx, "Failed to fetch inline execution response(s): %s", err)
 		}
 	}
+
+	if len(rsp.Execution) == 0 {
+		log.CtxInfof(ctx, "No executions found for invocation %q", req.GetExecutionLookup().GetInvocationId())
+	}
+
 	return rsp, nil
+}
+
+func (es *ExecutionService) lookupExecutions(ctx context.Context, lookup *espb.ExecutionLookup) ([]*espb.Execution, error) {
+	var primaryDBExecutions []*tables.Execution
+	var olapExecutions []*olaptables.Execution
+
+	var eg errgroup.Group
+	if *primaryDBReadsEnabled {
+		eg.Go(func() error {
+			ex, err := es.getInvocationExecutionsFromPrimaryDB(ctx, lookup)
+			if err != nil {
+				return err
+			}
+			primaryDBExecutions = ex
+			return nil
+		})
+	}
+	if *olapReadsEnabled {
+		eg.Go(func() error {
+			ex, err := es.getInvocationExecutionsFromOLAPDB(ctx, lookup)
+			if err != nil {
+				return err
+			}
+			olapExecutions = ex
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	// Combine the executions from the primary DB and OLAP.
+	// Prefer OLAP executions if they exist, otherwise fall back to primary DB.
+	executions := make([]*espb.Execution, 0, len(olapExecutions))
+	olapExecutionIDs := make(map[string]bool)
+	for _, e := range olapExecutions {
+		proto, err := execution.OLAPExecToClientProto(e)
+		if err != nil {
+			return nil, status.WrapError(err, "convert OLAP execution to client proto")
+		}
+		executions = append(executions, proto)
+		olapExecutionIDs[proto.GetExecutionId()] = true
+	}
+	for _, e := range primaryDBExecutions {
+		if olapExecutionIDs[e.ExecutionID] {
+			continue
+		}
+		proto, err := execution.TableExecToClientProto(e)
+		if err != nil {
+			return nil, status.WrapError(err, "convert execution to client proto")
+		}
+		executions = append(executions, proto)
+	}
+
+	// Sort the executions by queued timestamp.
+	sort.Slice(executions, func(i, j int) bool {
+		ti := executions[i].GetExecutedActionMetadata().GetQueuedTimestamp().AsTime()
+		tj := executions[j].GetExecutedActionMetadata().GetQueuedTimestamp().AsTime()
+		return ti.Before(tj)
+	})
+	return executions, nil
+}
+
+// GetExecutionDownloads returns paginated input file downloads for an
+// execution, ordered from largest to smallest file size.
+func (es *ExecutionService) GetExecutionDownloads(ctx context.Context, req *capb.GetExecutionDownloadsRequest) (*capb.GetExecutionDownloadsResponse, error) {
+	// Validate request
+	if req.GetInvocationId() == "" {
+		return nil, status.InvalidArgumentError("invocation_id field is required")
+	}
+	if req.GetExecutionId() == "" {
+		return nil, status.InvalidArgumentError("execution_id field is required")
+	}
+
+	// Authorize request (the user must have read access to the invocation that
+	// the execution belongs to)
+	if _, err := es.env.GetInvocationDB().LookupInvocation(ctx, req.GetInvocationId()); err != nil {
+		return nil, status.WrapError(err, "lookup invocation")
+	}
+	if err := es.checkExecutionBelongsToInvocation(ctx, req.GetInvocationId(), req.GetExecutionId()); err != nil {
+		return nil, err
+	}
+
+	// Fetch tree + download metadata and return filtered + paginated results.
+
+	// TODO: Invocation access is authorized above, but the subsequent cache
+	// reads still use the caller's current auth context. Consider switching the
+	// cache auth context to the owner group, if authorized. Note that the
+	// /file/download endpoint has this same problem.
+	downloads, err := es.getExecutionDownloads(ctx, req.GetExecutionId())
+	if err != nil {
+		return nil, status.WrapError(err, "get execution downloads")
+	}
+
+	page, err := paging.DecodeOffsetLimit(req.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+	if page.GetOffset() < 0 {
+		return nil, status.InvalidArgumentError("page offset must be non-negative")
+	}
+
+	limit := page.GetLimit()
+	if req.GetPageSize() > 0 {
+		limit = int64(req.GetPageSize())
+	}
+	limit = max(limit, int64(0))
+	if limit == 0 {
+		limit = defaultExecutionDownloadsPageSize
+	}
+	page.Limit = min(limit, maxExecutionDownloadsPageSize)
+
+	start := min(page.GetOffset(), int64(len(downloads)))
+	end := min(start+page.GetLimit(), int64(len(downloads)))
+
+	rsp := &capb.GetExecutionDownloadsResponse{
+		Downloads: downloads[int(start):int(end)],
+	}
+	if end < int64(len(downloads)) {
+		rsp.NextPageToken, err = paging.EncodeOffsetLimit(&pgpb.OffsetLimit{
+			Offset: end,
+			Limit:  page.GetLimit(),
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return rsp, nil
+}
+
+// After authorizing access to the invocation itself, also verify that the
+// requested execution belongs to that invocation before reading its downloads.
+func (es *ExecutionService) checkExecutionBelongsToInvocation(ctx context.Context, invocationID, executionID string) error {
+	executions, err := es.lookupExecutions(ctx, &espb.ExecutionLookup{
+		InvocationId: invocationID,
+		ExecutionId:  executionID,
+	})
+	if err != nil {
+		return status.WrapError(err, "lookup execution")
+	}
+	if len(executions) == 0 {
+		return status.NotFoundError("execution not found")
+	}
+	return nil
+}
+
+// Fetches the downloads bitmap and input root tree, and returns only the leaf
+// nodes from the tree that are present in the bitmap, sorted in decreasing
+// order of file size.
+func (es *ExecutionService) getExecutionDownloads(ctx context.Context, executionID string) ([]*capb.ExecutionDownload, error) {
+	actionResourceName, err := digest.ParseUploadResourceName(executionID)
+	if err != nil {
+		return nil, status.WrapError(err, "parse execution ID")
+	}
+	bitmap, err := es.fetchExecutionDownloadsBitmapFromAC(ctx, executionID)
+	if err != nil {
+		return nil, status.WrapError(err, "fetch downloads bitmap")
+	}
+	if bitmap == nil {
+		return nil, nil
+	}
+	tree, err := es.fetchExecutionInputTreeFromCAS(ctx, actionResourceName)
+	if err != nil {
+		return nil, status.WrapError(err, "fetch input tree")
+	}
+	downloads, err := filterExecutionDownloadsFromTree(tree, bitmap, actionResourceName.GetDigestFunction())
+	if err != nil {
+		return nil, status.WrapError(err, "filter execution downloads")
+	}
+	slices.SortFunc(downloads, func(a *capb.ExecutionDownload, b *capb.ExecutionDownload) int {
+		if c := cmp.Compare(b.GetDigest().GetSizeBytes(), a.GetDigest().GetSizeBytes()); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.GetPath(), b.GetPath())
+	})
+	return downloads, nil
+}
+
+// fetchExecutionDownloadsBitmapFromAC fetches the cached ExecuteResponse from
+// AC and returns the downloads bitmap from auxiliary metadata if available.
+// Note that older executors may not have this info available.
+func (es *ExecutionService) fetchExecutionDownloadsBitmapFromAC(ctx context.Context, executionID string) (*roaring.Bitmap, error) {
+	executeResponse, err := execution.GetCachedExecuteResponse(ctx, es.env.GetActionCacheClient(), executionID)
+	if err != nil {
+		return nil, status.WrapError(err, "get cached execute response")
+	}
+
+	auxMetadata := &espb.ExecutionAuxiliaryMetadata{}
+	ok, err := rexec.FindFirstAuxiliaryMetadata(executeResponse.GetResult().GetExecutionMetadata(), auxMetadata)
+	if err != nil {
+		return nil, status.WrapError(err, "parse execution auxiliary metadata")
+	}
+	if !ok || auxMetadata.GetInputFetchDetailedStats() == nil {
+		return nil, nil
+	}
+
+	bitmapData := auxMetadata.GetInputFetchDetailedStats().GetDownloadedFileIndicesBitmap()
+	if len(bitmapData) == 0 {
+		return nil, nil
+	}
+
+	bitmap := roaring.New()
+	if err := bitmap.UnmarshalBinary(bitmapData); err != nil {
+		return nil, status.WrapError(err, "unmarshal downloaded file bitmap")
+	}
+	return bitmap, nil
+}
+
+// fetchExecutionInputTreeFromCAS fetches and returns the Action input root tree
+// from CAS for the given parsed Action resource name.
+func (es *ExecutionService) fetchExecutionInputTreeFromCAS(ctx context.Context, actionResourceName *digest.CASResourceName) (*repb.Tree, error) {
+	actionCASResourceName := digest.NewCASResourceName(
+		actionResourceName.GetDigest(),
+		actionResourceName.GetInstanceName(),
+		actionResourceName.GetDigestFunction(),
+	)
+	action := &repb.Action{}
+	if err := cachetools.GetBlobAsProto(ctx, es.env.GetByteStreamClient(), actionCASResourceName, action); err != nil {
+		return nil, status.WrapError(err, "read action")
+	}
+	if action.GetInputRootDigest() == nil {
+		return nil, status.FailedPreconditionError("action did not contain an input root digest")
+	}
+	inputRootCASResourceName := digest.NewCASResourceName(
+		action.GetInputRootDigest(),
+		actionResourceName.GetInstanceName(),
+		actionResourceName.GetDigestFunction(),
+	)
+	tree, err := cachetools.GetTreeFromRootDirectoryDigest(
+		ctx,
+		es.env.GetContentAddressableStorageClient(),
+		inputRootCASResourceName,
+	)
+	if err != nil {
+		return nil, status.WrapError(err, "get input tree")
+	}
+	return tree, nil
+}
+
+// filterExecutionDownloadsFromTree maps bitmap leaf indexes back to input file paths
+// within a GetTree response for an Action input root, using the same
+// file-first traversal order used during input fetching.
+func filterExecutionDownloadsFromTree(tree *repb.Tree, bitmap *roaring.Bitmap, digestFunction repb.DigestFunction_Value) ([]*capb.ExecutionDownload, error) {
+	if tree == nil || tree.GetRoot() == nil || bitmap == nil || bitmap.IsEmpty() {
+		return nil, nil
+	}
+
+	// GetTree returns child directories separately, so index them by digest to
+	// follow DirectoryNode references during traversal.
+	directoriesByDigest := make(map[string]*repb.Directory, len(tree.GetChildren()))
+	for _, child := range tree.GetChildren() {
+		d, err := digest.ComputeForMessage(child, digestFunction)
+		if err != nil {
+			return nil, status.WrapError(err, "compute directory digest")
+		}
+		directoriesByDigest[digest.String(d)] = child
+	}
+
+	downloads := make([]*capb.ExecutionDownload, 0, int(bitmap.GetCardinality()))
+	// The bitmap uses the same file visitation order as input fetching, so walk
+	// the tree in that exact order and increment once per file.
+	leafIndex := uint32(0)
+	var visit func(dir *repb.Directory, parentPath string) error
+	visit = func(dir *repb.Directory, parentPath string) error {
+		for _, fileNode := range dir.GetFiles() {
+			// Files consume bitmap indexes. If this file's index is present, record
+			// its full path and metadata.
+			if bitmap.Contains(leafIndex) {
+				filePath := fileNode.GetName()
+				if parentPath != "" {
+					filePath = path.Join(parentPath, filePath)
+				}
+				downloads = append(downloads, &capb.ExecutionDownload{
+					Path:         filePath,
+					Digest:       fileNode.GetDigest(),
+					IsExecutable: fileNode.GetIsExecutable(),
+				})
+			}
+			leafIndex++
+		}
+		// Then recurse into child directories in protobuf order so later file
+		// indexes stay aligned with the bitmap.
+		for _, childNode := range dir.GetDirectories() {
+			if digest.IsEmptyHash(childNode.GetDigest(), digestFunction) && childNode.GetDigest().GetSizeBytes() == 0 {
+				continue
+			}
+			childDir, ok := directoriesByDigest[digest.String(childNode.GetDigest())]
+			if !ok {
+				return status.NotFoundErrorf("directory %q missing from GetTree response", childNode.GetName())
+			}
+			childPath := childNode.GetName()
+			if parentPath != "" {
+				childPath = path.Join(parentPath, childPath)
+			}
+			if err := visit(childDir, childPath); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	// Start at the input root with no path prefix.
+	if err := visit(tree.GetRoot(), ""); err != nil {
+		return nil, err
+	}
+
+	return downloads, nil
+}
+
+func (es *ExecutionService) WaitExecution(req *espb.WaitExecutionRequest, stream bbspb.BuildBuddyService_WaitExecutionServer) error {
+	if es.env.GetRemoteExecutionClient() == nil {
+		return status.UnimplementedError("not implemented")
+	}
+	client, err := es.env.GetRemoteExecutionClient().WaitExecution(stream.Context(), &repb.WaitExecutionRequest{
+		Name: req.GetExecutionId(),
+	})
+	if err != nil {
+		return status.WrapError(err, "create WaitExecution stream")
+	}
+	// Directly forward stream messages back to the Web client stream. Note: we
+	// don't try to automatically reconnect here, since the client has to handle
+	// disconnects anyway (to deal with the current server going away).
+	for {
+		op, err := client.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		res := &espb.WaitExecutionResponse{Operation: op}
+		if err = stream.Send(res); err != nil {
+			return status.WrapError(err, "send")
+		}
+	}
+}
+
+// WriteExecutionProfile writes the uncompressed JSON execution profile in
+// Google's Trace Event Format.
+func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writer, executionID string) error {
+	res, err := execution.GetCachedExecuteResponse(ctx, es.env.GetActionCacheClient(), executionID)
+	if err != nil {
+		return status.WrapError(err, "get cached execute response")
+	}
+
+	metadata := res.GetResult().GetExecutionMetadata()
+	stats := metadata.GetUsageStats()
+	auxMetadata := &espb.ExecutionAuxiliaryMetadata{}
+	if _, err := rexec.FindFirstAuxiliaryMetadata(metadata, auxMetadata); err != nil {
+		log.CtxWarningf(ctx, "Failed to unmarshal ExecutionAuxiliaryMetadata: %s", err)
+	}
+
+	timestampsMillis := timeseries.DeltaDecode(stats.GetTimeline().GetTimestamps())
+	cumulativeCPUMillis := timeseries.DeltaDecode(stats.GetTimeline().GetCpuSamples())
+	memoryUsageKB := timeseries.DeltaDecode(stats.GetTimeline().GetMemoryKbSamples())
+	cumulativeDiskRbytes := timeseries.DeltaDecode(stats.GetTimeline().GetRbytesTotalSamples())
+	cumulativeDiskWbytes := timeseries.DeltaDecode(stats.GetTimeline().GetWbytesTotalSamples())
+	cumulativeDiskRios := timeseries.DeltaDecode(stats.GetTimeline().GetRiosTotalSamples())
+	cumulativeDiskWios := timeseries.DeltaDecode(stats.GetTimeline().GetWiosTotalSamples())
+
+	// Before we start writing the HTTP response, perform basic validation, so
+	// that we can return an error status in the header if it fails.
+
+	// All lists of samples that are set (nonempty) should be 1-1 with
+	// timestamps.
+	if len(cumulativeCPUMillis) > 0 && len(timestampsMillis) != len(cumulativeCPUMillis) {
+		return status.UnknownErrorf("length mismatch: timestamps[%d], cpu[%d]", len(timestampsMillis), len(cumulativeCPUMillis))
+	}
+	if len(memoryUsageKB) > 0 && len(timestampsMillis) != len(memoryUsageKB) {
+		return status.UnknownErrorf("length mismatch: timestamps[%d], memory[%d]", len(timestampsMillis), len(memoryUsageKB))
+	}
+	if len(cumulativeDiskRbytes) > 0 && len(timestampsMillis) != len(cumulativeDiskRbytes) {
+		return status.UnknownErrorf("length mismatch: timestamps[%d], disk read bytes[%d]", len(timestampsMillis), len(cumulativeDiskRbytes))
+	}
+	if len(cumulativeDiskWbytes) > 0 && len(timestampsMillis) != len(cumulativeDiskWbytes) {
+		return status.UnknownErrorf("length mismatch: timestamps[%d], disk write bytes[%d]", len(timestampsMillis), len(cumulativeDiskWbytes))
+	}
+	if len(cumulativeDiskRios) > 0 && len(timestampsMillis) != len(cumulativeDiskRios) {
+		return status.UnknownErrorf("length mismatch: timestamps[%d], disk read ios[%d]", len(timestampsMillis), len(cumulativeDiskRios))
+	}
+	if len(cumulativeDiskWios) > 0 && len(timestampsMillis) != len(cumulativeDiskWios) {
+		return status.UnknownErrorf("length mismatch: timestamps[%d], disk write ios[%d]", len(timestampsMillis), len(cumulativeDiskWios))
+	}
+
+	// The UI expects a full profile object, rather than just a list of events.
+	if _, err := io.WriteString(w, `{"traceEvents":[`); err != nil {
+		return status.WrapError(err, "write response")
+	}
+	out := trace_events.NewEventWriter(w)
+
+	// Write thread name metadata. Identify app and executor as separate
+	// "threads" which has the effect of showing them in separate sections in
+	// the trace viewer. Note: Bazel uses "Complete" events instead of
+	// "Metadata" events for some reason; we just do the same here.
+	appTID := int64(1)
+	executorTID := int64(2)
+
+	appMD := &trace_events.Event{
+		ThreadID: appTID,
+		Name:     "thread_name",
+		Args:     map[string]any{"name": "buildbuddy-execution-server"},
+		Phase:    trace_events.PhaseComplete,
+	}
+	if err := out.WriteEvent(appMD); err != nil {
+		return status.WrapError(err, "write response")
+	}
+
+	executorMD := &trace_events.Event{
+		ThreadID: executorTID,
+		Name:     "thread_name",
+		Args:     map[string]any{"name": "buildbuddy-execution-worker"},
+		Phase:    trace_events.PhaseComplete,
+	}
+	if err := out.WriteEvent(executorMD); err != nil {
+		return status.WrapError(err, "write response")
+	}
+
+	// Clock skew can cause the queued timestamp and worker start timestamp to
+	// appear out of order; determine the profile start time as the minimum.
+	profileStartTimestampUsec := min(
+		metadata.GetQueuedTimestamp().AsTime().UnixMicro(),
+		metadata.GetWorkerStartTimestamp().AsTime().UnixMicro(),
+	)
+
+	// Write spans
+	for _, span := range []struct {
+		name  string
+		tid   int64
+		start *tspb.Timestamp
+		end   *tspb.Timestamp
+	}{
+		{
+			name:  "queued",
+			tid:   appTID,
+			start: metadata.GetQueuedTimestamp(),
+			end:   metadata.GetWorkerStartTimestamp(),
+		},
+		{
+			name:  "queued",
+			tid:   executorTID,
+			start: auxMetadata.GetWorkerQueuedTimestamp(),
+			end:   metadata.GetWorkerStartTimestamp(),
+		},
+		{
+			name:  "execute action",
+			tid:   executorTID,
+			start: metadata.GetWorkerStartTimestamp(),
+			end:   metadata.GetWorkerCompletedTimestamp(),
+		},
+		{
+			name:  "prepare runner",
+			tid:   executorTID,
+			start: metadata.GetWorkerStartTimestamp(),
+			end:   metadata.GetInputFetchStartTimestamp(),
+		},
+		{
+			name:  "fetch inputs",
+			tid:   executorTID,
+			start: metadata.GetInputFetchStartTimestamp(),
+			end:   metadata.GetInputFetchCompletedTimestamp(),
+		},
+		{
+			name:  "run command",
+			tid:   executorTID,
+			start: metadata.GetExecutionStartTimestamp(),
+			end:   metadata.GetExecutionCompletedTimestamp(),
+		},
+		{
+			name:  "upload outputs",
+			tid:   executorTID,
+			start: metadata.GetOutputUploadStartTimestamp(),
+			end:   metadata.GetOutputUploadCompletedTimestamp(),
+		},
+	} {
+		// Skip nil timestamps. In particular, older executors may not have
+		// worker_queued_timestamp.
+		if span.start == nil || span.end == nil {
+			continue
+		}
+		event := &trace_events.Event{
+			ThreadID:  span.tid,
+			Name:      span.name,
+			Timestamp: span.start.AsTime().UnixMicro() - profileStartTimestampUsec,
+			Duration:  max(0, span.end.AsTime().Sub(span.start.AsTime()).Microseconds()),
+			Phase:     trace_events.PhaseComplete,
+		}
+		if err := out.WriteEvent(event); err != nil {
+			return status.WrapError(err, "write response")
+		}
+	}
+
+	timeseriesStartTime := stats.GetTimeline().GetStartTime().AsTime()
+	// Derive current CPU core count from timestamps and cumulative CPU usage.
+	const cpuScale = 1.0 // 1 cpu_ms/ms = 1 cpu_core/s
+	cpuUsage := computeRate(timestampsMillis, cumulativeCPUMillis, cpuScale, timeseriesStartTime)
+
+	// Convert memory usage samples from []int64 to []float64
+	var memoryUsage []float64
+	for _, m := range memoryUsageKB {
+		memoryUsage = append(memoryUsage, float64(m))
+	}
+
+	// Derive disk bandwidth in MB/s.
+	const diskBandwidthScale = 1e-3 // 1 byte/ms = 1e-3 MB/s
+	diskReadBW := computeRate(timestampsMillis, cumulativeDiskRbytes, diskBandwidthScale, timeseriesStartTime)
+	diskWriteBW := computeRate(timestampsMillis, cumulativeDiskWbytes, diskBandwidthScale, timeseriesStartTime)
+
+	// Derive disk IOPS (ops/s).
+	const diskIOPSScale = 1000.0 // 1 op/ms = 1000 ops/s
+	diskReadIOPS := computeRate(timestampsMillis, cumulativeDiskRios, diskIOPSScale, timeseriesStartTime)
+	diskWriteIOPS := computeRate(timestampsMillis, cumulativeDiskWios, diskIOPSScale, timeseriesStartTime)
+
+	// Write timeseries data as events
+	for _, series := range []struct {
+		// Display name and short map key (keep in sync with trace_events.ts)
+		name, key string
+		data      []float64
+	}{
+		{
+			name: "CPU usage (cores)",
+			key:  "cpu",
+			data: cpuUsage,
+		},
+		{
+			name: "Memory usage (KB)",
+			key:  "memory",
+			data: memoryUsage,
+		},
+		{
+			name: "Disk read bandwidth (MB/s)",
+			key:  "disk-read-bw",
+			data: diskReadBW,
+		},
+		{
+			name: "Disk write bandwidth (MB/s)",
+			key:  "disk-write-bw",
+			data: diskWriteBW,
+		},
+		{
+			name: "Disk read IOPS",
+			key:  "disk-read-iops",
+			data: diskReadIOPS,
+		},
+		{
+			name: "Disk write IOPS",
+			key:  "disk-write-iops",
+			data: diskWriteIOPS,
+		},
+	} {
+		for i, value := range series.data {
+			event := &trace_events.Event{
+				ThreadID:  executorTID,
+				Name:      series.name,
+				Timestamp: timestampsMillis[i]*1000 - profileStartTimestampUsec, // ms => us
+				Args:      map[string]any{series.key: value},
+				Phase:     trace_events.PhaseCounter,
+			}
+			if err := out.WriteEvent(event); err != nil {
+				return status.WrapError(err, "write response")
+			}
+		}
+	}
+
+	// Close the events list and the outer profile object.
+	if _, err := io.WriteString(w, "]}"); err != nil {
+		return status.WrapError(err, "write response")
+	}
+
+	return nil
+}
+
+// computeRate computes a sliding-window average rate using the given timestamps
+// and samples. A rate is computed for each timestamp by considering the net
+// change from samples within a lookback window. It assumes that the sample
+// value at startTime is 0, which is used when computing the initial rate.
+func computeRate(timestampsMillis, samples []int64, scale float64, startTime time.Time) []float64 {
+	const windowSize = 500 * time.Millisecond
+	windowStartIdx := -1
+
+	out := make([]float64, 0, len(samples))
+	for i := range samples {
+		windowStartCutoffMillis := timestampsMillis[i] - windowSize.Milliseconds()
+
+		var windowStartTimestampMillis int64
+		var windowStartSample int64
+
+		// Move the sliding window forward and compute the start timestamp and
+		// start sample of the window. Note that windowStartIdx is -1 initially.
+		for ; windowStartIdx < i; windowStartIdx++ {
+			var t, s int64
+			if windowStartIdx >= 0 {
+				t, s = timestampsMillis[windowStartIdx], samples[windowStartIdx]
+			} else {
+				t, s = startTime.UnixMilli(), 0
+			}
+			if t >= windowStartCutoffMillis {
+				windowStartTimestampMillis = t
+				windowStartSample = s
+				break
+			}
+		}
+		f := float64(0)
+		if windowStartTimestampMillis > 0 {
+			sampleDelta := samples[i] - windowStartSample
+			dtMillis := timestampsMillis[i] - windowStartTimestampMillis
+			if dtMillis > 0 {
+				f = float64(sampleDelta) / float64(dtMillis) * scale
+			}
+		}
+		out = append(out, f)
+	}
+	return out
 }

@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -120,31 +119,34 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 	switch event := event.(type) {
 	case *gh.PushEvent:
-		// Ignore branch deletion events.
+		// Ignore deletion events (both branch and tag deletions).
 		if event.GetDeleted() {
 			return nil, nil
 		}
-		v, err := fieldgetter.ExtractValues(
-			event,
-			"HeadCommit.ID",
-			"Ref",
-			"Repo.CloneURL",
-			"Repo.Private",
-			"Repo.DefaultBranch",
-		)
-		if err != nil {
-			return nil, err
+		ref := event.GetRef()
+		if after, ok := strings.CutPrefix(ref, "refs/tags/"); ok {
+			tag := after
+			return &interfaces.WebhookData{
+				EventName:               webhook_data.EventName.Push,
+				PushedRepoURL:           event.GetRepo().GetCloneURL(),
+				PushedTag:               tag,
+				SHA:                     event.GetAfter(),
+				TargetRepoURL:           event.GetRepo().GetCloneURL(),
+				TargetRepoDefaultBranch: event.GetRepo().GetDefaultBranch(),
+				IsTargetRepoPublic:      !event.GetRepo().GetPrivate(),
+			}, nil
 		}
-		branch := strings.TrimPrefix(v["Ref"], "refs/heads/")
+		branch := strings.TrimPrefix(ref, "refs/heads/")
 		return &interfaces.WebhookData{
 			EventName:               webhook_data.EventName.Push,
-			PushedRepoURL:           v["Repo.CloneURL"],
+			PushedRepoURL:           event.GetRepo().GetCloneURL(),
 			PushedBranch:            branch,
-			SHA:                     v["HeadCommit.ID"],
-			TargetRepoURL:           v["Repo.CloneURL"],
-			TargetRepoDefaultBranch: v["Repo.DefaultBranch"],
+			SHA:                     event.GetHeadCommit().GetID(),
+			TargetRepoURL:           event.GetRepo().GetCloneURL(),
+			TargetRepoDefaultBranch: event.GetRepo().GetDefaultBranch(),
 			TargetBranch:            branch,
-			IsTargetRepoPublic:      v["Repo.Private"] == "false",
+			IsTargetRepoPublic:      !event.GetRepo().GetPrivate(),
+			ChangedFiles:            pushEventChangedFiles(event),
 		}, nil
 
 	case *gh.PullRequestEvent:
@@ -182,34 +184,43 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 	}
 }
 
+// pushEventChangedFiles returns any files modified by a push event.
+func pushEventChangedFiles(event *gh.PushEvent) []string {
+	seen := map[string]struct{}{}
+	var files []string
+	add := func(paths []string) {
+		for _, p := range paths {
+			if _, ok := seen[p]; !ok {
+				seen[p] = struct{}{}
+				files = append(files, p)
+			}
+		}
+	}
+	for _, c := range event.Commits {
+		add(c.Added)
+		add(c.Removed)
+		add(c.Modified)
+	}
+	return files
+}
+
+type HasPullRequestEvent interface {
+	GetPullRequest() *gh.PullRequest
+}
+
 // parsePullRequestOrReview extracts WebhookData from a pull_request or
 // pull_request_review event.
-func parsePullRequestOrReview(event interface{}) (*interfaces.WebhookData, error) {
-	v, err := fieldgetter.ExtractValues(
-		event,
-		"PullRequest.Head.Repo.CloneURL",
-		"PullRequest.Head.Ref",
-		"PullRequest.Head.SHA",
-		"PullRequest.Base.Repo.CloneURL",
-		"PullRequest.Base.Repo.Private",
-		"PullRequest.Base.Repo.DefaultBranch",
-		"PullRequest.Base.Ref",
-		"PullRequest.User.Login",
-	)
-	if err != nil {
-		return nil, err
-	}
-	isTargetRepoPublic := v["PullRequest.Base.Repo.Private"] == "false"
+func parsePullRequestOrReview(event HasPullRequestEvent) (*interfaces.WebhookData, error) {
 	return &interfaces.WebhookData{
 		EventName:               webhook_data.EventName.PullRequest,
-		PushedRepoURL:           v["PullRequest.Head.Repo.CloneURL"],
-		PushedBranch:            v["PullRequest.Head.Ref"],
-		SHA:                     v["PullRequest.Head.SHA"],
-		TargetRepoURL:           v["PullRequest.Base.Repo.CloneURL"],
-		TargetRepoDefaultBranch: v["PullRequest.Base.Repo.DefaultBranch"],
-		IsTargetRepoPublic:      isTargetRepoPublic,
-		TargetBranch:            v["PullRequest.Base.Ref"],
-		PullRequestAuthor:       v["PullRequest.User.Login"],
+		PushedRepoURL:           event.GetPullRequest().GetHead().GetRepo().GetCloneURL(),
+		PushedBranch:            event.GetPullRequest().GetHead().GetRef(),
+		SHA:                     event.GetPullRequest().GetHead().GetSHA(),
+		TargetRepoURL:           event.GetPullRequest().GetBase().GetRepo().GetCloneURL(),
+		TargetRepoDefaultBranch: event.GetPullRequest().GetBase().GetRepo().GetDefaultBranch(),
+		IsTargetRepoPublic:      !event.GetPullRequest().GetBase().GetRepo().GetPrivate(),
+		TargetBranch:            event.GetPullRequest().GetBase().GetRef(),
+		PullRequestAuthor:       event.GetPullRequest().GetUser().GetLogin(),
 	}, nil
 }
 
@@ -222,6 +233,17 @@ func (*githubGitProvider) GetFileContents(ctx context.Context, accessToken, repo
 	opts := &gh.RepositoryContentGetOptions{Ref: ref}
 	fileContent, _, rsp, err := client.Repositories.GetContents(ctx, owner, repo, filePath, opts)
 	if rsp != nil && rsp.StatusCode == http.StatusNotFound {
+		// GitHub's API response is identical in the case where the repo doesn't
+		// exist, as well as the case where the file isn't found. So if we get a
+		// 404, make another request to confirm whether the repo exists, so that
+		// we can abort the workflow if it doesn't, rather than using the
+		// default config.
+		_, rsp, err := client.Repositories.Get(ctx, owner, repo)
+		if rsp != nil && rsp.StatusCode == http.StatusNotFound {
+			return nil, status.FailedPreconditionErrorf("repository %q not found or inaccessible to this installation", repoURL)
+		} else if err != nil {
+			return nil, status.UnavailableErrorf("get repository %q: %s", repoURL, err)
+		}
 		return nil, status.NotFoundErrorf("%s: not found in %s", filePath, repoURL)
 	}
 	if err != nil {
@@ -243,14 +265,20 @@ func (*githubGitProvider) IsTrusted(ctx context.Context, accessToken, repoURL, u
 		return false, err
 	}
 	client := newGitHubClient(ctx, accessToken)
-	isCollaborator, _, err := client.Repositories.IsCollaborator(ctx, owner, repo, user)
+	level, rsp, err := client.Repositories.GetPermissionLevel(ctx, owner, repo, user)
 	if err != nil {
-		return false, status.InternalErrorf("failed to determine whether %s is a collaborator in %s: %s", user, repoURL, err)
+		if rsp != nil && rsp.StatusCode == http.StatusNotFound {
+			// User is not a collaborator in this repo.
+			return false, nil
+		}
+		return false, status.UnknownErrorf("get permission level: %s", err)
 	}
-	return isCollaborator, nil
+	// Trusted workflows get cache write perms, so if the user doesn't have
+	// write perms for the repo then don't consider the workflow trusted.
+	return level.GetPermission() == "admin" || level.GetPermission() == "write", nil
 }
 
-func (g *githubGitProvider) CreateStatus(ctx context.Context, token, repoURL, commitSHA string, payload any) error {
+func (g *githubGitProvider) CreateStatus(ctx context.Context, token, groupID, repoURL, commitSHA string, payload any) error {
 	s, ok := payload.(*gh_backend.GithubStatusPayload)
 	if !ok {
 		return status.InvalidArgumentErrorf("invalid GitHub status payload type %T (expected %T)", payload, &gh_backend.GithubStatusPayload{})
@@ -260,7 +288,7 @@ func (g *githubGitProvider) CreateStatus(ctx context.Context, token, repoURL, co
 	if err != nil {
 		return err
 	}
-	return client.CreateStatus(ctx, ownerRepo, commitSHA, s)
+	return client.CreateStatus(ctx, groupID, ownerRepo, commitSHA, s)
 }
 
 func webhookJSONPayload(r *http.Request) ([]byte, error) {

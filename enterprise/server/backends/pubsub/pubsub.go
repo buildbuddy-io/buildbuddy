@@ -5,12 +5,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
+)
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+const (
+	// Error detail reason indicating that there was a problem reading from the
+	// pubsub channel.
+	pubsubChannelErrorReason = "PUBSUB_CHANNEL_ERROR"
 )
 
 type PubSub struct {
@@ -58,6 +63,7 @@ func (s *Subscriber) Chan() <-chan string {
 	internalChannel := s.ps.Channel()
 	externalChannel := make(chan string)
 	go func() {
+		defer close(externalChannel)
 		for m := range internalChannel {
 			select {
 			case externalChannel <- m.Payload:
@@ -111,6 +117,10 @@ func (p *StreamPubSub) CreateMonitoredChannel(ctx context.Context, name string) 
 	return nil
 }
 
+func (p *StreamPubSub) DeleteMonitoredChannel(ctx context.Context, name string) error {
+	return p.rdb.Del(ctx, monitoredKeyPrefix+name).Err()
+}
+
 func (p *StreamPubSub) MonitoredChannel(name string) *Channel {
 	return &Channel{name: monitoredKeyPrefix + name}
 }
@@ -149,6 +159,13 @@ func (p *StreamPubSub) extractMsgData(channel *Channel, msg *redis.XMessage) (st
 	}
 
 	return str, nil
+}
+
+func deliverError(ctx context.Context, outCh chan *Message, err error) {
+	select {
+	case outCh <- &Message{Err: err}:
+	case <-ctx.Done():
+	}
 }
 
 func (p *StreamPubSub) deliverMsg(ctx context.Context, psChannel *Channel, outCh chan *Message, msg *redis.XMessage) bool {
@@ -206,13 +223,19 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 	if strings.HasPrefix(psChannel.name, monitoredKeyPrefix) {
 		go func() {
 			defer close(monChan)
+			ticker := time.NewTicker(monitoredChannelExistenceCheckInterval)
+			defer ticker.Stop()
+
 			for {
 				if err := p.checkMonitoredChannelExists(ctx, psChannel); err != nil {
-					monChan <- &Message{Err: err}
+					// Wrap error with details so the client can differentiate
+					// pubsub channel errors from execution errors.
+					err = status.WithReason(err, pubsubChannelErrorReason)
+					deliverError(ctx, monChan, err)
 					return
 				}
 				select {
-				case <-time.After(monitoredChannelExistenceCheckInterval):
+				case <-ticker.C:
 				case <-ctx.Done():
 					return
 				}
@@ -232,8 +255,10 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 		if startFromTail {
 			msgs, err := p.rdb.XRevRangeN(ctx, psChannel.name, "+", "-", 1).Result()
 			if err != nil {
-				log.CtxErrorf(ctx, "Unable to retrieve last element of stream!!! %q: %s", psChannel.name, err)
-				msgChan <- &Message{Err: err}
+				if err != context.Canceled {
+					log.CtxErrorf(ctx, "Unable to retrieve last element of stream: %q: %s", psChannel.name, err)
+				}
+				deliverError(ctx, msgChan, err)
 				return
 			}
 			if len(msgs) == 1 {
@@ -253,7 +278,7 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 			if err != nil {
 				if err != context.Canceled {
 					log.CtxErrorf(ctx, "Error reading from stream %q: %s", psChannel.name, err)
-					msgChan <- &Message{Err: err}
+					deliverError(ctx, msgChan, err)
 				}
 				return
 			}

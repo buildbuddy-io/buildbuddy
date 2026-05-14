@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/codesearch"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
@@ -14,9 +15,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/gcs_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/memcache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/metacache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
@@ -28,13 +31,20 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/iprules"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/mcp/mcpserver"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
@@ -43,32 +53,41 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/server_notification"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/sociartifactstore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/suggestion"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dsingleflight"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/trafficstats"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
 	"github.com/buildbuddy-io/buildbuddy/server/libmain"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
+
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/stats"
+
 	enterprise_app_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/app"
-	raft_cache "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/cache"
 	remote_execution_redis_client "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/redis_client"
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
+
+	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver" // registers kube:// resolver.
 )
 
 var serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
@@ -132,12 +151,17 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	}
 	env.SetRunnerService(runnerService)
 
+	if err = auth_service.Register(env); err != nil {
+		log.Fatalf("Error setting up auth service: %s", err)
+	}
+	hit_tracker_service.Register(env)
+
 	env.SetSplashPrinter(&splash.Printer{})
 }
 
 func main() {
 	rootContext := context.Background()
-	version.Print()
+	version.Print("BuildBuddy enterprise server")
 
 	// Flags must be parsed before config secrets integration is enabled since
 	// that feature itself depends on flag values.
@@ -150,6 +174,8 @@ func main() {
 	}
 
 	config.ReloadOnSIGHUP()
+
+	redisutil.ConfigureLogging()
 
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	enterpriseAppFS, err := enterprise_app_bundle.GetAppFS()
@@ -164,6 +190,20 @@ func main() {
 	// Setup the prod fanciness in our environment
 	convertToProdOrDie(rootContext, realEnv)
 
+	libmain.StartMonitoringHandler(realEnv)
+
+	if err := experiments.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	// Register KMS and crypter before caches because distributed.Register()
+	// starts a gRPC listener that can receive peer requests immediately,
+	// and those requests need the crypter to be available.
+	if err := kms.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := crypter_service.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := gcs_cache.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
 	}
@@ -178,6 +218,9 @@ func main() {
 	}
 	if err := redis_client.RegisterDefault(realEnv); err != nil {
 		log.Fatalf("%v", err)
+	}
+	if realEnv.GetDefaultRedisClient() != nil {
+		realEnv.SetPubSub(pubsub.NewPubSub(realEnv.GetDefaultRedisClient()))
 	}
 	if err := server_notification.Register(realEnv, "app"); err != nil {
 		log.Fatalf("%v", err)
@@ -216,11 +259,10 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	if err := distributed.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
+	if err := metacache.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
 	}
-
-	if err := raft_cache.Register(realEnv); err != nil {
+	if err := distributed.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
 	}
 
@@ -231,32 +273,26 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
+	libmain.RegisterLocalServersAndClients(realEnv)
+
 	if err := execution_server.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	// Needs to be registered after the execution server.
+	if err := capabilities_server.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := scheduler_server.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := remote_execution_redis_client.RegisterRemoteExecutionClient(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
 
-	if err := kms.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
 	if err := secrets.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := suggestion.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := crypter_service.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
 	if err := dsingleflight.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := sociartifactstore.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := prom.Register(realEnv); err != nil {
@@ -265,7 +301,10 @@ func main() {
 	if err := auditlog.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := iprules.Register(realEnv); err != nil {
+	if err := ip_rules_enforcer.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := ip_rules_service.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := clientidentity.Register(realEnv); err != nil {
@@ -274,7 +313,19 @@ func main() {
 	if err := scim.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
+	if err := mcpserver.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := codesearch.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := registry.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := workspace.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := ociregistry.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 
@@ -302,5 +353,17 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
+	if err := ocifetcher.RegisterServer(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	trafficHandler, err := trafficstats.NewServerHandler()
+	if err != nil {
+		log.Fatalf("Error creating traffic stats handlers: %v", err)
+	}
+	libmain.StartAndRunServices(realEnv, grpc_server.GRPCServerConfig{
+		ExtraStatsHandlers:         []stats.Handler{trafficHandler},
+		PostAuthUnaryInterceptors:  []grpc.UnaryServerInterceptor{trafficHandler.UnaryInterceptor},
+		PostAuthStreamInterceptors: []grpc.StreamServerInterceptor{trafficHandler.StreamInterceptor},
+	}) // Returns after graceful shutdown
 }

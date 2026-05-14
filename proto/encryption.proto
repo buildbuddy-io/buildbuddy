@@ -58,3 +58,41 @@ message GetEncryptionConfigResponse {
 
   repeated KMS supported_kms = 3;
 }
+
+// Auth info (client, group) is passed via headers.
+message GetEncryptionKeyRequest {
+  // Metadata about the encryption key to retrieve. If absent, the most recent
+  // encryption key for the desired group is returned.
+  EncryptionKeyMetadata metadata = 1;
+}
+
+message EncryptionKeyMetadata {
+  // A unique identifier for this encryption key. Supplied by the server. This
+  // will be something like "EK123456789012345678".
+  string id = 1;
+
+  // Encryption keys are versioned to support key rotation. Cache contents are
+  // encrypted using the latest available version of a key and the key version
+  // used is stored in the record's metadata so the correct version can be used
+  // for decryption.
+  //
+  // More about customer-managed encryption can be found in
+  // http://go/customer-managed-encryption
+  int64 version = 2;
+}
+
+message EncryptionKey {
+  EncryptionKeyMetadata metadata = 1;
+
+  // The encryption key.
+  bytes key = 3;
+}
+
+message GetEncryptionKeyResponse {
+  EncryptionKey key = 1;
+}
+
+service EncryptionService {
+  rpc GetEncryptionKey(GetEncryptionKeyRequest)
+      returns (GetEncryptionKeyResponse);
+}

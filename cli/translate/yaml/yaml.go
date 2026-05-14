@@ -33,7 +33,7 @@ func New() *yamlTranslator {
 func (y *yamlTranslator) Translate(path, input string) (string, error) {
 	isModule := strings.HasPrefix(strings.ToUpper(path), "MODULE")
 	rules := splitRegex.Split(string(input), -1)
-	output := ""
+	var output strings.Builder
 	for _, rule := range rules {
 		rule = strings.TrimSpace(rule)
 		if rule == "" {
@@ -48,9 +48,9 @@ func (y *yamlTranslator) Translate(path, input string) (string, error) {
 		if s == "" {
 			continue
 		}
-		output += s
+		output.WriteString(s)
 	}
-	return output, nil
+	return output.String(), nil
 }
 
 func (y *yamlTranslator) translateRule(m yaml.MapSlice, isModule bool) string {
@@ -194,7 +194,7 @@ func (y *yamlTranslator) translateLoad(m yaml.MapSlice) string {
 }
 
 func (y *yamlTranslator) translateDeps(m []interface{}, isModule bool) string {
-	output := ""
+	var output strings.Builder
 	for _, dep := range m {
 		depString, ok := dep.(string)
 		if !ok {
@@ -207,12 +207,12 @@ func (y *yamlTranslator) translateDeps(m []interface{}, isModule bool) string {
 			continue
 		}
 		if isModule {
-			output += add.GenerateModuleSnippet(module, version, resp)
+			output.WriteString(add.GenerateModuleSnippet(module, version, resp))
 		} else {
-			output += add.GenerateWorkspaceSnippet(module, version, resp)
+			output.WriteString(add.GenerateWorkspaceSnippet(module, version, resp))
 		}
 	}
-	return output
+	return output.String()
 }
 
 func (y *yamlTranslator) translateBazel(m yaml.MapSlice) {
@@ -237,12 +237,12 @@ func (y *yamlTranslator) translateBazel(m yaml.MapSlice) {
 }
 
 func (y *yamlTranslator) translateSettings(m yaml.MapSlice) {
-	bazelrc := ""
+	var bazelrc strings.Builder
 	for _, s := range m {
-		bazelrc += "common --" + s.Key.(string) + "=" + s.Value.(string) + "\n"
+		bazelrc.WriteString("common --" + s.Key.(string) + "=" + s.Value.(string) + "\n")
 	}
 
-	err := os.WriteFile(".bazelrc", []byte(bazelrc), 0644)
+	err := os.WriteFile(".bazelrc", []byte(bazelrc.String()), 0644)
 	if err != nil {
 		log.Warnf("error writing .bazelrc file: %s", err)
 	}
@@ -300,8 +300,8 @@ func renderTemplate(from, into string) {
 	log.Debugf("grabbing template from %s and putting it into %q", from, into)
 
 	repo := from
-	if strings.HasPrefix(from, "github/") {
-		repo = "https://github.com/" + strings.TrimPrefix(from, "github/")
+	if after, ok := strings.CutPrefix(from, "github/"); ok {
+		repo = "https://github.com/" + after
 	} else if strings.HasPrefix(from, "github.com/") {
 		repo = "https://" + from
 	} else if !strings.HasPrefix(from, "https://github.com/") {

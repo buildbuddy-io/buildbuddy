@@ -1,0 +1,128 @@
+diff --git a/jailer.go b/jailer.go
+index 208de67..eddd8f1 100644
+--- a/jailer.go
++++ b/jailer.go
+@@ -85,6 +85,14 @@ type JailerConfig struct {
+ 	// CgroupVersion is the version of the cgroup filesystem to use.
+ 	CgroupVersion string
+ 
++	// CgroupArgs are cgroup settings applied by the jailer. Each arg must be
++	// formatted like <cgroup_file>=<value>, like "cpu.shares=10"
++	CgroupArgs []string
++
++	// ParentCgroup is the parent cgroup in which the cgroup of the microvm
++	// will be placed.
++	ParentCgroup *string
++
+ 	// Stdout specifies the IO writer for STDOUT to use when spawning the jailer.
+ 	Stdout io.Writer
+ 	// Stderr specifies the IO writer for STDERR to use when spawning the jailer.
+@@ -109,6 +117,8 @@ type JailerCommandBuilder struct {
+ 	daemonize       bool
+ 	firecrackerArgs []string
+ 	cgroupVersion   string
++	cgroupArgs      []string
++	parentCgroup    *string
+ 
+ 	stdin  io.Reader
+ 	stdout io.Writer
+@@ -143,6 +153,14 @@ func (b JailerCommandBuilder) Args() []string {
+ 		args = append(args, "--cgroup", fmt.Sprintf("cpuset.cpus=%s", cpulist))
+ 	}
+ 
++	for _, cgroupArg := range b.cgroupArgs {
++		args = append(args, "--cgroup", cgroupArg)
++	}
++
++	if b.parentCgroup != nil {
++		args = append(args, "--parent-cgroup", *b.parentCgroup)
++	}
++
+ 	if len(b.cgroupVersion) > 0 {
+ 		args = append(args, "--cgroup-version", b.cgroupVersion)
+ 	}
+@@ -204,13 +222,38 @@ func (b JailerCommandBuilder) WithExecFile(path string) JailerCommandBuilder {
+ 	return b
+ }
+ 
+-// WithNumaNode uses the specfied node for the jailer. This represents the numa
++// WithNumaNode uses the specified node for the jailer. This represents the numa
+ // node that the process will get assigned to.
++// Note: this is a convenience function that just sets the values of the cgroup
++// files "cpuset.mems" and "cpuset.cpus".
++// If those files are also configured using WithCgroupArgs, the values passed to
++// WithCgroupArgs will take precedence.
+ func (b JailerCommandBuilder) WithNumaNode(node int) JailerCommandBuilder {
+ 	b.node = node
+ 	return b
+ }
+ 
++// WithCgroupArgs sets cgroup file values to be set by the jailer.
++// Each arg must be of the form <cgroup_file>=<value>.
++// Each call to this function resets the cgroup arguments, rather than
++// appending.
++//
++// Example:
++//
++//	b = b.WithCgroupArgs("cpu.shares=10")
++func (b JailerCommandBuilder) WithCgroupArgs(cgroupArgs ...string) JailerCommandBuilder {
++	b.cgroupArgs = cgroupArgs
++	return b
++}
++
++// WithParentCgroup sets the parent cgroup in which the cgroup for the microvm
++// will be placed. This is a relative path. Empty string means root cgroup,
++// nil means to use the default.
++func (b JailerCommandBuilder) WithParentCgroup(parentCgroup *string) JailerCommandBuilder {
++	b.parentCgroup = parentCgroup
++	return b
++}
++
+ // WithChrootBaseDir will set the given path as the chroot base directory. This
+ // specifies where chroot jails are built and defaults to /srv/jailer.
+ func (b JailerCommandBuilder) WithChrootBaseDir(path string) JailerCommandBuilder {
+@@ -348,6 +391,8 @@ func jail(ctx context.Context, m *Machine, cfg *Config) error {
+ 		WithChrootBaseDir(cfg.JailerCfg.ChrootBaseDir).
+ 		WithDaemonize(cfg.JailerCfg.Daemonize).
+ 		WithCgroupVersion(cfg.JailerCfg.CgroupVersion).
++		WithCgroupArgs(cfg.JailerCfg.CgroupArgs...).
++		WithParentCgroup(cfg.JailerCfg.ParentCgroup).
+ 		WithFirecrackerArgs(fcArgs...).
+ 		WithStdout(stdout).
+ 		WithStderr(stderr)
+diff --git a/jailer_test.go b/jailer_test.go
+index 7c7017b..ed92a7f 100644
+--- a/jailer_test.go
++++ b/jailer_test.go
+@@ -103,6 +103,8 @@ func TestJailerBuilder(t *testing.T) {
+ 				UID:            Int(123),
+ 				GID:            Int(100),
+ 				NumaNode:       Int(0),
++				CgroupArgs:     []string{"cpu.shares=10"},
++				ParentCgroup:   String("custom-parent"),
+ 				ChrootStrategy: NewNaiveChrootStrategy("kernel-image-path"),
+ 				ExecFile:       "/path/to/firecracker",
+ 				ChrootBaseDir:  "/tmp",
+@@ -123,8 +125,12 @@ func TestJailerBuilder(t *testing.T) {
+ 				"cpuset.mems=0",
+ 				"--cgroup",
+ 				fmt.Sprintf("cpuset.cpus=%s", getNumaCpuset(0)),
++				"--cgroup",
++				"cpu.shares=10",
+ 				"--cgroup-version",
+ 				"2",
++				"--parent-cgroup",
++				"custom-parent",
+ 				"--chroot-base-dir",
+ 				"/tmp",
+ 				"--netns",
+@@ -146,7 +152,9 @@ func TestJailerBuilder(t *testing.T) {
+ 				WithUID(IntValue(c.jailerCfg.UID)).
+ 				WithGID(IntValue(c.jailerCfg.GID)).
+ 				WithNumaNode(IntValue(c.jailerCfg.NumaNode)).
++				WithCgroupArgs(c.jailerCfg.CgroupArgs...).
+ 				WithCgroupVersion(c.jailerCfg.CgroupVersion).
++				WithParentCgroup(c.jailerCfg.ParentCgroup).
+ 				WithExecFile(c.jailerCfg.ExecFile)
+ 
+ 			if len(c.jailerCfg.JailerBinary) > 0 {

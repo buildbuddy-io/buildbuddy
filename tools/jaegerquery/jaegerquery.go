@@ -8,12 +8,14 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/signal"
-	"sort"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -21,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"golang.org/x/exp/maps"
 
 	jaegerpb "github.com/buildbuddy-io/buildbuddy/proto/jaeger"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
@@ -101,9 +102,8 @@ func run() error {
 	}
 
 	// Sort by total duration, greatest to least
-	operations := maps.Keys(totalDurations)
-	sort.Slice(operations, func(i, j int) bool {
-		return totalDurations[operations[i]] > totalDurations[operations[j]]
+	operations := slices.SortedFunc(maps.Keys(totalDurations), func(a, b string) int {
+		return -cmp.Compare(totalDurations[a], totalDurations[b])
 	})
 	fmt.Printf("AVG_MS\tOP\n")
 	for _, op := range operations {

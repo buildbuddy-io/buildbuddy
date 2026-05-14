@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -24,5 +24,51 @@ go_library(
         "//server/util/status",
         "@org_golang_google_protobuf//types/known/timestamppb",
         "@org_golang_x_sync//errgroup",
+    ],
+)
+
+# Tell gazelle to make each file a separate test target,
+# so we can use them with different properties.
+# gazelle:go_test file
+
+go_test(
+    name = "invocation_stat_service_test",
+    srcs = ["invocation_stat_service_test.go"],
+    embed = [":invocation_stat_service"],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+        # We don't want different different db tests to be assigned to the samed
+        # recycled runner, because we can't fit all db docker images with the
+        # default disk limit.
+        "test.runner-recycling-key": "clickhouse25.3",
+    },
+    tags = ["docker"],
+    deps = [
+        "//proto:context_go_proto",
+        "//proto:invocation_go_proto",
+        "//proto:invocation_status_go_proto",
+        "//proto:stats_go_proto",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
+        "//server/util/clickhouse/schema",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//testing/protocmp",
+    ],
+)
+
+go_test(
+    name = "invocation_stat_query_test",
+    size = "small",
+    srcs = ["invocation_stat_query_test.go"],
+    embed = [":invocation_stat_service"],
+    deps = [
+        "//proto:stat_filter_go_proto",
+        "//proto:stats_go_proto",
+        "@com_github_stretchr_testify//require",
     ],
 )

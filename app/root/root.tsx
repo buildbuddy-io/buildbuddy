@@ -1,17 +1,16 @@
 import React from "react";
-import FooterComponent from "../footer/footer";
-import MenuComponent from "../menu/menu";
-import InvocationComponent from "../invocation/invocation";
-import SetupComponent from "../docs/setup";
+import AlertComponent from "../alert/alert";
+import authService, { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
-import router, { Path } from "../router/router";
-import authService from "../auth/auth_service";
-import { User } from "../auth/auth_service";
+import CompareInvocationsComponent from "../compare/compare_invocations";
+import SetupComponent from "../docs/setup";
 import errorService from "../errors/error_service";
 import faviconService from "../favicon/favicon";
-import CompareInvocationsComponent from "../compare/compare_invocations";
-import AlertComponent from "../alert/alert";
+import FooterComponent from "../footer/footer";
+import InvocationComponent from "../invocation/invocation";
+import MenuComponent from "../menu/menu";
 import UserPreferences from "../preferences/preferences";
+import router, { Path } from "../router/router";
 
 declare var window: any;
 
@@ -47,6 +46,10 @@ export default class RootComponent extends React.Component {
     errorService.register();
   }
 
+  componentWillUnmount() {
+    this.state.preferences.cleanup();
+  }
+
   handlePathChange() {
     if (this.state.path != window.location.pathname) {
       faviconService.setDefaultFavicon();
@@ -67,8 +70,13 @@ export default class RootComponent extends React.Component {
     let invocationId = router.getInvocationId(this.state.path);
     let compareInvocationIds = router.getInvocationIdsForCompare(this.state.path);
     let showSetup = !invocationId && !compareInvocationIds;
+    const classNames = ["root"];
+    if (this.state.preferences.denseModeEnabled) classNames.push("dense");
+    const darkMode = this.state.preferences.darkModeEnabled;
+    if (darkMode) classNames.push("dark");
+    document.documentElement.classList.toggle("dark", darkMode);
     return (
-      <div className={this.state.preferences.denseModeEnabled ? "dense root" : "root"}>
+      <div className={classNames.join(" ")}>
         <MenuComponent user={this.state.user} showHamburger={true} preferences={this.state.preferences} />
         <div className="root-main">
           <div className="content">
@@ -87,6 +95,7 @@ export default class RootComponent extends React.Component {
                 invocationAId={compareInvocationIds.a}
                 invocationBId={compareInvocationIds.b}
                 search={this.state.search}
+                tab={this.state.tab}
                 user={undefined}
               />
             )}

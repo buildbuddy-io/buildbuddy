@@ -2,25 +2,39 @@ package action_cache_server
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/types/known/anypb"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+)
+
+var (
+	checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
+	recordOrigin                   = flag.Bool("cache.record_action_result_origin", true, "If true, the origin of the action result will be added to it's auxiliary metadata.")
+
+	restrictedPrefixes = []string{interfaces.OCIImageInstanceNamePrefix}
 )
 
 type ActionCacheServer struct {
@@ -52,18 +66,38 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 	}, nil
 }
 
-func checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*rspb.ResourceName) error {
+func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, digests []*rspb.ResourceName) error {
 	missing, err := cache.FindMissing(ctx, digests)
 	if err != nil {
 		return err
 	}
-	if len(missing) > 0 {
-		return status.NotFoundErrorf("ActionResult output file: '%s' not found in cache", missing[0])
+	if len(missing) == 0 {
+		return nil
+	}
+	if !chunkingEnabled {
+		return status.NotFoundErrorf("ActionResult output file %q not found in cache", chunking.DigestsSummary(missing))
+	}
+	checker := chunking.NewMissingChunkChecker(cache)
+	for _, d := range missing {
+		if d.GetSizeBytes() <= chunking.MinChunkedReadFallbackSizeBytes() {
+			return status.NotFoundErrorf("ActionResult output file %q not found in cache", digest.String(d))
+		}
+		manifest, err := chunking.LoadManifest(ctx, cache, d, instanceName, digestFunction)
+		if err != nil {
+			return status.WrapErrorf(err, "ActionResult output file %q: load chunk manifest", digest.String(d))
+		}
+		anyMissing, err := checker.AnyChunkMissing(ctx, manifest)
+		if err != nil {
+			return status.WrapErrorf(err, "ActionResult output file %q: failed to check chunks", digest.String(d))
+		}
+		if anyMissing {
+			return status.NotFoundErrorf("ActionResult output file %q: missing chunks", digest.String(d))
+		}
 	}
 	return nil
 }
 
-func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, digestFunction repb.DigestFunction_Value, r *repb.ActionResult) error {
+func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, r *repb.ActionResult) error {
 	outputFileDigests := make([]*rspb.ResourceName, 0, len(r.OutputFiles))
 	mu := &sync.Mutex{}
 	appendDigest := func(d *repb.Digest) {
@@ -106,10 +140,10 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 		return err
 	}
 
-	return checkFilesExist(ctx, cache, outputFileDigests)
+	return checkFilesExist(ctx, cache, remoteInstanceName, digestFunction, chunkingEnabled, outputFileDigests)
 }
 
-func setWorkerMetadata(ar *repb.ActionResult) error {
+func setWorkerMetadata(ar *repb.ActionResult) {
 	if ar.ExecutionMetadata == nil {
 		ar.ExecutionMetadata = &repb.ExecutedActionMetadata{
 			// This will return the Host ID in the normal case and
@@ -120,7 +154,88 @@ func setWorkerMetadata(ar *repb.ActionResult) error {
 			Worker: hostid.GetFailsafeHostID(""),
 		}
 	}
+}
+
+func setOriginMetadata(ar *repb.ActionResult, rm *repb.RequestMetadata) error {
+	if !*recordOrigin {
+		return nil
+	}
+	if ar == nil {
+		return nil
+	}
+	invocationID := rm.GetToolInvocationId()
+	if invocationID == "" {
+		return nil
+	}
+
+	om := &repb.OriginMetadata{InvocationId: invocationID}
+	am, err := anypb.New(om)
+	if err != nil {
+		return err
+	}
+	if ar.GetExecutionMetadata() == nil {
+		ar.ExecutionMetadata = &repb.ExecutedActionMetadata{}
+	}
+	ar.GetExecutionMetadata().AuxiliaryMetadata = append(ar.GetExecutionMetadata().GetAuxiliaryMetadata(), am)
 	return nil
+}
+
+// RecordActionResultOriginEnabled reports whether origin metadata should be recorded
+// and exposed to clients.
+func RecordActionResultOriginEnabled() bool {
+	return *recordOrigin
+}
+
+func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.ACResourceName, req *repb.GetActionResultRequest) (*repb.ActionResult, *repb.ExecutedActionMetadata, int64, error) {
+	blob, err := s.cache.Get(ctx, rn.ToProto())
+	if err != nil {
+		return nil, nil, 0, status.NotFoundErrorf("ActionResult (%s) not found: %s", req.GetActionDigest(), err)
+	}
+
+	rsp := &repb.ActionResult{}
+	if err := proto.Unmarshal(blob, rsp); err != nil {
+		return nil, nil, 0, err
+	}
+
+	chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
+	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), chunkingEnabled, rsp); err != nil {
+		return nil, nil, 0, status.NotFoundErrorf("ActionResult (%s) not found: %s", req.GetActionDigest(), err)
+	}
+	// The default limit on incoming gRPC messages is 4MB and Bazel doesn't
+	// change it.
+	if err := s.maybeInlineOutputFiles(ctx, req, rsp, 4*1024*1024); err != nil {
+		return nil, nil, 0, err
+	}
+
+	if !req.GetIncludeTimelineData() && rsp.GetExecutionMetadata().GetUsageStats() != nil {
+		rsp.GetExecutionMetadata().GetUsageStats().Timeline = nil
+	}
+
+	// See if the caller specified a cached value.  If they did and it matches
+	// the full response that we just computed, then we won't bother sending the
+	// data, and instead just tell the caller that their cache is correct.
+	if *checkClientActionResultDigests && req.GetCachedActionResultDigest().GetHash() != "" {
+		d, err := digest.ComputeForMessage(rsp, req.GetDigestFunction())
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		// NOTE: To avoid double-counting AC hits, callers that specify a
+		// cached_action_result_digest don't do hit tracking on their own.  This
+		// means we need to track the full response size here instead.
+
+		originalMetadata := rsp.GetExecutionMetadata()
+		originalResultSize := int64(proto.Size(rsp))
+
+		// Now that we've tracked size and metadata, wipe out the response.
+		if proto.Equal(req.GetCachedActionResultDigest(), d) {
+			rsp = &repb.ActionResult{
+				ActionResultDigest: d,
+			}
+		}
+		return rsp, originalMetadata, originalResultSize, nil
+	}
+
+	return rsp, rsp.GetExecutionMetadata(), int64(proto.Size(rsp)), nil
 }
 
 // Retrieve a cached execution result.
@@ -139,41 +254,35 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if req.ActionDigest == nil {
 		return nil, status.InvalidArgumentError("ActionDigest is a required field")
 	}
-	rn := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
+	rn := digest.NewACResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
 	if err := rn.Validate(); err != nil {
 		return nil, err
 	}
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
 	}
+	if err := s.validateRestrictedAccess(ctx, req.GetInstanceName()); err != nil {
+		return nil, err
+	}
 
-	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
+	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	d := req.GetActionDigest()
 	downloadTracker := ht.TrackDownload(d)
-	blob, err := s.cache.Get(ctx, rn.ToProto())
-	if err != nil {
-		if err := ht.TrackMiss(d); err != nil {
-			log.Debugf("GetActionResult: hit tracker error: %s", err)
-		}
-		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
-	}
-	defer func() {
-		if err := downloadTracker.CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server"); err != nil {
-			log.Debugf("GetActionResult: download tracker error: %s", err)
-		}
-	}()
 
-	rsp := &repb.ActionResult{}
-	if err := proto.Unmarshal(blob, rsp); err != nil {
-		return nil, err
+	rsp, metadata, downloadSizeBytes, err := s.fetchActionResult(ctx, rn, req)
+	ht.SetExecutedActionMetadata(metadata)
+	if err == nil {
+		if trackerErr := downloadTracker.CloseWithBytesTransferred(downloadSizeBytes, downloadSizeBytes, repb.Compressor_IDENTITY, "ac_server"); trackerErr != nil {
+			log.Debugf("GetActionResult: download tracker error: %s", trackerErr)
+		}
+	} else {
+		if trackerErr := ht.TrackMiss(d); trackerErr != nil {
+			log.Debugf("GetActionResult: hit tracker error: %s", trackerErr)
+		}
 	}
-	ht.SetExecutedActionMetadata(rsp.GetExecutionMetadata())
-	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), rsp); err != nil {
-		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
-	}
-	return rsp, nil
+	return rsp, err
 }
 
 // Upload a new execution result.
@@ -203,12 +312,12 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if err := rn.Validate(); err != nil {
 		return nil, err
 	}
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
 	}
 
-	canWrite, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +326,12 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return req.ActionResult, nil
 	}
 
-	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
+	if err := s.validateRestrictedAccess(ctx, req.GetInstanceName()); err != nil {
+		return nil, err
+	}
+
+	rm := bazel_request.GetRequestMetadata(ctx)
+	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, rm)
 	ht.SetExecutedActionMetadata(req.GetActionResult().GetExecutionMetadata())
 	d := req.GetActionDigest()
 	acResource := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
@@ -225,7 +339,9 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131
 	// More: https://github.com/buchgr/bazel-remote/commit/7de536f47bf163fb96bc1e38ffd5e444e2bcaa00
-	if err := setWorkerMetadata(req.ActionResult); err != nil {
+	setWorkerMetadata(req.GetActionResult())
+
+	if err := setOriginMetadata(req.GetActionResult(), rm); err != nil {
 		return nil, err
 	}
 
@@ -241,4 +357,108 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		log.Debugf("UpdateActionResult: upload tracker error: %s", err)
 	}
 	return req.ActionResult, nil
+}
+
+// Inlines the contents of output files requested to be inlined as long as the
+// total size of the ActionResult is below maxResultSize.
+func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *repb.GetActionResultRequest, ar *repb.ActionResult, maxResultSize int) error {
+	if ar == nil || len(req.InlineOutputFiles) == 0 {
+		return nil
+	}
+	requestedFiles := make(map[string]struct{}, len(req.InlineOutputFiles))
+	for _, f := range req.InlineOutputFiles {
+		requestedFiles[f] = struct{}{}
+	}
+
+	budget := int64(max(0, maxResultSize-proto.Size(ar)))
+	var filesToInline []*repb.OutputFile
+	inlinedBytes := int64(0)
+	for _, f := range ar.OutputFiles {
+		if _, ok := requestedFiles[f.Path]; !ok {
+			continue
+		}
+		contentsSize := f.GetDigest().GetSizeBytes()
+		if contentsSize == 0 {
+			// Empty files don't need to be inlined as they can be recognized
+			// by their size.
+			continue
+		}
+
+		// An additional "contents" field requires 1 byte for the tag field
+		// (5:LEN), the bytes for the varint encoding of the length of the
+		// contents and the contents themselves.
+		totalSize := 1 + int64(len(binary.AppendUvarint(nil, uint64(contentsSize)))) + contentsSize
+		if budget < totalSize {
+			continue
+		}
+		inlinedBytes += contentsSize
+		budget -= totalSize
+		filesToInline = append(filesToInline, f)
+	}
+
+	metrics.CacheRequestedInlineSizeBytes.With(prometheus.Labels{}).Observe(float64(inlinedBytes))
+
+	if len(filesToInline) == 0 {
+		return nil
+	}
+
+	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
+	resourcesToInline := make([]*rspb.ResourceName, 0, len(filesToInline))
+	downloadTrackers := make([]interfaces.TransferTimer, 0, len(filesToInline))
+	for _, f := range filesToInline {
+		resourcesToInline = append(resourcesToInline, digest.NewResourceName(f.GetDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction()).ToProto())
+		downloadTrackers = append(downloadTrackers, ht.TrackDownload(f.GetDigest()))
+	}
+	blobs, err := s.cache.GetMulti(ctx, resourcesToInline)
+	if err != nil {
+		resourcesStr := make([]string, 0, len(resourcesToInline))
+		for _, r := range resourcesToInline {
+			resourcesStr = append(resourcesStr, r.String())
+		}
+		// Don't track misses here as GetMulti doesn't tell us which blobs
+		// were missing.
+		return status.NotFoundErrorf("Not all requested CAS entries (%s) were found: %s", strings.Join(resourcesStr, ", "), err)
+	}
+	for i, f := range filesToInline {
+		blob := blobs[resourcesToInline[i].Digest]
+		f.Contents = blob
+		if err := downloadTrackers[i].CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server"); err != nil {
+			log.Debugf("GetActionResult: download tracker error: %s", err)
+		}
+	}
+	return nil
+}
+
+// validateRestrictedAccess checks to see if the instance name has a restricted prefix.
+// If it does, validateRestrictedAccess uses the ClientIdentityService to assert that the
+// request comes from a trusted client: the app, an executor, or a cache proxy.
+// If the client is not trusted, the ClientIdentityService is not available, or there are any other errors,
+// validateRestrictedAccess returns an UnauthenticatedError.
+func (s *ActionCacheServer) validateRestrictedAccess(ctx context.Context, instanceName string) error {
+	if !isRestricted(instanceName) {
+		return nil
+	}
+	if s.env.GetClientIdentityService() == nil {
+		return status.UnauthenticatedError("No client ID service available to check restricted instance name prefix")
+	}
+	identity, err := s.env.GetClientIdentityService().IdentityFromContext(ctx)
+	if err != nil {
+		return status.UnauthenticatedErrorf("Could not check identity for restricted instance name prefix: %s", err)
+	}
+	if identity.Client != interfaces.ClientIdentityApp &&
+		identity.Client != interfaces.ClientIdentityExecutor &&
+		identity.Client != interfaces.ClientIdentityCacheProxy {
+		return status.UnauthenticatedError("Cannot access restricted ActionResult from untrusted client")
+	}
+	return nil
+}
+
+// isRestricted indicates whether the input instance name has a restricted prefix.
+func isRestricted(instanceName string) bool {
+	for _, prefix := range restrictedPrefixes {
+		if strings.HasPrefix(instanceName, prefix) {
+			return true
+		}
+	}
+	return false
 }

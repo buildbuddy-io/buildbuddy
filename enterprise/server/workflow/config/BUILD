@@ -8,6 +8,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config",
     deps = [
         "//enterprise/server/webhooks/webhook_data",
+        "//proto:runner_go_proto",
+        "//server/build_event_protocol/accumulator",
         "@in_gopkg_yaml_v2//:yaml_v2",
     ],
 )
@@ -19,6 +21,7 @@ go_test(
     deps = [
         ":config",
         "//enterprise/server/workflow/config/test_data",
+        "//proto:runner_go_proto",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

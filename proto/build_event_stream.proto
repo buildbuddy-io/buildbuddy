@@ -84,6 +84,14 @@ message BuildEventId {
   message FetchId {
     // The external resource that was fetched from.
     string url = 1;
+
+    enum Downloader {
+      UNKNOWN = 0;
+      HTTP = 1;
+      GRPC = 2;
+    }
+    // The downloader used to fetch the resource.
+    Downloader downloader = 2;
   }
 
   // Identifier of an event indicating that a target pattern has been expanded
@@ -248,11 +256,10 @@ message BuildEventId {
   // Identifier of an event providing convenience symlinks information.
   message ConvenienceSymlinksIdentifiedId {}
 
-  // Identifier of an event signalling that the coverage actions are finished.
-  message CoverageActionsFinishedId {}
-
   // Identifier of an event providing the ExecRequest of a run command.
   message ExecRequestId {}
+
+  reserved 27;
 
   // BUILDBUDDY-SPECIFIC EVENTS BELOW
 
@@ -260,20 +267,21 @@ message BuildEventId {
   // run as part of a BuildBuddy workflow.
   message WorkflowConfiguredId {}
 
-  // Identifier of an event providing the status of a completed invocation
-  // within a BuildBuddy workflow.
+  // Identifier of an event providing the status of a completed step
+  // within a remote runner (i.e. Workflows or remote bazel).
   //
-  // A workflow action can specify multiple bazel commands, creating a
-  // "sub-invocation" for each one. There will be one of these events generated
-  // for each of those Bazel commands, where the invocation ID here refers to
-  // the invocation ID of the Bazel command that was completed.
-  message WorkflowCommandCompletedId {
-    // Invocation ID of the command that was completed.
-    string invocation_id = 1;
+  // A remote runner action can specify multiple steps, each of which is a block
+  // of bash code. This event will be emitted when the entire block has
+  // completed.
+  //
+  // For each bazel command invoked in the step, a ChildInvocationsConfigured
+  // and ChildInvocationCompleted event will also be emitted.
+  message RemoteRunnerStepCompletedId {
+    reserved 1;
   }
 
-  // Identifier of an event providing a list of commands that are
-  // run as children of this invocation.
+  // Identifier of an event indicating that a child invocation of this
+  // invocation has been invoked.
   message ChildInvocationsConfiguredId {}
 
   // Identifier of an event providing the status of a completed child
@@ -315,7 +323,6 @@ message BuildEventId {
     WorkspaceConfigId workspace = 23;
     BuildMetadataId build_metadata = 24;
     ConvenienceSymlinksIdentifiedId convenience_symlinks_identified = 25;
-    CoverageActionsFinishedId coverage_actions_finished = 27;
     ExecRequestId exec_request = 28;
 
     // BUILDBUDDY EVENTS BELOW
@@ -323,7 +330,7 @@ message BuildEventId {
     // additions to Bazel's build event protocol.
 
     WorkflowConfiguredId workflow_configured = 1000;
-    WorkflowCommandCompletedId workflow_command_completed = 1001;
+    RemoteRunnerStepCompletedId remote_runner_step_completed = 1001;
     ChildInvocationsConfiguredId child_invocations_configured = 1002;
     ChildInvocationCompletedId child_invocation_completed = 1003;
     RunTargetAnalyzedId run_target_analyzed = 1004;
@@ -336,10 +343,16 @@ message BuildEventId {
 message Progress {
   // The next chunk of stdout that bazel produced since the last progress event
   // or the beginning of the build.
+  // Consumers that need to reason about the relative order of stdout and stderr
+  // can assume that stderr has been emitted before stdout if both are present,
+  // on a best-effort basis.
   string stdout = 1;
 
   // The next chunk of stderr that bazel produced since the last progress event
   // or the beginning of the build.
+  // Consumers that need to reason about the relative order of stdout and stderr
+  // can assume that stderr has been emitted before stdout if both are present,
+  // on a best-effort basis.
   string stderr = 2;
 }
 
@@ -427,6 +440,12 @@ message BuildStarted {
 
   // The process ID of the Bazel server.
   int64 server_pid = 8;
+
+  // The short hostname of the machine where the build is running.
+  string host = 10;
+
+  // The username of the user who started the build.
+  string user = 11;
 }
 
 // Configuration related to the blaze workspace and output tree.
@@ -570,13 +589,6 @@ message File {
   int64 length = 6;
 }
 
-message Tree {
-  // Where the tree is to be planted.
-  string name = 1;
-  // Bytestream URI for the tree digest.
-  string uri = 2;
-}
-
 // Payload of a message to describe a set of files, usually build artifacts, to
 // be referred to later by their name. In this way, files that occur identically
 // as outputs of several targets have to be named only once.
@@ -621,8 +633,10 @@ message ActionExecuted {
   // The command-line of the action, if the action is a command.
   repeated string command_line = 9;
 
+  // TODO: This has been removed at HEAD, but may still be used by older
+  // versions of Bazel.
   // List of paths to log files
-  repeated File action_metadata_logs = 10;
+  repeated File action_metadata_logs = 10 [deprecated = true];
 
   // Only populated if success = false, and sometimes not even then.
   failure_details.FailureDetail failure_detail = 11;
@@ -655,6 +669,10 @@ message OutputGroup {
   // Indicates that one or more of the output group's files were not built
   // successfully (the generating action failed).
   bool incomplete = 4;
+
+  // Inlined files that belong to this output group, requested via
+  // --experimental_build_event_output_group_mode.
+  repeated File inline_files = 5;
 }
 
 // Payload of the event indicating the completion of a target. The target is
@@ -884,7 +902,15 @@ message TargetSummary {
   // Conjunction of TargetComplete events for this target, including aspects.
   bool overall_build_success = 1;
 
-  // Repeats TestSummary's overall_status if available.
+  // For non-test targets, set to NO_STATUS. For test targets, identical to
+  // TestSummary.overall_status.
+  //
+  // There are some cases where the `build` command on a test target succeeds,
+  // but the `test` command on the same target results in FAILED_TO_BUILD. In
+  // such cases, TargetComplete.overall_build_success is true, but this field is
+  // FAILED_TO_BUILD, and TestSummary may be missing.
+  // TODO - b/186996003: TestSummary is a child of TargetComplete and should be
+  //  posted.
   TestStatus overall_test_status = 2;
 }
 
@@ -977,6 +1003,9 @@ message BuildMetrics {
       // This is only set if all the actions reported a time
       google.protobuf.Duration system_time = 5;
       google.protobuf.Duration user_time = 6;
+
+      // The total number of actions of this type registered during the build.
+      int64 actions_created = 7;
     }
     // Contains the top N actions by number of actions executed.
     repeated ActionData action_data = 4;
@@ -1084,6 +1113,9 @@ message BuildMetrics {
     // The elapsed wall time in milliseconds until the first action execution
     // started (excluding workspace status actions).
     int64 actions_execution_start_in_ms = 5;
+
+    // The elapsed wall time in milliseconds that the critical path took.
+    google.protobuf.Duration critical_path_time = 6;
   }
   TimingMetrics timing_metrics = 5;
 
@@ -1128,6 +1160,14 @@ message BuildMetrics {
 
   ArtifactMetrics artifact_metrics = 7;
 
+  // Data about the evaluation of Skyfunctions.
+  message EvaluationStat {
+    // Name of the Skyfunction.
+    string skyfunction_name = 1;
+    // How many times a given operation was carried out on a Skyfunction.
+    int64 count = 2;
+  }
+
   // Information about the size and shape of the build graph. Some fields may
   // not be populated if Bazel was able to skip steps due to caching.
   message BuildGraphMetrics {
@@ -1167,6 +1207,61 @@ message BuildMetrics {
     // settings or with Skybuild, and may overestimate if there are nodes from
     // prior evaluations still in the cache.
     int32 post_invocation_skyframe_node_count = 4;
+    // Number of SkyValues that were dirtied during the build. Dirtied nodes are
+    // those that transitively depend on a node that changed by itself (e.g. one
+    // representing a file in the file system)
+    repeated EvaluationStat dirtied_values = 10;
+    // Number of SkyValues that changed by themselves. For example, when a file
+    // on the file system changes, the SkyValue representing it will change.
+    repeated EvaluationStat changed_values = 11;
+    // Number of SkyValues that were built. This means that they were evaluated
+    // and were found to have changed from their previous version.
+    repeated EvaluationStat built_values = 12;
+    // Number of SkyValues that were evaluated and found clean, i.e. equal to
+    // their previous version.
+    repeated EvaluationStat cleaned_values = 13;
+    // Number of evaluations to build SkyValues. This includes restarted
+    // evaluations, which means there can be multiple evaluations per built
+    // SkyValue. Subtract built_values from this number to get the number of
+    // restarted evaluations.
+    repeated EvaluationStat evaluated_values = 17;
+
+    // For SkyKeys in 'done values' where the SkyValue is of type
+    // RuleConfiguredTargetValue, we pull those out separately and report the
+    // ruleClass and action count.
+    message RuleClassCount {
+      // Unique key for the rule class.
+      string key = 1;
+
+      // String name of the rule_class (not guaranteed unique)
+      string rule_class = 2;
+
+      // how many rule instances of this type were seen.
+      uint64 count = 3;
+
+      // how many actions were created by this rule class.
+      uint64 action_count = 4;
+    }
+    repeated RuleClassCount rule_class = 14;
+
+    // For SkyKeys whose function name is ASPECT break out that information
+    message AspectCount {
+      // Unique key for Aspect.
+      string key = 1;
+
+      // usually the same as above, but can differ in some cases.
+      string aspect_name = 2;
+
+      // number of aspects created of this type.
+      uint64 count = 3;
+
+      // number of actions created by aspects of this type.
+      uint64 action_count = 4;
+    }
+    repeated AspectCount aspect = 15;
+
+    // Removed due to overlap with EvaluationStat
+    reserved 16;
   }
 
   BuildGraphMetrics build_graph_metrics = 8;
@@ -1317,6 +1412,31 @@ message BuildMetrics {
   }
 
   DynamicExecutionMetrics dynamic_execution_metrics = 12;
+
+  // Statistics about remote analysis caching
+  message RemoteAnalysisCacheStatistics {
+    int64 cache_hits = 1;
+    int64 cache_misses = 2;
+    int64 value_store_value_bytes_received = 3;
+    int64 value_store_value_bytes_sent = 4;
+    int64 value_store_key_bytes_sent = 5;
+    int64 value_store_write_ops = 6;
+    int64 value_store_read_ops_successful = 7;
+    int64 value_store_read_ops_not_found = 8;
+    int64 value_store_read_batches = 10;
+    int64 value_store_write_batches = 11;
+    int64 analysis_cache_bytes_received = 12;
+    int64 analysis_cache_key_bytes_sent = 13;
+    int64 analysis_cache_ops = 14;
+    int64 analysis_cache_batches = 15;
+
+    // TODO: Add the required analysis_cache_service_metadata_status.proto when
+    // we have to use this field.
+    // The result of the Skycache metadata lookup.
+    // devtools_blaze_proto.TopLevelTargetsMatchStatus metadata_lookup_result =
+    // 16;
+  }
+  RemoteAnalysisCacheStatistics remote_analysis_cache_statistics = 13;
 }
 
 // Event providing additional statistics/logs after completion of the build.
@@ -1357,9 +1477,8 @@ message ConvenienceSymlink {
   // The operation we are performing on the symlink.
   Action action = 2;
 
-  // If action is CREATE, this is the target path that the symlink should point
-  // to. If the path points underneath the output base, it is relative to the
-  // output base; otherwise it is absolute.
+  // If action is CREATE, this is the target path (relative to the output base)
+  // that the symlink should point to.
   //
   // If action is DELETE, this field is not set.
   string target = 3;
@@ -1453,10 +1572,11 @@ message WorkflowConfigured {
   reserved 13;
 }
 
-// Event describing a workflow command that completed.
-// Note: the event ID holds the invocation ID that identifies the command.
+// Event describing a workflow step that completed.
+// This differs from ChildInvocationCompleted because each step can contain
+// multiple child invocations.
 // Next Tag: 6
-message WorkflowCommandCompleted {
+message RemoteRunnerStepCompleted {
   // The overall status of the command. A command was successful if and only if
   // this value is equal to 0.
   int32 exit_code = 1;
@@ -1520,6 +1640,13 @@ message ChildInvocationCompleted {
   google.protobuf.Duration duration = 5;
 }
 
+message Tree {
+  // Where the tree is to be planted.
+  string name = 1;
+  // Bytestream URI for the tree digest.
+  string uri = 2;
+}
+
 // Event describing the runtime properties of a runnable target.
 message RunTargetAnalyzed {
   // Default arguments configured for the target, typically in the BUILD file.
@@ -1575,7 +1702,7 @@ message BuildEvent {
     // additions to Bazel's build event protocol.
 
     WorkflowConfigured workflow_configured = 1000;
-    WorkflowCommandCompleted workflow_command_completed = 1001;
+    RemoteRunnerStepCompleted remote_runner_step_completed = 1001;
     ChildInvocationsConfigured child_invocations_configured = 1002;
     ChildInvocationCompleted child_invocation_completed = 1003;
     RunTargetAnalyzed run_target_analyzed = 1004;

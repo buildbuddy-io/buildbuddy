@@ -1,13 +1,17 @@
 package rangecache
 
 import (
+	"context"
+	"fmt"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
@@ -17,13 +21,13 @@ type RangeCache struct {
 	rangeMu sync.RWMutex
 
 	// Keep a rangemap that maps from ranges to descriptors.
-	rangeMap *rangemap.RangeMap
+	rangeMap *rangemap.RangeMap[*lockingRangeDescriptor]
 }
 
 func New() *RangeCache {
 	return &RangeCache{
 		rangeMu:  sync.RWMutex{},
-		rangeMap: rangemap.New(),
+		rangeMap: rangemap.New[*lockingRangeDescriptor](),
 	}
 }
 
@@ -65,35 +69,21 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 
 	r := rc.rangeMap.Get(start, end)
 	if r == nil {
-		overlappingRanges := rc.rangeMap.GetOverlapping(start, end)
-		// If this range overlaps, we'll check it against the overlapping
-		// ranges and possibly delete them or if they are newer, then we'll
-		// ignore this update.
-		for _, overlappingRange := range overlappingRanges {
-			lr, ok := overlappingRange.Val.(*lockingRangeDescriptor)
-			if !ok {
-				continue
-			}
-			v := lr.Get()
-			if v.GetGeneration() >= newDescriptor.GetGeneration() {
-				log.Debugf("Ignoring rangeDescriptor %+v, because current has same or later generation: %+v", newDescriptor, v)
-				return nil
-			}
+		checkFn := func(r *lockingRangeDescriptor) bool {
+			v := r.Get()
+			return v.GetGeneration() < newDescriptor.GetGeneration()
 		}
-
-		// If we got here, all overlapping ranges are older, so we're gonna
-		// delete them and replace with the new one.
-		for _, overlappingRange := range overlappingRanges {
-			log.Debugf("Removing (outdated) overlapping range: [%q, %q)", overlappingRange.Start, overlappingRange.End)
-			rc.rangeMap.Remove(overlappingRange.Start, overlappingRange.End)
+		added, err := rc.rangeMap.AddAndRemoveOverlapping(start, end, newLockingRangeDescriptor(newDescriptor), checkFn)
+		if added {
+			log.Debugf("Adding new range: %d [%q, %q)", newDescriptor.GetRangeId(), start, end)
+		} else {
+			log.Debugf("Ignoring rangeDescriptor %+v, because current has same or later generation", newDescriptor)
 		}
-		log.Debugf("Adding new range: %d [%q, %q)", newDescriptor.GetRangeId(), start, end)
-		_, err := rc.rangeMap.Add(start, end, newLockingRangeDescriptor(newDescriptor))
 		return err
 	} else {
-		lr, ok := r.Val.(*lockingRangeDescriptor)
-		if !ok {
-			return status.FailedPreconditionError("Val was not a rangeVal")
+		lr := r.Val
+		if lr == nil {
+			return status.FailedPreconditionError("Val was nil")
 		}
 		v := lr.Get()
 		if newDescriptor.GetGeneration() > v.GetGeneration() {
@@ -113,18 +103,28 @@ func (rc *RangeCache) UpdateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 // SetPreferredReplica moves the given replica to the front for the given range
 // descriptor. It's an no-op when the given range is not in the cache or the given
 // replica is not included in the range descriptor's replica list.
-func (rc *RangeCache) SetPreferredReplica(rep *rfpb.ReplicaDescriptor, rng *rfpb.RangeDescriptor) {
+func (rc *RangeCache) SetPreferredReplica(ctx context.Context, rep *rfpb.ReplicaDescriptor, rng *rfpb.RangeDescriptor) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	rangeIDAttr := attribute.Int64("range_id", int64(rep.GetRangeId()))
+	spn.SetAttributes(rangeIDAttr)
+	defer spn.End()
+
 	rc.rangeMu.RLock()
 	defer rc.rangeMu.RUnlock()
 
 	r := rc.rangeMap.Get(rng.GetStart(), rng.GetEnd())
 	if r == nil {
-		log.Errorf("SetPreferredReplica called but range %+v not in cache", rng)
+		err := fmt.Errorf("SetPreferredReplica called but range %+v not in cache", rng)
+		log.Error(err.Error())
+		tracing.RecordErrorToSpan(spn, err)
 		return
 	}
 
-	lr, ok := r.Val.(*lockingRangeDescriptor)
-	if !ok {
+	lr := r.Val
+	if lr == nil {
+		err := fmt.Errorf("locking range descriptor value for range [%q, %q) is nil", r.Start, r.End)
+		log.Error(err.Error())
+		tracing.RecordErrorToSpan(spn, err)
 		return
 	}
 	rd := lr.Get()
@@ -132,18 +132,28 @@ func (rc *RangeCache) SetPreferredReplica(rep *rfpb.ReplicaDescriptor, rng *rfpb
 
 	leadReplicaIndex := -1
 	for i, replica := range newDescriptor.GetReplicas() {
-		if replica.GetShardId() == rep.GetShardId() &&
+		if replica.GetRangeId() == rep.GetRangeId() &&
 			replica.GetReplicaId() == rep.GetReplicaId() {
 			leadReplicaIndex = i
 			break
 		}
 	}
 	if leadReplicaIndex == -1 {
-		log.Errorf("SetPreferredReplica called but range %+v does not contain preferred %+v", rng, rep)
+		err := fmt.Errorf("SetPreferredReplica called but range %+v does not contain preferred %+v", rng, rep)
+		log.Error(err.Error())
+		tracing.RecordErrorToSpan(spn, err)
 		return
 	}
 	newDescriptor.Replicas[0], newDescriptor.Replicas[leadReplicaIndex] = newDescriptor.Replicas[leadReplicaIndex], newDescriptor.Replicas[0]
+
 	lr.Update(newDescriptor)
+
+	replica_ids := []int64{}
+	for _, repl := range newDescriptor.GetReplicas() {
+		replica_ids = append(replica_ids, int64(repl.GetReplicaId()))
+	}
+	replicaIDAttr := attribute.Int64Slice("replicas", replica_ids)
+	spn.SetAttributes(replicaIDAttr)
 }
 
 // Get returns a RangeDescriptor that includes the given key within its range.
@@ -151,12 +161,12 @@ func (rc *RangeCache) Get(key []byte) *rfpb.RangeDescriptor {
 	rc.rangeMu.RLock()
 	defer rc.rangeMu.RUnlock()
 
-	val := rc.rangeMap.Lookup(key)
+	lr, found := rc.rangeMap.Lookup(key)
 
 	var rd *rfpb.RangeDescriptor
 	label := "miss"
 
-	if lr, ok := val.(*lockingRangeDescriptor); ok {
+	if found {
 		rd = lr.Get()
 		label = "hit"
 	}

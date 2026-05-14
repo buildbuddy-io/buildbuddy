@@ -1,4 +1,4 @@
-import { CheckCircle, Circle, ChevronUp, ChevronDown, LogOut, PlusCircle, ArrowRightCircle } from "lucide-react";
+import { ArrowRightCircle, CheckCircle, ChevronDown, ChevronUp, Circle, LogOut, PlusCircle } from "lucide-react";
 import React from "react";
 import authService, { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";

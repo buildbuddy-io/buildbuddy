@@ -8,8 +8,14 @@ ts_library(
     name = "history",
     srcs = ["history.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/capabilities",
+        "//app/components/breadcrumbs",
         "//app/components/button",
         "//app/components/button:link_button",
         "//app/components/link",
@@ -27,13 +33,6 @@ ts_library(
         "//enterprise/app/org:org_join_requests",
         "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
-        "@npm//@types/long",
-        "@npm//@types/react",
-        "@npm//long",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//rxjs",
-        "@npm//tslib",
     ],
 )
 
@@ -41,13 +40,13 @@ ts_library(
     name = "history_invocation_stat_card",
     srcs = ["history_invocation_stat_card.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/capabilities",
         "//app/format",
         "//app/router",
         "//proto:invocation_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
     ],
 )
 
@@ -55,7 +54,7 @@ ts_library(
     name = "history_tabs",
     srcs = ["history_tabs.tsx"],
     deps = [
-        "@npm//@types/react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )

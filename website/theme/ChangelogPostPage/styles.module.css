@@ -1,0 +1,56 @@
+.article {
+  max-width: 860px;
+  margin: 0 auto;
+  padding-bottom: 64px;
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+  color: var(--ifm-color-emphasis-600);
+  transition: color 150ms ease;
+}
+
+.backLink:hover {
+  color: var(--ifm-font-color-base);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--ifm-color-emphasis-600);
+  margin-bottom: 1.5rem;
+}
+
+.metaDot {
+  color: var(--ifm-color-emphasis-400);
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-bottom: 2rem;
+}
+
+.tag {
+  background: var(--ifm-color-emphasis-100);
+  color: var(--ifm-color-emphasis-700);
+  border-radius: 6px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.78rem;
+}
+
+.article :global(.markdown) a:hover {
+  color: var(--ifm-color-emphasis-600);
+}
+
+.article :global(.markdown) img,
+.article :global(.markdown) video {
+  max-width: 100%;
+  height: auto;
+}

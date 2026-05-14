@@ -1,8 +1,8 @@
-import React from "react";
 import Layout from "@theme/Layout";
+import React from "react";
 import common from "../css/common.module.css";
+import { sendFormsMessage } from "../util/message";
 import styles from "./contact.module.css";
-import message from "../util/message";
 
 let form = {
   company: React.createRef<HTMLInputElement>(),
@@ -49,7 +49,7 @@ function RequestDemo() {
 }
 
 function sendMessage() {
-  message(
+  sendFormsMessage(
     `New Demo Request!\nName: ${form.firstName.current.value} ${form.lastName.current.value}\nEmail: ${form.email.current.value}\nCompany: ${form.company.current.value}\nNumber of Engineers: ${form.engineerCount.current.value}`
   );
 

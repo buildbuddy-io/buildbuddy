@@ -8,14 +8,29 @@ ts_library(
     name = "codesearch",
     srcs = ["codesearch.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/components/button",
-        "//app/components/input",
         "//app/components/spinner",
         "//app/errors:error_service",
+        "//app/router",
         "//app/service:rpc_service",
+        "//app/shortcuts",
+        "//app/util:errors",
+        "//enterprise/app/codesearch:result",
         "//proto:search_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "result",
+    srcs = ["result.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//proto:search_ts_proto",
     ],
 )

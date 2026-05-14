@@ -1,8 +1,7 @@
-import React from "react";
 import * as monaco from "monaco-editor";
+import React from "react";
 
 import { Trash2 } from "lucide-react";
-import { roundedDurationSec } from "../../../../app/format/format";
 import Select, { Option } from "../../../../app/components/select/select";
 
 interface Props {

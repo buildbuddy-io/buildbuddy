@@ -1,9 +1,13 @@
-import { CheckCircle, AlertCircle } from "lucide-react";
+import { CheckCircle } from "lucide-react";
 import React from "react";
-import { github } from "../../../proto/github_ts_proto";
 import alertService from "../../../app/alert/alert_service";
+import authService from "../../../app/auth/auth_service";
 import { User } from "../../../app/auth/user";
+import capabilities from "../../../app/capabilities/capabilities";
+import Banner from "../../../app/components/banner/banner";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
+import LinkButton from "../../../app/components/button/link_button";
+import Checkbox from "../../../app/components/checkbox/checkbox";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -11,16 +15,14 @@ import Dialog, {
   DialogHeader,
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
+import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
+import { TextLink } from "../../../app/components/link/link";
 import Modal from "../../../app/components/modal/modal";
 import Spinner from "../../../app/components/spinner/spinner";
-import rpcService from "../../../app/service/rpc_service";
 import errorService from "../../../app/errors/error_service";
-import authService from "../../../app/auth/auth_service";
-import { TextLink } from "../../../app/components/link/link";
-import capabilities from "../../../app/capabilities/capabilities";
-import Banner from "../../../app/components/banner/banner";
-import LinkButton from "../../../app/components/button/link_button";
-import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
+import rpcService from "../../../app/service/rpc_service";
+import { github } from "../../../proto/github_ts_proto";
+import GitHubTooltip from "./github_tooltip";
 
 export interface Props {
   user: User;
@@ -35,6 +37,8 @@ export interface State {
   installationsLoading: boolean;
   installationsResponse: github.GetAppInstallationsResponse | null;
 
+  isUpdatingInstallation: Map<Long, boolean>;
+
   installationToUnlink: github.AppInstallation | null;
   unlinkInstallationLoading: boolean;
 }
@@ -47,6 +51,8 @@ export default class GitHubLink extends React.Component<Props, State> {
 
     installationsResponse: null,
     installationsLoading: false,
+
+    isUpdatingInstallation: new Map<Long, boolean>(),
 
     installationToUnlink: null,
     unlinkInstallationLoading: false,
@@ -66,15 +72,6 @@ export default class GitHubLink extends React.Component<Props, State> {
     }
   }
 
-  private gitHubLinkUrl(): string {
-    const params = new URLSearchParams({
-      group_id: this.props.user.selectedGroup.id,
-      user_id: this.props.user.displayUser.userId?.id || "",
-      redirect_url: window.location.href,
-    });
-    return `/auth/github/link/?${params}`;
-  }
-
   private fetchInstallations() {
     this.setState({ installationsLoading: true, installationsResponse: null });
     rpcService.service
@@ -83,14 +80,21 @@ export default class GitHubLink extends React.Component<Props, State> {
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ installationsLoading: false }));
   }
-  private getInstallURL() {
-    const params = new URLSearchParams({
-      group_id: this.props.user.selectedGroup.id,
-      user_id: this.props.user.displayUser.userId?.id || "",
-      redirect_url: window.location.href,
-      install: "true",
-    });
-    return `/auth/github/app/link/?${params}`;
+  // onClickSetupGithubApp redirects to the corresponding app URL if a user has
+  // already authorized either the read-write or read-only GitHub app.
+  private onClickSetupGithubApp() {
+    rpcService.service
+      .getGitHubAppInstallPath(new github.GetGithubAppInstallPathRequest())
+      .then((response) => {
+        const path = `${response.installPath}?${new URLSearchParams({
+          group_id: this.props.user.selectedGroup.id,
+          user_id: this.props.user.displayUser.userId?.id || "",
+          redirect_url: window.location.href,
+          install: "true",
+        })}`;
+        window.location.href = path;
+      })
+      .catch((e) => errorService.handleError(e));
   }
   private unlinkInstallation(installation: github.AppInstallation) {
     this.setState({ unlinkInstallationLoading: true });
@@ -98,6 +102,7 @@ export default class GitHubLink extends React.Component<Props, State> {
       .unlinkGitHubAppInstallation(
         github.UnlinkAppInstallationRequest.create({
           installationId: installation.installationId,
+          appId: installation.appId,
         })
       )
       .then(() => {
@@ -147,6 +152,39 @@ export default class GitHubLink extends React.Component<Props, State> {
     this.setState({ installationToUnlink: null });
   }
 
+  private updateInstallationSettings(
+    installation: github.AppInstallation,
+    idx: number,
+    reportCommitStatusesForCIBuilds: boolean
+  ) {
+    let prevMap = this.state.isUpdatingInstallation;
+    prevMap.set(installation.installationId, true);
+    this.setState({ isUpdatingInstallation: prevMap });
+    rpcService.service
+      .updateGitHubAppInstallation(
+        github.UpdateGitHubAppInstallationRequest.create({
+          appId: installation.appId,
+          owner: installation.owner,
+          reportCommitStatusesForCiBuilds: reportCommitStatusesForCIBuilds,
+        })
+      )
+      .then(() => {
+        if (!this.state.installationsResponse || this.state.installationsResponse.installations.length < idx + 1) {
+          throw new Error(`unexpected installation response`);
+        }
+        this.state.installationsResponse.installations[idx].reportCommitStatusesForCiBuilds =
+          reportCommitStatusesForCIBuilds;
+        this.setState({ installationsResponse: this.state.installationsResponse });
+        alertService.success(`Successfully updated settings for "${installation.owner}"`);
+      })
+      .catch((e) => errorService.handleError(e))
+      .finally(() => {
+        let prevMap = this.state.isUpdatingInstallation;
+        prevMap.set(installation.installationId, false);
+        this.setState({ isUpdatingInstallation: prevMap });
+      });
+  }
+
   render() {
     if (this.state.isRefreshingUser) return <div className="loading" />;
 
@@ -179,7 +217,7 @@ export default class GitHubLink extends React.Component<Props, State> {
                 </Banner>
               )}
             </div>
-            {this.props.user.selectedGroup.githubLinked ? (
+            {this.props.user.selectedGroup.githubLinked && (
               <div className="linked-github-account-row">
                 <CheckCircle className="icon green" />
                 <div>GitHub account linked</div>
@@ -187,45 +225,77 @@ export default class GitHubLink extends React.Component<Props, State> {
                   Unlink
                 </OutlinedButton>
               </div>
-            ) : (
-              <FilledButton className="settings-button settings-link-button">
-                <a href={this.gitHubLinkUrl()}>Link GitHub account</a>
-              </FilledButton>
             )}
           </>
         )}
 
         {capabilities.config.githubAppEnabled && (
           <>
-            <div className="settings-option-title">GitHub app link</div>
-            <div className="settings-option-description">
-              <p>
-                The BuildBuddy GitHub app must be linked to a BuildBuddy organization before it can be used. All app
-                installations linked to your organization are shown below. You can also manage installations on GitHub
-                using the "Setup" button below.
-              </p>
+            <div className="settings-option-title github-settings-title">
+              Manage GitHub app installations
+              <GitHubTooltip />
             </div>
-            <LinkButton className="big-button" href={this.getInstallURL()}>
-              Setup
-            </LinkButton>
+            <div className="settings-option-description">
+              <p>GitHub app installations that have been imported to BuildBuddy are shown below.</p>
+            </div>
             {this.state.installationsLoading && <div className="loading loading-slim" />}
             {Boolean(this.state.installationsResponse?.installations?.length) && (
-              <div className="github-app-installations">
-                {this.state.installationsResponse?.installations.map(
-                  (installation) => (
-                    console.log(installation),
-                    (
-                      <div className="github-app-installation">
-                        <div className="installation-owner">
-                          <TextLink href={`https://github.com/${installation.owner}`}>{installation.owner}</TextLink>
-                        </div>
-                        <OutlinedButton className="destructive" onClick={() => this.showUnlinkDialog(installation)}>
-                          Unlink
-                        </OutlinedButton>
-                      </div>
-                    )
-                  )
-                )}
+              <div>
+                <div className="settings-option-description">
+                  <p>You can also manage installations on GitHub using the "Manage on GitHub" button below.</p>
+                </div>
+                <div className="setup-button-container">
+                  <LinkButton
+                    className="big-button left-aligned-button"
+                    onClick={this.onClickSetupGithubApp.bind(this)}>
+                    Manage on GitHub
+                  </LinkButton>
+                </div>
+                <div>
+                  <div className="github-app-installations">
+                    {this.state.installationsResponse?.installations.map(
+                      (installation, idx) => (
+                        console.log(installation),
+                        (
+                          <div className="github-app-installation">
+                            <div className="installation-header">
+                              <div className="installation-owner">
+                                <TextLink href={`https://github.com/${installation.owner}`}>
+                                  {installation.owner}
+                                </TextLink>
+                              </div>
+                              <OutlinedButton
+                                className="destructive"
+                                onClick={() => this.showUnlinkDialog(installation)}>
+                                Unlink
+                              </OutlinedButton>
+                            </div>
+                            <div className="installation-settings">
+                              <div className="input-row">
+                                <label className="input-label">
+                                  <Checkbox
+                                    disabled={
+                                      this.state.isUpdatingInstallation.get(installation.installationId) === true
+                                    }
+                                    checked={installation.reportCommitStatusesForCiBuilds}
+                                    onChange={(e) =>
+                                      this.updateInstallationSettings(installation, idx, e.target.checked)
+                                    }
+                                  />
+                                  <span>Report commit statuses to GitHub</span>
+                                </label>
+                              </div>
+                              <div className="input-description">
+                                Applies to BuildBuddy Workflows and builds tagged with{" "}
+                                <TextLink href="https://www.buildbuddy.io/docs/guide-metadata#role">ROLE=CI</TextLink>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      )
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </>
@@ -245,7 +315,10 @@ export default class GitHubLink extends React.Component<Props, State> {
                 <p>Any workflows linked using this account will also be deleted.</p>
                 <p>
                   After unlinking, the linked account owner may revoke app access via{" "}
-                  <TextLink href="https://github.com/settings/applications">GitHub OAuth app settings</TextLink>.
+                  <TextLink href="https://github.com/settings/apps/authorizations">
+                    GitHub Applications settings
+                  </TextLink>
+                  .
                 </p>
               </DialogBody>
               <DialogFooter>

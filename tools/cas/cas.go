@@ -28,15 +28,14 @@ import (
 var (
 	// Required flags:
 
-	target     = flag.String("target", "", "Cache grpc target, such as grpcs://remote.buildbuddy.io")
-	blobDigest = flag.String("digest", "", "Digest of the blob to fetch, in HASH/SIZE format.")
-	blobType   = flag.String("type", "", "Type of blob to inspect: Action, ActionResult, Command, Tree, file, stdout, stderr")
+	target   = flag.String("target", "", "Cache grpc target, such as grpcs://remote.buildbuddy.io")
+	resource = flag.String("resource", "", "Resource to fetch. May be a simple digest (HASH/SIZE) or a full resource name.")
+	blobType = flag.String("type", "", "Type of blob to inspect: Action, ActionResult, ExecuteResponse, Command, Tree, file, stdout, stderr")
 
 	// Optional flags:
 
 	instanceName = flag.String("remote_instance_name", "", "Remote instance name")
 	apiKey       = flag.String("api_key", "", "API key to attach to the outgoing context")
-	invocationID = flag.String("invocation_id", "", "Invocation ID. This is required when fetching the result of a failed action. Otherwise, it's optional.")
 
 	showMetadata     = flag.Bool("metadata", false, "Whether to fetch and log metadata for the digest (printed to stderr).")
 	showMetadataOnly = flag.Bool("metadata_only", false, "Whether to *only* fetch metadata, not the contents. This will print the metadata to stdout instead of stderr.")
@@ -46,48 +45,67 @@ var (
 //
 // Show an action result proto:
 //
-//	bazel run //tools/cas -- -target=grpcs://remote.buildbuddy.dev -digest=HASH/SIZE -type=ActionResult
+//	bazel run //tools/cas -- -target=grpcs://remote.buildbuddy.dev -digest=/blobs/ac/HASH/SIZE -type=ActionResult
 //
 // Show a command proto:
 //
-//	bazel run //tools/cas -- -target=grpcs://remote.buildbuddy.dev -digest=HASH/SIZE -type=Command
+//	bazel run //tools/cas -- -target=grpcs://remote.buildbuddy.dev -digest=/blobs/HASH/SIZE -type=Command
 //
 // Show stderr contents:
 //
-//	bazel run //tools/cas -- -target=grpcs://remote.buildbuddy.dev -digest=HASH/SIZE -type=stderr
-//
-// Show a failed action result proto (requires invocation ID):
-//
-//	bazel run //tools/cas -- -target=grpcs://remote.buildbuddy.dev -digest=HASH/SIZE -type=ActionResult -invocation_id=IID
+//	bazel run //tools/cas -- -target=grpcs://remote.buildbuddy.dev -digest=/blobs/HASH/SIZE -type=stderr
 func main() {
 	flag.Parse()
 	if *target == "" {
 		log.Fatalf("Missing --target")
 	}
-	if *blobDigest == "" {
-		log.Fatalf("Missing --digest")
+	if *resource == "" {
+		log.Fatalf("Missing --resource")
+	}
+
+	resourceNameString := *resource
+
+	// If fetching an ExecuteResponse then we're expecting an execution ID.
+	// Parse the execution ID, and use the hash function to get an AC resource
+	// name.
+	if *blobType == "ExecuteResponse" {
+		r, err := digest.ParseUploadResourceName(*resource)
+		if err != nil {
+			log.Fatalf("Parse --resource as upload resource name: %s", err)
+		}
+		executeResponseDigest, err := digest.Compute(strings.NewReader(*resource), r.GetDigestFunction())
+		if err != nil {
+			log.Fatalf("Failed to compute execute response digest: %s", err)
+		}
+		resourceNameString = digest.NewACResourceName(executeResponseDigest, r.GetInstanceName(), r.GetDigestFunction()).ActionCacheString()
 	}
 
 	// For backwards compatibility, attempt to fixup old style digest
 	// strings that don't start with a '/blobs/' prefix.
-	digestString := *blobDigest
-	if !strings.HasPrefix(digestString, "/blobs") {
-		digestString = "/blobs/" + digestString
+	if !strings.Contains(resourceNameString, "/blobs/") {
+		resourceNameString = "/blobs/" + resourceNameString
 	}
 
-	ind, err := digest.ParseDownloadResourceName(digestString)
-	if err != nil {
-		log.Fatalf(status.Message(err))
-	}
-	if *blobType == "ActionResult" {
-		ind = digest.NewResourceName(ind.GetDigest(), ind.GetInstanceName(), rspb.CacheType_AC, ind.GetDigestFunction())
+	var ind *rspb.ResourceName
+	if *blobType == "ActionResult" || *blobType == "ExecuteResponse" {
+		indDownload, err := digest.ParseActionCacheResourceName(resourceNameString)
+		if err != nil {
+			log.Fatal(status.Message(err))
+		}
+		ind = indDownload.ToProto()
+	} else {
+		indDownload, err := digest.ParseDownloadResourceName(resourceNameString)
+		if err != nil {
+			log.Fatal(status.Message(err))
+		}
+		ind = indDownload.ToProto()
 	}
 
 	// For backwards compatibility with the existing behavior of this code:
 	// If the parsed remote_instance_name is empty, and the flag instance
 	// name is set; override the instance name of `rn`.
 	if ind.GetInstanceName() == "" && *instanceName != "" {
-		ind = digest.NewResourceName(ind.GetDigest(), *instanceName, ind.GetCacheType(), ind.GetDigestFunction())
+		ind = digest.NewResourceName(ind.GetDigest(), *instanceName, ind.GetCacheType(), ind.GetDigestFunction()).ToProto()
 	}
 
 	conn, err := grpc_client.DialSimple(*target)
@@ -106,7 +124,7 @@ func main() {
 
 	if *showMetadata || *showMetadataOnly {
 		req := &capb.GetCacheMetadataRequest{
-			ResourceName: ind.ToProto(),
+			ResourceName: ind,
 		}
 		md, err := bbClient.GetCacheMetadata(ctx, req)
 		if err != nil {
@@ -132,7 +150,11 @@ func main() {
 	// Handle raw string types
 	if *blobType == "stdout" || *blobType == "stderr" || *blobType == "file" {
 		var out bytes.Buffer
-		if err := cachetools.GetBlob(ctx, bsClient, ind, &out); err != nil {
+		r, err := digest.CASResourceNameFromProto(ind)
+		if err != nil {
+			log.Fatalf("Failed to convert resource name to CAS: %s", err)
+		}
+		if err := cachetools.GetBlob(ctx, bsClient, r, &out); err != nil {
 			log.Fatal(err.Error())
 		}
 		writeToStdout(out.Bytes())
@@ -140,19 +162,24 @@ func main() {
 	}
 
 	// Handle ActionResults (these are stored in the action cache)
-	if *blobType == "ActionResult" {
-		ar, err := cachetools.GetActionResult(ctx, acClient, ind)
+	if *blobType == "ActionResult" || *blobType == "ExecuteResponse" {
+		r, err := digest.ACResourceNameFromProto(ind)
 		if err != nil {
-			log.Infof("Could not fetch ActionResult; maybe the action failed. Attempting to fetch failed action using invocation ID = %q", *invocationID)
-			failedDigest, err := digest.AddInvocationIDToDigest(ind.GetDigest(), ind.GetDigestFunction(), *invocationID)
-			if err != nil {
-				log.Fatalf(err.Error())
+			log.Fatalf("Failed to convert resource name to AC: %s", err)
+		}
+		ar, err := cachetools.GetActionResult(ctx, acClient, r)
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		// When fetching an ExecuteResponse, the response is encoded in the
+		// action stdout.
+		if *blobType == "ExecuteResponse" {
+			executeResponse := &repb.ExecuteResponse{}
+			if err := proto.Unmarshal(ar.GetStdoutRaw(), executeResponse); err != nil {
+				log.Fatalf("Failed to unmarshal execute response: %s", err)
 			}
-			ind := digest.NewResourceName(failedDigest, ind.GetInstanceName(), rspb.CacheType_AC, repb.DigestFunction_SHA256)
-			ar, err = cachetools.GetActionResult(ctx, acClient, ind)
-			if err != nil {
-				log.Fatal(err.Error())
-			}
+			printMessage(executeResponse)
+			return
 		}
 		printMessage(ar)
 		return
@@ -160,7 +187,11 @@ func main() {
 
 	// Handle Trees (these are stored in the CAS)
 	if *blobType == "Tree" {
-		inputTree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, casClient, ind)
+		r, err := digest.CASResourceNameFromProto(ind)
+		if err != nil {
+			log.Fatalf("Failed to convert resource name to CAS: %s", err)
+		}
+		inputTree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, casClient, r)
 		if err != nil {
 			log.Fatal(err.Error())
 		}
@@ -178,7 +209,11 @@ func main() {
 	default:
 		log.Fatalf(`Invalid --type: %q (allowed values: Action, ActionResult, Command, Tree, file, stderr, stdout)`, *blobType)
 	}
-	if err := cachetools.GetBlobAsProto(ctx, bsClient, ind, msg); err != nil {
+	r, err := digest.CASResourceNameFromProto(ind)
+	if err != nil {
+		log.Fatalf("Failed to convert resource name to CAS: %s", err)
+	}
+	if err := cachetools.GetBlobAsProto(ctx, bsClient, r, msg); err != nil {
 		log.Fatal(err.Error())
 	}
 	printMessage(msg)

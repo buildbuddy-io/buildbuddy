@@ -1,9 +1,10 @@
+import { AlertCircle, CheckCircle, Clock, Package, RotateCw, XCircle } from "lucide-react";
 import React from "react";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { google as google_grpc } from "../../proto/grpc_code_ts_proto";
-import { google as google_ts } from "../../proto/timestamp_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
-import { RotateCw, Package, Clock, AlertCircle, XCircle, CheckCircle } from "lucide-react";
+import { google as google_ts } from "../../proto/timestamp_ts_proto";
+import { digestToString } from "../util/cache";
 
 const ExecutionStage = build.bazel.remote.execution.v2.ExecutionStage;
 
@@ -47,11 +48,15 @@ export function getExecutionStatus(execution: execution_stats.Execution): Execut
   return STATUSES_BY_STAGE[execution.stage];
 }
 
+function isZeroTimestamp(ts: google_ts.protobuf.ITimestamp) {
+  return !ts.seconds && !ts.nanos;
+}
+
 export function subtractTimestamp(
   timestampA?: google_ts.protobuf.ITimestamp | null,
   timestampB?: google_ts.protobuf.ITimestamp | null
 ) {
-  if (!timestampA || !timestampB) return NaN;
+  if (!timestampA || !timestampB || isZeroTimestamp(timestampA) || isZeroTimestamp(timestampB)) return NaN;
   let microsA = +(timestampA.seconds ?? 0) * 1000000 + +(timestampA.nanos ?? 0) / 1000;
   let microsB = +(timestampB.seconds ?? 0) * 1000000 + +(timestampB.nanos ?? 0) / 1000;
   return microsA - microsB;
@@ -61,6 +66,13 @@ export function totalDuration(execution: execution_stats.IExecution) {
   return subtractTimestamp(
     execution?.executedActionMetadata?.workerCompletedTimestamp,
     execution?.executedActionMetadata?.queuedTimestamp
+  );
+}
+
+export function workerDuration(execution: execution_stats.IExecution) {
+  return subtractTimestamp(
+    execution?.executedActionMetadata?.workerCompletedTimestamp,
+    execution?.executedActionMetadata?.workerStartTimestamp
   );
 }
 
@@ -90,4 +102,22 @@ export function uploadDuration(execution: execution_stats.IExecution) {
     execution?.executedActionMetadata?.outputUploadCompletedTimestamp,
     execution?.executedActionMetadata?.outputUploadStartTimestamp
   );
+}
+
+export function getActionPageLink(invocationId: string, execution: execution_stats.Execution) {
+  const search = new URLSearchParams();
+  search.set("executionId", execution.executionId);
+  if (execution.actionDigest) {
+    search.set("actionDigest", digestToString(execution.actionDigest));
+  }
+  // Prefer executeResponseDigest if present, since it represents the action
+  // response that was returned for this specific invocation, and also
+  // contains additional useful info such as gRPC status. Otherwise, try the
+  // (deprecated) actionResultDigest.
+  if (execution.executeResponseDigest) {
+    search.set("executeResponseDigest", digestToString(execution.executeResponseDigest));
+  } else if (execution.actionResultDigest) {
+    search.set("actionResultDigest", digestToString(execution.actionResultDigest));
+  }
+  return `/invocation/${invocationId}?${search}#action`;
 }

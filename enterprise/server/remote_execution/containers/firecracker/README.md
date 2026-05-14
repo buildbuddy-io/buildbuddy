@@ -40,12 +40,15 @@ If you want to test workflows locally with firecracker, make sure to set
 You can run Firecracker in debug mode to see more detailed
 VM logs, including logs from the init binary and vmexec server.
 
-To run in debug mode, set `--executor.firecracker_debug_mode=true`
-on the executor, or pass `--test_arg=--executor.firecracker_debug_mode=true`
+To run in debug mode, set `--executor.firecracker_debug_stream_vm_logs=true`
+on the executor, or pass `--test_arg=--executor.firecracker_debug_stream_vm_logs=true`
 to `bazel test`.
 
 It's useful to use debug mode whenever the executor can't connect
 to the VM (indicating the VM might have crashed).
+
+You can also stream test outputs to stdout with `--debug_stream_command_outputs`
+passed either to the executor or as part of `--test_arg=...`.
 
 ### SSH into a VM
 

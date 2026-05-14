@@ -1,10 +1,8 @@
 import React from "react";
-import { grp } from "../../../proto/group_ts_proto";
-import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
 import auth_service from "../../../app/auth/auth_service";
-import rpc_service from "../../../app/service/rpc_service";
-import error_service from "../../../app/errors/error_service";
+import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
 import TextInput from "../../../app/components/input/input";
+import error_service from "../../../app/errors/error_service";
 
 interface State {
   query: string;

@@ -3,9 +3,13 @@
 install_buildbuddy_cli() (
   set -eo pipefail
 
-  arch=$(uname -m) # x86_64 | arm64
-  os=$(uname -s)   # Linux | Darwin
-  os=$(tr '[:upper:]' '[:lower:]' <<<"$os")
+  # Get host CPU architecture: "x86_64" or "arm64"
+  arch=$(uname -m)
+  if [[ "$arch" == "aarch64" ]]; then arch="arm64"; fi
+
+  # Get host OS name: "linux" or "darwin"
+  os=$(uname -s | tr '[:upper:]' '[:lower:]')
+
   tempfile=$(mktemp buildbuddy.XXXXX)
   cleanup() { rm -f "$tempfile"; }
   trap cleanup EXIT

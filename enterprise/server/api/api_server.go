@@ -2,12 +2,20 @@ package api
 
 import (
 	"context"
-	"flag"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -18,7 +26,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -26,15 +37,19 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-
-	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
+	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
 var (
@@ -44,8 +59,19 @@ var (
 	enableMetricsAPI     = flag.Bool("api.enable_metrics_api", false, "If true, enable access to metrics API.")
 )
 
+const (
+	minAuditLogPageSize     = 1
+	defaultAuditLogPageSize = 100
+	maxAuditLogPageSize     = 1_000
+	// Max allowed size for GetFileRange. Must be less than the gRPC max
+	// response size. Keep this value in sync with API proto comments.
+	maxGetFileRangeBytes = 16 * 1024 * 1024
+)
+
 type APIServer struct {
-	env environment.Env
+	env                     environment.Env
+	metricsFederationURL    *url.URL
+	metricsFederationClient *http.Client
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -62,7 +88,7 @@ func NewAPIServer(env environment.Env) *APIServer {
 }
 
 func (s *APIServer) authorizeWrites(ctx context.Context) error {
-	canWrite, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE)
 	if err != nil {
 		return err
 	}
@@ -84,6 +110,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 
 	q := query_builder.NewQuery(`SELECT * FROM "Invocations"`)
 	q = q.AddWhereClause(`group_id = ?`, user.GetGroupID())
+
 	if req.GetSelector().GetInvocationId() != "" {
 		q = q.AddWhereClause(`invocation_id = ?`, req.GetSelector().GetInvocationId())
 	}
@@ -103,20 +130,21 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 			Id: &apipb.Invocation_Id{
 				InvocationId: ti.InvocationID,
 			},
-			Success:       ti.Success,
-			User:          ti.User,
-			DurationUsec:  ti.DurationUsec,
-			Host:          ti.Host,
-			Command:       ti.Command,
-			Pattern:       ti.Pattern,
-			ActionCount:   ti.ActionCount,
-			CreatedAtUsec: ti.CreatedAtUsec,
-			UpdatedAtUsec: ti.UpdatedAtUsec,
-			RepoUrl:       ti.RepoURL,
-			BranchName:    ti.BranchName,
-			CommitSha:     ti.CommitSHA,
-			Role:          ti.Role,
-			BazelExitCode: ti.BazelExitCode,
+			Success:          ti.Success,
+			User:             ti.User,
+			DurationUsec:     ti.DurationUsec,
+			Host:             ti.Host,
+			Command:          ti.Command,
+			Pattern:          ti.Pattern,
+			ActionCount:      ti.ActionCount,
+			CreatedAtUsec:    ti.CreatedAtUsec,
+			UpdatedAtUsec:    ti.UpdatedAtUsec,
+			RepoUrl:          ti.RepoURL,
+			BranchName:       ti.BranchName,
+			CommitSha:        ti.CommitSHA,
+			Role:             ti.Role,
+			BazelExitCode:    ti.BazelExitCode,
+			InvocationStatus: apipb.InvocationStatus(ti.InvocationStatus),
 		}
 
 		invocations = append(invocations, apiInvocation)
@@ -126,33 +154,61 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 		return nil, err
 	}
 
-	if req.IncludeMetadata {
+	if req.IncludeMetadata || req.IncludeArtifacts || req.IncludeChildInvocations || req.IncludeBuildToolLogs {
 		for _, i := range invocations {
-			inv, err := build_event_handler.LookupInvocation(s.env, ctx, i.Id.InvocationId)
-			if err != nil {
-				return nil, err
-			}
-			for _, event := range inv.GetEvent() {
-				switch p := event.BuildEvent.Payload.(type) {
+			_, err := build_event_handler.LookupInvocationWithCallback(ctx, s.env, i.Id.InvocationId, func(event *inpb.InvocationEvent) error {
+				switch p := event.GetBuildEvent().GetPayload().(type) {
 				case *bespb.BuildEvent_BuildMetadata:
-					{
-						for k, v := range p.BuildMetadata.Metadata {
+					if req.IncludeMetadata {
+						for k, v := range p.BuildMetadata.GetMetadata() {
 							i.BuildMetadata = append(i.BuildMetadata, &apipb.InvocationMetadata{
 								Key:   k,
 								Value: v,
 							})
 						}
 					}
+					if req.IncludeChildInvocations {
+						for k, v := range p.BuildMetadata.GetMetadata() {
+							if k == "RUN_ID" {
+								childrenInvocationIDs, err := s.env.GetInvocationDB().LookupChildInvocations(ctx, v)
+								if err != nil {
+									return err
+								}
+								for _, iid := range childrenInvocationIDs {
+									i.ChildInvocations = append(i.ChildInvocations, &apipb.Invocation_Id{
+										InvocationId: iid,
+									})
+								}
+								break
+							}
+						}
+					}
 				case *bespb.BuildEvent_WorkspaceStatus:
-					{
-						for _, item := range p.WorkspaceStatus.Item {
+					if req.IncludeMetadata {
+						for _, item := range p.WorkspaceStatus.GetItem() {
 							i.WorkspaceStatus = append(i.WorkspaceStatus, &apipb.InvocationMetadata{
 								Key:   item.Key,
 								Value: item.Value,
 							})
 						}
 					}
+				case *bespb.BuildEvent_NamedSetOfFiles:
+					if req.IncludeArtifacts {
+						for _, file := range p.NamedSetOfFiles.GetFiles() {
+							i.Artifacts = append(i.Artifacts, api_common.FileFromBESFile(file))
+						}
+					}
+				case *bespb.BuildEvent_BuildToolLogs:
+					if req.IncludeBuildToolLogs {
+						for _, file := range p.BuildToolLogs.GetLog() {
+							i.BuildToolLogs = append(i.BuildToolLogs, api_common.FileFromBESFile(file))
+						}
+					}
 				}
+				return nil
+			})
+			if err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -214,7 +270,7 @@ func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) 
 	if err != nil {
 		log.Debugf("redisCachedTarget err: %s", err)
 	} else if cachedTarget != nil {
-		if targetMatchesTargetSelector(cachedTarget, req.GetSelector()) {
+		if api_common.TargetMatchesSelector(cachedTarget, req.GetSelector()) {
 			rsp.Target = append(rsp.Target, cachedTarget)
 		}
 	}
@@ -222,22 +278,18 @@ func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) 
 		return rsp, nil
 	}
 
-	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetSelector().GetInvocationId())
+	targetMap := api_common.NewTargetMap(req.GetSelector())
+	_, err = build_event_handler.LookupInvocationWithCallback(ctx, s.env, req.GetSelector().GetInvocationId(), func(event *inpb.InvocationEvent) error {
+		targetMap.ProcessEvent(req.GetSelector().GetInvocationId(), event.GetBuildEvent())
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	targetMap := api_common.TargetMapFromInvocation(inv)
-
-	// Filter to only selected targets.
-	targets := []*apipb.Target{}
-	for _, target := range targetMap {
-		if targetMatchesTargetSelector(target, req.GetSelector()) {
-			targets = append(targets, target)
-		}
-	}
 
 	return &apipb.GetTargetResponse{
-		Target: targets,
+		// Collect all the map values into a slice.
+		Target: slices.Collect(maps.Values(targetMap.Targets)),
 	}, nil
 }
 
@@ -300,24 +352,23 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 		return rsp, nil
 	}
 
-	inv, err := build_event_handler.LookupInvocation(s.env, ctx, iid)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, event := range inv.GetEvent() {
+	_, err = build_event_handler.LookupInvocationWithCallback(ctx, s.env, iid, func(event *inpb.InvocationEvent) error {
 		action := &apipb.Action{
 			Id: &apipb.Action_Id{
-				InvocationId: inv.InvocationId,
+				InvocationId: iid,
 			},
 		}
-		action = api_common.FillActionFromBuildEvent(event.BuildEvent, action)
+		action = api_common.FillActionFromBuildEvent(event.GetBuildEvent(), action)
 
 		// Filter to only selected actions.
 		if action != nil && actionMatchesActionSelector(action, req.GetSelector()) {
-			action = api_common.FillActionOutputFilesFromBuildEvent(event.BuildEvent, action)
+			action = api_common.FillActionOutputFilesFromBuildEvent(event.GetBuildEvent(), action)
 			rsp.Action = append(rsp.Action, action)
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return rsp, nil
@@ -353,6 +404,158 @@ func (s *APIServer) GetLog(ctx context.Context, req *apipb.GetLogRequest) (*apip
 	}, nil
 }
 
+func (s *APIServer) GetAuditLog(ctx context.Context, req *apipb.GetAuditLogRequest) (*apipb.GetAuditLogResponse, error) {
+	selector := req.GetSelector()
+	if selector == nil {
+		selector = &apipb.AuditLogSelector{}
+	}
+	pageToken, err := parseAuditLogPageToken(req.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+
+	startTime := selector.GetStartTime()
+	if startTime == nil {
+		startTime = timestamppb.New(time.Unix(0, 0))
+	}
+	if err := startTime.CheckValid(); err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid start_time: %s", err)
+	}
+
+	endTime := selector.GetEndTime()
+	if endTime == nil {
+		endTime = timestamppb.Now()
+	}
+	if err := endTime.CheckValid(); err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid end_time: %s", err)
+	}
+	if startTime.AsTime().After(endTime.AsTime()) {
+		return nil, status.InvalidArgumentErrorf("start_time must not be after end_time")
+	}
+	startUsec := startTime.AsTime().UnixMicro()
+	endUsec := endTime.AsTime().UnixMicro()
+	if pageToken != nil {
+		if selector.GetEndTime() != nil && endUsec != pageToken.EndTimeUsec {
+			return nil, status.InvalidArgumentError("page_token does not match selector.end_time")
+		}
+		endUsec = pageToken.EndTimeUsec
+	}
+	if startUsec > endUsec {
+		return nil, status.InvalidArgumentErrorf("start_time must not be after end_time")
+	}
+
+	if s.env.GetAuditLogger() == nil || s.env.GetOLAPDBHandle() == nil {
+		return nil, status.UnimplementedError("Audit logger not configured")
+	}
+
+	// Check whether the user is authenticated. No need for the returned user
+	// here, because user filters will be applied before returning entries.
+	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	userCaps, err := capabilities.ForAuthenticatedUser(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(userCaps, cappb.Capability_ORG_ADMIN) && !slices.Contains(userCaps, cappb.Capability_AUDIT_LOG_READ) {
+		return nil, status.PermissionDeniedError("missing required capabilities")
+	}
+	isServerAdmin := claims.AuthorizeServerAdmin(ctx) == nil
+	if pageToken != nil && pageToken.GroupID != user.GetGroupID() {
+		return nil, status.InvalidArgumentError("page_token does not match selected group")
+	}
+
+	pageSize := req.GetPageSize()
+	if pageSize < minAuditLogPageSize {
+		pageSize = defaultAuditLogPageSize
+	}
+	pageSize = min(pageSize, maxAuditLogPageSize)
+
+	q := query_builder.NewQuery(`SELECT * FROM AuditLogs`)
+	q.AddWhereClause("group_id = ?", user.GetGroupID())
+	q.AddWhereClause("event_time_usec >= ?", startUsec)
+	q.AddWhereClause("event_time_usec < ?", endUsec)
+	if pageToken != nil {
+		q.AddWhereClause("(event_time_usec, audit_log_id) > (?, ?)", pageToken.EventTimeUsec, pageToken.AuditLogID)
+	}
+	// Match AuditLogs sort key to keep keyset pagination index-friendly.
+	q.SetOrderBy("group_id, event_time_usec, audit_log_id", true)
+	// Request one extra row as lookahead so we can determine whether a next
+	// page exists without issuing an additional query.
+	q.SetLimit(int64(pageSize + 1))
+	queryStr, args := q.Build()
+
+	rq := s.env.GetOLAPDBHandle().NewQuery(ctx, "api_server_get_audit_logs").Raw(queryStr, args...)
+	rsp := &apipb.GetAuditLogResponse{}
+	var lastReturnedToken auditLogPageToken
+	err = db.ScanEach(rq, func(ctx context.Context, row *schema.AuditLog) error {
+		if len(rsp.Entry) == int(pageSize) {
+			nextPageToken, err := encodeAuditLogPageToken(lastReturnedToken)
+			if err != nil {
+				return err
+			}
+			rsp.NextPageToken = nextPageToken
+			return nil
+		}
+
+		entry, err := auditlog.EntryFromDBRow(row)
+		if err != nil {
+			return err
+		}
+		if !isServerAdmin {
+			auditlog.FilterEntry(entry, row.AuthUserEmail)
+		}
+
+		rsp.Entry = append(rsp.Entry, entry)
+		lastReturnedToken = auditLogPageToken{
+			GroupID:       user.GetGroupID(),
+			EndTimeUsec:   endUsec,
+			EventTimeUsec: row.EventTimeUsec,
+			AuditLogID:    row.AuditLogID,
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return rsp, nil
+}
+
+type auditLogPageToken struct {
+	GroupID       string `json:"group_id"`
+	EndTimeUsec   int64  `json:"end_time_usec"`
+	EventTimeUsec int64  `json:"event_time_usec"`
+	AuditLogID    string `json:"audit_log_id"`
+}
+
+func encodeAuditLogPageToken(token auditLogPageToken) (string, error) {
+	data, err := json.Marshal(token)
+	if err != nil {
+		return "", status.InternalErrorf("failed to encode page_token: %s", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(data), nil
+}
+
+func parseAuditLogPageToken(pageToken string) (*auditLogPageToken, error) {
+	if pageToken == "" {
+		return nil, nil
+	}
+	data, err := base64.RawURLEncoding.DecodeString(pageToken)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid page_token")
+	}
+	token := &auditLogPageToken{}
+	if err := json.Unmarshal(data, token); err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid page_token")
+	}
+	if token.GroupID == "" || token.AuditLogID == "" {
+		return nil, status.InvalidArgumentErrorf("invalid page_token")
+	}
+	return token, nil
+}
+
 type getFileWriter struct {
 	s apipb.ApiService_GetFileServer
 }
@@ -362,6 +565,21 @@ func (gfs *getFileWriter) Write(data []byte) (int, error) {
 		Data: data,
 	})
 	return len(data), err
+}
+
+func parseBytestreamCASURI(uri string) (*url.URL, *digest.CASResourceName, error) {
+	parsedURL, err := url.Parse(uri)
+	if err != nil {
+		return nil, nil, status.InvalidArgumentErrorf("Invalid URL")
+	}
+	if parsedURL.Scheme != "bytestream" {
+		return nil, nil, status.InvalidArgumentError("only bytestream:// URIs are supported")
+	}
+	rn, err := digest.ParseDownloadResourceName(strings.TrimPrefix(parsedURL.RequestURI(), "/"))
+	if err != nil {
+		return nil, nil, status.InvalidArgumentErrorf("Invalid URL")
+	}
+	return parsedURL, rn, nil
 }
 
 func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_GetFileServer) error {
@@ -380,12 +598,65 @@ func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_G
 	return s.env.GetPooledByteStreamClient().StreamBytestreamFile(ctx, parsedURL, writer)
 }
 
+func (s *APIServer) GetFileRange(ctx context.Context, req *apipb.GetFileRangeRequest) (*apipb.GetFileRangeResponse, error) {
+	if _, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
+		return nil, err
+	}
+	if s.env.GetCache() == nil {
+		return nil, status.FailedPreconditionError("Cache not configured")
+	}
+
+	start := req.GetStart()
+	end := req.GetEnd()
+	if start < 0 {
+		return nil, status.InvalidArgumentError("start must be non-negative")
+	}
+	if end <= start {
+		return nil, status.InvalidArgumentError("end must be greater than start")
+	}
+
+	_, rn, err := parseBytestreamCASURI(req.GetUri())
+	if err != nil {
+		return nil, err
+	}
+	if end > rn.GetDigest().GetSizeBytes() {
+		return nil, status.InvalidArgumentError("end must not exceed digest size_bytes")
+	}
+
+	limit := end - start
+	if limit > maxGetFileRangeBytes {
+		return nil, status.InvalidArgumentErrorf("requested range exceeds %d bytes", maxGetFileRangeBytes)
+	}
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
+
+	reader, err := s.env.GetCache().Reader(ctx, rn.ToProto(), start, limit)
+	if err != nil {
+		return nil, err
+	}
+	data, readErr := io.ReadAll(reader)
+	closeErr := reader.Close()
+	if readErr != nil {
+		return nil, readErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	if int64(len(data)) != limit {
+		return nil, status.DataLossErrorf("short read: got %d bytes, want %d", len(data), limit)
+	}
+	return &apipb.GetFileRangeResponse{Data: data}, nil
+}
+
 func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest) (*apipb.DeleteFileResponse, error) {
 	if !*enableCacheDeleteAPI {
 		return nil, status.PermissionDeniedError("DeleteFile API not enabled")
 	}
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
 	}
@@ -404,20 +675,16 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 	urlStr := strings.TrimPrefix(parsedURL.RequestURI(), "/")
 
 	var resourceName *rspb.ResourceName
-	if digest.IsActionCacheResourceName(urlStr) {
-		parsedRN, err := digest.ParseActionCacheResourceName(urlStr)
-		if err != nil {
-			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected actioncache URI pattern: %s", err)
-		}
-		resourceName = digest.NewResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName(), rspb.CacheType_AC, parsedRN.GetDigestFunction()).ToProto()
-	} else if digest.IsDownloadResourceName(urlStr) {
-		parsedRN, err := digest.ParseDownloadResourceName(urlStr)
-		if err != nil {
-			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected CAS URI pattern: %s", err)
-		}
-		resourceName = digest.NewResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName(), rspb.CacheType_CAS, parsedRN.GetDigestFunction()).ToProto()
+
+	parsedACRN, err := digest.ParseActionCacheResourceName(urlStr)
+	if err == nil {
+		resourceName = digest.NewResourceName(parsedACRN.GetDigest(), parsedACRN.GetInstanceName(), rspb.CacheType_AC, parsedACRN.GetDigestFunction()).ToProto()
 	} else {
-		return nil, status.InvalidArgumentErrorf("Invalid URL. Only actioncache and CAS URIs supported.")
+		parsedCASRN, err := digest.ParseDownloadResourceName(urlStr)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("Invalid URL. Only actioncache and CAS URIs supported.")
+		}
+		resourceName = digest.NewResourceName(parsedCASRN.GetDigest(), parsedCASRN.GetInstanceName(), rspb.CacheType_CAS, parsedCASRN.GetDigestFunction()).ToProto()
 	}
 
 	err = s.env.GetCache().Delete(ctx, resourceName)
@@ -450,7 +717,7 @@ func (s *APIServer) handleGetFileRequest(w http.ResponseWriter, r *http.Request)
 
 	err = s.env.GetPooledByteStreamClient().StreamBytestreamFile(r.Context(), parsedURL, w)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusNotFound)
 	}
 }
 
@@ -459,6 +726,8 @@ func (s *APIServer) GetMetricsHandler() http.Handler {
 }
 
 func (s *APIServer) handleGetMetricsRequest(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	if !*enableMetricsAPI {
 		http.Error(w, "API not enabled", http.StatusNotImplemented)
 		return
@@ -486,23 +755,41 @@ func (s *APIServer) handleGetMetricsRequest(w http.ResponseWriter, r *http.Reque
 	}
 	handler := promhttp.HandlerFor(reg, opts)
 	handler.ServeHTTP(w, r)
+
+	// If enabled, also fetch federated metrics matching the authenticated group
+	fp := s.env.GetExperimentFlagProvider()
+	if fp != nil && fp.Boolean(ctx, "api.metrics_federation.enabled", false) {
+		// Get configured match parameters for filtering federated metrics, e.g.
+		// {"__name__": "remote_execution_.*", "jobs": "(mac-executor|mac-node)"}
+		paramsObj := fp.Object(ctx, "api.metrics_federation.match_parameters", nil)
+		params := map[string]string{}
+		for k, v := range paramsObj {
+			s, ok := v.(string)
+			if !ok {
+				log.CtxWarningf(ctx, "Invalid match parameter %q (type %T)", k, v)
+				continue
+			}
+			params[k] = s
+		}
+		if err := s.fetchFederatedMetrics(ctx, w, userInfo.GetGroupID(), params); err != nil && ctx.Err() == nil {
+			log.CtxWarningf(ctx, "Fetching federated metrics failed: %s", err)
+		}
+	}
 }
 
-// Returns true if a selector has an empty target ID or matches the target's ID or tag
-func targetMatchesTargetSelector(target *apipb.Target, selector *apipb.TargetSelector) bool {
-	if selector.Label != "" {
-		return selector.Label == target.Label
+func (s *APIServer) fetchFederatedMetrics(ctx context.Context, w http.ResponseWriter, groupID string, matchParams map[string]string) error {
+	if _, ok := matchParams["job"]; !ok {
+		log.CtxErrorf(ctx, "Missing 'job' filter - refusing to fetch federated metrics.")
+		return nil
 	}
-
-	if selector.Tag != "" {
-		for _, tag := range target.GetTag() {
-			if tag == selector.Tag {
-				return true
-			}
-		}
-		return false
+	parts := make([]string, 0, 1+len(matchParams))
+	parts = append(parts, fmt.Sprintf("group_id=%q", groupID))
+	for k, v := range matchParams {
+		parts = append(parts, fmt.Sprintf("%s=~%q", k, v))
 	}
-	return selector.TargetId == "" || selector.TargetId == target.GetId().TargetId
+	match := fmt.Sprintf("{%s}", strings.Join(parts, ","))
+	log.CtxDebugf(ctx, "Fetching federated metrics: %s", match)
+	return s.env.GetPromQuerier().FetchFederatedMetrics(ctx, w, match)
 }
 
 // Returns true if a selector doesn't specify a particular id or matches the target's ID
@@ -526,25 +813,30 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 	requestCtx := requestcontext.ProtoRequestContextFromContext(ctx)
 
 	wfID := wfs.GetLegacyWorkflowIDForGitRepository(user.GetGroupID(), req.GetRepoUrl())
+	branch := req.GetBranch()
+	if branch == "" && req.GetCommitSha() == "" {
+		// For backwards compatibility, set branch from `ref` if neither `branch`
+		// or `commit_sha` are set
+		branch = req.GetRef()
+	}
 	r := &workflow.ExecuteWorkflowRequest{
 		RequestContext: requestCtx,
 		WorkflowId:     wfID,
 		ActionNames:    req.GetActionNames(),
 		PushedRepoUrl:  req.GetRepoUrl(),
-		PushedBranch:   req.GetRef(),
-		TargetRepoUrl:  req.GetRepoUrl(),
-		TargetBranch:   req.GetRef(),
-		Visibility:     req.GetVisibility(),
-		Async:          req.GetAsync(),
-		Env:            req.GetEnv(),
+		PushedBranch:   branch,
+		// Set target repo since we always use the target repo field for status
+		// publishing.
+		TargetRepoUrl: req.GetRepoUrl(),
+		TargetBranch:  branch,
+		CommitSha:     req.GetCommitSha(),
+		Visibility:    req.GetVisibility(),
+		Async:         req.GetAsync(),
+		Env:           req.GetEnv(),
+		DisableRetry:  req.GetDisableRetry(),
 	}
 	rsp, err := wfs.ExecuteWorkflow(ctx, r)
 	if err != nil {
-		if status.IsNotFoundError(err) {
-			return nil, status.NotFoundErrorf("Workflow for repo %s not found. Note that the legacy Workflow product"+
-				" is not supported for this API. See https://www.buildbuddy.io/docs/workflows-setup/ for more information"+
-				" on how to correctly setup Workflows.", req.GetRepoUrl())
-		}
 		return nil, err
 	}
 
@@ -559,4 +851,118 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 	return &apipb.ExecuteWorkflowResponse{
 		ActionStatuses: actionStatuses,
 	}, nil
+}
+
+func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunResponse, error) {
+	r, err := hostedrunner.New(s.env)
+	if err != nil {
+		return nil, err
+	}
+
+	steps := make([]*rnpb.Step, 0, len(req.GetSteps()))
+	for _, s := range req.GetSteps() {
+		steps = append(steps, &rnpb.Step{Run: s.Run})
+	}
+	execProps := make([]*repb.Platform_Property, 0, len(req.GetPlatformProperties()))
+	for k, v := range req.GetPlatformProperties() {
+		execProps = append(execProps, &repb.Platform_Property{
+			Name:  k,
+			Value: v,
+		})
+	}
+
+	var runnerFlags []string
+	if req.GetSkipAutoCheckout() {
+		runnerFlags = append(runnerFlags, "--skip_auto_checkout")
+	}
+
+	rsp, err := r.Run(ctx, &rnpb.RunRequest{
+		GitRepo: &gitpb.GitRepo{RepoUrl: req.GetRepo()},
+		RepoState: &gitpb.RepoState{
+			CommitSha: req.GetCommitSha(),
+			Branch:    req.GetBranch(),
+			Patch:     req.GetPatches(),
+		},
+		Steps:          steps,
+		Async:          req.GetAsync(),
+		WaitUntil:      fromApiWaitCondition(req.GetWaitUntil()),
+		Env:            req.GetEnv(),
+		Timeout:        req.GetTimeout(),
+		ExecProperties: execProps,
+		RemoteHeaders:  req.GetRemoteHeaders(),
+		RunRemotely:    true,
+		RunnerFlags:    runnerFlags,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &apipb.RunResponse{InvocationId: rsp.InvocationId}, nil
+}
+
+// Converts from internal wait mode to api wait mode.
+func fromApiWaitCondition(waitCondition apipb.WaitCondition) rnpb.WaitCondition {
+	switch waitCondition {
+	case apipb.WaitCondition_QUEUED:
+		return rnpb.WaitCondition_QUEUED
+	case apipb.WaitCondition_STARTED:
+		return rnpb.WaitCondition_STARTED
+	case apipb.WaitCondition_COMPLETED:
+		return rnpb.WaitCondition_COMPLETED
+	case apipb.WaitCondition_UNKNOWN_CONDITION:
+		return rnpb.WaitCondition_UNKNOWN_CONDITION
+	}
+	return rnpb.WaitCondition_UNKNOWN_CONDITION
+}
+
+func (s *APIServer) CreateUserApiKey(ctx context.Context, req *apipb.CreateUserApiKeyRequest) (*apipb.CreateUserApiKeyResponse, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	authdb := s.env.GetAuthDB()
+	if authdb == nil {
+		return nil, status.UnimplementedError("not implemented")
+	}
+	userdb := s.env.GetUserDB()
+	if userdb == nil {
+		return nil, status.UnimplementedError("not implemented")
+	}
+
+	// Get user's role-based capabilities within the group.
+	reqUser, err := userdb.GetUserByIDWithoutAuthCheck(ctx, req.GetUserId(), &interfaces.GetUserOpts{})
+	if err != nil {
+		return nil, err
+	}
+	var groupRole *tables.GroupRole
+	for _, g := range reqUser.Groups {
+		if g.Group.GroupID == u.GetGroupID() {
+			groupRole = g
+			break
+		}
+	}
+	if groupRole == nil {
+		return nil, status.PermissionDeniedError("permission denied")
+	}
+	roleBasedCapabilities := capabilities.ApplyMask(groupRole.Capabilities, capabilities.UserAPIKeyCapabilitiesMask)
+
+	// Note: authdb performs additional authentication checks, such as making
+	// sure the authenticated user has ORG_ADMIN capability if needed.
+	apiKey, err := authdb.CreateUserAPIKey(
+		ctx, u.GetGroupID(), req.GetUserId(), req.GetLabel(),
+		roleBasedCapabilities, req.GetExpiresIn().AsDuration(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	rsp := &apipb.CreateUserApiKeyResponse{
+		ApiKey: &apipb.ApiKey{
+			ApiKeyId: apiKey.APIKeyID,
+			Value:    apiKey.Value,
+			Label:    apiKey.Label,
+		},
+	}
+	if apiKey.ExpiryUsec != 0 {
+		rsp.ApiKey.ExpirationTimestamp = timestamppb.New(time.UnixMicro(apiKey.ExpiryUsec))
+	}
+	return rsp, nil
 }

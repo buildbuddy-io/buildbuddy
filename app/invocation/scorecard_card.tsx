@@ -1,9 +1,8 @@
-import React from "react";
-import InvocationModel from "./invocation_model";
 import { XCircle } from "lucide-react";
+import React from "react";
 import { cache } from "../../proto/cache_ts_proto";
-import router from "../router/router";
 import { TextLink } from "../components/link/link";
+import InvocationModel from "./invocation_model";
 
 interface Props {
   model: InvocationModel;

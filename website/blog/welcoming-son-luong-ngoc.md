@@ -1,11 +1,8 @@
 ---
 slug: welcoming-son-luong-ngoc
 title: Welcoming Son Luong Ngoc
-author: Siggi Simonarson
-author_title: "Co-founder @ BuildBuddy"
+authors: siggi
 date: 2023-1-10 12:00:00
-author_url: https://www.linkedin.com/in/siggisim/
-author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
 image: /img/welcome_son.png
 tags: [company, team]
 ---
@@ -23,3 +20,5 @@ Son Luong joins us from Qarik, where he helped large enterprises with Bazel and 
 We look forward to working alongside Son Luong to build the future of developer tools.
 
 Welcome to BuildBuddy, Son Luong!
+
+<!-- truncate -->

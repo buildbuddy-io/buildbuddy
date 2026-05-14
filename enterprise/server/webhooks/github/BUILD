@@ -7,7 +7,6 @@ go_library(
     srcs = ["github.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github",
     deps = [
-        "//enterprise/server/util/fieldgetter",
         "//enterprise/server/webhooks/webhook_data",
         "//server/backends/github",
         "//server/environment",

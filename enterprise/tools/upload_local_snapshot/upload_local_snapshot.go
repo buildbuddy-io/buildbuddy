@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
@@ -28,7 +29,6 @@ import (
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -124,7 +124,7 @@ func main() {
 		// The filecache reads the groupID from the claims on the context,
 		// so set that here. However this isn't a valid Claims object, so for
 		// API calls to the remote cache, you will not be able to use this context
-		ctxWithHackyClaims = claims.AuthContextFromClaims(ctx, &claims.Claims{
+		ctxWithHackyClaims = claims.AuthContextWithJWT(ctx, &claims.Claims{
 			GroupID: snapshotGroupID,
 		}, nil)
 	}
@@ -145,7 +145,11 @@ func main() {
 
 	// Sanity check that snapshot exists in remote cache
 	flagutil.SetValueForFlagName("executor.enable_remote_snapshot_sharing", true, nil, false)
-	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, true)
+	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
+		SupportsRemoteChunks:   true,
+		SupportsRemoteManifest: true,
+		ReadPolicy:             platform.AlwaysReadNewestSnapshot,
+	})
 	if err != nil {
 		log.Fatalf("Snapshot upload failed. Snapshot is not in the remote cache after it should've been uploaded.")
 	}
@@ -254,14 +258,14 @@ func uploadDigestsRemoteCache(ctx context.Context, ctxWithClaims context.Context
 			}
 			defer os.Remove(path)
 
-			rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
+			rn := digest.NewCASResourceName(d, remoteInstanceName, repb.DigestFunction_BLAKE3)
 			rn.SetCompressor(repb.Compressor_ZSTD)
 			file, err := os.Open(path)
 			if err != nil {
 				return err
 			}
 			defer file.Close()
-			_, err = cachetools.UploadFromReader(ctx, env.GetByteStreamClient(), rn, file)
+			_, _, err = cachetools.UploadFromReader(ctx, env.GetByteStreamClient(), rn, file)
 			if err != nil {
 				return status.WrapErrorf(err, "upload %s", path)
 			}
@@ -270,7 +274,7 @@ func uploadDigestsRemoteCache(ctx context.Context, ctxWithClaims context.Context
 		})
 	}
 	if err := eg.Wait(); err != nil {
-		log.Fatalf(err.Error())
+		log.Fatal(err.Error())
 	}
 }
 
@@ -279,7 +283,7 @@ func uploadManifestRemoteCache(ctx context.Context, env environment.Env, key *fc
 	if err != nil {
 		log.Fatalf("Error generating digest for snapshot key: %s", err)
 	}
-	acDigest := digest.NewResourceName(remoteManifestKey, remoteInstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+	acDigest := digest.NewACResourceName(remoteManifestKey, remoteInstanceName, repb.DigestFunction_BLAKE3)
 	if err := cachetools.UploadActionResult(ctx, env.GetActionCacheClient(), acDigest, localACResult); err != nil {
 		log.Fatalf("Error uploading manifest to remote cache: %s", err)
 	}

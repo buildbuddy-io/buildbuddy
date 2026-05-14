@@ -1,29 +1,33 @@
-import { HelpCircle, PlayCircle, XCircle, CheckCircle, Circle } from "lucide-react";
+import { CheckCircle, Circle, HelpCircle, PlayCircle, XCircle } from "lucide-react";
 import moment from "moment";
 import React from "react";
 import { Subject } from "rxjs";
+import * as varint from "varint";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
-import { api_key } from "../../proto/api_key_ts_proto";
-import { build } from "../../proto/remote_execution_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { cache } from "../../proto/cache_ts_proto";
+import { capability } from "../../proto/capability_ts_proto";
 import { command_line } from "../../proto/command_line_ts_proto";
 import { grp } from "../../proto/group_ts_proto";
-import { invocation } from "../../proto/invocation_ts_proto";
 import { invocation_status } from "../../proto/invocation_status_ts_proto";
-import { suggestion } from "../../proto/suggestion_ts_proto";
-import { IconType } from "../favicon/favicon";
-import format from "../format/format";
-import { formatDate } from "../format/format";
-import { durationToMillisWithFallback, timestampToDateWithFallback } from "../util/proto";
-import rpcService from "../service/rpc_service";
-import capabilities from "../capabilities/capabilities";
-import { exitCode } from "../util/exit_codes";
-import { resourceNameToString } from "../util/cache";
+import { invocation } from "../../proto/invocation_ts_proto";
+import { options } from "../../proto/option_filters_ts_proto";
+import { build } from "../../proto/remote_execution_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
+import { tools } from "../../proto/spawn_ts_proto";
+import { suggestion } from "../../proto/suggestion_ts_proto";
+import capabilities from "../capabilities/capabilities";
+import { IconType } from "../favicon/favicon";
+import format, { formatDate } from "../format/format";
+import rpcService from "../service/rpc_service";
+import { resourceNameToString } from "../util/cache";
+import { exitCode } from "../util/exit_codes";
+import { durationToMillisWithFallback, timestampToDateWithFallback } from "../util/proto";
+import { quote } from "../util/shlex";
 
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
+export const NINJA_ROLE = "NINJA";
 
 export const InvocationStatus = invocation_status.InvocationStatus;
 
@@ -50,11 +54,8 @@ export default class InvocationModel {
   aborted: build_event_stream.BuildEvent[] = [];
   failedAction?: build_event_stream.BuildEvent;
   workflowConfigured?: build_event_stream.WorkflowConfigured;
-  childInvocationsConfigured?: build_event_stream.ChildInvocationsConfigured;
-  childInvocationCompletedByInvocationId = new Map<
-    string,
-    build_event_stream.IChildInvocationCompleted | build_event_stream.IWorkflowCommandCompleted
-  >();
+  childInvocationsConfigured: build_event_stream.ChildInvocationsConfigured[] = [];
+  childInvocationCompletedByInvocationId = new Map<string, build_event_stream.IChildInvocationCompleted>();
   workspaceStatus?: build_event_stream.WorkspaceStatus;
   configuration?: build_event_stream.Configuration;
   workspaceConfig?: build_event_stream.WorkspaceConfig;
@@ -77,6 +78,8 @@ export default class InvocationModel {
   testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
   actionMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
   rootCauseTargetLabels: Set<String> = new Set<String>();
+
+  execLogEntryPromise: Promise<tools.protos.ExecLogEntry[]> | undefined;
 
   private fileSetIDToFilesMap: Map<string, build_event_stream.File[]> = new Map();
 
@@ -141,12 +144,8 @@ export default class InvocationModel {
         this.workflowConfigured = buildEvent.workflowConfigured as build_event_stream.WorkflowConfigured;
       }
       if (buildEvent.childInvocationsConfigured) {
-        this.childInvocationsConfigured = buildEvent.childInvocationsConfigured as build_event_stream.ChildInvocationsConfigured;
-      }
-      if (buildEvent.workflowCommandCompleted && buildEvent.id?.workflowCommandCompleted?.invocationId) {
-        this.childInvocationCompletedByInvocationId.set(
-          buildEvent.id.workflowCommandCompleted.invocationId,
-          buildEvent.workflowCommandCompleted
+        this.childInvocationsConfigured.push(
+          buildEvent.childInvocationsConfigured as build_event_stream.ChildInvocationsConfigured
         );
       }
       if (buildEvent.childInvocationCompleted && buildEvent.id?.childInvocationCompleted?.invocationId) {
@@ -243,21 +242,25 @@ export default class InvocationModel {
     }
   }
 
-  getUser(possessive: boolean) {
+  getUser() {
     let invocationUser = this.invocation.user;
     if (invocationUser) {
-      return possessive ? `${invocationUser}'s` : invocationUser;
+      return invocationUser;
     }
+    // TODO: shouldn't the server be populating invocation.user based on these?
+    let username = this.workspaceStatusMap.get("BUILD_USER") || this.clientEnvMap.get("USER") || "";
+    if (username === "<REDACTED>") {
+      return "";
+    }
+    return username;
+  }
 
-    let username = this.workspaceStatusMap.get("BUILD_USER") || this.clientEnvMap.get("USER");
-    if (username == "<REDACTED>") {
-      return "Loading";
+  getUserPossessivePrefix() {
+    const user = this.getUser();
+    if (!user) {
+      return "";
     }
-
-    if (!username) {
-      return possessive ? "Unknown user's" : "Unknown user";
-    }
-    return possessive ? `${username}'s` : username;
+    return `${user}'s `;
   }
 
   /**
@@ -275,14 +278,21 @@ export default class InvocationModel {
     return this.invocation.acl?.groupId === "";
   }
 
-  hasCacheWriteCapability(): boolean {
-    return Boolean(
-      this.invocation.createdWithCapabilities?.some(
-        (existingCapability) =>
-          existingCapability == api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY ||
-          existingCapability == api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY
-      )
+  hasActionCacheWriteCapability(): boolean {
+    return this.invocation.createdWithCapabilities?.includes(capability.Capability.CACHE_WRITE) ?? false;
+  }
+
+  hasCASWriteCapability(): boolean {
+    return (
+      this.invocation.createdWithCapabilities?.includes(capability.Capability.CAS_WRITE) ||
+      // CACHE_WRITE implies CAS_WRITE.
+      this.invocation.createdWithCapabilities?.includes(capability.Capability.CACHE_WRITE) ||
+      false
     );
+  }
+
+  hasCacheWriteCapability(): boolean {
+    return this.hasActionCacheWriteCapability() || this.hasCASWriteCapability();
   }
 
   getInvocationId(): string {
@@ -294,7 +304,7 @@ export default class InvocationModel {
   }
 
   getHost() {
-    return this.invocation.host || this.workspaceStatusMap.get("BUILD_HOST") || "Unknown host";
+    return this.invocation.host || this.workspaceStatusMap.get("BUILD_HOST") || "";
   }
 
   getTags(): invocation.Invocation.Tag[] {
@@ -305,6 +315,26 @@ export default class InvocationModel {
     const rawVal = this.optionsMap.get(name);
     if (rawVal === undefined) return defaultValue;
     return rawVal !== "0";
+  }
+
+  booleanBuildMetadata(name: string): boolean | undefined {
+    const rawVal = this.buildMetadataMap.get(name);
+    if (rawVal === undefined) return undefined;
+
+    switch (rawVal.trim().toLowerCase()) {
+      case "1":
+      case "true":
+      case "yes":
+      case "on":
+        return true;
+      case "0":
+      case "false":
+      case "no":
+      case "off":
+        return false;
+      default:
+        return Boolean(rawVal);
+    }
   }
 
   stringCommandLineOption(name: string, defaultValue = ""): string {
@@ -373,11 +403,38 @@ export default class InvocationModel {
     return "Cache on";
   }
 
+  private parseBytestreamURIPrefix() {
+    let prefix = this.optionsMap.get("remote_bytestream_uri_prefix");
+    if (!prefix) return null;
+
+    // Strip protocol
+    prefix = prefix.replace(/^[a-z]+:\/\//, "");
+
+    // Split host/path
+    let idx = prefix.indexOf("/");
+    if (idx >= 0) {
+      return {
+        host: prefix.substring(0, idx),
+        pathname: prefix.substring(idx),
+      };
+    } else {
+      return {
+        host: prefix,
+        pathname: "",
+      };
+    }
+  }
+
   /**
    * Returns the hostname or hostname:port of the cache address used as the
    * remote cache target for this invocation.
    */
-  private getCacheAddress(): string | undefined {
+  getCacheAddress(): string | undefined {
+    const prefix = this.parseBytestreamURIPrefix();
+    if (prefix) {
+      return prefix.host;
+    }
+
     const orderedOptions = ["remote_cache", "remote_executor", "cache_backend", "rbe_backend"];
 
     for (const optionName of orderedOptions) {
@@ -450,6 +507,10 @@ export default class InvocationModel {
   }
 
   getIsRBEEnabled() {
+    const remoteExecutionEnabled = this.booleanBuildMetadata("REMOTE_EXECUTION_ENABLED");
+    if (remoteExecutionEnabled !== undefined) {
+      return remoteExecutionEnabled;
+    }
     return Boolean(this.stringCommandLineOption("remote_executor"));
   }
 
@@ -458,10 +519,20 @@ export default class InvocationModel {
   }
 
   getIsExecutionLogEnabled() {
-    return (
+    return Boolean(
       this.buildToolLogs?.log.find(
-        (l) => (l.name == "execution.log" || l.name == "execution_log.binpb.zstd") && l.uri.startsWith("bytestream://")
-      ) && this.stringCommandLineOption("remote_build_event_upload") == "all"
+        (l: any) =>
+          (l.name == "execution.log" || l.name == "execution_log.binpb.zst") && l.uri.startsWith("bytestream://")
+      )
+    );
+  }
+
+  hasCoverage() {
+    return (
+      this.getCommand() == "coverage" &&
+      Boolean(
+        this.buildToolLogs?.log.find((l: any) => l.name == "coverage_report.lcov" && l.uri.startsWith("bytestream://"))
+      )
     );
   }
 
@@ -486,9 +557,17 @@ export default class InvocationModel {
   }
 
   getPullRequestNumber(): number | undefined {
-    return this.buildMetadataMap.get("PULL_REQUEST_NUMBER")
-      ? Number(this.buildMetadataMap.get("PULL_REQUEST_NUMBER"))
-      : undefined;
+    if (this.buildMetadataMap.get("PULL_REQUEST_NUMBER")) {
+      return Number(this.buildMetadataMap.get("PULL_REQUEST_NUMBER"));
+    }
+
+    // If the build metadata is not set, get PR from GITHUB_REF (e.g. "refs/pull/123/merge")
+    const githubRef = this.clientEnvMap.get("GITHUB_REF") ?? "";
+    const match = githubRef.match(/^refs\/pull\/(\d+)\//);
+    if (match) {
+      return Number(match[1]);
+    }
+    return undefined;
   }
 
   getGithubUser() {
@@ -501,6 +580,15 @@ export default class InvocationModel {
     }
 
     return this.clientEnvMap.get("BUILDKITE_BUILD_URL");
+  }
+
+  // https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables
+  getGithubActionsUrl() {
+    if (this.getGithubRepo() && this.clientEnvMap.get("GITHUB_RUN_ID")) {
+      return `${this.getGithubRepo()}/actions/runs/${this.clientEnvMap.get("GITHUB_RUN_ID")}`;
+    }
+
+    return undefined;
   }
 
   getGithubRepo(): string {
@@ -548,7 +636,11 @@ export default class InvocationModel {
   }
 
   isBazelInvocation() {
-    return !this.isWorkflowInvocation() && !this.isHostedBazelInvocation();
+    return !this.isWorkflowInvocation() && !this.isHostedBazelInvocation() && !this.isNinjaInvocation();
+  }
+
+  isNinjaInvocation() {
+    return this.getRole() === NINJA_ROLE;
   }
 
   getTool() {
@@ -557,6 +649,9 @@ export default class InvocationModel {
     }
     if (this.isHostedBazelInvocation()) {
       return "BuildBuddy hosted bazel";
+    }
+    if (this.isNinjaInvocation()) {
+      return `ninja v${this.started?.buildToolVersion} ` + this.started?.command || "";
     }
     return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build";
   }
@@ -586,7 +681,7 @@ export default class InvocationModel {
   }
 
   getEndTimeDate(): Date {
-    let durationMillis = this.getDurationMicros() * 1000;
+    let durationMillis = this.getDurationMicros() / 1000;
     return new Date(this.getStartTimeDate().getTime() + durationMillis);
   }
 
@@ -630,6 +725,19 @@ export default class InvocationModel {
   }
 
   getStatus() {
+    if (this.hasRunStatus()) {
+      switch (this.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return "Succeeded";
+        case invocation_status.OverallStatus.FAILURE:
+          return "Run failed";
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return "Run in progress...";
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return "Run disconnected";
+        default:
+      }
+    }
     switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
         return this.invocation.success ? "Succeeded" : exitCode(this.invocation.bazelExitCode);
@@ -643,6 +751,20 @@ export default class InvocationModel {
   }
 
   getStatusClass() {
+    if (this.hasRunStatus()) {
+      switch (this.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return "success";
+        case invocation_status.OverallStatus.FAILURE:
+          return "failure";
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return "in-progress";
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return "disconnected";
+        default:
+      }
+    }
+
     switch (this.invocation.invocationStatus) {
       case InvocationStatus.COMPLETE_INVOCATION_STATUS:
         if (this.invocation.bazelExitCode == "NO_TESTS_FOUND") {
@@ -666,7 +788,36 @@ export default class InvocationModel {
     return this.invocation.invocationStatus === InvocationStatus.PARTIAL_INVOCATION_STATUS;
   }
 
+  isRunInProgress() {
+    return this.invocation.runStatus === invocation_status.OverallStatus.IN_PROGRESS;
+  }
+
+  /**
+   * Returns whether basic invocation metadata has been received yet, such as
+   * user, bazel command, target pattern etc.
+   */
+  isMetadataLoaded() {
+    // Just return whether we have any events. This logic works because the
+    // server doesn't persist any events until all invocation metadata is
+    // loaded.
+    return this.invocation.event.length > 0;
+  }
+
   getFaviconType() {
+    if (this.hasRunStatus()) {
+      switch (this.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return IconType.Success;
+        case invocation_status.OverallStatus.FAILURE:
+          return IconType.Failure;
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return IconType.InProgress;
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return IconType.Unknown;
+        default:
+      }
+    }
+
     let invocationStatus = this.invocation.invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return IconType.Unknown;
@@ -684,6 +835,20 @@ export default class InvocationModel {
   }
 
   getStatusIcon() {
+    if (this.hasRunStatus()) {
+      switch (this.invocation.runStatus) {
+        case invocation_status.OverallStatus.SUCCESS:
+          return <CheckCircle className="icon green" />;
+        case invocation_status.OverallStatus.FAILURE:
+          return <XCircle className="icon red" />;
+        case invocation_status.OverallStatus.IN_PROGRESS:
+          return <PlayCircle className="icon blue" />;
+        case invocation_status.OverallStatus.DISCONNECTED:
+          return <HelpCircle className="icon" />;
+        default:
+      }
+    }
+
     let invocationStatus = this.invocation.invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return <HelpCircle className="icon" />;
@@ -756,7 +921,8 @@ export default class InvocationModel {
   }
 
   getLinks(): { linkUrl: string; linkText: string }[] {
-    let links = this.buildMetadataMap.get("BUILDBUDDY_LINKS")?.split(",");
+    const rawValue = this.buildMetadataMap.get("BUILDBUDDY_LINKS") ?? this.workspaceStatusMap.get("BUILDBUDDY_LINKS");
+    const links = rawValue?.split(",");
     const filtered: { linkUrl: string; linkText: string }[] =
       links
         ?.flatMap((link) => {
@@ -807,5 +973,213 @@ export default class InvocationModel {
         this.botSuggestions = ["Error getting a fix suggestion :("];
         this.onChange.next();
       });
+  }
+
+  /**
+   * Returns the original command line as it was entered by the user.
+   */
+  explicitCommandLine() {
+    // We allow overriding EXPLICIT_COMMAND_LINE to enable tools that wrap bazel
+    // to append bazel args but still preserve the appearance of the original
+    // command line. The effective command line can still be used to see the
+    // effective configuration used by bazel.
+    const overrideJSON = this.buildMetadataMap.get("EXPLICIT_COMMAND_LINE");
+    if (overrideJSON) {
+      try {
+        return JSON.parse(overrideJSON).map(quote).join(" ");
+      } catch (_) {
+        // Invalid JSON; fall back to showing BES event.
+      }
+    }
+
+    return this.commandLineOptionsToShellCommand(this.getExplicitCommandLineOptions());
+  }
+
+  /**
+   * Returns an expanded version of the command line containing both explicit
+   * and implicit options. Implicit options may include options expanded from
+   * bazelrc configs as well as flag values which are overridden by certain
+   * subcommands (for example, the "cquery" subcommand overrides "--build" to
+   * false, from its default value of true).
+   */
+  effectiveCommandLine() {
+    return this.commandLineOptionsToShellCommand(this.getEffectiveCommandLineOptions());
+  }
+
+  getExplicitCommandLineOptions(): string[] {
+    const explicitOptions = this.getStructuredOptionCombinedForms("original", "command options");
+    if (explicitOptions.length) {
+      return explicitOptions;
+    }
+    return (this.optionsParsed?.explicitCmdLine || []).filter((option) => Boolean(option));
+  }
+
+  getEffectiveCommandLineOptions(): string[] {
+    const canonicalOptions = this.getStructuredOptionCombinedForms("canonical", "command options");
+    if (canonicalOptions.length) {
+      return canonicalOptions;
+    }
+    return (this.optionsParsed?.cmdLine || []).filter((option) => Boolean(option));
+  }
+
+  getExplicitStartupOptions(): string[] {
+    const explicitStartup = this.getStructuredOptionCombinedForms("original", "startup options");
+    if (explicitStartup.length) {
+      return explicitStartup;
+    }
+    return (this.optionsParsed?.explicitStartupOptions || []).filter((option) => Boolean(option));
+  }
+
+  getEffectiveStartupOptions(): string[] {
+    const canonicalStartup = this.getStructuredOptionCombinedForms("canonical", "startup options");
+    if (canonicalStartup.length) {
+      return canonicalStartup;
+    }
+    return (this.optionsParsed?.startupOptions || []).filter((option) => Boolean(option));
+  }
+
+  /**
+   * Returns the build tool executable name from the structured command line.
+   */
+  private getExecutableName(): string | null {
+    return (
+      this.structuredCommandLine
+        ?.find((cmdLine) => cmdLine.commandLineLabel === "original")
+        ?.sections?.find((section) => section.sectionLabel === "executable")?.chunkList?.chunk?.[0] ?? null
+    );
+  }
+
+  /**
+   * Returns any non-flag arguments to bazel, such as target patterns or query
+   * expressions.
+   *
+   * If there are residual arguments, it returns an argument separator "--" as
+   * the first list element. If there are no residual arguments, it returns an
+   * empty list.
+   */
+  private getResidualArgsWithSeparator(): string[] {
+    const residual = this.structuredCommandLine
+      ?.find((cmdLine) => cmdLine.commandLineLabel === "original")
+      ?.sections?.find((section) => section.sectionLabel === "residual")?.chunkList?.chunk;
+    if (!residual?.length) {
+      return [];
+    }
+    return ["--", ...residual];
+  }
+
+  private getStructuredCommandLineByLabel(label: string): command_line.CommandLine | undefined {
+    return this.structuredCommandLine.find((commandLine) => commandLine.commandLineLabel === label);
+  }
+
+  private getStructuredOptionCombinedForms(label: string, sectionLabel: string): string[] {
+    const commandLine = this.getStructuredCommandLineByLabel(label);
+    if (!commandLine?.sections?.length) {
+      return [];
+    }
+    return commandLine.sections
+      .filter((section) => section.sectionLabel === sectionLabel)
+      .flatMap((section) => section.optionList?.option || [])
+      .filter((option) => option?.combinedForm)
+      .filter((option) => !(option.metadataTags || []).includes(options.OptionMetadataTag.HIDDEN))
+      .map((option) => option.combinedForm);
+  }
+
+  private commandLineOptionsToShellCommand(options: string[]) {
+    return [
+      this.getExecutableName() ?? "bazel",
+      this.started?.command,
+      ...(options || []),
+      ...this.getResidualArgsWithSeparator(),
+    ]
+      .filter((x) => x !== null && x !== undefined)
+      .map(quote)
+      .join(" ");
+  }
+
+  hasPatternFile() {
+    return Boolean(this.optionsMap.get("target_pattern_file"));
+  }
+
+  // getBazelVersion returns the major and minor version of Bazel from BES event.
+  //
+  // The version could contain rc version in the patch number, such as "7.2.1rc1".
+  getBazelVersion(): { major: number; minor: number } | null {
+    const version = this.started?.buildToolVersion;
+    if (!version) return null;
+    const segments = version.split(".").map(Number);
+    if (segments.length < 2) return null;
+    if (segments.slice(0, 2).some(isNaN)) return null;
+    return { major: segments[0], minor: segments[1] };
+  }
+
+  hasExecutionLog(): boolean {
+    return Boolean(this.getExecutionLogFileUri());
+  }
+
+  getExecutionLogFileUri(): string | undefined {
+    return this.buildToolLogs?.log.find(
+      (log: build_event_stream.File) =>
+        (log.name == "execution.log" || log.name == "execution_log.binpb.zst") &&
+        log.uri &&
+        Boolean(log.uri.startsWith("bytestream://"))
+    )?.uri;
+  }
+
+  getExecutionLog() {
+    if (this.execLogEntryPromise) {
+      return this.execLogEntryPromise;
+    }
+
+    let logFileUri = this.getExecutionLogFileUri();
+    if (!logFileUri) throw new Error("Execution log file not found");
+
+    const init = {
+      // Set the stored encoding header to prevent the server from double-compressing.
+      headers: { "X-Stored-Encoding-Hint": "zstd" },
+    };
+
+    this.execLogEntryPromise = rpcService
+      .fetchBytestreamFile(logFileUri, this.getInvocationId(), "arraybuffer", { init })
+      .then(async (body) => {
+        if (body === null) throw new Error("response body is null");
+        let entries: tools.protos.ExecLogEntry[] = [];
+        let byteArray = new Uint8Array(body);
+        for (var offset = 0; offset < body.byteLength; ) {
+          let length = varint.decode(byteArray, offset);
+          let bytes = varint.decode.bytes || 0;
+          offset += bytes;
+          entries.push(tools.protos.ExecLogEntry.decode(byteArray.subarray(offset, offset + length)));
+          offset += length;
+        }
+        console.log(entries);
+        return entries;
+      });
+
+    return this.execLogEntryPromise;
+  }
+
+  downloadExecutionLog() {
+    let profileFileUri = this.getExecutionLogFileUri();
+    if (!profileFileUri) {
+      return;
+    }
+
+    try {
+      rpcService.downloadBytestreamFile("execution_log.binpb.zst", profileFileUri, this.getInvocationId());
+    } catch {
+      console.error("Error downloading execution log");
+    }
+  }
+
+  hasRunStatus(): boolean {
+    switch (this.invocation.runStatus) {
+      case invocation_status.OverallStatus.SUCCESS:
+      case invocation_status.OverallStatus.FAILURE:
+      case invocation_status.OverallStatus.IN_PROGRESS:
+      case invocation_status.OverallStatus.DISCONNECTED:
+        return true;
+      default:
+        return false;
+    }
   }
 }

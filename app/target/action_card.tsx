@@ -1,9 +1,9 @@
-import React from "react";
-import SetupCodeComponent from "../docs/setup_code";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
-import { TerminalComponent } from "../terminal/terminal";
-import rpcService from "../service/rpc_service";
 import { PauseCircle, PlayCircle } from "lucide-react";
+import React from "react";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import SetupCodeComponent from "../docs/setup_code";
+import rpcService from "../service/rpc_service";
+import { TerminalComponent } from "../terminal/terminal";
 
 interface Props {
   buildEvent?: build_event_stream.BuildEvent;
@@ -199,9 +199,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
               {action?.type} command exited with code {action?.exitCode}
             </div>
             <div>
-              {action?.commandLine.map((commandLineArg) => (
-                <div className="command-line-arg">{commandLineArg}</div>
-              ))}
+              {action?.commandLine.map((commandLineArg) => <div className="command-line-arg">{commandLineArg}</div>)}
             </div>
           </div>
         </div>

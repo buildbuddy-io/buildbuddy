@@ -1,10 +1,24 @@
 package remotebazel
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
+	"github.com/buildbuddy-io/buildbuddy/cli/storage"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	parser.SetBazelHelpForTesting(test_data.BazelHelpFlagsAsProtoOutput)
+}
 
 func TestParseRemoteCliFlags(t *testing.T) {
 	type testCase struct {
@@ -199,8 +213,285 @@ func TestParseRemoteCliFlags(t *testing.T) {
 		}
 
 		for flag, expectedVal := range tc.expectedFlagValue {
-			actualVal := remoteFlagset.Lookup(flag).Value
+			actualVal := RemoteFlagset.Lookup(flag).Value
 			require.Equal(t, expectedVal, actualVal.String(), tc.name)
 		}
 	}
+}
+
+func TestGitConfig_BranchAndSha(t *testing.T) {
+	// Setup the "remote" repo
+	remoteRepoPath, originalMasterHeadCommit := testgit.MakeTempRepo(t, map[string]string{"hello.txt": "exit 0"})
+
+	// Create a remote branch
+	testshell.Run(t, remoteRepoPath, "git checkout -B remote_b")
+	remoteBranchHeadCommit := testgit.CommitFiles(t, remoteRepoPath, map[string]string{"new_file.txt": "exit 0"})
+	testshell.Run(t, remoteRepoPath, "git checkout master")
+
+	type testCase struct {
+		name string
+
+		localBranchExistsRemotely bool
+		localCommitExistsRemotely bool
+		unpushedLocalCommit       bool
+
+		expectedBranch  string
+		expectedCommit  string
+		expectedPatches []string
+	}
+
+	testCases := []testCase{
+		{
+			name:                      "Local branch and commit exist remotely",
+			localBranchExistsRemotely: true,
+			localCommitExistsRemotely: true,
+			expectedBranch:            "remote_b",
+			expectedCommit:            remoteBranchHeadCommit,
+			expectedPatches:           []string{},
+		},
+		{
+			name:                      "Local branch does not exist remotely",
+			localBranchExistsRemotely: false,
+			localCommitExistsRemotely: false,
+			expectedBranch:            "master",
+			expectedCommit:            originalMasterHeadCommit,
+			expectedPatches:           []string{"local_file.txt"},
+		},
+		{
+			name:                      "Local commit does not exist remotely",
+			localBranchExistsRemotely: true,
+			localCommitExistsRemotely: false,
+			expectedBranch:            "master",
+			expectedCommit:            originalMasterHeadCommit,
+			expectedPatches:           []string{"local_file.txt"},
+		},
+		{
+			name:                "On master with an unpushed commit",
+			unpushedLocalCommit: true,
+			expectedBranch:      "master",
+			expectedCommit:      originalMasterHeadCommit,
+			expectedPatches:     []string{"local_only_commited_file.txt"},
+		},
+	}
+
+	for i, tc := range testCases {
+		// Setup a "local" repo
+		localRepoPath := testgit.MakeTempRepoClone(t, remoteRepoPath)
+		err := os.Chdir(localRepoPath)
+		require.NoError(t, err, tc.name)
+		resetRepoRootPathForTest(t)
+
+		if tc.unpushedLocalCommit {
+			testgit.CommitFiles(t, localRepoPath, map[string]string{"local_only_commited_file.txt": "exit 0"})
+		} else if tc.localBranchExistsRemotely {
+			testshell.Run(t, localRepoPath, "git checkout remote_b")
+		} else {
+			testshell.Run(t, localRepoPath, "git checkout -B local_only")
+
+			// Simulate that the remote master is ahead of the local master
+			testshell.Run(t, remoteRepoPath, "git checkout master")
+			newFileName := fmt.Sprintf("new_file%d.txt", i)
+			_ = testgit.CommitFiles(t, remoteRepoPath, map[string]string{newFileName: "exit 0"})
+		}
+		if !tc.localCommitExistsRemotely {
+			testgit.CommitFiles(t, localRepoPath, map[string]string{"local_file.txt": "exit 0"})
+		}
+
+		config, err := Config()
+		require.NoError(t, err, tc.name)
+
+		require.Equal(t, tc.expectedBranch, config.Ref, tc.name)
+		require.Equal(t, tc.expectedCommit, config.CommitSHA, tc.name)
+		require.Equal(t, len(tc.expectedPatches), len(config.Patches), tc.name)
+		if len(tc.expectedPatches) > 0 {
+			require.Contains(t, string(config.Patches[0]), tc.expectedPatches[0], tc.name)
+		}
+
+		// Reset remote repo for future test cases
+		testshell.Run(t, remoteRepoPath, "git checkout master && git clean -fdx && git reset --hard "+originalMasterHeadCommit)
+	}
+}
+
+func TestGitConfig_FetchURL(t *testing.T) {
+	// Setup the "remote" repo
+	remoteRepoPath, _ := testgit.MakeTempRepo(t, map[string]string{"hello.txt": "exit 0"})
+	remoteUrl := "file://" + remoteRepoPath
+
+	testCases := []struct {
+		name            string
+		expectedURL     string
+		multipleRemotes bool
+		isRemoteCached  bool
+	}{
+		{
+			name:        "One remote is configured",
+			expectedURL: remoteUrl,
+		},
+		{
+			name:            "Selected remote is cached",
+			multipleRemotes: true,
+			isRemoteCached:  true,
+			expectedURL:     remoteUrl,
+		},
+	}
+
+	for _, tc := range testCases {
+		// Setup a "local" repo
+		localRepoPath := testgit.MakeTempRepoClone(t, remoteRepoPath)
+		err := os.Chdir(localRepoPath)
+		require.NoError(t, err, tc.name)
+		resetRepoRootPathForTest(t)
+
+		if tc.multipleRemotes {
+			testshell.Run(t, localRepoPath, "git remote add extra "+remoteUrl)
+		}
+		if tc.isRemoteCached {
+			testshell.Run(t, localRepoPath, fmt.Sprintf("git config --replace-all %s.%s extra", gitConfigSection, gitConfigRemoteBazelRemote))
+		}
+
+		config, err := Config()
+		require.NoError(t, err, tc.name)
+		require.Equal(t, tc.expectedURL, config.URL)
+	}
+}
+
+func TestGeneratingPatches(t *testing.T) {
+	// Setup the "remote" repo
+	remoteRepoPath, _ := testgit.MakeTempRepo(t, map[string]string{
+		"hello.txt": "echo HI",
+		"b.bin":     "",
+	})
+
+	// Setup a "local" repo
+	localRepoPath := testgit.MakeTempRepoClone(t, remoteRepoPath)
+	// Remote bazel runs commands in the working directory, so make sure it
+	// is set correctly
+	err := os.Chdir(localRepoPath)
+	require.NoError(t, err)
+	resetRepoRootPathForTest(t)
+
+	testshell.Run(t, localRepoPath, `
+		# Generate a diff on a pre-existing file
+		echo "echo HELLO" > hello.txt
+
+		# Generate a diff for a new untracked file
+		echo "echo BYE" > bye.txt
+
+		# Generate a binary diff on a pre-existing file
+		echo -ne '\x00\x01\x02\x03\x04' > b.bin
+
+		# Generate a binary diff on an untracked file
+		echo -ne '\x00\x01\x02\x03\x04' > b2.bin
+`)
+
+	config, err := Config()
+	require.NoError(t, err)
+
+	require.Equal(t, 4, len(config.Patches))
+	for _, patchBytes := range config.Patches {
+		p := string(patchBytes)
+		if strings.Contains(p, "hello.txt") {
+			require.Contains(t, p, "HELLO")
+		} else if strings.Contains(p, "bye.txt") {
+			require.Contains(t, p, "BYE")
+		} else if strings.Contains(p, "b.bin") {
+			require.Contains(t, p, "GIT binary patch")
+		} else if strings.Contains(p, "b2.bin") {
+			require.Contains(t, p, "GIT binary patch")
+		} else {
+			require.FailNowf(t, "unexpected patch %s", p)
+		}
+	}
+}
+
+func TestWorkingDirectory(t *testing.T) {
+	rootDir := t.TempDir()
+	repoRoot := filepath.Join(rootDir, "repo")
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "subdir", "nested"), 0755))
+
+	testCases := []struct {
+		name              string
+		workspaceFilePath string
+		expectedDir       string
+		expectedError     string
+	}{
+		{
+			name:              "Repo root workspace",
+			workspaceFilePath: filepath.Join(repoRoot, "MODULE.bazel"),
+			expectedDir:       "",
+		},
+		{
+			name:              "Nested workspace",
+			workspaceFilePath: filepath.Join(repoRoot, "subdir", "MODULE.bazel"),
+			expectedDir:       "subdir",
+		},
+		{
+			name:              "Deeply nested workspace",
+			workspaceFilePath: filepath.Join(repoRoot, "subdir", "nested", "MODULE.bazel"),
+			expectedDir:       filepath.Join("subdir", "nested"),
+		},
+		{
+			name:              "Workspace outside repo root",
+			workspaceFilePath: filepath.Join(rootDir, "outside", "MODULE.bazel"),
+			expectedError:     "outside repo root",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, err := workingDirectory(repoRoot, tc.workspaceFilePath)
+			if tc.expectedError != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.expectedError)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedDir, dir)
+		})
+	}
+}
+
+func resetRepoRootPathForTest(t *testing.T) {
+	storage.RepoRootPath = sync.OnceValues(func() (string, error) {
+		return os.Getwd()
+	})
+}
+
+func TestParseArgs(t *testing.T) {
+	t.Setenv("BUILDBUDDY_API_KEY", "test-api-key")
+
+	bazelArgs, execArgs, err := parseArgs([]string{
+		"--output_base", "/tmp/output_base",
+		"test",
+		"-c", "opt",
+		"--config=remote_only",
+		"--bes_backend=grpc://user-bes",
+		"--remote_cache=grpc://user-cache",
+		"--remote_header=x-custom=1",
+		"//foo",
+		"--",
+		"--exec_arg",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		// Startup flags should be preserved.
+		"--output_base=/tmp/output_base",
+		"test",
+		// Bazel flags should be canonicalized.
+		"--compilation_mode=opt",
+		// Config flags should not be expanded and passed through to the remote runner as is.
+		"--config=remote_only",
+		// Remote headers should be preserved.
+		"--remote_header=x-custom=1",
+		"//foo",
+		// API key should be set.
+		"--remote_header=x-buildbuddy-api-key=test-api-key",
+		// Remote flags should be removed and replaced by the CLI.
+		"--config=buildbuddy_bes_backend",
+		"--config=buildbuddy_bes_results_url",
+		"--config=buildbuddy_remote_cache",
+	}, bazelArgs)
+	// Exec args should be preserved.
+	require.Equal(t, []string{"--exec_arg"}, execArgs)
 }

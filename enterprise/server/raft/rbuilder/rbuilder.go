@@ -2,6 +2,7 @@ package rbuilder
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -91,6 +92,14 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_UpdateAtime{
 			UpdateAtime: value,
 		}
+	case *rfpb.DeleteSessionsRequest:
+		req.Value = &rfpb.RequestUnion_DeleteSessions{
+			DeleteSessions: value,
+		}
+	case *rfpb.FetchRangesRequest:
+		req.Value = &rfpb.RequestUnion_FetchRanges{
+			FetchRanges: value,
+		}
 	default:
 		bb.setErr(status.FailedPreconditionErrorf("BatchBuilder.Add handling for %+v not implemented.", m))
 		return bb
@@ -124,11 +133,25 @@ func (bb *BatchBuilder) SetHeader(h *rfpb.Header) *BatchBuilder {
 	return bb
 }
 
+func (bb *BatchBuilder) SetSession(session *rfpb.Session) *BatchBuilder {
+	bb.cmd.Session = session
+	return bb
+}
+
+func (bb *BatchBuilder) SetLockMappedRange(lock bool) *BatchBuilder {
+	bb.cmd.LockMappedRange = lock
+	return bb
+}
+
 func (bb *BatchBuilder) AddPostCommitHook(m proto.Message) *BatchBuilder {
 	switch value := m.(type) {
 	case *rfpb.SnapshotClusterHook:
 		bb.cmd.PostCommitHooks = append(bb.cmd.PostCommitHooks, &rfpb.PostCommitHook{
 			SnapshotCluster: value,
+		})
+	case *rfpb.StartShardHook:
+		bb.cmd.PostCommitHooks = append(bb.cmd.PostCommitHooks, &rfpb.PostCommitHook{
+			StartShard: value,
 		})
 	}
 	return bb
@@ -156,12 +179,13 @@ func (bb *BatchBuilder) Size() int {
 }
 
 func (bb *BatchBuilder) String() string {
-	builder := fmt.Sprintf("Builder(err: %s)", bb.err)
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("Builder(err: %s)", bb.err))
 	for i, v := range bb.cmd.Union {
 		out, _ := (&prototext.MarshalOptions{Multiline: false}).Marshal(v)
-		builder += fmt.Sprintf(" [%d]: %+v", i, string(out))
+		builder.WriteString(fmt.Sprintf(" [%d]: %+v", i, string(out)))
 	}
-	return builder
+	return builder.String()
 }
 
 type BatchResponse struct {
@@ -227,6 +251,10 @@ func (br *BatchResponse) AnyError() error {
 	return nil
 }
 
+func (br *BatchResponse) Len() int {
+	return len(br.cmd.GetUnion())
+}
+
 func (br *BatchResponse) DirectReadResponse(n int) (*rfpb.DirectReadResponse, error) {
 	br.checkIndex(n)
 	if br.err != nil {
@@ -234,6 +262,15 @@ func (br *BatchResponse) DirectReadResponse(n int) (*rfpb.DirectReadResponse, er
 	}
 	u := br.cmd.GetUnion()[n]
 	return u.GetDirectRead(), br.unionError(u)
+}
+
+func (br *BatchResponse) DirectDeleteResponse(n int) (*rfpb.DirectDeleteResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
+	}
+	u := br.cmd.GetUnion()[n]
+	return u.GetDirectDelete(), br.unionError(u)
 }
 
 func (br *BatchResponse) IncrementResponse(n int) (*rfpb.IncrementResponse, error) {
@@ -312,28 +349,80 @@ func (br *BatchResponse) UpdateAtimeResponse(n int) (*rfpb.UpdateAtimeResponse, 
 	u := br.cmd.GetUnion()[n]
 	return u.GetUpdateAtime(), br.unionError(u)
 }
+func (br *BatchResponse) DeleteSessionsResponse(n int) (*rfpb.DeleteSessionsResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
+	}
+	u := br.cmd.GetUnion()[n]
+	return u.GetDeleteSessions(), br.unionError(u)
+}
 
-type txnStatement struct {
-	replicaDescriptor *rfpb.ReplicaDescriptor
-	rawBatch          *BatchBuilder
+func (br *BatchResponse) FetchRangesResponse(n int) (*rfpb.FetchRangesResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
+	}
+	u := br.cmd.GetUnion()[n]
+	return u.GetFetchRanges(), br.unionError(u)
 }
 
 type TxnBuilder struct {
-	statements []txnStatement
+	statements []*TxnStatementBuilder
 }
 
 func NewTxn() *TxnBuilder {
 	return &TxnBuilder{
-		statements: make([]txnStatement, 0),
+		statements: make([]*TxnStatementBuilder, 0),
 	}
 }
 
-func (tb *TxnBuilder) AddStatement(replica *rfpb.ReplicaDescriptor, batch *BatchBuilder) *TxnBuilder {
-	tb.statements = append(tb.statements, txnStatement{
-		replicaDescriptor: replica,
-		rawBatch:          batch,
-	})
-	return tb
+type TxnStatementBuilder struct {
+	rangeDescriptor         *rfpb.RangeDescriptor
+	rawBatch                *BatchBuilder
+	hooks                   []*rfpb.TransactionHook
+	rangeValidationRequired bool
+}
+
+func (sb *TxnStatementBuilder) SetRangeDescriptor(rd *rfpb.RangeDescriptor) *TxnStatementBuilder {
+	sb.rangeDescriptor = rd
+	return sb
+}
+
+func (sb *TxnStatementBuilder) SetBatch(batch *BatchBuilder) *TxnStatementBuilder {
+	sb.rawBatch = batch
+	return sb
+}
+
+func (sb *TxnStatementBuilder) SetRangeValidationRequired(required bool) *TxnStatementBuilder {
+	sb.rangeValidationRequired = required
+	return sb
+}
+
+func (sb *TxnStatementBuilder) AddPostCommitHook(phase rfpb.TransactionHook_Phase, m proto.Message) *TxnStatementBuilder {
+	switch value := m.(type) {
+	case *rfpb.SnapshotClusterHook:
+		sb.hooks = append(sb.hooks, &rfpb.TransactionHook{
+			Phase: phase,
+			Hook: &rfpb.PostCommitHook{
+				SnapshotCluster: value,
+			}})
+	case *rfpb.StartShardHook:
+		sb.hooks = append(sb.hooks, &rfpb.TransactionHook{
+			Phase: phase,
+			Hook: &rfpb.PostCommitHook{
+				StartShard: value,
+			}})
+	}
+	return sb
+}
+
+func (tb *TxnBuilder) AddStatement() *TxnStatementBuilder {
+	sb := &TxnStatementBuilder{
+		hooks: make([]*rfpb.TransactionHook, 0),
+	}
+	tb.statements = append(tb.statements, sb)
+	return sb
 }
 
 func (tb *TxnBuilder) ToProto() (*rfpb.TxnRequest, error) {
@@ -352,8 +441,10 @@ func (tb *TxnBuilder) ToProto() (*rfpb.TxnRequest, error) {
 			return nil, err
 		}
 		req.Statements = append(req.Statements, &rfpb.TxnRequest_Statement{
-			Replica:  statement.replicaDescriptor,
-			RawBatch: batchProto,
+			Range:                   statement.rangeDescriptor,
+			RawBatch:                batchProto,
+			Hooks:                   statement.hooks,
+			RangeValidationRequired: statement.rangeValidationRequired,
 		})
 	}
 	return req, nil

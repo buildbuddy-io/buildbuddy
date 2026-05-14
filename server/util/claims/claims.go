@@ -2,29 +2,40 @@ package claims
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
+	"fmt"
+	"runtime"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v4"
+	"google.golang.org/grpc/metadata"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
 const (
 	// Maximum number of entries in JWT -> Claims cache.
-	claimsCacheSize = 10_00
+	claimsCacheSize = 1_000
 
 	// The key the Claims are stored under in the context.
 	// If unset, the JWT can be used to reconstitute the claims.
@@ -32,30 +43,123 @@ const (
 )
 
 var (
-	jwtKey             = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.", flag.Secret)
-	newJwtKey          = flag.String("auth.new_jwt_key", "", "If set, JWT verifications will try both this and the old JWT key.", flag.Secret)
+	jwtKey             = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing HMAC-SHA256-signed JWT tokens.", flag.Secret)
+	newJwtKey          = flag.String("auth.new_jwt_key", "", "If set, HMAC-SHA256-signed JWT verifications will try both this and the old JWT key.", flag.Secret)
 	signUsingNewJwtKey = flag.Bool("auth.sign_using_new_jwt_key", false, "If true, new JWTs will be signed using the new JWT key.")
+	claimsCacheTTL     = flag.Duration("auth.jwt_claims_cache_ttl", 15*time.Second, "TTL for JWT string to parsed claims caching. Set to '0' to disable cache.")
 	jwtDuration        = flag.Duration("auth.jwt_duration", 6*time.Hour, "Maximum lifetime of the generated JWT.")
+
+	jwtES256PrivateKey    = flag.String("auth.jwt_es256_private_key", "", "PEM-encoded private key used to sign ES256-signed JWTs.", flag.Secret)
+	newJWTES256PrivateKey = flag.String("auth.new_jwt_es256_private_key", "", "PEM-encoded private key used to sign new ES256-signed JWTs during key rotation.", flag.Secret)
+
+	serverAdminGroupID = flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
+
+	reparseJWTs = flag.Bool("auth.reparse_jwts", true, "Whether to permit re-parsing JWTs or not.")
 )
+
+var (
+	// Generic permission denied error.
+	errPermissionDenied = status.PermissionDeniedError("permission denied")
+
+	es256PrivateKey *ecdsa.PrivateKey
+	es256PublicKeys []string = []string{}
+
+	reparseLog = log.NamedSubLogger("reparse-jwt").EveryDuration(time.Minute)
+)
+
+func Init() error {
+	es256PrivateKey = nil
+	es256PublicKeys = []string{}
+
+	if *newJWTES256PrivateKey == "" && *jwtES256PrivateKey == "" {
+		return nil
+	}
+
+	var newPrivateKey *ecdsa.PrivateKey
+	var oldPrivateKey *ecdsa.PrivateKey
+	var newPublicKey string
+	var oldPublicKey string
+	var err error
+
+	// Make both public keys available so that clients can verify JWTs during
+	// app rollouts.
+	if *newJWTES256PrivateKey != "" {
+		newPrivateKey, newPublicKey, err = getES256KeyPair(*newJWTES256PrivateKey)
+		if err != nil {
+			return err
+		}
+	}
+
+	if *jwtES256PrivateKey != "" {
+		oldPrivateKey, oldPublicKey, err = getES256KeyPair(*jwtES256PrivateKey)
+		if err != nil {
+			return err
+		}
+	}
+
+	es256PrivateKey = oldPrivateKey
+	if *signUsingNewJwtKey {
+		if newPrivateKey == nil {
+			return status.InvalidArgumentError("Requested signing with new ES256 private key, but no new private key was specified.")
+		}
+		es256PrivateKey = newPrivateKey
+	}
+
+	if newPublicKey != "" {
+		es256PublicKeys = append(es256PublicKeys, newPublicKey)
+	}
+	if oldPublicKey != "" {
+		es256PublicKeys = append(es256PublicKeys, oldPublicKey)
+	}
+
+	return nil
+}
+
+func getES256KeyPair(key string) (*ecdsa.PrivateKey, string, error) {
+	privateKey, err := jwt.ParseECPrivateKeyFromPEM([]byte(key))
+	if err != nil {
+		return nil, "", err
+	}
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		return nil, "", err
+	}
+	encodedPublicKey := pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: publicKeyBytes,
+	})
+	return privateKey, string(encodedPublicKey), nil
+}
 
 type Claims struct {
 	jwt.StandardClaims
-	APIKeyID      string `json:"api_key_id,omitempty"`
-	UserID        string `json:"user_id"`
-	GroupID       string `json:"group_id"`
-	Impersonating bool   `json:"impersonating"`
+	APIKeyID                   string `json:"api_key_id,omitempty"`
+	UserID                     string `json:"user_id"`
+	GroupID                    string `json:"group_id"`
+	ExperimentTargetingGroupID string `json:"experiment_targeting_group_id"`
+	// APIKeyOwnerGroupID identifies the group that owns the API key used
+	// for authentication. Will be empty if authentication was not performed
+	// using an API key.
+	// The GroupID field above should be used in most cases!
+	APIKeyOwnerGroupID string `json:"api_key_owner_group_id,omitempty"`
+	Impersonating      bool   `json:"impersonating"`
 	// TODO(bduffany): remove this field
 	AllowedGroups          []string                      `json:"allowed_groups"`
 	GroupMemberships       []*interfaces.GroupMembership `json:"group_memberships"`
-	Capabilities           []akpb.ApiKey_Capability      `json:"capabilities"`
+	Capabilities           []cappb.Capability            `json:"capabilities"`
 	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
 	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
 	EnforceIPRules         bool                          `json:"enforce_ip_rules,omitempty"`
-	SAML                   bool                          `json:"saml,omitempty"`
+	GroupStatus            grpb.Group_GroupStatus        `json:"group_status,omitempty"`
+	// TODO(vadim): remove this field
+	SAML        bool `json:"saml,omitempty"`
+	CustomerSSO bool `json:"customer_sso,omitempty"`
 }
 
-func (c *Claims) GetAPIKeyID() string {
-	return c.APIKeyID
+func (c *Claims) GetAPIKeyInfo() interfaces.APIKeyInfo {
+	return interfaces.APIKeyInfo{
+		ID: c.APIKeyID, OwnerGroupID: c.APIKeyOwnerGroupID,
+	}
 }
 
 func (c *Claims) GetUserID() string {
@@ -64,6 +168,13 @@ func (c *Claims) GetUserID() string {
 
 func (c *Claims) GetGroupID() string {
 	return c.GroupID
+}
+
+func (c *Claims) GetExperimentTargetingGroupID() string {
+	if c.ExperimentTargetingGroupID == "" {
+		return c.GroupID
+	}
+	return c.ExperimentTargetingGroupID
 }
 
 func (c *Claims) IsImpersonating() bool {
@@ -78,11 +189,11 @@ func (c *Claims) GetGroupMemberships() []*interfaces.GroupMembership {
 	return c.GroupMemberships
 }
 
-func (c *Claims) GetCapabilities() []akpb.ApiKey_Capability {
+func (c *Claims) GetCapabilities() []cappb.Capability {
 	return c.Capabilities
 }
 
-func (c *Claims) HasCapability(cap akpb.ApiKey_Capability) bool {
+func (c *Claims) HasCapability(cap cappb.Capability) bool {
 	for _, cc := range c.Capabilities {
 		if cap&cc > 0 {
 			return true
@@ -103,76 +214,143 @@ func (c *Claims) GetEnforceIPRules() bool {
 	return c.EnforceIPRules
 }
 
+func (c *Claims) GetGroupStatus() grpb.Group_GroupStatus {
+	return grpb.Group_GroupStatus(c.GroupStatus)
+}
+
 func (c *Claims) IsSAML() bool {
 	return c.SAML
 }
 
-func ParseClaims(token string) (*Claims, error) {
-	keys := []string{*jwtKey}
-	if *newJwtKey != "" {
-		// Try the new key first.
-		keys = []string{*newJwtKey, *jwtKey}
+func (c *Claims) IsCustomerSSO() bool {
+	return c.SAML || c.CustomerSSO
+}
+
+func parseClaims(ctx context.Context, token string, keyProvider KeyProvider) (*Claims, error) {
+	c, method, err := parseClaimsInternal(ctx, token, keyProvider)
+	metrics.JWTVerificationCount.WithLabelValues(method, status.MetricsLabel(err)).Add(1)
+	return c, err
+}
+
+func parseClaimsInternal(ctx context.Context, token string, keyProvider KeyProvider) (*Claims, string, error) {
+	method := "unknown"
+	keys, err := keyProvider(ctx)
+	if err != nil {
+		return nil, method, err
+	}
+	if len(keys) == 0 {
+		alert.CtxUnexpectedEvent(ctx, "No JWT keys", "No keys available for parsing claims")
+		return nil, method, status.InternalError("no keys available for parsing claims")
 	}
 
 	var lastErr error
 	claims := &Claims{}
 	for _, key := range keys {
 		_, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
-			return []byte(key), nil
+			method = token.Method.Alg()
+			if token.Method != key.SigningMethod {
+				return nil, fmt.Errorf("incorrect key signing method: %v", token.Method.Alg())
+			}
+			switch token.Method {
+			case jwt.SigningMethodHS256:
+				return []byte(key.Key), nil
+			case jwt.SigningMethodES256:
+				return jwt.ParseECPublicKeyFromPEM([]byte(key.Key))
+			default:
+				return nil, fmt.Errorf("unsupported signing method: %v", token.Method.Alg())
+			}
 		})
 		if err == nil {
-			return claims, nil
+			return claims, method, nil
 		}
 		lastErr = err
 
 		var validationErr *jwt.ValidationError
-		if errors.As(err, &validationErr) && validationErr.Errors&jwt.ValidationErrorSignatureInvalid != 0 {
+		if errors.As(err, &validationErr) && validationErr.Errors&(jwt.ValidationErrorSignatureInvalid|jwt.ValidationErrorUnverifiable) != 0 {
 			continue
 		}
-		return nil, err
+		return nil, method, err
 	}
-	return nil, lastErr
+	return nil, method, lastErr
 }
 
-func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
-	keyRole := role.Default
-	// User management through SCIM requires Admin access.
-	if akg.GetCapabilities()&int32(akpb.ApiKey_ORG_ADMIN_CAPABILITY) > 0 {
-		keyRole = role.Admin
+func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims, error) {
+	allowedGroups := []string{akg.GetGroupID()}
+	groupMemberships := []*interfaces.GroupMembership{{
+		GroupID:      akg.GetGroupID(),
+		Capabilities: capabilities.FromInt(akg.GetCapabilities()),
+	}}
+	for _, cg := range akg.GetChildGroupIDs() {
+		allowedGroups = append(allowedGroups, cg)
+		groupMemberships = append(groupMemberships, &interfaces.GroupMembership{
+			GroupID:      cg,
+			Capabilities: capabilities.FromInt(akg.GetCapabilities()),
+		})
 	}
+
+	requestContext := requestcontext.ProtoRequestContextFromContext(ctx)
+	effectiveGroup := akg.GetGroupID()
+	if requestContext.GetGroupId() != "" {
+		if slices.Contains(allowedGroups, requestContext.GetGroupId()) {
+			effectiveGroup = requestContext.GetGroupId()
+		} else {
+			return nil, status.PermissionDeniedErrorf("invalid group id %s", requestContext.GetGroupId())
+		}
+	}
+
+	experimentTargetingGroup := ""
+	if v := metadata.ValueFromIncomingContext(ctx, "x-buildbuddy-experiment.group_id"); len(v) > 0 {
+		// Only server admins can set this header. Note: can't use
+		// AuthorizeServerAdmin directly, since the claims aren't in the ctx yet
+		// (this function is building the claims).
+		if !isAdminOfServerAdminGroup(groupMemberships) {
+			return nil, errPermissionDenied
+		}
+		experimentTargetingGroup = v[len(v)-1]
+	}
+
 	return &Claims{
-		APIKeyID:      akg.GetAPIKeyID(),
-		UserID:        akg.GetUserID(),
-		GroupID:       akg.GetGroupID(),
-		AllowedGroups: []string{akg.GetGroupID()},
-		GroupMemberships: []*interfaces.GroupMembership{
-			{
-				GroupID:      akg.GetGroupID(),
-				Capabilities: capabilities.FromInt(akg.GetCapabilities()),
-				Role:         keyRole,
-			},
-		},
-		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
-		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
-		CacheEncryptionEnabled: akg.GetCacheEncryptionEnabled(),
-		EnforceIPRules:         akg.GetEnforceIPRules(),
-	}
+		APIKeyID:                   akg.GetAPIKeyID(),
+		UserID:                     akg.GetUserID(),
+		GroupID:                    effectiveGroup,
+		ExperimentTargetingGroupID: experimentTargetingGroup,
+		APIKeyOwnerGroupID:         akg.GetGroupID(),
+		AllowedGroups:              allowedGroups,
+		GroupMemberships:           groupMemberships,
+		Capabilities:               capabilities.FromInt(akg.GetCapabilities()),
+		UseGroupOwnedExecutors:     akg.GetUseGroupOwnedExecutors(),
+		CacheEncryptionEnabled:     akg.GetCacheEncryptionEnabled(),
+		EnforceIPRules:             akg.GetEnforceIPRules(),
+		Impersonating:              akg.IsImpersonating(),
+		GroupStatus:                akg.GetGroupStatus(),
+	}, nil
 }
 
 func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*Claims, error) {
-	authDB := env.GetAuthDB()
-	if authDB == nil {
-		return nil, status.FailedPreconditionError("AuthDB not configured")
+	userDB := env.GetUserDB()
+	if userDB == nil {
+		return nil, status.FailedPreconditionError("UserDB not configured")
 	}
-	u, err := authDB.LookupUserFromSubID(ctx, subID)
+	u, err := userDB.GetUserBySubIDWithoutAuthCheck(ctx, subID, &interfaces.GetUserOpts{})
 	if err != nil {
 		return nil, err
 	}
+
+	requestContext := requestcontext.ProtoRequestContextFromContext(ctx)
+	// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/4191):
+	// return an error here once we have a better understanding of why the
+	// request context can be missing.
+	if requestContext == nil {
+		log.CtxInfof(ctx, "Request is missing request context")
+	} else if requestContext.GetGroupId() == "" {
+		log.CtxInfof(ctx, "Request context group ID is empty")
+	}
+
 	eg := ""
-	if c := requestcontext.ProtoRequestContextFromContext(ctx); c != nil && c.GetGroupId() != "" {
+	if requestContext.GetGroupId() != "" {
 		for _, g := range u.Groups {
-			if g.Group.GroupID == c.GetGroupId() {
-				eg = c.GetGroupId()
+			if g.Group.GroupID == requestContext.GetGroupId() {
+				eg = requestContext.GetGroupId()
 			}
 		}
 	}
@@ -185,13 +363,13 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 	// If the user is trying to impersonate a member of another org and has Admin
 	// role within the configured admin group, set their authenticated user to
 	// *only* have access to the org being impersonated.
-	if c := requestcontext.ProtoRequestContextFromContext(ctx); c != nil && c.GetImpersonatingGroupId() != "" {
+	if requestContext.GetImpersonatingGroupId() != "" {
 		for _, membership := range claims.GetGroupMemberships() {
-			if membership.GroupID != env.GetAuthenticator().AdminGroupID() || membership.Role != role.Admin {
+			if membership.GroupID != ServerAdminGroupID() || !slices.Contains(membership.Capabilities, cappb.Capability_ORG_ADMIN) {
 				continue
 			}
 
-			ig, err := env.GetUserDB().GetGroupByID(ctx, c.GetImpersonatingGroupId())
+			ig, err := env.GetUserDB().GetGroupByID(ctx, requestContext.GetImpersonatingGroupId())
 			if err != nil {
 				return nil, err
 			}
@@ -203,10 +381,10 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 			}
 
 			u.Groups = []*tables.GroupRole{{
-				Group: *ig,
-				Role:  uint32(role.Admin),
+				Group:        *ig,
+				Capabilities: role.AdminCapabilities,
 			}}
-			claims, err := userClaims(u, c.GetImpersonatingGroupId())
+			claims, err := userClaims(u, requestContext.GetImpersonatingGroupId())
 			if err != nil {
 				return nil, err
 			}
@@ -224,61 +402,83 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	groupMemberships := make([]*interfaces.GroupMembership, 0, len(u.Groups))
 	cacheEncryptionEnabled := false
 	enforceIPRules := false
-	var capabilities []akpb.ApiKey_Capability
+	groupStatus := grpb.Group_UNKNOWN_GROUP_STATUS
+	var capabilities []cappb.Capability
 	for _, g := range u.Groups {
 		allowedGroups = append(allowedGroups, g.Group.GroupID)
-		c, err := role.ToCapabilities(role.Role(g.Role))
-		if err != nil {
-			return nil, err
-		}
 		groupMemberships = append(groupMemberships, &interfaces.GroupMembership{
 			GroupID:      g.Group.GroupID,
-			Capabilities: c,
-			Role:         role.Role(g.Role),
+			Capabilities: g.Capabilities,
 		})
 		if g.Group.GroupID == effectiveGroup {
 			// TODO: move these fields into u.GroupMemberships
 			cacheEncryptionEnabled = g.Group.CacheEncryptionEnabled
 			enforceIPRules = g.Group.EnforceIPRules
-			capabilities = c
+			groupStatus = g.Group.Status
+			capabilities = g.Capabilities
 		}
 	}
 	return &Claims{
 		UserID:                 u.UserID,
+		GroupID:                effectiveGroup,
 		GroupMemberships:       groupMemberships,
 		AllowedGroups:          allowedGroups,
-		GroupID:                effectiveGroup,
 		Capabilities:           capabilities,
 		CacheEncryptionEnabled: cacheEncryptionEnabled,
 		EnforceIPRules:         enforceIPRules,
+		GroupStatus:            groupStatus,
 	}, nil
 }
 
-func assembleJWT(ctx context.Context, c *Claims) (string, error) {
+func AssembleJWT(c *Claims, method jwt.SigningMethod) (string, error) {
 	expirationTime := time.Now().Add(*jwtDuration)
 	expiresAt := expirationTime.Unix()
 	// Round expiration times down to the nearest minute to improve stability
 	// of JWTs for caching purposes.
 	expiresAt -= (expiresAt % 60)
 	c.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
+	token := jwt.NewWithClaims(method, c)
+	if method == jwt.SigningMethodHS256 {
+		return assembleHS256JWT(token)
+	} else if method == jwt.SigningMethodES256 {
+		return assembleES256JWT(token)
+	}
+	return "", status.InternalError("Unsupported JWT signing method")
+}
+
+func assembleHS256JWT(token *jwt.Token) (string, error) {
 	key := *jwtKey
 	if *newJwtKey != "" && *signUsingNewJwtKey {
 		key = *newJwtKey
 	}
-	tokenString, err := token.SignedString([]byte(key))
-	return tokenString, err
+	return token.SignedString([]byte(key))
 }
 
-func AuthContextFromClaims(ctx context.Context, c *Claims, err error) context.Context {
+func assembleES256JWT(token *jwt.Token) (string, error) {
+	if es256PrivateKey == nil {
+		return "", status.UnimplementedError("ES256-signed JWTs are unsupported")
+	}
+	return token.SignedString(es256PrivateKey)
+}
+
+// Returns a context containing auth state for the provided Claims and auth
+// error. Note that this function assembles a JWT out of the provided Claims
+// and sets that in the context as well, so it should only be used in cases
+// where that is necessary.
+func AuthContextWithJWT(ctx context.Context, c *Claims, err error) context.Context {
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
-	tokenString, err := assembleJWT(ctx, c)
+	tokenString, err := AssembleJWT(c, jwt.SigningMethodHS256)
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
 	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, tokenString)
+	return AuthContext(ctx, c)
+}
+
+// Returns a Context containing auth state for the the provided Claims.
+func AuthContext(ctx context.Context, c *Claims) context.Context {
 	ctx = context.WithValue(ctx, contextClaimsKey, c)
 	// Note: we clear the error here in case it was set initially by the
 	// authentication handler, but then we want to re-authenticate later on in the
@@ -295,12 +495,21 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 	}
 
 	// If context already contains a JWT, just verify it and return the claims.
-	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
-		claims, err := ParseClaims(tokenString)
-		if err != nil {
-			return nil, err
+	// Skip re-parsing if an auth error is already set, since that means
+	// authentication was already attempted and failed.
+	if authErr, _ := authutil.AuthErrorFromContext(ctx); authErr == nil && *reparseJWTs {
+		if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok && tokenString != "" {
+			caller := "unknown"
+			if _, file, line, ok := runtime.Caller(1); ok {
+				caller = fmt.Sprintf("%s:%d", file, line)
+			}
+			reparseLog.CtxDebugf(ctx, "Reparsing JWT (caller: %s)", caller)
+			claims, err := parseClaims(ctx, tokenString, DefaultKeyProvider)
+			if err != nil {
+				return nil, err
+			}
+			return claims, nil
 		}
-		return claims, nil
 	}
 
 	// If there's no error or we have an assertion failure; just return a
@@ -323,32 +532,110 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 	return nil, status.UnauthenticatedErrorf("%s: %s", authutil.UserNotFoundMsg, err.Error())
 }
 
-// ClaimsCache helps reduce CPU overhead due to JWT parsing by caching parsed
-// and verified JWT claims.
+// AuthorizeServerAdmin checks whether the authenticated user is a server admin
+// (a member of the server admin group, with ORG_ADMIN capability).
+func AuthorizeServerAdmin(ctx context.Context) error {
+	u, err := ClaimsFromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	// If impersonation is in effect, it implies the user is an admin.
+	// Can't check group membership because impersonation modifies
+	// group information.
+	if u.IsImpersonating() {
+		return nil
+	}
+
+	if isAdminOfServerAdminGroup(u.GetGroupMemberships()) {
+		return nil
+	}
+
+	return errPermissionDenied
+}
+
+func isAdminOfServerAdminGroup(memberships []*interfaces.GroupMembership) bool {
+	serverAdminGID := *serverAdminGroupID
+	if serverAdminGID == "" {
+		return false
+	}
+	for _, m := range memberships {
+		if m.GroupID == serverAdminGID && slices.Contains(m.Capabilities, cappb.Capability_ORG_ADMIN) {
+			return true
+		}
+	}
+	return false
+}
+
+// ServerAdminGroupID returns the ID of the server admin group.
+// For auth checks, prefer using AuthorizeServerAdmin instead.
+func ServerAdminGroupID() string {
+	return *serverAdminGroupID
+}
+
+// VerificationKey pairs a key with its expected signing method.
+type VerificationKey struct {
+	Key           string
+	SigningMethod jwt.SigningMethod
+}
+
+// A lazily-evaluated provider of keys to use for verifying JWT signatures.
+type KeyProvider func(ctx context.Context) ([]VerificationKey, error)
+
+func DefaultKeyProvider(ctx context.Context) ([]VerificationKey, error) {
+	var keys []VerificationKey
+	if *newJwtKey != "" {
+		keys = []VerificationKey{
+			{Key: *newJwtKey, SigningMethod: jwt.SigningMethodHS256},
+			{Key: *jwtKey, SigningMethod: jwt.SigningMethodHS256},
+		}
+	} else {
+		keys = []VerificationKey{
+			{Key: *jwtKey, SigningMethod: jwt.SigningMethodHS256},
+		}
+	}
+	for _, k := range es256PublicKeys {
+		keys = append(keys, VerificationKey{Key: k, SigningMethod: jwt.SigningMethodES256})
+	}
+	return keys, nil
+}
+
+// ClaimsParser parses and verifies encoded JWTs. It also caches the parsed
+// claims, if configured to do so, to reduce overhead due to redundant parsing.
 //
-// The JWTs used with this cache should have Expiration times rounded down to
-// the nearest minute, so that their cache key doesn't change as often and can
-// therefore be cached for longer.
-type ClaimsCache struct {
+// The JWTs used with the parser's cache should have Expiration times rounded
+// down to the nearest minute, so that their cache key doesn't change as often
+// and can therefore be cached for longer.
+type ClaimsParser struct {
 	ttl time.Duration
 
 	mu  sync.Mutex
-	lru interfaces.LRU[*Claims]
+	lru lru.LRU[*Claims]
+
+	keyProvider KeyProvider
 }
 
-func NewClaimsCache(ctx context.Context, ttl time.Duration) (*ClaimsCache, error) {
+func NewClaimsParser(keyProvider KeyProvider) (*ClaimsParser, error) {
+	if *claimsCacheTTL <= 0 {
+		return &ClaimsParser{ttl: 0, keyProvider: keyProvider, lru: nil}, nil
+	}
+
 	config := &lru.Config[*Claims]{
 		MaxSize: claimsCacheSize,
 		SizeFn:  func(v *Claims) int64 { return 1 },
 	}
-	lru, err := lru.NewLRU[*Claims](config)
+	lru, err := lru.New[*Claims](config)
 	if err != nil {
 		return nil, err
 	}
-	return &ClaimsCache{ttl: ttl, lru: lru}, nil
+	return &ClaimsParser{ttl: *claimsCacheTTL, keyProvider: keyProvider, lru: lru}, nil
 }
 
-func (c *ClaimsCache) Get(token string) (*Claims, error) {
+func (c *ClaimsParser) Parse(ctx context.Context, token string) (*Claims, error) {
+	if c.ttl <= 0 {
+		return parseClaims(ctx, token, c.keyProvider)
+	}
+
 	c.mu.Lock()
 	v, ok := c.lru.Get(token)
 	c.mu.Unlock()
@@ -359,7 +646,7 @@ func (c *ClaimsCache) Get(token string) (*Claims, error) {
 		}
 	}
 
-	claims, err := ParseClaims(token)
+	claims, err := parseClaims(ctx, token, c.keyProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -369,4 +656,8 @@ func (c *ClaimsCache) Get(token string) (*Claims, error) {
 	c.mu.Unlock()
 
 	return claims, nil
+}
+
+func GetES256PublicKeys() []string {
+	return es256PublicKeys
 }

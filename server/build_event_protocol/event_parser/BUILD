@@ -26,6 +26,7 @@ go_test(
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:option_filters_go_proto",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],

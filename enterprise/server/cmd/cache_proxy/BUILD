@@ -1,5 +1,8 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
+load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -10,27 +13,58 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/action_cache_server_proxy",
+        "//enterprise/server/atime_updater",
         "//enterprise/server/backends/configsecrets",
+        "//enterprise/server/backends/distributed",
         "//enterprise/server/backends/pebble_cache",
         "//enterprise/server/byte_stream_server_proxy",
         "//enterprise/server/capabilities_server_proxy",
+        "//enterprise/server/clientidentity",
         "//enterprise/server/content_addressable_storage_server_proxy",
+        "//enterprise/server/experiments",
+        "//enterprise/server/hit_tracker_client",
+        "//enterprise/server/ip_rules_enforcer",
+        "//enterprise/server/ocifetcher_server_proxy",
+        "//enterprise/server/remote_crypter",
+        "//enterprise/server/remoteauth",
+        "//enterprise/server/routing/routing_action_cache_client",
+        "//enterprise/server/routing/routing_byte_stream_client",
+        "//enterprise/server/routing/routing_capabilities_client",
+        "//enterprise/server/routing/routing_content_addressable_storage_client",
+        "//enterprise/server/routing/routing_service",
+        "//enterprise/server/util/proxy_util",
+        "//enterprise/server/util/trafficstats",
+        "//proto:cache_service_go_proto",
+        "//proto:oci_fetcher_go_proto",
+        "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",
+        "//server/cache_server",
         "//server/config",
         "//server/http/interceptors",
-        "//server/nullauth",
         "//server/real_environment",
+        "//server/remote_asset/fetch_server",
+        "//server/remote_cache/action_cache_server",
+        "//server/remote_cache/byte_stream_server",
+        "//server/remote_cache/content_addressable_storage_server",
         "//server/rpc/interceptors",
         "//server/ssl",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
+        "//server/util/kuberesolver",
         "//server/util/log",
         "//server/util/monitoring",
+        "//server/util/scratchspace",
+        "//server/util/status",
         "//server/util/tracing",
+        "//server/util/usageutil",
+        "//server/util/xds",
         "//server/version",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
-        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//channelz/service",
+        "@org_golang_google_grpc//stats",
+        "@org_golang_google_grpc//xds",
     ],
 )
 
@@ -41,7 +75,53 @@ go_binary(
 
 container_image(
     name = "base_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
     base = "@buildbuddy_go_image_base//image",
     tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# Build a docker image similar to the go_binary above, but use the "go_image"
+# rule from @io_bazel_rules_docker instead, which creates a docker image.
+#
+# This target can be run locally with enterprise/tools/run_proxy_image.sh
+go_image(
+    name = "cache_proxy_go_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
+    base = ":base_image",
+    binary = ":cache_proxy",
+    tags = ["manual"],
+)
+
+container_image(
+    name = "cache_proxy_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
+    base = ":cache_proxy_go_image",
+    entrypoint = [
+        "/app/enterprise/server/cmd/cache_proxy/cache_proxy",
+    ],
+    tags = ["manual"],
+)
+
+pkg_tar(
+    name = "tar",
+    srcs = [":cache_proxy"],
+)
+
+oci_image(
+    name = "oci_image",
+    base = "@buildbuddy_go_oci_image_base",
+    entrypoint = ["/cache_proxy"],
+    target_compatible_with = ["@platforms//os:linux"],
+    tars = [":tar"],
     visibility = ["//visibility:public"],
 )

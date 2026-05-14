@@ -8,21 +8,55 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
 	pspb "github.com/buildbuddy-io/buildbuddy/proto/ping_service"
 )
 
-type pingServer struct{}
+type pingServer struct {
+	lastClientIP string
+}
 
 func (p *pingServer) Ping(ctx context.Context, req *pspb.PingRequest) (*pspb.PingResponse, error) {
+	p.lastClientIP = clientip.Get(ctx)
 	return &pspb.PingResponse{
 		Tag: req.GetTag(),
 	}, nil
+}
+
+func TestClientIPInterceptor_FallsBackToPeerAddress(t *testing.T) {
+	ctx := context.Background()
+	listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+
+	env := testenv.GetTestEnv(t)
+	grpcOptions := grpc_server.CommonGRPCServerOptions(env)
+	grpcServer := grpc.NewServer(grpcOptions...)
+	ps := &pingServer{}
+	pspb.RegisterApiServer(grpcServer, ps)
+
+	lis, err := net.Listen("tcp", listenAddr)
+	require.NoError(t, err)
+	go func() {
+		grpcServer.Serve(lis)
+	}()
+	t.Cleanup(grpcServer.Stop)
+
+	conn, err := grpc.Dial(listenAddr, grpc.WithInsecure())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	client := pspb.NewApiClient(conn)
+	_, err = client.Ping(ctx, &pspb.PingRequest{Tag: 123})
+	require.NoError(t, err)
+
+	assert.Equal(t, "127.0.0.1", ps.lastClientIP)
 }
 
 func BenchmarkBare(b *testing.B) {

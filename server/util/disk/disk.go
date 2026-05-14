@@ -2,15 +2,24 @@ package disk
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -27,12 +36,15 @@ const (
 
 var (
 	tmpWriteFileRe = regexp.MustCompile(`\.[0-9a-zA-Z]{10}\.tmp$`)
+
+	fileWriterConcurrencyLimit = flag.Int("file_writer_concurrency_limit", 5_000, "Limit on concurrent file writer operations that may result in syscalls. Can be disabled by setting the value to 0.")
 )
 
 type Partition struct {
-	ID                  string `yaml:"id" json:"id" usage:"The ID of the partition."`
-	MaxSizeBytes        int64  `yaml:"max_size_bytes" json:"max_size_bytes" usage:"Maximum size of the partition."`
-	EncryptionSupported bool   `yaml:"encryption_supported" json:"encryption_supported" usage:"Whether encrypted data can be stored on this partition."`
+	ID           string `yaml:"id" json:"id" usage:"The ID of the partition."`
+	MaxSizeBytes int64  `yaml:"max_size_bytes" json:"max_size_bytes" usage:"Maximum size of the partition."`
+	NumRanges    int    `yaml:"num_ranges" json:"num_ranges" usage:"The number of raft ranges to pre-create for this partition. This is only useful for raft."`
+	SoftDeleted  bool   `yaml:"soft_deleted" json:"soft_delete" usage:"If set, mark this partition as soft_deleted. This is only useful for raft. Note that rollback the config change won't undo this change. To undo the change, the partition descriptor needs to be updated in meta range."`
 }
 
 type PartitionMapping struct {
@@ -41,11 +53,11 @@ type PartitionMapping struct {
 	PartitionID string `yaml:"partition_id" json:"partition_id" usage:"The partition to use if the Group ID and prefix match."`
 }
 
+// EnsureDirectoryExists is a synonym for os.MkdirAll(dir, 0755). It returns an
+// error if dir exists but isn't a directory.
 func EnsureDirectoryExists(dir string) error {
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return os.MkdirAll(dir, 0755)
-	}
-	return nil
+	// This could be inlined, but there many callers in many files.
+	return os.MkdirAll(dir, 0755)
 }
 
 // RemoveIfExists attempts to remove the given named file or (empty) directory,
@@ -123,7 +135,7 @@ func ForceRemove(ctx context.Context, path string) error {
 		if entry.IsDir() {
 			// In order to remove dir entries and make sure we can further
 			// recurse into the dir, we need all bits set (RWX).
-			return os.Chmod(path, 0770)
+			return os.Chmod(path, 0777)
 		}
 		return nil
 	})
@@ -131,6 +143,34 @@ func ForceRemove(ctx context.Context, path string) error {
 		return err
 	}
 	return os.RemoveAll(path)
+}
+
+func isParent(parent, child string) bool {
+	return strings.HasPrefix(filepath.Clean(child), filepath.Clean(parent)+string(os.PathSeparator))
+}
+
+// forceUnlink attempts to unlink the given path (non-recursively). It ignores
+// NotExist errors. It attempts to change the parent directory permissions to
+// 0777 if needed in order to unlink the entry.
+func forceUnlink(path string) error {
+	if err := os.Remove(path); err == nil || errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if !errors.Is(err, os.ErrPermission) {
+		return err
+	}
+	// Try changing parent directory permissions.
+	parent := filepath.Dir(path)
+	if err := os.Chmod(parent, 0777); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// Parent disappeared - that means the child (probably) is gone too.
+			return nil
+		}
+		return fmt.Errorf("chmod parent %q: %w", parent, err)
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func FileExists(ctx context.Context, fullPath string) (bool, error) {
@@ -199,13 +239,6 @@ func WaitUntilExists(ctx context.Context, path string, opts WaitOpts) error {
 type readCloser struct {
 	*io.SectionReader
 	io.Closer
-	ctx context.Context
-}
-
-func (r *readCloser) Read(p []byte) (int, error) {
-	_, spn := tracing.StartSpan(r.ctx)
-	defer spn.End()
-	return r.SectionReader.Read(p)
 }
 
 func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.ReadCloser, error) {
@@ -213,14 +246,53 @@ func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.
 	if err != nil {
 		return nil, err
 	}
-	if length > 0 {
-		return &readCloser{io.NewSectionReader(f, offset, length), f, ctx}, nil
+	if offset == 0 && length == 0 {
+		return f, nil
 	}
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
+	if length == 0 {
+		length = math.MaxInt64
 	}
-	return &readCloser{io.NewSectionReader(f, offset, info.Size()-offset), f, ctx}, nil
+	return &readCloser{io.NewSectionReader(f, offset, length), f}, nil
+}
+
+// A buffered channel used for reservations.
+// Users obtain a reservation by writing a reservation to the channel.
+// The write will block if the concurrency limit has been reached.
+// The reservation is released by dequeing a value from the channel.
+var fileWriterQuotaReservations = sync.OnceValue(func() chan struct{} {
+	return make(chan struct{}, *fileWriterConcurrencyLimit)
+})
+var fileWriterInProgressGauge atomic.Int64
+var fileWriterTmpFileBytesGauge atomic.Int64
+
+func updateTmpFileBytesMetric(delta int64) {
+	metrics.DiskFileWriterTmpFileBytes.Set(float64(fileWriterTmpFileBytesGauge.Add(delta)))
+}
+
+// reserveFileWriterQuota blocks until quota is available.
+// If a reservation is obtained, the returned function must be called
+// to release the quota.
+func reserveFileWriterQuota(ctx context.Context) (func(), error) {
+	updateMetric := func(delta int64) {
+		metrics.DiskFileWriterInProgressOps.Set(float64(fileWriterInProgressGauge.Add(delta)))
+	}
+
+	updateMetric(1)
+	if *fileWriterConcurrencyLimit == 0 {
+		return func() {
+			updateMetric(-1)
+		}, nil
+	}
+	select {
+	case fileWriterQuotaReservations() <- struct{}{}:
+		return func() {
+			updateMetric(-1)
+			<-fileWriterQuotaReservations()
+		}, nil
+	case <-ctx.Done():
+		updateMetric(-1)
+		return nil, ctx.Err()
+	}
 }
 
 type writeMover struct {
@@ -228,43 +300,151 @@ type writeMover struct {
 	tmpFileIsClosed bool
 	ctx             context.Context
 	finalPath       string
+	// anonymous is true if File was opened with O_TMPFILE.
+	anonymous bool
+	// tmpDir is the directory where fallback named temp files are created
+	// (used by the anonymous Commit path on EEXIST).
+	tmpDir string
+	// tmpFileBytes is the number of bytes attributed to this writer's temp
+	// file in the DiskFileWriterTmpFileBytes gauge. Released back to the
+	// gauge when the temp file is committed to its final path or deleted.
+	tmpFileBytes   int64
+	metricReleased bool
 }
 
 func (w *writeMover) Write(p []byte) (int, error) {
-	_, spn := tracing.StartSpan(w.ctx)
-	defer spn.End()
-	return w.File.Write(p)
+	releaseQuota, err := reserveFileWriterQuota(w.ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer releaseQuota()
+	n, err := w.File.Write(p)
+	if n > 0 {
+		w.tmpFileBytes += int64(n)
+		updateTmpFileBytesMetric(int64(n))
+	}
+	return n, err
+}
+
+func (w *writeMover) releaseTmpFileBytesMetric() {
+	if w.metricReleased {
+		return
+	}
+	w.metricReleased = true
+	if w.tmpFileBytes > 0 {
+		updateTmpFileBytesMetric(-w.tmpFileBytes)
+	}
 }
 
 func (w *writeMover) Commit() error {
+	releaseQuota, err := reserveFileWriterQuota(w.ctx)
+	if err != nil {
+		return err
+	}
+	defer releaseQuota()
+	if w.anonymous {
+		// Fast path: try linking the anonymous file directly to finalPath.
+		// This is the common case (writing a new file). linkat fails with
+		// EEXIST if finalPath already exists, in which case we fall back to
+		// linking to a unique temp name and renaming over the destination.
+		err := linkAnonymousTmpFile(w.File, w.finalPath)
+		if err != nil {
+			if !errors.Is(err, syscall.EEXIST) {
+				return err
+			}
+			randStr, randErr := random.RandomString(10)
+			if randErr != nil {
+				return randErr
+			}
+			linkPath := filepath.Join(w.tmpDir, filepath.Base(w.finalPath)+fmt.Sprintf(".%s.tmp", randStr))
+			if err := linkAnonymousTmpFile(w.File, linkPath); err != nil {
+				return err
+			}
+			if err := os.Rename(linkPath, w.finalPath); err != nil {
+				RemoveIfExists(linkPath)
+				return err
+			}
+		}
+		w.releaseTmpFileBytesMetric()
+		if err := w.File.Close(); err != nil {
+			return err
+		}
+		w.tmpFileIsClosed = true
+		return nil
+	}
 	tmpName := w.File.Name()
 	if err := w.File.Close(); err != nil {
 		return err
 	}
 	w.tmpFileIsClosed = true
-	return os.Rename(tmpName, w.finalPath)
+	if err := os.Rename(tmpName, w.finalPath); err != nil {
+		return err
+	}
+	w.releaseTmpFileBytesMetric()
+	return nil
 }
 
 func (w *writeMover) Close() error {
+	// Try to reserve quota for the temp file close and delete, but we will
+	// do both either way. Otherwise we would leak temp files.
+	releaseQuota, _ := reserveFileWriterQuota(w.ctx)
+	if releaseQuota != nil {
+		defer releaseQuota()
+	}
 	if !w.tmpFileIsClosed {
 		w.File.Close()
 	}
-	if err := RemoveIfExists(w.File.Name()); err != nil {
-		log.Warningf("Failed to delete %s: %s", w.File.Name(), err)
+	if w.anonymous {
+		// O_TMPFILE inodes are reclaimed automatically when the last fd
+		// reference is closed; nothing else to do.
+		w.releaseTmpFileBytesMetric()
+		return nil
 	}
+	if err := RemoveIfExists(w.File.Name()); err != nil {
+		alert.CtxUnexpectedEvent(w.ctx, "failed_to_delete_tmp_file", "Failed to delete %s: %s", w.File.Name(), err)
+		return nil
+	}
+	w.releaseTmpFileBytesMetric()
 	return nil
 }
 
 func FileWriter(ctx context.Context, fullPath string) (interfaces.CommittedWriteCloser, error) {
-	if err := EnsureDirectoryExists(filepath.Dir(fullPath)); err != nil {
+	return FileWriterWithTmpDir(ctx, filepath.Dir(fullPath), fullPath)
+}
+
+func FileWriterWithTmpDir(ctx context.Context, tmpDir, fullPath string) (interfaces.CommittedWriteCloser, error) {
+	releaseQuota, err := reserveFileWriterQuota(ctx)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseQuota()
+
+	dir := filepath.Dir(fullPath)
+	if err := EnsureDirectoryExists(dir); err != nil {
+		return nil, err
+	}
+
+	// On Linux, prefer O_TMPFILE so we don't leave a named temp file behind
+	// if the writer is dropped without Commit (e.g. process crash). Falls
+	// back to a named temp file if the filesystem doesn't support it.
+	if f, ok, err := openAnonymousTmpFile(dir); err != nil {
+		return nil, err
+	} else if ok {
+		return &writeMover{
+			File:      f,
+			ctx:       ctx,
+			finalPath: fullPath,
+			tmpDir:    tmpDir,
+			anonymous: true,
+		}, nil
+	}
+
 	randStr, err := random.RandomString(10)
 	if err != nil {
 		return nil, err
 	}
 
-	tmpFileName := fullPath + fmt.Sprintf(".%s.tmp", randStr)
+	tmpFileName := filepath.Join(tmpDir, filepath.Base(fullPath)+fmt.Sprintf(".%s.tmp", randStr))
 	f, err := os.OpenFile(tmpFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
@@ -358,4 +538,43 @@ func CopyViaTmpSibling(src, dest string) error {
 		return err
 	}
 	return nil
+}
+
+type UsageMonitor struct {
+	rootDir     string  // The path to watch
+	maxFullness float64 // .90 means fail health check with 90 % full
+}
+
+func NewUsageMonitor(path string, maxFullness float64) *UsageMonitor {
+	return &UsageMonitor{
+		rootDir:     path,
+		maxFullness: maxFullness,
+	}
+}
+
+func (s *UsageMonitor) Check(ctx context.Context) error {
+	usage, err := GetDirUsage(s.rootDir)
+	if err != nil {
+		log.Warningf("Error getting usage for path %q: %v", s.rootDir, err)
+		return nil
+	}
+	percentUsed := float64(usage.UsedBytes) / float64(usage.TotalBytes)
+	if percentUsed > s.maxFullness {
+		return status.FailedPreconditionErrorf("Insufficent free space on %q, %2.2f%% full", s.rootDir, percentUsed*100)
+	}
+	return nil
+}
+
+func (s *UsageMonitor) Statusz(ctx context.Context) string {
+	usage, err := GetDirUsage(s.rootDir)
+	if err != nil {
+		return fmt.Sprintf("Error getting usage for path %q: %v", s.rootDir, err)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "<div>TotalBytes: %d</div>", usage.TotalBytes)
+	fmt.Fprintf(&b, "<div>UsedBytes: %d</div>", usage.UsedBytes)
+	fmt.Fprintf(&b, "<div>FreeBytes: %d</div>", usage.FreeBytes)
+	fmt.Fprintf(&b, "<div>AvailBytes: %d</div>", usage.AvailBytes)
+	fmt.Fprintf(&b, "<div>Percent Full: %2.2f%%</div>", float64(usage.UsedBytes)*100/float64(usage.TotalBytes))
+	return b.String()
 }

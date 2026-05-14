@@ -12,19 +12,24 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scim"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 func getEnv(t *testing.T) *testenv.TestEnv {
@@ -40,12 +45,12 @@ func authUserCtx(ctx context.Context, env environment.Env, t *testing.T, userID 
 	return ctx
 }
 
-func prepareGroup(t *testing.T, ctx context.Context, env environment.Env) string {
+func prepareGroup(t *testing.T, ctx context.Context, env environment.Env) (string, *tables.Group) {
 	u, err := env.GetUserDB().GetUser(ctx)
 	require.NoError(t, err)
 	g := u.Groups[0].Group
 
-	apiKey, err := env.GetAuthDB().CreateAPIKey(ctx, g.GroupID, "SCIM", []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY}, false)
+	apiKey, err := env.GetAuthDB().CreateAPIKey(ctx, g.GroupID, "SCIM", []cappb.Capability{cappb.Capability_ORG_ADMIN}, 0, false)
 	require.NoError(t, err)
 
 	g.SamlIdpMetadataUrl = "foo"
@@ -64,7 +69,7 @@ func prepareGroup(t *testing.T, ctx context.Context, env environment.Env) string
 	_, err = env.GetUserDB().UpdateGroup(ctx, &gr)
 	require.NoError(t, err)
 
-	return apiKey.Value
+	return apiKey.Value, &gr
 }
 
 type testClient struct {
@@ -76,7 +81,7 @@ func (tc *testClient) do(method string, url string, body []byte) (int, []byte) {
 	req, err := http.NewRequest(method, url, bytes.NewReader(body))
 	require.NoError(tc.t, err)
 
-	req.Header[testauth.APIKeyHeader] = []string{tc.apiKey}
+	req.Header[authutil.APIKeyHeader] = []string{tc.apiKey}
 	rsp, err := http.DefaultClient.Do(req)
 	require.NoError(tc.t, err)
 	b, err := io.ReadAll(rsp.Body)
@@ -111,6 +116,14 @@ func verifyRole(t *testing.T, ur scim.UserResource, expectedRole string) {
 	require.Equal(t, true, ur.Roles[0].Primary)
 }
 
+func updateUserSubID(t *testing.T, ctx context.Context, udb interfaces.UserDB, userID string, g *tables.Group) {
+	u, err := udb.GetUserByID(ctx, userID, &interfaces.GetUserOpts{})
+	require.NoError(t, err)
+	u.SubID = saml.SubIDForUserName(u.Email, g)
+	err = udb.UpdateUser(ctx, u)
+	require.NoError(t, err)
+}
+
 func TestGetUsers(t *testing.T) {
 	env := getEnv(t)
 	udb := env.GetUserDB()
@@ -133,14 +146,25 @@ func TestGetUsers(t *testing.T) {
 	require.NoError(t, err)
 
 	userCtx := authUserCtx(ctx, env, t, "US100")
-	apiKey := prepareGroup(t, userCtx, env)
+	apiKey, gr := prepareGroup(t, userCtx, env)
+	updateUserSubID(t, userCtx, udb, "US100", gr)
+
+	// Add another user to the group with the same e-mail but non-matching
+	// SubID prefix. This user should not be returned by the SCIM call.
+	err = udb.InsertUser(ctx, &tables.User{
+		UserID: "US777",
+		SubID:  "SubID777",
+		Email:  "user100@org1.io",
+	})
+	require.NoError(t, err)
 
 	extraUsers := []*tables.User{}
 	for i := 101; i < 111; i++ {
+		email := fmt.Sprintf("user%d@org1.io", i)
 		extraUsers = append(extraUsers, &tables.User{
 			UserID: fmt.Sprintf("US%d", i),
-			SubID:  fmt.Sprintf("SubID%d", i),
-			Email:  fmt.Sprintf("user%d@org1.io", i),
+			SubID:  saml.SubIDForUserName(email, gr),
+			Email:  email,
 		})
 	}
 	rand.Shuffle(len(extraUsers), func(i, j int) {
@@ -202,8 +226,12 @@ func TestGetUsers(t *testing.T) {
 	}
 
 	// Test using filter to look up a specific user.
+	// There are two users with the same e-mail address but only one has a
+	// SubID that matches the SAML application.
+	// The query should ignore the existence of the user with the non-matching
+	// SubID.
 	{
-		code, body := tc.Get(baseURL + "/scim/Users?filter=" + url.QueryEscape(`userName eq "user109@org1.io"`))
+		code, body := tc.Get(baseURL + "/scim/Users?filter=" + url.QueryEscape(`userName eq "user100@org1.io"`))
 		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
 		lr := scim.UserListResponseResource{}
 		err = json.Unmarshal(body, &lr)
@@ -216,8 +244,8 @@ func TestGetUsers(t *testing.T) {
 		require.Len(t, lr.Resources, 1)
 
 		r := lr.Resources[0]
-		require.Equal(t, "US109", r.ID)
-		require.Equal(t, "user109@org1.io", r.UserName)
+		require.Equal(t, "US100", r.ID)
+		require.Equal(t, "user100@org1.io", r.UserName)
 		require.True(t, r.Active)
 	}
 
@@ -292,7 +320,7 @@ func TestCreateUser(t *testing.T) {
 	require.NoError(t, err)
 
 	userCtx := authUserCtx(ctx, env, t, "US100")
-	apiKey := prepareGroup(t, userCtx, env)
+	apiKey, group := prepareGroup(t, userCtx, env)
 
 	ss := scim.NewSCIMServer(env)
 	mux := http.NewServeMux()
@@ -345,12 +373,13 @@ func TestCreateUser(t *testing.T) {
 		verifyRole(t, ur, role.Developer.String())
 		require.True(t, ur.Active)
 
-		u, err := udb.GetUserByID(userCtx, createdUser.ID)
+		u, err := udb.GetUserByID(userCtx, createdUser.ID, &interfaces.GetUserOpts{})
 		require.NoError(t, err)
 		require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/user500@org1.io", u.SubID)
 	}
 
 	// Create admin user.
+	user501ID := ""
 	{
 		newUser := &scim.UserResource{
 			Schemas:  []string{scim.UserResourceSchema},
@@ -395,6 +424,64 @@ func TestCreateUser(t *testing.T) {
 		require.Equal(t, "user501@org1.io", ur.UserName)
 		verifyRole(t, ur, role.Admin.String())
 		require.True(t, ur.Active)
+
+		user501ID = createdUser.ID
+	}
+
+	// Remove a user manually from the SCIM-managed group and try creating the
+	// user through the SCIM API. The user should be added to the target group.
+	{
+		err = udb.UpdateGroupUsers(userCtx, group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+			UserId:           &uidpb.UserId{Id: user501ID},
+			MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
+		}})
+		require.NoError(t, err)
+
+		newUser := &scim.UserResource{
+			Schemas:  []string{scim.UserResourceSchema},
+			UserName: "user501@org1.io",
+			Name: scim.NameResource{
+				GivenName:  "User",
+				FamilyName: "Doe",
+			},
+			Emails: []scim.EmailResource{
+				{
+					Primary: true,
+					Value:   "user501@org1.io",
+				},
+			},
+			Active: true,
+		}
+		body, err := json.Marshal(newUser)
+		require.NoError(t, err)
+
+		code, body := tc.Post(baseURL+"/scim/Users", body)
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		createdUser := scim.UserResource{}
+		err = json.Unmarshal(body, &createdUser)
+		require.NoError(t, err)
+		require.Equal(t, "User", createdUser.Name.GivenName)
+		require.Equal(t, "Doe", createdUser.Name.FamilyName)
+		require.Equal(t, "user501@org1.io", createdUser.UserName)
+		require.True(t, createdUser.Active)
+
+		code, body = tc.Get(baseURL + "/scim/Users/" + createdUser.ID)
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		ur := scim.UserResource{}
+		err = json.Unmarshal(body, &ur)
+		require.NoError(t, err)
+		require.Len(t, ur.Schemas, 1)
+		require.Equal(t, scim.UserResourceSchema, ur.Schemas[0])
+		require.Equal(t, createdUser.ID, ur.ID)
+		require.Equal(t, "User", ur.Name.GivenName)
+		require.Equal(t, "Doe", ur.Name.FamilyName)
+		require.Equal(t, "user501@org1.io", ur.UserName)
+		verifyRole(t, ur, role.Developer.String())
+		require.True(t, ur.Active)
+
+		u, err := udb.GetUserByID(userCtx, createdUser.ID, &interfaces.GetUserOpts{})
+		require.NoError(t, err)
+		require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/user501@org1.io", u.SubID)
 	}
 }
 
@@ -419,7 +506,7 @@ func TestDeleteUser(t *testing.T) {
 	require.NoError(t, err)
 
 	userCtx := authUserCtx(ctx, env, t, "US100")
-	apiKey := prepareGroup(t, userCtx, env)
+	apiKey, _ := prepareGroup(t, userCtx, env)
 
 	// Deletion victims.
 	err = udb.InsertUser(userCtx, &tables.User{
@@ -475,7 +562,7 @@ func TestDeleteUser(t *testing.T) {
 		err = json.Unmarshal(body, &updatedUser)
 		require.NoError(t, err)
 		require.False(t, updatedUser.Active)
-		_, err = udb.GetUserByID(userCtx, "US101")
+		_, err = udb.GetUserByID(userCtx, "US101", &interfaces.GetUserOpts{})
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err))
 	}
@@ -494,7 +581,7 @@ func TestDeleteUser(t *testing.T) {
 		err = json.Unmarshal(body, &updatedUser)
 		require.NoError(t, err)
 		require.False(t, updatedUser.Active)
-		_, err = udb.GetUserByID(userCtx, "US102")
+		_, err = udb.GetUserByID(userCtx, "US102", &interfaces.GetUserOpts{})
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err))
 	}
@@ -521,7 +608,7 @@ func TestDeleteUser(t *testing.T) {
 		err = json.Unmarshal(body, &updatedUser)
 		require.NoError(t, err)
 		require.False(t, updatedUser.Active)
-		_, err = udb.GetUserByID(userCtx, "US103")
+		_, err = udb.GetUserByID(userCtx, "US103", &interfaces.GetUserOpts{})
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err))
 	}
@@ -531,7 +618,7 @@ func TestDeleteUser(t *testing.T) {
 		code, body := tc.Delete(baseURL + "/scim/Users/US104")
 		require.Equal(tc.t, http.StatusNoContent, code, "body: %s", string(body))
 		require.NoError(t, err)
-		_, err = udb.GetUserByID(userCtx, "US104")
+		_, err = udb.GetUserByID(userCtx, "US104", &interfaces.GetUserOpts{})
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err))
 	}
@@ -570,7 +657,7 @@ func TestUpdateUser(t *testing.T) {
 	require.NoError(t, err)
 
 	userCtx := authUserCtx(ctx, env, t, "US100")
-	apiKey := prepareGroup(t, userCtx, env)
+	apiKey, _ := prepareGroup(t, userCtx, env)
 
 	ss := scim.NewSCIMServer(env)
 	mux := http.NewServeMux()
@@ -614,59 +701,118 @@ func TestUpdateUser(t *testing.T) {
 	verifyRole(t, updatedUser, role.Developer.String())
 
 	// Verify that SubID was updated to reflect the new email.
-	u, err := udb.GetUserByID(userCtx, updatedUser.ID)
+	u, err := udb.GetUserByID(userCtx, updatedUser.ID, &interfaces.GetUserOpts{})
 	require.NoError(t, err)
 	require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/puttest@example.domain", u.SubID)
 
 	// Update user using PATCH request.
-	patchReq := &scim.PatchResource{
-		Operations: []scim.OperationResource{
-			{
-				Op:    "replace",
-				Path:  scim.FamilyNameAttribute,
-				Value: "Fam",
+	{
+		patchReq := &scim.PatchResource{
+			Operations: []scim.OperationResource{
+				{
+					Op:    "replace",
+					Path:  scim.FamilyNameAttribute,
+					Value: "Fam",
+				},
+				{
+					Op:    "replace",
+					Path:  scim.GivenNameAttribute,
+					Value: "Gov",
+				},
+				{
+					Op:    "replace",
+					Path:  scim.UserNameAttribute,
+					Value: "somenewemail@example.domain",
+				},
 			},
-			{
-				Op:    "replace",
-				Path:  scim.GivenNameAttribute,
-				Value: "Gov",
-			},
-			{
-				Op:    "replace",
-				Path:  scim.UserNameAttribute,
-				Value: "somenewemail@example.domain",
-			},
-		},
-		Schemas: []string{scim.PatchResourceSchema},
+			Schemas: []string{scim.PatchResourceSchema},
+		}
+		body, err = json.Marshal(patchReq)
+		require.NoError(t, err)
+		code, body = tc.Patch(baseURL+"/scim/Users/US100", body)
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		updatedUser = scim.UserResource{}
+		err = json.Unmarshal(body, &updatedUser)
+		require.NoError(t, err)
+		require.True(t, updatedUser.Active)
+		require.Equal(t, "Gov", updatedUser.Name.GivenName)
+		require.Equal(t, "Fam", updatedUser.Name.FamilyName)
+		require.Equal(t, "somenewemail@example.domain", updatedUser.UserName)
+
+		// Look up patched user.
+		code, body = tc.Get(baseURL + "/scim/Users/US100")
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		updatedUser = scim.UserResource{}
+		err = json.Unmarshal(body, &updatedUser)
+		require.NoError(t, err)
+		require.True(t, updatedUser.Active)
+		require.Equal(t, "Gov", updatedUser.Name.GivenName)
+		require.Equal(t, "Fam", updatedUser.Name.FamilyName)
+		require.Equal(t, "somenewemail@example.domain", updatedUser.UserName)
+		verifyRole(t, updatedUser, role.Developer.String())
+
+		// Verify that SubID was updated to reflect the new email.
+		u, err = udb.GetUserByID(userCtx, updatedUser.ID, &interfaces.GetUserOpts{})
+		require.NoError(t, err)
+		require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/somenewemail@example.domain", u.SubID)
 	}
-	body, err = json.Marshal(patchReq)
-	require.NoError(t, err)
-	code, body = tc.Patch(baseURL+"/scim/Users/US100", body)
-	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
-	updatedUser = scim.UserResource{}
-	err = json.Unmarshal(body, &updatedUser)
-	require.NoError(t, err)
-	require.True(t, updatedUser.Active)
-	require.Equal(t, "Gov", updatedUser.Name.GivenName)
-	require.Equal(t, "Fam", updatedUser.Name.FamilyName)
-	require.Equal(t, "somenewemail@example.domain", updatedUser.UserName)
 
-	// Look up patched user.
-	code, body = tc.Get(baseURL + "/scim/Users/US100")
-	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
-	updatedUser = scim.UserResource{}
-	err = json.Unmarshal(body, &updatedUser)
-	require.NoError(t, err)
-	require.True(t, updatedUser.Active)
-	require.Equal(t, "Gov", updatedUser.Name.GivenName)
-	require.Equal(t, "Fam", updatedUser.Name.FamilyName)
-	require.Equal(t, "somenewemail@example.domain", updatedUser.UserName)
-	verifyRole(t, updatedUser, role.Developer.String())
+	// Update the user using PATCH request with 'add' operation.
+	// An upstream system may send these instead of 'replace' if an attribute,
+	// like name, is empty.
+	{
+		newFamilyName := "Stark"
+		newGivenName := "Arya"
+		newEmail := "arya@example.domain"
+		patchReq := &scim.PatchResource{
+			Operations: []scim.OperationResource{
+				{
+					Op:    "add",
+					Path:  scim.FamilyNameAttribute,
+					Value: newFamilyName,
+				},
+				{
+					Op:    "add",
+					Path:  scim.GivenNameAttribute,
+					Value: newGivenName,
+				},
+				{
+					Op:    "add",
+					Path:  scim.UserNameAttribute,
+					Value: newEmail,
+				},
+			},
+			Schemas: []string{scim.PatchResourceSchema},
+		}
+		body, err = json.Marshal(patchReq)
+		require.NoError(t, err)
+		code, body = tc.Patch(baseURL+"/scim/Users/US100", body)
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		updatedUser = scim.UserResource{}
+		err = json.Unmarshal(body, &updatedUser)
+		require.NoError(t, err)
+		require.True(t, updatedUser.Active)
+		require.Equal(t, newGivenName, updatedUser.Name.GivenName)
+		require.Equal(t, newFamilyName, updatedUser.Name.FamilyName)
+		require.Equal(t, newEmail, updatedUser.UserName)
 
-	// Verify that SubID was updated to reflect the new email.
-	u, err = udb.GetUserByID(userCtx, updatedUser.ID)
-	require.NoError(t, err)
-	require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/somenewemail@example.domain", u.SubID)
+		// Look up patched user.
+		code, body = tc.Get(baseURL + "/scim/Users/US100")
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		updatedUser = scim.UserResource{}
+		err = json.Unmarshal(body, &updatedUser)
+		require.NoError(t, err)
+		require.True(t, updatedUser.Active)
+		require.Equal(t, newGivenName, updatedUser.Name.GivenName)
+		require.Equal(t, newFamilyName, updatedUser.Name.FamilyName)
+		require.Equal(t, newEmail, updatedUser.UserName)
+		verifyRole(t, updatedUser, role.Developer.String())
+
+		// Verify that SubID was updated to reflect the new email.
+		u, err = udb.GetUserByID(userCtx, updatedUser.ID, &interfaces.GetUserOpts{})
+		require.NoError(t, err)
+		require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/"+newEmail, u.SubID)
+	}
 
 	// Promote user to admin.
 	req.Role = role.Admin.String()
@@ -699,7 +845,7 @@ func TestUpdateUser(t *testing.T) {
 	verifyRole(t, updatedUser, role.Developer.String())
 
 	// Promote user to Admin using patch request.
-	patchReq = &scim.PatchResource{
+	patchReq := &scim.PatchResource{
 		Operations: []scim.OperationResource{
 			{
 				Op:    "replace",
@@ -721,4 +867,601 @@ func TestUpdateUser(t *testing.T) {
 	err = json.Unmarshal(body, &updatedUser)
 	require.NoError(t, err)
 	verifyRole(t, updatedUser, role.Admin.String())
+}
+
+func TestCreateGroup(t *testing.T) {
+	env := getEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	// Create first user & group.
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US100",
+		SubID:  "SubID100",
+		Email:  "user100@org1.io",
+	})
+	require.NoError(t, err)
+
+	userCtx := authUserCtx(ctx, env, t, "US100")
+	apiKey, _ := prepareGroup(t, userCtx, env)
+
+	ss := scim.NewSCIMServer(env)
+	mux := http.NewServeMux()
+	ss.RegisterHandlers(mux)
+
+	baseURL := testhttp.StartServer(t, mux).String()
+	tc := &testClient{t: t, apiKey: apiKey}
+
+	// Create a group with no members.
+	{
+		reqBody := `{"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],"displayName":"test group","members":[]}`
+		code, body := tc.Post(baseURL+"/scim/v2/Groups", []byte(reqBody))
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		gr := scim.GroupResource{}
+		err = json.Unmarshal(body, &gr)
+		require.NoError(t, err)
+		require.Len(t, gr.Schemas, 1)
+		require.Equal(t, scim.GroupResourceSchema, gr.Schemas[0])
+		require.NotEmpty(t, gr.ID)
+		require.Equal(t, "test group", gr.DisplayName)
+		require.Empty(t, gr.Members)
+		require.Equal(t, "Group", gr.Meta.ResourceType)
+
+		// Verify the group can be retrieved.
+		code, body = tc.Get(baseURL + "/scim/v2/Groups/" + gr.ID)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		fetched := scim.GroupResource{}
+		err = json.Unmarshal(body, &fetched)
+		require.NoError(t, err)
+		require.Equal(t, gr.ID, fetched.ID)
+		require.Equal(t, "test group", fetched.DisplayName)
+		require.Empty(t, fetched.Members)
+		require.Equal(t, "Group", fetched.Meta.ResourceType)
+	}
+
+	// Create a group with members.
+	{
+		// Create a second user to add as a member.
+		err = udb.InsertUser(userCtx, &tables.User{
+			UserID: "US200",
+			SubID:  "SubID200",
+			Email:  "user200@org1.io",
+		})
+		require.NoError(t, err)
+
+		reqBody := `{"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],"displayName":"group with members","members":[{"value":"US100"},{"value":"US200"}]}`
+		code, body := tc.Post(baseURL+"/scim/v2/Groups", []byte(reqBody))
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		gr := scim.GroupResource{}
+		err = json.Unmarshal(body, &gr)
+		require.NoError(t, err)
+		require.Equal(t, "group with members", gr.DisplayName)
+		require.Len(t, gr.Members, 2)
+		require.Equal(t, "Group", gr.Meta.ResourceType)
+
+		memberIDs := map[string]bool{}
+		for _, m := range gr.Members {
+			memberIDs[m.Value] = true
+		}
+		require.True(t, memberIDs["US100"])
+		require.True(t, memberIDs["US200"])
+
+		// Verify the group can be retrieved with members.
+		code, body = tc.Get(baseURL + "/scim/v2/Groups/" + gr.ID)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		fetched := scim.GroupResource{}
+		err = json.Unmarshal(body, &fetched)
+		require.NoError(t, err)
+		require.Equal(t, gr.ID, fetched.ID)
+		require.Len(t, fetched.Members, 2)
+	}
+}
+
+func TestGetGroups(t *testing.T) {
+	env := getEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	// Create first user & group.
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US100",
+		SubID:  "SubID100",
+		Email:  "user100@org1.io",
+	})
+	require.NoError(t, err)
+
+	userCtx := authUserCtx(ctx, env, t, "US100")
+	apiKey, _ := prepareGroup(t, userCtx, env)
+
+	ss := scim.NewSCIMServer(env)
+	mux := http.NewServeMux()
+	ss.RegisterHandlers(mux)
+
+	baseURL := testhttp.StartServer(t, mux).String()
+	tc := &testClient{t: t, apiKey: apiKey}
+
+	// List groups when there are none.
+	{
+		code, body := tc.Get(baseURL + "/scim/v2/Groups")
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		lr := scim.GroupListResponseResource{}
+		err = json.Unmarshal(body, &lr)
+		require.NoError(t, err)
+		require.Len(t, lr.Schemas, 1)
+		require.Equal(t, scim.ListResponseSchema, lr.Schemas[0])
+		require.Equal(t, 0, lr.TotalResults)
+		require.Empty(t, lr.Resources)
+	}
+
+	// Create several groups and list them.
+	for _, name := range []string{"group A", "group B", "group C", "group D"} {
+		reqBody := fmt.Sprintf(`{"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],"displayName":%q,"members":[]}`, name)
+		code, body := tc.Post(baseURL+"/scim/v2/Groups", []byte(reqBody))
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+	}
+
+	// List all groups.
+	{
+		code, body := tc.Get(baseURL + "/scim/v2/Groups")
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		lr := scim.GroupListResponseResource{}
+		err = json.Unmarshal(body, &lr)
+		require.NoError(t, err)
+		require.Equal(t, 4, lr.TotalResults)
+		require.Equal(t, 1, lr.StartIndex)
+		require.Equal(t, 4, lr.ItemsPerPage)
+		require.Len(t, lr.Resources, 4)
+
+		for _, g := range lr.Resources {
+			require.Equal(t, "Group", g.Meta.ResourceType)
+		}
+	}
+
+	// Test pagination.
+	{
+		code, body := tc.Get(baseURL + "/scim/v2/Groups?startIndex=2&count=2")
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		lr := scim.GroupListResponseResource{}
+		err = json.Unmarshal(body, &lr)
+		require.NoError(t, err)
+		require.Equal(t, 4, lr.TotalResults)
+		require.Equal(t, 2, lr.StartIndex)
+		require.Equal(t, 2, lr.ItemsPerPage)
+		require.Len(t, lr.Resources, 2)
+	}
+
+	// Test filter by displayName.
+	{
+		code, body := tc.Get(baseURL + "/scim/v2/Groups?filter=" + url.QueryEscape(`displayName eq "group C"`))
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		lr := scim.GroupListResponseResource{}
+		err = json.Unmarshal(body, &lr)
+		require.NoError(t, err)
+		require.Equal(t, 1, lr.TotalResults)
+		require.Equal(t, 1, lr.StartIndex)
+		require.Equal(t, 1, lr.ItemsPerPage)
+		require.Len(t, lr.Resources, 1)
+		require.Equal(t, "group C", lr.Resources[0].DisplayName)
+	}
+
+	// Test filter with no match.
+	{
+		code, body := tc.Get(baseURL + "/scim/v2/Groups?filter=" + url.QueryEscape(`displayName eq "nonexistent"`))
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		lr := scim.GroupListResponseResource{}
+		err = json.Unmarshal(body, &lr)
+		require.NoError(t, err)
+		require.Equal(t, 0, lr.TotalResults)
+		require.Empty(t, lr.Resources)
+	}
+
+	// Get a non-existent group.
+	{
+		code, _ := tc.Get(baseURL + "/scim/v2/Groups/nonexistent")
+		require.Equal(t, http.StatusNotFound, code)
+	}
+}
+
+func TestPatchGroup(t *testing.T) {
+	env := getEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US100",
+		SubID:  "SubID100",
+		Email:  "user100@org1.io",
+	})
+	require.NoError(t, err)
+
+	userCtx := authUserCtx(ctx, env, t, "US100")
+	apiKey, _ := prepareGroup(t, userCtx, env)
+
+	ss := scim.NewSCIMServer(env)
+	mux := http.NewServeMux()
+	ss.RegisterHandlers(mux)
+
+	baseURL := testhttp.StartServer(t, mux).String()
+	tc := &testClient{t: t, apiKey: apiKey}
+
+	// Create a group first.
+	reqBody := `{"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],"displayName":"original name","members":[]}`
+	code, body := tc.Post(baseURL+"/scim/v2/Groups", []byte(reqBody))
+	require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+	created := scim.GroupResource{}
+	err = json.Unmarshal(body, &created)
+	require.NoError(t, err)
+
+	// Patch displayName using path field.
+	{
+		patchReq := &scim.PatchResource{
+			Schemas: []string{scim.PatchResourceSchema},
+			Operations: []scim.OperationResource{
+				{
+					Op:    "replace",
+					Path:  "displayName",
+					Value: "final name",
+				},
+			},
+		}
+		patchBody, err := json.Marshal(patchReq)
+		require.NoError(t, err)
+
+		code, body = tc.Patch(baseURL+"/scim/v2/Groups/"+created.ID, patchBody)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		patched := scim.GroupResource{}
+		err = json.Unmarshal(body, &patched)
+		require.NoError(t, err)
+		require.Equal(t, "final name", patched.DisplayName)
+
+		// Verify via GET.
+		code, body = tc.Get(baseURL + "/scim/v2/Groups/" + created.ID)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		fetched := scim.GroupResource{}
+		err = json.Unmarshal(body, &fetched)
+		require.NoError(t, err)
+		require.Equal(t, "final name", fetched.DisplayName)
+	}
+}
+
+func TestPatchGroupMembers(t *testing.T) {
+	env := getEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US100",
+		SubID:  "SubID100",
+		Email:  "user100@org1.io",
+	})
+	require.NoError(t, err)
+
+	userCtx := authUserCtx(ctx, env, t, "US100")
+	apiKey, _ := prepareGroup(t, userCtx, env)
+
+	// Create additional users.
+	for _, u := range []struct {
+		id, email string
+	}{
+		{"US200", "user200@org1.io"},
+		{"US300", "user300@org1.io"},
+	} {
+		err = udb.InsertUser(userCtx, &tables.User{
+			UserID: u.id,
+			SubID:  "SubID" + u.id,
+			Email:  u.email,
+		})
+		require.NoError(t, err)
+	}
+
+	ss := scim.NewSCIMServer(env)
+	mux := http.NewServeMux()
+	ss.RegisterHandlers(mux)
+
+	baseURL := testhttp.StartServer(t, mux).String()
+	tc := &testClient{t: t, apiKey: apiKey}
+
+	// Create a group with no members.
+	reqBody := `{"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],"displayName":"test group","members":[]}`
+	code, body := tc.Post(baseURL+"/scim/v2/Groups", []byte(reqBody))
+	require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+	created := scim.GroupResource{}
+	err = json.Unmarshal(body, &created)
+	require.NoError(t, err)
+	groupURL := baseURL + "/scim/v2/Groups/" + created.ID
+
+	// Add members via PATCH.
+	{
+		patchReq := &scim.PatchResource{
+			Schemas: []string{scim.PatchResourceSchema},
+			Operations: []scim.OperationResource{
+				{
+					Op:   "add",
+					Path: "members",
+					Value: []any{
+						map[string]any{"value": "US100", "display": "user100@org1.io"},
+						map[string]any{"value": "US200", "display": "user200@org1.io"},
+					},
+				},
+			},
+		}
+		patchBody, err := json.Marshal(patchReq)
+		require.NoError(t, err)
+
+		code, body = tc.Patch(groupURL, patchBody)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		patched := scim.GroupResource{}
+		err = json.Unmarshal(body, &patched)
+		require.NoError(t, err)
+		require.Len(t, patched.Members, 2)
+
+		memberIDs := map[string]bool{}
+		for _, m := range patched.Members {
+			memberIDs[m.Value] = true
+		}
+		require.True(t, memberIDs["US100"])
+		require.True(t, memberIDs["US200"])
+	}
+
+	// Remove a member and add another in a single PATCH.
+	{
+		patchReq := &scim.PatchResource{
+			Schemas: []string{scim.PatchResourceSchema},
+			Operations: []scim.OperationResource{
+				{
+					Op:   "remove",
+					Path: "members",
+					Value: []any{
+						map[string]any{"value": "US100"},
+					},
+				},
+				{
+					Op:   "add",
+					Path: "members",
+					Value: []any{
+						map[string]any{"value": "US300", "display": "user300@org1.io"},
+					},
+				},
+			},
+		}
+		patchBody, err := json.Marshal(patchReq)
+		require.NoError(t, err)
+
+		code, body = tc.Patch(groupURL, patchBody)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		patched := scim.GroupResource{}
+		err = json.Unmarshal(body, &patched)
+		require.NoError(t, err)
+		require.Len(t, patched.Members, 2)
+
+		memberIDs := map[string]bool{}
+		for _, m := range patched.Members {
+			memberIDs[m.Value] = true
+		}
+		require.False(t, memberIDs["US100"], "US100 should have been removed")
+		require.True(t, memberIDs["US200"])
+		require.True(t, memberIDs["US300"])
+
+		// Verify via GET.
+		code, body = tc.Get(groupURL)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+		fetched := scim.GroupResource{}
+		err = json.Unmarshal(body, &fetched)
+		require.NoError(t, err)
+		require.Len(t, fetched.Members, 2)
+	}
+
+}
+
+func TestDeleteGroup(t *testing.T) {
+	env := getEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US100",
+		SubID:  "SubID100",
+		Email:  "user100@org1.io",
+	})
+	require.NoError(t, err)
+
+	userCtx := authUserCtx(ctx, env, t, "US100")
+	apiKey, _ := prepareGroup(t, userCtx, env)
+
+	ss := scim.NewSCIMServer(env)
+	mux := http.NewServeMux()
+	ss.RegisterHandlers(mux)
+
+	baseURL := testhttp.StartServer(t, mux).String()
+	tc := &testClient{t: t, apiKey: apiKey}
+
+	// Create a group with a member.
+	reqBody := `{"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],"displayName":"to delete","members":[{"value":"US100"}]}`
+	code, body := tc.Post(baseURL+"/scim/v2/Groups", []byte(reqBody))
+	require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+
+	created := scim.GroupResource{}
+	err = json.Unmarshal(body, &created)
+	require.NoError(t, err)
+
+	// Delete the group.
+	code, body = tc.Delete(baseURL + "/scim/v2/Groups/" + created.ID)
+	require.Equal(t, http.StatusNoContent, code, "body: %s", string(body))
+
+	// Verify it's gone.
+	code, _ = tc.Get(baseURL + "/scim/v2/Groups/" + created.ID)
+	require.Equal(t, http.StatusNotFound, code)
+
+	// Delete a non-existent group.
+	code, _ = tc.Delete(baseURL + "/scim/v2/Groups/nonexistent")
+	require.Equal(t, http.StatusNotFound, code)
+}
+
+func TestV2UserCreationDefaultRole(t *testing.T) {
+	env := getEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US100",
+		SubID:  "SubID100",
+		Email:  "user100@org1.io",
+	})
+	require.NoError(t, err)
+
+	userCtx := authUserCtx(ctx, env, t, "US100")
+	apiKey, _ := prepareGroup(t, userCtx, env)
+
+	ss := scim.NewSCIMServer(env)
+	mux := http.NewServeMux()
+	ss.RegisterHandlers(mux)
+
+	baseURL := testhttp.StartServer(t, mux).String()
+	tc := &testClient{t: t, apiKey: apiKey}
+
+	// V2 user creation without explicit role should default to Reader.
+	{
+		newUser := &scim.UserResource{
+			Schemas:  []string{scim.UserResourceSchema},
+			UserName: "v2user@org1.io",
+			Name: scim.NameResource{
+				GivenName:  "V2",
+				FamilyName: "User",
+			},
+			Emails: []scim.EmailResource{
+				{Primary: true, Value: "v2user@org1.io"},
+			},
+			Active: true,
+		}
+		body, err := json.Marshal(newUser)
+		require.NoError(t, err)
+
+		code, body := tc.Post(baseURL+"/scim/v2/Users", body)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+		createdUser := scim.UserResource{}
+		err = json.Unmarshal(body, &createdUser)
+		require.NoError(t, err)
+
+		code, body = tc.Get(baseURL + "/scim/v2/Users/" + createdUser.ID)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+		ur := scim.UserResource{}
+		err = json.Unmarshal(body, &ur)
+		require.NoError(t, err)
+		verifyRole(t, ur, role.Reader.String())
+	}
+
+	// V2 user creation with explicit role should use that role.
+	{
+		newUser := &scim.UserResource{
+			Schemas:  []string{scim.UserResourceSchema},
+			UserName: "v2admin@org1.io",
+			Role:     role.Admin.String(),
+			Name: scim.NameResource{
+				GivenName:  "V2",
+				FamilyName: "Admin",
+			},
+			Emails: []scim.EmailResource{
+				{Primary: true, Value: "v2admin@org1.io"},
+			},
+			Active: true,
+		}
+		body, err := json.Marshal(newUser)
+		require.NoError(t, err)
+
+		code, body := tc.Post(baseURL+"/scim/v2/Users", body)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+		createdUser := scim.UserResource{}
+		err = json.Unmarshal(body, &createdUser)
+		require.NoError(t, err)
+
+		code, body = tc.Get(baseURL + "/scim/v2/Users/" + createdUser.ID)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+		ur := scim.UserResource{}
+		err = json.Unmarshal(body, &ur)
+		require.NoError(t, err)
+		verifyRole(t, ur, role.Admin.String())
+	}
+
+	// V1 user creation should still default to Developer.
+	{
+		newUser := &scim.UserResource{
+			Schemas:  []string{scim.UserResourceSchema},
+			UserName: "v1user@org1.io",
+			Name: scim.NameResource{
+				GivenName:  "V1",
+				FamilyName: "User",
+			},
+			Emails: []scim.EmailResource{
+				{Primary: true, Value: "v1user@org1.io"},
+			},
+			Active: true,
+		}
+		body, err := json.Marshal(newUser)
+		require.NoError(t, err)
+
+		code, body := tc.Post(baseURL+"/scim/Users", body)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+		createdUser := scim.UserResource{}
+		err = json.Unmarshal(body, &createdUser)
+		require.NoError(t, err)
+
+		code, body = tc.Get(baseURL + "/scim/Users/" + createdUser.ID)
+		require.Equal(t, http.StatusOK, code, "body: %s", string(body))
+		ur := scim.UserResource{}
+		err = json.Unmarshal(body, &ur)
+		require.NoError(t, err)
+		verifyRole(t, ur, role.Developer.String())
+	}
+}
+
+func TestV1GroupsReturns404(t *testing.T) {
+	env := getEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US100",
+		SubID:  "SubID100",
+		Email:  "user100@org1.io",
+	})
+	require.NoError(t, err)
+
+	userCtx := authUserCtx(ctx, env, t, "US100")
+	apiKey, _ := prepareGroup(t, userCtx, env)
+
+	ss := scim.NewSCIMServer(env)
+	mux := http.NewServeMux()
+	ss.RegisterHandlers(mux)
+
+	baseURL := testhttp.StartServer(t, mux).String()
+	tc := &testClient{t: t, apiKey: apiKey}
+
+	// All /scim/Groups operations should return 404.
+	code, _ := tc.Get(baseURL + "/scim/Groups")
+	require.Equal(t, http.StatusNotFound, code)
+
+	code, _ = tc.Post(baseURL+"/scim/Groups", []byte(`{"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],"displayName":"test","members":[]}`))
+	require.Equal(t, http.StatusNotFound, code)
+
+	code, _ = tc.Get(baseURL + "/scim/Groups/some-id")
+	require.Equal(t, http.StatusNotFound, code)
+
+	code, _ = tc.Delete(baseURL + "/scim/Groups/some-id")
+	require.Equal(t, http.StatusNotFound, code)
 }

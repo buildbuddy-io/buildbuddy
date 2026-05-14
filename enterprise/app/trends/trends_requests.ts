@@ -1,10 +1,10 @@
 import moment from "moment";
 
-import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
-import { getProtoFilterParams } from "../filter/filter_util";
-import { stats } from "../../../proto/stats_ts_proto";
-import TrendsModel from "./trends_model";
 import capabilities from "../../../app/capabilities/capabilities";
+import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
+import { stats } from "../../../proto/stats_ts_proto";
+import { getProtoFilterParams } from "../filter/filter_util";
+import TrendsModel from "./trends_model";
 
 function getKey(prefix: string, request: { toJSON(): Object }, ...extras: any[]): string {
   return `${prefix}|${JSON.stringify(request.toJSON())}|${JSON.stringify(extras)}`;
@@ -53,6 +53,8 @@ export function fetchTrends(
   if (capabilities.config.patternFilterEnabled && filterParams.pattern) request.query.pattern = filterParams.pattern;
   if (filterParams.tags) request.query.tags = filterParams.tags;
   if (filterParams.status) request.query.status = filterParams.status;
+  request.query.dimensionFilter = filterParams.dimensionFilters ?? [];
+  request.query.genericFilters = filterParams.genericFilters ?? [];
 
   request.query.updatedBefore = filterParams.updatedBefore;
   request.query.updatedAfter = filterParams.updatedAfter;

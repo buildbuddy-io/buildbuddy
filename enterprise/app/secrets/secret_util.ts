@@ -1,6 +1,6 @@
+import sodium from "libsodium-wrappers";
 import rpc_service from "../../../app/service/rpc_service";
 import { secrets } from "../../../proto/secrets_ts_proto";
-import sodium from "libsodium-wrappers";
 
 export function encryptAndUpdate(name: string, value: string) {
   return sodium.ready.then(() => {

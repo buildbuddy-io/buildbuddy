@@ -5,15 +5,17 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
-	"os"
-	"path/filepath"
+	"path"
 	"strings"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/features"
+	"github.com/buildbuddy-io/buildbuddy/server/http/csp"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
@@ -28,14 +30,17 @@ import (
 	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/server/scheduling/scheduler_server/config"
 )
 
+var staticGoRlocation string
+
 const (
 	indexTemplateFilename = "index.html"
 	stylePathTemplate     = "/app/style.css?hash={APP_BUNDLE_HASH}"
 )
 
+// TODO: Move these flags to the features package to allow other packages to
+// access them without creating dependency cycles.
 var (
 	defaultToDenseMode                     = flag.Bool("app.default_to_dense_mode", false, "Enables the dense UI mode by default.")
-	codeEditorEnabled                      = flag.Bool("app.code_editor_enabled", false, "If set, code editor functionality will be enabled.")
 	userManagementEnabled                  = flag.Bool("app.user_management_enabled", true, "If set, the user management page will be enabled in the UI.", flag.Deprecated("This flag has no effect and will be removed in the future."))
 	testGridV2Enabled                      = flag.Bool("app.test_grid_v2_enabled", true, "Whether to enable test grid V2")
 	usageEnabled                           = flag.Bool("app.usage_enabled", false, "If set, the usage page will be enabled in the UI.")
@@ -49,9 +54,10 @@ var (
 	customerManagedEncryptionKeysEnabled   = flag.Bool("app.customer_managed_encryption_keys_enabled", false, "If set, show customer-managed encryption configuration UI.")
 	tagsUIEnabled                          = flag.Bool("app.tags_ui_enabled", false, "If set, expose tags data and let users filter by tag.")
 	timeseriesChartsInTimingProfileEnabled = flag.Bool("app.timeseries_charts_in_timing_profile_enabled", true, "If set, charts with sampled time series data (such as CPU and memory usage) will be shown")
+	timingProfileMaxSizeBytes              = flag.Int64("app.timing_profile_max_size_bytes", 175_000_000, "Maximum timing profile size that the UI will load.")
 	auditLogsUIEnabled                     = flag.Bool("app.audit_logs_ui_enabled", false, "If set, the audit logs UI will be accessible from the sidebar.")
 	newTrendsUIEnabled                     = flag.Bool("app.new_trends_ui_enabled", false, "DEPRECATED: If set, show a new trends UI with a bit more organization.")
-	trendsRangeSelectionEnabled            = flag.Bool("app.trends_range_selection", false, "If set, let users drag to select time ranges in the trends UI.")
+	trendsRangeSelectionEnabled            = flag.Bool("app.trends_range_selection", true, "If set, let users drag to select time ranges in the trends UI.")
 	ipRulesUIEnabled                       = flag.Bool("app.ip_rules_ui_enabled", false, "If set, show the IP rules tab in settings page.")
 	traceViewerEnabled                     = flag.Bool("app.trace_viewer_enabled", false, "Whether the new trace viewer is enabled.")
 	popupAuthEnabled                       = flag.Bool("app.popup_auth_enabled", false, "Whether popup windows should be used for authentication.")
@@ -59,20 +65,29 @@ var (
 	codeReviewEnabled                      = flag.Bool("app.code_review_enabled", false, "If set, show the code review UI.")
 	codeSearchEnabled                      = flag.Bool("app.codesearch_enabled", false, "If set, show the code search UI.")
 	orgAdminApiKeyCreationEnabled          = flag.Bool("app.org_admin_api_key_creation_enabled", false, "If set, SCIM API keys will be able to be created in the UI.")
-	readerWriterRolesEnabled               = flag.Bool("app.reader_writer_roles_enabled", false, "If set, Reader/Writer roles will be enabled in the user management UI.")
+	readerWriterRolesEnabled               = flag.Bool("app.reader_writer_roles_enabled", true, "If set, Reader/Writer roles will be enabled in the user management UI.")
+	invocationLogStreamingEnabled          = flag.Bool("app.invocation_log_streaming_enabled", false, "If set, the UI will stream invocation logs instead of polling.")
+	targetFlakesUIEnabled                  = flag.Bool("app.target_flakes_ui_enabled", false, "If set, show some fancy new features for analyzing flakes.")
+	bazelButtonsEnabled                    = flag.Bool("app.bazel_buttons_enabled", false, "If set, show remote bazel buttons in the UI.")
+	communityLinksEnabled                  = flag.Bool("app.community_links_enabled", true, "If set, show links to BuildBuddy community in the UI.")
+	targetsPageEnabled                     = flag.Bool("app.targets_page_enabled", true, "If true, show a targets page for exploring RBE usage by target in the UI.")
+	userListsUIEnabled                     = flag.Bool("app.user_lists_ui_enabled", false, "If set, show show user list management options in the UI.")
+	darkModeEnabled                        = flag.Bool("app.dark_mode_enabled", false, "If set, show dark mode option in user preferences.")
+	defaultLoginSlug                       = flag.String("app.default_login_slug", "", "If set, the login page will default to using this slug.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
 )
 
 func FSFromRelPath(relPath string) (fs.FS, error) {
-	// Figure out where our runfiles (static content bundled with the binary) live.
-	rfp, err := bazel.RunfilesPath()
+	// Get a filesystem containing the runfiles (static content bundled with the binary).
+	runfilesFS, err := runfiles.New()
 	if err != nil {
 		return nil, err
 	}
-	dirFS := os.DirFS(filepath.Join(rfp, relPath))
-	return dirFS, nil
+	moduleName, _, _ := strings.Cut(staticGoRlocation, "/")
+
+	return fs.Sub(runfilesFS, path.Clean(path.Join(moduleName, relPath)))
 }
 
 // StaticFileServer implements a static file http server that serves static
@@ -99,10 +114,10 @@ func NewStaticFileServer(env environment.Env, fs fs.FS, rootPaths []string, appB
 			env.GetHealthChecker().AddHealthCheck("app_static_file_server", &healthChecker{jsPath: jsPath})
 		}
 
-		handler = handleRootPaths(env, rootPaths, template, version.AppVersion(), jsPath, stylePath, handler)
+		handler = handleRootPaths(env, rootPaths, template, version.Tag(), jsPath, stylePath, appBundleHash, handler)
 	}
 	return &StaticFileServer{
-		handler: setCacheHeaders(handler),
+		handler: setCacheHeaders(handler, appBundleHash),
 	}, nil
 }
 
@@ -111,7 +126,7 @@ func (s *StaticFileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.ServeHTTP(w, r)
 }
 
-func handleRootPaths(env environment.Env, rootPaths []string, template *template.Template, version, jsPath, stylePath string, h http.Handler) http.Handler {
+func handleRootPaths(env environment.Env, rootPaths []string, template *template.Template, version, jsPath, stylePath, appBundleHash string, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for _, rootPath := range rootPaths {
 			if strings.HasPrefix(r.URL.Path, rootPath) {
@@ -120,7 +135,7 @@ func handleRootPaths(env environment.Env, rootPaths []string, template *template
 		}
 
 		if r.URL.Path == "/" {
-			serveIndexTemplate(r.Context(), env, template, version, jsPath, stylePath, w)
+			serveIndexTemplate(r.Context(), env, template, version, jsPath, stylePath, appBundleHash, w)
 			return
 		}
 
@@ -128,11 +143,13 @@ func handleRootPaths(env environment.Env, rootPaths []string, template *template
 	})
 }
 
-// Set cache headers if a static file request hash a `hash` query parameter.
-func setCacheHeaders(h http.Handler) http.Handler {
+// Set cache headers if a static file request has a `hash` query parameter.
+func setCacheHeaders(h http.Handler, appBundleHash string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if (r.URL.Query().Get("hash")) != "" {
+		if (r.URL.Query().Get("hash")) == appBundleHash {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable") // 1 year
+		} else if (r.URL.Query().Get("hash")) != "" {
+			w.Header().Set("Cache-Control", "no-cache")
 		}
 		h.ServeHTTP(w, r)
 	})
@@ -147,22 +164,30 @@ type FrontendTemplateData struct {
 	GaEnabled bool
 	// Config is the FrontendConfig proto serialized using jsonpb.
 	Config template.JS
+	// Nonce is the Content-Security-Policy nonce value.
+	Nonce string
 }
 
-func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.Template, version, jsPath, stylePath string, w http.ResponseWriter) {
+func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.Template, version, jsPath, stylePath, appBundleHash string, w http.ResponseWriter) {
+	nonce, _ := ctx.Value(csp.Nonce{}).(string)
+	apiKeyValueReadbackEnabled := true
+	if authDB := env.GetAuthDB(); authDB != nil {
+		apiKeyValueReadbackEnabled = authDB.GetAPIKeyValueReadbackEnabled()
+	}
 	config := cfgpb.FrontendConfig{
 		Version:                                version,
+		AppBundleHash:                          appBundleHash,
 		ConfiguredIssuers:                      env.GetAuthenticator().PublicIssuers(),
 		DefaultToDenseMode:                     *defaultToDenseMode,
 		GithubEnabled:                          github.IsLegacyOAuthAppEnabled(),
-		GithubAppEnabled:                       env.GetGitHubApp() != nil,
+		GithubAppEnabled:                       env.GetGitHubAppService() != nil,
 		GithubAuthEnabled:                      github.AuthEnabled(env),
 		AnonymousUsageEnabled:                  env.GetAuthenticator().AnonymousUsageEnabled(ctx),
 		TestDashboardEnabled:                   target_tracker.TargetTrackingEnabled(),
 		UserOwnedExecutorsEnabled:              remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
 		ExecutorKeyCreationEnabled:             remote_execution_config.RemoteExecutionEnabled() && *enableExecutorKeyCreation,
 		WorkflowsEnabled:                       remote_execution_config.RemoteExecutionEnabled() && *enableWorkflows,
-		CodeEditorEnabled:                      *codeEditorEnabled,
+		CodeEditorEnabled:                      *features.CodeEditorEnabled || *features.CodeEditorV2Enabled,
 		RemoteExecutionEnabled:                 remote_execution_config.RemoteExecutionEnabled(),
 		SsoEnabled:                             env.GetAuthenticator().SSOEnabled(),
 		GlobalFilterEnabled:                    true,
@@ -181,9 +206,11 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		MultipleSuggestionProviders:            env.GetSuggestionService() != nil && env.GetSuggestionService().MultipleProvidersConfigured(),
 		ExecutionSearchEnabled:                 *executionSearchEnabled,
 		TrendsSummaryEnabled:                   *trendsSummaryEnabled,
+		ActionResultOriginEnabled:              action_cache_server.RecordActionResultOriginEnabled(),
 		CustomerManagedEncryptionKeysEnabled:   *customerManagedEncryptionKeysEnabled,
 		TagsUiEnabled:                          *tagsUIEnabled,
 		TimeseriesChartsInTimingProfileEnabled: *timeseriesChartsInTimingProfileEnabled,
+		TimingProfileMaxSizeBytes:              *timingProfileMaxSizeBytes,
 		AuditLogsUiEnabled:                     *auditLogsUIEnabled,
 		TrendsRangeSelectionEnabled:            *trendsRangeSelectionEnabled && env.GetOLAPDBHandle() != nil,
 		SubdomainsEnabled:                      subdomain.Enabled(),
@@ -197,6 +224,26 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		CodeSearchEnabled:                      *codeSearchEnabled,
 		OrgAdminApiKeyCreationEnabled:          *orgAdminApiKeyCreationEnabled,
 		ReaderWriterRolesEnabled:               *readerWriterRolesEnabled,
+		ApiKeyValueReadbackEnabled:             &apiKeyValueReadbackEnabled,
+		GroupMembershipRequestsEnabled:         new(env.GetUserDB() != nil && env.GetUserDB().GetGroupMembershipRequestsEnabled()),
+		UsageAlertsEnabled:                     env.GetUsageService() != nil && env.GetUsageService().GetAlertsEnabled(),
+		InvocationLogStreamingEnabled:          *invocationLogStreamingEnabled,
+		TargetFlakesUiEnabled:                  *targetFlakesUIEnabled && env.GetOLAPDBHandle() != nil,
+		CodeEditorV2Enabled:                    *features.CodeEditorV2Enabled,
+		BazelButtonsEnabled:                    *bazelButtonsEnabled,
+		CspNonce:                               nonce,
+		CommunityLinksEnabled:                  *communityLinksEnabled,
+		DefaultLoginSlug:                       *defaultLoginSlug,
+		ReadOnlyGithubAppEnabled:               env.GetGitHubAppService() != nil && env.GetGitHubAppService().IsReadOnlyAppEnabled(),
+		TargetsPageEnabled:                     *targetsPageEnabled && env.GetOLAPDBHandle() != nil,
+		UserListsUiEnabled:                     *userListsUIEnabled,
+		DarkModeEnabled:                        *darkModeEnabled,
+	}
+
+	if efp := env.GetExperimentFlagProvider(); efp != nil {
+		config.FlipLogoOnHover = efp.Boolean(ctx, "flip-logo-on-hover", false /*=default*/)
+		// Global experiments can be handled here, but experiments that are user or group specific
+		// should be included in the experiments field of GetUserResponse instead.
 	}
 
 	configJSON, err := protojson.Marshal(&config)
@@ -204,11 +251,13 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	w.Header().Set("Content-Type", "text/html")
 	err = tpl.ExecuteTemplate(w, indexTemplateFilename, &FrontendTemplateData{
 		StylePath:        stylePath,
 		JsEntryPointPath: jsPath,
 		GaEnabled:        !*disableGA,
 		Config:           template.JS(configJSON),
+		Nonce:            nonce,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
