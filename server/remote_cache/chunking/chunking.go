@@ -32,7 +32,7 @@ import (
 
 var (
 	chunkedManifestSalt             = flag.String("cache.chunking.ac_key_salt", "", "If set, salt the AC key with this value.")
-	avgChunkSizeBytes               = flag.Int64("cache.avg_chunk_size_bytes", 1024*1024, "This is the average size of a chunk. Only blobs larger (non-inclusive) than 4x this value will be chunked. The maximum chunk size will be 4x this value, and the minimum will be 1/4 this value (default 1MB).")
+	avgChunkSizeBytes               = flag.Int64("cache.avg_chunk_size_bytes", 512*1024, "This is the average size of a chunk. Only blobs larger (non-inclusive) than 4x this value will be chunked. The maximum chunk size will be 4x this value, and the minimum will be 1/4 this value (default 512KB).")
 	minChunkedReadFallbackSizeBytes = flag.Int64("cache.min_chunked_read_fallback_size_bytes", 2*1024*1024, "Only blobs larger (non-inclusive) than this value will use the server-side chunked read fallback after a normal blob lookup misses.")
 )
 
