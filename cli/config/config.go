@@ -1,7 +1,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -72,7 +71,7 @@ func loadWorkspaceConfig(workspaceDir string) (*File, error) {
 // userConfigCandidates returns paths to check for an existing user config, in
 // precedence order. The first candidate is also where a new config should be
 // created when none already exists.
-func userConfigCandidates() ([]string, error) {
+func userConfigCandidates() []string {
 	home := os.Getenv("HOME")
 	xdg := os.Getenv("XDG_CONFIG_HOME")
 	if xdg == "" && home != "" {
@@ -87,12 +86,11 @@ func userConfigCandidates() ([]string, error) {
 		paths = append(paths, filepath.Join(home, HomeRelativeUserConfigPath))
 	}
 	if len(paths) == 0 {
-		msg := "cannot determine user config path: $HOME and $XDG_CONFIG_HOME are unset"
-		log.Debugf(msg)
-		return nil, errors.New(msg)
+		log.Debugf("cannot determine user config path: $HOME and $XDG_CONFIG_HOME are unset")
+		return nil
 	}
 
-	return paths, nil
+	return paths
 }
 
 func loadUserConfig() (*File, error) {
@@ -100,13 +98,16 @@ func loadUserConfig() (*File, error) {
 	if err != nil {
 		return nil, err
 	}
+	if path == "" {
+		return nil, nil
+	}
 	return LoadFile(path)
 }
 
 func UserConfigPath() (string, error) {
-	paths, err := userConfigCandidates()
-	if err != nil {
-		return "", err
+	paths := userConfigCandidates()
+	if len(paths) == 0 {
+		return "", nil
 	}
 	for _, p := range paths {
 		_, err := os.Stat(p)
