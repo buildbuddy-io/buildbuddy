@@ -532,6 +532,12 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 	return nil, status.UnauthenticatedErrorf("%s: %s", authutil.UserNotFoundMsg, err.Error())
 }
 
+// IsAnonymousUser returns true if the context has no authenticated claims.
+func IsAnonymousUser(ctx context.Context) bool {
+	_, err := ClaimsFromContext(ctx)
+	return authutil.IsAnonymousUserError(err)
+}
+
 // AuthorizeServerAdmin checks whether the authenticated user is a server admin
 // (a member of the server admin group, with ORG_ADMIN capability).
 func AuthorizeServerAdmin(ctx context.Context) error {

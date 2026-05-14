@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
@@ -89,6 +90,10 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 		return status.InvalidArgumentErrorf("invalid blob digest in reference %q: %s", req.GetRef(), err)
 	}
 
+	if claims.IsAnonymousUser(ctx) {
+		return s.fetchBlobFromUpstreamToStream(ctx, req, stream)
+	}
+
 	metaResp, err := s.remote.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
 		Ref:            req.GetRef(),
 		Credentials:    req.GetCredentials(),
@@ -108,6 +113,9 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 	// cache misses as FailedPrecondition via MissingDigestError.
 	if !status.IsNotFoundError(err) && !status.IsFailedPreconditionError(err) {
 		return err
+	}
+	if req.GetBypassRegistry() {
+		return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", blobRef)
 	}
 
 	// Deduplicate concurrent upstream fetches for the same blob+creds.
@@ -131,6 +139,25 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 
 	// Stream the blob from local BSS to the caller.
 	return fetchBlobFromLocalBS(ctx, s.localBSClient, hash, size, &grpcStreamWriter{stream: stream})
+}
+
+func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToStream(ctx context.Context, req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	remoteStream, err := s.remote.FetchBlob(ctx, req)
+	if err != nil {
+		return err
+	}
+	for {
+		resp, err := remoteStream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(resp); err != nil {
+			return err
+		}
+	}
 }
 
 // fetchBlobFromUpstreamToLocalBS fetches a blob from the upstream OCIFetcher

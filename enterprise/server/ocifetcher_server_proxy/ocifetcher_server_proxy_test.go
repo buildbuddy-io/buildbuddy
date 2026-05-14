@@ -51,6 +51,13 @@ func TestNew_MissingLocalBSClient(t *testing.T) {
 	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
 }
 
+func authenticatedContext() context.Context {
+	return testauth.WithAuthenticatedUserInfo(context.Background(), &claims.Claims{
+		UserID:  "US1",
+		GroupID: "GR1",
+	})
+}
+
 // TestHappyPath tests successful FetchBlob, FetchBlobMetadata, FetchManifest,
 // FetchManifestMetadata calls with no credentials and with credentials.
 func TestHappyPath(t *testing.T) {
@@ -229,11 +236,30 @@ func TestFetchBlob_ForwardsRequestUnchanged(t *testing.T) {
 	}
 }
 
+func TestFetchBlob_BypassRegistryLocalCacheMissDoesNotFetchUpstream(t *testing.T) {
+	const ref = "example.com/repo@sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+
+	ctx := authenticatedContext()
+	remoteClient := &recordingOCIFetcherClient{}
+	proxyClient := runOCIFetcherProxy(ctx, t, remoteClient)
+
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref:            ref,
+		BypassRegistry: true,
+	})
+	if err == nil {
+		_, err = stream.Recv()
+	}
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
+	require.Nil(t, remoteClient.fetchBlobRequest, "bypass_registry should not fetch from upstream on local cache miss")
+}
+
 // TestFetchBlob_LocalCacheWriteThrough verifies that after a FetchBlob call,
 // the blob is written to the proxy's local BS cache and can be served from
 // there on a subsequent request.
 func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
-	ctx := context.Background()
+	ctx := authenticatedContext()
 
 	reg := setupTestRegistry(t, nil)
 	imageName, img := reg.PushNamedImage(t, "test-image", nil)
@@ -270,6 +296,38 @@ func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
 	require.Equal(t, expectedData, data2)
 }
 
+func TestFetchBlob_AnonymousSkipsLocalCache(t *testing.T) {
+	ctx := context.Background()
+
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+	proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+	ref := imageName + "@" + digest.String()
+
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	require.NoError(t, err)
+	require.Equal(t, expectedData, collectBlobData(t, stream))
+
+	err = reg.Shutdown()
+	require.NoError(t, err)
+
+	stream, err = proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	if err == nil {
+		_, err = stream.Recv()
+	}
+	require.Error(t, err, "anonymous proxy request should not read from local BS cache")
+}
+
 // TestBypassRegistry tests the bypass_registry flag crossed with server admin claims
 // for all Fetch methods.
 func TestBypassRegistry(t *testing.T) {
@@ -285,6 +343,11 @@ func TestBypassRegistry(t *testing.T) {
 				Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
 			},
 		},
+	}
+	nonAdminUser := &claims.Claims{
+		UserID:        "US2",
+		GroupID:       "GR456",
+		AllowedGroups: []string{"GR456"},
 	}
 
 	for _, tc := range []struct {
@@ -302,7 +365,7 @@ func TestBypassRegistry(t *testing.T) {
 		{
 			name:           "BypassTrue_NonAdmin",
 			bypassRegistry: true,
-			user:           nil,
+			user:           nonAdminUser,
 			checkError:     status.IsPermissionDeniedError,
 		},
 		{
@@ -314,7 +377,7 @@ func TestBypassRegistry(t *testing.T) {
 		{
 			name:           "BypassFalse_NonAdmin",
 			bypassRegistry: false,
-			user:           nil,
+			user:           nonAdminUser,
 			checkError:     nil, // Should succeed
 		},
 	} {
@@ -339,16 +402,9 @@ func TestBypassRegistry(t *testing.T) {
 				BypassRegistry: tc.bypassRegistry,
 			})
 
-			if tc.bypassRegistry {
-				// FetchManifestMetadata always errors with bypass_registry=true
+			if tc.checkError != nil {
 				require.Error(t, err)
-				if tc.user != nil {
-					// Admin gets NotFound
-					require.True(t, status.IsNotFoundError(err), "expected NotFoundError for admin, got: %v", err)
-				} else {
-					// Non-admin gets PermissionDenied
-					require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDeniedError for non-admin, got: %v", err)
-				}
+				require.True(t, tc.checkError(err), "unexpected error type: %v", err)
 			} else {
 				// No bypass - should succeed
 				require.NoError(t, err)
@@ -603,7 +659,7 @@ func TestInvalidOrMissingCredentials(t *testing.T) {
 // the same blob are deduplicated: only one upstream FetchBlob RPC is made and
 // all callers receive the correct data.
 func TestFetchBlob_Singleflight(t *testing.T) {
-	ctx := context.Background()
+	ctx := authenticatedContext()
 
 	reg := setupTestRegistry(t, nil)
 	imageName, img := reg.PushNamedImage(t, "test-image", nil)

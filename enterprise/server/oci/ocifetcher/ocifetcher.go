@@ -134,10 +134,6 @@ func RegisterServer(env *real_environment.RealEnv) error {
 func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
 
-	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
-		return err
-	}
-
 	blobRef, err := gcrname.ParseReference(req.GetRef())
 	if err != nil {
 		return status.InvalidArgumentErrorf("invalid blob reference %q: %s", req.GetRef(), err)
@@ -152,6 +148,14 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	hash, err := gcr.NewHash(digestRef.DigestStr())
 	if err != nil {
 		return status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
+	}
+
+	if claims.IsAnonymousUser(ctx) {
+		return s.fetchBlobFromRemoteWriteToResponse(ctx, digestRef, req.GetCredentials(), stream)
+	}
+
+	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+		return err
 	}
 
 	err = s.fetchBlobFromCache(ctx, stream, repo, hash)
@@ -218,10 +222,6 @@ func recordFetchBlobMetrics(role string, err error, duration time.Duration) {
 // Server admins can bypass the registry: the metadata will be served from the action cache
 // if present. If not present, FetchBlobMetadata will not fall back to the remote registry.
 func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest) (*ofpb.FetchBlobMetadataResponse, error) {
-	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
-		return nil, err
-	}
-
 	blobRef, err := gcrname.ParseReference(req.GetRef())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid blob reference %q: %s", req.GetRef(), err)
@@ -236,6 +236,14 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 	hash, err := gcr.NewHash(digestRef.DigestStr())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
+	}
+
+	if claims.IsAnonymousUser(ctx) {
+		return s.fetchBlobMetadataFromRemote(ctx, blobRef, digestRef, req.GetCredentials())
+	}
+
+	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+		return nil, err
 	}
 
 	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, repo, hash)
@@ -253,11 +261,15 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 		return nil, status.NotFoundErrorf("bypassing registry, but blob metadata for %q not found in cache", blobRef)
 	}
 
+	return s.fetchBlobMetadataFromRemote(ctx, blobRef, digestRef, req.GetCredentials())
+}
+
+func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, blobRef gcrname.Reference, digestRef gcrname.Digest, creds *rgpb.Credentials) (*ofpb.FetchBlobMetadataResponse, error) {
 	type blobMeta struct {
 		size      int64
 		mediaType string
 	}
-	meta, err := withPullerRetry(ctx, s, blobRef, req.GetCredentials(), func(puller *remote.Puller) (*blobMeta, error) {
+	meta, err := withPullerRetry(ctx, s, blobRef, creds, func(puller *remote.Puller) (*blobMeta, error) {
 		layer, err := puller.Layer(ctx, digestRef)
 		if err != nil {
 			return nil, err
@@ -290,13 +302,17 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 // Server admins can bypass the registry: the manifest will be served from the action cache
 // if present. If not present, FetchManifest will not fall back to the remote registry.
 func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
-	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
-		return nil, err
-	}
-
 	imageRef, err := gcrname.ParseReference(req.GetRef())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
+	}
+
+	if claims.IsAnonymousUser(ctx) {
+		return s.fetchManifestFromRemote(ctx, imageRef, req.GetCredentials())
+	}
+
+	if err := authorizeBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
+		return nil, err
 	}
 
 	var hash gcr.Hash
@@ -340,15 +356,23 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 		return nil, status.NotFoundErrorf("bypassing registry, but manifest for %q not found in cache", imageRef)
 	}
 
-	remoteDesc, err := withPullerRetry(ctx, s, imageRef, req.GetCredentials(), func(puller *remote.Puller) (*remote.Descriptor, error) {
-		return puller.Get(ctx, imageRef)
-	})
+	resp, err := s.fetchManifestFromRemote(ctx, imageRef, req.GetCredentials())
 	if err != nil {
 		return nil, err
 	}
 
-	if err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, s.acClient, repo, hash, string(remoteDesc.MediaType), imageRef); err != nil {
+	if err := ocicache.WriteManifestToAC(ctx, resp.GetManifest(), s.acClient, repo, hash, resp.GetMediaType(), imageRef); err != nil {
 		log.CtxWarningf(ctx, "Error writing manifest to cache: %s", err)
+	}
+	return resp, nil
+}
+
+func (s *ociFetcherServer) fetchManifestFromRemote(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (*ofpb.FetchManifestResponse, error) {
+	remoteDesc, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*remote.Descriptor, error) {
+		return puller.Get(ctx, imageRef)
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return &ofpb.FetchManifestResponse{
@@ -365,18 +389,53 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 // FetchManifestMetadata does not read from or write to the action cache or byte stream server.
 // Callers may rely on FetchManifestMetadata returning successfully as an indication
 // that the input credentials grant access to the OCI image in the remote registry.
-// Bypassing the registry is not possible. Requests that set the bypass_registry flag
-// will fail with an error.
+// Bypassing the registry is not possible for identified requests. Identified
+// requests that set the bypass_registry flag will fail with an error.
 func (s *ociFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest) (*ofpb.FetchManifestMetadataResponse, error) {
-	if err := checkBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
-		return nil, err
-	}
 	imageRef, err := gcrname.ParseReference(req.GetRef())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", req.GetRef(), err)
 	}
 
-	desc, err := withPullerRetry(ctx, s, imageRef, req.GetCredentials(), func(puller *remote.Puller) (*gcr.Descriptor, error) {
+	if claims.IsAnonymousUser(ctx) {
+		return s.fetchManifestMetadataFromRemote(ctx, imageRef, req.GetCredentials())
+	}
+
+	if req.GetBypassRegistry() {
+		if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+			return nil, status.PermissionDeniedErrorf("authorize bypass_registry: %s", err)
+		}
+		return s.fetchManifestMetadataFromCache(ctx, imageRef)
+	}
+
+	return s.fetchManifestMetadataFromRemote(ctx, imageRef, req.GetCredentials())
+}
+
+func (s *ociFetcherServer) fetchManifestMetadataFromCache(ctx context.Context, imageRef gcrname.Reference) (*ofpb.FetchManifestMetadataResponse, error) {
+	digestRef, ok := imageRef.(gcrname.Digest)
+	if !ok {
+		return nil, status.NotFoundErrorf("bypassing registry, but manifest metadata for %q not found in cache", imageRef)
+	}
+	hash, err := gcr.NewHash(digestRef.DigestStr())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
+	}
+	cached, err := ocicache.FetchManifestFromAC(ctx, s.acClient, imageRef.Context(), hash, imageRef)
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			return nil, status.NotFoundErrorf("bypassing registry, but manifest metadata for %q not found in cache", imageRef)
+		}
+		return nil, err
+	}
+	return &ofpb.FetchManifestMetadataResponse{
+		Digest:    hash.String(),
+		Size:      int64(len(cached.GetRaw())),
+		MediaType: cached.GetContentType(),
+	}, nil
+}
+
+func (s *ociFetcherServer) fetchManifestMetadataFromRemote(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (*ofpb.FetchManifestMetadataResponse, error) {
+	desc, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*gcr.Descriptor, error) {
 		return puller.Head(ctx, imageRef)
 	})
 	if err != nil {
@@ -448,6 +507,23 @@ func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.O
 	}
 	w := &grpcStreamWriter{stream: stream}
 	return ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, metadata.GetContentLength())
+}
+
+// fetchBlobFromRemoteWriteToResponse fetches a blob from the upstream registry
+// and streams it to the response without reading from or writing to cache.
+func (s *ociFetcherServer) fetchBlobFromRemoteWriteToResponse(ctx context.Context, digestRef gcrname.Digest, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	rc, err := withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (io.ReadCloser, error) {
+		layer, err := puller.Layer(ctx, digestRef)
+		if err != nil {
+			return nil, err
+		}
+		return layer.Compressed()
+	})
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	return s.streamBlob(rc, stream)
 }
 
 // fetchBlobFromRemoteWriteToCacheAndResponse fetches a blob from the upstream
@@ -602,18 +678,6 @@ func authorizeBypassRegistry(ctx context.Context, bypassRegistry bool) error {
 		return status.PermissionDeniedErrorf("not authorized to bypass registry: %s", err)
 	}
 	return nil
-}
-
-// checkBypassRegistry is used by FetchManifestMetadata which does not support
-// bypass_registry at all (it always needs registry access for credential validation).
-func checkBypassRegistry(ctx context.Context, bypassRegistry bool) error {
-	if !bypassRegistry {
-		return nil
-	}
-	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
-		return status.PermissionDeniedErrorf("authorize bypass_registry: %s", err)
-	}
-	return status.NotFoundError("bypass_registry is not yet supported")
 }
 
 type grpcStreamWriter struct {
