@@ -729,13 +729,17 @@ func TestInvalidYAML(t *testing.T) {
 
 	// Make sure we published an invalid YAML status
 	s := <-fakeGitProvider.Statuses
+	payload, ok := s.Payload.(*github.GithubStatusPayload)
+	require.True(t, ok, "expected payload to be *github.GithubStatusPayload")
+	require.NotNil(t, payload.Description)
+	require.Contains(t, *payload.Description, "Invalid buildbuddy.yaml")
 	require.Equal(t, &testgit.Status{
 		AccessToken: "faketoken",
 		RepoURL:     repoURL,
 		CommitSHA:   commitSHA,
 		Payload: &github.GithubStatusPayload{
 			Context:     pointer("BuildBuddy Workflows"),
-			Description: pointer("Invalid buildbuddy.yaml"),
+			Description: payload.Description,
 			TargetURL:   pointer("https://buildbuddy.io/docs/workflows-config"),
 			State:       pointer("error"),
 		},

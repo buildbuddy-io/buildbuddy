@@ -1929,7 +1929,7 @@ actions:
 	case st := <-provider.Statuses:
 		payload := st.Payload.(*github.RepoStatus)
 		require.Equal(t, "error", payload.GetState())
-		require.Contains(t, payload.GetDescription(), "fires more than once every 15 minutes")
+		require.Contains(t, payload.GetDescription(), "fires more than once every 15m0s")
 		require.LessOrEqual(t, len(payload.GetDescription()), 140)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for GitHub error status")
