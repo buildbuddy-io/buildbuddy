@@ -60,7 +60,7 @@ var UsageFields = []UsageField{
 	{
 		Name:                "total_cached_action_exec_usec",
 		PrimaryDBExpression: "SUM(total_cached_action_exec_usec)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_CACHED_BUILD_DURATION,
+		AlertingMetric:      usagepb.UsageAlertingMetric_TOTAL_CACHED_ACTION_EXEC_USEC,
 	},
 	{
 		Name:                "cas_cache_hits",
@@ -75,17 +75,17 @@ var UsageFields = []UsageField{
 	{
 		Name:                "total_external_download_size_bytes",
 		PrimaryDBExpression: "SUM(CASE WHEN origin <> 'internal' THEN total_download_size_bytes ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_EXTERNAL_DOWNLOAD_SIZE_BYTES,
+		AlertingMetric:      usagepb.UsageAlertingMetric_TOTAL_EXTERNAL_DOWNLOAD_SIZE_BYTES,
 	},
 	{
 		Name:                "total_internal_download_size_bytes",
 		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN total_download_size_bytes ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_INTERNAL_DOWNLOAD_SIZE_BYTES,
+		AlertingMetric:      usagepb.UsageAlertingMetric_TOTAL_INTERNAL_DOWNLOAD_SIZE_BYTES,
 	},
 	{
 		Name:                "total_workflow_download_size_bytes",
 		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN total_download_size_bytes ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_WORKFLOW_DOWNLOAD_SIZE_BYTES,
+		AlertingMetric:      usagepb.UsageAlertingMetric_TOTAL_WORKFLOW_DOWNLOAD_SIZE_BYTES,
 	},
 	{
 		Name:                "total_upload_size_bytes",
@@ -95,47 +95,47 @@ var UsageFields = []UsageField{
 	{
 		Name:                "total_external_upload_size_bytes",
 		PrimaryDBExpression: "SUM(CASE WHEN origin <> 'internal' THEN total_upload_size_bytes ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_EXTERNAL_UPLOAD_SIZE_BYTES,
+		AlertingMetric:      usagepb.UsageAlertingMetric_TOTAL_EXTERNAL_UPLOAD_SIZE_BYTES,
 	},
 	{
 		Name:                "total_internal_upload_size_bytes",
 		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN total_upload_size_bytes ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_INTERNAL_UPLOAD_SIZE_BYTES,
+		AlertingMetric:      usagepb.UsageAlertingMetric_TOTAL_INTERNAL_UPLOAD_SIZE_BYTES,
 	},
 	{
 		Name:                "total_workflow_upload_size_bytes",
 		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN total_upload_size_bytes ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_WORKFLOW_UPLOAD_SIZE_BYTES,
+		AlertingMetric:      usagepb.UsageAlertingMetric_TOTAL_WORKFLOW_UPLOAD_SIZE_BYTES,
 	},
 	{
 		Name:                "linux_execution_duration_usec",
 		PrimaryDBExpression: "SUM(linux_execution_duration_usec)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_LINUX_EXECUTION_DURATION,
+		AlertingMetric:      usagepb.UsageAlertingMetric_LINUX_EXECUTION_DURATION_USEC,
 	},
 	{
 		Name:                "cloud_rbe_linux_execution_duration_usec",
 		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN linux_execution_duration_usec ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_EXECUTION_DURATION,
+		AlertingMetric:      usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_EXECUTION_DURATION_USEC,
 	},
 	{
 		Name:                "cloud_workflow_linux_execution_duration_usec",
 		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN linux_execution_duration_usec ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_LINUX_EXECUTION_DURATION,
+		AlertingMetric:      usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_LINUX_EXECUTION_DURATION_USEC,
 	},
 	{
 		Name:                "cloud_cpu_nanos",
 		PrimaryDBExpression: "SUM(CASE WHEN origin = 'internal' THEN cpu_nanos ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_LINUX_CPU_DURATION,
+		AlertingMetric:      usagepb.UsageAlertingMetric_CLOUD_CPU_NANOS,
 	},
 	{
 		Name:                "cloud_rbe_cpu_nanos",
 		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN cpu_nanos ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_CPU_DURATION,
+		AlertingMetric:      usagepb.UsageAlertingMetric_CLOUD_RBE_CPU_NANOS,
 	},
 	{
 		Name:                "cloud_workflow_cpu_nanos",
 		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN cpu_nanos ELSE 0 END)",
-		AlertingMetric:      usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_LINUX_CPU_DURATION,
+		AlertingMetric:      usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_CPU_NANOS,
 	},
 }
 

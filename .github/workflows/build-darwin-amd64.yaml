@@ -1,0 +1,44 @@
+name: "Build Darwin amd64"
+
+on:
+  push:
+    branches:
+      - "master"
+  pull_request:
+    branches:
+      - "master"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Darwin amd64
+    runs-on: macos-15-intel
+    if: "!contains(github.event.head_commit.message, 'ci skip')"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Bazel Go module cache
+        uses: ./.github/actions/setup-bazel-go-mod-cache
+
+      - name: Build
+        env:
+          BUILDBUDDY_ORG_API_KEY: ${{ secrets.BUILDBUDDY_ORG_API_KEY }}
+          DEVELOPER_DIR: /Library/Developer/CommandLineTools
+        run: |
+          # Setup bazelrc
+          echo >> user.bazelrc '--config=untrusted-ci-macos'
+          if [[ -n "${BUILDBUDDY_ORG_API_KEY:-}" ]]; then
+            echo >> user.bazelrc "--remote_header=x-buildbuddy-api-key=$BUILDBUDDY_ORG_API_KEY"
+          fi
+
+          bazelisk build \
+            //enterprise/server/cmd/executor \
+            //enterprise/server \
+            //server \
+            //enterprise/server/cmd/cache_proxy
+
+          bazelisk test //...
