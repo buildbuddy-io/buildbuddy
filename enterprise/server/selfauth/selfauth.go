@@ -3,8 +3,10 @@ package selfauth
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"flag"
 	"math/big"
 	"net/http"
@@ -12,14 +14,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oidcissuer"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/lestrrat-go/jwx/jwa"
-	"github.com/lestrrat-go/jwx/jwk"
-	"github.com/lestrrat-go/jwx/jwt"
+	"github.com/golang-jwt/jwt/v4"
 	"golang.org/x/oauth2"
 )
 
@@ -73,17 +74,7 @@ func Enabled() bool {
 }
 
 type selfAuth struct {
-	rsaPrivateKey jwk.RSAPrivateKey
-	rsaPublicKey  jwk.RSAPublicKey
-}
-
-type configurationJSON struct {
-	Issuer                           string   `json:"issuer"`
-	AuthorizationEndpoint            string   `json:"authorization_endpoint"`
-	TokenEndpoint                    string   `json:"token_endpoint"`
-	UserinfoEndpoint                 string   `json:"userinfo_endpoint"`
-	JwksUri                          string   `json:"jwks_uri"`
-	IdTokenSigningAlgValuesSupported []string `json:"id_token_signing_alg_values_supported"`
+	issuer *oidcissuer.Provider
 }
 
 type tokenJSON struct {
@@ -94,6 +85,15 @@ type tokenJSON struct {
 	IdToken      string `json:"id_token"`
 }
 
+type idTokenClaims struct {
+	jwt.RegisteredClaims
+
+	Email     string `json:"email,omitempty"`
+	Name      string `json:"name,omitempty"`
+	GivenName string `json:"given_name,omitempty"`
+	AtHash    string `json:"at_hash,omitempty"`
+}
+
 func Register(env environment.Env) error {
 	oauth, err := NewSelfAuth()
 	if err != nil {
@@ -102,8 +102,8 @@ func Register(env environment.Env) error {
 	mux := env.GetMux()
 	mux.Handle(oauth.AuthorizationEndpoint().Path, interceptors.SetSecurityHeaders(http.HandlerFunc(oauth.Authorize)))
 	mux.Handle(oauth.TokenEndpoint().Path, interceptors.SetSecurityHeaders(http.HandlerFunc(oauth.AccessToken)))
-	mux.Handle(oauth.JwksEndpoint().Path, interceptors.SetSecurityHeaders(http.HandlerFunc(oauth.Jwks)))
-	mux.Handle("/.well-known/openid-configuration", interceptors.SetSecurityHeaders(http.HandlerFunc(oauth.WellKnownOpenIDConfiguration)))
+	mux.Handle(oauth.JWKSURI().Path, interceptors.SetSecurityHeaders(http.HandlerFunc(oauth.issuer.ServeJWKS)))
+	mux.Handle(oidcissuer.ConfigurationPath, interceptors.SetSecurityHeaders(http.HandlerFunc(oauth.issuer.ServeWellKnownOpenIDConfiguration)))
 	return nil
 }
 
@@ -125,37 +125,43 @@ func NewSelfAuth() (*selfAuth, error) {
 		Primes: []*big.Int{&p, &q},
 	}
 	privateKey.Precompute()
-	jwkKey, err := jwk.New(privateKey)
-	if err != nil {
-		return nil, status.InternalErrorf("Failed to create private key: %s\n", err)
-	}
-	jwkPrivateKey, ok := jwkKey.(jwk.RSAPrivateKey)
-	if !ok {
-		return nil, status.InternalErrorf("Expected jwk.RSAPrivateKey, got %T\n", jwkKey)
-	}
-
-	jwkKey, err = jwk.New(privateKey.PublicKey)
-	if err != nil {
-		return nil, status.InternalErrorf("Failed to create public key: %s\n", err)
-	}
-	jwkPublicKey, ok := jwkKey.(jwk.RSAPublicKey)
-	if !ok {
-		return nil, status.InternalErrorf("Expected jwk.RSAPublicKey, got %T\n", jwkKey)
-	}
-	return &selfAuth{
-		rsaPrivateKey: jwkPrivateKey,
-		rsaPublicKey:  jwkPublicKey,
-	}, nil
-}
-
-func (o *selfAuth) WellKnownOpenIDConfiguration(w http.ResponseWriter, r *http.Request) {
-	writeJSONResponse(w, r, &configurationJSON{
-		Issuer:                           o.IssuerURL().String(),
-		AuthorizationEndpoint:            o.AuthorizationEndpoint().String(),
-		TokenEndpoint:                    o.TokenEndpoint().String(),
-		JwksUri:                          o.JwksEndpoint().String(),
-		IdTokenSigningAlgValuesSupported: []string{"RS256"},
+	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
 	})
+	oauth := &selfAuth{}
+	issuer, err := oidcissuer.New(oidcissuer.Config{
+		PrivateKeyPEM:         string(privateKeyPEM),
+		IssuerURL:             IssuerURL(),
+		JWKSURI:               oauth.JWKSURI().String(),
+		AuthorizationEndpoint: oauth.AuthorizationEndpoint().String(),
+		TokenEndpoint:         oauth.TokenEndpoint().String(),
+		ResponseTypesSupported: []string{
+			"code",
+		},
+		GrantTypesSupported: []string{
+			"authorization_code",
+		},
+		SubjectTypesSupported: []string{
+			"public",
+		},
+		ScopesSupported: []string{
+			"openid",
+			"profile",
+			"email",
+		},
+		ClaimsSupported: []string{
+			"sub",
+			"email",
+			"name",
+			"given_name",
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	oauth.issuer = issuer
+	return oauth, nil
 }
 
 func (o *selfAuth) IssuerURL() *url.URL {
@@ -174,7 +180,7 @@ func (o *selfAuth) TokenEndpoint() *url.URL {
 	return u
 }
 
-func (o *selfAuth) JwksEndpoint() *url.URL {
+func (o *selfAuth) JWKSURI() *url.URL {
 	u := o.IssuerURL()
 	u.Path = "/.well-known/jwks.json"
 	return u
@@ -226,26 +232,25 @@ func (o *selfAuth) AccessToken(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	token := jwt.New()
-	token.Set(jwt.AudienceKey, "buildbuddy")
-	token.Set(jwt.ExpirationKey, time.Now().Add(time.Hour).Unix())
-	token.Set(jwt.JwtIDKey, base64.StdEncoding.EncodeToString(idKey))
-	token.Set(jwt.IssuedAtKey, time.Now().Unix())
-	token.Set(jwt.IssuerKey, o.IssuerURL().String())
-	token.Set(jwt.SubjectKey, "")
-
-	token.Set("email", "buildbuddy@example.com")
-	token.Set("name", "buildbuddy")
-	token.Set("given_name", "Default")
-
-	// This value is a hash of the access token, so must match. It can be
-	// computed with the following python snippet:
-	//
-	// base64.b64encode(hashlib.sha256("AccessToken").digest()[:16]).rstrip("=")
-	//
-	token.Set("at_hash", "LkjhI6Ijpj638f0mirBH2g")
-
-	signed, err := jwt.Sign(token, jwa.RS256, o.rsaPrivateKey)
+	now := time.Now()
+	signed, err := o.issuer.Sign(&idTokenClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{"buildbuddy"},
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+			ID:        base64.StdEncoding.EncodeToString(idKey),
+			IssuedAt:  jwt.NewNumericDate(now),
+			Issuer:    o.IssuerURL().String(),
+			Subject:   "",
+		},
+		Email:     "buildbuddy@example.com",
+		Name:      "buildbuddy",
+		GivenName: "Default",
+		// This value is a hash of the access token, so must match. It can be
+		// computed with the following python snippet:
+		//
+		// base64.b64encode(hashlib.sha256("AccessToken").digest()[:16]).rstrip("=")
+		AtHash: "LkjhI6Ijpj638f0mirBH2g",
+	})
 	if err != nil {
 		log.Errorf("Error signing token: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -255,13 +260,6 @@ func (o *selfAuth) AccessToken(w http.ResponseWriter, r *http.Request) {
 		AccessToken:  "AccessToken",
 		RefreshToken: "RefreshToken",
 		ExpiresIn:    3600,
-		IdToken:      string(signed),
+		IdToken:      signed,
 	})
-}
-
-// Jwks handles requests to /.well-known/jwks.json, returning the keyset for our oauth
-func (o *selfAuth) Jwks(w http.ResponseWriter, r *http.Request) {
-	set := jwk.NewSet()
-	set.Add(o.rsaPublicKey)
-	writeJSONResponse(w, r, set)
 }

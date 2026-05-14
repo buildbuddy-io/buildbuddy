@@ -7,14 +7,13 @@ go_library(
     srcs = ["selfauth.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth",
     deps = [
+        "//enterprise/server/oidcissuer",
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/http/interceptors",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_lestrrat_go_jwx//jwa",
-        "@com_github_lestrrat_go_jwx//jwk",
-        "@com_github_lestrrat_go_jwx//jwt",
+        "@com_github_golang_jwt_jwt_v4//:jwt",
         "@org_golang_x_oauth2//:oauth2",
     ],
 )
