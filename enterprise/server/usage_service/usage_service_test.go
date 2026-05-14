@@ -189,7 +189,7 @@ func TestUsageAlertingRules_CreateListDelete(t *testing.T) {
 	createRsp, err := service.CreateUsageAlertingRule(ctx1, &usagepb.CreateUsageAlertingRuleRequest{
 		RequestContext: &ctxpb.RequestContext{GroupId: "GR1"},
 		Configuration: &usagepb.UsageAlertingRuleConfiguration{
-			Metric:            usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_CPU_DURATION,
+			Metric:            usagepb.UsageAlertingMetric_CLOUD_RBE_CPU_NANOS,
 			AbsoluteThreshold: 123,
 			Window:            usagepb.UsageAlertingWindow_WEEK,
 		},
@@ -208,7 +208,7 @@ func TestUsageAlertingRules_CreateListDelete(t *testing.T) {
 			CreatedTimestamp: timestamppb.New(now),
 		},
 		Configuration: &usagepb.UsageAlertingRuleConfiguration{
-			Metric:            usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_CPU_DURATION,
+			Metric:            usagepb.UsageAlertingMetric_CLOUD_RBE_CPU_NANOS,
 			AbsoluteThreshold: 123,
 			Window:            usagepb.UsageAlertingWindow_WEEK,
 		},
@@ -273,7 +273,7 @@ func TestUsageAlertingRules_AreScopedToAuthenticatedGroup(t *testing.T) {
 	service := usage_service.New(env, clock)
 	createRsp, err := service.CreateUsageAlertingRule(ctx1, &usagepb.CreateUsageAlertingRuleRequest{
 		Configuration: &usagepb.UsageAlertingRuleConfiguration{
-			Metric:            usagepb.UsageAlertingMetric_WORKFLOW_DOWNLOAD_SIZE_BYTES,
+			Metric:            usagepb.UsageAlertingMetric_TOTAL_WORKFLOW_DOWNLOAD_SIZE_BYTES,
 			AbsoluteThreshold: 1,
 			Window:            usagepb.UsageAlertingWindow_DAY,
 		},
@@ -454,7 +454,7 @@ func TestUsageAlertingRules_MaxRulesPerGroup(t *testing.T) {
 	for i := range usage_service.MaxUsageAlertingRulesPerGroup {
 		_, err := service.CreateUsageAlertingRule(ctx1, &usagepb.CreateUsageAlertingRuleRequest{
 			Configuration: &usagepb.UsageAlertingRuleConfiguration{
-				Metric:            usagepb.UsageAlertingMetric_CACHED_BUILD_DURATION,
+				Metric:            usagepb.UsageAlertingMetric_TOTAL_CACHED_ACTION_EXEC_USEC,
 				AbsoluteThreshold: int64(i + 1),
 				Window:            usagepb.UsageAlertingWindow_DAY,
 			},
@@ -465,7 +465,7 @@ func TestUsageAlertingRules_MaxRulesPerGroup(t *testing.T) {
 	// The next rule would exceed the per-group cap, so it is rejected.
 	_, err = service.CreateUsageAlertingRule(ctx1, &usagepb.CreateUsageAlertingRuleRequest{
 		Configuration: &usagepb.UsageAlertingRuleConfiguration{
-			Metric:            usagepb.UsageAlertingMetric_CACHED_BUILD_DURATION,
+			Metric:            usagepb.UsageAlertingMetric_TOTAL_CACHED_ACTION_EXEC_USEC,
 			AbsoluteThreshold: int64(usage_service.MaxUsageAlertingRulesPerGroup + 1),
 			Window:            usagepb.UsageAlertingWindow_DAY,
 		},
