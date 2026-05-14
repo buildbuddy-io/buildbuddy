@@ -702,28 +702,19 @@ func ensureSameZonePrimary(
 	self string, myZone string,
 	zoneOf func(string) string,
 ) *peerset.PeerSet {
-	if myZone == "" {
+	if myZone == "" || slices.ContainsFunc(peers[:primaryCount], func(peer string) bool {
+		return peer == self || myZone == zoneOf(peer)
+	}) {
 		return peerset.New(peers[:primaryCount], peers[primaryCount:])
 	}
-	for _, p := range peers[:primaryCount] {
-		if p == self {
-			return peerset.New(peers[:primaryCount], peers[primaryCount:])
-		}
-		if z := zoneOf(p); z != "" && z == myZone {
-			return peerset.New(peers[:primaryCount], peers[primaryCount:])
-		}
-	}
-	selfIdx := -1
-	for i := primaryCount; i < len(peers); i++ {
-		if peers[i] == self {
-			selfIdx = i
-			break
-		}
-	}
+	selfIdx := slices.Index(peers[primaryCount:], self)
 	if selfIdx == -1 {
 		peers = append(peers, self)
 		selfIdx = len(peers) - 1
+	} else {
+		selfIdx += primaryCount
 	}
+	// Move self into the primary section, shifting others to the right.
 	copy(peers[primaryCount+1:selfIdx+1], peers[primaryCount:selfIdx])
 	peers[primaryCount] = self
 	return peerset.New(peers[:primaryCount+1], peers[primaryCount+1:])
