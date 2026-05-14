@@ -362,6 +362,9 @@ export default class UsageAlertsComponent extends React.Component<{}, UsageAlert
     return (
       <>
         <div className="usage-alerting-header">
+          <p>
+            Usage alerts send emails to all Admin users in the organization when a usage metric exceeds a threshold.
+          </p>
           <FilledButton onClick={this.onClickOpenCreateAlertModal.bind(this)}>Create new alert</FilledButton>
         </div>
         {this.state.alertingLoading && <Spinner />}
