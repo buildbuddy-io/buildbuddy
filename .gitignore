@@ -28,7 +28,7 @@ tramp
 # Bazel directories
 /bazel-*
 
-# bb directories
+# bb directory
 /bb-out
 
 # Generated protos
