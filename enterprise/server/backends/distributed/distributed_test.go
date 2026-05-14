@@ -185,6 +185,25 @@ func TestBasicReadWrite(t *testing.T) {
 	}, peerLookupMetrics)
 }
 
+func TestReadPeers_FewerNodesThanReplicationFactor(t *testing.T) {
+	env, _, _ := getEnvAuthAndCtx(t)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	memCache := newMemoryCache(t, int64(1000000))
+	c, err := NewDistributedCache(env, memCache, Options{
+		ListenAddr:         peer1,
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2},
+		DisableLocalLookup: true,
+	}, env.GetHealthChecker())
+	require.NoError(t, err)
+
+	rn, _ := testdigest.RandomCASResourceBuf(t, 100)
+	ps := c.readPeers(rn.GetDigest())
+	require.ElementsMatch(t, []string{peer1, peer2}, ps.PreferredPeers)
+	require.Empty(t, ps.FallbackPeers)
+}
+
 func TestReadWrite_Compression(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 

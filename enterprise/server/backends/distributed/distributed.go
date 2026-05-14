@@ -740,10 +740,9 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 	peers := c.consistentHash.GetAllReplicas(d.GetHash())
 	var primaryPeers, secondaryPeers []string
 	// To prevent a panic if replication is misconfigured to be higher than peer count.
-	if len(peers) >= c.opts.ReplicationFactor {
-		primaryPeers = peers[:c.opts.ReplicationFactor]
-		secondaryPeers = peers[c.opts.ReplicationFactor:]
-	}
+	primaryCount := min(len(peers), c.opts.ReplicationFactor)
+	primaryPeers = peers[:primaryCount]
+	secondaryPeers = peers[primaryCount:]
 
 	if len(c.opts.NewNodes) > 0 {
 		extendedPeerList := c.extraConsistentHash.GetAllReplicas(d.GetHash())
