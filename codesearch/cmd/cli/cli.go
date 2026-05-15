@@ -173,7 +173,7 @@ func handleIndex(args []string) {
 		commitSHA := extractGitSHA(dir)
 		log.Printf("indexing dir: %q", dir)
 		stopWalk := indexprofile.Timer(indexprofile.PhaseWalk)
-		_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		walkErr := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 			indexprofile.Add(indexprofile.CounterPathsVisited, 1)
 			if _, elem := filepath.Split(path); elem != "" {
 				// Skip various temporary or "hidden" files or directories.
@@ -207,6 +207,9 @@ func handleIndex(args []string) {
 			return nil
 		})
 		stopWalk()
+		if walkErr != nil {
+			log.Fatal(err.Error())
+		}
 		github.SetLastIndexedCommitSha(iw, repoURL, commitSHA)
 	}
 
