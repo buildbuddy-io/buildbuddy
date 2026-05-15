@@ -194,17 +194,10 @@ func (s *sidecarService) Ping(ctx context.Context, req *scpb.PingRequest) (*scpb
 }
 
 func normalizeGrpcTarget(target string) string {
-	switch {
-	case strings.HasPrefix(target, "grpc://"),
-		strings.HasPrefix(target, "grpcs://"):
+	if strings.HasPrefix(target, "grpc://") || strings.HasPrefix(target, "grpcs://") {
 		return target
-	case strings.HasPrefix(target, "http://"):
-		return "grpc://" + strings.TrimPrefix(target, "http://")
-	case strings.HasPrefix(target, "https://"):
-		return "grpcs://" + strings.TrimPrefix(target, "https://")
-	default:
-		return "grpcs://" + target
 	}
+	return "grpcs://" + target
 }
 
 func initializeDiskCache(env *real_environment.RealEnv) {
