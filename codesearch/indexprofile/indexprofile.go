@@ -25,9 +25,6 @@ const (
 	PhaseAddDocument        Phase = "add_document"
 	PhaseTokenizerNext      Phase = "tokenizer_next"
 	PhasePostingMutation    Phase = "posting_mutation"
-	PhaseNgramConversion    Phase = "ngram_conversion"
-	PhasePostingListLookup  Phase = "posting_list_lookup"
-	PhasePostingListAdd     Phase = "posting_list_add"
 	PhaseStoredFieldSet     Phase = "stored_field_set"
 	PhaseFlush              Phase = "flush"
 	PhaseUpdatePostingList  Phase = "update_posting_list"
@@ -218,6 +215,25 @@ func (p *Profiler) Get(counter Counter) int64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.counters[counter]
+}
+
+// Now returns time.Now() when profiling is enabled, otherwise the zero Time.
+// Safe to call on a nil receiver — paired with Since this lets hot loops skip
+// time.Now() when profiling is off without an explicit nil check at each site.
+func (p *Profiler) Now() time.Time {
+	if p == nil {
+		return time.Time{}
+	}
+	return time.Now()
+}
+
+// Since returns time.Since(start) when profiling is enabled, otherwise 0.
+// Safe to call on a nil receiver. See Now.
+func (p *Profiler) Since(start time.Time) time.Duration {
+	if p == nil {
+		return 0
+	}
+	return time.Since(start)
 }
 
 func (p *Profiler) RecordPostingList(field, ngram string, cardinality uint64, keyBytes, valueBytes int64) {

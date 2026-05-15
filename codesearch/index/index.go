@@ -418,66 +418,56 @@ func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) e
 	return w.AddDocument(newDoc)
 }
 
+type addDocStats struct {
+	fields              int64
+	tokens              int64
+	postingListsCreated int64
+	storedFieldsSet     int64
+	pebbleBatchSets     int64
+	pebbleBatchSetBytes int64
+	tokenizerNextDur    time.Duration
+	postingMutationDur  time.Duration
+	storedFieldSetDur   time.Duration
+	pebbleBatchSetDur   time.Duration
+}
+
+func (s *addDocStats) flush(p *indexprofile.Profiler) {
+	p.RecordN(indexprofile.PhaseTokenizerNext, s.tokens, s.tokenizerNextDur)
+	p.RecordN(indexprofile.PhasePostingMutation, s.tokens, s.postingMutationDur)
+	p.RecordN(indexprofile.PhaseStoredFieldSet, s.storedFieldsSet, s.storedFieldSetDur)
+	p.RecordN(indexprofile.PhasePebbleBatchSet, s.pebbleBatchSets, s.pebbleBatchSetDur)
+	p.Add(indexprofile.CounterDocsAdded, 1)
+	p.Add(indexprofile.CounterFieldsIndexed, s.fields)
+	p.Add(indexprofile.CounterTokensIndexed, s.tokens)
+	p.Add(indexprofile.CounterPostingListLookups, s.tokens)
+	p.Add(indexprofile.CounterPostingListsCreated, s.postingListsCreated)
+	p.Add(indexprofile.CounterStoredFieldsSet, s.storedFieldsSet)
+	p.Add(indexprofile.CounterPebbleBatchSets, s.pebbleBatchSets)
+	p.Add(indexprofile.CounterPebbleBatchSetBytes, s.pebbleBatchSetBytes)
+}
+
 func (w *Writer) AddDocument(doc types.Document) error {
 	profiler := indexprofile.Current()
-	var addDocumentStart time.Time
-	var fieldsIndexed int64
-	var tokenNextCount int64
-	var tokenNextDuration time.Duration
-	var tokensIndexed int64
-	var postingMutationDuration time.Duration
-	var ngramConversionDuration time.Duration
-	var postingListLookupDuration time.Duration
-	var postingListAddDuration time.Duration
-	var postingListsCreated int64
-	var storedFieldsSet int64
-	var storedFieldSetDuration time.Duration
-	var pebbleBatchSets int64
-	var pebbleBatchSetBytes int64
-	var pebbleBatchSetDuration time.Duration
+	var s addDocStats
 	if profiler != nil {
-		addDocumentStart = time.Now()
-		defer func() {
-			profiler.Record(indexprofile.PhaseAddDocument, time.Since(addDocumentStart))
-			profiler.RecordN(indexprofile.PhaseTokenizerNext, tokenNextCount, tokenNextDuration)
-			profiler.RecordN(indexprofile.PhasePostingMutation, tokensIndexed, postingMutationDuration)
-			profiler.RecordN(indexprofile.PhaseNgramConversion, tokensIndexed, ngramConversionDuration)
-			profiler.RecordN(indexprofile.PhasePostingListLookup, tokensIndexed, postingListLookupDuration)
-			profiler.RecordN(indexprofile.PhasePostingListAdd, tokensIndexed, postingListAddDuration)
-			profiler.RecordN(indexprofile.PhaseStoredFieldSet, storedFieldsSet, storedFieldSetDuration)
-			profiler.RecordN(indexprofile.PhasePebbleBatchSet, pebbleBatchSets, pebbleBatchSetDuration)
-			profiler.Add(indexprofile.CounterDocsAdded, 1)
-			profiler.Add(indexprofile.CounterFieldsIndexed, fieldsIndexed)
-			profiler.Add(indexprofile.CounterTokensIndexed, tokensIndexed)
-			profiler.Add(indexprofile.CounterPostingListLookups, tokensIndexed)
-			profiler.Add(indexprofile.CounterPostingListsCreated, postingListsCreated)
-			profiler.Add(indexprofile.CounterStoredFieldsSet, storedFieldsSet)
-			profiler.Add(indexprofile.CounterPebbleBatchSets, pebbleBatchSets)
-			profiler.Add(indexprofile.CounterPebbleBatchSetBytes, pebbleBatchSetBytes)
-		}()
+		defer s.flush(profiler)
 	}
+	defer indexprofile.Timer(indexprofile.PhaseAddDocument)()
 
 	w.docIndex++
 
 	// **Always store DocID.**
 	docID := uint64(w.generation)<<32 | uint64(w.docIndex)
 	idKey := w.storedFieldKey(docID, types.DocIDField)
-	var batchSetStart time.Time
-	if profiler != nil {
-		batchSetStart = time.Now()
-	}
+	t := profiler.Now()
 	w.batch.Set(idKey, Uint64ToBytes(docID), nil)
-	if profiler != nil {
-		pebbleBatchSetDuration += time.Since(batchSetStart)
-		pebbleBatchSets++
-		pebbleBatchSetBytes += int64(len(idKey) + 8)
-	}
+	s.pebbleBatchSetDur += profiler.Since(t)
+	s.pebbleBatchSets++
+	s.pebbleBatchSetBytes += int64(len(idKey) + 8)
 
 	for _, fieldName := range doc.Fields() {
 		field := doc.Field(fieldName)
-		if profiler != nil {
-			fieldsIndexed++
-		}
+		s.fields++
 
 		if _, ok := w.fieldPostingLists[field.Name()]; !ok {
 			w.fieldPostingLists[field.Name()] = make(postingLists, 0)
@@ -493,74 +483,34 @@ func (w *Writer) AddDocument(doc types.Document) error {
 		tokenizer.Reset(bytes.NewReader(field.Contents()))
 
 		for {
-			var tokenizerStart time.Time
-			if profiler != nil {
-				tokenizerStart = time.Now()
-			}
+			t := profiler.Now()
 			err := tokenizer.Next()
-			if profiler != nil {
-				tokenNextDuration += time.Since(tokenizerStart)
-				tokenNextCount++
-			}
+			s.tokenizerNextDur += profiler.Since(t)
 			if err != nil {
 				break
 			}
 
-			var postingStart time.Time
-			if profiler != nil {
-				postingStart = time.Now()
-				tokensIndexed++
-			}
-
-			var ngramConversionStart time.Time
-			if profiler != nil {
-				ngramConversionStart = time.Now()
-			}
+			t = profiler.Now()
 			ngram := string(tokenizer.Ngram())
-			if profiler != nil {
-				ngramConversionDuration += time.Since(ngramConversionStart)
-			}
-
-			var postingListLookupStart time.Time
-			if profiler != nil {
-				postingListLookupStart = time.Now()
-			}
 			if _, ok := postingLists[ngram]; !ok {
 				postingLists[ngram] = posting.NewList()
-				if profiler != nil {
-					postingListsCreated++
-				}
-			}
-			if profiler != nil {
-				postingListLookupDuration += time.Since(postingListLookupStart)
-			}
-
-			var postingListAddStart time.Time
-			if profiler != nil {
-				postingListAddStart = time.Now()
+				s.postingListsCreated++
 			}
 			postingLists[ngram].Add(docID)
-			if profiler != nil {
-				postingListAddDuration += time.Since(postingListAddStart)
-				postingMutationDuration += time.Since(postingStart)
-			}
+			s.postingMutationDur += profiler.Since(t)
+			s.tokens++
 		}
 
 		if field.Schema().Stored() {
 			storedFieldKey := w.storedFieldKey(docID, field.Name())
-			var storedFieldSetStart time.Time
-			if profiler != nil {
-				storedFieldSetStart = time.Now()
-			}
+			t := profiler.Now()
 			w.batch.Set(storedFieldKey, field.Contents(), nil)
-			if profiler != nil {
-				duration := time.Since(storedFieldSetStart)
-				storedFieldSetDuration += duration
-				storedFieldsSet++
-				pebbleBatchSetDuration += duration
-				pebbleBatchSets++
-				pebbleBatchSetBytes += int64(len(storedFieldKey) + len(field.Contents()))
-			}
+			d := profiler.Since(t)
+			s.storedFieldSetDur += d
+			s.pebbleBatchSetDur += d
+			s.storedFieldsSet++
+			s.pebbleBatchSets++
+			s.pebbleBatchSetBytes += int64(len(storedFieldKey) + len(field.Contents()))
 		}
 	}
 	if w.batch.Len() >= batchFlushSizeBytes {
