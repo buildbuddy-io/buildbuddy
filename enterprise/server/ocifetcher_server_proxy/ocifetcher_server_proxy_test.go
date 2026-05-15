@@ -236,7 +236,7 @@ func TestFetchBlob_ForwardsRequestUnchanged(t *testing.T) {
 	}
 }
 
-func TestFetchBlob_BypassRegistryLocalCacheMissDoesNotFetchUpstream(t *testing.T) {
+func TestFetchBlob_BypassRegistryLocalCacheMissForwardsToUpstream(t *testing.T) {
 	const ref = "example.com/repo@sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
 
 	ctx := authenticatedContext()
@@ -247,12 +247,60 @@ func TestFetchBlob_BypassRegistryLocalCacheMissDoesNotFetchUpstream(t *testing.T
 		Ref:            ref,
 		BypassRegistry: true,
 	})
-	if err == nil {
-		_, err = stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, []byte("hello"), collectBlobData(t, stream))
+	require.NotNil(t, remoteClient.fetchBlobRequest, "bypass_registry with local cache miss should forward to upstream")
+}
+
+func TestFetchBlob_BypassRegistryLocalCacheHit(t *testing.T) {
+	const adminGroupID = "GR123"
+	flags.Set(t, "auth.admin_group_id", adminGroupID)
+
+	adminUser := &claims.Claims{
+		UserID:        "US1",
+		GroupID:       adminGroupID,
+		AllowedGroups: []string{adminGroupID},
+		GroupMemberships: []*interfaces.GroupMembership{
+			{
+				GroupID:      adminGroupID,
+				Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
+			},
+		},
 	}
-	require.Error(t, err)
-	require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
-	require.Nil(t, remoteClient.fetchBlobRequest, "bypass_registry should not fetch from upstream on local cache miss")
+
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	authCtx := authenticatedContext()
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(authCtx, t, bsClient, acClient)
+	proxyClient := runOCIFetcherProxy(authCtx, t, ociFetcherClient)
+	ref := imageName + "@" + digest.String()
+
+	// First fetch (authenticated, no bypass) → populates upstream AC and local proxy BS.
+	stream, err := proxyClient.FetchBlob(authCtx, &ofpb.FetchBlobRequest{Ref: ref})
+	require.NoError(t, err)
+	require.Equal(t, expectedData, collectBlobData(t, stream))
+
+	// Shut down the registry to prove subsequent calls don't contact it.
+	err = reg.Shutdown()
+	require.NoError(t, err)
+
+	// Admin + bypass_registry + local cache hit → serve from local BS, no registry access.
+	adminCtx := testauth.WithAuthenticatedUserInfo(context.Background(), adminUser)
+	stream, err = proxyClient.FetchBlob(adminCtx, &ofpb.FetchBlobRequest{
+		Ref:            ref,
+		BypassRegistry: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, expectedData, collectBlobData(t, stream))
 }
 
 // TestFetchBlob_LocalCacheWriteThrough verifies that after a FetchBlob call,

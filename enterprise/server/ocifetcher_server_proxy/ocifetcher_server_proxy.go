@@ -115,7 +115,7 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 		return err
 	}
 	if req.GetBypassRegistry() {
-		return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", blobRef)
+		return s.fetchBlobFromUpstreamToStream(ctx, req, stream)
 	}
 
 	// Deduplicate concurrent upstream fetches for the same blob+creds.
