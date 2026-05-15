@@ -36,12 +36,11 @@ var (
 		squeryCmd.Name(): squeryCmd,
 	}
 
-	indexDir             string
-	cpuProfile           string
-	heapProfile          string
-	indexProfile         bool
-	indexProfileDetailed bool
-	namespace            string
+	indexDir     string
+	cpuProfile   string
+	heapProfile  string
+	indexProfile bool
+	namespace    string
 
 	reset    = indexCmd.Bool("reset", false, "Delete the index and start fresh")
 	results  = searchCmd.Int("results", 100, "Print this many results")
@@ -68,7 +67,6 @@ func setupCommonFlags() {
 			flagset.StringVar(&namespace, "namespace", "", "Namespace to index/search/squery in")
 			if cmdName == indexCmd.Name() {
 				flagset.BoolVar(&indexProfile, "index_profile", false, "Print indexing phase timing and counters")
-				flagset.BoolVar(&indexProfileDetailed, "index_profile_detailed", false, "Include high-overhead tokenizer internals in the index profile")
 			}
 		}
 	}
@@ -108,7 +106,7 @@ func main() {
 	}
 
 	if indexProfile {
-		p := indexprofile.Start(indexProfileDetailed)
+		p := indexprofile.Start()
 		defer func() {
 			indexprofile.Stop()
 			p.PrettyPrint()

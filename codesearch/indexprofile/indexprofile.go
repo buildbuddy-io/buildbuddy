@@ -28,13 +28,6 @@ const (
 	PhaseNgramConversion    Phase = "ngram_conversion"
 	PhasePostingListLookup  Phase = "posting_list_lookup"
 	PhasePostingListAdd     Phase = "posting_list_add"
-	PhaseSparseRefillLine   Phase = "sparse_refill_line"
-	PhaseSparseDecodeLine   Phase = "sparse_decode_line"
-	PhaseSparseBuildNgrams  Phase = "sparse_build_ngrams"
-	PhaseSparseHashBigram   Phase = "sparse_hash_bigram"
-	PhaseSparseToBytes      Phase = "sparse_to_bytes"
-	PhaseSparseTestOrAdd    Phase = "sparse_test_or_add"
-	PhaseSparseStringAppend Phase = "sparse_string_append"
 	PhaseStoredFieldSet     Phase = "stored_field_set"
 	PhaseFlush              Phase = "flush"
 	PhaseUpdatePostingList  Phase = "update_posting_list"
@@ -68,18 +61,6 @@ const (
 	CounterHiddenPathsSkipped     Counter = "hidden_paths_skipped"
 	CounterValidationSkippedFiles Counter = "validation_skipped_files"
 	CounterAddFileErrors          Counter = "add_file_errors"
-	CounterSparseLinesScanned     Counter = "sparse_lines_scanned"
-	CounterSparseLineBytes        Counter = "sparse_line_bytes"
-	CounterSparseRunes            Counter = "sparse_runes"
-	CounterSparseCandidates       Counter = "sparse_candidates"
-	CounterSparseNgramsTested     Counter = "sparse_ngrams_tested"
-	CounterSparseNgramsEmitted    Counter = "sparse_ngrams_emitted"
-	CounterTFOccurrences          Counter = "tf_ngram_occurrences"
-	CounterTFUniquePostings       Counter = "tf_unique_postings"
-	CounterTFDuplicateOccurrences Counter = "tf_duplicate_occurrences"
-	CounterTFDuplicatePostings    Counter = "tf_postings_with_freq_gt_1"
-	CounterTFExceptionBytes       Counter = "tf_exception_bytes_estimate"
-	CounterTFCountBytes           Counter = "tf_count_bytes_estimate"
 )
 
 type phaseStats struct {
@@ -113,24 +94,6 @@ type postingListTopEntry struct {
 	valueBytes  int64
 }
 
-type TermFrequencyStats struct {
-	Occurrences            int64
-	UniquePostings         int64
-	DuplicateOccurrences   int64
-	DuplicatePostings      int64
-	ExceptionBytesEstimate int64
-	CountBytesEstimate     int64
-	Count1                 int64
-	Count2                 int64
-	Count3To4              int64
-	Count5To8              int64
-	Count9To16             int64
-	Count17To32            int64
-	Count33To64            int64
-	Count65To128           int64
-	Count129Plus           int64
-}
-
 type topPostingListHeap struct {
 	entries []postingListTopEntry
 	less    func(a, b postingListTopEntry) bool
@@ -153,8 +116,7 @@ func (h *topPostingListHeap) Pop() any {
 }
 
 type Profiler struct {
-	start    time.Time
-	detailed bool
+	start time.Time
 
 	mu                        sync.Mutex
 	phases                    map[Phase]phaseStats
@@ -162,20 +124,17 @@ type Profiler struct {
 	postingListsByCardinality map[postingListBucketKey]postingListAggregate
 	postingListsByNgramLength map[postingListLengthKey]postingListAggregate
 	topContentByValueBytes    topPostingListHeap
-	termFrequencyByField      map[string]TermFrequencyStats
 }
 
 var current atomic.Pointer[Profiler]
 
-func Start(detailed bool) *Profiler {
+func Start() *Profiler {
 	p := &Profiler{
 		start:                     time.Now(),
-		detailed:                  detailed,
 		phases:                    make(map[Phase]phaseStats),
 		counters:                  make(map[Counter]int64),
 		postingListsByCardinality: make(map[postingListBucketKey]postingListAggregate),
 		postingListsByNgramLength: make(map[postingListLengthKey]postingListAggregate),
-		termFrequencyByField:      make(map[string]TermFrequencyStats),
 		topContentByValueBytes: topPostingListHeap{
 			less: lessByValueBytes,
 		},
@@ -190,14 +149,6 @@ func Stop() *Profiler {
 
 func Current() *Profiler {
 	return current.Load()
-}
-
-func CurrentDetailed() *Profiler {
-	p := Current()
-	if p == nil || !p.detailed {
-		return nil
-	}
-	return p
 }
 
 func Record(phase Phase, duration time.Duration) {
@@ -244,38 +195,6 @@ func (p *Profiler) Get(counter Counter) int64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.counters[counter]
-}
-
-func (p *Profiler) RecordTermFrequencyStats(field string, stats TermFrequencyStats) {
-	if stats.Occurrences == 0 {
-		return
-	}
-	p.mu.Lock()
-	current := p.termFrequencyByField[field]
-	current.Occurrences += stats.Occurrences
-	current.UniquePostings += stats.UniquePostings
-	current.DuplicateOccurrences += stats.DuplicateOccurrences
-	current.DuplicatePostings += stats.DuplicatePostings
-	current.ExceptionBytesEstimate += stats.ExceptionBytesEstimate
-	current.CountBytesEstimate += stats.CountBytesEstimate
-	current.Count1 += stats.Count1
-	current.Count2 += stats.Count2
-	current.Count3To4 += stats.Count3To4
-	current.Count5To8 += stats.Count5To8
-	current.Count9To16 += stats.Count9To16
-	current.Count17To32 += stats.Count17To32
-	current.Count33To64 += stats.Count33To64
-	current.Count65To128 += stats.Count65To128
-	current.Count129Plus += stats.Count129Plus
-	p.termFrequencyByField[field] = current
-
-	p.counters[CounterTFOccurrences] += stats.Occurrences
-	p.counters[CounterTFUniquePostings] += stats.UniquePostings
-	p.counters[CounterTFDuplicateOccurrences] += stats.DuplicateOccurrences
-	p.counters[CounterTFDuplicatePostings] += stats.DuplicatePostings
-	p.counters[CounterTFExceptionBytes] += stats.ExceptionBytesEstimate
-	p.counters[CounterTFCountBytes] += stats.CountBytesEstimate
-	p.mu.Unlock()
 }
 
 func (p *Profiler) RecordPostingList(field, ngram string, cardinality uint64, keyBytes, valueBytes int64) {
@@ -347,10 +266,6 @@ func (p *Profiler) PrettyPrint() {
 		key   postingListLengthKey
 		stats postingListAggregate
 	}
-	type termFrequencyRow struct {
-		field string
-		stats TermFrequencyStats
-	}
 
 	p.mu.Lock()
 	phases := make([]phaseRow, 0, len(p.phases))
@@ -368,10 +283,6 @@ func (p *Profiler) PrettyPrint() {
 	lengthRows := make([]lengthRow, 0, len(p.postingListsByNgramLength))
 	for key, stats := range p.postingListsByNgramLength {
 		lengthRows = append(lengthRows, lengthRow{key: key, stats: stats})
-	}
-	termFrequencyRows := make([]termFrequencyRow, 0, len(p.termFrequencyByField))
-	for field, stats := range p.termFrequencyByField {
-		termFrequencyRows = append(termFrequencyRows, termFrequencyRow{field: field, stats: stats})
 	}
 	topByValueBytes := append([]postingListTopEntry(nil), p.topContentByValueBytes.entries...)
 	p.mu.Unlock()
@@ -396,9 +307,6 @@ func (p *Profiler) PrettyPrint() {
 			return lengthRows[i].key.field < lengthRows[j].key.field
 		}
 		return lengthRows[i].key.length < lengthRows[j].key.length
-	})
-	sort.Slice(termFrequencyRows, func(i, j int) bool {
-		return termFrequencyRows[i].field < termFrequencyRows[j].field
 	})
 	sortPostingListTop(topByValueBytes, lessByValueBytes)
 
@@ -429,34 +337,6 @@ func (p *Profiler) PrettyPrint() {
 		for _, row := range lengthRows {
 			log.Printf("  field=%-12q length=%-3d lists=%-10d postings=%-12d key_bytes=%-12d value_bytes=%d",
 				row.key.field, row.key.length, row.stats.lists, row.stats.postings, row.stats.keyBytes, row.stats.valueBytes)
-		}
-	}
-	if len(termFrequencyRows) > 0 {
-		log.Printf("Index profile term frequency storage estimate:")
-		for _, row := range termFrequencyRows {
-			duplicatePostingPct := float64(0)
-			if row.stats.UniquePostings > 0 {
-				duplicatePostingPct = 100 * float64(row.stats.DuplicatePostings) / float64(row.stats.UniquePostings)
-			}
-			log.Printf("  field=%-12q occurrences=%-12d unique_postings=%-12d duplicate_occurrences=%-12d postings_with_tf_gt_1=%-12d (%5.2f%%) exception_bytes_estimate=%-12d count_bytes_estimate=%d",
-				row.field,
-				row.stats.Occurrences,
-				row.stats.UniquePostings,
-				row.stats.DuplicateOccurrences,
-				row.stats.DuplicatePostings,
-				duplicatePostingPct,
-				row.stats.ExceptionBytesEstimate,
-				row.stats.CountBytesEstimate)
-			log.Printf("    tf_buckets: 1=%d 2=%d 3-4=%d 5-8=%d 9-16=%d 17-32=%d 33-64=%d 65-128=%d 129+=%d",
-				row.stats.Count1,
-				row.stats.Count2,
-				row.stats.Count3To4,
-				row.stats.Count5To8,
-				row.stats.Count9To16,
-				row.stats.Count17To32,
-				row.stats.Count33To64,
-				row.stats.Count65To128,
-				row.stats.Count129Plus)
 		}
 	}
 	printTopPostingLists("Index profile top content posting lists by value bytes:", topByValueBytes)
