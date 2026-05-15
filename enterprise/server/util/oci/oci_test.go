@@ -1479,8 +1479,6 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 	} {
 		name := tc.name
 		t.Run(name, func(t *testing.T) {
-			te := setupTestEnvWithCache(t)
-			flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 			counter := testhttp.NewRequestCounter()
 			registry := testregistry.Run(t, testregistry.Opts{
 				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
@@ -1498,47 +1496,75 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 			})
 			registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
-			for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
-				pulledImage, err := newResolver(t, te).Resolve(
-					context.Background(),
-					registry.ImageAddress(nameToResolve),
-					tc.args.platform,
-					tc.args.credentials,
-					true, /*=useOCIFetcher*/
-				)
-				require.NoError(t, err)
+			for _, authCase := range []struct {
+				name     string
+				ctx      context.Context
+				wantHead bool // whether FetchBlob makes a HEAD to get size for caching
+			}{
+				{
+					name:     "anonymous",
+					ctx:      context.Background(),
+					wantHead: false,
+				},
+				{
+					name:     "authenticated",
+					ctx:      contextWithUnverifiedJWT(&claims.Claims{UserID: "US123"}),
+					wantHead: true,
+				},
+			} {
+				t.Run(authCase.name, func(t *testing.T) {
+					te := setupTestEnvWithCache(t)
+					flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
-				counter.Reset()
+					for i, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
+						pulledImage, err := newResolver(t, te).Resolve(
+							authCase.ctx,
+							registry.ImageAddress(nameToResolve),
+							tc.args.platform,
+							tc.args.credentials,
+							true, /*=useOCIFetcher*/
+						)
+						require.NoError(t, err)
 
-				layers, err := pulledImage.Layers()
-				require.NoError(t, err)
+						counter.Reset()
 
-				expected := map[string]int{}
-				require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
+						layers, err := pulledImage.Layers()
+						require.NoError(t, err)
+						require.Empty(t, cmp.Diff(map[string]int{}, counter.Snapshot()))
 
-				configDigest, err := pulledImage.ConfigName()
-				require.NoError(t, err)
-				// With OCIFetcher, fetching the config blob uses FetchBlob which:
-				// - Reuses the puller from Resolve() (no additional GET /v2/)
-				// - Makes a GET request for the config blob data
-				// Anonymous requests (context.Background()) skip the cache, so no
-				// HEAD is made to get size for caching.
-				expected = map[string]int{
-					http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
-				}
+						configDigest, err := pulledImage.ConfigName()
+						require.NoError(t, err)
 
-				// To make the DiffID() request counts always be zero,
-				// fetch the config file here. Otherwise the first
-				// Layer.DiffID() call will make a request to fetch the config file.
-				_, err = pulledImage.ConfigFile()
-				require.NoError(t, err)
-				require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
+						// To make DiffID() request counts always be zero,
+						// fetch the config file here. Otherwise the first
+						// Layer.DiffID() call will make a request to fetch the config file.
+						_, err = pulledImage.ConfigFile()
+						require.NoError(t, err)
 
-				for _, layer := range layers {
-					_, err := layer.DiffID()
-					require.NoError(t, err)
-					require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
-				}
+						// For the first image (_image), the cache is always cold.
+						// Assert the exact fetch pattern: anonymous makes only GET
+						// (skips cache), authenticated makes HEAD+GET (size for caching).
+						// For _index the cache state depends on whether the resolver
+						// uses the same repo as _image, so we only assert that DiffID
+						// makes no additional requests beyond what ConfigFile already did.
+						if i == 0 {
+							expected := map[string]int{
+								http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
+							}
+							if authCase.wantHead {
+								expected[http.MethodHead+" /v2/"+nameToResolve+"/blobs/"+configDigest.String()] = 1
+							}
+							require.Empty(t, cmp.Diff(expected, counter.Snapshot()))
+						}
+
+						afterConfig := counter.Snapshot()
+						for _, layer := range layers {
+							_, err := layer.DiffID()
+							require.NoError(t, err)
+							require.Empty(t, cmp.Diff(afterConfig, counter.Snapshot()))
+						}
+					}
+				})
 			}
 		})
 	}
