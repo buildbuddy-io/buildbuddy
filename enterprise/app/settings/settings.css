@@ -70,6 +70,10 @@
   cursor: inherit;
 }
 
+.settings-billing-enterprise-quote {
+  margin-top: 12px;
+}
+
 .settings .organization-form .settings-option-title {
   margin-top: 0;
 }

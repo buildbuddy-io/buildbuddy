@@ -6,8 +6,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/billing/stripe"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
@@ -123,6 +125,7 @@ func TestCreateGroup_StatusRestrictions(t *testing.T) {
 		{"Unknown", grpb.Group_UNKNOWN_GROUP_STATUS, true},
 		{"EnterpriseTrial", grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS, true},
 		{"Enterprise", grpb.Group_ENTERPRISE_GROUP_STATUS, true},
+		{"UsageBased", grpb.Group_USAGE_BASED_GROUP_STATUS, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			te := enterprise_testenv.New(t)
@@ -180,6 +183,117 @@ func TestCreateGroup_StatusRestrictions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUsageBasedBillingSetup(t *testing.T) {
+	te := enterprise_testenv.New(t)
+	enterprise_testauth.Configure(t, te)
+
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+
+	ctx := context.Background()
+	err := te.GetUserDB().InsertUser(ctx, &tables.User{UserID: "US1", SubID: "US1SubID"})
+	require.NoError(t, err)
+	userCtx := authUserCtx(ctx, te, t, "US1")
+	group := getGroup(t, userCtx, te).Group
+	group.Name = "Acme"
+	group.URLIdentifier = "acme"
+	_, err = te.GetUserDB().UpdateGroup(userCtx, &group)
+	require.NoError(t, err)
+
+	flags.Set(t, "auth.admin_group_id", group.GroupID)
+	adminRole, err := role.ToProto(role.Admin)
+	require.NoError(t, err)
+	err = te.GetUserDB().UpdateGroupUsers(userCtx, group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+		{
+			UserId: &uidpb.UserId{Id: "US1"},
+			Role:   adminRole,
+		},
+	})
+	require.NoError(t, err)
+	userCtx = authUserCtx(ctx, te, t, "US1")
+	require.NoError(t, te.GetUserDB().UpdateGroupStatus(userCtx, group.GroupID, grpb.Group_FREE_TIER_GROUP_STATUS))
+
+	var sawCustomerRequest, sawCheckoutRequest, sawSessionRequest bool
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username, password, ok := r.BasicAuth()
+		require.True(t, ok)
+		require.Equal(t, "sk_test_123", username)
+		require.Empty(t, password)
+		require.Equal(t, "2026-04-22.dahlia", r.Header.Get("Stripe-Version"))
+
+		switch r.URL.Path {
+		case "/v1/customers":
+			sawCustomerRequest = true
+			require.Equal(t, http.MethodPost, r.Method)
+			require.Equal(t, "buildbuddy-usage-billing-customer-"+group.GroupID, r.Header.Get("Idempotency-Key"))
+			require.NoError(t, r.ParseForm())
+			require.Equal(t, "Acme", r.Form.Get("name"))
+			require.Equal(t, group.GroupID, r.Form.Get("metadata[group_id]"))
+			w.Write([]byte(`{"id":"cus_123"}`))
+		case "/v1/checkout/sessions":
+			sawCheckoutRequest = true
+			require.Equal(t, http.MethodPost, r.Method)
+			require.Empty(t, r.Header.Get("Idempotency-Key"))
+			require.NoError(t, r.ParseForm())
+			require.Equal(t, "setup", r.Form.Get("mode"))
+			require.Equal(t, "usd", r.Form.Get("currency"))
+			require.Equal(t, "cus_123", r.Form.Get("customer"))
+			require.Equal(t, group.GroupID, r.Form.Get("client_reference_id"))
+			require.Equal(t, group.GroupID, r.Form.Get("metadata[group_id]"))
+			require.Equal(t, group.GroupID, r.Form.Get("setup_intent_data[metadata][group_id]"))
+			require.Empty(t, r.Form.Get("payment_method_types[]"))
+			w.Write([]byte(`{"id":"cs_123","url":"https://checkout.stripe.test/cs_123","customer":"cus_123","mode":"setup","status":"open"}`))
+		case "/v1/checkout/sessions/cs_123":
+			sawSessionRequest = true
+			require.Equal(t, http.MethodGet, r.Method)
+			w.Write([]byte(`{"id":"cs_123","customer":"cus_123","setup_intent":"seti_123","mode":"setup","status":"complete","client_reference_id":"` + group.GroupID + `"}`))
+		default:
+			t.Fatalf("unexpected Stripe path %q", r.URL.Path)
+		}
+	}))
+	defer stripeServer.Close()
+
+	flags.Set(t, "billing.stripe.api_key", "sk_test_123")
+	flags.Set(t, "billing.stripe.enabled", true)
+	flags.Set(t, "billing.stripe.api_url", stripeServer.URL)
+	require.NoError(t, stripe.Register(te))
+	buildBuddyURL, err := url.Parse("https://app.buildbuddy.test")
+	require.NoError(t, err)
+	flags.Set(t, "app.build_buddy_url", *buildBuddyURL)
+
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+	createRsp, err := server.CreateUsageBasedBillingSetupSession(userCtx, &grpb.CreateUsageBasedBillingSetupSessionRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "https://checkout.stripe.test/cs_123", createRsp.GetSetupUrl())
+	require.Equal(t, "cs_123", createRsp.GetSetupSessionId())
+
+	var billing tables.GroupBilling
+	err = te.GetDBHandle().GORM(ctx, "test_get_group_billing").Where("group_id = ?", group.GroupID).Take(&billing).Error
+	require.NoError(t, err)
+	require.Equal(t, "cus_123", billing.ExternalCustomerID)
+	require.Equal(t, "cs_123", billing.ExternalSetupSessionID)
+
+	completeRsp, err := server.CompleteUsageBasedBillingSetup(userCtx, &grpb.CompleteUsageBasedBillingSetupRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+		SetupSessionId: "cs_123",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, completeRsp)
+
+	err = te.GetDBHandle().GORM(ctx, "test_get_completed_group_billing").Where("group_id = ?", group.GroupID).Take(&billing).Error
+	require.NoError(t, err)
+	require.Equal(t, "seti_123", billing.ExternalPaymentSetupID)
+	updatedGroup, err := te.GetUserDB().GetGroupByID(ctx, group.GroupID)
+	require.NoError(t, err)
+	require.Equal(t, grpb.Group_USAGE_BASED_GROUP_STATUS, updatedGroup.Status)
+	require.True(t, sawCustomerRequest)
+	require.True(t, sawCheckoutRequest)
+	require.True(t, sawSessionRequest)
 }
 
 func TestSetGroupStatus(t *testing.T) {

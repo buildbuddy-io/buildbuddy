@@ -6,6 +6,7 @@ go_test(
     name = "buildbuddy_server_test",
     srcs = ["buildbuddy_server_test.go"],
     deps = [
+        "//enterprise/server/billing/stripe",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//proto:capability_go_proto",
