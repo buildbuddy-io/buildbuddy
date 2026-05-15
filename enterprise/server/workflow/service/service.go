@@ -1965,8 +1965,8 @@ func (ws *workflowService) RunScheduledWorkflows(ctx context.Context) error {
 		if scheduled == nil {
 			break
 		}
-		if dispatchErr := ws.dispatchScheduledWorkflow(ctx, scheduled); dispatchErr != nil {
-			if err := ws.handleScheduledWorkflowFailure(ctx, scheduled, dispatchErr); err != nil {
+		if err := ws.dispatchScheduledWorkflow(ctx, scheduled); err != nil {
+			if err := ws.handleScheduledWorkflowFailure(ctx, scheduled, err); err != nil {
 				log.CtxWarningf(ctx, "Failed to handle scheduled workflow failure %s: %s", scheduled.ScheduleID, err)
 			}
 			continue
@@ -2126,39 +2126,22 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	if err != nil {
 		return err
 	}
+	var allActions []*config.Action
 	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
 	if err != nil {
 		return status.WrapError(err, "fetch workflow config")
-	} else if cfg == nil {
-		log.CtxInfof(ctx, "Workflow config not found for scheduled run %s; deleting", scheduled.ScheduleID)
-		if err := ws.deleteScheduledRun(ctx, scheduled.ScheduleID, scheduled.LeaseExpiresUsec); err != nil {
-			msg := fmt.Sprintf("Failed to delete scheduled run %s: %s", scheduled.ScheduleID, err)
-			log.CtxError(ctx, msg)
-			return fmt.Errorf("%s", msg)
-		}
-		return nil
+	} else if cfg != nil {
+		allActions = cfg.Actions
 	}
 
-	actions, err := ws.filterActions(ctx, wf, wd, cfg.Actions, []string{scheduled.ActionName})
+	actions, err := ws.filterActions(ctx, wf, wd, allActions, []string{scheduled.ActionName})
 	if err != nil {
 		return err
 	}
-
 	if len(actions) != 1 {
-		return fmt.Errorf("expected one action named %s, found %d", scheduled.ActionName, len(actions))
+		return status.InvalidArgumentErrorf("expected one action named %s, found %d", scheduled.ActionName, len(actions))
 	}
 	action := actions[0]
-
-	if !isScheduleStillValid(action, scheduled) {
-		log.CtxInfof(ctx, "Schedule %q for action %q no longer valid for scheduled run %s; deleting", scheduled.CronExpr, scheduled.ActionName, scheduled.ScheduleID)
-		if err := ws.deleteScheduledRun(ctx, scheduled.ScheduleID, scheduled.LeaseExpiresUsec); err != nil {
-			msg := fmt.Sprintf("Failed to delete scheduled run %s: %s", scheduled.ScheduleID, err)
-			log.CtxError(ctx, msg)
-			return fmt.Errorf("%s", msg)
-		}
-		return nil
-	}
-
 	invocationUUID, err := guuid.NewRandom()
 	if err != nil {
 		return err
@@ -2176,19 +2159,6 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 		return err
 	}
 	return nil
-}
-
-// Validate that the schedule configured in the fetched workflow config matches what we have in the database.
-func isScheduleStillValid(fetchedAction *config.Action, storedSchedule *tables.ScheduledRun) bool {
-	if fetchedAction.Triggers == nil || fetchedAction.Triggers.Schedule == nil {
-		return false
-	}
-	for _, c := range fetchedAction.Triggers.Schedule.Crons {
-		if c == storedSchedule.CronExpr {
-			return true
-		}
-	}
-	return false
 }
 
 // calculateNextRunTimeUsec uses the given cron expression to return the next
@@ -2222,17 +2192,6 @@ func (ws *workflowService) advanceWorkflowSchedule(ctx context.Context, schedule
 		return fmt.Errorf("failed to advance scheduled workflow %s", scheduleID)
 	}
 	return nil
-}
-
-// deleteScheduledRun deletes a scheduled run that is no longer valid (e.g. config file deleted or
-// cron expression removed). We filter on lease_expires_usec to avoid race conditions.
-func (ws *workflowService) deleteScheduledRun(ctx context.Context, scheduleID string, leaseExpiresUsec int64) error {
-	result := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_delete_scheduled_run").Raw(`
-		DELETE FROM "ScheduledRuns"
-		WHERE schedule_id = ?
-		  AND lease_expires_usec = ?
-	`, scheduleID, leaseExpiresUsec).Exec()
-	return result.Error
 }
 
 // updateScheduledWorkflows checks for changes regarding scheduled workflows in the workflow config,

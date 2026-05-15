@@ -45,12 +45,10 @@ type FakeProvider struct {
 
 	// Faked values
 
-	WebhookData  *interfaces.WebhookData
-	FileContents map[string]string
-	TrustedUsers []string
-
 	RegisterWebhookError error
-	GetFileContentsError error
+	WebhookData          *interfaces.WebhookData
+	FileContents         map[string]string
+	TrustedUsers         []string
 }
 
 func NewFakeProvider() *FakeProvider {
@@ -83,9 +81,6 @@ func (p *FakeProvider) UnregisterWebhook(ctx context.Context, accessToken, repoU
 	return nil
 }
 func (p *FakeProvider) GetFileContents(ctx context.Context, accessToken, repoURL, filePath, ref string) ([]byte, error) {
-	if p.GetFileContentsError != nil {
-		return nil, p.GetFileContentsError
-	}
 	contents, ok := p.FileContents[filePath]
 	if !ok {
 		return nil, status.NotFoundError("Not found")
