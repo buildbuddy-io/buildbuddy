@@ -733,10 +733,7 @@ func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRespo
 	}
 
 	// Shard the query by key and query shards in parallel.
-	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
-		// sender runMultiKeyFuncs require that we return an interface{}
-		// and error, but in this case there's no value to return, so
-		// always return nil for the interface, even on success.
+	_, err = rc.sender().RunMultiKeyPropose(ctx, keys, func(keys []*sender.KeyMeta) (*rfpb.BatchCmdRequest, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			setOp := k.Meta.(*mdpb.SetRequest_SetOperation)
@@ -751,14 +748,9 @@ func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRespo
 		if err != nil {
 			return nil, err
 		}
-		rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
-			Header: h,
-			Batch:  batchProto,
-		})
-		if err != nil {
-			return nil, err
-		}
-		return nil, rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).AnyError()
+		return batchProto, nil
+	}, func(keys []*sender.KeyMeta, batchRsp *rfpb.BatchCmdResponse) (any, error) {
+		return nil, rbuilder.NewBatchResponseFromProto(batchRsp).AnyError()
 	}, sender.WithConsistencyMode(rfpb.Header_RANGELEASE))
 	if err != nil {
 		return nil, err
@@ -793,10 +785,7 @@ func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.De
 	}
 
 	// Shard the query by key and query shards in parallel.
-	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
-		// sender runMultiKeyFuncs require that we return an interface{}
-		// and error, but in this case there's no value to return, so
-		// always return nil for the interface, even on success.
+	_, err = rc.sender().RunMultiKeyPropose(ctx, keys, func(keys []*sender.KeyMeta) (*rfpb.BatchCmdRequest, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			deleteOp := k.Meta.(*mdpb.DeleteRequest_DeleteOperation)
@@ -809,14 +798,9 @@ func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.De
 		if err != nil {
 			return nil, err
 		}
-		rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
-			Header: h,
-			Batch:  batchProto,
-		})
-		if err != nil {
-			return nil, err
-		}
-		return nil, rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).AnyError()
+		return batchProto, nil
+	}, func(keys []*sender.KeyMeta, batchRsp *rfpb.BatchCmdResponse) (any, error) {
+		return nil, rbuilder.NewBatchResponseFromProto(batchRsp).AnyError()
 	}, sender.WithConsistencyMode(rfpb.Header_RANGELEASE))
 	if err != nil {
 		return nil, err

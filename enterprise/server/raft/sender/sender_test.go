@@ -7,6 +7,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -207,6 +210,120 @@ func TestDuplicateApplyOnReplicaRetry(t *testing.T) {
 	value, err := s1.Sender().Increment(ctx, key, 1)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), value)
+
+	buf, err := s1.Sender().DirectRead(ctx, key)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), binary.LittleEndian.Uint64(buf))
+}
+
+func TestSyncProposeWithRangeDescriptorDuplicateApplyOnReplicaRetry(t *testing.T) {
+	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+
+	key := []byte("PTdefault/dup-apply-rd")
+	var faultInjected atomic.Bool
+	interceptor := func(
+		ctx context.Context,
+		req any,
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (any, error) {
+		rsp, err := handler(ctx, req)
+		syncReq, ok := req.(*rfpb.SyncProposeRequest)
+		shouldFault := ok &&
+			len(syncReq.GetBatch().GetUnion()) == 1 &&
+			syncReq.GetBatch().GetUnion()[0].GetIncrement() != nil &&
+			string(syncReq.GetBatch().GetUnion()[0].GetIncrement().GetKey()) == string(key)
+		if err == nil &&
+			strings.HasSuffix(info.FullMethod, "/SyncPropose") &&
+			shouldFault &&
+			faultInjected.CompareAndSwap(false, true) {
+			return nil, gstatus.Error(codes.Unavailable, "injected fault after apply")
+		}
+		return rsp, err
+	}
+
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStoreWithGRPCServerConfig(t, grpc_server.GRPCServerConfig{
+		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{interceptor},
+	})
+	ctx := context.Background()
+
+	stores := []*testutil.TestingStore{s1}
+	sf.StartShard(t, ctx, s1)
+	testutil.WaitForRangeLease(t, ctx, stores, 1)
+	testutil.WaitForRangeLease(t, ctx, stores, 2)
+
+	batch, err := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
+		Key:   key,
+		Delta: 1,
+	}).ToProto()
+	require.NoError(t, err)
+	rd := s1.GetRange(2)
+
+	rsp, err := s1.Sender().SyncProposeWithRangeDescriptor(ctx, rd, batch, header.MakeLinearizableWithRangeValidation)
+	require.NoError(t, err)
+	require.NoError(t, rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).AnyError())
+
+	buf, err := s1.Sender().DirectRead(ctx, key)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), binary.LittleEndian.Uint64(buf))
+}
+
+func TestRunMultiKeyProposeDuplicateApplyOnReplicaRetry(t *testing.T) {
+	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+
+	key := []byte("PTdefault/dup-apply-multikey")
+	var faultInjected atomic.Bool
+	interceptor := func(
+		ctx context.Context,
+		req any,
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (any, error) {
+		rsp, err := handler(ctx, req)
+		syncReq, ok := req.(*rfpb.SyncProposeRequest)
+		shouldFault := ok &&
+			len(syncReq.GetBatch().GetUnion()) == 1 &&
+			syncReq.GetBatch().GetUnion()[0].GetIncrement() != nil &&
+			string(syncReq.GetBatch().GetUnion()[0].GetIncrement().GetKey()) == string(key)
+		if err == nil &&
+			strings.HasSuffix(info.FullMethod, "/SyncPropose") &&
+			shouldFault &&
+			faultInjected.CompareAndSwap(false, true) {
+			return nil, gstatus.Error(codes.Unavailable, "injected fault after apply")
+		}
+		return rsp, err
+	}
+
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStoreWithGRPCServerConfig(t, grpc_server.GRPCServerConfig{
+		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{interceptor},
+	})
+	ctx := context.Background()
+
+	stores := []*testutil.TestingStore{s1}
+	sf.StartShard(t, ctx, s1)
+	testutil.WaitForRangeLease(t, ctx, stores, 1)
+	testutil.WaitForRangeLease(t, ctx, stores, 2)
+
+	_, err := s1.Sender().RunMultiKeyPropose(ctx, []*sender.KeyMeta{{Key: key}},
+		func(keys []*sender.KeyMeta) (*rfpb.BatchCmdRequest, error) {
+			return rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
+				Key:   keys[0].Key,
+				Delta: 1,
+			}).ToProto()
+		},
+		func(keys []*sender.KeyMeta, batchRsp *rfpb.BatchCmdResponse) (any, error) {
+			return nil, rbuilder.NewBatchResponseFromProto(batchRsp).AnyError()
+		},
+	)
+	require.NoError(t, err)
 
 	buf, err := s1.Sender().DirectRead(ctx, key)
 	require.NoError(t, err)

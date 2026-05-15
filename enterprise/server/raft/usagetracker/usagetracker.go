@@ -35,7 +35,6 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
 
@@ -226,7 +225,7 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 	start := pu.clock.Now()
 	defer metrics.RaftBatchDeleteDurationUsec.Observe(float64(pu.clock.Since(start).Microseconds()))
 
-	rsps, err := pu.sender.RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
+	rsps, err := pu.sender.RunMultiKeyPropose(ctx, keys, func(keys []*sender.KeyMeta) (*rfpb.BatchCmdRequest, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			sample, ok := k.Meta.(*approxlru.Sample[*evictionKey])
@@ -242,18 +241,14 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 		if err != nil {
 			return nil, fmt.Errorf("could not construct delete req proto: %s", err)
 		}
-		rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
-			Header: h,
-			Batch:  batchCmd,
-		})
-		if err != nil {
-			return nil, err
-		}
+		return batchCmd, nil
+	}, func(keys []*sender.KeyMeta, batchRsp *rfpb.BatchCmdResponse) (any, error) {
 		res := make([]*approxlru.Sample[*evictionKey], 0)
-		batchRsp := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
+		parsed := rbuilder.NewBatchResponseFromProto(batchRsp)
 		errCount := 0
+		var err error
 		for i, k := range keys {
-			_, err = batchRsp.DeleteResponse(i)
+			_, err = parsed.DeleteResponse(i)
 			if err == nil {
 				res = append(res, k.Meta.(*approxlru.Sample[*evictionKey]))
 			} else {
