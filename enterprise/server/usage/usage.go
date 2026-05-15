@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/column/orderedmap"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/billing/metronome"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -30,6 +31,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 )
 
@@ -137,8 +139,16 @@ type tracker struct {
 	// See docs for [olaptables.RawUsage.BufferID]
 	bufferID string
 
-	flushLock interfaces.DistributedLock
-	stopFlush chan struct{}
+	flushLock       interfaces.DistributedLock
+	stopFlush       chan struct{}
+	metronomeClient *metronome.Client
+}
+
+type metronomeUsageReport struct {
+	groupID     string
+	periodStart time.Time
+	labels      *tables.UsageLabels
+	counts      *tables.UsageCounts
 }
 
 func RegisterTracker(env *real_environment.RealEnv) error {
@@ -176,14 +186,19 @@ func NewTracker(env environment.Env, clock clockwork.Clock, flushLock interfaces
 	if *writeToOLAP && env.GetOLAPDBHandle() == nil {
 		return nil, status.FailedPreconditionError("OLAP DB handle must be configured for usage tracker when 'app.write_usage_to_olap_db' is true.")
 	}
+	var metronomeClient *metronome.Client
+	if metronome.IsConfigured() {
+		metronomeClient = metronome.NewClient(metronome.ClientConfig{})
+	}
 	return &tracker{
-		env:       env,
-		rdb:       env.GetDefaultRedisClient(),
-		region:    appRegion,
-		clock:     clock,
-		flushLock: flushLock,
-		stopFlush: make(chan struct{}),
-		bufferID:  fmt.Sprintf("%s:redis", appRegion),
+		env:             env,
+		rdb:             env.GetDefaultRedisClient(),
+		region:          appRegion,
+		clock:           clock,
+		flushLock:       flushLock,
+		stopFlush:       make(chan struct{}),
+		bufferID:        fmt.Sprintf("%s:redis", appRegion),
+		metronomeClient: metronomeClient,
 	}, nil
 }
 
@@ -331,25 +346,30 @@ func (ut *tracker) stopDBFlush() {
 //
 // Public for testing only; the server should call StartDBFlush to periodically
 // flush usage.
-func (ut *tracker) FlushToDB(ctx context.Context) error {
+func (ut *tracker) FlushToDB(ctx context.Context) (err error) {
 	// Grab lock. This will immediately return ResourceExhausted if
 	// another client already holds the lock. In that case, we ignore the error.
-	err := ut.flushLock.Lock(ctx)
+	err = ut.flushLock.Lock(ctx)
 	if status.IsResourceExhaustedError(err) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
+	var metronomeReports []metronomeUsageReport
 	defer func() {
 		if err := ut.flushLock.Unlock(ctx); err != nil {
 			log.Warningf("Failed to unlock distributed lock: %s", err)
 		}
+		if ut.metronomeClient != nil {
+			ut.reportUsageToMetronome(ctx, metronomeReports)
+		}
 	}()
-	return ut.flushToDB(ctx)
+	metronomeReports, err = ut.flushToDB(ctx)
+	return err
 }
 
-func (ut *tracker) flushToDB(ctx context.Context) error {
+func (ut *tracker) flushToDB(ctx context.Context) ([]metronomeUsageReport, error) {
 	// Don't run for longer than we have the Redis lock. This is mostly just to
 	// avoid situations where multiple apps are trying to write usage data to the
 	// DB at once while it is already under high load.
@@ -370,8 +390,11 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 	var eg errgroup.Group
 
 	// Flush MySQL buffer (v1 keys)
+	var metronomeReports []metronomeUsageReport
 	eg.Go(func() error {
-		if err := ut.flushPrimaryDBBuffer(ctx, redisCleanupCtx); err != nil {
+		reports, err := ut.flushPrimaryDBBuffer(ctx, redisCleanupCtx)
+		metronomeReports = reports
+		if err != nil {
 			return fmt.Errorf("flush buffered usage data to primary DB: %w", err)
 		}
 		return nil
@@ -387,21 +410,22 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 		})
 	}
 
-	return eg.Wait()
+	return metronomeReports, eg.Wait()
 }
 
 // flushPrimaryDBBuffer reads from the v1 Redis buffer and writes to MySQL.
-func (ut *tracker) flushPrimaryDBBuffer(ctx context.Context, redisCleanupCtx context.Context) error {
+func (ut *tracker) flushPrimaryDBBuffer(ctx context.Context, redisCleanupCtx context.Context) ([]metronomeUsageReport, error) {
 	// Loop through usage periods starting from the oldest period
 	// that may exist in Redis (based on key expiration time) and looping up until
 	// we hit a period which is not yet "settled".
+	var metronomeReports []metronomeUsageReport
 	oldestPeriod := ut.oldestWritablePeriod()
 	for p := oldestPeriod; ut.isSettled(p); p = p.Next() {
 		// Read collections (JSON-serialized Collection structs)
 		collectionsKey := collectionsRedisKey(p)
 		encodedCollections, err := ut.rdb.SMembers(ctx, collectionsKey).Result()
 		if err != nil {
-			return err
+			return metronomeReports, err
 		}
 		if len(encodedCollections) == 0 {
 			continue
@@ -414,26 +438,26 @@ func (ut *tracker) flushPrimaryDBBuffer(ctx context.Context, redisCleanupCtx con
 		for _, encodedCollection := range encodedCollections {
 			ok, err := ut.supportsCollection(ctx, encodedCollection)
 			if err != nil {
-				return status.WrapError(err, "check DB schema supports collection")
+				return metronomeReports, status.WrapError(err, "check DB schema supports collection")
 			}
 			if !ok {
 				// Collection contains a new column; let a newer app flush
 				// instead.
 				log.CtxInfof(ctx, "Usage collection %q for period %s contains column not yet supported by this app; will let a newer app flush this period's data.", encodedCollection, p)
-				return nil
+				return metronomeReports, nil
 			}
 		}
 
 		for _, encodedCollection := range encodedCollections {
 			collection, _, err := usageutil.DecodeCollection(encodedCollection)
 			if err != nil {
-				return status.WrapError(err, "decode collection")
+				return metronomeReports, status.WrapError(err, "decode collection")
 			}
 			// Read usage counts from Redis
 			countsKey := countsRedisKey(p, encodedCollection)
 			h, err := ut.rdb.HGetAll(ctx, countsKey).Result()
 			if err != nil {
-				return err
+				return metronomeReports, err
 			}
 			if len(h) == 0 {
 				// Normally every collection key should have a corresponding
@@ -449,13 +473,13 @@ func (ut *tracker) flushPrimaryDBBuffer(ctx context.Context, redisCleanupCtx con
 			}
 			counts, err := stringMapToCounts(h)
 			if err != nil {
-				return err
+				return metronomeReports, err
 			}
 			// Update counts in the DB
 			groupID := collection.GroupID
 			labels := collection.UsageLabels()
 			if err := ut.flushCountsToPrimaryDB(ctx, groupID, p, labels, counts); err != nil {
-				return err
+				return metronomeReports, err
 			}
 
 			// Remove the collection data from Redis now that it has been
@@ -464,11 +488,63 @@ func (ut *tracker) flushPrimaryDBBuffer(ctx context.Context, redisCleanupCtx con
 			pipe.SRem(redisCleanupCtx, collectionsKey, encodedCollection)
 			pipe.Del(redisCleanupCtx, countsKey)
 			if _, err := pipe.Exec(redisCleanupCtx); err != nil {
-				return err
+				return metronomeReports, err
+			}
+			if ut.metronomeClient != nil {
+				metronomeReports = append(metronomeReports, metronomeUsageReport{
+					groupID:     groupID,
+					periodStart: p.Start(),
+					labels:      labels,
+					counts:      counts,
+				})
 			}
 		}
 	}
-	return nil
+	return metronomeReports, nil
+}
+
+func (ut *tracker) reportUsageToMetronome(ctx context.Context, reports []metronomeUsageReport) {
+	if len(reports) == 0 {
+		return
+	}
+	groupCache := map[string]bool{}
+	for _, report := range reports {
+		reportUsage, err := ut.shouldReportUsageToMetronome(ctx, report.groupID, groupCache)
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to determine whether to report usage to Metronome: %s", err)
+			continue
+		}
+		if !reportUsage {
+			continue
+		}
+		start := time.Now()
+		if err := ut.metronomeClient.ReportUsage(ctx, report.groupID, report.periodStart, report.labels, report.counts); err != nil {
+			log.CtxWarningf(ctx, "Failed to report usage to Metronome: %s", err)
+		}
+		metrics.UsageTrackerMetronomeReportDurationUsec.Observe(float64(time.Since(start).Microseconds()))
+	}
+}
+
+func (ut *tracker) shouldReportUsageToMetronome(ctx context.Context, groupID string, cache map[string]bool) (bool, error) {
+	if result, ok := cache[groupID]; ok {
+		return result, nil
+	}
+	dbh := ut.env.GetDBHandle()
+	if dbh == nil {
+		return false, status.FailedPreconditionError("usage reporting requires a DB handle")
+	}
+	group := &tables.Group{}
+	err := dbh.GORM(ctx, "usage_tracker_get_group_for_metronome").Select("status").Where("group_id = ?", groupID).Take(group).Error
+	if db.IsRecordNotFound(err) {
+		cache[groupID] = false
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	result := group.Status == grpb.Group_USAGE_BASED_GROUP_STATUS
+	cache[groupID] = result
+	return result, nil
 }
 
 // flushOLAPBuffer reads from the v2 Redis buffer and writes to ClickHouse.
@@ -808,118 +884,8 @@ func toLabelMap(labels *tables.UsageLabels) map[sku.LabelName]sku.LabelValue {
 	return m
 }
 
-// labeledSKUCount contains a subset of RawUsage columns. It is used when
-// converting the MySQL-format rows to OLAP-format when buffering usage to
-// Redis.
-//
-// TODO(bduffany): remove once we're using OLAP-format rows directly.
-type labeledSKUCount struct {
-	Labels map[sku.LabelName]sku.LabelValue
-	SKU    sku.SKU
-	Count  int64
-}
-
 // toOLAPLabeledSKUCounts converts a MySQL-shaped UsageLabels+UsageCounts to
 // multiple RawUsage rows containing only labels, SKU, and count.
-func toOLAPLabeledSKUCounts(labels *tables.UsageLabels, counts *tables.UsageCounts) []labeledSKUCount {
-	baseLabels := toLabelMap(labels)
-	var items []labeledSKUCount
-
-	if counts.ActionCacheHits > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteCacheACHits,
-			Labels: baseLabels,
-			Count:  counts.ActionCacheHits,
-		})
-	}
-	if counts.CASCacheHits > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteCacheCASHits,
-			Labels: baseLabels,
-			Count:  counts.CASCacheHits,
-		})
-	}
-	if counts.Invocations > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.BuildEventsBESCount,
-			Labels: baseLabels,
-			Count:  counts.Invocations,
-		})
-	}
-	if counts.LinuxExecutionDurationUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
-			Labels: appendExecutionLabels(baseLabels, sku.OSLinux, sku.SelfHostedFalse),
-			Count:  counts.LinuxExecutionDurationUsec * 1000,
-		})
-	}
-	if counts.MacExecutionDurationUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
-			Labels: appendExecutionLabels(baseLabels, sku.OSMac, sku.SelfHostedFalse),
-			Count:  counts.MacExecutionDurationUsec * 1000,
-		})
-	}
-	if counts.SelfHostedLinuxExecutionDurationUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
-			Labels: appendExecutionLabels(baseLabels, sku.OSLinux, sku.SelfHostedTrue),
-			Count:  counts.SelfHostedLinuxExecutionDurationUsec * 1000,
-		})
-	}
-	if counts.SelfHostedMacExecutionDurationUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteWorkerDurationNanos,
-			Labels: appendExecutionLabels(baseLabels, sku.OSMac, sku.SelfHostedTrue),
-			Count:  counts.SelfHostedMacExecutionDurationUsec * 1000,
-		})
-	}
-	if counts.TotalDownloadSizeBytes > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteCacheCASDownloadedBytes,
-			Labels: baseLabels,
-			Count:  counts.TotalDownloadSizeBytes,
-		})
-	}
-	if counts.TotalUploadSizeBytes > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteCacheCASUploadedBytes,
-			Labels: baseLabels,
-			Count:  counts.TotalUploadSizeBytes,
-		})
-	}
-	if counts.TotalCachedActionExecUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteCacheACCachedExecDurationNanos,
-			Labels: baseLabels,
-			Count:  counts.TotalCachedActionExecUsec * 1000,
-		})
-	}
-	if counts.CPUNanos > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteWorkerCPUNanos,
-			Labels: appendExecutionLabels(baseLabels, sku.OSLinux, sku.SelfHostedFalse),
-			Count:  counts.CPUNanos,
-		})
-	}
-	if counts.MemoryGBUsec > 0 {
-		items = append(items, labeledSKUCount{
-			SKU:    sku.RemoteExecutionExecuteWorkerMemoryGBNanos,
-			Labels: appendExecutionLabels(baseLabels, sku.OSLinux, sku.SelfHostedFalse),
-			Count:  counts.MemoryGBUsec * 1000,
-		})
-	}
-	return items
-}
-
-// appendExecutionLabels returns a new map which is a clone of the given map
-// with the given OS and self-hosted labels applied.
-func appendExecutionLabels(m map[sku.LabelName]sku.LabelValue, os, selfHosted sku.LabelValue) map[sku.LabelName]sku.LabelValue {
-	out := make(map[sku.LabelName]sku.LabelValue, len(m)+2)
-	for k, v := range m {
-		out[k] = v
-	}
-	out[sku.OS] = os
-	out[sku.SelfHosted] = selfHosted
-	return out
+func toOLAPLabeledSKUCounts(labels *tables.UsageLabels, counts *tables.UsageCounts) []usageutil.LabeledSKUCount {
+	return usageutil.LabeledSKUCountsFromUsageCounts(toLabelMap(labels), counts)
 }

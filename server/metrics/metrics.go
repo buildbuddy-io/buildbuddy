@@ -2274,6 +2274,14 @@ var (
 		Help:      "The number of times the usage tracking system was missing counts for a particular collection period. This may happen if there are transient redis errors.",
 	})
 
+	UsageTrackerMetronomeReportDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "usage_tracker",
+		Name:      "metronome_report_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 30*time.Second, 2),
+		Help:      "Duration of synchronous Metronome usage report calls during the primary DB flush, in microseconds.",
+	})
+
 	// ### Webhooks
 	//
 	// Webhooks are HTTP endpoints exposed by BuildBuddy server which allow it to

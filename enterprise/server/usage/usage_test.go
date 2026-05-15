@@ -2,10 +2,14 @@ package usage_test
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -510,6 +515,90 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 			UsageLabels: *labels,
 		},
 	}, usages)
+}
+
+func TestUsageTracker_Flush_ReportsMetronomeOnlyForUsageBasedGroups(t *testing.T) {
+	type metronomeEvent struct {
+		CustomerID string            `json:"customer_id"`
+		EventType  string            `json:"event_type"`
+		Properties map[string]string `json:"properties"`
+	}
+	var gotEvents []metronomeEvent
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/v1/ingest", r.URL.Path)
+		var events []metronomeEvent
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&events))
+		gotEvents = append(gotEvents, events...)
+	}))
+	defer server.Close()
+
+	clock := clockwork.NewFakeClockAt(period1Start)
+	te := setupEnv(t)
+	flags.Set(t, "http.client.allow_localhost", true)
+	flags.Set(t, "billing.metronome.enabled", true)
+	flags.Set(t, "billing.metronome.api_key", "test-key")
+	flags.Set(t, "billing.metronome.api_url", server.URL)
+
+	ctx := context.Background()
+	require.NoError(t, te.GetDBHandle().GORM(ctx, "test_create_groups").Create([]*tables.Group{
+		{GroupID: "GR1", Status: grpb.Group_FREE_TIER_GROUP_STATUS},
+		{GroupID: "GR2", Status: grpb.Group_USAGE_BASED_GROUP_STATUS},
+	}).Error)
+
+	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
+	require.NoError(t, err)
+	require.NoError(t, ut.Increment(authContext(te, "US1"), &tables.UsageLabels{}, &tables.UsageCounts{
+		TotalDownloadSizeBytes: 1,
+	}))
+	require.NoError(t, ut.Increment(authContext(te, "US2"), &tables.UsageLabels{}, &tables.UsageCounts{
+		TotalDownloadSizeBytes: 2,
+	}))
+	require.NoError(t, te.GetMetricsCollector().Flush(ctx))
+
+	clock.Advance(2 * periodDuration)
+	require.NoError(t, ut.FlushToDB(ctx))
+
+	require.Len(t, gotEvents, 1)
+	require.Equal(t, "GR2", gotEvents[0].CustomerID)
+	require.Equal(t, sku.RemoteCacheCASDownloadedBytes.String(), gotEvents[0].EventType)
+	require.Equal(t, "2", gotEvents[0].Properties["count"])
+}
+
+func TestUsageTracker_Flush_MetronomeFailureIsBestEffort(t *testing.T) {
+	var requests atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.Error(w, "no customer", http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	clock := clockwork.NewFakeClockAt(period1Start)
+	te := setupEnv(t)
+	flags.Set(t, "http.client.allow_localhost", true)
+	flags.Set(t, "billing.metronome.enabled", true)
+	flags.Set(t, "billing.metronome.api_key", "test-key")
+	flags.Set(t, "billing.metronome.api_url", server.URL)
+
+	ctx := context.Background()
+	require.NoError(t, te.GetDBHandle().GORM(ctx, "test_create_usage_based_group").Create(&tables.Group{
+		GroupID: "GR1",
+		Status:  grpb.Group_USAGE_BASED_GROUP_STATUS,
+	}).Error)
+
+	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
+	require.NoError(t, err)
+	require.NoError(t, ut.Increment(authContext(te, "US1"), &tables.UsageLabels{}, &tables.UsageCounts{
+		TotalDownloadSizeBytes: 1,
+	}))
+	require.NoError(t, te.GetMetricsCollector().Flush(ctx))
+
+	clock.Advance(2 * periodDuration)
+	require.NoError(t, ut.FlushToDB(ctx))
+	require.Equal(t, int64(1), requests.Load())
+	require.Len(t, queryAllUsages(t, te), 1)
+
+	require.NoError(t, ut.FlushToDB(ctx))
+	require.Equal(t, int64(1), requests.Load(), "failed Metronome payload should not block Redis cleanup")
 }
 
 func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
