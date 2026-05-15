@@ -2032,6 +2032,7 @@ actions:
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 			te := newTestEnv(t)
+			enableScheduledWorkflows(t, te)
 			provider := setupFakeGitProvider(t, te)
 			repoURL := makeTempRepo(t)
 			_ = runBBServer(ctx, t, te)
@@ -2070,6 +2071,7 @@ actions:
 func TestScheduledWorkflow_GitProviderError_Retries(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
+	enableScheduledWorkflows(t, te)
 	authCtx, _, gid := authenticate(t, ctx, te)
 	repoURL := makeTempRepo(t)
 	provider := setupFakeGitProvider(t, te)
