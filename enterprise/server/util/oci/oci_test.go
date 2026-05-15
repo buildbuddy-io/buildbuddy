@@ -1520,11 +1520,11 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 				require.NoError(t, err)
 				// With OCIFetcher, fetching the config blob uses FetchBlob which:
 				// - Reuses the puller from Resolve() (no additional GET /v2/)
-				// - Makes a HEAD request for the config blob to get size for caching
 				// - Makes a GET request for the config blob data
+				// Anonymous requests (context.Background()) skip the cache, so no
+				// HEAD is made to get size for caching.
 				expected = map[string]int{
-					http.MethodHead + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
-					http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String():  1,
+					http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
 				}
 
 				// To make the DiffID() request counts always be zero,
