@@ -91,6 +91,31 @@ func TestParse_Pool(t *testing.T) {
 	assert.Equal(t, "", platformProps.Pool)
 }
 
+func TestParse_ContainerRegistryAuthMethod(t *testing.T) {
+	// Actions keep using explicit registry credentials unless the OIDC auth
+	// method is requested.
+	platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{}}})
+	require.NoError(t, err)
+	assert.Equal(t, ContainerRegistryAuthMethodExplicit, platformProps.ContainerRegistryAuthMethod)
+
+	// The OIDC auth method is parsed case insensitively so users can pass it
+	// through the same property channels as other platform options.
+	plat := &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: ContainerRegistryAuthMethodPropertyName, Value: "OIDC"},
+	}}
+	platformProps, err = ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	require.NoError(t, err)
+	assert.Equal(t, ContainerRegistryAuthMethodOIDC, platformProps.ContainerRegistryAuthMethod)
+
+	// Unknown auth methods are rejected instead of silently falling back to an
+	// unauthenticated image pull.
+	plat = &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: ContainerRegistryAuthMethodPropertyName, Value: "magic"},
+	}}
+	_, err = ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	require.Error(t, err)
+}
+
 func TestParse_EstimatedBCU(t *testing.T) {
 	for _, testCase := range []struct {
 		name          string

@@ -18,6 +18,7 @@ go_library(
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/executorplatform",
         "//enterprise/server/remote_execution/persistentworker",
+        "//enterprise/server/remote_execution/rbeoidc",
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/tasksize",

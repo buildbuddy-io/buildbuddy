@@ -14,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/rbeoidc"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -44,11 +45,11 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/server/scheduling/scheduler_server/config"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
-	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
-	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/server/scheduling/scheduler_server/config"
 )
 
 var (
@@ -2020,7 +2021,10 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 					log.CtxWarningf(ctx, "Could not remove task from unclaimed list: %s", err)
 				}
 			}
-			task.serializedTask = s.modifyTaskForLease(ctx, req.GetExecutorHostname(), task.serializedTask, task.metadata.GetTaskGroupId())
+			task.serializedTask, err = s.modifyTaskForLease(ctx, req.GetExecutorHostname(), task.serializedTask, task.metadata.GetTaskGroupId())
+			if err != nil {
+				return err
+			}
 
 			// Prometheus: observe queue wait time.
 			ageInMillis := time.Since(task.queuedTimestamp).Milliseconds()
@@ -2119,27 +2123,47 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 // for things like experiments and token refreshes.
 // This is important for tasks that are queued for a long time or are retried
 // after some time, as values computed at initial enqueue can be stale.
-func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostname string, task []byte, taskGroupID string) []byte {
+func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostname string, task []byte, taskGroupID string) ([]byte, error) {
 	taskProto := &repb.ExecutionTask{}
 	if err := proto.Unmarshal(task, taskProto); err != nil {
 		log.CtxWarningf(ctx, "Failed to unmarshal ExecutionTask: %s", err)
-		return task
+		return task, nil
 	}
 
 	taskProto = s.modifyTaskForExperiments(ctx, executorHostname, taskProto)
 	if err := ci_runner_util.SetTaskRepositoryToken(ctx, s.env, taskProto, taskGroupID); err != nil {
 		if status.IsNotFoundError(err) {
 			// This can be expected with Remote Bazel on public repos, where tokens are not needed.
-			return task
+			log.CtxDebugf(ctx, "No repository token available for task: %s", err)
+		} else {
+			log.CtxWarningf(ctx, "Failed to set repository token: %s", err)
 		}
-		log.CtxWarningf(ctx, "Failed to set repository token: %s", err)
+	}
+	props, err := platform.ParseProperties(taskProto)
+	if err != nil {
+		return nil, status.WrapError(err, "parse platform properties")
+	}
+	if rbeoidc.ExchangeEnabled(props) {
+		credentials, err := rbeoidc.GenerateExchangedCredentialsForGroup(ctx, s.env, props, taskGroupID)
+		if err != nil {
+			return nil, err
+		}
+		taskProto.OidcCredentials = credentials
+	} else if props.OIDCTokenAudience != "" && !rbeoidc.RequestEnvPresent(taskProto) {
+		envVars, secretEnvVars, err := rbeoidc.GenerateRequestEnvForGroup(ctx, s.env, taskProto, props.OIDCTokenAudience, taskGroupID, "" /*userID*/)
+		if err != nil {
+			return nil, err
+		}
+		if err := rbeoidc.ApplyRequestEnv(taskProto.GetCommand(), envVars, secretEnvVars); err != nil {
+			return nil, err
+		}
 	}
 
 	if newTask, err := proto.Marshal(taskProto); err != nil {
 		log.CtxWarningf(ctx, "Failed to marshal updated ExecutionTask: %s", err)
-		return task
+		return task, nil
 	} else {
-		return newTask
+		return newTask, nil
 	}
 }
 

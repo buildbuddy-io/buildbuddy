@@ -62,12 +62,21 @@ the appropriate credentials for the container registry):
 ```
 
 For the value of `ACCESS_TOKEN`, we recommend generating a short-lived
-token using the command-line tool for your cloud provider.
+token using the command-line tool for your cloud provider. For AWS and Google
+Cloud registries, you can also configure BuildBuddy's OIDC provider flow so
+BuildBuddy obtains short-lived registry credentials for each action.
 
 #### Google Container Registry (GCR)
 
-To generate a short-lived token for GCR (Google Container Registry),
-the username must be `_dcgcloud_token` and the token can be generated with
+There are two ways to authenticate pulls from GCR.
+
+The first method is to use BuildBuddy's OIDC provider flow. See
+[OIDC for Google Cloud](#oidc-for-google-cloud)
+for details.
+
+The second method is to generate a short-lived access token with the `gcloud`
+CLI and pass it explicitly. For GCR (Google Container Registry), the username
+must be `_dcgcloud_token` and the token can be generated with
 `gcloud auth print-access-token`:
 
 ```bash
@@ -77,8 +86,16 @@ the username must be `_dcgcloud_token` and the token can be generated with
 
 #### Google Artifact Registry
 
-For Artifact Registry (registries like `LOCATION-docker.pkg.dev`), the username must be
-`oauth2accesstoken` and the token can be generated with `gcloud auth print-access-token`:
+There are two ways to authenticate pulls from Google Artifact Registry.
+
+The first method is to use BuildBuddy's OIDC provider flow. See
+[OIDC for Google Cloud](#oidc-for-google-cloud)
+for details.
+
+The second method is to generate a short-lived access token with the `gcloud`
+CLI and pass it explicitly. For Artifact Registry (registries like
+`LOCATION-docker.pkg.dev`), the username must be `oauth2accesstoken` and the
+token can be generated with `gcloud auth print-access-token`:
 
 ```bash
 --remote_exec_header=x-buildbuddy-platform.container-registry-username=oauth2accesstoken
@@ -109,9 +126,16 @@ than hard-coding values.
 
 #### Amazon Elastic Container Registry (ECR)
 
-For Amazon ECR (Elastic Container Registry), the username must be `AWS`
-and a short-lived token can be generated with `aws ecr get-login-password --region REGION`
-(replace `REGION` with the region matching the ECR image URL):
+There are two ways to authenticate pulls from Amazon ECR.
+
+The first method is BuildBuddy's OIDC provider flow. See [OIDC for AWS](#oidc-for-aws)
+for details.
+
+The second method is to generate a short-lived access token with the AWS CLI and
+pass it explicitly. For Amazon ECR (Elastic Container Registry), the username
+must be `AWS` and a short-lived token can be generated with
+`aws ecr get-login-password --region REGION` (replace `REGION` with the region
+matching the ECR image URL):
 
 ```bash
 --remote_exec_header=x-buildbuddy-platform.container-registry-username=AWS
@@ -353,7 +377,10 @@ The following execution properties provide more customization.
 - `container-registry-username` and `container-registry-password`:
   credentials to be used to pull private container images.
   These are not needed if the image is public. We recommend setting these
-  via remote headers, to avoid storing them in the cache.
+  via remote headers, to avoid storing them in the cache. For AWS ECR, Google
+  Artifact Registry, and GCR images, you can use
+  [`container-registry-auth-method=oidc`](#openid-connect-credentials) instead
+  of passing explicit registry credentials.
 - `dockerUser`: determines which user the action should be run with inside
   the container. The default is the user set on the image.
   If setting to a non-root user, you may also need to set
@@ -402,6 +429,249 @@ just a historical artifact.)
 ### Runner secrets
 
 Please consult [RBE secrets](secrets) for more information on the related properties.
+
+### OpenID Connect credentials
+
+BuildBuddy can act as an OIDC provider for remote actions, issuing short-lived
+identity tokens that cloud providers can trust.
+
+When requested by a remote action, BuildBuddy exchanges that identity token for
+AWS or Google Cloud credentials. This is useful for deploys, integration tests,
+artifact publishing, and private image pulls without passing long-lived secrets
+into the action environment. For private image pulls, this is the OIDC
+alternative to passing `container-registry-password`; see [Passing credentials
+for Docker images](#passing-credentials-for-docker-images) for the explicit
+credential flow.
+
+Self-hosted BuildBuddy deployments must configure
+`remote_execution.oidc.private_key` on the app to enable this feature. The
+private key is not needed on executors. For automatic cloud token exchange, the
+app exchanges credentials at task lease time and sends the exchanged credentials
+to the executor with the leased task. For actions that request a raw BuildBuddy
+OIDC token with `oidc-token-audience`, the app sends a short-lived request token
+at task lease time that the action can exchange at the app. The OIDC issuer is
+`https://YOUR_BUILDBUDDY_URL/oidc`; discovery and JWKS are published below that
+issuer.
+
+When token exchange is enabled, BuildBuddy injects cloud credentials as secret
+environment variables. For GCP, BuildBuddy writes the exchanged OAuth access
+token to `.buildbuddy/gcloud_access_token` in the action workspace and sets
+`CLOUDSDK_AUTH_ACCESS_TOKEN_FILE` so `gcloud` commands can use it directly.
+Provider-specific variables are also injected where useful, such as AWS SDK
+environment variables. These values are redacted from action cache entries and
+workflow logs. Exchanged credentials are cached per BuildBuddy group and
+provider configuration until shortly before expiration.
+
+Set `container-registry-auth-method` to `oidc` to use exchanged credentials for
+pulling the action's container image. If unset, the default value is `explicit`,
+which preserves the existing `container-registry-username` and
+`container-registry-password` behavior.
+
+Bazel targets use `exec_properties` to request these credentials. Workflow
+actions in `buildbuddy.yaml` use the equivalent `platform_properties` field on
+the action; see [OIDC auth in workflows](workflows-config#oidc-auth).
+
+#### OIDC for Google Cloud
+
+To exchange BuildBuddy OIDC tokens with Google Cloud, configure [Workload
+Identity Federation](https://cloud.google.com/iam/docs/workload-identity-federation)
+with an OIDC provider whose issuer URI is the BuildBuddy issuer. Map the
+BuildBuddy subject into `google.subject`, and use an attribute condition to
+limit which BuildBuddy group can exchange tokens:
+
+```bash
+gcloud iam workload-identity-pools create POOL_ID \
+  --location=global \
+  --display-name="BuildBuddy RBE"
+
+gcloud iam workload-identity-pools providers create-oidc PROVIDER_ID \
+  --location=global \
+  --workload-identity-pool=POOL_ID \
+  --issuer-uri="https://buildbuddy.example.com/oidc" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.buildbuddy_group_id=assertion.buildbuddy_group_id" \
+  --attribute-condition='assertion.buildbuddy_group_id=="GR123"'
+```
+
+Usually, you should leave `--allowed-audiences` unset. In that default mode,
+Google Cloud expects the ID token audience to be the provider's canonical
+resource name, which is unique to this Workload Identity Federation provider:
+
+```python title="BUILD"
+sh_test(
+    name = "gcp_integration_test",
+    srcs = ["gcp_integration_test.sh"],
+    exec_properties = {
+        "oidc-provider": "gcp",
+        "oidc-token-audience": "//iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID",
+    },
+)
+```
+
+For BuildBuddy workflows without service account impersonation, configure the
+Google Cloud OIDC provider under the action's `platform_properties` field:
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: "Deploy to Google Cloud"
+    triggers:
+      push:
+        branches:
+          - "main"
+    platform_properties:
+      oidc-provider: gcp
+      oidc-token-audience: //iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID
+    steps:
+      - run: ./deploy_to_gcp.sh
+```
+
+If you do configure `--allowed-audiences`, set `oidc-token-audience` to exactly
+one of the allowed values instead. Choose an audience value that is specific to
+this BuildBuddy issuer and Google Cloud provider.
+
+Grant access either directly to the federated principal or through service
+account impersonation. For service account impersonation, grant
+`roles/iam.workloadIdentityUser` to the BuildBuddy group subject:
+
+```bash
+gcloud iam service-accounts add-iam-policy-binding SERVICE_ACCOUNT_EMAIL \
+  --role=roles/iam.workloadIdentityUser \
+  --member="principal://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/subject/buildbuddy:group:GR123"
+```
+
+Then set `oidc-gcp-service-account` to the service account email:
+
+```python title="BUILD"
+sh_test(
+    name = "gcp_integration_test",
+    srcs = ["gcp_integration_test.sh"],
+    exec_properties = {
+        "oidc-provider": "gcp",
+        "oidc-token-audience": "//iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID",
+        "oidc-gcp-service-account": "SERVICE_ACCOUNT_EMAIL",
+    },
+)
+```
+
+For BuildBuddy workflows that impersonate a service account, configure the
+service account under the action's `platform_properties` field:
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: "Deploy to Google Cloud"
+    triggers:
+      push:
+        branches:
+          - "main"
+    platform_properties:
+      oidc-provider: gcp
+      oidc-token-audience: //iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID
+      oidc-gcp-service-account: SERVICE_ACCOUNT_EMAIL
+    steps:
+      - run: ./deploy_to_gcp.sh
+```
+
+To use OIDC credentials for Google Artifact Registry or GCR image pulls, also
+set `container-registry-auth-method` to `oidc`:
+
+```python title="BUILD"
+platform(
+    name = "private_google_artifact_registry_platform",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    exec_properties = {
+        "container-image": "docker://us-docker.pkg.dev/PROJECT/REPO/IMAGE:TAG",
+        "container-registry-auth-method": "oidc",
+        "oidc-provider": "gcp",
+        "oidc-token-audience": "//iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID",
+        "oidc-gcp-service-account": "SERVICE_ACCOUNT_EMAIL",
+    },
+)
+```
+
+#### OIDC for AWS
+
+To exchange BuildBuddy OIDC tokens with AWS STS, configure an AWS IAM OIDC
+identity provider for the BuildBuddy issuer and set `oidc-provider` to `aws`.
+BuildBuddy uses `AssumeRoleWithWebIdentity` and injects `AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, and `AWS_REGION` into the action
+environment.
+
+Set `oidc-aws-region` when the action should run AWS commands in a specific
+region. If it is omitted, BuildBuddy defaults to `us-east-1`; for ECR image
+pulls, BuildBuddy derives the region from the image name.
+
+```python title="BUILD"
+sh_test(
+    name = "aws_integration_test",
+    srcs = ["aws_integration_test.sh"],
+    exec_properties = {
+        "oidc-provider": "aws",
+        "oidc-token-audience": "sts.amazonaws.com",
+        "oidc-aws-role-arn": "arn:aws:iam::123456789012:role/buildbuddy-rbe",
+    },
+)
+```
+
+For BuildBuddy workflows, configure AWS OIDC credentials under the action's
+`platform_properties` field:
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: "Deploy to AWS"
+    triggers:
+      push:
+        branches:
+          - "main"
+    platform_properties:
+      oidc-provider: aws
+      oidc-token-audience: sts.amazonaws.com
+      oidc-aws-role-arn: arn:aws:iam::123456789012:role/buildbuddy-rbe
+    steps:
+      - run: ./deploy_to_aws.sh
+```
+
+In AWS IAM, configure an OIDC identity provider for the BuildBuddy issuer and
+scope the role trust policy to the BuildBuddy group subject. In IAM condition
+keys, use the issuer host and path without the `https://` prefix:
+
+```json
+{
+  "Condition": {
+    "StringEquals": {
+      "buildbuddy.example.com/oidc:aud": "sts.amazonaws.com",
+      "buildbuddy.example.com/oidc:sub": "buildbuddy:group:GR123"
+    }
+  }
+}
+```
+
+To use OIDC credentials for private Amazon ECR image pulls, also set
+`container-registry-auth-method` to `oidc`. BuildBuddy derives the ECR region
+and registry ID from the image name:
+
+```python title="BUILD"
+platform(
+    name = "private_ecr_platform",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    exec_properties = {
+        "container-image": "docker://123456789012.dkr.ecr.us-west-2.amazonaws.com/repo/image:tag",
+        "container-registry-auth-method": "oidc",
+        "oidc-provider": "aws",
+        "oidc-aws-role-arn": "arn:aws:iam::123456789012:role/buildbuddy-rbe",
+    },
+)
+```
+
+If only `oidc-token-audience` is set and no token exchange provider is
+configured, BuildBuddy exposes the lower-level ID token request flow by
+injecting `BUILDBUDDY_OIDC_TOKEN_REQUEST_URL` and
+`BUILDBUDDY_OIDC_TOKEN_REQUEST_TOKEN` into the action environment. The request
+token is redacted from action cache entries and workflow logs.
 
 ### Docker daemon support
 

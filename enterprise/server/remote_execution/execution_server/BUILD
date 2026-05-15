@@ -12,6 +12,7 @@ go_library(
         "//enterprise/server/gcplink",
         "//enterprise/server/remote_execution/action_merger",
         "//enterprise/server/remote_execution/operation",
+        "//enterprise/server/remote_execution/rbeoidc",
         "//enterprise/server/tasksize",
         "//enterprise/server/util/ci_runner_env",
         "//enterprise/server/util/execution",

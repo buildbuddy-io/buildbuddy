@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/action_merger",
+        "//enterprise/server/remote_execution/rbeoidc",
         "//enterprise/server/tasksize",
         "//enterprise/server/util/ci_runner_util",
         "//proto:capability_go_proto",
@@ -79,6 +80,7 @@ go_test(
         "//server/util/proto",
         "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_golang_jwt_jwt_v4//:jwt",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_uuid//:uuid",
         "@com_github_jonboulle_clockwork//:clockwork",

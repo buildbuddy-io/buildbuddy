@@ -59,6 +59,7 @@ go_library(
         "//enterprise/server/quota",
         "//enterprise/server/registry",
         "//enterprise/server/remote_execution/execution_server",
+        "//enterprise/server/remote_execution/rbeoidc",
         "//enterprise/server/remote_execution/redis_client",
         "//enterprise/server/remote_execution/snaploader",
         "//enterprise/server/scheduling/scheduler_server",

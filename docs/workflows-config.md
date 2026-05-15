@@ -167,6 +167,9 @@ steps:
   - run: "bazel test ... --remote_exec_header=x-buildbuddy-platform.container-registry-password=$REGISTRY_TOKEN"
 ```
 
+For AWS ECR, Google Artifact Registry, and GCR, you can often avoid storing or
+passing a registry token by using [OIDC auth](#oidc-auth) instead.
+
 To access the environment variables within `build` or `test` actions, you
 may need to explicitly expose the environment variable to the actions by
 using a bazel flag like
@@ -178,6 +181,52 @@ or
 # ...
 steps:
   - run: "bazel test ... --test_env=REGISTRY_TOKEN"
+```
+
+### OIDC auth
+
+Workflow actions can request short-lived AWS or Google Cloud credentials by
+setting OIDC platform properties under `platform_properties`. BuildBuddy then
+exchanges a BuildBuddy-issued OIDC token with the cloud provider, injects the
+resulting credentials into the workflow action, and makes them available to
+deploy or publish steps.
+
+For full provider setup, required IAM trust configuration, and Bazel target
+examples, see [OpenID Connect credentials](rbe-platforms#openid-connect-credentials).
+
+To use OIDC credentials inside an AWS workflow action:
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: "Deploy to AWS"
+    triggers:
+      push:
+        branches:
+          - "main"
+    platform_properties:
+      oidc-provider: aws
+      oidc-token-audience: sts.amazonaws.com
+      oidc-aws-role-arn: arn:aws:iam::123456789012:role/buildbuddy-rbe
+    steps:
+      - run: ./deploy_to_aws.sh
+```
+
+For Google Cloud Workload Identity Federation, use the provider resource name
+as the token audience unless your provider has an explicit allowed audience:
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: "Deploy to Google Cloud"
+    triggers:
+      push:
+        branches:
+          - "main"
+    platform_properties:
+      oidc-provider: gcp
+      oidc-token-audience: //iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID
+      oidc-gcp-service-account: SERVICE_ACCOUNT_EMAIL
+    steps:
+      - run: ./deploy_to_gcp.sh
 ```
 
 ## Merge queue support
@@ -404,6 +453,10 @@ A named group of Bazel commands that run when triggered.
   might still have `"root"` as the default user, but we are in the process
   of migrating all users to non-root by default.
 - **`env`** (`map` with string values): Map of static environment variables and their values.
+- **`platform_properties`** (`map` with string values): Map of remote execution
+  platform properties to apply to this workflow action. This is the workflow
+  equivalent of Bazel target `exec_properties`, and can be used for settings
+  such as executor pools, container registry auth, and OIDC credential exchange.
 - **`git_fetch_filters`** (`string` list): list of [`--filter` option](https://git-scm.com/docs/git-clone#Documentation/git-clone.txt-code--filtercodeemltfilter-specgtem)
   values to the `git fetch` command used when fetching the git commits
   to build. Defaults to `["blob:none"]`.

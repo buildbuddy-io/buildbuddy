@@ -59,10 +59,11 @@ const (
 	containerImagePropertyName = "container-image"
 	DockerPrefix               = "docker://"
 
-	containerRegistryUsernamePropertyName = "container-registry-username"
-	containerRegistryPasswordPropertyName = "container-registry-password"
-	containerRegistryBypassPropertyName   = "container-registry-bypass"
-	useOCIFetcherPropertyName             = "use-oci-fetcher"
+	containerRegistryUsernamePropertyName   = "container-registry-username"
+	containerRegistryPasswordPropertyName   = "container-registry-password"
+	ContainerRegistryAuthMethodPropertyName = "container-registry-auth-method"
+	containerRegistryBypassPropertyName     = "container-registry-bypass"
+	useOCIFetcherPropertyName               = "use-oci-fetcher"
 
 	// container-image prop value which behaves the same way as if the prop were
 	// empty or unset.
@@ -100,6 +101,11 @@ const (
 	EnvOverridesBase64PropertyName           = "env-overrides-base64"
 	SecretEnvOverridesPropertyName           = "secret-env-overrides"
 	SecretEnvOverridesBase64PropertyName     = "secret-env-overrides-base64"
+	OIDCTokenAudiencePropertyName            = "oidc-token-audience"
+	OIDCProviderPropertyName                 = "oidc-provider"
+	OIDCAWSRoleARNPropertyName               = "oidc-aws-role-arn"
+	OIDCAWSRegionPropertyName                = "oidc-aws-region"
+	OIDCGCPServiceAccountPropertyName        = "oidc-gcp-service-account"
 	IncludeSecretsPropertyName               = "include-secrets"
 	EnvSecretsPropertyName                   = "env-secrets"
 	DefaultTimeoutPropertyName               = "default-timeout"
@@ -176,6 +182,14 @@ const (
 // If you add a container type, also add it to KnownContainerTypes
 )
 
+const (
+	ContainerRegistryAuthMethodExplicit = "explicit"
+	ContainerRegistryAuthMethodOIDC     = "oidc"
+
+	OIDCProviderAWS = "aws"
+	OIDCProviderGCP = "gcp"
+)
+
 // KnownContainerTypes are all the types that are currently supported, or were
 // previously supported.
 var KnownContainerTypes []ContainerType = []ContainerType{BareContainerType, PodmanContainerType, DockerContainerType, FirecrackerContainerType, OCIContainerType, SandboxContainerType}
@@ -234,26 +248,27 @@ const (
 
 // Properties represents the platform properties parsed from a command.
 type Properties struct {
-	OS                        string
-	Arch                      string
-	Pool                      string
-	PoolType                  PoolType
-	EstimatedComputeUnits     float64
-	EstimatedMilliCPU         int64
-	EstimatedMemoryBytes      int64
-	EstimatedFreeDiskBytes    int64
-	CustomResources           []*scpb.CustomResource
-	ContainerImage            string
-	ContainerRegistryUsername string
-	ContainerRegistryPassword string
-	WorkloadIsolationType     string
-	DockerForceRoot           bool
-	DockerInit                bool
-	DockerUser                string
-	DockerNetwork             string
-	ExecrootPath              string
-	Network                   string
-	NetworkEnableIPv6         bool
+	OS                          string
+	Arch                        string
+	Pool                        string
+	PoolType                    PoolType
+	EstimatedComputeUnits       float64
+	EstimatedMilliCPU           int64
+	EstimatedMemoryBytes        int64
+	EstimatedFreeDiskBytes      int64
+	CustomResources             []*scpb.CustomResource
+	ContainerImage              string
+	ContainerRegistryUsername   string
+	ContainerRegistryPassword   string
+	ContainerRegistryAuthMethod string
+	WorkloadIsolationType       string
+	DockerForceRoot             bool
+	DockerInit                  bool
+	DockerUser                  string
+	DockerNetwork               string
+	ExecrootPath                string
+	Network                     string
+	NetworkEnableIPv6           bool
 
 	// ShmSizeBytes is the requested size of the /dev/shm tmpfs mount.
 	ShmSizeBytes           *int64
@@ -341,6 +356,22 @@ type Properties struct {
 	// SecretEnvOverrides contains environment variables in the form NAME=VALUE to be
 	// applied as overrides to the action. These are always redacted in logs/UI.
 	SecretEnvOverrides []string
+
+	// OIDCTokenAudience enables the BuildBuddy RBE OIDC provider for this
+	// action and sets the default audience for requested ID tokens.
+	OIDCTokenAudience string
+
+	// OIDCProvider configures token exchange with an external cloud provider.
+	OIDCProvider string
+
+	// OIDCAWSRoleARN configures AWS STS AssumeRoleWithWebIdentity.
+	OIDCAWSRoleARN string
+
+	// OIDCAWSRegion optionally sets the AWS region used for exchanged credentials.
+	OIDCAWSRegion string
+
+	// OIDCGCPServiceAccount optionally configures GCP service account impersonation.
+	OIDCGCPServiceAccount string
 
 	// OverrideSnapshotKey specifies a snapshot key that the action should start
 	// from.
@@ -535,61 +566,74 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		shmSizeBytes = &n
 	}
 
+	containerRegistryAuthMethod := strings.ToLower(stringProp(m, ContainerRegistryAuthMethodPropertyName, ContainerRegistryAuthMethodExplicit))
+	switch containerRegistryAuthMethod {
+	case ContainerRegistryAuthMethodExplicit, ContainerRegistryAuthMethodOIDC:
+	default:
+		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the `%s` platform property", containerRegistryAuthMethod, ContainerRegistryAuthMethodPropertyName)
+	}
+
 	return &Properties{
-		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
-		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
-		Pool:                      strings.ToLower(pool),
-		PoolType:                  poolType,
-		OriginalPool:              stringProp(m, originalPoolPropertyName, ""),
-		EstimatedComputeUnits:     float64Prop(m, EstimatedComputeUnitsPropertyName, 0),
-		EstimatedMemoryBytes:      iecBytesProp(m, EstimatedMemoryPropertyName, 0),
-		EstimatedMilliCPU:         milliCPUProp(m, EstimatedCPUPropertyName, 0),
-		EstimatedFreeDiskBytes:    iecBytesProp(m, EstimatedFreeDiskPropertyName, 0),
-		CustomResources:           customResources,
-		ContainerImage:            stringProp(m, containerImagePropertyName, ""),
-		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
-		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
-		WorkloadIsolationType:     isolationType,
-		InitDockerd:               boolProp(m, initDockerdPropertyName, false),
-		EnableDockerdTCP:          boolProp(m, enableDockerdTCPPropertyName, false),
-		DockerForceRoot:           boolProp(m, dockerRunAsRootPropertyName, false),
-		DockerInit:                boolProp(m, DockerInitPropertyName, false),
-		DockerUser:                stringProp(m, DockerUserPropertyName, ""),
-		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
-		ExecrootPath:              stringProp(m, execrootPathPropertyName, ""),
-		Network:                   stringProp(m, networkPropertyName, ""),
-		NetworkEnableIPv6:         boolProp(m, NetworkEnableIPv6PropertyName, false),
-		ShmSizeBytes:              shmSizeBytes,
-		RecycleRunner:             recycleRunner,
-		DefaultTimeout:            timeout,
-		TerminationGracePeriod:    terminationGracePeriod,
-		RunnerRecyclingMaxWait:    runnerRecyclingMaxWait,
-		EnableVFS:                 vfsEnabled,
-		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),
-		EnvSecrets:                stringListProp(m, EnvSecretsPropertyName),
-		PreserveWorkspace:         boolProp(m, PreserveWorkspacePropertyName, false),
-		OverlayfsWorkspace:        boolProp(m, overlayfsWorkspacePropertyName, false),
-		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),
-		PersistentWorker:          boolProp(m, persistentWorkerPropertyName, false),
-		PersistentWorkerKey:       stringProp(m, PersistentWorkerKeyPropertyName, ""),
-		PersistentWorkerProtocol:  stringProp(m, persistentWorkerProtocolPropertyName, ""),
-		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
-		HostedBazelAffinityKey:    stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
-		DisableMeasuredTaskSize:   boolProp(m, disableMeasuredTaskSizePropertyName, false),
-		DisablePredictedTaskSize:  boolProp(m, disablePredictedTaskSizePropertyName, false),
-		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
-		EnvOverrides:              envOverrides,
-		SecretEnvOverrides:        secretEnvOverrides,
-		OverrideSnapshotKey:       overrideSnapshotKey,
-		Retry:                     boolProp(m, RetryPropertyName, true),
-		PersistentVolumes:         persistentVolumes,
-		SnapshotReadPolicy:        snapshotReadPolicy,
-		RemoteSnapshotSavePolicy:  snapshotSavePolicy,
-		ContainerRegistryBypass:   boolProp(m, containerRegistryBypassPropertyName, false),
-		UseOCIFetcher:             boolProp(m, useOCIFetcherPropertyName, false),
-		RunnerCrashedExitCodes:    intListProp(m, runnerCrashedExitCodesPropertyName),
-		TransientErrorExitCodes:   intListProp(m, transientErrorExitCodes),
-		RunUnder:                  stringProp(m, RunUnderPropertyName, ""),
+		OS:                          strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
+		Arch:                        strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
+		Pool:                        strings.ToLower(pool),
+		PoolType:                    poolType,
+		OriginalPool:                stringProp(m, originalPoolPropertyName, ""),
+		EstimatedComputeUnits:       float64Prop(m, EstimatedComputeUnitsPropertyName, 0),
+		EstimatedMemoryBytes:        iecBytesProp(m, EstimatedMemoryPropertyName, 0),
+		EstimatedMilliCPU:           milliCPUProp(m, EstimatedCPUPropertyName, 0),
+		EstimatedFreeDiskBytes:      iecBytesProp(m, EstimatedFreeDiskPropertyName, 0),
+		CustomResources:             customResources,
+		ContainerImage:              stringProp(m, containerImagePropertyName, ""),
+		ContainerRegistryUsername:   stringProp(m, containerRegistryUsernamePropertyName, ""),
+		ContainerRegistryPassword:   stringProp(m, containerRegistryPasswordPropertyName, ""),
+		ContainerRegistryAuthMethod: containerRegistryAuthMethod,
+		WorkloadIsolationType:       isolationType,
+		InitDockerd:                 boolProp(m, initDockerdPropertyName, false),
+		EnableDockerdTCP:            boolProp(m, enableDockerdTCPPropertyName, false),
+		DockerForceRoot:             boolProp(m, dockerRunAsRootPropertyName, false),
+		DockerInit:                  boolProp(m, DockerInitPropertyName, false),
+		DockerUser:                  stringProp(m, DockerUserPropertyName, ""),
+		DockerNetwork:               stringProp(m, dockerNetworkPropertyName, ""),
+		ExecrootPath:                stringProp(m, execrootPathPropertyName, ""),
+		Network:                     stringProp(m, networkPropertyName, ""),
+		NetworkEnableIPv6:           boolProp(m, NetworkEnableIPv6PropertyName, false),
+		ShmSizeBytes:                shmSizeBytes,
+		RecycleRunner:               recycleRunner,
+		DefaultTimeout:              timeout,
+		TerminationGracePeriod:      terminationGracePeriod,
+		RunnerRecyclingMaxWait:      runnerRecyclingMaxWait,
+		EnableVFS:                   vfsEnabled,
+		IncludeSecrets:              boolProp(m, IncludeSecretsPropertyName, false),
+		EnvSecrets:                  stringListProp(m, EnvSecretsPropertyName),
+		PreserveWorkspace:           boolProp(m, PreserveWorkspacePropertyName, false),
+		OverlayfsWorkspace:          boolProp(m, overlayfsWorkspacePropertyName, false),
+		CleanWorkspaceInputs:        stringProp(m, cleanWorkspaceInputsPropertyName, ""),
+		PersistentWorker:            boolProp(m, persistentWorkerPropertyName, false),
+		PersistentWorkerKey:         stringProp(m, PersistentWorkerKeyPropertyName, ""),
+		PersistentWorkerProtocol:    stringProp(m, persistentWorkerProtocolPropertyName, ""),
+		WorkflowID:                  stringProp(m, WorkflowIDPropertyName, ""),
+		HostedBazelAffinityKey:      stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
+		DisableMeasuredTaskSize:     boolProp(m, disableMeasuredTaskSizePropertyName, false),
+		DisablePredictedTaskSize:    boolProp(m, disablePredictedTaskSizePropertyName, false),
+		ExtraArgs:                   stringListProp(m, extraArgsPropertyName),
+		EnvOverrides:                envOverrides,
+		SecretEnvOverrides:          secretEnvOverrides,
+		OIDCTokenAudience:           stringProp(m, OIDCTokenAudiencePropertyName, ""),
+		OIDCProvider:                strings.ToLower(stringProp(m, OIDCProviderPropertyName, "")),
+		OIDCAWSRoleARN:              stringProp(m, OIDCAWSRoleARNPropertyName, ""),
+		OIDCAWSRegion:               stringProp(m, OIDCAWSRegionPropertyName, ""),
+		OIDCGCPServiceAccount:       stringProp(m, OIDCGCPServiceAccountPropertyName, ""),
+		OverrideSnapshotKey:         overrideSnapshotKey,
+		Retry:                       boolProp(m, RetryPropertyName, true),
+		PersistentVolumes:           persistentVolumes,
+		SnapshotReadPolicy:          snapshotReadPolicy,
+		RemoteSnapshotSavePolicy:    snapshotSavePolicy,
+		ContainerRegistryBypass:     boolProp(m, containerRegistryBypassPropertyName, false),
+		UseOCIFetcher:               boolProp(m, useOCIFetcherPropertyName, false),
+		RunnerCrashedExitCodes:      intListProp(m, runnerCrashedExitCodesPropertyName),
+		TransientErrorExitCodes:     intListProp(m, transientErrorExitCodes),
+		RunUnder:                    stringProp(m, RunUnderPropertyName, ""),
 	}, nil
 }
 
