@@ -25,12 +25,30 @@ import (
 
 const ExecutableName = "buildbuddy_ci_runner"
 const CLIBinaryName = "bb"
+const DefaultTimeoutExperimentName = "remote_execution.remote_runner_default_timeout"
 
 var (
 	RecycledCIRunnerMaxWait = flag.Duration("remote_execution.ci_runner_recycling_max_wait", 3*time.Second, "Max duration that a ci_runner task should wait for a warm runner before running on a potentially cold runner.")
 	CIRunnerDefaultTimeout  = flag.Duration("remote_execution.ci_runner_default_timeout", 8*time.Hour, "Default timeout applied to all ci runners.")
 	InitCIRunnerFromCache   = flag.Bool("remote_execution.init_ci_runner_from_cache", true, "Whether the apps should upload ci_runner binaries to the cache so executors can fetch the latest versions without upgrading.")
 )
+
+func RunnerTimeout(ctx context.Context, efp interfaces.ExperimentFlagProvider, requestedTimeout *time.Duration) (time.Duration, error) {
+	if efp != nil {
+		timeoutString := efp.String(ctx, DefaultTimeoutExperimentName, "")
+		if timeoutString != "" {
+			timeout, err := time.ParseDuration(timeoutString)
+			if err != nil {
+				return 0, status.WrapErrorf(err, "parse %s experiment value %q", DefaultTimeoutExperimentName, timeoutString)
+			}
+			return timeout, nil
+		}
+	}
+	if requestedTimeout != nil {
+		return *requestedTimeout, nil
+	}
+	return *CIRunnerDefaultTimeout, nil
+}
 
 // CanInitFromCache The apps are built for linux/amd64. If the ci_runner will run on linux/amd64
 // as well, the apps can upload the ci_runner binary to the cache for the executors
