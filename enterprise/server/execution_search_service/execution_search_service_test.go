@@ -51,7 +51,6 @@ func TestSearchExecutions(t *testing.T) {
 
 	executions := []*olaptables.Execution{
 		{
-			ExecutionID:                        exid1,
 			GroupID:                            "GR1",
 			InvocationUUID:                     strings.ReplaceAll(iid1, "-", ""),
 			User:                               "ci-runner",
@@ -93,7 +92,6 @@ func TestSearchExecutions(t *testing.T) {
 			UpdatedAtUsec:                      testTimestampUsec,
 		},
 		{
-			ExecutionID:                     exid2,
 			GroupID:                         "GR1",
 			InvocationUUID:                  strings.ReplaceAll(iid2, "-", ""),
 			User:                            "developer",
@@ -122,7 +120,6 @@ func TestSearchExecutions(t *testing.T) {
 			UpdatedAtUsec:                   testTimestampUsec + 1000,
 		},
 		{
-			ExecutionID:      exid3,
 			GroupID:          "GR2",
 			InvocationUUID:   strings.ReplaceAll(uuid.New(), "-", ""),
 			User:             "other-user",
@@ -224,7 +221,6 @@ func TestSearchExecutions_SkipsEmptyInvocationUUID(t *testing.T) {
 
 	executions := []*olaptables.Execution{
 		{
-			ExecutionID:      exid1,
 			GroupID:          "GR1",
 			InvocationUUID:   strings.ReplaceAll(iid1, "-", ""),
 			User:             "ci-runner",
@@ -240,7 +236,6 @@ func TestSearchExecutions_SkipsEmptyInvocationUUID(t *testing.T) {
 			UpdatedAtUsec:    testTimestampUsec,
 		},
 		{
-			ExecutionID:      exid2,
 			GroupID:          "GR1",
 			InvocationUUID:   "",
 			User:             "unknown",
@@ -292,7 +287,6 @@ func TestSearchExecutions_Pagination(t *testing.T) {
 		actionDigest := &repb.Digest{Hash: hash, SizeBytes: int64(100 + i*10)}
 		executionID := makeExecutionID(actionDigest)
 		executions[i] = &olaptables.Execution{
-			ExecutionID:      executionID,
 			GroupID:          "GR1",
 			InvocationUUID:   strings.ReplaceAll(uuid.New(), "-", ""),
 			User:             "ci-runner",
@@ -361,7 +355,6 @@ func TestSearchExecutions_PaginationWithEmptyInvocationUUIDs(t *testing.T) {
 			invocationUUID = ""
 		}
 		executions[i] = &olaptables.Execution{
-			ExecutionID:      executionID,
 			GroupID:          "GR1",
 			InvocationUUID:   invocationUUID,
 			User:             "ci-runner",

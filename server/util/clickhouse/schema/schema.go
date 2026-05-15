@@ -147,7 +147,6 @@ type Execution struct {
 	GroupID        string `gorm:"codec:ZSTD(1)"`
 	UpdatedAtUsec  int64  `gorm:"codec:DoubleDelta,ZSTD(1)"`
 	InvocationUUID string `gorm:"codec:ZSTD(1)"`
-	ExecutionID    string `gorm:"codec:ZSTD(1)"`
 
 	// Resource-name components split out of execution_id.
 	// ActionDigest holds raw hash bytes (incompressible) — default codec.
@@ -284,6 +283,7 @@ func (e *Execution) TableOptions(clickhouseVersion string) string {
 
 func (e *Execution) ExcludedFields() []string {
 	return []string{
+		"ExecutionID",
 		"InvocationID",
 		"Perms",
 		"SerializedOperation",
