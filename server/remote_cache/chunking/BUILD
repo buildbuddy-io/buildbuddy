@@ -12,6 +12,7 @@ go_library(
         "//server/metrics",
         "//server/remote_cache/digest",
         "//server/util/cdc",
+        "//server/util/compression",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
