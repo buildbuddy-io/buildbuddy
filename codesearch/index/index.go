@@ -408,15 +408,9 @@ func (w *Writer) CompactDeletes() error {
 // Note: This implementation does not handle file renames - clients must explicitly
 // delete the old file and add (or update) the new file when renames happen.
 func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) error {
-	profiler := indexprofile.Current()
-	var deleteStart time.Time
-	if profiler != nil {
-		deleteStart = time.Now()
-	}
+	stop := indexprofile.Timer(indexprofile.PhaseDeleteExisting)
 	err := w.DeleteDocumentByMatchField(matchField)
-	if profiler != nil {
-		profiler.Record(indexprofile.PhaseDeleteExisting, time.Since(deleteStart))
-	}
+	stop()
 	if err != nil {
 		return err
 	}
@@ -583,57 +577,37 @@ func (w *Writer) flushBatch() error {
 	}
 	w.log.Infof("Batch size is %d", w.batch.Len())
 	commitSize := w.batch.Len()
-	profiler := indexprofile.Current()
-	var commitStart time.Time
-	if profiler != nil {
-		commitStart = time.Now()
-	}
+	stop := indexprofile.Timer(indexprofile.PhasePebbleBatchCommit)
 	if err := w.batch.Commit(pebble.NoSync); err != nil {
 		return err
 	}
-	if profiler != nil {
-		profiler.Record(indexprofile.PhasePebbleBatchCommit, time.Since(commitStart))
-		profiler.Add(indexprofile.CounterPebbleBatchCommits, 1)
-		profiler.Add(indexprofile.CounterPebbleBatchCommitBytes, int64(commitSize))
-	}
+	stop()
+	indexprofile.Add(indexprofile.CounterPebbleBatchCommits, 1)
+	indexprofile.Add(indexprofile.CounterPebbleBatchCommitBytes, int64(commitSize))
 	w.log.Debugf("flushed batch")
 	w.batch = w.db.NewBatch()
 	return nil
 }
 
 func (w *Writer) updatePostingList(key []byte, pl posting.List, field, ngram string, deferOp func(int, int) *pebble.DeferredBatchOp) error {
-	profiler := indexprofile.Current()
-	var updateStart time.Time
-	if profiler != nil {
-		updateStart = time.Now()
-		defer func() {
-			profiler.Record(indexprofile.PhaseUpdatePostingList, time.Since(updateStart))
-		}()
-	}
+	defer indexprofile.Timer(indexprofile.PhaseUpdatePostingList)()
 
 	valueLength := int(pl.GetSerializedSizeInBytes())
 	keyLength := len(key)
-	if profiler != nil {
-		profiler.Add(indexprofile.CounterPostingListsFlushed, 1)
-		profiler.Add(indexprofile.CounterPostingListKeyBytes, int64(keyLength))
-		profiler.Add(indexprofile.CounterPostingListValueBytes, int64(valueLength))
-		if field != "" {
-			profiler.RecordPostingList(field, ngram, pl.GetCardinality(), int64(keyLength), int64(valueLength))
-		}
+	indexprofile.Add(indexprofile.CounterPostingListsFlushed, 1)
+	indexprofile.Add(indexprofile.CounterPostingListKeyBytes, int64(keyLength))
+	indexprofile.Add(indexprofile.CounterPostingListValueBytes, int64(valueLength))
+	if field != "" {
+		indexprofile.RecordPostingList(field, ngram, pl.GetCardinality(), int64(keyLength), int64(valueLength))
 	}
 
 	op := deferOp(keyLength, valueLength)
 	copy(op.Key, key)
-	var marshalStart time.Time
-	if profiler != nil {
-		marshalStart = time.Now()
-	}
+	stopMarshal := indexprofile.Timer(indexprofile.PhasePostingListMarshal)
 	if err := pl.MarshalInto(op.Value[:0]); err != nil {
 		return err
 	}
-	if profiler != nil {
-		profiler.Record(indexprofile.PhasePostingListMarshal, time.Since(marshalStart))
-	}
+	stopMarshal()
 	if err := op.Finish(); err != nil {
 		return err
 	}
@@ -647,14 +621,7 @@ func (w *Writer) updatePostingList(key []byte, pl posting.List, field, ngram str
 }
 
 func (w *Writer) Flush() error {
-	profiler := indexprofile.Current()
-	var flushStart time.Time
-	if profiler != nil {
-		flushStart = time.Now()
-		defer func() {
-			profiler.Record(indexprofile.PhaseFlush, time.Since(flushStart))
-		}()
-	}
+	defer indexprofile.Timer(indexprofile.PhaseFlush)()
 
 	mu := sync.Mutex{}
 	eg := new(errgroup.Group)

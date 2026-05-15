@@ -169,6 +169,29 @@ func Add(counter Counter, value int64) {
 	}
 }
 
+func RecordPostingList(field, ngram string, cardinality uint64, keyBytes, valueBytes int64) {
+	if p := Current(); p != nil {
+		p.RecordPostingList(field, ngram, cardinality, keyBytes, valueBytes)
+	}
+}
+
+var noopTimer = func() {}
+
+// Timer starts a stopwatch and returns a function that records the elapsed
+// time against phase. When profiling is off, the returned function is a shared
+// no-op so callers can use `defer indexprofile.Timer(phase)()` without
+// allocating per call.
+func Timer(phase Phase) func() {
+	p := Current()
+	if p == nil {
+		return noopTimer
+	}
+	start := time.Now()
+	return func() {
+		p.Record(phase, time.Since(start))
+	}
+}
+
 func (p *Profiler) Record(phase Phase, duration time.Duration) {
 	p.RecordN(phase, 1, duration)
 }

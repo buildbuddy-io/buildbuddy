@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/indexprofile"
@@ -75,39 +74,21 @@ func makeLastIndexedDoc(repoURL *git.RepoURL, commitSHA string) types.Document {
 // mimetype, or contains invalid UTF-8 data.
 // This function does not flush the index writer, so the caller is responsible for doing that.
 func AddFileToIndex(w types.IndexWriter, repoURL *git.RepoURL, commitSHA, filename string, fileContent []byte) error {
-	profiler := indexprofile.Current()
-	var totalStart time.Time
-	if profiler != nil {
-		totalStart = time.Now()
-		defer func() {
-			profiler.Record(indexprofile.PhaseAddFileToIndex, time.Since(totalStart))
-		}()
-	}
+	defer indexprofile.Timer(indexprofile.PhaseAddFileToIndex)()
 
-	var validateStart time.Time
-	if profiler != nil {
-		validateStart = time.Now()
-	}
+	stopValidate := indexprofile.Timer(indexprofile.PhaseValidateFile)
 	err := validateFile(fileContent)
-	if profiler != nil {
-		profiler.Record(indexprofile.PhaseValidateFile, time.Since(validateStart))
-	}
+	stopValidate()
 	if err != nil {
-		if profiler != nil {
-			profiler.Add(indexprofile.CounterFilesSkipped, 1)
-			profiler.Add(indexprofile.CounterValidationSkippedFiles, 1)
-		}
+		indexprofile.Add(indexprofile.CounterFilesSkipped, 1)
+		indexprofile.Add(indexprofile.CounterValidationSkippedFiles, 1)
 		return err
 	}
 
-	var langStart time.Time
-	if profiler != nil {
-		langStart = time.Now()
-	}
+	stopLang := indexprofile.Timer(indexprofile.PhaseDetectLanguage)
 	lang := strings.ToLower(enry.GetLanguage(filepath.Base(filename), detectionBuffer(fileContent)))
-	if profiler != nil {
-		profiler.Record(indexprofile.PhaseDetectLanguage, time.Since(langStart))
-	}
+	stopLang()
+
 	fields := map[string][]byte{
 		schema.IDField:       makeFileId(repoURL, filename),
 		schema.FilenameField: []byte(filename),
@@ -118,31 +99,19 @@ func AddFileToIndex(w types.IndexWriter, repoURL *git.RepoURL, commitSHA, filena
 		schema.SHAField:      []byte(commitSHA),
 	}
 
-	var docStart time.Time
-	if profiler != nil {
-		docStart = time.Now()
-	}
+	stopDoc := indexprofile.Timer(indexprofile.PhaseMakeDocument)
 	doc := schema.GitHubFileSchema().MustMakeDocument(fields)
-	if profiler != nil {
-		profiler.Record(indexprofile.PhaseMakeDocument, time.Since(docStart))
-	}
+	stopDoc()
 
-	var updateStart time.Time
-	if profiler != nil {
-		updateStart = time.Now()
-	}
-	if err := w.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
-		if profiler != nil {
-			profiler.Record(indexprofile.PhaseUpdateDocument, time.Since(updateStart))
-			profiler.Add(indexprofile.CounterFilesSkipped, 1)
-			profiler.Add(indexprofile.CounterAddFileErrors, 1)
-		}
+	stopUpdate := indexprofile.Timer(indexprofile.PhaseUpdateDocument)
+	err = w.UpdateDocument(doc.Field(schema.IDField), doc)
+	stopUpdate()
+	if err != nil {
+		indexprofile.Add(indexprofile.CounterFilesSkipped, 1)
+		indexprofile.Add(indexprofile.CounterAddFileErrors, 1)
 		return status.InternalErrorf("Failed to update file %s: %v", filename, err)
 	}
-	if profiler != nil {
-		profiler.Record(indexprofile.PhaseUpdateDocument, time.Since(updateStart))
-		profiler.Add(indexprofile.CounterFilesIndexed, 1)
-	}
+	indexprofile.Add(indexprofile.CounterFilesIndexed, 1)
 	return nil
 }
 

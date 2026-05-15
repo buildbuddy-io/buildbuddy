@@ -11,7 +11,6 @@ import (
 	"runtime/pprof"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
@@ -155,7 +154,6 @@ func extractGitSHA(dir string) string {
 }
 
 func handleIndex(args []string) {
-	profiler := indexprofile.Current()
 	if *reset {
 		os.RemoveAll(indexDir)
 	}
@@ -174,20 +172,13 @@ func handleIndex(args []string) {
 		repoURL := extractRepoURL(dir)
 		commitSHA := extractGitSHA(dir)
 		log.Printf("indexing dir: %q", dir)
-		var walkStart time.Time
-		if profiler != nil {
-			walkStart = time.Now()
-		}
+		stopWalk := indexprofile.Timer(indexprofile.PhaseWalk)
 		_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-			if profiler != nil {
-				profiler.Add(indexprofile.CounterPathsVisited, 1)
-			}
+			indexprofile.Add(indexprofile.CounterPathsVisited, 1)
 			if _, elem := filepath.Split(path); elem != "" {
 				// Skip various temporary or "hidden" files or directories.
 				if elem[0] == '.' || elem[0] == '#' || elem[0] == '~' || elem[len(elem)-1] == '~' {
-					if profiler != nil {
-						profiler.Add(indexprofile.CounterHiddenPathsSkipped, 1)
-					}
+					indexprofile.Add(indexprofile.CounterHiddenPathsSkipped, 1)
 					if info != nil && info.IsDir() {
 						return filepath.SkipDir
 					}
@@ -199,22 +190,15 @@ func handleIndex(args []string) {
 				return nil
 			}
 			if info != nil && info.Mode()&os.ModeType == 0 {
-				var readStart time.Time
-				if profiler != nil {
-					profiler.Add(indexprofile.CounterFilesSeen, 1)
-					readStart = time.Now()
-				}
+				indexprofile.Add(indexprofile.CounterFilesSeen, 1)
+				stopRead := indexprofile.Timer(indexprofile.PhaseReadFile)
 				buf, err := os.ReadFile(path)
-				if profiler != nil {
-					profiler.Record(indexprofile.PhaseReadFile, time.Since(readStart))
-				}
+				stopRead()
 				if err != nil {
 					return err
 				}
-				if profiler != nil {
-					profiler.Add(indexprofile.CounterFilesRead, 1)
-					profiler.Add(indexprofile.CounterBytesRead, int64(len(buf)))
-				}
+				indexprofile.Add(indexprofile.CounterFilesRead, 1)
+				indexprofile.Add(indexprofile.CounterBytesRead, int64(len(buf)))
 
 				if err := github.AddFileToIndex(iw, repoURL, commitSHA, path, buf); err != nil {
 					log.Infof("Skipping file %s: %s", path, err)
@@ -222,9 +206,7 @@ func handleIndex(args []string) {
 			}
 			return nil
 		})
-		if profiler != nil {
-			profiler.Record(indexprofile.PhaseWalk, time.Since(walkStart))
-		}
+		stopWalk()
 		github.SetLastIndexedCommitSha(iw, repoURL, commitSHA)
 	}
 
