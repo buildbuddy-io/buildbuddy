@@ -11,9 +11,11 @@ import (
 	"runtime/pprof"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/indexprofile"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
@@ -34,10 +36,12 @@ var (
 		squeryCmd.Name(): squeryCmd,
 	}
 
-	indexDir    string
-	cpuProfile  string
-	heapProfile string
-	namespace   string
+	indexDir             string
+	cpuProfile           string
+	heapProfile          string
+	indexProfile         bool
+	indexProfileDetailed bool
+	namespace            string
 
 	reset    = indexCmd.Bool("reset", false, "Delete the index and start fresh")
 	results  = searchCmd.Int("results", 100, "Print this many results")
@@ -62,6 +66,10 @@ func setupCommonFlags() {
 			flagset.StringVar(&cpuProfile, "cpu_profile", "", "Path to dump a CPU profile")
 			flagset.StringVar(&heapProfile, "heap_profile", "", "Path to dump a heap profile")
 			flagset.StringVar(&namespace, "namespace", "", "Namespace to index/search/squery in")
+			if cmdName == indexCmd.Name() {
+				flagset.BoolVar(&indexProfile, "index_profile", false, "Print indexing phase timing and counters")
+				flagset.BoolVar(&indexProfileDetailed, "index_profile_detailed", false, "Include high-overhead tokenizer internals in the index profile")
+			}
 		}
 	}
 }
@@ -97,6 +105,14 @@ func main() {
 		}
 		defer f.Close()
 		defer pprof.WriteHeapProfile(f)
+	}
+
+	if indexProfile {
+		p := indexprofile.Start(indexProfileDetailed)
+		defer func() {
+			indexprofile.Stop()
+			p.PrettyPrint()
+		}()
 	}
 
 	ctx := performance.WrapContext(context.Background())
@@ -141,6 +157,7 @@ func extractGitSHA(dir string) string {
 }
 
 func handleIndex(args []string) {
+	profiler := indexprofile.Current()
 	if *reset {
 		os.RemoveAll(indexDir)
 	}
@@ -159,11 +176,21 @@ func handleIndex(args []string) {
 		repoURL := extractRepoURL(dir)
 		commitSHA := extractGitSHA(dir)
 		log.Printf("indexing dir: %q", dir)
-		filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		var walkStart time.Time
+		if profiler != nil {
+			walkStart = time.Now()
+		}
+		_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if profiler != nil {
+				profiler.Add(indexprofile.CounterPathsVisited, 1)
+			}
 			if _, elem := filepath.Split(path); elem != "" {
 				// Skip various temporary or "hidden" files or directories.
 				if elem[0] == '.' || elem[0] == '#' || elem[0] == '~' || elem[len(elem)-1] == '~' {
-					if info.IsDir() {
+					if profiler != nil {
+						profiler.Add(indexprofile.CounterHiddenPathsSkipped, 1)
+					}
+					if info != nil && info.IsDir() {
 						return filepath.SkipDir
 					}
 					return nil
@@ -174,9 +201,21 @@ func handleIndex(args []string) {
 				return nil
 			}
 			if info != nil && info.Mode()&os.ModeType == 0 {
+				var readStart time.Time
+				if profiler != nil {
+					profiler.Add(indexprofile.CounterFilesSeen, 1)
+					readStart = time.Now()
+				}
 				buf, err := os.ReadFile(path)
+				if profiler != nil {
+					profiler.Record(indexprofile.PhaseReadFile, time.Since(readStart))
+				}
 				if err != nil {
 					return err
+				}
+				if profiler != nil {
+					profiler.Add(indexprofile.CounterFilesRead, 1)
+					profiler.Add(indexprofile.CounterBytesRead, int64(len(buf)))
 				}
 
 				if err := github.AddFileToIndex(iw, repoURL, commitSHA, path, buf); err != nil {
@@ -185,6 +224,9 @@ func handleIndex(args []string) {
 			}
 			return nil
 		})
+		if profiler != nil {
+			profiler.Record(indexprofile.PhaseWalk, time.Since(walkStart))
+		}
 		github.SetLastIndexedCommitSha(iw, repoURL, commitSHA)
 	}
 

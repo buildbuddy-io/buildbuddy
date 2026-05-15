@@ -1,0 +1,551 @@
+package indexprofile
+
+import (
+	"container/heap"
+	"sort"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+)
+
+type Phase string
+
+const (
+	PhaseWalk               Phase = "walk_total"
+	PhaseReadFile           Phase = "read_file"
+	PhaseAddFileToIndex     Phase = "add_file_to_index"
+	PhaseValidateFile       Phase = "validate_file"
+	PhaseDetectLanguage     Phase = "detect_language"
+	PhaseMakeDocument       Phase = "make_document"
+	PhaseUpdateDocument     Phase = "update_document"
+	PhaseDeleteExisting     Phase = "delete_existing"
+	PhaseAddDocument        Phase = "add_document"
+	PhaseTokenizerNext      Phase = "tokenizer_next"
+	PhasePostingMutation    Phase = "posting_mutation"
+	PhaseNgramConversion    Phase = "ngram_conversion"
+	PhasePostingListLookup  Phase = "posting_list_lookup"
+	PhasePostingListAdd     Phase = "posting_list_add"
+	PhaseSparseRefillLine   Phase = "sparse_refill_line"
+	PhaseSparseDecodeLine   Phase = "sparse_decode_line"
+	PhaseSparseBuildNgrams  Phase = "sparse_build_ngrams"
+	PhaseSparseHashBigram   Phase = "sparse_hash_bigram"
+	PhaseSparseToBytes      Phase = "sparse_to_bytes"
+	PhaseSparseTestOrAdd    Phase = "sparse_test_or_add"
+	PhaseSparseStringAppend Phase = "sparse_string_append"
+	PhaseStoredFieldSet     Phase = "stored_field_set"
+	PhaseFlush              Phase = "flush"
+	PhaseUpdatePostingList  Phase = "update_posting_list"
+	PhasePostingListMarshal Phase = "posting_list_marshal"
+	PhasePebbleBatchSet     Phase = "pebble_batch_set"
+	PhasePebbleBatchCommit  Phase = "pebble_batch_commit"
+)
+
+type Counter string
+
+const (
+	CounterPathsVisited           Counter = "paths_visited"
+	CounterFilesSeen              Counter = "files_seen"
+	CounterFilesRead              Counter = "files_read"
+	CounterFilesIndexed           Counter = "files_indexed"
+	CounterFilesSkipped           Counter = "files_skipped"
+	CounterBytesRead              Counter = "bytes_read"
+	CounterDocsAdded              Counter = "docs_added"
+	CounterFieldsIndexed          Counter = "fields_indexed"
+	CounterTokensIndexed          Counter = "tokens_indexed"
+	CounterPostingListLookups     Counter = "posting_list_lookups"
+	CounterPostingListsCreated    Counter = "posting_lists_created"
+	CounterPostingListsFlushed    Counter = "posting_lists_flushed"
+	CounterPostingListKeyBytes    Counter = "posting_list_key_bytes"
+	CounterPostingListValueBytes  Counter = "posting_list_value_bytes"
+	CounterStoredFieldsSet        Counter = "stored_fields_set"
+	CounterPebbleBatchSets        Counter = "pebble_batch_sets"
+	CounterPebbleBatchSetBytes    Counter = "pebble_batch_set_bytes"
+	CounterPebbleBatchCommits     Counter = "pebble_batch_commits"
+	CounterPebbleBatchCommitBytes Counter = "pebble_batch_commit_bytes"
+	CounterHiddenPathsSkipped     Counter = "hidden_paths_skipped"
+	CounterValidationSkippedFiles Counter = "validation_skipped_files"
+	CounterAddFileErrors          Counter = "add_file_errors"
+	CounterSparseLinesScanned     Counter = "sparse_lines_scanned"
+	CounterSparseLineBytes        Counter = "sparse_line_bytes"
+	CounterSparseRunes            Counter = "sparse_runes"
+	CounterSparseCandidates       Counter = "sparse_candidates"
+	CounterSparseNgramsTested     Counter = "sparse_ngrams_tested"
+	CounterSparseNgramsEmitted    Counter = "sparse_ngrams_emitted"
+	CounterTFOccurrences          Counter = "tf_ngram_occurrences"
+	CounterTFUniquePostings       Counter = "tf_unique_postings"
+	CounterTFDuplicateOccurrences Counter = "tf_duplicate_occurrences"
+	CounterTFDuplicatePostings    Counter = "tf_postings_with_freq_gt_1"
+	CounterTFExceptionBytes       Counter = "tf_exception_bytes_estimate"
+	CounterTFCountBytes           Counter = "tf_count_bytes_estimate"
+)
+
+type phaseStats struct {
+	count int64
+	total time.Duration
+}
+
+type postingListAggregate struct {
+	lists      int64
+	postings   int64
+	keyBytes   int64
+	valueBytes int64
+}
+
+type postingListBucketKey struct {
+	field string
+	label string
+	order int
+}
+
+type postingListLengthKey struct {
+	field  string
+	length int
+}
+
+type postingListTopEntry struct {
+	field       string
+	ngram       string
+	cardinality uint64
+	keyBytes    int64
+	valueBytes  int64
+}
+
+type TermFrequencyStats struct {
+	Occurrences            int64
+	UniquePostings         int64
+	DuplicateOccurrences   int64
+	DuplicatePostings      int64
+	ExceptionBytesEstimate int64
+	CountBytesEstimate     int64
+	Count1                 int64
+	Count2                 int64
+	Count3To4              int64
+	Count5To8              int64
+	Count9To16             int64
+	Count17To32            int64
+	Count33To64            int64
+	Count65To128           int64
+	Count129Plus           int64
+}
+
+type topPostingListHeap struct {
+	entries []postingListTopEntry
+	less    func(a, b postingListTopEntry) bool
+}
+
+func (h topPostingListHeap) Len() int           { return len(h.entries) }
+func (h topPostingListHeap) Less(i, j int) bool { return h.less(h.entries[i], h.entries[j]) }
+func (h topPostingListHeap) Swap(i, j int)      { h.entries[i], h.entries[j] = h.entries[j], h.entries[i] }
+
+func (h *topPostingListHeap) Push(x any) {
+	h.entries = append(h.entries, x.(postingListTopEntry))
+}
+
+func (h *topPostingListHeap) Pop() any {
+	old := h.entries
+	n := len(old)
+	x := old[n-1]
+	h.entries = old[:n-1]
+	return x
+}
+
+type Profiler struct {
+	start    time.Time
+	detailed bool
+
+	mu                        sync.Mutex
+	phases                    map[Phase]phaseStats
+	counters                  map[Counter]int64
+	postingListsByCardinality map[postingListBucketKey]postingListAggregate
+	postingListsByNgramLength map[postingListLengthKey]postingListAggregate
+	topContentByValueBytes    topPostingListHeap
+	termFrequencyByField      map[string]TermFrequencyStats
+}
+
+var current atomic.Pointer[Profiler]
+
+func Start(detailed bool) *Profiler {
+	p := &Profiler{
+		start:                     time.Now(),
+		detailed:                  detailed,
+		phases:                    make(map[Phase]phaseStats),
+		counters:                  make(map[Counter]int64),
+		postingListsByCardinality: make(map[postingListBucketKey]postingListAggregate),
+		postingListsByNgramLength: make(map[postingListLengthKey]postingListAggregate),
+		termFrequencyByField:      make(map[string]TermFrequencyStats),
+		topContentByValueBytes: topPostingListHeap{
+			less: lessByValueBytes,
+		},
+	}
+	current.Store(p)
+	return p
+}
+
+func Stop() *Profiler {
+	return current.Swap(nil)
+}
+
+func Current() *Profiler {
+	return current.Load()
+}
+
+func CurrentDetailed() *Profiler {
+	p := Current()
+	if p == nil || !p.detailed {
+		return nil
+	}
+	return p
+}
+
+func Record(phase Phase, duration time.Duration) {
+	if p := Current(); p != nil {
+		p.Record(phase, duration)
+	}
+}
+
+func RecordN(phase Phase, count int64, duration time.Duration) {
+	if p := Current(); p != nil {
+		p.RecordN(phase, count, duration)
+	}
+}
+
+func Add(counter Counter, value int64) {
+	if p := Current(); p != nil {
+		p.Add(counter, value)
+	}
+}
+
+func (p *Profiler) Record(phase Phase, duration time.Duration) {
+	p.RecordN(phase, 1, duration)
+}
+
+func (p *Profiler) RecordN(phase Phase, count int64, duration time.Duration) {
+	if count == 0 {
+		return
+	}
+	p.mu.Lock()
+	stats := p.phases[phase]
+	stats.count += count
+	stats.total += duration
+	p.phases[phase] = stats
+	p.mu.Unlock()
+}
+
+func (p *Profiler) Add(counter Counter, value int64) {
+	p.mu.Lock()
+	p.counters[counter] += value
+	p.mu.Unlock()
+}
+
+func (p *Profiler) Get(counter Counter) int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.counters[counter]
+}
+
+func (p *Profiler) RecordTermFrequencyStats(field string, stats TermFrequencyStats) {
+	if stats.Occurrences == 0 {
+		return
+	}
+	p.mu.Lock()
+	current := p.termFrequencyByField[field]
+	current.Occurrences += stats.Occurrences
+	current.UniquePostings += stats.UniquePostings
+	current.DuplicateOccurrences += stats.DuplicateOccurrences
+	current.DuplicatePostings += stats.DuplicatePostings
+	current.ExceptionBytesEstimate += stats.ExceptionBytesEstimate
+	current.CountBytesEstimate += stats.CountBytesEstimate
+	current.Count1 += stats.Count1
+	current.Count2 += stats.Count2
+	current.Count3To4 += stats.Count3To4
+	current.Count5To8 += stats.Count5To8
+	current.Count9To16 += stats.Count9To16
+	current.Count17To32 += stats.Count17To32
+	current.Count33To64 += stats.Count33To64
+	current.Count65To128 += stats.Count65To128
+	current.Count129Plus += stats.Count129Plus
+	p.termFrequencyByField[field] = current
+
+	p.counters[CounterTFOccurrences] += stats.Occurrences
+	p.counters[CounterTFUniquePostings] += stats.UniquePostings
+	p.counters[CounterTFDuplicateOccurrences] += stats.DuplicateOccurrences
+	p.counters[CounterTFDuplicatePostings] += stats.DuplicatePostings
+	p.counters[CounterTFExceptionBytes] += stats.ExceptionBytesEstimate
+	p.counters[CounterTFCountBytes] += stats.CountBytesEstimate
+	p.mu.Unlock()
+}
+
+func (p *Profiler) RecordPostingList(field, ngram string, cardinality uint64, keyBytes, valueBytes int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	agg := postingListAggregate{
+		lists:      1,
+		postings:   int64(cardinality),
+		keyBytes:   keyBytes,
+		valueBytes: valueBytes,
+	}
+
+	bucket := postingListCardinalityBucket(cardinality)
+	bucket.field = field
+	addPostingListAggregate(p.postingListsByCardinality, bucket, agg)
+	addPostingListAggregate(p.postingListsByNgramLength, postingListLengthKey{
+		field:  field,
+		length: len(ngram),
+	}, agg)
+
+	if field == "content" {
+		entry := postingListTopEntry{
+			field:       field,
+			ngram:       ngram,
+			cardinality: cardinality,
+			keyBytes:    keyBytes,
+			valueBytes:  valueBytes,
+		}
+		maybeAddTopPostingList(&p.topContentByValueBytes, entry)
+	}
+}
+
+func addPostingListAggregate[K comparable](m map[K]postingListAggregate, key K, value postingListAggregate) {
+	agg := m[key]
+	agg.lists += value.lists
+	agg.postings += value.postings
+	agg.keyBytes += value.keyBytes
+	agg.valueBytes += value.valueBytes
+	m[key] = agg
+}
+
+func maybeAddTopPostingList(h *topPostingListHeap, entry postingListTopEntry) {
+	const maxTopPostingLists = 100
+	if h.Len() < maxTopPostingLists {
+		heap.Push(h, entry)
+		return
+	}
+	if h.less(h.entries[0], entry) {
+		h.entries[0] = entry
+		heap.Fix(h, 0)
+	}
+}
+
+func (p *Profiler) PrettyPrint() {
+	type phaseRow struct {
+		phase Phase
+		stats phaseStats
+	}
+	type counterRow struct {
+		counter Counter
+		value   int64
+	}
+	type cardinalityRow struct {
+		key   postingListBucketKey
+		stats postingListAggregate
+	}
+	type lengthRow struct {
+		key   postingListLengthKey
+		stats postingListAggregate
+	}
+	type termFrequencyRow struct {
+		field string
+		stats TermFrequencyStats
+	}
+
+	p.mu.Lock()
+	phases := make([]phaseRow, 0, len(p.phases))
+	for phase, stats := range p.phases {
+		phases = append(phases, phaseRow{phase: phase, stats: stats})
+	}
+	counters := make([]counterRow, 0, len(p.counters))
+	for counter, value := range p.counters {
+		counters = append(counters, counterRow{counter: counter, value: value})
+	}
+	cardinalityRows := make([]cardinalityRow, 0, len(p.postingListsByCardinality))
+	for key, stats := range p.postingListsByCardinality {
+		cardinalityRows = append(cardinalityRows, cardinalityRow{key: key, stats: stats})
+	}
+	lengthRows := make([]lengthRow, 0, len(p.postingListsByNgramLength))
+	for key, stats := range p.postingListsByNgramLength {
+		lengthRows = append(lengthRows, lengthRow{key: key, stats: stats})
+	}
+	termFrequencyRows := make([]termFrequencyRow, 0, len(p.termFrequencyByField))
+	for field, stats := range p.termFrequencyByField {
+		termFrequencyRows = append(termFrequencyRows, termFrequencyRow{field: field, stats: stats})
+	}
+	topByValueBytes := append([]postingListTopEntry(nil), p.topContentByValueBytes.entries...)
+	p.mu.Unlock()
+
+	sort.Slice(phases, func(i, j int) bool {
+		if phases[i].stats.total == phases[j].stats.total {
+			return phases[i].phase < phases[j].phase
+		}
+		return phases[i].stats.total > phases[j].stats.total
+	})
+	sort.Slice(counters, func(i, j int) bool {
+		return counters[i].counter < counters[j].counter
+	})
+	sort.Slice(cardinalityRows, func(i, j int) bool {
+		if cardinalityRows[i].key.field != cardinalityRows[j].key.field {
+			return cardinalityRows[i].key.field < cardinalityRows[j].key.field
+		}
+		return cardinalityRows[i].key.order < cardinalityRows[j].key.order
+	})
+	sort.Slice(lengthRows, func(i, j int) bool {
+		if lengthRows[i].key.field != lengthRows[j].key.field {
+			return lengthRows[i].key.field < lengthRows[j].key.field
+		}
+		return lengthRows[i].key.length < lengthRows[j].key.length
+	})
+	sort.Slice(termFrequencyRows, func(i, j int) bool {
+		return termFrequencyRows[i].field < termFrequencyRows[j].field
+	})
+	sortPostingListTop(topByValueBytes, lessByValueBytes)
+
+	log.Printf("Index profile elapsed=%s", time.Since(p.start).Round(time.Millisecond))
+	log.Printf("Index profile phases (some rows are inclusive parent phases):")
+	for _, row := range phases {
+		avg := time.Duration(0)
+		if row.stats.count > 0 {
+			avg = row.stats.total / time.Duration(row.stats.count)
+		}
+		log.Printf("  %-24s count=%-10d total=%-12s avg=%s", row.phase, row.stats.count, formatDuration(row.stats.total), formatDuration(avg))
+	}
+
+	log.Printf("Index profile counters:")
+	for _, row := range counters {
+		log.Printf("  %-32s %d", row.counter, row.value)
+	}
+
+	if len(cardinalityRows) > 0 {
+		log.Printf("Index profile posting list cardinality buckets:")
+		for _, row := range cardinalityRows {
+			log.Printf("  field=%-12q bucket=%-12s lists=%-10d postings=%-12d key_bytes=%-12d value_bytes=%d",
+				row.key.field, row.key.label, row.stats.lists, row.stats.postings, row.stats.keyBytes, row.stats.valueBytes)
+		}
+	}
+	if len(lengthRows) > 0 {
+		log.Printf("Index profile posting list ngram length buckets:")
+		for _, row := range lengthRows {
+			log.Printf("  field=%-12q length=%-3d lists=%-10d postings=%-12d key_bytes=%-12d value_bytes=%d",
+				row.key.field, row.key.length, row.stats.lists, row.stats.postings, row.stats.keyBytes, row.stats.valueBytes)
+		}
+	}
+	if len(termFrequencyRows) > 0 {
+		log.Printf("Index profile term frequency storage estimate:")
+		for _, row := range termFrequencyRows {
+			duplicatePostingPct := float64(0)
+			if row.stats.UniquePostings > 0 {
+				duplicatePostingPct = 100 * float64(row.stats.DuplicatePostings) / float64(row.stats.UniquePostings)
+			}
+			log.Printf("  field=%-12q occurrences=%-12d unique_postings=%-12d duplicate_occurrences=%-12d postings_with_tf_gt_1=%-12d (%5.2f%%) exception_bytes_estimate=%-12d count_bytes_estimate=%d",
+				row.field,
+				row.stats.Occurrences,
+				row.stats.UniquePostings,
+				row.stats.DuplicateOccurrences,
+				row.stats.DuplicatePostings,
+				duplicatePostingPct,
+				row.stats.ExceptionBytesEstimate,
+				row.stats.CountBytesEstimate)
+			log.Printf("    tf_buckets: 1=%d 2=%d 3-4=%d 5-8=%d 9-16=%d 17-32=%d 33-64=%d 65-128=%d 129+=%d",
+				row.stats.Count1,
+				row.stats.Count2,
+				row.stats.Count3To4,
+				row.stats.Count5To8,
+				row.stats.Count9To16,
+				row.stats.Count17To32,
+				row.stats.Count33To64,
+				row.stats.Count65To128,
+				row.stats.Count129Plus)
+		}
+	}
+	printTopPostingLists("Index profile top content posting lists by value bytes:", topByValueBytes)
+}
+
+func formatDuration(d time.Duration) time.Duration {
+	if d == 0 {
+		return 0
+	}
+	if d < time.Microsecond {
+		return d.Round(time.Nanosecond)
+	}
+	return d.Round(time.Microsecond)
+}
+
+func postingListCardinalityBucket(cardinality uint64) postingListBucketKey {
+	switch {
+	case cardinality == 0:
+		return postingListBucketKey{label: "0", order: 0}
+	case cardinality == 1:
+		return postingListBucketKey{label: "1", order: 1}
+	case cardinality == 2:
+		return postingListBucketKey{label: "2", order: 2}
+	case cardinality <= 4:
+		return postingListBucketKey{label: "3-4", order: 3}
+	case cardinality <= 8:
+		return postingListBucketKey{label: "5-8", order: 4}
+	case cardinality <= 16:
+		return postingListBucketKey{label: "9-16", order: 5}
+	case cardinality <= 32:
+		return postingListBucketKey{label: "17-32", order: 6}
+	case cardinality <= 64:
+		return postingListBucketKey{label: "33-64", order: 7}
+	case cardinality <= 128:
+		return postingListBucketKey{label: "65-128", order: 8}
+	case cardinality <= 256:
+		return postingListBucketKey{label: "129-256", order: 9}
+	case cardinality <= 512:
+		return postingListBucketKey{label: "257-512", order: 10}
+	case cardinality <= 1024:
+		return postingListBucketKey{label: "513-1K", order: 11}
+	case cardinality <= 2048:
+		return postingListBucketKey{label: "1K-2K", order: 12}
+	case cardinality <= 4096:
+		return postingListBucketKey{label: "2K-4K", order: 13}
+	case cardinality <= 8192:
+		return postingListBucketKey{label: "4K-8K", order: 14}
+	case cardinality <= 16384:
+		return postingListBucketKey{label: "8K-16K", order: 15}
+	case cardinality <= 32768:
+		return postingListBucketKey{label: "16K-32K", order: 16}
+	case cardinality <= 65536:
+		return postingListBucketKey{label: "32K-64K", order: 17}
+	default:
+		return postingListBucketKey{label: "64K+", order: 18}
+	}
+}
+
+func lessByValueBytes(a, b postingListTopEntry) bool {
+	if a.valueBytes != b.valueBytes {
+		return a.valueBytes < b.valueBytes
+	}
+	if a.cardinality != b.cardinality {
+		return a.cardinality < b.cardinality
+	}
+	return a.ngram > b.ngram
+}
+
+func sortPostingListTop(entries []postingListTopEntry, less func(a, b postingListTopEntry) bool) {
+	sort.Slice(entries, func(i, j int) bool {
+		return less(entries[j], entries[i])
+	})
+}
+
+func printTopPostingLists(header string, entries []postingListTopEntry) {
+	if len(entries) == 0 {
+		return
+	}
+	log.Printf("%s", header)
+	for i, entry := range entries {
+		log.Printf("  #%03d ngram=%-12s docs=%-10d key_bytes=%-8d value_bytes=%d",
+			i+1, formatNgram(entry.ngram), entry.cardinality, entry.keyBytes, entry.valueBytes)
+	}
+}
+
+func formatNgram(ngram string) string {
+	const maxNgramPrintBytes = 24
+	if len(ngram) > maxNgramPrintBytes {
+		ngram = ngram[:maxNgramPrintBytes] + "..."
+	}
+	return strconv.QuoteToASCII(ngram)
+}

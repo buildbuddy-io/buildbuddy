@@ -10,8 +10,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/indexprofile"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -73,12 +75,39 @@ func makeLastIndexedDoc(repoURL *git.RepoURL, commitSHA string) types.Document {
 // mimetype, or contains invalid UTF-8 data.
 // This function does not flush the index writer, so the caller is responsible for doing that.
 func AddFileToIndex(w types.IndexWriter, repoURL *git.RepoURL, commitSHA, filename string, fileContent []byte) error {
+	profiler := indexprofile.Current()
+	var totalStart time.Time
+	if profiler != nil {
+		totalStart = time.Now()
+		defer func() {
+			profiler.Record(indexprofile.PhaseAddFileToIndex, time.Since(totalStart))
+		}()
+	}
+
+	var validateStart time.Time
+	if profiler != nil {
+		validateStart = time.Now()
+	}
 	err := validateFile(fileContent)
+	if profiler != nil {
+		profiler.Record(indexprofile.PhaseValidateFile, time.Since(validateStart))
+	}
 	if err != nil {
+		if profiler != nil {
+			profiler.Add(indexprofile.CounterFilesSkipped, 1)
+			profiler.Add(indexprofile.CounterValidationSkippedFiles, 1)
+		}
 		return err
 	}
 
+	var langStart time.Time
+	if profiler != nil {
+		langStart = time.Now()
+	}
 	lang := strings.ToLower(enry.GetLanguage(filepath.Base(filename), detectionBuffer(fileContent)))
+	if profiler != nil {
+		profiler.Record(indexprofile.PhaseDetectLanguage, time.Since(langStart))
+	}
 	fields := map[string][]byte{
 		schema.IDField:       makeFileId(repoURL, filename),
 		schema.FilenameField: []byte(filename),
@@ -89,10 +118,30 @@ func AddFileToIndex(w types.IndexWriter, repoURL *git.RepoURL, commitSHA, filena
 		schema.SHAField:      []byte(commitSHA),
 	}
 
+	var docStart time.Time
+	if profiler != nil {
+		docStart = time.Now()
+	}
 	doc := schema.GitHubFileSchema().MustMakeDocument(fields)
+	if profiler != nil {
+		profiler.Record(indexprofile.PhaseMakeDocument, time.Since(docStart))
+	}
 
+	var updateStart time.Time
+	if profiler != nil {
+		updateStart = time.Now()
+	}
 	if err := w.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
+		if profiler != nil {
+			profiler.Record(indexprofile.PhaseUpdateDocument, time.Since(updateStart))
+			profiler.Add(indexprofile.CounterFilesSkipped, 1)
+			profiler.Add(indexprofile.CounterAddFileErrors, 1)
+		}
 		return status.InternalErrorf("Failed to update file %s: %v", filename, err)
+	}
+	if profiler != nil {
+		profiler.Record(indexprofile.PhaseUpdateDocument, time.Since(updateStart))
+		profiler.Add(indexprofile.CounterFilesIndexed, 1)
 	}
 	return nil
 }
