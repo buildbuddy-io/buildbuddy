@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "capabilities_server",
@@ -15,5 +15,17 @@ go_library(
         "//server/remote_cache/config",
         "//server/remote_cache/digest",
         "//server/util/bazel_request",
+    ],
+)
+
+go_test(
+    name = "capabilities_server_test",
+    srcs = ["capabilities_server_test.go"],
+    embed = [":capabilities_server"],
+    deps = [
+        "//proto:remote_execution_go_proto",
+        "//server/interfaces",
+        "//server/testutil/testenv",
+        "@com_github_stretchr_testify//require",
     ],
 )

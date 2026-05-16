@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -45,6 +46,7 @@ import (
 
 const (
 	defaultChunkTransferConcurrency = 32
+	fastCDCParamsCacheMaxEntries    = 1000
 )
 
 var disableCDC = flag.Bool("cache_proxy.disable_cdc", false, "If true, disable proxy-side CDC behavior, including chunked reads and intercepting/chunking large writes.")
@@ -73,6 +75,20 @@ func (s *ByteStreamServerProxy) shouldBypassLocalCacheForEncryption(ctx context.
 	return authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx)
 }
 
+// fastCDCCacheEntry wraps the fetched params so a nil result (server does not
+// support chunking) is distinguishable from a cache miss.
+type fastCDCCacheEntry struct {
+	params *repb.FastCdc2020Params
+}
+
+func newFastCDCParamsCache() (lru.LRU[fastCDCCacheEntry], error) {
+	return lru.New[fastCDCCacheEntry](&lru.Config[fastCDCCacheEntry]{
+		MaxSize:    fastCDCParamsCacheMaxEntries,
+		SizeFn:     func(fastCDCCacheEntry) int64 { return 1 },
+		ThreadSafe: true,
+	})
+}
+
 type ByteStreamServerProxy struct {
 	supportsEncryption func(context.Context) bool
 	authenticator      interfaces.Authenticator
@@ -81,7 +97,9 @@ type ByteStreamServerProxy struct {
 	efp                interfaces.ExperimentFlagProvider
 	localCache         interfaces.Cache
 	remoteCAS          repb.ContentAddressableStorageClient
+	capabilitiesClient repb.CapabilitiesClient
 	bufPool            *bytebufferpool.VariableSizePool
+	fastCDCParamsCache lru.LRU[fastCDCCacheEntry]
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -106,6 +124,10 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 	if local == nil {
 		return nil, fmt.Errorf("A local ByteStreamServer is required to enable ByteStreamServerProxy")
 	}
+	fastCDCParamsCache, err := newFastCDCParamsCache()
+	if err != nil {
+		return nil, status.InternalErrorf("create FastCDC params cache: %s", err)
+	}
 	return &ByteStreamServerProxy{
 		supportsEncryption: remote_crypter.SupportsEncryption(env),
 		authenticator:      authenticator,
@@ -114,7 +136,9 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		efp:                env.GetExperimentFlagProvider(),
 		localCache:         env.GetCache(),
 		remoteCAS:          env.GetContentAddressableStorageClient(),
+		capabilitiesClient: env.GetCapabilitiesClient(),
 		bufPool:            bytebufferpool.VariableSize(int(compression.ZstdCompressBound(chunking.MaxChunkSizeBytes()))),
+		fastCDCParamsCache: fastCDCParamsCache,
 	}, nil
 }
 
@@ -1126,8 +1150,62 @@ func (s *replayableWriteStream) Recv() (*bspb.WriteRequest, error) {
 	return s.ByteStream_WriteServer.Recv()
 }
 
+func fastCDCCacheKey(ctx context.Context, instanceName string) string {
+	groupID := interfaces.AuthAnonymousUser
+	if c, err := claims.ClaimsFromContext(ctx); err == nil && c.GetGroupID() != "" {
+		groupID = c.GetGroupID()
+	}
+	return groupID + "/" +
+		bazel_request.GetInvocationID(ctx) + "/" +
+		instanceName
+}
+
+func nonRetryableGetCapabilitiesError(err error) bool {
+	return status.IsInvalidArgumentError(err) ||
+		status.IsNotFoundError(err) ||
+		status.IsPermissionDeniedError(err) ||
+		status.IsUnauthenticatedError(err) ||
+		status.IsFailedPreconditionError(err) ||
+		status.IsUnimplementedError(err)
+}
+
+func (s *ByteStreamServerProxy) remoteFastCDCParams(ctx context.Context, instanceName string) (*repb.FastCdc2020Params, error) {
+	if s.capabilitiesClient == nil {
+		return nil, status.UnimplementedError("capabilities client not configured")
+	}
+	cacheKey := fastCDCCacheKey(ctx, instanceName)
+	if s.fastCDCParamsCache != nil {
+		if entry, ok := s.fastCDCParamsCache.Get(cacheKey); ok {
+			return entry.params, nil
+		}
+	}
+
+	opts := retry.DefaultOptions()
+	opts.MaxRetries = 3
+	opts.Name = "GetCapabilities"
+	rsp, err := retry.Do(ctx, opts, func(ctx context.Context) (*repb.ServerCapabilities, error) {
+		rsp, err := s.capabilitiesClient.GetCapabilities(ctx, &repb.GetCapabilitiesRequest{
+			InstanceName: instanceName,
+		})
+		if err != nil && nonRetryableGetCapabilitiesError(err) {
+			return nil, retry.NonRetryableError(err)
+		}
+		return rsp, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	entry := fastCDCCacheEntry{
+		params: rsp.GetCacheCapabilities().GetFastCdc_2020Params(),
+	}
+	if s.fastCDCParamsCache != nil {
+		s.fastCDCParamsCache.Add(cacheKey, entry)
+	}
+	return entry.params, nil
+}
+
 func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
-	if *disableCDC || s.localCache == nil || s.remoteCAS == nil {
+	if *disableCDC || s.localCache == nil || s.remoteCAS == nil || s.capabilitiesClient == nil {
 		return false
 	}
 	if bazel_request.GetRequestMetadata(ctx).GetActionId() == "bes-upload" {
@@ -1136,8 +1214,7 @@ func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
 	if cdc.EnabledViaHeader(ctx) {
 		return true
 	}
-	return chunking.Enabled(ctx, s.efp) &&
-		(s.efp == nil || s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", true))
+	return s.efp == nil || s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", true)
 }
 
 type writeChunkedResult struct {
@@ -1165,8 +1242,23 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		return writeChunkedResult{}, status.InvalidArgumentErrorf("parse resource name: %s", err)
 	}
 
+	instanceName := rn.GetInstanceName()
+
+	// Use the upstream server's advertised FastCDC params so the proxy chunks
+	// with the same avg chunk size as the server.
+	fastCDCParams, err := s.remoteFastCDCParams(ctx, instanceName)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to fetch capabilities for chunking config, passing write through: %v", err)
+		return writeChunkedResult{firstReq: firstReq}, status.UnimplementedErrorf("fetch capabilities for chunking config: %s", err)
+	}
+	if fastCDCParams == nil {
+		return writeChunkedResult{firstReq: firstReq}, status.UnimplementedError("server does not advertise FastCDC support")
+	}
+
 	blobSize := rn.GetDigest().GetSizeBytes()
-	if !chunking.ShouldUploadChunked(ctx, s.efp, rn.GetDigest()) {
+	avgChunkSize := int64(fastCDCParams.GetAvgChunkSizeBytes())
+	maxWriteSize := fastCDCParams.GetBuildbuddyMaxChunkedWriteSizeBytes()
+	if !chunking.ShouldUploadChunkedWithMax(rn.GetDigest(), avgChunkSize, maxWriteSize) {
 		return writeChunkedResult{firstReq: firstReq}, status.UnimplementedError("blob outside chunking size range")
 	}
 
@@ -1186,7 +1278,6 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	var chunkDigests []*repb.Digest
 
 	digestFunction := rn.GetDigestFunction()
-	instanceName := rn.GetInstanceName()
 	compressor := rn.GetCompressor()
 	uploader, err := newChunkUploader(ctx, s, instanceName, digestFunction)
 	if err != nil {
@@ -1238,7 +1329,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		return nil
 	}
 
-	chunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), chunkWriteFn)
+	chunker, err := chunking.NewChunker(ctx, int(avgChunkSize), chunkWriteFn)
 	if err != nil {
 		return writeChunkedResult{}, status.InternalErrorf("creating chunker: %s", err)
 	}

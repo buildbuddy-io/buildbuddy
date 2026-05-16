@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -35,8 +36,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -79,6 +82,43 @@ type noOpCASClient struct {
 	repb.ContentAddressableStorageClient
 }
 
+type fakeCapabilitiesClient struct {
+	repb.CapabilitiesClient
+	mu    sync.Mutex
+	calls int
+	fn    func(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error)
+}
+
+func (c *fakeCapabilitiesClient) GetCapabilities(ctx context.Context, req *repb.GetCapabilitiesRequest, opts ...grpc.CallOption) (*repb.ServerCapabilities, error) {
+	c.mu.Lock()
+	c.calls++
+	c.mu.Unlock()
+	return c.fn(ctx, req)
+}
+
+func (c *fakeCapabilitiesClient) Calls() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.calls
+}
+
+func serverCapabilities(avgChunkSizeBytes uint64, maxWriteSizeBytes int64) *repb.ServerCapabilities {
+	return &repb.ServerCapabilities{
+		CacheCapabilities: &repb.CacheCapabilities{
+			FastCdc_2020Params: &repb.FastCdc2020Params{
+				AvgChunkSizeBytes:                  avgChunkSizeBytes,
+				BuildbuddyMaxChunkedWriteSizeBytes: maxWriteSizeBytes,
+			},
+		},
+	}
+}
+
+func newTestFastCDCParamsCache(t testing.TB) lru.LRU[fastCDCCacheEntry] {
+	c, err := newFastCDCParamsCache()
+	require.NoError(t, err)
+	return c
+}
+
 func (c *noOpCAS) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
 	return &repb.FindMissingBlobsResponse{}, nil
 }
@@ -109,26 +149,42 @@ func (c *noOpCAS) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*r
 }
 
 func TestWriteChunkedFallsBackAboveMaxSize(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_max_write_size_bytes": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "max",
-			Variants: map[string]any{
-				"max": 5 * 1024 * 1024,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	rn := digest.NewCASResourceName(
 		&repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 6 * 1024 * 1024},
 		"",
 		repb.DigestFunction_BLAKE3,
 	)
-	s := &ByteStreamServerProxy{efp: fp}
+	s := &ByteStreamServerProxy{
+		capabilitiesClient: &fakeCapabilitiesClient{
+			fn: func(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
+				return serverCapabilities(512*1024, 5*1024*1024), nil
+			},
+		},
+	}
+	result, err := s.writeChunked(ctx, &rawWriteStream{
+		ctx:          ctx,
+		resourceName: rn.NewUploadString(),
+		data:         []byte("x"),
+	})
+	require.True(t, status.IsUnimplementedError(err))
+	require.NotNil(t, result.firstReq)
+}
+
+func TestWriteChunkedFallsBackBelowRemoteThreshold(t *testing.T) {
+	ctx := context.Background()
+	rn := digest.NewCASResourceName(
+		&repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 3 * 1024 * 1024},
+		"",
+		repb.DigestFunction_BLAKE3,
+	)
+	s := &ByteStreamServerProxy{
+		capabilitiesClient: &fakeCapabilitiesClient{
+			fn: func(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
+				return serverCapabilities(1024*1024, 0), nil
+			},
+		},
+	}
 	result, err := s.writeChunked(ctx, &rawWriteStream{
 		ctx:          ctx,
 		resourceName: rn.NewUploadString(),
@@ -144,11 +200,123 @@ func TestWriteChunkingEnabledSkipsBESUpload(t *testing.T) {
 	s := &ByteStreamServerProxy{
 		localCache: testenv.GetTestEnv(t).GetCache(),
 		remoteCAS:  &noOpCASClient{},
+		capabilitiesClient: &fakeCapabilitiesClient{fn: func(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
+			return serverCapabilities(512*1024, 0), nil
+		}},
 	}
 	require.False(t, s.writeChunkingEnabled(ctx))
 
 	ctx = bazel_request.OverrideRequestMetadata(context.Background(), &repb.RequestMetadata{ActionId: "compile"})
 	require.True(t, s.writeChunkingEnabled(ctx))
+}
+
+func TestWriteChunkingEnabledRequiresCapabilitiesClient(t *testing.T) {
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(cdc.EnabledHeaderName, "true"))
+	s := &ByteStreamServerProxy{
+		localCache: testenv.GetTestEnv(t).GetCache(),
+		remoteCAS:  &noOpCASClient{},
+	}
+	require.False(t, s.writeChunkingEnabled(ctx))
+}
+
+func TestRemoteFastCDCParamsCachesByGroupInvocationAndInstance(t *testing.T) {
+	capabilitiesClient := &fakeCapabilitiesClient{
+		fn: func(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
+			c, err := claims.ClaimsFromContext(ctx)
+			require.NoError(t, err)
+			if c.GetGroupID() == "group-1" {
+				if bazel_request.GetInvocationID(ctx) == "invocation-2" {
+					return serverCapabilities(96*1024, 0), nil
+				}
+				return serverCapabilities(64*1024, 0), nil
+			}
+			return serverCapabilities(128*1024, 0), nil
+		},
+	}
+	s := &ByteStreamServerProxy{
+		capabilitiesClient: capabilitiesClient,
+		fastCDCParamsCache: newTestFastCDCParamsCache(t),
+	}
+
+	ctx1 := claims.AuthContext(context.Background(), &claims.Claims{GroupID: "group-1"})
+	ctx1 = bazel_request.OverrideRequestMetadata(ctx1, &repb.RequestMetadata{ToolInvocationId: "invocation-1"})
+	params, err := s.remoteFastCDCParams(ctx1, "instance")
+	require.NoError(t, err)
+	require.Equal(t, uint64(64*1024), params.GetAvgChunkSizeBytes())
+	params, err = s.remoteFastCDCParams(ctx1, "instance")
+	require.NoError(t, err)
+	require.Equal(t, uint64(64*1024), params.GetAvgChunkSizeBytes())
+
+	ctx2 := claims.AuthContext(context.Background(), &claims.Claims{GroupID: "group-2"})
+	ctx2 = bazel_request.OverrideRequestMetadata(ctx2, &repb.RequestMetadata{ToolInvocationId: "invocation-1"})
+	params, err = s.remoteFastCDCParams(ctx2, "instance")
+	require.NoError(t, err)
+	require.Equal(t, uint64(128*1024), params.GetAvgChunkSizeBytes())
+
+	ctx3 := claims.AuthContext(context.Background(), &claims.Claims{GroupID: "group-1"})
+	ctx3 = bazel_request.OverrideRequestMetadata(ctx3, &repb.RequestMetadata{ToolInvocationId: "invocation-2"})
+	params, err = s.remoteFastCDCParams(ctx3, "instance")
+	require.NoError(t, err)
+	require.Equal(t, uint64(96*1024), params.GetAvgChunkSizeBytes())
+	require.Equal(t, 3, capabilitiesClient.Calls())
+}
+
+func TestRemoteFastCDCParamsDoesNotRetryNonRetryableErrors(t *testing.T) {
+	capabilitiesClient := &fakeCapabilitiesClient{
+		fn: func(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
+			return nil, status.InvalidArgumentError("bad instance")
+		},
+	}
+	s := &ByteStreamServerProxy{capabilitiesClient: capabilitiesClient}
+	_, err := s.remoteFastCDCParams(context.Background(), "instance")
+	require.True(t, status.IsInvalidArgumentError(err))
+	require.Equal(t, 1, capabilitiesClient.Calls())
+}
+
+func TestWriteChunkedFallsBackWhenCapabilitiesUnavailable(t *testing.T) {
+	ctx := context.Background()
+	rn := digest.NewCASResourceName(
+		&repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 6 * 1024 * 1024},
+		"",
+		repb.DigestFunction_BLAKE3,
+	)
+	s := &ByteStreamServerProxy{
+		capabilitiesClient: &fakeCapabilitiesClient{
+			fn: func(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
+				return nil, status.UnavailableError("temporarily unavailable")
+			},
+		},
+	}
+	result, err := s.writeChunked(ctx, &rawWriteStream{
+		ctx:          ctx,
+		resourceName: rn.NewUploadString(),
+		data:         []byte("x"),
+	})
+	require.True(t, status.IsUnimplementedError(err))
+	require.NotNil(t, result.firstReq)
+}
+
+func TestWriteChunkedFallsBackWhenCapabilitiesDisableChunking(t *testing.T) {
+	ctx := context.Background()
+	rn := digest.NewCASResourceName(
+		&repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 6 * 1024 * 1024},
+		"",
+		repb.DigestFunction_BLAKE3,
+	)
+	s := &ByteStreamServerProxy{
+		capabilitiesClient: &fakeCapabilitiesClient{
+			fn: func(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
+				return &repb.ServerCapabilities{}, nil
+			},
+		},
+	}
+	result, err := s.writeChunked(ctx, &rawWriteStream{
+		ctx:          ctx,
+		resourceName: rn.NewUploadString(),
+		data:         []byte("x"),
+	})
+	require.True(t, status.IsUnimplementedError(err))
+	require.NotNil(t, result.firstReq)
 }
 
 type casRPCRecorder struct {
@@ -1698,6 +1866,7 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 	remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
 	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
 	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
+	repb.RegisterCapabilitiesServer(remoteGRPC, capabilities_server.NewCapabilitiesServer(remoteEnv, true, true, true))
 	go remoteRun()
 	var splitBlobCalls atomic.Int32
 	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
@@ -1715,6 +1884,7 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 
 	uploadProxyEnv.SetByteStreamClient(bsClient)
 	uploadProxyEnv.SetContentAddressableStorageClient(casClient)
+	uploadProxyEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(remoteConn))
 	uploadProxyBSS, err := byte_stream_server.NewByteStreamServer(uploadProxyEnv)
 	require.NoError(t, err)
 	uploadProxyEnv.SetLocalByteStreamServer(uploadProxyBSS)
@@ -2360,6 +2530,7 @@ func TestWriteChunked(t *testing.T) {
 	remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
 	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
 	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
+	repb.RegisterCapabilitiesServer(remoteGRPC, capabilities_server.NewCapabilitiesServer(remoteEnv, true, true, true))
 	go remoteRun()
 	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis)
 	require.NoError(t, err)
@@ -2369,6 +2540,7 @@ func TestWriteChunked(t *testing.T) {
 
 	proxyEnv.SetByteStreamClient(bsClient)
 	proxyEnv.SetContentAddressableStorageClient(casClient)
+	proxyEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(remoteConn))
 	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
 	require.NoError(t, err)
 	proxyEnv.SetLocalByteStreamServer(proxyBSS)
@@ -2544,6 +2716,7 @@ func TestWriteChunkedEncryptedRemoteOnly(t *testing.T) {
 	remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
 	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
 	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
+	repb.RegisterCapabilitiesServer(remoteGRPC, capabilities_server.NewCapabilitiesServer(remoteEnv, true, true, true))
 	go remoteRun()
 
 	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis)
@@ -2553,6 +2726,7 @@ func TestWriteChunkedEncryptedRemoteOnly(t *testing.T) {
 	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(remoteConn))
 	casClient := repb.NewContentAddressableStorageClient(remoteConn)
 	proxyEnv.SetContentAddressableStorageClient(casClient)
+	proxyEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(remoteConn))
 	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
 	require.NoError(t, err)
 	proxyEnv.SetLocalByteStreamServer(proxyBSS)
@@ -2697,6 +2871,7 @@ func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
 	remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
 	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
 	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
+	repb.RegisterCapabilitiesServer(remoteGRPC, capabilities_server.NewCapabilitiesServer(remoteEnv, true, true, true))
 	go remoteRun()
 
 	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(recordCASUnaryInterceptor(rec)))
@@ -2706,6 +2881,7 @@ func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
 	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(remoteConn))
 	casClient := repb.NewContentAddressableStorageClient(remoteConn)
 	proxyEnv.SetContentAddressableStorageClient(casClient)
+	proxyEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(remoteConn))
 	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
 	require.NoError(t, err)
 	proxyEnv.SetLocalByteStreamServer(proxyBSS)
@@ -2853,6 +3029,7 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 	remoteGRPC, remoteRun, remoteLis := testenv.RegisterLocalGRPCServer(t, remoteEnv)
 	bspb.RegisterByteStreamServer(remoteGRPC, remoteBSS)
 	repb.RegisterContentAddressableStorageServer(remoteGRPC, remoteCAS)
+	repb.RegisterCapabilitiesServer(remoteGRPC, capabilities_server.NewCapabilitiesServer(remoteEnv, true, true, true))
 	go remoteRun()
 	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis)
 	require.NoError(t, err)
@@ -2862,6 +3039,7 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 
 	proxyEnv.SetByteStreamClient(bsClient)
 	proxyEnv.SetContentAddressableStorageClient(casClient)
+	proxyEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(remoteConn))
 	proxyBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
 	require.NoError(t, err)
 	proxyEnv.SetLocalByteStreamServer(proxyBSS)
