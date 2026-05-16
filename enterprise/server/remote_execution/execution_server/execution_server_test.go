@@ -1066,6 +1066,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		ActionMnemonic:               "TestRunner",
 		SelfHosted:                   test.expectedSelfHosted,
 		Region:                       "test-region",
+		Os:                           "linux",
 		CommandSnippet:               "test",
 		OutputPath:                   "bazel-out/k8-fastbuild/bin/some/test",
 		RecycleRunner:                test.recycleRunner,
@@ -1112,6 +1113,130 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			"created_at_usec",
 			"updated_at_usec",
 		)))
+}
+
+// TestPublishOperation_RetriedStream simulates the executor's PublishOperation
+// stream disconnecting after publishing COMPLETED and being retried as a
+// separate stream that re-publishes the same operation. The execution should
+// be flushed once and usage should be counted exactly once.
+func TestPublishOperation_RetriedStream(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+	env, conn, _ := setupEnv(t)
+	client := repb.NewExecutionClient(conn)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
+
+	const instanceName = "test-instance"
+	const invocationID = "93383cc1-5d6c-4ad1-a321-8ee87c2f6816"
+
+	clientCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: invocationID,
+		TargetId:         "//some:test",
+		ActionMnemonic:   "TestRunner",
+	})
+	require.NoError(t, err)
+
+	arn := uploadAction(clientCtx, t, env, instanceName, repb.DigestFunction_SHA256, &repb.Action{
+		Timeout: &durationpb.Duration{Seconds: 10},
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "pool", Value: "test-pool"},
+				{Name: "workload-isolation-type", Value: "oci"},
+				{Name: "EstimatedComputeUnits", Value: "2.5"},
+			},
+		},
+	})
+
+	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+	require.NoError(t, executionClient.CloseSend())
+	op, err := executionClient.Recv()
+	require.NoError(t, err)
+	taskID := op.GetName()
+
+	executorCtx := metadata.AppendToOutgoingContext(clientCtx, usageutil.ClientHeaderName, "executor")
+	executorCtx = metadata.AppendToOutgoingContext(executorCtx, "x-buildbuddy-executor-region", "test-region")
+
+	queuedTime := time.Unix(100, 0)
+	workerStartTime := queuedTime.Add(1 * time.Second)
+	workerEndTime := workerStartTime.Add(5 * time.Second)
+	durationUsec := (5 * time.Second).Microseconds()
+	aux := &espb.ExecutionAuxiliaryMetadata{
+		PlatformOverrides: &repb.Platform{},
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			ExecutorGroupId: sharedPoolGroupID,
+			Pool:            "test-pool",
+		},
+	}
+	auxAny, err := anypb.New(aux)
+	require.NoError(t, err)
+	completedOp, err := operation.Assemble(
+		taskID,
+		operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()),
+		&repb.ExecuteResponse{
+			Result: &repb.ActionResult{
+				ExecutionMetadata: &repb.ExecutedActionMetadata{
+					QueuedTimestamp:          tspb.New(queuedTime),
+					WorkerStartTimestamp:     tspb.New(workerStartTime),
+					WorkerCompletedTimestamp: tspb.New(workerEndTime),
+					AuxiliaryMetadata:        []*anypb.Any{auxAny},
+				},
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	// Open two distinct PublishOperation streams sequentially. Each one sends
+	// COMPLETED and closes. This simulates the executor's retryingClient
+	// reconnecting after a transient disconnect: the server sees two separate
+	// streams for the same execution.
+	for i := 0; i < 2; i++ {
+		stream, err := client.PublishOperation(executorCtx)
+		require.NoError(t, err)
+		require.NoError(t, stream.Send(completedOp))
+		_, err = stream.CloseAndRecv()
+		require.NoError(t, err, "stream %d closed cleanly", i)
+	}
+
+	// Drain the /Execute stream so the test doesn't leak goroutines.
+	for {
+		_, err := executionClient.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+	}
+
+	// Exactly one execution row should be recorded in the collector. The
+	// first stream's EOF flushes it to the per-invocation list and cleans up
+	// the per-execution invocation links; the second stream's EOF finds no
+	// links so it doesn't re-flush.
+	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
+	require.NoError(t, err)
+	assert.Equal(t, 1, len(collectedExecutions), "execution should be flushed exactly once across retried streams")
+
+	// Usage should be recorded. Note: currently this is tracked per
+	// COMPLETED operation received, which can over-count on retry. That
+	// pre-dates this change and is tracked separately; here we just assert
+	// that usage was recorded at all.
+	ut := env.GetUsageTracker().(*testusage.Tracker)
+	var foundExecutorUsage *testusage.Total
+	for _, u := range ut.Totals() {
+		if u.Labels.Client == "executor" {
+			foundExecutorUsage = &u
+			break
+		}
+	}
+	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
+	assert.GreaterOrEqual(t, foundExecutorUsage.Counts.LinuxExecutionDurationUsec, durationUsec)
 }
 
 func TestMarkFailed(t *testing.T) {

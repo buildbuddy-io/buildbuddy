@@ -190,6 +190,7 @@ type Execution struct {
 	// Executor metadata
 	SelfHosted bool
 	Region     string `gorm:"type:LowCardinality(String)"`
+	OS         string `gorm:"type:LowCardinality(String)"`
 
 	Stage int64 `gorm:"codec:T64,ZSTD(1)"`
 
@@ -379,6 +380,7 @@ func (e *Execution) AdditionalFields() []string {
 		"EffectiveTimeoutUsec",
 		"Region",
 		"SelfHosted",
+		"OS",
 		"ExecutorHostname",
 		"Experiments",
 		"ClientIP",

@@ -444,6 +444,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.RequestedFreeDiskBytes = properties.EstimatedFreeDiskBytes
 				executionProto.RequestedPool = properties.Pool
 				executionProto.RecycleRunner = properties.RecycleRunner
+				executionProto.Os = properties.OS
 			}
 
 			schedulingMeta := auxMeta.GetSchedulingMetadata()
@@ -504,10 +505,15 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 	return dbErr
 }
 
-// flushExecutionToOLAP flushes execution data to Clickhouse.
-func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID string) error {
+// flushExecutionToOLAP flushes execution data to Clickhouse. Returns the
+// merged StoredExecution and a boolean indicating whether the flush did any
+// work. Because operation updates can be retried, this function may be called
+// twice for the same execution. The Redis invocation-link cleanup at the end
+// of the first successful call ensures the second call short-circuits with
+// flushed=false.
+func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID string) (*repb.StoredExecution, bool, error) {
 	if !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
-		return nil
+		return nil, false, nil
 	}
 
 	// Always clean up invocationLinks and execution updates from the collector.
@@ -526,12 +532,12 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 
 	executionProto, err := s.executionCollector.GetInProgressExecution(ctx, executionID)
 	if err != nil {
-		return status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
+		return nil, false, status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
 	}
 
 	links, err := s.executionCollector.GetExecutionInvocationLinks(ctx, executionID)
 	if err != nil {
-		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
+		return nil, false, status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
 	for _, link := range links {
 		executionProto := executionProto.CloneVT()
@@ -563,7 +569,7 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 			}
 		}
 	}
-	return nil
+	return executionProto, len(links) > 0, nil
 }
 
 // getUnvalidatedActionResult fetches an action result from the cache but does
@@ -1312,7 +1318,7 @@ func (s *ExecutionServer) recordFailedExecution(ctx context.Context, taskID stri
 	if err := s.updateExecution(ctx, taskID, repb.ExecutionStage_COMPLETED, executeRsp, auxMetadata, properties, action, cmd); err != nil {
 		return err
 	}
-	if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
+	if _, _, err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
 		log.CtxWarningf(ctx, "MarkExecutionFailed: failed to flush execution to clickhouse: %s", err)
 	}
 	return nil
@@ -1382,10 +1388,14 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	for {
 		op, err := stream.Recv()
 		if err == io.EOF {
-			// TODO(Maggie): Flush execution data to DB when the stream is closed
-			//if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
-			//	log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
-			//}
+			// Flush execution data to clickhouse once the executor closes the
+			// stream. Doing this on EOF rather than inside the COMPLETED
+			// branch lets us pick up any post-COMPLETED updates the executor
+			// publishes before closing (e.g. cleanup or snapshot save stats
+			// produced during runner recycling).
+			if _, _, err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
+				log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
+			}
 			return stream.SendAndClose(&repb.PublishOperationResponse{})
 		}
 		if err != nil {
@@ -1483,12 +1493,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
 				lastWrite = time.Now()
-				// TODO(Maggie): After receiving cleanup stats, update execution in OLAP again.
-				// TODO(Maggie): Flush execution data to DB when the stream is closed.
-				// Don't flush early here.
-				if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
-					log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
-				}
 				return nil
 			}()
 			if err != nil {
