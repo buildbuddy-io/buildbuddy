@@ -12,6 +12,8 @@ import (
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 )
@@ -25,6 +27,67 @@ var (
 	bazel7Runfilepath string
 	bazel8Runfilepath string
 )
+
+type staticExperimentFlagDetails struct{}
+
+func (staticExperimentFlagDetails) Variant() string {
+	return ""
+}
+
+type staticExperimentFlagProvider struct {
+	bools  map[string]bool
+	int64s map[string]int64
+}
+
+func (p *staticExperimentFlagProvider) Boolean(ctx context.Context, flagName string, defaultValue bool, opts ...any) bool {
+	if v, ok := p.bools[flagName]; ok {
+		return v
+	}
+	return defaultValue
+}
+
+func (p *staticExperimentFlagProvider) String(ctx context.Context, flagName string, defaultValue string, opts ...any) string {
+	return defaultValue
+}
+
+func (p *staticExperimentFlagProvider) Float64(ctx context.Context, flagName string, defaultValue float64, opts ...any) float64 {
+	return defaultValue
+}
+
+func (p *staticExperimentFlagProvider) Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64 {
+	if v, ok := p.int64s[flagName]; ok {
+		return v
+	}
+	return defaultValue
+}
+
+func (p *staticExperimentFlagProvider) Object(ctx context.Context, flagName string, defaultValue map[string]any, opts ...any) map[string]any {
+	return defaultValue
+}
+
+func (p *staticExperimentFlagProvider) BooleanDetails(ctx context.Context, flagName string, defaultValue bool, opts ...any) (bool, interfaces.ExperimentFlagDetails) {
+	return p.Boolean(ctx, flagName, defaultValue, opts...), staticExperimentFlagDetails{}
+}
+
+func (p *staticExperimentFlagProvider) StringDetails(ctx context.Context, flagName string, defaultValue string, opts ...any) (string, interfaces.ExperimentFlagDetails) {
+	return p.String(ctx, flagName, defaultValue, opts...), staticExperimentFlagDetails{}
+}
+
+func (p *staticExperimentFlagProvider) Float64Details(ctx context.Context, flagName string, defaultValue float64, opts ...any) (float64, interfaces.ExperimentFlagDetails) {
+	return p.Float64(ctx, flagName, defaultValue, opts...), staticExperimentFlagDetails{}
+}
+
+func (p *staticExperimentFlagProvider) Int64Details(ctx context.Context, flagName string, defaultValue int64, opts ...any) (int64, interfaces.ExperimentFlagDetails) {
+	return p.Int64(ctx, flagName, defaultValue, opts...), staticExperimentFlagDetails{}
+}
+
+func (p *staticExperimentFlagProvider) ObjectDetails(ctx context.Context, flagName string, defaultValue map[string]any, opts ...any) (map[string]any, interfaces.ExperimentFlagDetails) {
+	return p.Object(ctx, flagName, defaultValue, opts...), staticExperimentFlagDetails{}
+}
+
+func (p *staticExperimentFlagProvider) Subscribe(ch chan<- struct{}) (stop func()) {
+	return func() {}
+}
 
 func TestBazelRBEProber_Bazel6(t *testing.T) {
 	runProberTest(t, bazel6Runfilepath, "bazel6", "")
@@ -55,7 +118,16 @@ func TestBazelRBEProber_Bazel8(t *testing.T) {
 func runProberTest(t *testing.T, bazelRunfilepath, proberName, extraBazelArgs string) {
 	// Set up RBE test environment with a BuildBuddy server and executor
 	env := rbetest.NewRBETestEnv(t)
-	env.AddBuildBuddyServer()
+	env.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
+		EnvModifier: func(env *testenv.TestEnv) {
+			env.SetExperimentFlagProvider(&staticExperimentFlagProvider{
+				bools: map[string]bool{
+					"cache.chunking_enabled":          true,
+					"executor.upload_outputs_chunked": true,
+				},
+			})
+		},
+	})
 	flags.Set(t, "executor.api_key", env.APIKey1)
 	env.AddExecutor(t)
 
@@ -84,6 +156,11 @@ func runProberTest(t *testing.T, bazelRunfilepath, proberName, extraBazelArgs st
 		"--num_targets=2",
 		"--num_inputs_per_target=2",
 		"--input_size_bytes=1000",
+		"--large_output_size_bytes=2097152",
+		"--large_output_size_bytes=3145728",
+		"--large_output_size_bytes=4194304",
+		"--large_output_size_bytes=5242880",
+		"--large_output_size_bytes=10485760",
 		"--bazel_args=" + bazelArgs,
 	}
 

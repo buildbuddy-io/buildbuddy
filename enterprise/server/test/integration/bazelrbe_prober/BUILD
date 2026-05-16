@@ -17,6 +17,8 @@ go_test(
     },
     deps = [
         "//enterprise/server/test/integration/remote_execution/rbetest",
+        "//server/interfaces",
+        "//server/testutil/testenv",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/runfiles",

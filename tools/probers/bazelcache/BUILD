@@ -8,7 +8,9 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/cachetools",
+        "//server/remote_cache/chunking",
         "//server/remote_cache/digest",
+        "//server/util/cdc",
         "//server/util/compression",
         "//server/util/grpc_client",
         "//server/util/log",

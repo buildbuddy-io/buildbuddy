@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	mrand "math/rand/v2"
@@ -23,11 +24,47 @@ var (
 	bazelStartupOptions = flag.String("bazel_startup_options", "", "Space separated list of Bazel startup options to pass (appear before the command)")
 	proberName          = flag.String("prober_name", "", "Short, human-readable name of this prober. This name must be a valid bazel package name (only '.', '@', '-', '_' and alphanumeric characters allowed).")
 
-	numTargets         = flag.Int("num_targets", 10, "Number targets to generate")
-	numInputsPerTarget = flag.Int("num_inputs_per_target", 10, "Number of inputs each generated target will have")
-	inputSizeBytes     = flag.Int("input_size_bytes", 100_000, "Size of each input file")
-	tags               = flag.String("tags", "", "Comma-separated list of tags to pass to Bazel via --build_metadata=TAGS=...")
+	numTargets           = flag.Int("num_targets", 10, "Number targets to generate")
+	numInputsPerTarget   = flag.Int("num_inputs_per_target", 10, "Number of inputs each generated target will have")
+	inputSizeBytes       = flag.Int("input_size_bytes", 100_000, "Size of each input file")
+	tags                 = flag.String("tags", "", "Comma-separated list of tags to pass to Bazel via --build_metadata=TAGS=...")
+	largeOutputSizeBytes byteSizeList
 )
+
+type byteSizeList []int64
+
+func (l *byteSizeList) String() string {
+	parts := make([]string, 0, len(*l))
+	for _, size := range *l {
+		parts = append(parts, strconv.FormatInt(size, 10))
+	}
+	return strings.Join(parts, ",")
+}
+
+func (l *byteSizeList) Set(value string) error {
+	for part := range strings.SplitSeq(value, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		size, err := strconv.ParseInt(part, 10, 64)
+		if err != nil {
+			return fmt.Errorf("parse byte size %q: %w", part, err)
+		}
+		if size < 0 {
+			return fmt.Errorf("byte size must be >= 0, got %d", size)
+		}
+		if size == 0 {
+			continue
+		}
+		*l = append(*l, size)
+	}
+	return nil
+}
+
+func init() {
+	flag.Var(&largeOutputSizeBytes, "large_output_size_bytes", "Size of a large output file used to probe chunked output upload and download. May be repeated or comma-separated. Set to 0 to disable.")
+}
 
 // createEchoRule creates a target that generates an action that echoes the contents of each input file to a separate
 // output file.
@@ -62,7 +99,28 @@ genrule(
 `, targetName, strings.Join(srcs, ","), strings.Join(outs, ","), salt), nil
 }
 
-func createWorkspace(dir string, numTargets, numInputsPerTarget, inputSizeBytes int) error {
+func createLargeOutputRule(targetName, outputName string, sizeBytes int64) string {
+	// Disable affinity routing by adding a random salt to platform properties.
+	salt := mrand.Uint64()
+	return fmt.Sprintf(`
+genrule(
+      name = "%s",
+      srcs = [],
+      outs = ["%s"],
+      cmd_bash = """
+		  /bin/dd if=/dev/zero bs=%d count=1 of="$@" 2>/dev/null
+		  offset=0
+		  while [[ $$offset -lt %d ]]; do
+		    printf "%s:%d:%%d\n" $$offset | /bin/dd of="$@" bs=1 seek=$$offset conv=notrunc 2>/dev/null
+		    offset=$$((offset + 1048576))
+		  done
+      """,
+	  exec_properties = {"salt": "%d"},
+)
+`, targetName, outputName, sizeBytes, sizeBytes, targetName, salt, salt)
+}
+
+func createWorkspace(dir string, numTargets, numInputsPerTarget, inputSizeBytes int, largeOutputSizes []int64) error {
 	err := os.WriteFile(filepath.Join(dir, "WORKSPACE"), []byte(""), 0644)
 	if err != nil {
 		return err
@@ -105,6 +163,13 @@ func createWorkspace(dir string, numTargets, numInputsPerTarget, inputSizeBytes 
 			return err
 		}
 	}
+	for i, sizeBytes := range largeOutputSizes {
+		targetName := fmt.Sprintf("large_output_%d_%d", i, sizeBytes)
+		outputName := targetName + ".out"
+		if _, err = buildFile.WriteString(createLargeOutputRule(targetName, outputName, sizeBytes)); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -122,7 +187,7 @@ func runProbe() error {
 		}
 	}()
 
-	err = createWorkspace(workspaceDir, *numTargets, *numInputsPerTarget, *inputSizeBytes)
+	err = createWorkspace(workspaceDir, *numTargets, *numInputsPerTarget, *inputSizeBytes, []int64(largeOutputSizeBytes))
 	if err != nil {
 		return status.UnknownErrorf("Could not populate workspace: %s", err)
 	}
@@ -143,6 +208,11 @@ func runProbe() error {
 		"build",
 		"//"+*proberName+":all",
 	)
+	if len(largeOutputSizeBytes) > 0 {
+		args = append(args,
+			"--remote_download_outputs=all",
+		)
+	}
 	if *bazelArgs != "" {
 		extraArgs := strings.Split(*bazelArgs, " ")
 		args = append(args, extraArgs...)
