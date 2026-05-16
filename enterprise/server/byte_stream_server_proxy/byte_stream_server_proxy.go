@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
@@ -45,6 +46,8 @@ import (
 
 const (
 	defaultChunkTransferConcurrency = 32
+	remoteAvgChunkSizeCacheTTL      = time.Minute
+	remoteAvgChunkSizeFetchTimeout  = 10 * time.Second
 )
 
 var disableCDC = flag.Bool("cache_proxy.disable_cdc", false, "If true, disable proxy-side CDC behavior, including chunked reads and intercepting/chunking large writes.")
@@ -74,14 +77,18 @@ func (s *ByteStreamServerProxy) shouldBypassLocalCacheForEncryption(ctx context.
 }
 
 type ByteStreamServerProxy struct {
-	supportsEncryption func(context.Context) bool
-	authenticator      interfaces.Authenticator
-	local              interfaces.ByteStreamServer
-	remote             bspb.ByteStreamClient
-	efp                interfaces.ExperimentFlagProvider
-	localCache         interfaces.Cache
-	remoteCAS          repb.ContentAddressableStorageClient
-	bufPool            *bytebufferpool.VariableSizePool
+	supportsEncryption                        func(context.Context) bool
+	authenticator                             interfaces.Authenticator
+	local                                     interfaces.ByteStreamServer
+	remote                                    bspb.ByteStreamClient
+	efp                                       interfaces.ExperimentFlagProvider
+	localCache                                interfaces.Cache
+	remoteCAS                                 repb.ContentAddressableStorageClient
+	capabilitiesClient                        repb.CapabilitiesClient
+	bufPool                                   *bytebufferpool.VariableSizePool
+	remoteAvgChunkSizeRefreshInFlight         atomic.Bool
+	cachedRemoteAvgChunkSizeBytes             atomic.Int64
+	cachedRemoteAvgChunkSizeExpiresAtUnixNano atomic.Int64
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -114,6 +121,7 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		efp:                env.GetExperimentFlagProvider(),
 		localCache:         env.GetCache(),
 		remoteCAS:          env.GetContentAddressableStorageClient(),
+		capabilitiesClient: env.GetCapabilitiesClient(),
 		bufPool:            bytebufferpool.VariableSize(int(compression.ZstdCompressBound(chunking.MaxChunkSizeBytes()))),
 	}, nil
 }
@@ -1126,8 +1134,67 @@ func (s *replayableWriteStream) Recv() (*bspb.WriteRequest, error) {
 	return s.ByteStream_WriteServer.Recv()
 }
 
+func nonRetryableGetCapabilitiesError(err error) bool {
+	return status.IsInvalidArgumentError(err) ||
+		status.IsNotFoundError(err) ||
+		status.IsPermissionDeniedError(err) ||
+		status.IsUnauthenticatedError(err) ||
+		status.IsFailedPreconditionError(err) ||
+		status.IsUnimplementedError(err)
+}
+
+func (s *ByteStreamServerProxy) remoteAvgChunkSizeBytes(ctx context.Context, instanceName string) (int64, error) {
+	if s.capabilitiesClient == nil {
+		return 0, status.UnimplementedError("capabilities client not configured")
+	}
+	if time.Now().UnixNano() < s.cachedRemoteAvgChunkSizeExpiresAtUnixNano.Load() {
+		return s.cachedRemoteAvgChunkSizeBytes.Load(), nil
+	}
+	if s.remoteAvgChunkSizeRefreshInFlight.CompareAndSwap(false, true) {
+		go s.refreshRemoteAvgChunkSizeBytes(context.WithoutCancel(ctx), instanceName)
+	}
+	return s.cachedRemoteAvgChunkSizeBytes.Load(), nil
+}
+
+func (s *ByteStreamServerProxy) fetchRemoteAvgChunkSizeBytes(ctx context.Context, instanceName string) (int64, error) {
+	if s.capabilitiesClient == nil {
+		return 0, status.UnimplementedError("capabilities client not configured")
+	}
+	opts := retry.DefaultOptions()
+	opts.MaxRetries = 3
+	opts.Name = "GetCapabilities"
+	rsp, err := retry.Do(ctx, opts, func(ctx context.Context) (*repb.ServerCapabilities, error) {
+		rsp, err := s.capabilitiesClient.GetCapabilities(ctx, &repb.GetCapabilitiesRequest{
+			InstanceName: instanceName,
+		})
+		if err != nil && nonRetryableGetCapabilitiesError(err) {
+			return nil, retry.NonRetryableError(err)
+		}
+		return rsp, err
+	})
+	if err != nil {
+		return 0, err
+	}
+	return int64(rsp.GetCacheCapabilities().GetFastCdc_2020Params().GetAvgChunkSizeBytes()), nil
+}
+
+func (s *ByteStreamServerProxy) refreshRemoteAvgChunkSizeBytes(ctx context.Context, instanceName string) {
+	defer s.remoteAvgChunkSizeRefreshInFlight.Store(false)
+	ctx, cancel := context.WithTimeout(ctx, remoteAvgChunkSizeFetchTimeout)
+	defer cancel()
+
+	avgChunkSizeBytes, err := s.fetchRemoteAvgChunkSizeBytes(ctx, instanceName)
+	if err != nil {
+		alert.CtxUnexpectedEvent(ctx, "cache_proxy_capabilities_refresh_failed", "Failed to refresh FastCDC avg chunk size: %s", err)
+		s.cachedRemoteAvgChunkSizeExpiresAtUnixNano.Store(time.Now().Add(remoteAvgChunkSizeCacheTTL).UnixNano())
+		return
+	}
+	s.cachedRemoteAvgChunkSizeBytes.Store(avgChunkSizeBytes)
+	s.cachedRemoteAvgChunkSizeExpiresAtUnixNano.Store(time.Now().Add(remoteAvgChunkSizeCacheTTL).UnixNano())
+}
+
 func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
-	if *disableCDC || s.localCache == nil || s.remoteCAS == nil {
+	if *disableCDC || s.localCache == nil || s.remoteCAS == nil || s.capabilitiesClient == nil {
 		return false
 	}
 	if bazel_request.GetRequestMetadata(ctx).GetActionId() == "bes-upload" {
@@ -1136,8 +1203,7 @@ func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
 	if cdc.EnabledViaHeader(ctx) {
 		return true
 	}
-	return chunking.Enabled(ctx, s.efp) &&
-		(s.efp == nil || s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", true))
+	return s.efp == nil || s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", true)
 }
 
 type writeChunkedResult struct {
@@ -1165,8 +1231,20 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		return writeChunkedResult{}, status.InvalidArgumentErrorf("parse resource name: %s", err)
 	}
 
+	instanceName := rn.GetInstanceName()
+
+	avgChunkSize, err := s.remoteAvgChunkSizeBytes(ctx, instanceName)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to fetch avg chunk size from capabilities, passing write through: %v", err)
+		return writeChunkedResult{firstReq: firstReq}, status.UnimplementedErrorf("fetch avg chunk size from capabilities: %s", err)
+	}
+	if avgChunkSize <= 0 {
+		return writeChunkedResult{firstReq: firstReq}, status.UnimplementedError("server does not advertise FastCDC avg chunk size")
+	}
+
 	blobSize := rn.GetDigest().GetSizeBytes()
-	if !chunking.ShouldUploadChunked(ctx, s.efp, rn.GetDigest()) {
+	maxWriteSize := chunking.MaxWriteSizeBytes(ctx, s.efp)
+	if !chunking.ShouldUploadChunkedWithMax(rn.GetDigest(), avgChunkSize, maxWriteSize) {
 		return writeChunkedResult{firstReq: firstReq}, status.UnimplementedError("blob outside chunking size range")
 	}
 
@@ -1186,7 +1264,6 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	var chunkDigests []*repb.Digest
 
 	digestFunction := rn.GetDigestFunction()
-	instanceName := rn.GetInstanceName()
 	compressor := rn.GetCompressor()
 	uploader, err := newChunkUploader(ctx, s, instanceName, digestFunction)
 	if err != nil {
@@ -1238,7 +1315,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		return nil
 	}
 
-	chunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), chunkWriteFn)
+	chunker, err := chunking.NewChunker(ctx, int(avgChunkSize), chunkWriteFn)
 	if err != nil {
 		return writeChunkedResult{}, status.InternalErrorf("creating chunker: %s", err)
 	}
