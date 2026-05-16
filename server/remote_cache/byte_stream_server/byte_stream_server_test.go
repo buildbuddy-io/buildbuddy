@@ -156,6 +156,21 @@ func (c *casCompressionCache) Reader(ctx context.Context, r *rspb.ResourceName, 
 	return (&testcompression.CompressionCache{Cache: c.Cache}).Reader(ctx, r, offset, limit)
 }
 
+func (c *casCompressionCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
+	for _, r := range resources {
+		data, err := c.Get(ctx, r)
+		if status.IsNotFoundError(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		foundMap[r.GetDigest()] = data
+	}
+	return foundMap, nil
+}
+
 func (c *casCompressionCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	switch compressor {
 	case repb.Compressor_IDENTITY, repb.Compressor_ZSTD:

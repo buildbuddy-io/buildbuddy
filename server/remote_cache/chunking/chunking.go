@@ -464,12 +464,18 @@ func (cm *Manifest) verifyChunks(ctx context.Context, cache interfaces.Cache) er
 	// but low enough to avoid buffering too much data in memory. The
 	// distributed cache sends requests to shards in parallel.
 	const batchSize = 20
-	decompressedData := make([]byte, 0, MaxChunkSizeBytes())
+	readCompressed := cache.SupportsCompressor(repb.Compressor_ZSTD)
+	var decompressedData []byte
+	if readCompressed {
+		decompressedData = make([]byte, 0, MaxChunkSizeBytes())
+	}
 	resources := make([]*rspb.ResourceName, 0, batchSize)
 	for chunkDigestsPart := range slices.Chunk(cm.ChunkDigests, batchSize) {
 		for _, chunkDigest := range chunkDigestsPart {
 			chunkRN := digest.NewCASResourceName(chunkDigest, cm.InstanceName, cm.DigestFunction)
-			chunkRN.SetCompressor(repb.Compressor_ZSTD)
+			if readCompressed {
+				chunkRN.SetCompressor(repb.Compressor_ZSTD)
+			}
 			if err := chunkRN.Validate(); err != nil {
 				return status.InvalidArgumentErrorf("invalid chunk resource name %v for blob %s: %s", chunkRN, cm.BlobDigest.GetHash(), err)
 			}
@@ -484,15 +490,18 @@ func (cm *Manifest) verifyChunks(ctx context.Context, cache interfaces.Cache) er
 			if !ok {
 				return status.InvalidArgumentErrorf("invalid manifest: chunk %v not found in the CAS for blob %v", r.GetDigest().GetHash(), cm.BlobDigest.GetHash())
 			}
-			decompressedData, err = compression.DecompressZstd(decompressedData, chunkData)
-			if err != nil {
-				return status.WrapErrorf(err, "decompress chunk %s for blob %s", r.GetDigest().GetHash(), cm.BlobDigest.GetHash())
+			if readCompressed {
+				decompressedData, err = compression.DecompressZstd(decompressedData, chunkData)
+				if err != nil {
+					return status.WrapErrorf(err, "decompress chunk %s for blob %s", r.GetDigest().GetHash(), cm.BlobDigest.GetHash())
+				}
+				chunkData = decompressedData
 			}
-			_, err := hasher.Write(decompressedData)
+			_, err := hasher.Write(chunkData)
 			if err != nil {
 				return status.WrapErrorf(err, "hash chunk %s for blob %s", r.GetDigest().GetHash(), cm.BlobDigest.GetHash())
 			}
-			totalSize += int64(len(decompressedData))
+			totalSize += int64(len(chunkData))
 		}
 		resources = resources[:0]
 	}
