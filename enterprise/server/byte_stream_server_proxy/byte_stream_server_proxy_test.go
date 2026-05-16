@@ -3320,7 +3320,7 @@ func prepareChunkedReadBenchmarkData(b *testing.B, ctx context.Context, size int
 		})
 		return nil
 	}
-	cdcChunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes(ctx, nil)), writeChunkFn)
 	require.NoError(b, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(b, err)

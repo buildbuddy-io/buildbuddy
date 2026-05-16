@@ -1473,7 +1473,7 @@ func TestBatchCASUploader_ChunkedUpload(t *testing.T) {
 	blobSize := int64(5 * 1024 * 1024)
 	rn, buf := testdigest.RandomCASResourceBuf(t, blobSize)
 
-	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), chunking.FastCDCParams())
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), chunking.FastCDCParams(ctx, nil))
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
 	require.NoError(t, ul.Wait())
 
@@ -1509,7 +1509,7 @@ func TestBatchCASUploader_SkipsChunkedUploadAboveMaxSize(t *testing.T) {
 	blobSize := int64(5 * 1024 * 1024)
 	rn, buf := testdigest.RandomCASResourceBuf(t, blobSize)
 
-	chunkingParams := chunking.FastCDCParams()
+	chunkingParams := chunking.FastCDCParams(ctx, nil)
 	chunkingParams.BuildbuddyMaxChunkedWriteSizeBytes = 2 * 1024 * 1024
 	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), chunkingParams)
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
