@@ -151,6 +151,18 @@ func TestWriteChunkingEnabledSkipsBESUpload(t *testing.T) {
 	require.True(t, s.writeChunkingEnabled(ctx))
 }
 
+func TestWriteChunkingEnabledSkipsChunkedWrites(t *testing.T) {
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+		cdc.EnabledHeaderName, "true",
+		cdc.ChunkedHeaderName, "true",
+	))
+	s := &ByteStreamServerProxy{
+		localCache: testenv.GetTestEnv(t).GetCache(),
+		remoteCAS:  &noOpCASClient{},
+	}
+	require.False(t, s.writeChunkingEnabled(ctx))
+}
+
 type casRPCRecorder struct {
 	mu           sync.Mutex
 	fmbGroups    [][]string

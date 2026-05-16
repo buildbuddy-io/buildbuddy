@@ -27,6 +27,7 @@ var (
 		usageutil.OriginHeaderName,
 		bazel_request.RequestMetadataKey,
 		cdc.EnabledHeaderName,
+		cdc.ChunkedHeaderName,
 	}
 )
 

@@ -20,6 +20,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/bazel_request",
         "//server/util/bytebufferpool",
+        "//server/util/cdc",
         "//server/util/claims",
         "//server/util/compression",
         "//server/util/ioutil",
