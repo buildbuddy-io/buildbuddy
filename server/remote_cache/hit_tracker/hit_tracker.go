@@ -611,7 +611,7 @@ func (t *transferTimer) emitMetrics(bytesTransferredCache, bytesTransferredClien
 
 func (t *transferTimer) Record(bytesTransferred int64, duration time.Duration, compressor repb.Compressor_Value) error {
 	h := t.h
-	if err := h.recordCacheUsage(t.h.ctx, t.d, t.actionCounter); err != nil {
+	if err := h.recordCacheUsage(t.h.ctx, t.d, t.actionCounter, compressor); err != nil {
 		return err
 	}
 
@@ -690,7 +690,7 @@ func (h *hitTracker) TrackUpload(d *repb.Digest) interfaces.TransferTimer {
 	}
 }
 
-func (h *hitTracker) recordCacheUsage(ctx context.Context, d *repb.Digest, actionCounter counterType) error {
+func (h *hitTracker) recordCacheUsage(ctx context.Context, d *repb.Digest, actionCounter counterType, compressor repb.Compressor_Value) error {
 	if h.usage == nil {
 		return nil
 	}
@@ -717,9 +717,16 @@ func (h *hitTracker) recordCacheUsage(ctx context.Context, d *repb.Digest, actio
 	if err != nil {
 		return status.WrapError(err, "get usage labels")
 	}
+	if actionCounter == Hit && !h.actionCache && compressor == repb.Compressor_IDENTITY && d.GetSizeBytes() > 1000 {
+		occasionalUncompressedDownloadLogger.CtxInfof(ctx,
+			"Uncompressed CAS download of %d bytes for invocation: %s; target: %s; labels: %v; server: %s; group: %s. This may indicate that the client isn't requesting compressed downloads",
+			d.GetSizeBytes(), h.iid, h.targetField(), labels, h.serverName, h.groupID)
+	}
 
 	return h.usage.Increment(h.ctx, labels, c)
 }
+
+var occasionalUncompressedDownloadLogger = log.NamedSubLogger("uncompressed_download").EveryDuration(time.Minute)
 
 func computeThroughputBytesPerSecond(sizeBytes, durationUsec int64) int64 {
 	if durationUsec == 0 {
