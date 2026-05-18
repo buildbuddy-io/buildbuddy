@@ -170,6 +170,10 @@ func (c *Counter) Count() int64 {
 // ReadAllLimited reads from r until EOF or until the read exceeds limit.
 // It returns ErrLimitExceeded if more than limit bytes would be read.
 func ReadAllLimited(r io.Reader, limit int64) ([]byte, error) {
+	const maxInt64 = int64(^uint64(0) >> 1)
+	if limit == maxInt64 {
+		return io.ReadAll(r)
+	}
 	b, err := io.ReadAll(io.LimitReader(r, limit+1))
 	if err != nil {
 		return nil, err
