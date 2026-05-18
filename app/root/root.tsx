@@ -1,4 +1,5 @@
 import React from "react";
+import AgentDialog from "../agent/agent_dialog";
 import AlertComponent from "../alert/alert";
 import authService, { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
@@ -11,6 +12,7 @@ import InvocationComponent from "../invocation/invocation";
 import MenuComponent from "../menu/menu";
 import UserPreferences from "../preferences/preferences";
 import router, { Path } from "../router/router";
+import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 
 declare var window: any;
 
@@ -32,6 +34,9 @@ export default class RootComponent extends React.Component {
     preferences: new UserPreferences(this.handlePreferencesChanged.bind(this)),
   };
 
+  private agentDialogRef = React.createRef<AgentDialog>();
+  private agentShortcutHandle = "";
+
   componentWillMount() {
     authService.register();
     router.register(this.handlePathChange.bind(this));
@@ -44,9 +49,13 @@ export default class RootComponent extends React.Component {
 
   componentDidMount() {
     errorService.register();
+    this.agentShortcutHandle = shortcuts.registerSequence([KeyCombo.b, KeyCombo.b], () => {
+      this.agentDialogRef.current?.open();
+    });
   }
 
   componentWillUnmount() {
+    shortcuts.deregister(this.agentShortcutHandle);
     this.state.preferences.cleanup();
   }
 
@@ -103,6 +112,7 @@ export default class RootComponent extends React.Component {
           </div>
           <FooterComponent />
           <AlertComponent />
+          <AgentDialog ref={this.agentDialogRef} />
         </div>
       </div>
     );
