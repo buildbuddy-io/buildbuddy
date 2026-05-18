@@ -592,16 +592,20 @@ func TestScanWithConcurrentAdd(t *testing.T) {
 		var nodeContents [n]string
 		for i := 0; i < n; i++ {
 			name := fmt.Sprint(i)
-			nodes[i] = nodeFromString(name, false)
-			writeFileContent(t, filecacheRoot, "ANON/"+nodes[i].GetDigest().GetHash(), name, false)
+			executable := i%2 == 0
+			nodes[i] = nodeFromString(name, executable)
+			cachePath := "ANON/" + nodes[i].GetDigest().GetHash()
+			if executable {
+				cachePath += ".executable"
+			}
+			writeFileContent(t, filecacheRoot, cachePath, name, executable)
 			nodeContents[i] = name
 		}
 
 		i := rand.Intn(n)
 		nodeToAddConcurrently := nodes[i]
 		nodeToAddConcurrentlyPath := filepath.Join(testfs.MakeTempDir(t), "action.output")
-		err := os.WriteFile(nodeToAddConcurrentlyPath, []byte(nodeContents[i]), 0644)
-		require.NoError(t, err)
+		writeFileContent(t, filepath.Dir(nodeToAddConcurrentlyPath), filepath.Base(nodeToAddConcurrentlyPath), nodeContents[i], nodeToAddConcurrently.GetIsExecutable())
 
 		fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
 		require.NoError(t, err)
@@ -651,6 +655,48 @@ func TestFileAccessBeforeInitialScanCompleteFallsBackToFilesystem(t *testing.T) 
 	data, err := io.ReadAll(f)
 	require.NoError(t, err)
 	require.Equal(t, "content", string(data))
+}
+
+func TestFileAccessBeforeInitialScanCompleteRejectsInvalidDigestPath(t *testing.T) {
+	ctx := context.Background()
+	filecache.DisableInitialDirectoryScanForTest()
+	t.Cleanup(filecache.EnableInitialDirectoryScanForTest)
+
+	baseDir := testfs.MakeTempDir(t)
+	filecacheRoot := filepath.Join(baseDir, "filecache")
+	outDir := filepath.Join(baseDir, "out")
+	outsideFilePath := filepath.Join(baseDir, "outside-file.txt")
+	outsideFileContents := "outside file should not become an input"
+
+	err := os.MkdirAll(filepath.Join(filecacheRoot, "ANON"), 0755)
+	require.NoError(t, err)
+	err = os.MkdirAll(outDir, 0755)
+	require.NoError(t, err)
+	err = os.WriteFile(outsideFilePath, []byte(outsideFileContents), 0644)
+	require.NoError(t, err)
+
+	node := &repb.FileNode{
+		Digest: &repb.Digest{
+			Hash:      "../../" + filepath.Base(outsideFilePath),
+			SizeBytes: int64(len(outsideFileContents)),
+		},
+	}
+	fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+
+	require.False(t, fc.ContainsFile(ctx, node), "invalid digest should not hit startup disk fallback")
+
+	outPath := filepath.Join(outDir, "linked")
+	ok := fc.FastLinkFile(ctx, node, outPath)
+	require.False(t, ok, "invalid digest should not be linked before initial scan completes")
+	assert.NoFileExists(t, outPath)
+
+	f, err := fc.Open(ctx, node)
+	if f != nil {
+		defer f.Close()
+	}
+	require.Error(t, err, "invalid digest should not be opened before initial scan completes")
 }
 
 func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
@@ -1019,6 +1065,37 @@ func TestFileCacheWriter(t *testing.T) {
 	require.NoError(t, err)
 	requireOwnerReadableWritable(t, fi)
 	requireOwnerExecutable(t, fi)
+}
+
+func TestFileCacheTempPathRejectsDigestWithTwoDots(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	node := &repb.FileNode{Digest: &repb.Digest{Hash: "../foo", SizeBytes: 7}}
+
+	// Read stages its linked cache entry through a temp file, so a digest with a
+	// dot should be rejected before checking the cache.
+	_, err = fc.Read(ctx, node)
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got: %v", err)
+
+	// Write stages bytes through a temp file, so the bytes should not be
+	// accepted when the digest name is not safe for temp file creation.
+	n, err := fc.Write(ctx, node, []byte("content"))
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got: %v", err)
+	require.Zero(t, n)
+
+	// Writer also creates a temp file before commit, so it should reject the
+	// digest before returning a writable handle.
+	w, err := fc.Writer(ctx, node, repb.DigestFunction_BLAKE3)
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got: %v", err)
+	require.Nil(t, w)
 }
 
 func requireOwnerReadableWritable(t *testing.T, fi os.FileInfo) {
