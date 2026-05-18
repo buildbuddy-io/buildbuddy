@@ -5,11 +5,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -324,4 +327,103 @@ func (c *countingActionCacheClient) GetActionResult(ctx context.Context, in *rep
 // UpdateActionResult implements remote_execution.ActionCacheClient.
 func (c *countingActionCacheClient) UpdateActionResult(ctx context.Context, in *repb.UpdateActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
 	return c.realAC.UpdateActionResult(ctx, in, opts...)
+}
+
+// TestRestrictedPrefixBypassViaProxy checks whether an external cache client
+// can access restricted AC instance name prefixes (e.g. _bb_ociregistry_) by
+// sending requests through the cache proxy.
+//
+// The confused-deputy scenario being tested:
+//  1. Authoritative AC server trusts ClientIdentityCacheProxy for restricted prefixes.
+//  2. The proxy forwards caller-controlled instance names without its own
+//     restricted-prefix check.
+//  3. The proxy's outbound gRPC connection signs forwarded requests as
+//     cache-proxy (simulating DialInternal).
+//
+// If the bypass is present the authoritative server accepts the forwarded
+// request and returns NotFound (not UnauthenticatedError), confirming that a
+// normal cache client can reach restricted OCI AC entries via the proxy.
+// If the bypass is fixed the proxy (or auth server) returns UnauthenticatedError
+// before the entry is looked up.
+func TestRestrictedPrefixBypassViaProxy(t *testing.T) {
+	ctx := context.Background()
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user", "GR123"))
+	userCtx, err := ta.WithAuthenticatedUser(ctx, "user")
+	require.NoError(t, err)
+
+	// Shared signing key — both the auth server and the proxy use the same key
+	// so the auth server can verify JWTs signed by the proxy.
+	key, err := random.RandomString(16)
+	require.NoError(t, err)
+	flags.Set(t, "app.client_identity.key", string(key))
+	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityCacheProxy)
+
+	// Authoritative AC server with identity validation enabled.
+	authEnv := testenv.GetTestEnv(t)
+	authEnv.SetAuthenticator(ta)
+	require.NoError(t, clientidentity.Register(authEnv))
+
+	authACServer, err := action_cache_server.NewActionCacheServer(authEnv)
+	require.NoError(t, err)
+	authGRPCServer, authRunFunc, authLis := testenv.RegisterLocalGRPCServer(t, authEnv)
+	repb.RegisterActionCacheServer(authGRPCServer, authACServer)
+	go authRunFunc()
+
+	// Proxy environment — its outbound connection to the auth server uses
+	// client-identity interceptors, mirroring DialInternal, so forwarded
+	// requests arrive at the auth server signed as cache-proxy.
+	proxyEnv := testenv.GetTestEnv(t)
+	proxyEnv.SetAuthenticator(ta)
+	require.NoError(t, clientidentity.Register(proxyEnv))
+
+	authConn, err := testenv.LocalGRPCConn(ctx, authLis,
+		interceptors.GetUnaryClientIdentityInterceptor(proxyEnv),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { authConn.Close() })
+
+	proxyEnv.SetActionCacheClient(repb.NewActionCacheClient(authConn))
+	proxyEnv.SetLocalActionCacheServer(runLocalActionCacheServerForProxy(ctx, proxyEnv, t))
+
+	proxyACServer, err := NewActionCacheServerProxy(proxyEnv)
+	require.NoError(t, err)
+	proxyGRPCServer, proxyRunFunc, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
+	repb.RegisterActionCacheServer(proxyGRPCServer, proxyACServer)
+	go proxyRunFunc()
+
+	// External client: connects to the proxy without any client-identity
+	// interceptor, simulating a normal authenticated Bazel remote-cache client.
+	extConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+	require.NoError(t, err)
+	t.Cleanup(func() { extConn.Close() })
+	extACClient := repb.NewActionCacheClient(extConn)
+
+	d := &repb.Digest{
+		Hash:      strings.Repeat("a", 64),
+		SizeBytes: 1024,
+	}
+
+	// GetActionResult with a restricted OCI instance name.
+	// Expected if bypass is FIXED:   UnauthenticatedError
+	// Expected if bypass is PRESENT: NotFoundError (the request reached the
+	//   auth server, which accepted the cache-proxy identity and looked up
+	//   the (absent) entry)
+	_, getErr := extACClient.GetActionResult(userCtx, &repb.GetActionResultRequest{
+		InstanceName:   interfaces.OCIImageInstanceNamePrefix,
+		ActionDigest:   d,
+		DigestFunction: repb.DigestFunction_SHA256,
+	})
+	require.True(t, status.IsUnauthenticatedError(getErr),
+		"GetActionResult with restricted prefix via proxy: expected UnauthenticatedError (bypass fixed), got: %v", getErr)
+
+	// UpdateActionResult with a restricted OCI instance name.
+	// Same logic: UnauthenticatedError means fixed; any other outcome means bypass.
+	_, updateErr := extACClient.UpdateActionResult(userCtx, &repb.UpdateActionResultRequest{
+		InstanceName:   interfaces.OCIImageInstanceNamePrefix,
+		ActionDigest:   d,
+		DigestFunction: repb.DigestFunction_SHA256,
+		ActionResult:   &repb.ActionResult{ExitCode: 0},
+	})
+	require.True(t, status.IsUnauthenticatedError(updateErr),
+		"UpdateActionResult with restricted prefix via proxy: expected UnauthenticatedError (bypass fixed), got: %v", updateErr)
 }
