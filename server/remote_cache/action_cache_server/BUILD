@@ -16,6 +16,7 @@ go_library(
         "//server/real_environment",
         "//server/remote_cache/chunking",
         "//server/remote_cache/digest",
+        "//server/util/authutil",
         "//server/util/bazel_request",
         "//server/util/capabilities",
         "//server/util/flag",

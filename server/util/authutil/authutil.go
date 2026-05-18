@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -170,6 +171,31 @@ func AuthContextWithError(ctx context.Context, err error) context.Context {
 func AuthErrorFromContext(ctx context.Context) (error, bool) {
 	err, ok := ctx.Value(contextUserErrorKey).(error)
 	return err, ok
+}
+
+// ValidateRestrictedACAccess returns an error if instanceName has a restricted
+// prefix and the caller identity stored in ctx is not a trusted internal service.
+// This MUST be checked in action cache server implementations.
+func ValidateRestrictedACAccess(ctx context.Context, env environment.Env, instanceName string) error {
+	if !strings.HasPrefix(instanceName, interfaces.OCIImageInstanceNamePrefix) {
+		return nil
+	}
+	cis := env.GetClientIdentityService()
+	if cis == nil {
+		return status.UnauthenticatedError("No client ID service available to check restricted instance name prefix")
+	}
+	identity, err := cis.IdentityFromContext(ctx)
+	if err != nil {
+		return status.UnauthenticatedErrorf("Could not check identity for restricted instance name prefix: %s", err)
+	}
+	if slices.Contains([]string{
+		interfaces.ClientIdentityApp,
+		interfaces.ClientIdentityExecutor,
+		interfaces.ClientIdentityCacheProxy,
+	}, identity.Client) {
+		return nil
+	}
+	return status.UnauthenticatedError("Cannot access restricted ActionResult from untrusted client")
 }
 
 func EncryptionEnabled(ctx context.Context, authenticator interfaces.Authenticator) bool {
