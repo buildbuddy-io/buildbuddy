@@ -1,0 +1,70 @@
+<!-- BuildBuddy dev VM. Rendered by ../vmctl (placeholders substituted at
+     `vmctl setup`). host-passthrough CPU exposes VMX so nested KVM/Firecracker
+     works inside (the host has nested virt enabled). virtiofs shares the repo
+     read-write at the same path used by the container setup. -->
+<domain type='kvm'>
+  <name>__VM_NAME__</name>
+  <memory unit='GiB'>__MEM_GIB__</memory>
+  <currentMemory unit='GiB'>__MEM_GIB__</currentMemory>
+  <vcpu placement='static'>__VCPUS__</vcpu>
+  <os>
+    <type arch='x86_64' machine='q35'>hvm</type>
+    <boot dev='hd'/>
+  </os>
+  <features>
+    <acpi/>
+    <apic/>
+  </features>
+  <!-- host-passthrough => nested virtualization available in the guest -->
+  <cpu mode='host-passthrough' check='none' migratable='off'/>
+  <clock offset='utc'/>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>destroy</on_crash>
+  <!-- shared memory backing is required for virtiofs -->
+  <memoryBacking>
+    <source type='memfd'/>
+    <access mode='shared'/>
+  </memoryBacking>
+  <devices>
+    <emulator>/usr/bin/qemu-system-x86_64</emulator>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2' cache='none' discard='unmap'/>
+      <source file='__DISK__'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>
+    <!-- NoCloud cloud-init seed -->
+    <disk type='file' device='cdrom'>
+      <driver name='qemu' type='raw'/>
+      <source file='__SEED__'/>
+      <target dev='sda' bus='sata'/>
+      <readonly/>
+    </disk>
+    <!-- repo bind-equivalent: virtiofs share of the host repo -->
+    <filesystem type='mount' accessmode='passthrough'>
+      <driver type='virtiofs'/>
+      <source dir='__REPO__'/>
+      <target dir='repo'/>
+    </filesystem>
+    <!-- FIXED MAC (locally-administered, QEMU OUI). Stable across
+         setup/define so a REUSED disk's cloud-init netplan (which pins the
+         interface by MAC) still matches the NIC and DHCPs. Without this, a
+         re-defined domain gets a random MAC and the reused disk loses
+         networking entirely. -->
+    <interface type='network'>
+      <source network='bbvm-net'/>
+      <mac address='52:54:00:bb:bb:01'/>
+      <model type='virtio'/>
+    </interface>
+    <serial type='pty'><target port='0'/></serial>
+    <console type='pty'><target type='serial' port='0'/></console>
+    <!-- guest agent: lets vmctl read the VM IP reliably -->
+    <channel type='unix'>
+      <target type='virtio' name='org.qemu.guest_agent.0'/>
+    </channel>
+    <rng model='virtio'>
+      <backend model='random'>/dev/urandom</backend>
+    </rng>
+    <memballoon model='virtio'/>
+  </devices>
+</domain>

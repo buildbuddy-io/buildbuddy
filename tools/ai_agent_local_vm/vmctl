@@ -1,0 +1,234 @@
+#!/bin/bash
+# vmctl - lifecycle wrapper for the BuildBuddy dev VM.
+#
+#   A libvirt/QEMU KVM VM used as an SSH dev host. Fully privileged INSIDE
+#   (sudo, OCI runtime, nested KVM) -- safe, because the hypervisor is the
+#   boundary and egress is filtered on the HOST at the VM's edge by a
+#   SNI-allowlist proxy the guest cannot touch (tools/ai_agent_local_vm/egress/).
+#
+# Usage: tools/ai_agent_local_vm/vmctl <command>
+#   setup     define net+domain, apply egress. Reuses an existing disk+seed
+#             (no re-provision) -- e.g. to change VCPUS/MEM_GIB. --fresh forces
+#             a clean disk+seed (re-provision).
+#   up        start the VM (+ ensure network/egress); wait for SSH
+#   down      graceful shutdown (keeps disk/state)
+#   destroy   tear down the domain + egress. Keeps disk+seed and the network
+#             by default. --purge-disk also deletes the disk+seed;
+#             --net also removes the libvirt network.
+#   ssh       ssh into the VM as 'aiagent'
+#   status    domain state, IP, egress status
+#   egress    apply|status   (re)apply or inspect the host egress filter
+#   help
+set -euo pipefail
+IFS=$'\n\t'
+
+# ---- config (override via env) -------------------------------------------
+VM_NAME="${VM_NAME:-buildbuddy-dev}"
+# Default to HALF the host's logical CPUs / RAM (min 1). Override via env.
+VCPUS="${VCPUS:-$(( ( $(nproc) + 1 ) / 2 ))}"
+MEM_GIB="${MEM_GIB:-$(awk '/^MemTotal:/{v=int($2/1048576/2); print (v<1?1:v)}' /proc/meminfo)}"
+DISK_GIB="${DISK_GIB:-80}"
+IMG_DIR="${IMG_DIR:-/var/lib/libvirt/images/bbvm}"
+NET_NAME="bbvm-net"
+VM_BR="bbvmbr0"
+WORKSPACE="/workspaces/buildbuddy"
+UBUNTU_IMG_URL="https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+vsh() { virsh -c qemu:///system "$@"; }   # function: robust under IFS=$'\n\t'
+
+HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+# Repo root (shared into the VM via virtiofs). Derived from git so it works
+# regardless of how deep this tool lives (tools/ai_agent_local_vm/); falls
+# back to two levels up.
+REPO="$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null || (cd "$HERE/../.." && pwd))"
+BUILD="$HERE/.build"      # rendered seed/meta (gitignored, local only)
+
+die()  { echo "vmctl: $*" >&2; exit 1; }
+info() { echo "[vmctl] $*"; }
+need() { command -v "$1" >/dev/null 2>&1 || die "missing required tool: $1"; }
+
+ssh_pubkey() {
+  local k
+  for k in "$HOME"/.ssh/id_ed25519.pub "$HOME"/.ssh/id_rsa.pub; do
+    [ -f "$k" ] && { cat "$k"; return; }
+  done
+  die "no SSH public key (~/.ssh/id_ed25519.pub|id_rsa.pub) — run: ssh-keygen -t ed25519"
+}
+
+vm_ip() {
+  # Always exits 0 (prints empty if no IP). The trailing `|| true` is load-
+  # bearing: with `set -o pipefail`, a failing `virsh` (e.g. domain not
+  # defined) makes the pipeline non-zero, which under `set -e` would abort
+  # the *caller* at `ip="$(vm_ip)"` -- silently. That was the bug behind
+  # "says it's up but ssh does nothing".
+  # Extract the first NON-loopback IPv4. The qemu guest agent lists the
+  # guest's `lo` first, so a naive `head -1` yields 127.0.0.1 -> ssh would
+  # hit the HOST's sshd, not the VM. grep the bare IPv4 (drops /CIDR) and
+  # drop 127.x / 0.0.0.0. Try the agent first, then the DHCP lease.
+  local src out ip=""
+  for src in agent lease; do
+    out="$(vsh domifaddr "$VM_NAME" --source "$src" 2>/dev/null || true)"
+    ip="$(printf '%s\n' "$out" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' \
+          | grep -vE '^(127\.|0\.0\.0\.0$)' | head -1 || true)"
+    [ -n "$ip" ] && break
+  done
+  printf '%s' "$ip"
+}
+
+cmd_setup() {
+  need virsh; need qemu-img; need sudo
+  [ -e /dev/kvm ] || die "/dev/kvm absent — KVM not available on this host"
+  command -v cloud-localds >/dev/null 2>&1 || command -v xorriso >/dev/null 2>&1 \
+    || die "need 'cloud-localds' (cloud-image-utils) or 'xorriso' to build the seed"
+  command -v virtiofsd >/dev/null 2>&1 || command -v /usr/lib/qemu/virtiofsd >/dev/null 2>&1 \
+    || die "virtiofsd not found (needed for the repo share). Install: sudo apt install virtiofsd"
+
+  sudo mkdir -p "$IMG_DIR"; mkdir -p "$BUILD"
+  local base="$IMG_DIR/noble-base.img"
+  if [ ! -f "$base" ]; then
+    info "downloading Ubuntu 24.04 cloud image (host network, unfiltered)..."
+    sudo curl -fSL "$UBUNTU_IMG_URL" -o "$base"
+    info "verifying checksum..."
+    local sums; sums="$(curl -fsSL "${UBUNTU_IMG_URL%/*}/SHA256SUMS")"
+    echo "$sums" | grep "$(basename "$UBUNTU_IMG_URL")" \
+      | awk '{print $1}' | { read -r want; \
+        got="$(sudo sha256sum "$base" | awk '{print $1}')"; \
+        [ "$want" = "$got" ] || die "checksum mismatch for base image"; }
+    info "checksum OK"
+  fi
+
+  local disk="$IMG_DIR/${VM_NAME}.qcow2" seed="$IMG_DIR/${VM_NAME}-seed.iso"
+  local fresh=0
+  [ "${1:-}" = "--fresh" ] && fresh=1
+
+  # Reuse an existing disk+seed so you can change VCPUS/MEM_GIB (the domain
+  # XML is always re-rendered+redefined below) WITHOUT wiping the provisioned
+  # disk. Keeping the existing seed preserves its cloud-init instance-id, so
+  # cloud-init does NOT re-run. `--fresh` (or `destroy --purge-disk`) forces a
+  # clean disk + re-provision.
+  if [ "$fresh" -eq 0 ] && sudo test -f "$disk" && sudo test -f "$seed"; then
+    info "reusing existing disk+seed (no re-provision); applying ${VCPUS} vCPU / ${MEM_GIB} GiB"
+  else
+    sudo qemu-img create -f qcow2 -F qcow2 -b "$base" "$disk" "${DISK_GIB}G" >/dev/null
+    info "fresh overlay disk: $disk (${DISK_GIB}G) -- will re-provision on boot"
+    sed -e "s|__HOSTNAME__|$VM_NAME|" \
+        -e "s|__WORKSPACE__|$WORKSPACE|" \
+        -e "s|__SSH_PUBKEY__|$(ssh_pubkey)|" \
+        "$HERE/cloud-init/user-data.tmpl" > "$BUILD/user-data"
+    sed -e "s|__INSTANCE_ID__|${VM_NAME}-$(date +%s)|" \
+        -e "s|__HOSTNAME__|$VM_NAME|" \
+        "$HERE/cloud-init/meta-data.tmpl" > "$BUILD/meta-data"
+    if command -v cloud-localds >/dev/null 2>&1; then
+      cloud-localds "$BUILD/seed.iso" "$BUILD/user-data" "$BUILD/meta-data"
+    else
+      xorriso -as mkisofs -V cidata -J -r -o "$BUILD/seed.iso" \
+        "$BUILD/user-data" "$BUILD/meta-data" >/dev/null 2>&1
+    fi
+    sudo cp "$BUILD/seed.iso" "$seed"
+  fi
+
+  # network: ALWAYS (re)define so edits to network.xml take effect (an active
+  # net must be destroyed before it can be redefined).
+  vsh net-destroy "$NET_NAME" 2>/dev/null || true
+  vsh net-undefine "$NET_NAME" 2>/dev/null || true
+  vsh net-define "$HERE/libvirt/network.xml"
+  vsh net-start "$NET_NAME"
+  vsh net-autostart "$NET_NAME" >/dev/null 2>&1 || true
+
+  cmd_egress apply   # bring the host filter up before the VM can talk
+
+  # domain
+  sed -e "s|__VM_NAME__|$VM_NAME|" -e "s|__MEM_GIB__|$MEM_GIB|" \
+      -e "s|__VCPUS__|$VCPUS|" -e "s|__DISK__|$disk|" \
+      -e "s|__SEED__|$seed|" -e "s|__REPO__|$REPO|" \
+      "$HERE/libvirt/domain.xml.tmpl" > "$BUILD/domain.xml"
+  vsh destroy "$VM_NAME" 2>/dev/null || true
+  vsh undefine "$VM_NAME" 2>/dev/null || true
+  vsh define "$BUILD/domain.xml"
+  # autostart so a host reboot brings the VM back (bbvm-net already autostarts)
+  vsh autostart "$VM_NAME" >/dev/null 2>&1 || true
+  info "defined domain '$VM_NAME' (autostart on). Run: tools/ai_agent_local_vm/vmctl up"
+}
+
+cmd_up() {
+  vsh net-start "$NET_NAME" 2>/dev/null || true
+  cmd_egress apply
+  local state
+  state="$(vsh domstate "$VM_NAME" 2>/dev/null || true)"
+  case "$state" in
+    "")        die "domain '$VM_NAME' is not defined — run: tools/ai_agent_local_vm/vmctl setup" ;;
+    running)   info "domain already running" ;;
+    *)         vsh start "$VM_NAME" ;;
+  esac
+  info "waiting for guest agent / SSH..."
+  local ip="" i
+  for i in $(seq 1 60); do ip="$(vm_ip)"; [ -n "$ip" ] && break; sleep 5; done
+  [ -n "$ip" ] || die "VM did not report an IP (debug: virsh -c qemu:///system console $VM_NAME)"
+  info "VM up at $ip — first boot runs cloud-init (provisioning may take a few min)"
+  info "connect: tools/ai_agent_local_vm/vmctl ssh"
+}
+
+cmd_down()    { vsh shutdown "$VM_NAME" 2>/dev/null && info "shutting down" || info "not running"; }
+
+cmd_destroy() {
+  local purge_disk=0 rm_net=0 a
+  for a in "$@"; do
+    case "$a" in
+      --purge-disk|--disk) purge_disk=1 ;;
+      --net)               rm_net=1 ;;
+      *) die "destroy: unknown flag '$a' (use --purge-disk and/or --net)" ;;
+    esac
+  done
+  vsh destroy "$VM_NAME" 2>/dev/null || true
+  vsh undefine "$VM_NAME" --nvram 2>/dev/null || vsh undefine "$VM_NAME" 2>/dev/null || true
+  sudo "$HERE/egress/host-egress.sh" --teardown 2>/dev/null || \
+    { sudo iptables -t nat -D PREROUTING -i "$VM_BR" -s 192.168.71.0/24 -j BBVM_PRE 2>/dev/null || true; }
+  if [ "$purge_disk" -eq 1 ]; then
+    sudo rm -f "$IMG_DIR/${VM_NAME}.qcow2" "$IMG_DIR/${VM_NAME}-seed.iso"
+    rm -rf "$BUILD"
+    info "removed disk + seed (next setup re-provisions from scratch)"
+  else
+    info "kept disk + seed -- next 'setup' reuses them (no re-provision)."
+    info "  e.g.: MEM_GIB=64 VCPUS=24 tools/ai_agent_local_vm/vmctl setup && tools/ai_agent_local_vm/vmctl up"
+  fi
+  if [ "$rm_net" -eq 1 ]; then
+    vsh net-destroy "$NET_NAME" 2>/dev/null || true
+    vsh net-undefine "$NET_NAME" 2>/dev/null || true
+    info "removed libvirt network"
+  fi
+  info "destroyed VM domain + egress (disk kept unless --purge-disk; net kept unless --net)"
+}
+
+cmd_ssh() {
+  local ip; ip="$(vm_ip)"
+  [ -n "$ip" ] || die "no VM IP — domain not up/defined. Try: tools/ai_agent_local_vm/vmctl status ; tools/ai_agent_local_vm/vmctl setup ; tools/ai_agent_local_vm/vmctl up"
+  exec ssh -o StrictHostKeyChecking=accept-new "aiagent@$ip" "$@"
+}
+
+cmd_status() {
+  echo "domain : $(vsh domstate "$VM_NAME" 2>/dev/null || echo undefined)"
+  echo "ip     : $(vm_ip || echo -)"
+  echo "network: $(vsh net-info "$NET_NAME" 2>/dev/null | awk '/Active/{print $2}' || echo -)"
+  echo -n "egress : "; pgrep -x nginx >/dev/null && echo "nginx up" || echo "nginx DOWN"
+  echo "allowlist source: $HERE/egress/nginx-sni-proxy.conf"
+}
+
+cmd_egress() {
+  case "${1:-status}" in
+    apply)  sudo VM_BR="$VM_BR" "$HERE/egress/host-egress.sh" ;;
+    status) sudo iptables -t nat -nL BBVM_PRE 2>/dev/null || echo "(egress not applied)";
+            sudo tail -n 5 /var/log/bbvm-sni/sni.log 2>/dev/null || true ;;
+    *) die "egress: apply|status" ;;
+  esac
+}
+
+case "${1:-help}" in
+  setup)   shift; cmd_setup "$@" ;;
+  up|start) shift; cmd_up "$@" ;;
+  down|stop) shift; cmd_down "$@" ;;
+  destroy) shift; cmd_destroy "$@" ;;
+  ssh)     shift; cmd_ssh "$@" ;;
+  status)  shift; cmd_status "$@" ;;
+  egress)  shift; cmd_egress "$@" ;;
+  help|-h|--help) awk 'NR==1{next} /^[^#]/{exit} {sub(/^# ?/,"");print}' "$0" ;;
+  *) die "unknown command '${1}'. Try: tools/ai_agent_local_vm/vmctl help" ;;
+esac

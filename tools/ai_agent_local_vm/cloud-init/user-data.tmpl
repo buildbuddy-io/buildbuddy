@@ -1,0 +1,97 @@
+#cloud-config
+# Provisioning for the BuildBuddy dev VM. Rendered by ../vmctl (placeholders
+# __SSH_PUBKEY__ / __WORKSPACE__ are substituted at `vmctl setup`).
+#
+# IMPORTANT: first boot runs behind the host egress filter, which only allows
+# TLS :443 to the SNI allowlist. So:
+#   * apt is forced to HTTPS (archive/security.ubuntu.com serve https) so it
+#     traverses the SNI proxy instead of plain :80 (which is dropped).
+#   * Every host this script fetches from MUST be in tools/ai_agent_local_vm/egress/
+#     nginx-sni-proxy.conf (Ubuntu mirrors + nodesource + npm + bazel + ...).
+
+hostname: __HOSTNAME__
+preserve_hostname: false
+
+users:
+  - name: aiagent
+    gecos: BuildBuddy dev VM user
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"          # privileges are SAFE: the VM is the boundary
+    lock_passwd: true
+    ssh_authorized_keys:
+      - __SSH_PUBKEY__
+
+# Force apt over HTTPS so package install goes through the :443 SNI proxy.
+apt:
+  primary:
+    - arches: [default]
+      uri: https://archive.ubuntu.com/ubuntu
+  security:
+    - arches: [default]
+      uri: https://security.ubuntu.com/ubuntu
+
+# The host egress filter is IPv4-only. Disable IPv6 in the guest BEFORE
+# package install so apt/curl never try (and fail on) AAAA/IPv6 routes.
+# bootcmd runs early every boot (applies on this first boot too).
+bootcmd:
+  - [ sysctl, -w, net.ipv6.conf.all.disable_ipv6=1 ]
+  - [ sysctl, -w, net.ipv6.conf.default.disable_ipv6=1 ]
+
+package_update: true
+packages:
+  - build-essential
+  - gcc
+  - g++
+  - ca-certificates
+  - curl
+  - git
+  - gnupg
+  - unzip
+  - zip
+  - xz-utils
+  - python3
+  - python3-venv
+  - python-is-python3
+  - jq
+  - less
+  - procps
+  - qemu-guest-agent
+  # OCI runtime / nested containers for the executor:
+  - podman
+  - crun
+  - runc
+  - uidmap
+  - dbus-user-session
+
+write_files:
+  - path: /etc/sysctl.d/99-no-ipv6.conf
+    permissions: "0644"
+    content: |
+      # Egress filter is IPv4-only; keep IPv6 off persistently.
+      net.ipv6.conf.all.disable_ipv6 = 1
+      net.ipv6.conf.default.disable_ipv6 = 1
+  - path: /etc/profile.d/99-buildbuddy-vm.sh
+    permissions: "0644"
+    content: |
+      # Bazel cache + Claude config live on the (persistent) VM disk.
+      export CLAUDE_CONFIG_DIR=/home/aiagent/.claude
+  - path: /etc/fstab
+    append: true
+    content: |
+      repo  __WORKSPACE__  virtiofs  defaults,nofail  0  0
+
+runcmd:
+  # Mount the virtiofs-shared repo from the host.
+  - mkdir -p __WORKSPACE__
+  - mount -a || true
+  # Node 22 (for the Claude Code CLI + bazelisk); NodeSource is HTTPS.
+  - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  - apt-get install -y --no-install-recommends nodejs
+  - npm install -g @bazel/bazelisk @anthropic-ai/claude-code
+  - ln -sf "$(command -v bazelisk)" /usr/local/bin/bazel
+  # Pre-fetch the pinned Bazel so the first build doesn't pay for it.
+  - su - aiagent -c 'mkdir -p ~/.cache ~/.claude'
+  - su - aiagent -c 'cd __WORKSPACE__ 2>/dev/null && USE_BAZEL_VERSION=9.1.0 bazelisk version || true'
+  - touch /var/lib/cloud/instance/buildbuddy-provisioned
+
+final_message: "BuildBuddy dev VM provisioned in $UPTIME s"

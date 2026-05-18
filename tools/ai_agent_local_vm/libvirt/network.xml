@@ -1,0 +1,30 @@
+<!-- Isolated VM network. libvirt does no NAT/forwarding (forward=none), so
+     the VM's only way out is the host egress gateway in tools/ai_agent_local_vm/egress, which the
+     guest cannot tamper with. We still advertise a default route (dhcp-option
+     3) pointing at the bridge/host so external-bound traffic reaches the host,
+     where tcp:443 is REDIRECTed to the host SNI proxy (handled host-locally,
+     the INPUT path, not forwarding) and everything else hits the host
+     default-deny FORWARD. DNS is served by libvirt dnsmasq on the bridge. -->
+<network xmlns:dnsmasq='http://libvirt.org/schemas/network/dnsmasq/1.0'>
+  <name>bbvm-net</name>
+  <bridge name='bbvmbr0' stp='on' delay='0'/>
+  <forward mode='none'/>
+  <!-- forward=none means libvirt's dnsmasq does NOT resolve external names by
+       default. An explicit upstream forwarder lets the VM resolve hostnames
+       (required before the SNI proxy can even see a connection). DNS is not
+       the security boundary: egress is still filtered by SNI at :443 on the
+       host, so resolving a name grants no connectivity by itself. -->
+  <dns>
+    <forwarder addr='1.1.1.1'/>
+    <forwarder addr='8.8.8.8'/>
+  </dns>
+  <ip address='192.168.71.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='192.168.71.10' end='192.168.71.50'/>
+    </dhcp>
+  </ip>
+  <dnsmasq:options>
+    <dnsmasq:option value='dhcp-option=3,192.168.71.1'/>
+    <dnsmasq:option value='dhcp-option=6,192.168.71.1'/>
+  </dnsmasq:options>
+</network>

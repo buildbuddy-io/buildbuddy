@@ -1,0 +1,2 @@
+# Rendered cloud-init / domain XML (contains your SSH pubkey; transient).
+.build/
