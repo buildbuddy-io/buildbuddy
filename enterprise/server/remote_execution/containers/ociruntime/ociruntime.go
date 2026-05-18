@@ -657,13 +657,13 @@ func (c *ociContainer) IsImageCached(ctx context.Context) (bool, error) {
 }
 
 func (c *ociContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
-	if c.lockedImage != nil {
-		return nil
-	}
-
+	previousLockedImage := c.lockedImage
 	lockedImage, err := c.imageStore.PullAndLockImage(ctx, c.imageRef, creds, c.useOCIFetcher)
 	if err != nil {
 		return status.WrapError(err, "pull OCI image")
+	}
+	if previousLockedImage != nil {
+		previousLockedImage.Unlock()
 	}
 	c.lockedImage = lockedImage
 	return nil
