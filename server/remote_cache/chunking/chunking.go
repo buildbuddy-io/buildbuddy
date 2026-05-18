@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -114,9 +113,6 @@ func ValidateConfig() error {
 }
 
 func Enabled(ctx context.Context, efp interfaces.ExperimentFlagProvider) bool {
-	if cdc.EnabledViaHeader(ctx) {
-		return true
-	}
 	return efp == nil || efp.Boolean(ctx, "cache.chunking_enabled", true)
 }
 
@@ -131,8 +127,7 @@ func ShouldReadChunked(ctx context.Context, efp interfaces.ExperimentFlagProvide
 func ShouldReadChunkedOnProxy(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes, offset, limit int64) bool {
 	return digestSizeBytes > MaxChunkSizeBytes() &&
 		limit == 0 &&
-		(cdc.EnabledViaHeader(ctx) ||
-			efp == nil ||
+		(efp == nil ||
 			efp.Boolean(ctx, "cache_proxy.attempt_chunked_reads", true))
 }
 
