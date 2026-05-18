@@ -134,6 +134,24 @@ go_test(
     ],
 )
 
+go_test(
+    name = "ociruntime_security_test",
+    srcs = ["ociruntime_security_test.go"],
+    embed = [":ociruntime"],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/filecache",
+        "//enterprise/server/testutil/testregistry",
+        "//enterprise/server/util/oci",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
+        "//server/testutil/testfs",
+        "//server/util/status",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
 # Manual test for NVIDIA GPU support.
 #
 # From a Linux machine with an NVIDIA GPU:
