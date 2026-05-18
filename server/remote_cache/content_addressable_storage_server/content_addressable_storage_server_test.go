@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -1138,6 +1139,12 @@ func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
 
 	require.Len(t, rsp.MissingBlobDigests, 1)
 	require.Equal(t, regularDigest.GetHash(), rsp.MissingBlobDigests[0].GetHash())
+
+	rsp, err = casClient.FindMissingBlobs(cdc.ContextWithChunked(ctx), &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{blobDigest, regularDigest},
+	})
+	require.NoError(t, err)
+	require.ElementsMatch(t, digestStrings(blobDigest, regularDigest), digestStrings(rsp.MissingBlobDigests...))
 }
 
 func TestFindMissingBlobsDoesNotUseReadFallbackThreshold(t *testing.T) {

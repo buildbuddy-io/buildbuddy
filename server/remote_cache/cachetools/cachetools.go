@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -644,8 +645,13 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 		InstanceName:   r.GetInstanceName(),
 		DigestFunction: r.GetDigestFunction(),
 	}
+	// Tag all outgoing calls for individual chunks so the server skips the
+	// chunked-manifest fallback lookup on FindMissingBlobs (safe even during
+	// rolling deploys where MaxChunkSizeBytes may differ between nodes).
+	chunkCtx := cdc.ContextWithChunked(ctx)
+
 	casClient := env.GetContentAddressableStorageClient()
-	missingRsp, err := FindMissingBlobs(ctx, casClient, manifest.ToFindMissingBlobsRequest())
+	missingRsp, err := FindMissingBlobs(chunkCtx, casClient, manifest.ToFindMissingBlobsRequest())
 	if err != nil {
 		return nil, 0, status.WrapError(err, "find missing chunks")
 	}
@@ -679,7 +685,7 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 	metrics.CacheClientChunkedUploadChunkBytesDedupedByActionMnemonic.With(actionMnemonicLabels).Add(float64(dedupedBytes))
 
 	var uploadedBytes atomic.Int64
-	eg, egCtx := errgroup.WithContext(ctx)
+	eg, egCtx := errgroup.WithContext(chunkCtx)
 	var offset int64
 	for _, d := range chunkDigests {
 		if !missingChunkHashes.Contains(d.GetHash()) {

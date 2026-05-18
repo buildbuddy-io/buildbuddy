@@ -1133,6 +1133,10 @@ func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
 	if bazel_request.GetRequestMetadata(ctx).GetActionId() == "bes-upload" {
 		return false
 	}
+	// The write is already a content-defined chunk — never re-chunk it.
+	if cdc.IsChunked(ctx) {
+		return false
+	}
 	if cdc.EnabledViaHeader(ctx) {
 		return true
 	}
@@ -1188,7 +1192,10 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	digestFunction := rn.GetDigestFunction()
 	instanceName := rn.GetInstanceName()
 	compressor := rn.GetCompressor()
-	uploader, err := newChunkUploader(ctx, s, instanceName, digestFunction)
+	// Tag outgoing chunk uploads so intermediaries downstream of this proxy
+	// do not re-chunk them.
+	chunkUploadCtx := cdc.ContextWithChunked(ctx)
+	uploader, err := newChunkUploader(chunkUploadCtx, s, instanceName, digestFunction)
 	if err != nil {
 		return writeChunkedResult{}, err
 	}
