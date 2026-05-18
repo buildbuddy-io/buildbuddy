@@ -314,6 +314,7 @@ func TestDispatch_WorkingDirectoryValidation(t *testing.T) {
 		{name: "nested_path_traversal", wd: "a/../../escape", wantErr: true},
 		{name: "absolute_path", wd: "/etc/passwd", wantErr: true},
 		{name: "dot_dot_only", wd: "..", wantErr: true},
+		{name: "dot_only", wd: ".", wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env, _, _ := setupEnv(t)
