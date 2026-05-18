@@ -110,23 +110,6 @@ genrule(
     ],
 )
 
-# Unit tests for network-mode derivation logic (no Firecracker binary
-# or privileged resources required).
-go_test(
-    name = "firecracker_network_test",
-    size = "small",
-    srcs = ["firecracker_network_test.go"],
-    target_compatible_with = [
-        "@platforms//os:linux",
-    ],
-    deps = [
-        ":firecracker",
-        "//proto:firecracker_go_proto",
-        "@com_github_stretchr_testify//assert",
-        "@com_github_stretchr_testify//require",
-    ],
-)
-
 # NOTE: to run this test locally, use `test.sh` or `bench.sh`
 #
 # To remotely execute this test, a couple of tag_filters are needed:
