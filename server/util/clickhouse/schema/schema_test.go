@@ -3,6 +3,7 @@ package schema
 import (
 	"encoding/hex"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -12,15 +13,6 @@ import (
 
 	"github.com/go-faker/faker/v4"
 )
-
-func isInList(fieldName string, fields []string) bool {
-	for _, fn := range fields {
-		if fn == fieldName {
-			return true
-		}
-	}
-	return false
-}
 
 func TestSchemaInSync(t *testing.T) {
 	tests := []struct {
@@ -83,7 +75,7 @@ func TestSchemaInSync(t *testing.T) {
 			}
 			for _, chField := range chFields {
 				_, found := primaryDBType.FieldByName(chField.Name)
-				isIncluded := isInList(chField.Name, additionalFields)
+				isIncluded := slices.Contains(additionalFields, chField.Name)
 				if isIncluded {
 					assert.False(t, found, "Field %q is found in %s, but it's marked as additional", chField.Name, primaryDBType)
 				} else {
@@ -97,7 +89,7 @@ func TestSchemaInSync(t *testing.T) {
 				}
 
 				_, found := chType.FieldByName(primaryField.Name)
-				isExcluded := isInList(primaryField.Name, excludedFields)
+				isExcluded := slices.Contains(excludedFields, primaryField.Name)
 				if isExcluded {
 					assert.False(t, found, "Field %q is found in %s, but it's marked as excluded", primaryField.Name, chType)
 				} else {
@@ -132,7 +124,7 @@ func TestToInvocationFromPrimaryDB(t *testing.T) {
 	assert.Equal(t, dest.Tags, strings.Split(src.Tags, ","))
 
 	for _, primaryField := range primaryInvFields {
-		if isInList(primaryField.Name, excludedFields) || primaryField.Anonymous || isInList(primaryField.Name, NonStandardInvocationCopyFields) {
+		if slices.Contains(excludedFields, primaryField.Name) || primaryField.Anonymous || slices.Contains(NonStandardInvocationCopyFields, primaryField.Name) {
 			// already checked fields that don't do direct copies seperately above.
 			continue
 		}

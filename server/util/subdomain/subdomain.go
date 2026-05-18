@@ -3,6 +3,7 @@ package subdomain
 import (
 	"context"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -37,10 +38,8 @@ func SetHost(ctx context.Context, host string) context.Context {
 	}
 
 	subdomain := parts[0]
-	for _, ds := range *defaultSubdomains {
-		if ds == subdomain {
-			return ctx
-		}
+	if slices.Contains(*defaultSubdomains, subdomain) {
+		return ctx
 	}
 	return Context(ctx, subdomain)
 }

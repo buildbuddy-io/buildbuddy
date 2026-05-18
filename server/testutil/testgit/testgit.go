@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -93,12 +94,7 @@ func (p *FakeProvider) GetFileContents(ctx context.Context, accessToken, repoURL
 	return []byte(contents), nil
 }
 func (p *FakeProvider) IsTrusted(ctx context.Context, accessToken, repoURL, user string) (bool, error) {
-	for _, u := range p.TrustedUsers {
-		if u == user {
-			return true, nil
-		}
-	}
-	return false, nil
+	return slices.Contains(p.TrustedUsers, user), nil
 }
 func (p *FakeProvider) CreateStatus(ctx context.Context, accessToken, groupID, repoURL, commitSHA string, payload any) error {
 	p.Statuses <- &Status{accessToken, repoURL, commitSHA, payload}

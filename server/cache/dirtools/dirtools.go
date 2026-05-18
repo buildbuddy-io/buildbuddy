@@ -449,17 +449,11 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 	}
 
 	// REAPI < v2.1
-	for _, expectedFile := range cmd.OutputFiles {
-		if symlink.Path == expectedFile {
-			actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
-			break
-		}
+	if slices.Contains(cmd.OutputFiles, symlink.Path) {
+		actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
 	}
-	for _, expectedDir := range cmd.OutputDirectories {
-		if symlink.Path == expectedDir {
-			actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
-			break
-		}
+	if slices.Contains(cmd.OutputDirectories, symlink.Path) {
+		actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
 	}
 	return nil
 }

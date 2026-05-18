@@ -70,13 +70,7 @@ func (n fakeRankedNode) IsPreferred() bool {
 func (f *fakeTaskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
 	rankedNodes := make([]interfaces.RankedExecutionNode, len(nodes))
 	for i, node := range nodes {
-		preferred := false
-		for _, preferredNodeID := range f.preferredExecutors {
-			if node.GetExecutorId() == preferredNodeID {
-				preferred = true
-				break
-			}
-		}
+		preferred := slices.Contains(f.preferredExecutors, node.GetExecutorId())
 		rankedNodes[i] = fakeRankedNode{node: node, preferred: preferred}
 	}
 

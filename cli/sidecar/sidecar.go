@@ -180,12 +180,7 @@ func isCI(args *arg.BazelArgs) bool {
 	if isFlagTrue(os.Getenv("CI")) {
 		return true
 	}
-	for _, md := range args.GetAllFlagsWithName("build_metadata") {
-		if md == "ROLE=CI" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(args.GetAllFlagsWithName("build_metadata"), "ROLE=CI")
 }
 
 // Instance holds information about the running sidecar instance.

@@ -454,12 +454,7 @@ func clientAcceptsCompressor(acceptableCompressors []repb.Compressor_Value, comp
 	if compressor == repb.Compressor_IDENTITY {
 		return true
 	}
-	for _, c := range acceptableCompressors {
-		if c == compressor {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(acceptableCompressors, compressor)
 }
 
 func zstdDecompress(data []byte, decompressedLength int64) ([]byte, error) {

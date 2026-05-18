@@ -392,12 +392,7 @@ func RemoveExistingArgs(args []string, existingArgs []string) []string {
 // ContainsExact returns whether the slice `args` contains the literal string
 // `value`.
 func ContainsExact(args []string, value string) bool {
-	for _, v := range args {
-		if v == value {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(args, value)
 }
 
 // ParseFlagSet works like flagset.Parse(), except it allows positional

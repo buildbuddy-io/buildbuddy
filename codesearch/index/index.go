@@ -626,12 +626,7 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
 		if len(fieldNames) == 0 {
 			return true
 		}
-		for _, allowedFieldName := range fieldNames {
-			if allowedFieldName == fieldName {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(fieldNames, fieldName)
 	}
 
 	fields := make(map[string]types.Field, 0)

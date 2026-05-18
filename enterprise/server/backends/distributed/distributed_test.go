@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -1157,11 +1158,8 @@ func TestHintedHandoff(t *testing.T) {
 	hintedHandoffs := make([]*rspb.ResourceName, 0)
 	for _, d := range digestsWritten {
 		ps := dc3.readPeers(d.Digest)
-		for _, p := range ps.PreferredPeers {
-			if p == peer3 {
-				hintedHandoffs = append(hintedHandoffs, d)
-				break
-			}
+		if slices.Contains(ps.PreferredPeers, peer3) {
+			hintedHandoffs = append(hintedHandoffs, d)
 		}
 	}
 
