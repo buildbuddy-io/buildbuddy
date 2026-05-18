@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -218,12 +219,7 @@ func TargetMatchesSelector(target *apipb.Target, selector *apipb.TargetSelector)
 	}
 
 	if selector.GetTag() != "" {
-		for _, tag := range target.GetTag() {
-			if tag == selector.GetTag() {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(target.GetTag(), selector.GetTag())
 	}
 	return selector.GetTargetId() == "" || selector.GetTargetId() == target.GetId().GetTargetId()
 }

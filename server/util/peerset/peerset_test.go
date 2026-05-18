@@ -1,6 +1,7 @@
 package peerset_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
@@ -10,15 +11,6 @@ import (
 type wantPeerHandoff struct {
 	peer    string
 	handoff string
-}
-
-func contains(needle string, haystack []string) bool {
-	for _, h := range haystack {
-		if h == needle {
-			return true
-		}
-	}
-	return false
 }
 
 func TestGetNextPeer(t *testing.T) {
@@ -89,7 +81,7 @@ func TestGetNextPeer(t *testing.T) {
 	for _, test := range tests {
 		for _, want := range test.expected {
 			peer, handoff := test.p.GetNextPeerAndHandoff()
-			if contains(peer, test.peersToFail) {
+			if slices.Contains(test.peersToFail, peer) {
 				test.p.MarkPeerAsFailed(peer)
 			}
 			assert.Equal(t, want.peer, peer)
@@ -135,7 +127,7 @@ func TestGetBackfillTargets(t *testing.T) {
 		for i := 0; i < len(test.expectedPeers); i++ {
 			peer := test.p.GetNextPeer()
 			assert.Equal(t, test.expectedPeers[i], peer)
-			if contains(peer, test.peersToFail) {
+			if slices.Contains(test.peersToFail, peer) {
 				test.p.MarkPeerAsFailed(peer)
 			}
 		}
