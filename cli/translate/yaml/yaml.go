@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
@@ -153,10 +154,8 @@ func (y *yamlTranslator) translateValue(v interface{}, ruleName string) string {
 				return i
 			}
 		}
-		for _, l := range y.loadList {
-			if l == fmt.Sprintf(`"%s"`, i) {
-				return i
-			}
+		if slices.Contains(y.loadList, fmt.Sprintf(`"%s"`, i)) {
+			return i
 		}
 		return fmt.Sprintf(`"%s"`, i)
 	case bool:

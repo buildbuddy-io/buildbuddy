@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -386,12 +387,7 @@ func newCtxWithMetadata(t *testing.T, apiKey, invocationID string) context.Conte
 }
 
 func mdHasAPIKey(md metadata.MD, want string) bool {
-	for _, v := range md.Get(authutil.APIKeyHeader) {
-		if v == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(md.Get(authutil.APIKeyHeader), want)
 }
 
 func mdHasInvocationID(md metadata.MD, want string) bool {

@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -2183,12 +2184,7 @@ func isScheduleStillValid(fetchedAction *config.Action, storedSchedule *tables.S
 	if fetchedAction.Triggers == nil || fetchedAction.Triggers.Schedule == nil {
 		return false
 	}
-	for _, c := range fetchedAction.Triggers.Schedule.Crons {
-		if c == storedSchedule.CronExpr {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(fetchedAction.Triggers.Schedule.Crons, storedSchedule.CronExpr)
 }
 
 // calculateNextRunTimeUsec uses the given cron expression to return the next
@@ -2326,10 +2322,5 @@ func shouldUpdateScheduledWorkflows(wd *interfaces.WebhookData, repo *tables.Git
 		wd.PushedBranch != wd.TargetRepoDefaultBranch {
 		return false
 	}
-	for _, f := range wd.ChangedFiles {
-		if f == config.FilePath {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(wd.ChangedFiles, config.FilePath)
 }

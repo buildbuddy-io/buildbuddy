@@ -187,12 +187,7 @@ func (d *UserDB) authorizeGroupAdminRole(ctx context.Context, groupID string) er
 }
 
 func isInOwnedDomainBlocklist(email string) bool {
-	for _, item := range blockList {
-		if item == email {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(blockList, email)
 }
 
 func (d *UserDB) getDomainOwnerGroup(ctx context.Context, h interfaces.DB, domain string) (*tables.Group, error) {
