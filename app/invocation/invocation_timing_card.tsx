@@ -1,10 +1,9 @@
-import { Clock } from "lucide-react";
+import { Clock, Download } from "lucide-react";
 import React from "react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import capabilities from "../capabilities/capabilities";
-import Button from "../components/button/button";
+import Button, { OutlinedButton } from "../components/button/button";
 import LinkButton from "../components/button/link_button";
-import { TextLink } from "../components/link/link";
 import SetupCodeComponent from "../docs/setup_code";
 import errorService from "../errors/error_service";
 import format from "../format/format";
@@ -138,7 +137,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     progressBarInner.style.width = `${progressPercent}%`;
   }
 
-  fetchProfile() {
+  fetchProfile(ignoreSizeLimit = false) {
     if (!this.isTimingEnabled()) {
       this.setState({ loading: false });
     }
@@ -149,7 +148,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     let profileFile = this.getProfileFile();
     if (!profileFile?.uri) return;
 
-    if (isProfileTooLarge(profileFile)) {
+    if (!ignoreSizeLimit && isProfileTooLarge(profileFile)) {
       this.setState({ loading: false });
       return;
     }
@@ -339,10 +338,25 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       const downloadHref = getProfileDownloadHref(profileFile, this.props.model.getInvocationId());
       return (
         <>
-          Timing profile is too large to display{sizeBytes ? <> ({format.bytes(sizeBytes)})</> : null}.{" "}
-          <TextLink href={downloadHref} target="_blank">
-            Download profile
-          </TextLink>
+          <div>
+            Large timing profiles may crash the browser and are not shown by default
+            {sizeBytes ? (
+              <>
+                {" "}
+                (profile size: <b>{format.bytes(sizeBytes)}</b>)
+              </>
+            ) : null}
+            .
+          </div>
+          <div className="timing-profile-too-large-actions">
+            <LinkButton className="small-button" href={downloadHref} target="_blank">
+              <Download className="icon" />
+              Download profile
+            </LinkButton>
+            <OutlinedButton className="small-button" onClick={this.fetchProfile.bind(this, true)}>
+              Try loading anyway
+            </OutlinedButton>
+          </div>
         </>
       );
     }

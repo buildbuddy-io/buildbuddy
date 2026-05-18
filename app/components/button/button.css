@@ -21,9 +21,19 @@
   outline: 2px solid transparent;
 }
 
+.base-button:not(.icon-button):not(.square) > .icon:first-child {
+  margin-right: 8px;
+  width: 16px;
+  height: 16px;
+}
+
 .filled-button {
   background-color: var(--color-button-primary-bg);
   color: var(--color-button-primary-text);
+}
+
+.filled-button .icon {
+  stroke: var(--color-button-primary-text);
 }
 
 .filled-button:focus {
@@ -159,6 +169,12 @@
 }
 
 .small-button {
+  font-size: 14px;
+  padding: 6px 12px;
+  min-height: 36px;
+}
+
+.xsmall-button {
   font-size: 14px;
   padding: 4px 16px;
   line-height: 14px;
