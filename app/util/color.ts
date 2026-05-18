@@ -210,11 +210,11 @@ export function getUniformBrightnessColor(id: string) {
   return UNIFORM_BRIGHTNESS_COLORS[Math.abs(hash(id) % UNIFORM_BRIGHTNESS_COLORS.length)];
 }
 
-export function computeTraceEventColor(id: string): string {
+export function computeTraceEventColor(id: string, chromaOverride?: string): string {
   const hue = Math.abs(hash(id) % 360);
   const style = getComputedStyle(document.documentElement);
   const lightness = style.getPropertyValue("--trace-event-lightness").trim() || "65%";
-  const chroma = style.getPropertyValue("--trace-event-chroma").trim() || "80";
+  const chroma = chromaOverride || style.getPropertyValue("--trace-event-chroma").trim() || "80";
   return `lch(${lightness} ${chroma} ${hue})`;
 }
 
