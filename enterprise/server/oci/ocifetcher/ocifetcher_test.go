@@ -489,6 +489,106 @@ func TestServerMissingAndInvalidCredentials(t *testing.T) {
 	}
 }
 
+func TestPrivateRegistryCacheHitsRequireValidCredentials(t *testing.T) {
+	registryCreds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
+	validRequestCreds := &rgpb.Credentials{Username: "testuser", Password: "testpass"}
+
+	reg, counter := setupRegistry(t, registryCreds, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", registryCreds)
+	manifestDigest, _, _ := imageMetadata(t, img)
+	expectedManifest, err := img.RawManifest()
+	require.NoError(t, err)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedBlob := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	server := newTestServerWithCache(t, bsClient, acClient)
+
+	// Populate manifest, blob, and blob metadata cache entries using credentials
+	// that are valid for the private registry.
+	counter.Reset()
+	manifestResp, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
+		Ref:         imageName + "@" + manifestDigest,
+		Credentials: validRequestCreds,
+	})
+	require.NoError(t, err)
+	require.Equal(t, expectedManifest, manifestResp.GetManifest())
+	require.Greater(t, counter.Snapshot()[http.MethodGet+" /v2/test-image/manifests/"+manifestDigest], 0)
+
+	counter.Reset()
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{
+		Ref:         imageName + "@" + layerDigest.String(),
+		Credentials: validRequestCreds,
+	}, stream)
+	require.NoError(t, err)
+	require.Equal(t, expectedBlob, stream.collectData())
+	require.Greater(t, counter.Snapshot()[http.MethodGet+" /v2/test-image/blobs/"+layerDigest.String()], 0)
+
+	credsCases := []struct {
+		name         string
+		requestCreds *rgpb.Credentials
+	}{
+		{
+			name:         "MissingCredentials",
+			requestCreds: nil,
+		},
+		{
+			name:         "InvalidCredentials",
+			requestCreds: &rgpb.Credentials{Username: "wrong", Password: "wrong"},
+		},
+	}
+
+	for _, cc := range credsCases {
+		t.Run("FetchManifestMetadata/"+cc.name, func(t *testing.T) {
+			counter.Reset()
+			_, err := server.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
+				Ref:         imageName + "@" + manifestDigest,
+				Credentials: cc.requestCreds,
+			})
+			require.Error(t, err)
+			require.True(t, status.IsUnauthenticatedError(err), "FetchManifestMetadata: expected Unauthenticated, got: %v", err)
+		})
+
+		t.Run("FetchManifest/"+cc.name, func(t *testing.T) {
+			counter.Reset()
+			_, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
+				Ref:         imageName + "@" + manifestDigest,
+				Credentials: cc.requestCreds,
+			})
+			require.Error(t, err)
+			require.True(t, status.IsUnauthenticatedError(err), "FetchManifest: expected Unauthenticated, got: %v", err)
+		})
+
+		t.Run("FetchBlobMetadata/"+cc.name, func(t *testing.T) {
+			counter.Reset()
+			_, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
+				Ref:         imageName + "@" + layerDigest.String(),
+				Credentials: cc.requestCreds,
+			})
+			require.Error(t, err)
+			require.True(t, status.IsUnauthenticatedError(err), "FetchBlobMetadata: expected Unauthenticated, got: %v", err)
+		})
+
+		t.Run("FetchBlob/"+cc.name, func(t *testing.T) {
+			counter.Reset()
+			stream := &mockFetchBlobServer{ctx: context.Background()}
+			err := server.FetchBlob(&ofpb.FetchBlobRequest{
+				Ref:         imageName + "@" + layerDigest.String(),
+				Credentials: cc.requestCreds,
+			}, stream)
+			require.Error(t, err)
+			require.True(t, status.IsUnauthenticatedError(err), "FetchBlob: expected Unauthenticated, got: %v", err)
+		})
+	}
+}
+
 func TestServerRetryOnHTTPErrors(t *testing.T) {
 	var headAttempts, getAttempts, blobAttempts atomic.Int32
 	var failHeadOnce, failGetOnce, failBlobOnce atomic.Bool
