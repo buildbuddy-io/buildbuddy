@@ -127,7 +127,6 @@ func installFileCacheInEnv(t testing.TB, env *real_environment.RealEnv) {
 
 func TestPullImageIfNecessaryReauthenticatesCachedOCIImage(t *testing.T) {
 	flags.Set(t, "executor.oci.default_network_mode", "off")
-	flags.Set(t, "executor.oci.enable_masquerading", false)
 
 	registryCreds := &testregistry.BasicAuthCreds{
 		Username: "authorized-user",
@@ -149,7 +148,9 @@ func TestPullImageIfNecessaryReauthenticatesCachedOCIImage(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProviderWithOpts(env, buildRoot, cacheRoot, ociruntime.ProviderOpts{
+		DisableMasquerading: true,
+	})
 	require.NoError(t, err)
 
 	groupACtx, err := ta.WithAuthenticatedUser(ctx, "US1")

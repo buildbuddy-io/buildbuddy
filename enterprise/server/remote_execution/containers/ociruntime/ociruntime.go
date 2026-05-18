@@ -91,12 +91,8 @@ var (
 	minPIDsLimit            = flag.Int64("executor.oci.min_pids_limit", 0, "Min value to use for pids.max (PID limit). The scheduler may set a higher value for larger tasks. This can be used for rare cases where the scheduler does not provide a high enough limit.")
 	cgroupMemoryCushion     = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume (1 + cgroup_memory_limit_cushion) * EstimatedMemoryBytes")
 	enableImageEviction     = flag.Bool("executor.oci.image_eviction_enabled", false, "If true, track OCI image layers in the filecache LRU for eviction. When enabled, unused image layers can be evicted to make room for other cached files.")
-	enableMasquerading      = flag.Bool("executor.oci.enable_masquerading", true, "If true, configure host NAT masquerading for networked OCI containers once when the OCI provider starts.")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
-
-	enableMasqueradingOnce sync.Once
-	enableMasqueradingErr  error
 )
 
 const (
@@ -236,20 +232,28 @@ type provider struct {
 	cdiRegistry *cdi.Cache
 }
 
+// ProviderOpts controls optional provider setup behavior.
+type ProviderOpts struct {
+	// DisableMasquerading skips host NAT setup. This should only be set when
+	// the provider will not create networked containers.
+	DisableMasquerading bool
+}
+
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, error) {
+	return NewProviderWithOpts(env, buildRoot, cacheRoot, ProviderOpts{})
+}
+
+// NewProviderWithOpts creates a new OCI runtime provider with optional setup
+// overrides.
+func NewProviderWithOpts(env environment.Env, buildRoot, cacheRoot string, opts ProviderOpts) (*provider, error) {
 	if !slices.Contains([]string{"", "bridge", "off"}, *defaultNetworkMode) {
 		return nil, fmt.Errorf("unsupported 'executor.oci.default_network_mode' setting %q", *defaultNetworkMode)
 	}
 
-	if *enableMasquerading {
-		// Enable masquerading on the host once on startup if it isn't enabled
-		// already. Masquerading is host-global, and repeated setup is expensive in
-		// tests which may construct many providers.
-		enableMasqueradingOnce.Do(func() {
-			enableMasqueradingErr = networking.EnableMasquerading(env.GetServerContext())
-		})
-		if enableMasqueradingErr != nil {
-			return nil, status.WrapError(enableMasqueradingErr, "enable masquerading")
+	if !opts.DisableMasquerading {
+		// Enable masquerading on the host if it isn't enabled already.
+		if err := networking.EnableMasquerading(env.GetServerContext()); err != nil {
+			return nil, status.WrapError(err, "enable masquerading")
 		}
 	}
 
