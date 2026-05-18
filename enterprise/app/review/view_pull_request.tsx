@@ -705,7 +705,7 @@ export default class ViewPullRequestComponent extends React.Component<ViewPullRe
               <span> Diff against: </span>
               {this.renderDiffSelect(model)}
             </div>
-            <OutlinedButton className="expand-button small-button" onClick={() => this.handleExpandDiffsClicked()}>
+            <OutlinedButton className="expand-button xsmall-button" onClick={() => this.handleExpandDiffsClicked()}>
               {this.state.displayedDiffs.length === 0 ? "Expand diffs" : "Collapse diffs"}
             </OutlinedButton>
           </div>

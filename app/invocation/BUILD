@@ -680,7 +680,6 @@ ts_library(
         "//app/capabilities",
         "//app/components/button",
         "//app/components/button:link_button",
-        "//app/components/link",
         "//app/docs:setup_code",
         "//app/errors:error_service",
         "//app/format",
