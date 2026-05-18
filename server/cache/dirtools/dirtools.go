@@ -39,7 +39,6 @@ import (
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -958,9 +957,8 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 		for dk, filePointers := range ff.filesToFetch {
 			filePointers := filePointers
 
-			rn := digest.NewCASResourceName(dk.ToDigest(), ff.instanceName, ff.digestFunction)
 			// Write empty files directly (skip checking cache and downloading).
-			if rn.IsEmpty() && !ff.onlyDownloadToFileCache {
+			if digest.IsEmptyHash(dk.ToDigest(), ff.digestFunction) && !ff.onlyDownloadToFileCache {
 				for _, fp := range filePointers {
 					if err := writeFile(fp, []byte(""), opts); err != nil {
 						return err
@@ -1590,8 +1588,7 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 					return err
 				}
 			}
-			rn := digest.NewResourceName(child.GetDigest(), f.instanceName, rspb.CacheType_CAS, f.digestFunction)
-			if rn.IsEmpty() && rn.GetDigest().SizeBytes == 0 {
+			if digest.IsEmptyHash(child.GetDigest(), f.digestFunction) && child.GetDigest().GetSizeBytes() == 0 {
 				continue
 			}
 			childDir, ok := dirMap[digest.NewKey(child.GetDigest())]

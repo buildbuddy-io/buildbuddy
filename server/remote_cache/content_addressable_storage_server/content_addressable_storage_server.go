@@ -1141,8 +1141,7 @@ func isComplete(children []*capb.DirectoryWithDigest) bool {
 			return false
 		}
 		for _, dirNode := range child.GetDirectory().GetDirectories() {
-			grn := digest.NewResourceName(dirNode.GetDigest(), "", rspb.CacheType_CAS, rn.GetDigestFunction())
-			if grn.IsEmpty() {
+			if digest.IsEmptyHash(dirNode.GetDigest(), rn.GetDigestFunction()) {
 				continue
 			}
 			if _, ok := allDigests[dirNode.GetDigest().GetHash()]; !ok {
