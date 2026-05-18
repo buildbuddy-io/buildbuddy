@@ -33,8 +33,13 @@ import (
 var (
 	checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
 	recordOrigin                   = flag.Bool("cache.record_action_result_origin", true, "If true, the origin of the action result will be added to it's auxiliary metadata.")
+	layeredReadMaxDepth            = flag.Int64("cache.layered_read_max_depth", 1, "Maximum number of instance layers to search on ActionCache GetActionResult misses, including the original instance. A value of 1 disables layered fallback.")
 
 	restrictedPrefixes = []string{interfaces.OCIImageInstanceNamePrefix}
+)
+
+const (
+	layeredReadMaxDepthExperimentFlag = "cache.layered_read_max_depth"
 )
 
 type ActionCacheServer struct {
@@ -198,12 +203,12 @@ func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.AC
 	}
 
 	chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
-	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), chunkingEnabled, rsp); err != nil {
+	if err := ValidateActionResult(ctx, s.cache, rn.GetInstanceName(), rn.GetDigestFunction(), chunkingEnabled, rsp); err != nil {
 		return nil, nil, 0, status.NotFoundErrorf("ActionResult (%s) not found: %s", req.GetActionDigest(), err)
 	}
 	// The default limit on incoming gRPC messages is 4MB and Bazel doesn't
 	// change it.
-	if err := s.maybeInlineOutputFiles(ctx, req, rsp, 4*1024*1024); err != nil {
+	if err := s.maybeInlineOutputFiles(ctx, req, rn.GetInstanceName(), rn.GetDigestFunction(), rsp, 4*1024*1024); err != nil {
 		return nil, nil, 0, err
 	}
 
@@ -271,18 +276,61 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	d := req.GetActionDigest()
 	downloadTracker := ht.TrackDownload(d)
 
-	rsp, metadata, downloadSizeBytes, err := s.fetchActionResult(ctx, rn, req)
-	ht.SetExecutedActionMetadata(metadata)
-	if err == nil {
-		if trackerErr := downloadTracker.CloseWithBytesTransferred(downloadSizeBytes, downloadSizeBytes, repb.Compressor_IDENTITY, "ac_server"); trackerErr != nil {
-			log.Debugf("GetActionResult: download tracker error: %s", trackerErr)
+	maxDepth := s.layeredReadMaxDepth(ctx)
+	var rsp *repb.ActionResult
+	var metadata *repb.ExecutedActionMetadata
+	var downloadSizeBytes int64
+	var fetchErr error
+	for i := int64(0); i < maxDepth; i++ {
+		rsp, metadata, downloadSizeBytes, fetchErr = s.fetchActionResult(ctx, rn, req)
+		ht.SetExecutedActionMetadata(metadata)
+		if fetchErr == nil {
+			break
 		}
-	} else {
+		if !status.IsNotFoundError(fetchErr) {
+			break
+		}
+
+		// After a miss, walk up one instance-name layer and retry.
+		parentInstance, ok := parentInstanceName(rn.GetInstanceName())
+		if !ok {
+			break
+		}
+		rn = digest.NewACResourceName(d, parentInstance, req.GetDigestFunction())
+		if valErr := rn.Validate(); valErr != nil {
+			log.Warningf("GetActionResult: invalid parent resource name %v: %s", rn, valErr)
+			fetchErr = valErr
+			break
+		}
+	}
+	if status.IsNotFoundError(fetchErr) {
 		if trackerErr := ht.TrackMiss(d); trackerErr != nil {
 			log.Debugf("GetActionResult: hit tracker error: %s", trackerErr)
 		}
 	}
-	return rsp, err
+	if fetchErr != nil {
+		return rsp, fetchErr
+	}
+	if trackerErr := downloadTracker.CloseWithBytesTransferred(downloadSizeBytes, downloadSizeBytes, repb.Compressor_IDENTITY, "ac_server"); trackerErr != nil {
+		log.Debugf("GetActionResult: download tracker error: %s", trackerErr)
+	}
+	return rsp, nil
+}
+
+func (s *ActionCacheServer) layeredReadMaxDepth(ctx context.Context) int64 {
+	maxDepth := *layeredReadMaxDepth
+	if efp := s.env.GetExperimentFlagProvider(); efp != nil {
+		maxDepth = efp.Int64(ctx, layeredReadMaxDepthExperimentFlag, maxDepth)
+	}
+	return max(1, maxDepth)
+}
+
+func parentInstanceName(instanceName string) (string, bool) {
+	lastSlash := strings.LastIndex(instanceName, "/")
+	if lastSlash > 0 {
+		return instanceName[:lastSlash], true
+	}
+	return "", false
 }
 
 // Upload a new execution result.
@@ -361,7 +409,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 
 // Inlines the contents of output files requested to be inlined as long as the
 // total size of the ActionResult is below maxResultSize.
-func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *repb.GetActionResultRequest, ar *repb.ActionResult, maxResultSize int) error {
+func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *repb.GetActionResultRequest, instanceName string, digestFunction repb.DigestFunction_Value, ar *repb.ActionResult, maxResultSize int) error {
 	if ar == nil || len(req.InlineOutputFiles) == 0 {
 		return nil
 	}
@@ -406,7 +454,7 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 	resourcesToInline := make([]*rspb.ResourceName, 0, len(filesToInline))
 	downloadTrackers := make([]interfaces.TransferTimer, 0, len(filesToInline))
 	for _, f := range filesToInline {
-		resourcesToInline = append(resourcesToInline, digest.NewResourceName(f.GetDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction()).ToProto())
+		resourcesToInline = append(resourcesToInline, digest.NewResourceName(f.GetDigest(), instanceName, rspb.CacheType_CAS, digestFunction).ToProto())
 		downloadTrackers = append(downloadTrackers, ht.TrackDownload(f.GetDigest()))
 	}
 	blobs, err := s.cache.GetMulti(ctx, resourcesToInline)
