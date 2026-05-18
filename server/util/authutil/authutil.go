@@ -190,12 +190,14 @@ func ValidateRestrictedACAccess(ctx context.Context, env environment.Env, instan
 	if err != nil {
 		return status.UnauthenticatedErrorf("Could not check identity for restricted instance name prefix: %s", err)
 	}
-	if identity.Client != interfaces.ClientIdentityApp &&
-		identity.Client != interfaces.ClientIdentityExecutor &&
-		identity.Client != interfaces.ClientIdentityCacheProxy {
-		return status.UnauthenticatedError("Cannot access restricted ActionResult from untrusted client")
+	if slices.Contains([]string{
+		interfaces.ClientIdentityApp,
+		interfaces.ClientIdentityExecutor,
+		interfaces.ClientIdentityCacheProxy,
+	}, identity.Client) {
+		return nil
 	}
-	return nil
+	return status.UnauthenticatedError("Cannot access restricted ActionResult from untrusted client")
 }
 
 func EncryptionEnabled(ctx context.Context, authenticator interfaces.Authenticator) bool {
