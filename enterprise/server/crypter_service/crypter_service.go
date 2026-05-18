@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -608,14 +609,7 @@ func (c *Crypter) GetEncryptionKey(ctx context.Context, req *enpb.GetEncryptionK
 	if err != nil {
 		return nil, status.InvalidArgumentError("Client Identity is required")
 	}
-	permitted := false
-	for _, client := range *permittedClients {
-		if identity.Client == client {
-			permitted = true
-			break
-		}
-	}
-	if !permitted {
+	if !slices.Contains(*permittedClients, identity.Client) {
 		return nil, status.InvalidArgumentErrorf("Client %s may not access EncryptionService", identity.Client)
 	}
 
