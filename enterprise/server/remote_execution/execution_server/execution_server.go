@@ -742,7 +742,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		return nil, err
 	}
 	if wd := command.GetWorkingDirectory(); wd != "" {
-		if filepath.IsAbs(wd) || !filepath.IsLocal(wd) {
+		if filepath.IsAbs(wd) || !filepath.IsLocal(wd) || wd == "." {
 			return nil, status.InvalidArgumentErrorf("working_directory %q must be a relative path within the input root", wd)
 		}
 	}
