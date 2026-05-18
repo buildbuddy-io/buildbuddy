@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
@@ -130,11 +131,41 @@ func (s *ActionCacheServerProxy) cacheActionResultToLocalCAS(ctx context.Context
 	return s.localCache.Set(ctx, acKey.ToProto(), buf)
 }
 
+// validateRestrictedAccess rejects requests for restricted instance name
+// prefixes (e.g. _bb_ociregistry_) from callers that are not trusted internal
+// services. This mirrors the check on the authoritative ActionCacheServer and
+// must be enforced here as well: because the proxy's outbound gRPC connection
+// carries the proxy's own service identity, the authoritative server cannot
+// distinguish a legitimate internal caller from an external client that is
+// merely forwarded by the proxy.
+func (s *ActionCacheServerProxy) validateRestrictedAccess(ctx context.Context, instanceName string) error {
+	if !strings.HasPrefix(instanceName, interfaces.OCIImageInstanceNamePrefix) {
+		return nil
+	}
+	cis := s.env.GetClientIdentityService()
+	if cis == nil {
+		return status.UnauthenticatedError("No client ID service available to check restricted instance name prefix")
+	}
+	identity, err := cis.IdentityFromContext(ctx)
+	if err != nil {
+		return status.UnauthenticatedErrorf("Could not check identity for restricted instance name prefix: %s", err)
+	}
+	if identity.Client != interfaces.ClientIdentityApp &&
+		identity.Client != interfaces.ClientIdentityExecutor &&
+		identity.Client != interfaces.ClientIdentityCacheProxy {
+		return status.UnauthenticatedError("Cannot access restricted ActionResult from untrusted client")
+	}
+	return nil
+}
+
 // Action Cache entries are not content-addressable, so the value pointed to
 // by a given key may change in the backing cache. Thus, we always send a
 // request to the authoritative cache, but send a hash of the last value we
 // received to avoid transferring data on unmodified actions.
 func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
+	if err := s.validateRestrictedAccess(ctx, req.GetInstanceName()); err != nil {
+		return nil, err
+	}
 	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
 		resp, err := s.remoteACClient.GetActionResult(ctx, req)
 		labels := prometheus.Labels{
@@ -222,6 +253,9 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 }
 
 func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
+	if err := s.validateRestrictedAccess(ctx, req.GetInstanceName()); err != nil {
+		return nil, err
+	}
 	// Only if it's explicitly requested do we cache AC results locally.
 	if proxy_util.SkipRemote(ctx) && (!authutil.EncryptionEnabled(ctx, s.authenticator) || s.supportsEncryption(ctx)) {
 		resp, err := s.localACServer.UpdateActionResult(ctx, req)
