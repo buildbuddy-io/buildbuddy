@@ -1137,11 +1137,9 @@ func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
 	if cdc.IsChunked(ctx) {
 		return false
 	}
-	if cdc.EnabledViaHeader(ctx) {
-		return true
-	}
-	return chunking.Enabled(ctx, s.efp) &&
-		(s.efp == nil || s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", true))
+	return s.efp != nil &&
+		s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", false) &&
+		chunking.Enabled(ctx, s.efp)
 }
 
 type writeChunkedResult struct {
