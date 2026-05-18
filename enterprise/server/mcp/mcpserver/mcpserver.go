@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/mcp/jsonrpc"
@@ -438,10 +439,8 @@ func negotiateProtocolVersion(requested string) (string, error) {
 	if requested == "" {
 		return latestProtocolVersion, nil
 	}
-	for _, supported := range supportedProtocolVersions {
-		if requested == supported {
-			return requested, nil
-		}
+	if slices.Contains(supportedProtocolVersions, requested) {
+		return requested, nil
 	}
 	return "", status.InvalidArgumentErrorf("unsupported protocol version %q", requested)
 }
