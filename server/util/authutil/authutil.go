@@ -174,10 +174,8 @@ func AuthErrorFromContext(ctx context.Context) (error, bool) {
 }
 
 // ValidateRestrictedACAccess returns an error if instanceName has a restricted
-// prefix (e.g. _bb_ociregistry_) and the caller identity stored in ctx is not
-// a trusted internal service. This must be checked wherever Action Cache RPCs
-// are handled — both on the authoritative server and on any proxy that forwards
-// AC requests — because a proxy's outbound identity replaces the caller's.
+// prefix and the caller identity stored in ctx is not a trusted internal service.
+// This MUST be checked in action cache server implementations.
 func ValidateRestrictedACAccess(ctx context.Context, env environment.Env, instanceName string) error {
 	if !strings.HasPrefix(instanceName, interfaces.OCIImageInstanceNamePrefix) {
 		return nil
