@@ -110,17 +110,17 @@ genrule(
     ],
 )
 
-# White-box unit tests for network-mode derivation logic (no Firecracker binary
+# Unit tests for network-mode derivation logic (no Firecracker binary
 # or privileged resources required).
 go_test(
     name = "firecracker_network_test",
     size = "small",
     srcs = ["firecracker_network_test.go"],
-    embed = [":firecracker"],
     target_compatible_with = [
         "@platforms//os:linux",
     ],
     deps = [
+        ":firecracker",
         "//proto:firecracker_go_proto",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
