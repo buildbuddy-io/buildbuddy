@@ -1,20 +1,6 @@
 # NOTE: this is a multi-platform image, so each step needs to work on both amd64 and arm64.
 # See README for details.
 
-# Extract nvidia-cdi-hook in an intermediate stage so the final image gets only
-# the binary and not any apt/dpkg metadata churn from package installation.
-FROM mirror.gcr.io/debian@sha256:01a723bf5bfb21b9dda0c9a33e0538106e4d02cce8f557e118dd61259553d598 AS nvidia_cdi_hook_extractor
-
-RUN NVIDIA_CONTAINER_TOOLKIT_BASE_VERSION="1.19.0-1" && \
-    apt-get update && \
-    apt-get install -y ca-certificates curl && \
-    arch="$(dpkg --print-architecture)" && \
-    curl -fsSL \
-    "https://nvidia.github.io/libnvidia-container/stable/deb/${arch}/nvidia-container-toolkit-base_${NVIDIA_CONTAINER_TOOLKIT_BASE_VERSION}_${arch}.deb" \
-    -o /tmp/nvidia-container-toolkit-base.deb && \
-    dpkg-deb -x /tmp/nvidia-container-toolkit-base.deb /tmp/rootfs && \
-    rm -rf /var/lib/apt/lists/* && apt-get clean
-
 # debian 12
 FROM mirror.gcr.io/debian@sha256:01a723bf5bfb21b9dda0c9a33e0538106e4d02cce8f557e118dd61259553d598
 
@@ -43,18 +29,53 @@ RUN \
     # apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
+# nvidia-cdi-hook is needed for the executor to spawn child containers that need
+# to access the GPU. CDI takes care of mounting device files and libraries
+# needed for the GPU, but it doesn't mount the supporting files used to set up
+# the container itself. So, these container support files need to be provisioned
+# manually.
+#
+# For NVIDIA, the relevant container support files are nvidia-cdi-hook as well
+# as some configs under /usr/share/vulkan. It's fine to mount /usr/share/vulkan
+# from the host since it just contains some JSON manifests, but we can't mount
+# nvidia-cdi-hook since it's usually dynamically linked against GLIBC, and we
+# can't assume the host GLIBC version will be compatible with the one installed
+# in the executor image. Install only nvidia-cdi-hook from the verified package.
+# When updating the package version, update both package and binary SHA256 values below.
 RUN DOCKER_VERSION="5:29.0.1-1~debian.13~trixie" && \
     CONTAINERD_DEB_VERSION="2.1.5-1~debian.13~trixie" && \
     DOCKER_BUILDX_VERSION="0.30.0-1~debian.13~trixie" && \
     DOCKER_COMPOSE_VERSION="2.40.3-1~debian.13~trixie" && \
+    NVIDIA_CONTAINER_TOOLKIT_BASE_VERSION="1.19.0-1" && \
+    NVIDIA_CONTAINER_TOOLKIT_BASE_SHA256_AMD64="6a69692b813439d5973ce3e8769fd2cc981b2fb2b5191e3d15e9a613037a108e" && \
+    NVIDIA_CONTAINER_TOOLKIT_BASE_SHA256_ARM64="928d5a9412619148d679a56675364723368d6c0b38c97cf8540fcaf20b174dd7" && \
+    NVIDIA_CDI_HOOK_SHA256_AMD64="fb9e22c288346e9a99cfbef446a8495932073608aa9982628a750cacb129925c" && \
+    NVIDIA_CDI_HOOK_SHA256_ARM64="78436e99f0f8a9424817e0cc53221998d1791515124b556e7d7e488b58467785" && \
     apt-get update && \
     apt-get install -y \
     curl ca-certificates apt-transport-https && \
+    arch="$(dpkg --print-architecture)" && \
+    case "${arch}" in \
+      amd64) \
+        nvidia_container_toolkit_base_sha256="${NVIDIA_CONTAINER_TOOLKIT_BASE_SHA256_AMD64}" && \
+        nvidia_cdi_hook_sha256="${NVIDIA_CDI_HOOK_SHA256_AMD64}" ;; \
+      arm64) \
+        nvidia_container_toolkit_base_sha256="${NVIDIA_CONTAINER_TOOLKIT_BASE_SHA256_ARM64}" && \
+        nvidia_cdi_hook_sha256="${NVIDIA_CDI_HOOK_SHA256_ARM64}" ;; \
+      *) echo "unsupported architecture: ${arch}" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL \
+    "https://nvidia.github.io/libnvidia-container/stable/deb/${arch}/nvidia-container-toolkit-base_${NVIDIA_CONTAINER_TOOLKIT_BASE_VERSION}_${arch}.deb" \
+    -o /tmp/nvidia-container-toolkit-base.deb && \
+    echo "${nvidia_container_toolkit_base_sha256}  /tmp/nvidia-container-toolkit-base.deb" | sha256sum -c - && \
+    dpkg-deb -x /tmp/nvidia-container-toolkit-base.deb /tmp/nvidia-container-toolkit-base && \
+    install -m 0755 /tmp/nvidia-container-toolkit-base/usr/bin/nvidia-cdi-hook /usr/bin/nvidia-cdi-hook && \
+    echo "${nvidia_cdi_hook_sha256}  /usr/bin/nvidia-cdi-hook" | sha256sum -c - && \
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
     chmod a+r /etc/apt/keyrings/docker.asc && \
     echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
+      "deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
       $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
     tee /etc/apt/sources.list.d/docker.list > /dev/null && \
     apt-get update && apt-get install -y \
@@ -67,7 +88,7 @@ RUN DOCKER_VERSION="5:29.0.1-1~debian.13~trixie" && \
     apt-mark auto \
     curl ca-certificates apt-transport-https && \
     apt-get autoremove -y && \
-    rm -rf /var/lib/apt/lists/* && apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/nvidia-container-toolkit-base /tmp/nvidia-container-toolkit-base.deb && apt-get clean && \
     rm \
     # keep these in sync with the binaries we are manually
     # adding in enterprise/server/cmd/executor/BUILD.
@@ -80,17 +101,3 @@ RUN DOCKER_VERSION="5:29.0.1-1~debian.13~trixie" && \
     # /usr/bin/rootlesskit \
     # runc
     /usr/bin/runc
-
-# nvidia-cdi-hook is needed for the executor to spawn child containers that need
-# to access the GPU. CDI takes care of mounting device files and libraries
-# needed for the GPU, but it doesn't mount the supporting files used to set up
-# the container itself. So, these container support files need to be provisioned
-# manually.
-#
-# For NVIDIA, the relevant container support files are nvidia-cdi-hook as well
-# as some configs under /usr/share/vulkan. It's fine to mount /usr/share/vulkan
-# from the host since it just contains some JSON manifests, but we can't mount
-# nvidia-cdi-hook since it's usually dynamically linked against GLIBC, and we
-# can't assume the host GLIBC version will be compatible with the one installed
-# in the executor image. Copy only nvidia-cdi-hook from an extractor stage.
-COPY --from=nvidia_cdi_hook_extractor /tmp/rootfs/usr/bin/nvidia-cdi-hook /usr/bin/nvidia-cdi-hook
