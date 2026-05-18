@@ -126,7 +126,7 @@ func installFileCacheInEnv(t testing.TB, env *real_environment.RealEnv) {
 }
 
 func TestPullImageIfNecessaryReauthenticatesCachedOCIImage(t *testing.T) {
-	flags.Set(t, "executor.oci.default_network_mode", "off")
+	setupNetworking(t)
 
 	registryCreds := &testregistry.BasicAuthCreds{
 		Username: "authorized-user",
