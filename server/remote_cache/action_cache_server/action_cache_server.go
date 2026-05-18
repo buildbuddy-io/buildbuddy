@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -33,8 +34,6 @@ import (
 var (
 	checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
 	recordOrigin                   = flag.Bool("cache.record_action_result_origin", true, "If true, the origin of the action result will be added to it's auxiliary metadata.")
-
-	restrictedPrefixes = []string{interfaces.OCIImageInstanceNamePrefix}
 )
 
 type ActionCacheServer struct {
@@ -262,7 +261,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err != nil {
 		return nil, err
 	}
-	if err := s.validateRestrictedAccess(ctx, req.GetInstanceName()); err != nil {
+	if err := authutil.ValidateRestrictedACAccess(ctx, s.env, req.GetInstanceName()); err != nil {
 		return nil, err
 	}
 
@@ -326,7 +325,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return req.ActionResult, nil
 	}
 
-	if err := s.validateRestrictedAccess(ctx, req.GetInstanceName()); err != nil {
+	if err := authutil.ValidateRestrictedACAccess(ctx, s.env, req.GetInstanceName()); err != nil {
 		return nil, err
 	}
 
@@ -429,36 +428,3 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 	return nil
 }
 
-// validateRestrictedAccess checks to see if the instance name has a restricted prefix.
-// If it does, validateRestrictedAccess uses the ClientIdentityService to assert that the
-// request comes from a trusted client: the app, an executor, or a cache proxy.
-// If the client is not trusted, the ClientIdentityService is not available, or there are any other errors,
-// validateRestrictedAccess returns an UnauthenticatedError.
-func (s *ActionCacheServer) validateRestrictedAccess(ctx context.Context, instanceName string) error {
-	if !isRestricted(instanceName) {
-		return nil
-	}
-	if s.env.GetClientIdentityService() == nil {
-		return status.UnauthenticatedError("No client ID service available to check restricted instance name prefix")
-	}
-	identity, err := s.env.GetClientIdentityService().IdentityFromContext(ctx)
-	if err != nil {
-		return status.UnauthenticatedErrorf("Could not check identity for restricted instance name prefix: %s", err)
-	}
-	if identity.Client != interfaces.ClientIdentityApp &&
-		identity.Client != interfaces.ClientIdentityExecutor &&
-		identity.Client != interfaces.ClientIdentityCacheProxy {
-		return status.UnauthenticatedError("Cannot access restricted ActionResult from untrusted client")
-	}
-	return nil
-}
-
-// isRestricted indicates whether the input instance name has a restricted prefix.
-func isRestricted(instanceName string) bool {
-	for _, prefix := range restrictedPrefixes {
-		if strings.HasPrefix(instanceName, prefix) {
-			return true
-		}
-	}
-	return false
-}
