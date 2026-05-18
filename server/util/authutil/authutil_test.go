@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockEnv satisfies environment.Env for the subset used by ValidateRestrictedACAccess.
 type mockEnv struct {
 	environment.Env
 	cis interfaces.ClientIdentityService
@@ -20,7 +19,6 @@ type mockEnv struct {
 
 func (m *mockEnv) GetClientIdentityService() interfaces.ClientIdentityService { return m.cis }
 
-// mockCIS returns a fixed identity (or error) from IdentityFromContext.
 type mockCIS struct {
 	identity *interfaces.ClientIdentity
 	err      error
