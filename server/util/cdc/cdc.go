@@ -11,8 +11,6 @@ import (
 )
 
 const (
-	EnabledHeaderName = "x-buildbuddy-cdc-enabled"
-
 	// ChunkedHeaderName is the gRPC header attached to RPCs whose digests
 	// or payloads are individual content-defined chunks, not whole blobs.
 	ChunkedHeaderName = "build.bazel.remote.execution.v2.chunked"
@@ -20,11 +18,6 @@ const (
 	// ChunkedHeaderValue names the chunking function used to produce the chunk.
 	ChunkedHeaderValue = "FAST_CDC_2020"
 )
-
-func EnabledViaHeader(ctx context.Context) bool {
-	values := metadata.ValueFromIncomingContext(ctx, EnabledHeaderName)
-	return len(values) > 0 && values[0] == "true"
-}
 
 // IsChunked reports whether the incoming RPC context carries a non-empty
 // chunked header, meaning the request refers to individual content-defined chunks.

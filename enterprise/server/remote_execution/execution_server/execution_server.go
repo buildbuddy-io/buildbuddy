@@ -38,7 +38,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
-	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -871,11 +870,11 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	efp := s.env.GetExperimentFlagProvider()
-	if cdc.EnabledViaHeader(ctx) || (chunking.Enabled(ctx, efp) && efp != nil && efp.Boolean(ctx, "executor.upload_outputs_chunked", false)) {
+	if efp != nil && chunking.Enabled(ctx, efp) && efp.Boolean(ctx, "executor.upload_outputs_chunked", false) {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.upload_outputs_chunked")
 		executionTask.FastCdc_2020Params = chunking.FastCDCWriteParams(ctx, efp)
 	}
-	if cdc.EnabledViaHeader(ctx) || (chunking.Enabled(ctx, efp) && efp != nil && efp.Boolean(ctx, "executor.download_inputs_chunked", false)) {
+	if efp != nil && chunking.Enabled(ctx, efp) && efp.Boolean(ctx, "executor.download_inputs_chunked", false) {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.download_inputs_chunked")
 	}
 

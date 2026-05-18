@@ -152,8 +152,7 @@ func TestWriteChunkingEnabledSkipsBESUpload(t *testing.T) {
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 	fp, err := experiments.NewFlagProvider(t.Name())
 	require.NoError(t, err)
-
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(cdc.EnabledHeaderName, "true"))
+	ctx := context.Background()
 	ctx = bazel_request.OverrideRequestMetadata(ctx, &repb.RequestMetadata{ActionId: "bes-upload"})
 	s := &ByteStreamServerProxy{
 		localCache: testenv.GetTestEnv(t).GetCache(),
@@ -182,7 +181,6 @@ func TestWriteChunkingEnabledSkipsChunkedWrites(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
-		cdc.EnabledHeaderName, "true",
 		cdc.ChunkedHeaderName, "true",
 	))
 	s := &ByteStreamServerProxy{
@@ -237,7 +235,7 @@ func TestWriteChunkingEnabledRequiresExperimentInterceptFlag(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(cdc.EnabledHeaderName, "true"))
+			ctx := context.Background()
 			s := &ByteStreamServerProxy{
 				localCache: testenv.GetTestEnv(t).GetCache(),
 				remoteCAS:  &noOpCASClient{},
