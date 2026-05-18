@@ -14,6 +14,7 @@ go_library(
         "//server/http/httpclient",
         "//server/real_environment",
         "//server/remote_cache/cachetools",
+        "//server/remote_cache/config",
         "//server/remote_cache/digest",
         "//server/util/flag",
         "//server/util/log",
