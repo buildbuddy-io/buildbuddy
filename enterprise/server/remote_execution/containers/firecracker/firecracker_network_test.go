@@ -1,9 +1,8 @@
 package firecracker
 
 // Tests for network mode derivation logic (CVE-candidate: network=off +
-// init-dockerd bypass). These are white-box unit tests that exercise the
-// unexported networkMode / networkingEnabled helpers without needing a
-// Firecracker binary or any privileged resources.
+// init-dockerd bypass). White-box unit tests; no Firecracker binary or
+// privileged resources required.
 
 import (
 	"testing"
