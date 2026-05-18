@@ -329,22 +329,9 @@ func (c *countingActionCacheClient) UpdateActionResult(ctx context.Context, in *
 	return c.realAC.UpdateActionResult(ctx, in, opts...)
 }
 
-// TestRestrictedPrefixBypassViaProxy checks whether an external cache client
+// TestRestrictedPrefixBypassViaProxy checks whether an untrusted cache client
 // can access restricted AC instance name prefixes (e.g. _bb_ociregistry_) by
 // sending requests through the cache proxy.
-//
-// The confused-deputy scenario being tested:
-//  1. Authoritative AC server trusts ClientIdentityCacheProxy for restricted prefixes.
-//  2. The proxy forwards caller-controlled instance names without its own
-//     restricted-prefix check.
-//  3. The proxy's outbound gRPC connection signs forwarded requests as
-//     cache-proxy (simulating DialInternal).
-//
-// If the bypass is present the authoritative server accepts the forwarded
-// request and returns NotFound (not UnauthenticatedError), confirming that a
-// normal cache client can reach restricted OCI AC entries via the proxy.
-// If the bypass is fixed the proxy (or auth server) returns UnauthenticatedError
-// before the entry is looked up.
 func TestRestrictedPrefixBypassViaProxy(t *testing.T) {
 	ctx := context.Background()
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user", "GR123"))
@@ -369,9 +356,6 @@ func TestRestrictedPrefixBypassViaProxy(t *testing.T) {
 	repb.RegisterActionCacheServer(authGRPCServer, authACServer)
 	go authRunFunc()
 
-	// Proxy environment — its outbound connection to the auth server uses
-	// client-identity interceptors, mirroring DialInternal, so forwarded
-	// requests arrive at the auth server signed as cache-proxy.
 	proxyEnv := testenv.GetTestEnv(t)
 	proxyEnv.SetAuthenticator(ta)
 	require.NoError(t, clientidentity.Register(proxyEnv))
@@ -403,11 +387,6 @@ func TestRestrictedPrefixBypassViaProxy(t *testing.T) {
 		SizeBytes: 1024,
 	}
 
-	// GetActionResult with a restricted OCI instance name.
-	// Expected if bypass is FIXED:   UnauthenticatedError
-	// Expected if bypass is PRESENT: NotFoundError (the request reached the
-	//   auth server, which accepted the cache-proxy identity and looked up
-	//   the (absent) entry)
 	_, getErr := extACClient.GetActionResult(userCtx, &repb.GetActionResultRequest{
 		InstanceName:   interfaces.OCIImageInstanceNamePrefix,
 		ActionDigest:   d,
@@ -416,8 +395,6 @@ func TestRestrictedPrefixBypassViaProxy(t *testing.T) {
 	require.True(t, status.IsUnauthenticatedError(getErr),
 		"GetActionResult with restricted prefix via proxy: expected UnauthenticatedError (bypass fixed), got: %v", getErr)
 
-	// UpdateActionResult with a restricted OCI instance name.
-	// Same logic: UnauthenticatedError means fixed; any other outcome means bypass.
 	_, updateErr := extACClient.UpdateActionResult(userCtx, &repb.UpdateActionResultRequest{
 		InstanceName:   interfaces.OCIImageInstanceNamePrefix,
 		ActionDigest:   d,
