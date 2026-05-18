@@ -232,9 +232,29 @@ type provider struct {
 	cdiRegistry *cdi.Cache
 }
 
+// ProviderOpts controls optional provider setup behavior.
+type ProviderOpts struct {
+	// DisableMasquerading skips host NAT setup. This should only be set when
+	// the provider will not create networked containers.
+	DisableMasquerading bool
+}
+
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, error) {
+	return NewProviderWithOpts(env, buildRoot, cacheRoot, ProviderOpts{})
+}
+
+// NewProviderWithOpts creates a new OCI runtime provider with optional setup
+// overrides.
+func NewProviderWithOpts(env environment.Env, buildRoot, cacheRoot string, opts ProviderOpts) (*provider, error) {
 	if !slices.Contains([]string{"", "bridge", "off"}, *defaultNetworkMode) {
 		return nil, fmt.Errorf("unsupported 'executor.oci.default_network_mode' setting %q", *defaultNetworkMode)
+	}
+
+	if !opts.DisableMasquerading {
+		// Enable masquerading on the host if it isn't enabled already.
+		if err := networking.EnableMasquerading(env.GetServerContext()); err != nil {
+			return nil, status.WrapError(err, "enable masquerading")
+		}
 	}
 
 	// Try to find a usable runtime if the runtime flag is not explicitly set.
@@ -398,12 +418,6 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 	}
 	if networkMode == "" {
 		networkMode = *defaultNetworkMode
-	}
-	if networkMode != "off" {
-		// Enable masquerading on the host if it isn't enabled already.
-		if err := networking.EnableMasquerading(ctx); err != nil {
-			return nil, status.WrapError(err, "enable masquerading")
-		}
 	}
 
 	execroot := args.Props.ExecrootPath
