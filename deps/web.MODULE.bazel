@@ -2,19 +2,6 @@ npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
 npm.npm_translate_lock(
     name = "npm",
     npmrc = "@com_github_buildbuddy_io_buildbuddy//:.npmrc",
-    patch_args = {
-        "@protobufjs/inquire": [
-            "-p1",
-            "--binary",
-        ],
-    },
-    patches = {
-        "@protobufjs/inquire": [
-            # Patch out use of eval to satisfy a strict CSP.
-            # https://github.com/protobufjs/protobuf.js/issues/593
-            "//buildpatches:protobuf.js_inquire.patch",
-        ],
-    },
     pnpm_lock = "@com_github_buildbuddy_io_buildbuddy//:pnpm-lock.yaml",
     verify_node_modules_ignored = "@com_github_buildbuddy_io_buildbuddy//:.bazelignore",
 )
