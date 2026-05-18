@@ -237,11 +237,6 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 		return nil, fmt.Errorf("unsupported 'executor.oci.default_network_mode' setting %q", *defaultNetworkMode)
 	}
 
-	// Enable masquerading on the host if it isn't enabled already.
-	if err := networking.EnableMasquerading(env.GetServerContext()); err != nil {
-		return nil, status.WrapError(err, "enable masquerading")
-	}
-
 	// Try to find a usable runtime if the runtime flag is not explicitly set.
 	rt := *Runtime
 	if rt == "" && crunRlocationpath != "" {
@@ -403,6 +398,12 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 	}
 	if networkMode == "" {
 		networkMode = *defaultNetworkMode
+	}
+	if networkMode != "off" {
+		// Enable masquerading on the host if it isn't enabled already.
+		if err := networking.EnableMasquerading(ctx); err != nil {
+			return nil, status.WrapError(err, "enable masquerading")
+		}
 	}
 
 	execroot := args.Props.ExecrootPath
