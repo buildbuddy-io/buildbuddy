@@ -228,10 +228,8 @@ func (d *UserDB) validateURLIdentifier(ctx context.Context, groupID string, urlI
 	}
 
 	if subdomain.Enabled() {
-		for _, sd := range subdomain.DefaultSubdomains() {
-			if urlIdentifier == sd {
-				return false, nil
-			}
+		if slices.Contains(subdomain.DefaultSubdomains(), urlIdentifier) {
+			return false, nil
 		}
 	}
 
