@@ -10,6 +10,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
+var (
+	// ErrLimitExceeded is returned when a read exceeds its configured size limit.
+	ErrLimitExceeded = errors.New("read limit exceeded")
+)
+
 // A writer that drops anything written to it.
 // Useful when you need an io.Writer but don't intend
 // to actually write bytes to it.
@@ -162,6 +167,19 @@ func (c *Counter) Count() int64 {
 	return c.n
 }
 
+// ReadAllLimited reads from r until EOF or until the read exceeds limit.
+// It returns ErrLimitExceeded if more than limit bytes would be read.
+func ReadAllLimited(r io.Reader, limit int64) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > limit {
+		return nil, ErrLimitExceeded
+	}
+	return b, nil
+}
+
 // ReadTryFillBuffer tries to fill the given buffer by repeatedly reading
 // from the reader until it runs out of data. If the underlying reader does
 // not have enough data left to fill the buffer, the returned buffer will only
@@ -172,6 +190,20 @@ func ReadTryFillBuffer(r io.Reader, buf []byte) (int, error) {
 		return n, nil
 	}
 	return n, err
+}
+
+type byteRepeater byte
+
+func (r byteRepeater) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = byte(r)
+	}
+	return len(p), nil
+}
+
+// NewByteRepeater returns an io.Reader that endlessly repeats b.
+func NewByteRepeater(b byte) io.Reader {
+	return byteRepeater(b)
 }
 
 func NewBestEffortWriter(w io.Writer) *BestEffortWriter {

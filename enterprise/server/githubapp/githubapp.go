@@ -7,10 +7,10 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -83,6 +84,10 @@ var (
 const (
 	readWriteOauthPath = "/auth/github/app/link/"
 	readOnlyOauthPath  = "/auth/github/read_only_app/link/"
+
+	// GitHub documents a 25 MB limit for webhook payloads:
+	// https://docs.github.com/en/webhooks/webhook-events-and-payloads#payload-cap
+	githubWebhookMaxPayloadSize = 25 * 1024 * 1024
 
 	// Max page size that GitHub allows for list requests.
 	githubMaxPageSize = 100
@@ -450,6 +455,10 @@ func (a *GitHubApp) handleWebhookRequest(w http.ResponseWriter, req *http.Reques
 	b, err := a.validateWebhookPayload(req)
 	if err != nil {
 		log.CtxDebugf(ctx, "Failed to validate webhook payload: %s", err)
+		if errors.Is(err, ioutil.ErrLimitExceeded) {
+			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
@@ -473,7 +482,7 @@ func (a *GitHubApp) handleWebhookRequest(w http.ResponseWriter, req *http.Reques
 
 func (a *GitHubApp) validateWebhookPayload(req *http.Request) ([]byte, error) {
 	// Buffer the full body since we need to read it multiple times.
-	body, err := io.ReadAll(req.Body)
+	body, err := ioutil.ReadAllLimited(req.Body, githubWebhookMaxPayloadSize)
 	if err != nil {
 		return nil, err
 	}
@@ -1167,7 +1176,7 @@ func cloneTemplate(email, tmpDirName, token, srcURL, destURL, srcDir, destDir st
 	if err != nil {
 		return err
 	}
-	fileInfo, err := ioutil.ReadDir(path)
+	fileInfo, err := os.ReadDir(path)
 	if err != nil {
 		return err
 	}
@@ -1241,14 +1250,14 @@ func replace(dir string, replacements map[string]string) error {
 		if info.IsDir() {
 			return nil
 		}
-		contents, err := ioutil.ReadFile(path)
+		contents, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
 		for k, v := range replacements {
 			contents = bytes.Replace(contents, []byte(k), []byte(v), -1)
 		}
-		return ioutil.WriteFile(path, contents, os.ModePerm)
+		return os.WriteFile(path, contents, os.ModePerm)
 	})
 }
 
