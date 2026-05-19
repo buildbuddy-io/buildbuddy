@@ -75,6 +75,7 @@ type Tokenizer interface {
 
 	Type() FieldType
 	Ngram() []byte
+	NgramString() string
 }
 
 type IndexWriter interface {
