@@ -573,9 +573,9 @@ func TestLRU(t *testing.T) {
 		resourceKeys = append(resourceKeys, md.GetFileRecord())
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	err = rc1.TestingWaitForGC(ctx)
+	gcCtx, gcCancel := context.WithTimeout(ctx, 60*time.Second)
+	defer gcCancel()
+	err = rc1.TestingWaitForGC(gcCtx)
 	require.NoError(t, err)
 	waitForShutdown(t, caches...)
 
@@ -599,17 +599,29 @@ func TestLRU(t *testing.T) {
 	keptCount := 0
 	keptAgeTotal := time.Duration(0)
 
+	// Use a fresh context for the post-restart Find loop. The GC context
+	// above can be near expiry by now.
+	findCtx, findCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer findCancel()
+	// Wait for the freshly-restarted cache to acquire range leases before
+	// running the Find loop. Without this, the first few Find()s can fail
+	// with "Range lease invalid", which the loop below would silently
+	// count as "kept" (causing evictedCount=0 false-negative failures).
+	require.Eventually(t, func() bool {
+		_, err := rc1.Find(findCtx, &mdpb.FindRequest{
+			FileRecords: []*sgpb.FileRecord{resourceKeys[0]},
+		})
+		return err == nil
+	}, 10*time.Second, 100*time.Millisecond, "cache did not become ready after restart")
+
 	now := clock.Now()
 	for r, usedAt := range lastUsed {
-		findRsp, err := rc1.Find(ctx, &mdpb.FindRequest{
+		findRsp, err := rc1.Find(findCtx, &mdpb.FindRequest{
 			FileRecords: []*sgpb.FileRecord{r},
 		})
-		evicted := false
-		if err == nil && len(findRsp.GetFindResponses()) == 1 {
-			if !findRsp.GetFindResponses()[0].GetPresent() {
-				evicted = true
-			}
-		}
+		require.NoError(t, err)
+		require.Equal(t, 1, len(findRsp.GetFindResponses()))
+		evicted := !findRsp.GetFindResponses()[0].GetPresent()
 
 		age := now.Sub(usedAt)
 		if evicted {
