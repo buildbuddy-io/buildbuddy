@@ -717,7 +717,7 @@ func (h *hitTracker) recordCacheUsage(ctx context.Context, d *repb.Digest, actio
 	if err != nil {
 		return status.WrapError(err, "get usage labels")
 	}
-	if actionCounter == Hit && !h.actionCache && compressor == repb.Compressor_IDENTITY && d.GetSizeBytes() > 1000 {
+	if actionCounter == Hit && !h.actionCache && compressor == repb.Compressor_IDENTITY && d.GetSizeBytes() > 4*1024*1024 {
 		occasionalUncompressedDownloadLogger.CtxInfof(ctx,
 			"Uncompressed CAS download of %d bytes for invocation: %s; target: %s; labels: %+v; group: %s. This may indicate that the client isn't requesting compressed downloads.",
 			d.GetSizeBytes(), h.iid, h.targetField(), labels, h.groupID)
