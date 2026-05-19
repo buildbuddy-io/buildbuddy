@@ -53,6 +53,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/go-redis/redis/v8"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/metadata"
@@ -177,6 +178,7 @@ type ExecutionServer struct {
 	invocationDB                      interfaces.InvocationDB
 	taskSizer                         interfaces.TaskSizer
 	actionCacheClient                 repb.ActionCacheClient
+	clock                             clockwork.Clock
 
 	mu          sync.Mutex
 	teeLimiters map[string]*rate.Limiter
@@ -242,6 +244,7 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 		invocationDB:                      invocationDB,
 		taskSizer:                         taskSizer,
 		actionCacheClient:                 actionCacheClient,
+		clock:                             env.GetClock(),
 	}, nil
 }
 
@@ -1251,20 +1254,17 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 	}
 }
 
-func loopAfterTimeout(ctx context.Context, timeout time.Duration, f func() bool) {
-	ticker := time.NewTicker(timeout)
+// runUntil runs f every tick until either f returns false or the context is done.
+func runUntil(ctx context.Context, clock clockwork.Clock, tick time.Duration, f func() bool) {
+	ticker := clock.NewTicker(tick)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			{
+			return
+		case <-ticker.Chan():
+			if shouldContinue := f(); !shouldContinue {
 				return
-			}
-		case <-ticker.C:
-			{
-				if shouldContinue := f(); !shouldContinue {
-					return
-				}
 			}
 		}
 	}
@@ -1340,28 +1340,31 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		return err
 	}
 	lastOp := &longrunningpb.Operation{}
-	lastWrite := time.Now()
+	wroteToDB := false
 	taskID := ""
 	// Once the executor has called PublishOperation, we're in EXECUTING stage.
 	stage := repb.ExecutionStage_EXECUTING
 	mu := sync.Mutex{}
-	// 80% of executions take < 10 seconds in total. So here, we delay
-	// writes to the database if pubsub.Publish is successful, in an
-	// attempt to reduce DB load. To ensure that executions complete, even
-	// if no pubsub listener receives our published updates, we *always*
-	// write the execution on stage == COMPLETE or after 5 seconds have
-	// passed with no writes.
-	go loopAfterTimeout(ctx, time.Second, func() bool {
+	// Most actions are fast so it doesn't make sense to write to the DB.
+	// Delay the first write to the DB until either the execution has been
+	// running for 5 seconds. We will write at most 2 times:
+	// 1) An intermediary update after 5 seconds if the execution is still running, to capture long-running executions in the DB.
+	// 2) A final update when the execution completes, to capture metadata that's only available at the end of the execution (e.g. cache hit/miss, detailed timing info, etc).
+	// At least one of these writes will happen. The first write must not happen
+	// if the second one did.
+	start := s.clock.Now()
+	go runUntil(ctx, s.clock, time.Second, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
-		if time.Since(lastWrite) > 5*time.Second && taskID != "" {
+		if wroteToDB {
+			return false
+		}
+		if s.clock.Since(start) > 5*time.Second && taskID != "" {
 			// We only write additional metadata when the operation has completed, so
 			// we don't need to pass those fields here for intermediary updates.
 			if err := s.updateExecution(ctx, taskID, stage, operation.ExtractExecuteResponse(lastOp), nil, nil, nil, nil); err != nil {
 				log.CtxWarningf(ctx, "PublishOperation: FlushWrite: error updating execution: %s", err)
-				return false
 			}
-			lastWrite = time.Now()
 			return false
 		}
 		return true
@@ -1482,7 +1485,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
-				lastWrite = time.Now()
+				wroteToDB = true
 				// TODO(Maggie): After receiving cleanup stats, update execution in OLAP again.
 				// TODO(Maggie): Flush execution data to DB when the stream is closed.
 				// Don't flush early here.
