@@ -111,6 +111,7 @@ go_test(
         "//proto:worker_go_proto",
         "//server/interfaces",
         "//server/real_environment",
+        "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testnetworking",
