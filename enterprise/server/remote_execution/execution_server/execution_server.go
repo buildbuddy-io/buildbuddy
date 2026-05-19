@@ -1,3 +1,8 @@
+// Package execution_server implements the Remote Execution API's Execution
+// gRPC service. It dispatches Execute requests to executors via the
+// scheduler, receives progress updates from executors over PublishOperation,
+// fans those updates out to WaitExecution clients via Redis pub/sub, and
+// records execution metadata to Redis, the primary DB, and Clickhouse.
 package execution_server
 
 import (
@@ -1334,6 +1339,10 @@ func (s *ExecutionServer) metadataForClickhouse(ctx context.Context, taskID stri
 	return action, cmd, properties, nil
 }
 
+// PublishOperation is called by the executor to publish updates to the
+// execution operation as the execution progresses. The server will stream these
+// updates to the client via WaitExecution, and will also use these updates to
+// keep the execution status in the database up-to-date.
 func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperationServer) error {
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.authenticator)
 	if err != nil {
