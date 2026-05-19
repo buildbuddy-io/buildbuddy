@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -45,13 +46,25 @@ const (
 	defaultMaxChunkedWriteSizeBytes = -1
 )
 
-func AvgChunkSizeBytes() int64 {
+func AvgChunkSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
+	if efp == nil {
+		return *avgChunkSizeBytes
+	}
+	if v := efp.Int64(ctx, "cache.avg_chunk_size_override", 0); v > 0 {
+		if v < 1024 || v > 1024*1024 || v&(v-1) != 0 {
+			alert.CtxUnexpectedEvent(ctx, "invalid_cache_avg_chunk_size_override", "Ignoring invalid cache.avg_chunk_size_override %d", v)
+			return *avgChunkSizeBytes
+		}
+		return v
+	}
 	return *avgChunkSizeBytes
 }
 
 // FastCDCParams returns the FastCDC2020 parameters if chunking is configured.
-func FastCDCParams() *repb.FastCdc2020Params {
-	v := *avgChunkSizeBytes
+// The avg chunk size may vary by group. This is safe because manifests are AC
+// entries, and AC entries are namespaced by group in the cache key.
+func FastCDCParams(ctx context.Context, efp interfaces.ExperimentFlagProvider) *repb.FastCdc2020Params {
+	v := AvgChunkSizeBytes(ctx, efp)
 	if v <= 0 {
 		return nil
 	}
@@ -62,7 +75,7 @@ func FastCDCParams() *repb.FastCdc2020Params {
 }
 
 func FastCDCWriteParams(ctx context.Context, efp interfaces.ExperimentFlagProvider) *repb.FastCdc2020Params {
-	params := FastCDCParams()
+	params := FastCDCParams(ctx, efp)
 	if params != nil {
 		params.BuildbuddyMaxChunkedWriteSizeBytes = MaxWriteSizeBytes(ctx, efp)
 	}
@@ -89,7 +102,7 @@ func MaxWriteSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvide
 }
 
 func ShouldUploadChunked(ctx context.Context, efp interfaces.ExperimentFlagProvider, d *repb.Digest) bool {
-	return ShouldUploadChunkedWithMax(d, AvgChunkSizeBytes(), MaxWriteSizeBytes(ctx, efp))
+	return ShouldUploadChunkedWithMax(d, AvgChunkSizeBytes(ctx, efp), MaxWriteSizeBytes(ctx, efp))
 }
 
 // ShouldUploadChunkedWithMax returns whether a blob is eligible for chunked upload.
