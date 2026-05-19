@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
@@ -39,9 +40,13 @@ func RunnerTimeout(ctx context.Context, efp interfaces.ExperimentFlagProvider, r
 		if timeoutString != "" {
 			timeout, err := time.ParseDuration(timeoutString)
 			if err != nil {
-				return 0, status.WrapErrorf(err, "parse %s experiment value %q", DefaultTimeoutExperimentName, timeoutString)
+				log.CtxErrorf(ctx, "Failed to parse %s experiment value %q: %s", DefaultTimeoutExperimentName, timeoutString, err)
+			} else {
+				if requestedTimeout != nil && *requestedTimeout < timeout {
+					return *requestedTimeout, nil
+				}
+				return timeout, nil
 			}
-			return timeout, nil
 		}
 	}
 	if requestedTimeout != nil {
