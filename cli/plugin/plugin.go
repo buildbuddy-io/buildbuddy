@@ -40,8 +40,9 @@ const (
 	// invoked by BB as a plugin.
 	isPluginEnvVar = "IS_BB_PLUGIN"
 
-	execArgsFileEnvVar          = "EXEC_ARGS_FILE"
-	resolvedBazelArgsFileEnvVar = "RESOLVED_BAZEL_ARGS_FILE"
+	execArgsFileEnvVar           = "EXEC_ARGS_FILE"
+	forwardedBazelArgsFileEnvVar = "FORWARDED_BAZEL_ARGS_FILE"
+	resolvedBazelArgsFileEnvVar  = "RESOLVED_BAZEL_ARGS_FILE"
 
 	installCommandUsage = `
 Usage: bb install [REPO[@VERSION]][:PATH] [--user]
@@ -625,19 +626,24 @@ func (p *Plugin) commandEnv() []string {
 // PreBazel executes the plugin's pre-bazel hook if it exists, allowing the
 // plugin to return a set of transformed bazel arguments.
 //
-// Plugins receive as their first argument a path to a file containing the
-// arguments to be passed to bazel. The plugin can read and write that file to
-// modify the args (most commonly, just appending to the file), which will then
-// be fed to the next plugin in the pipeline, or passed to Bazel if this is the
-// last plugin.
+// Plugins can read Bazel args from the FORWARDED_BAZEL_ARGS_FILE environment
+// variable. Plugins can write that file to modify the args (most commonly just
+// appending to the file), which will then be fed to the next plugin in the
+// pipeline, or passed to Bazel if this is the last plugin.
 //
-// Plugins can also read the resolved arg view from the
+// Plugins can also read the resolved args (i.e. all --config flags expanded) from the
 // file at RESOLVED_BAZEL_ARGS_FILE, but changes to that file are ignored.
+//
+// DEPRECATED: Plugins receive as their first argument a path to a legacy args
+// file containing the resolved Bazel arguments. Writing changes to this file is
+// still supported for backwards compatibility.
 //
 // See cli/example_plugins/ping-remote/pre_bazel.sh for an example.
 func (p *Plugin) PreBazel(bazelArgs *arg.BazelArgs, execArgs []string) (*arg.BazelArgs, []string, error) {
-	// Write bazel args to a file that the plugin can manipulate.
-	// Any changes are passed through to bazelisk.
+	initialForwardedArgs := bazelArgs.Forwarded()
+	initialResolvedArgs := bazelArgs.Resolved()
+
+	// Write legacy resolved bazel args to $1 so existing plugins keep working.
 	argsFile, err := os.CreateTemp("", "bazelisk-args-*")
 	if err != nil {
 		return nil, nil, status.InternalErrorf("failed to create args file for pre-bazel hook: %s", err)
@@ -646,7 +652,21 @@ func (p *Plugin) PreBazel(bazelArgs *arg.BazelArgs, execArgs []string) (*arg.Baz
 		argsFile.Close()
 		os.Remove(argsFile.Name())
 	}()
-	if err := writeArgsFile(argsFile.Name(), bazelArgs.Forwarded()); err != nil {
+	if err := writeArgsFile(argsFile.Name(), initialResolvedArgs); err != nil {
+		return nil, nil, err
+	}
+
+	// Write forwarded bazel args to a separate mutable file. This is the
+	// preferred API for plugins that want their changes passed through to Bazel.
+	forwardedArgsFile, err := os.CreateTemp("", "bazelisk-forwarded-args-*")
+	if err != nil {
+		return nil, nil, status.InternalErrorf("failed to create forwarded args file for pre-bazel hook: %s", err)
+	}
+	defer func() {
+		forwardedArgsFile.Close()
+		os.Remove(forwardedArgsFile.Name())
+	}()
+	if err := writeArgsFile(forwardedArgsFile.Name(), initialForwardedArgs); err != nil {
 		return nil, nil, err
 	}
 
@@ -661,7 +681,7 @@ func (p *Plugin) PreBazel(bazelArgs *arg.BazelArgs, execArgs []string) (*arg.Baz
 		resolvedArgsFile.Close()
 		os.Remove(resolvedArgsFile.Name())
 	}()
-	if err := writeArgsFile(resolvedArgsFile.Name(), bazelArgs.Resolved()); err != nil {
+	if err := writeArgsFile(resolvedArgsFile.Name(), initialResolvedArgs); err != nil {
 		return nil, nil, err
 	}
 
@@ -701,12 +721,23 @@ func (p *Plugin) PreBazel(bazelArgs *arg.BazelArgs, execArgs []string) (*arg.Baz
 	cmd.Stdout = os.Stdout
 	cmd.Env = p.commandEnv()
 	cmd.Env = append(cmd.Env, execArgsFileEnvVar+"="+execArgsFile.Name())
+	cmd.Env = append(cmd.Env, forwardedBazelArgsFileEnvVar+"="+forwardedArgsFile.Name())
 	cmd.Env = append(cmd.Env, resolvedBazelArgsFileEnvVar+"="+resolvedArgsFile.Name())
 	if err := cmd.Run(); err != nil {
 		return nil, nil, status.InternalErrorf("Pre-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
 	}
 
-	newArgs, err := readArgsFile(argsFile.Name())
+	newLegacyArgs, err := readArgsFile(argsFile.Name())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	newForwardedArgs, err := readArgsFile(forwardedArgsFile.Name())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	newResolvedArgs, err := readArgsFile(resolvedArgsFile.Name())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -716,10 +747,39 @@ func (p *Plugin) PreBazel(bazelArgs *arg.BazelArgs, execArgs []string) (*arg.Baz
 		return nil, nil, err
 	}
 
-	log.Debugf("New bazel args: %s", shlex.Quote(newArgs...))
+	log.Debugf("New forwarded bazel args: %s", shlex.Quote(newForwardedArgs...))
+	log.Debugf("New legacy bazel args: %s", shlex.Quote(newLegacyArgs...))
 	log.Debugf("New executable args: %s", shlex.Quote(newExecArgs...))
 
-	bazelArgs.Set(newArgs)
+	forwardedChanged := !slices.Equal(initialForwardedArgs, newForwardedArgs)
+	legacyChanged := !slices.Equal(initialResolvedArgs, newLegacyArgs)
+	resolvedChanged := !slices.Equal(initialResolvedArgs, newResolvedArgs)
+
+	pluginID, err := p.VersionedID()
+	if err != nil {
+		pluginID = "<unknown>"
+	}
+
+	switch {
+	case forwardedChanged:
+		if legacyChanged {
+			log.Warnf("Plugin %s modified both %s and the legacy resolved Bazel args file passed as $1; using %s and ignoring changes to $1.", pluginID, forwardedBazelArgsFileEnvVar, forwardedBazelArgsFileEnvVar)
+		}
+		if err := bazelArgs.Set(newForwardedArgs); err != nil {
+			return nil, nil, err
+		}
+	case legacyChanged:
+		log.Warnf("Plugin %s modified the legacy resolved Bazel args file passed as $1. This is deprecated; write Bazel arg changes to %s instead, and use %s only for reading rc/config-expanded args.", pluginID, forwardedBazelArgsFileEnvVar, resolvedBazelArgsFileEnvVar)
+		legacyBazelArgs, err := arg.NewBazelArgsNoResolve(newLegacyArgs)
+		if err != nil {
+			return nil, nil, err
+		}
+		bazelArgs = legacyBazelArgs
+	}
+
+	if resolvedChanged {
+		log.Warnf("Plugin %s modified %s, but that file is read-only; ignoring those changes.", pluginID, resolvedBazelArgsFileEnvVar)
+	}
 
 	return bazelArgs, newExecArgs, nil
 }

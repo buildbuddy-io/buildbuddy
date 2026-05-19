@@ -117,24 +117,31 @@ path/to/plugin/
 
 The `pre_bazel.sh` script will be called before Bazel is run.
 
-It is called with a single argument, which is the path to a file containing the
-arguments that will be passed to Bazel (i.e. the forwarded args). Your plugin can modify this
-file to add, remove, or change flags that will ultimately be passed to Bazel.
+To change the arguments that will be passed to Bazel, read and write the file
+at `FORWARDED_BAZEL_ARGS_FILE`. Your plugin can modify this file to add,
+remove, or change flags that will ultimately be passed to Bazel.
 **Each line in this file contains a single argument.**
 
-In this file, `--config` flags are not expanded, and flags imported from `.bazelrc` files are not included.
-These are the raw args that will be passed to Bazel.
+In the forwarded args file, `--config` flags are not expanded, and flags
+imported from `.bazelrc` files are not included. These are the raw args that
+will be passed to Bazel.
 
-The CLI also exposes a second args file via the `RESOLVED_BAZEL_ARGS_FILE`
+The CLI also exposes a resolved args file via the `RESOLVED_BAZEL_ARGS_FILE`
 environment variable. This file contains the resolved view of the Bazel args.
 Flags imported from `.bazelrc` files are explicitly included, and `--config` flags are expanded.
 This file is read-only. It's useful if a plugin needs to read an expanded flag. However
 changes to it are ignored. If you'd like to modify the args, modify the forwarded args file instead.
 
+For backward compatibility, `pre_bazel.sh` is also called with a single
+argument, `$1`, which points to a legacy resolved args file. Plugins that modify
+`$1` still work for now, but this is deprecated and will print a warning. New
+plugins should use `FORWARDED_BAZEL_ARGS_FILE` for writes and
+`RESOLVED_BAZEL_ARGS_FILE` for reads.
+
 The script will be called like this:
 
 ```bash
-/usr/bin/env bash /path/to/plugin/pre_bazel.sh /path/to/forwarded-bazel-args
+/usr/bin/env bash /path/to/plugin/pre_bazel.sh /path/to/legacy-resolved-bazel-args
 ```
 
 Here's an example of what the forwarded Bazel args file might look like:
@@ -147,8 +154,6 @@ run
 
 Here's an example of what the resolved Bazel args file might look like (--config=remote
 was expanded to BuildBuddy remote cache flags):
-
-Here's an example of what the Bazel args file might look like:
 
 ```bash
 --ignore_all_rc_files
@@ -173,7 +178,7 @@ fi
 # Make sure we can ping the remote execution service in 500ms.
 if ! timeout 0.5 ping -c 1 remote.buildbuddy.io &>/dev/null; then
   # Network is spotty; disable remote execution.
-  echo "--remote_executor=" >>"$1"
+  echo "--remote_executor=" >>"$FORWARDED_BAZEL_ARGS_FILE"
 fi
 ```
 
@@ -378,19 +383,32 @@ positional_arg3
 --option4
 ```
 
+#### $FORWARDED_BAZEL_ARGS_FILE
+
+This is the path of a file that contains the forwarded Bazel args for the
+current invocation. These are the args that will be passed to Bazel after
+plugins run. The file uses a one-argument-per-line format.
+
+This environment variable will only be set for the `pre_bazel.sh` script in the
+plugin. Plugins can read and write this file to change the args passed to Bazel.
+For example, appending a line containing `--remote_executor=` disables remote
+execution for the invocation.
+
+In this file, `--config` flags are preserved as `--config` flags, and args from
+`.bazelrc` files are not expanded inline. To inspect the fully resolved Bazel
+configuration, read `RESOLVED_BAZEL_ARGS_FILE`.
+
 #### $RESOLVED_BAZEL_ARGS_FILE
 
 This is the path of a file that contains the resolved Bazel args for the current
 invocation. This includes args loaded from `.bazelrc` files and args expanded
 from any `--config=` flags. The file uses the same one-argument-per-line format
-as the forwarded Bazel args file passed as the first argument to
-`pre_bazel.sh`.
+as `FORWARDED_BAZEL_ARGS_FILE`.
 
 This environment variable will only be set for the `pre_bazel.sh` script in the
 plugin. Plugins can read this file to make decisions based on the effective
 Bazel configuration, but should not modify it. Changes to this file are ignored.
-To change the args passed to Bazel, modify the forwarded Bazel args file passed
-as `$1`.
+To change the args passed to Bazel, modify `FORWARDED_BAZEL_ARGS_FILE`.
 
 ### Examples
 
