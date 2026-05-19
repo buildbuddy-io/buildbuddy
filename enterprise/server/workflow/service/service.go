@@ -141,6 +141,8 @@ const (
 
 	// Minimum interval between cron triggers for scheduled workflows.
 	scheduledWorkflowMinInterval = 15 * time.Minute
+
+	suppressWorkflowExecutionExperimentName = "remote_execution.suppress_workflow_execution"
 )
 
 var (
@@ -577,6 +579,25 @@ func (ws *workflowService) filterActions(ctx context.Context, wf *tables.Workflo
 			return nil, status.NotFoundErrorf("requested workflow actions %v not found", actionFilter)
 		}
 	}
+
+	efp := ws.env.GetExperimentFlagProvider()
+	if efp == nil {
+		return filteredActions, nil
+	}
+	filteredActions = slices.DeleteFunc(filteredActions, func(a *config.Action) bool {
+		suppressWorkflowExecution := efp.Boolean(ctx, suppressWorkflowExecutionExperimentName, false,
+			experiments.WithContext("group_id", wf.GroupID),
+			experiments.WithContext("workflow_action_name", a.Name),
+			experiments.WithContext("workflow_event_name", wd.EventName),
+			experiments.WithContext("pushed_repo_url", wd.PushedRepoURL),
+			experiments.WithContext("target_repo_url", wd.TargetRepoURL),
+		)
+		if suppressWorkflowExecution {
+			log.CtxInfof(ctx, "Suppressing workflow execution via experiment (WFID: %q, Repo: %q, Event: %s, Action: %q)", wf.WorkflowID, wf.RepoURL, wd.EventName, a.Name)
+			return true
+		}
+		return false
+	})
 
 	return filteredActions, nil
 }
@@ -2155,6 +2176,10 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	if err != nil {
 		return err
 	}
+	if len(actions) == 0 {
+		log.CtxInfof(ctx, "Skipping suppressed scheduled workflow action %q for scheduled run %s", scheduled.ActionName, scheduled.ScheduleID)
+		return ws.advanceScheduledWorkflow(ctx, scheduled)
+	}
 
 	if len(actions) != 1 {
 		return fmt.Errorf("expected one action named %s, found %d", scheduled.ActionName, len(actions))
@@ -2178,6 +2203,10 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, true /*isTrusted*/, action, invocationUUID.String(), nil /*extraCIRunnerArgs*/, nil /*env*/, true /*shouldRetry*/); err != nil {
 		return status.WrapErrorf(err, "failed to start scheduled workflow action %q", scheduled.ActionName)
 	}
+	return ws.advanceScheduledWorkflow(ctx, scheduled)
+}
+
+func (ws *workflowService) advanceScheduledWorkflow(ctx context.Context, scheduled *tables.ScheduledRun) error {
 	nextRunUsec, err := ws.calculateNextRunTimeUsec(scheduled.CronExpr)
 	if err != nil {
 		alert.CtxUnexpectedEvent(ctx, "Failed to calculate next run time for scheduled workflow %s: %s", scheduled.ScheduleID, err)
