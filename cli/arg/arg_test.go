@@ -43,25 +43,24 @@ build:ci --remote_cache=grpc://ci-cache
 	require.Equal(t, "build", args.GetCommand())
 }
 
-// TODO(#7216): Uncomment once we support appending config flags with late resolution.
-// func TestAppend_Config(t *testing.T) {
-// 	setupWorkspace(t, `
-// build:ci --remote_cache=grpc://ci-cache
-// `)
-// 	args, err := NewBazelArgs([]string{"build", "//foo"})
-// 	require.NoError(t, err)
-// 	err = args.Append("--config=ci")
-// 	require.NoError(t, err)
-// 	err = args.Append("--configuration=a")
-// 	require.NoError(t, err)
+func TestAppend_Config(t *testing.T) {
+	setupWorkspace(t, `
+build:ci --remote_cache=grpc://ci-cache
+`)
+	args, err := NewBazelArgs([]string{"build", "//foo"})
+	require.NoError(t, err)
+	err = args.Append("--config=ci")
+	require.NoError(t, err)
+	err = args.Append("--configuration=a")
+	require.NoError(t, err)
 
-// 	// Config flag should be expanded.
-// 	require.Equal(t, "grpc://ci-cache", args.Get("remote_cache"))
-// 	require.NotContains(t, args.Resolved, "--config=ci")
+	// Config flag should be expanded.
+	require.Equal(t, "grpc://ci-cache", args.Get("remote_cache"))
+	require.NotContains(t, args.Resolved, "--config=ci")
 
-// 	// Make sure that we don't try to expand flags that start with config but don't match exactly.
-// 	require.Equal(t, "a", args.Get("configuration"))
-// }
+	// Make sure that we don't try to expand flags that start with config but don't match exactly.
+	require.Equal(t, "a", args.Get("configuration"))
+}
 
 func TestAppend_ExecutableArgs(t *testing.T) {
 	setupWorkspace(t, ``)
@@ -99,16 +98,15 @@ build:ci --remote_cache=grpc://ci-cache
 		"//foo",
 	}, args.Resolved)
 
-	// TODO(#7216): Uncomment once we support adding config flags with late resolution.
-	// err = args.Prepend("--config=ci")
-	// require.NoError(t, err)
+	err = args.Prepend("--config=ci")
+	require.NoError(t, err)
 
 	require.Equal(t, []string{
 		"--output_base=/tmp/output",
 		"--ignore_all_rc_files",
 		"build",
 		// Config flag should be expanded.
-		// "--remote_cache=grpc://ci-cache",
+		"--remote_cache=grpc://ci-cache",
 		"--build_metadata=ROLE=CI",
 		"--flag=initial",
 		"//foo",
@@ -128,6 +126,76 @@ build --bes_backend=grpc://default-bes
 	require.Equal(t, "val", value)
 	require.Equal(t, "grpc://default-bes", args.Get("bes_backend"))
 	require.NotContains(t, args.Resolved, "--flag=val")
+}
+
+func TestPop_DoesNotRemoveFlagsFromConfigs(t *testing.T) {
+	// --build_metadata is only set via config file. Pop should not be able to remove it.
+	setupWorkspace(t, `build:ci --build_metadata=COMMIT_SHA=abc`)
+
+	args, err := NewBazelArgs([]string{"build", "--config=ci", "//foo"})
+	require.NoError(t, err)
+
+	value, err := args.Pop("build_metadata")
+	require.Error(t, err)
+	require.Empty(t, value)
+
+	require.Contains(t, args.Resolved, "--build_metadata=COMMIT_SHA=abc")
+}
+
+func TestPop_SkipsConfigResolvedDuplicates(t *testing.T) {
+	// --config=ci is placed after --build_metadata on the CLI, so the config
+	// expansion appends --build_metadata=COMMIT_SHA=abc at the end of Resolved.
+	// Pop should return the CLI-set value and leave the config-resolved one intact.
+	setupWorkspace(t, `build:ci --build_metadata=COMMIT_SHA=abc`)
+
+	args, err := NewBazelArgs([]string{"build", "--build_metadata=ROLE=CI", "--config=ci", "//foo"})
+	require.NoError(t, err)
+
+	value, err := args.Pop("build_metadata")
+	require.NoError(t, err)
+
+	require.Equal(t, "ROLE=CI", value)
+	require.NotContains(t, args.Resolved, "--build_metadata=ROLE=CI")
+	require.Contains(t, args.Resolved, "--build_metadata=COMMIT_SHA=abc")
+}
+
+func TestStripBBBoolFlag(t *testing.T) {
+	tests := []struct {
+		name             string
+		args             []string
+		flagToStrip      string
+		expectedStripped bool
+	}{
+		{
+			name:             "flag set",
+			args:             []string{"run", "--stream_run_logs", ":target"},
+			flagToStrip:      "stream_run_logs",
+			expectedStripped: true,
+		},
+		{
+			name:             "flag not set",
+			args:             []string{"run", ":target"},
+			flagToStrip:      "stream_run_logs",
+			expectedStripped: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			setupWorkspace(t, "")
+			args, err := NewBazelArgs(test.args)
+			require.NoError(t, err)
+			stripped, err := args.StripBBBoolFlag(test.flagToStrip)
+			require.NoError(t, err)
+			require.Equal(t, test.expectedStripped, stripped)
+			require.NotContains(t, args.Forwarded, test.flagToStrip)
+			require.NotContains(t, args.Resolved, test.flagToStrip)
+
+			require.Equal(t, []string{"run", ":target"}, args.Forwarded)
+			require.Equal(t, []string{"--ignore_all_rc_files", "run", ":target"}, args.Resolved)
+			require.Equal(t, []string{":target"}, args.GetTargets())
+		})
+	}
 }
 
 func TestFindLast(t *testing.T) {

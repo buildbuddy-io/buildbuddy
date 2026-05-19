@@ -117,16 +117,36 @@ path/to/plugin/
 
 The `pre_bazel.sh` script will be called before Bazel is run.
 
-It is called with a single argument, which is the path to a file
-containing all arguments that will be passed to Bazel (including the
-arguments specified in your `.bazelrc` and expanded via any `--config=`
-flags). **Each line in this file contains a single argument.**
+It is called with a single argument, which is the path to a file containing the
+arguments that will be passed to Bazel (i.e. the forwarded args). Your plugin can modify this
+file to add, remove, or change flags that will ultimately be passed to Bazel.
+**Each line in this file contains a single argument.**
+
+In this file, `--config` flags are not expanded, and flags imported from `.bazelrc` files are not included.
+These are the raw args that will be passed to Bazel.
+
+The CLI also exposes a second args file via the `RESOLVED_BAZEL_ARGS_FILE`
+environment variable. This file contains the resolved view of the Bazel args.
+Flags imported from `.bazelrc` files are explicitly included, and `--config` flags are expanded.
+This file is read-only. It's useful if a plugin needs to read an expanded flag. However
+changes to it are ignored. If you'd like to modify the args, modify the forwarded args file instead.
 
 The script will be called like this:
 
 ```bash
-/usr/bin/env bash /path/to/plugin/pre_bazel.sh /path/to/bazel-args
+/usr/bin/env bash /path/to/plugin/pre_bazel.sh /path/to/forwarded-bazel-args
 ```
+
+Here's an example of what the forwarded Bazel args file might look like:
+
+```bash
+run
+//server
+--config=remote
+```
+
+Here's an example of what the resolved Bazel args file might look like (--config=remote
+was expanded to BuildBuddy remote cache flags):
 
 Here's an example of what the Bazel args file might look like:
 
@@ -136,30 +156,16 @@ run
 //server
 --bes_results_url=https://app.buildbuddy.io/invocation/
 --bes_backend=grpcs://remote.buildbuddy.io
---noremote_upload_local_results
---workspace_status_command=$(pwd)/workspace_status.sh
---incompatible_remote_build_event_upload_respect_no_cache
---experimental_remote_cache_async
---incompatible_strict_action_env
---enable_runfiles=1
---build_tag_filters=-docker
---bes_results_url=https://app.buildbuddy.io/invocation/
---bes_backend=grpcs://remote.buildbuddy.io
 --remote_cache=grpcs://remote.buildbuddy.io
 --remote_upload_local_results
---experimental_remote_cache_compression
---noremote_upload_local_results
---noincompatible_remote_build_event_upload_respect_no_cache
 ```
-
-Your plugin can modify this file to add, remove, or change that flags that will ultimately be passed to Bazel.
 
 Your `pre_bazel.sh` script can also accept user input, spawn other processes, or anything else you'd like.
 
 Here's an example of a simple `pre_bazel.sh` plugin that disables remote execution if it's unable to ping `remote.buildbuddy.io` within 500ms.
 
 ```bash title="pre_bazel.sh"
-if ! grep -E '^--remote_executor=.*\.buildbuddy\.io$' "$1" &>/dev/null; then
+if ! grep -E '^--remote_executor=.*\.buildbuddy\.io$' "$RESOLVED_BAZEL_ARGS_FILE" &>/dev/null; then
   # BB remote execution is not enabled; do nothing.
   exit 0
 fi
@@ -354,7 +360,7 @@ following a `--` in the argument list passed to bazel, if any.
 
 This environment variable will only be set for the `pre_bazel.sh` script in the
 plugin. Plugins can change this file to change the arguments
-passed to Bazel.
+passed to the executable produced by `bazel run`.
 
 The file in question is formatted very similarly to the bazel args file, except
 that the arguments will be split across lines based solely as a result of shell
@@ -371,6 +377,20 @@ positional_arg
 positional_arg3
 --option4
 ```
+
+#### $RESOLVED_BAZEL_ARGS_FILE
+
+This is the path of a file that contains the resolved Bazel args for the current
+invocation. This includes args loaded from `.bazelrc` files and args expanded
+from any `--config=` flags. The file uses the same one-argument-per-line format
+as the forwarded Bazel args file passed as the first argument to
+`pre_bazel.sh`.
+
+This environment variable will only be set for the `pre_bazel.sh` script in the
+plugin. Plugins can read this file to make decisions based on the effective
+Bazel configuration, but should not modify it. Changes to this file are ignored.
+To change the args passed to Bazel, modify the forwarded Bazel args file passed
+as `$1`.
 
 ### Examples
 

@@ -272,6 +272,7 @@ EOF
 
 	// We expect the output args to be canonicalized.
 	expectedArgs := []string{
+		"--ignore_all_rc_files",
 		"test",
 		"--compilation_mode=opt",
 		"--bes_backend=grpc://new",
@@ -284,12 +285,10 @@ EOF
 	require.Equal(t, []string{"--exec"}, execArgs)
 }
 
-// TODO(#7216): Refactor the CLI to resolve flags after each plugin,
-// so each plugin sees the fully resolved args.
 func TestPreBazel_AddConfig(t *testing.T) {
 	ws, _ := setup(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		".bazelrc":                    "test:plugin_cfg --test_output=all\n",
+		".bazelrc":                    "test:plugin-cfg --test_output=all\n",
 		"plugins/config/pre_bazel.sh": `echo '--config=plugin-cfg' >> "$1"`,
 	})
 	p := testPlugin(t, ws, "./plugins/config")
@@ -298,9 +297,10 @@ func TestPreBazel_AddConfig(t *testing.T) {
 
 	args, execArgs, err := p.PreBazel(args, nil)
 	require.NoError(t, err)
-	require.Equal(t, []string{"--ignore_all_rc_files", "test", "--config=plugin-cfg", "//initial"}, args.Resolved)
 	require.Empty(t, execArgs)
-	require.NotContains(t, args.Resolved, "--test_output=all")
+
+	require.Equal(t, []string{"test", "--config=plugin-cfg", "//initial"}, args.Forwarded)
+	require.Equal(t, []string{"--ignore_all_rc_files", "test", "--test_output=all", "//initial"}, args.Resolved)
 }
 
 // TestPipelineWriter_HandlesFinalLine guards against a regression in which

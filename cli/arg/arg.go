@@ -13,8 +13,13 @@ import (
 // TODO(#7216): Add getters for these fields, so they can't be modified directly, potentially breaking
 // the contract for how they should be simultaneously updated.
 type BazelArgs struct {
-	// TODO(#7216): Add a Forwarded args fields that represents the non-expanded args
-	// that are eventually passed to Bazelisk.
+	// TODO(#7216): Actually pass the Forwarded args field to Bazelisk.
+	//
+	// Forwarded are the Bazel args that are eventually passed to Bazelisk.
+	// --config and --bazelrc flags are not expanded.
+	// These should look fairly similarly to the user-supplied args, but with some additional args the CLI has
+	// added.
+	Forwarded []string
 
 	// Resolved are the Bazel args that are used internally within the bb parser.
 	// --config and --bazelrc flags are expanded, so the parser has a complete view of the args.
@@ -38,24 +43,19 @@ func (a *BazelArgs) Set(args []string) error {
 	if err != nil {
 		return err
 	}
-	// TODO(#7216): Set the Forwarded args field.
-	return a.resolve(normalizedArgs)
+	a.Forwarded = normalizedArgs
+	return a.resolve()
 }
 
 // Append adds a new bazel arg.
 func (a *BazelArgs) Append(arg string) error {
-	// TODO(#7216): Set the Forwarded args field.
+	a.Forwarded = Append(a.Forwarded, arg)
 
-	newArgs := Append(a.Resolved, arg)
+	if requiresResolve(arg) {
+		return a.resolve()
+	}
 
-	resolve, err := requiresResolve(arg)
-	if err != nil {
-		return err
-	}
-	if resolve {
-		return a.Set(newArgs)
-	}
-	a.Resolved = newArgs
+	a.Resolved = Append(a.Resolved, arg)
 	return nil
 }
 
@@ -63,17 +63,11 @@ func (a *BazelArgs) Append(arg string) error {
 // If the same flag is specified multiple times, Bazel will use the last value. This is useful for adding flags that should
 // be overridden by later flags.
 func (a *BazelArgs) Prepend(arg string) error {
-	// TODO(#7216): Set the Forwarded args field.
-
-	updatedResolvedArgs := prepend(a.Resolved, arg)
-	resolve, err := requiresResolve(arg)
-	if err != nil {
-		return err
+	a.Forwarded = prepend(a.Forwarded, arg)
+	if requiresResolve(arg) {
+		return a.resolve()
 	}
-	if resolve {
-		return a.Set(updatedResolvedArgs)
-	}
-	a.Resolved = updatedResolvedArgs
+	a.Resolved = prepend(a.Resolved, arg)
 	return nil
 }
 
@@ -90,16 +84,10 @@ func prepend(args []string, arg string) []string {
 }
 
 // requiresResolve returns true if the arg can change rc/config expansion.
-func requiresResolve(arg string) (bool, error) {
+func requiresResolve(arg string) bool {
 	flagName, _ := SplitOptionValue(arg)
 	flagName = strings.TrimPrefix(flagName, "--")
-
-	// TODO(#7216): Remove this check once we add the Forwarded args field and can safely resolve --bazelrc.
-	if flagName == "bazelrc" {
-		return false, fmt.Errorf("cannot resolve --bazelrc with BazelArgs")
-	}
-
-	return flagName == "config" || flagName == "bazelrc", nil
+	return flagName == "config" || flagName == "bazelrc"
 }
 
 // Get returns the value of a flag.
@@ -112,11 +100,13 @@ func (a *BazelArgs) Has(flagName string) bool {
 	return a.Get(flagName) != ""
 }
 
-// TODO(#7216): Read the Forwarded args field, instead of passing in args.
-// resolve re-evaluates the args and expands all flags.
-func (a *BazelArgs) resolve(args []string) error {
+// resolve re-evaluates the Forwarded args and expands all flags in the Resolved field.
+//
+// resolve is expensive because it re-parses all rc files and expands configs. It is only necessary
+// when requiresResolve returns true for a flag.
+func (a *BazelArgs) resolve() error {
 	// Expand --config and --bazelrc flags, then normalize the result.
-	resolved, err := parser.ResolveAndCanonicalizeArgs(args)
+	resolved, err := parser.ResolveAndCanonicalizeArgs(a.Forwarded)
 	if err != nil {
 		return err
 	}
@@ -136,44 +126,59 @@ func (a *BazelArgs) GetAllFlagsWithName(flagName string) []string {
 	return GetMulti(a.Resolved, flagName)
 }
 
+func stripBBFlag(args []string, flagName string) (string, []string, error) {
+	parsed, err := parser.ParseArgs(args)
+	if err != nil {
+		return "", nil, err
+	}
+	flagVal, err := parser.GetCLICommandOptionVal(parsed, flagName)
+	if err != nil {
+		return "", nil, err
+	}
+	return flagVal, parsed.Format(), nil
+}
+
 // StripBBFlag removes a CLI-only string flag from the args (so it is
 // not passed to Bazelisk) and returns its value.
 func (a *BazelArgs) StripBBFlag(flagName string) (string, error) {
-	// TODO(#7216): Read the Forwarded args field - we can't strip a field set in a rc file.
-	parsed, err := parser.ParseArgs(a.Resolved)
+	flagVal, resolved, err := stripBBFlag(a.Resolved, flagName)
 	if err != nil {
 		return "", err
 	}
-	// Remove the flag from the parsed args and return its value.
-	flagVal, err := parser.GetCLICommandOptionVal(parsed, flagName)
+	_, forwarded, err := stripBBFlag(a.Forwarded, flagName)
 	if err != nil {
 		return "", err
 	}
-	// Update the args to not have the removed flag.
-	// Use direct assignment rather than Set() to avoid re-resolving rc/config
-	// flags, which would fail if a plugin added a  --config flag.
-	// TODO(#7216): This will be cleaner when we can safely re-resolve the Forwarded args.
-	a.Resolved = parsed.Format()
+	a.Resolved = resolved
+	a.Forwarded = forwarded
 	return flagVal, nil
+}
+
+func stripBBBoolFlag(args []string, flagName string) (bool, []string, error) {
+	parsed, err := parser.ParseArgs(args)
+	if err != nil {
+		return false, nil, err
+	}
+	set, err := parser.IsCLICommandOptionSet(parsed, flagName)
+	if err != nil {
+		return false, nil, err
+	}
+	return set, parsed.Format(), nil
 }
 
 // StripBBBoolFlag removes a CLI-only bool flag from the forwarded args (so it
 // is not passed to Bazelisk) and returns whether it was set.
 func (a *BazelArgs) StripBBBoolFlag(flagName string) (bool, error) {
-	// TODO(#7216): Read the Forwarded args field - we can't strip a field set in a rc file.
-	parsed, err := parser.ParseArgs(a.Resolved)
+	set, resolved, err := stripBBBoolFlag(a.Resolved, flagName)
 	if err != nil {
 		return false, err
 	}
-	set, err := parser.IsCLICommandOptionSet(parsed, flagName)
+	_, forwarded, err := stripBBBoolFlag(a.Forwarded, flagName)
 	if err != nil {
 		return false, err
 	}
-	// Update the args to not have the removed flag.
-	// Use direct assignment rather than Set() to avoid re-resolving rc/config
-	// flags, which would fail if a plugin added a  --config flag.
-	// TODO(#7216): This will be cleaner when we can safely re-resolve the Forwarded args.
-	a.Resolved = parsed.Format()
+	a.Resolved = resolved
+	a.Forwarded = forwarded
 	return set, nil
 }
 
@@ -187,31 +192,34 @@ func (a *BazelArgs) GetRemoteHeaderVal(key string) string {
 	return parser.GetRemoteHeaderVal(parsed, key)
 }
 
-// TODO(#7216): Add a test where the resolved flags add another version of flagName at the end of the args.
-// We shouldn't pop the newly resolved arg.
-//
 // Pop removes a flag and returns its value.
 // NOTE: Pop does not remove boolean flags.
 func (a *BazelArgs) Pop(flagName string) (string, error) {
-	value, newArgs := Pop(a.Resolved, flagName)
+	value, newArgs := Pop(a.Forwarded, flagName)
 
-	if value == "" {
-		return "", nil
-	}
-
-	resolve, err := requiresResolve(flagName)
-	if err != nil {
-		return "", err
-	}
-	if resolve {
-		if err := a.Set(newArgs); err != nil {
-			return "", err
+	if value != "" {
+		a.Forwarded = newArgs
+		if requiresResolve(flagName) {
+			if err := a.resolve(); err != nil {
+				return "", err
+			}
+			return value, nil
 		}
-	} else {
-		a.Resolved = newArgs
+
+		// Remove the flag from the resolved args.
+		// Make sure we remove the correct occurrence (i.e. same flag name and value),
+		// because the resolved args could have an alternate value for the same flag name,
+		// derived from a config file.
+		if i := slices.Index(a.Resolved, "--"+flagName+"="+value); i >= 0 {
+			a.Resolved = slices.Delete(a.Resolved, i, i+1)
+		}
+		return value, nil
 	}
-	// TODO(#7216): Return an error if the flag is only present in the resolved args (i.e. set
-	// via a config file), since it cannot be removed from the forwarded args in that case.
+
+	if a.Has(flagName) {
+		return "", fmt.Errorf("--%s is set via a config file and cannot be removed", flagName)
+	}
+
 	return value, nil
 }
 

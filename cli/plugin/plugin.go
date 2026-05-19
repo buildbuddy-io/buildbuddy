@@ -631,6 +631,9 @@ func (p *Plugin) commandEnv() []string {
 // be fed to the next plugin in the pipeline, or passed to Bazel if this is the
 // last plugin.
 //
+// Plugins can also read the resolved arg view from the
+// file at RESOLVED_BAZEL_ARGS_FILE, but changes to that file are ignored.
+//
 // See cli/example_plugins/ping-remote/pre_bazel.sh for an example.
 func (p *Plugin) PreBazel(bazelArgs *arg.BazelArgs, execArgs []string) (*arg.BazelArgs, []string, error) {
 	// Write bazel args to a file that the plugin can manipulate.
@@ -643,8 +646,7 @@ func (p *Plugin) PreBazel(bazelArgs *arg.BazelArgs, execArgs []string) (*arg.Baz
 		argsFile.Close()
 		os.Remove(argsFile.Name())
 	}()
-	// TODO(#7216): Write the forwarded args to the file.
-	if err := writeArgsFile(argsFile.Name(), bazelArgs.Resolved); err != nil {
+	if err := writeArgsFile(argsFile.Name(), bazelArgs.Forwarded); err != nil {
 		return nil, nil, err
 	}
 
@@ -717,15 +719,7 @@ func (p *Plugin) PreBazel(bazelArgs *arg.BazelArgs, execArgs []string) (*arg.Baz
 	log.Debugf("New bazel args: %s", shlex.Quote(newArgs...))
 	log.Debugf("New executable args: %s", shlex.Quote(newExecArgs...))
 
-	// Canonicalize args after each plugin is run, so that every plugin gets
-	// canonicalized args as input.
-	canonicalizedArgs, err := parser.CanonicalizeArgs(newArgs)
-	if err != nil {
-		return nil, nil, err
-	}
-	// TODO(#7216): Resolve bazel args after each plugin is run (using bazelArgs.Set), so every following plugin gets
-	// a refreshed resolved view of the bazel args (i.e. all --config flags expanded).
-	bazelArgs.Resolved = canonicalizedArgs
+	bazelArgs.Set(newArgs)
 
 	return bazelArgs, newExecArgs, nil
 }

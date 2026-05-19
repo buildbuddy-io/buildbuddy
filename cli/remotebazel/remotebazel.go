@@ -1354,7 +1354,8 @@ func parseArgs(commandLineArgs []string) ([]string, []string, error) {
 	// Manually construct a BazelArgs struct because the login code expects it.
 	// TODO: Find a less hacky way to handle this.
 	bazelArgsStruct := &arg.BazelArgs{
-		Resolved: bazelArgs,
+		Forwarded: bazelArgs,
+		Resolved:  bazelArgs,
 	}
 	if err := login.ConfigureAPIKey(bazelArgsStruct); err != nil {
 		return nil, nil, fmt.Errorf("configure api key: %w", err)
