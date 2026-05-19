@@ -42,7 +42,8 @@ var (
 	taskIPRange                   = flag.String("executor.task_ip_range", "192.168.0.0/16", "Subnet to allocate IP addresses from for actions that require network access. Must be a /16 range.")
 	taskAllowedPrivateIPs         = flag.Slice("executor.task_allowed_private_ips", []string{}, "Allowed private IPs that should be reachable from actions: either 'default', an IP address, or IP range. Private IP ranges as defined in RFC1918 are otherwise blocked.")
 	networkStatsEnabled           = flag.Bool("executor.network_stats_enabled", false, "Enable basic tx/rx statistics.")
-	clampMSSToPMTU                = flag.Bool("executor.clamp-mss-to-pmtu", false, "Clamp the TCP MSS to the PMTU for outgoing connections.")
+	clampMSSToPMTU                = flag.Bool("executor.clamp_mss_to_pmtu", false, "Clamp the TCP MSS to the PMTU for outgoing connections.")
+	_                             = flag.Alias[bool]("executor.clamp_mss_to_pmtu", "executor.clamp-mss-to-pmtu") // old misnamed flag
 	cleanupStaleVethDevices       = flag.Bool("executor.cleanup_stale_veth_devices", false, "If true, clean up stale veth devices with conflicting IPs before creating new ones.", flag.Internal)
 
 	// Private IP ranges, as defined in RFC1918.
