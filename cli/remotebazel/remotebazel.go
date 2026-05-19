@@ -1353,14 +1353,14 @@ func parseArgs(commandLineArgs []string) ([]string, []string, error) {
 	// are only defined on the remote runners.)
 	// Manually construct a BazelArgs struct because the login code expects it.
 	// TODO: Find a less hacky way to handle this.
-	bazelArgsStruct := &arg.BazelArgs{
-		Forwarded: bazelArgs,
-		Resolved:  bazelArgs,
+	bazelArgsStruct, err := arg.NewBazelArgsNoResolve(bazelArgs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse bazel args: %w", err)
 	}
 	if err := login.ConfigureAPIKey(bazelArgsStruct); err != nil {
 		return nil, nil, fmt.Errorf("configure api key: %w", err)
 	}
-	bazelArgs = bazelArgsStruct.Resolved
+	bazelArgs = bazelArgsStruct.Resolved()
 
 	// Ensure all bazel remote runs use the remote cache.
 	// The goal is to keep remote workloads close to our servers, so use the same

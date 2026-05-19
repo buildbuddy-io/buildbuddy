@@ -243,7 +243,7 @@ func ConfigureSidecar(args *arg.BazelArgs) (*Instance, error) {
 		return nil, nil
 	}
 
-	originalArgs := slices.Clone(args.Forwarded)
+	originalArgs := args.Forwarded()
 
 	log.Debugf("Configuring sidecar")
 

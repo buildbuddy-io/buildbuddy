@@ -646,7 +646,7 @@ func (p *Plugin) PreBazel(bazelArgs *arg.BazelArgs, execArgs []string) (*arg.Baz
 		argsFile.Close()
 		os.Remove(argsFile.Name())
 	}()
-	if err := writeArgsFile(argsFile.Name(), bazelArgs.Forwarded); err != nil {
+	if err := writeArgsFile(argsFile.Name(), bazelArgs.Forwarded()); err != nil {
 		return nil, nil, err
 	}
 
@@ -661,7 +661,7 @@ func (p *Plugin) PreBazel(bazelArgs *arg.BazelArgs, execArgs []string) (*arg.Baz
 		resolvedArgsFile.Close()
 		os.Remove(resolvedArgsFile.Name())
 	}()
-	if err := writeArgsFile(resolvedArgsFile.Name(), bazelArgs.Resolved); err != nil {
+	if err := writeArgsFile(resolvedArgsFile.Name(), bazelArgs.Resolved()); err != nil {
 		return nil, nil, err
 	}
 

@@ -33,8 +33,8 @@ build:ci --remote_cache=grpc://ci-cache
 	// Config and bazelrc flags should be expanded.
 	require.Equal(t, "grpc://default-bes", args.Get("bes_backend"))
 	require.Equal(t, "grpc://ci-cache", args.Get("remote_cache"))
-	require.NotContains(t, args.Resolved, "--config=ci")
-	require.Contains(t, args.Resolved, "--ignore_all_rc_files")
+	require.NotContains(t, args.Resolved(), "--config=ci")
+	require.Contains(t, args.Resolved(), "--ignore_all_rc_files")
 
 	// Flags should be canonicalized (-c expanded to --compilation_mode).
 	require.Equal(t, "opt", args.Get("compilation_mode"))
@@ -56,7 +56,7 @@ build:ci --remote_cache=grpc://ci-cache
 
 	// Config flag should be expanded.
 	require.Equal(t, "grpc://ci-cache", args.Get("remote_cache"))
-	require.NotContains(t, args.Resolved, "--config=ci")
+	require.NotContains(t, args.Resolved(), "--config=ci")
 
 	// Make sure that we don't try to expand flags that start with config but don't match exactly.
 	require.Equal(t, "a", args.Get("configuration"))
@@ -74,7 +74,7 @@ func TestAppend_ExecutableArgs(t *testing.T) {
 	require.Equal(t, "ROLE=CI", args.Get("build_metadata"))
 	require.Equal(t, []string{":target"}, args.GetTargets())
 
-	bazelArgs, execArgs := SplitExecutableArgs(args.Resolved)
+	bazelArgs, execArgs := SplitExecutableArgs(args.Resolved())
 	require.NotContains(t, execArgs, "--build_metadata=ROLE=CI")
 	require.Contains(t, bazelArgs, "--build_metadata=ROLE=CI")
 }
@@ -96,7 +96,7 @@ build:ci --remote_cache=grpc://ci-cache
 		"--build_metadata=ROLE=CI",
 		"--flag=initial",
 		"//foo",
-	}, args.Resolved)
+	}, args.Resolved())
 
 	err = args.Prepend("--config=ci")
 	require.NoError(t, err)
@@ -110,7 +110,7 @@ build:ci --remote_cache=grpc://ci-cache
 		"--build_metadata=ROLE=CI",
 		"--flag=initial",
 		"//foo",
-	}, args.Resolved)
+	}, args.Resolved())
 }
 
 func TestPop(t *testing.T) {
@@ -125,7 +125,7 @@ build --bes_backend=grpc://default-bes
 
 	require.Equal(t, "val", value)
 	require.Equal(t, "grpc://default-bes", args.Get("bes_backend"))
-	require.NotContains(t, args.Resolved, "--flag=val")
+	require.NotContains(t, args.Resolved(), "--flag=val")
 }
 
 func TestPop_DoesNotRemoveFlagsFromConfigs(t *testing.T) {
@@ -139,7 +139,7 @@ func TestPop_DoesNotRemoveFlagsFromConfigs(t *testing.T) {
 	require.Error(t, err)
 	require.Empty(t, value)
 
-	require.Contains(t, args.Resolved, "--build_metadata=COMMIT_SHA=abc")
+	require.Contains(t, args.Resolved(), "--build_metadata=COMMIT_SHA=abc")
 }
 
 func TestPop_SkipsConfigResolvedDuplicates(t *testing.T) {
@@ -155,28 +155,60 @@ func TestPop_SkipsConfigResolvedDuplicates(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, "ROLE=CI", value)
-	require.NotContains(t, args.Resolved, "--build_metadata=ROLE=CI")
-	require.Contains(t, args.Resolved, "--build_metadata=COMMIT_SHA=abc")
+	require.NotContains(t, args.Resolved(), "--build_metadata=ROLE=CI")
+	require.Contains(t, args.Resolved(), "--build_metadata=COMMIT_SHA=abc")
 }
 
 func TestStripBBBoolFlag(t *testing.T) {
 	tests := []struct {
-		name             string
-		args             []string
-		flagToStrip      string
-		expectedStripped bool
+		name              string
+		args              []string
+		flagToStrip       string
+		expectedStripped  bool
+		expectedForwarded []string
+		expectedResolved  []string
 	}{
 		{
-			name:             "flag set",
-			args:             []string{"run", "--stream_run_logs", ":target"},
-			flagToStrip:      "stream_run_logs",
-			expectedStripped: true,
+			name:              "flag set",
+			args:              []string{"run", "--stream_run_logs", ":target"},
+			flagToStrip:       "stream_run_logs",
+			expectedStripped:  true,
+			expectedForwarded: []string{"run", ":target"},
+			expectedResolved:  []string{"--ignore_all_rc_files", "run", ":target"},
 		},
 		{
-			name:             "flag not set",
-			args:             []string{"run", ":target"},
-			flagToStrip:      "stream_run_logs",
-			expectedStripped: false,
+			name: "flag set multiple times",
+			args: []string{
+				"run",
+				"--stream_run_logs",
+				"--stream_run_logs",
+				":target",
+			},
+			flagToStrip:       "stream_run_logs",
+			expectedStripped:  true,
+			expectedForwarded: []string{"run", ":target"},
+			expectedResolved:  []string{"--ignore_all_rc_files", "run", ":target"},
+		},
+		{
+			name: "flag set then unset",
+			args: []string{
+				"run",
+				"--stream_run_logs",
+				"--nostream_run_logs",
+				":target",
+			},
+			flagToStrip:       "stream_run_logs",
+			expectedStripped:  false,
+			expectedForwarded: []string{"run", ":target"},
+			expectedResolved:  []string{"--ignore_all_rc_files", "run", ":target"},
+		},
+		{
+			name:              "flag not set",
+			args:              []string{"run", ":target"},
+			flagToStrip:       "stream_run_logs",
+			expectedStripped:  false,
+			expectedForwarded: []string{"run", ":target"},
+			expectedResolved:  []string{"--ignore_all_rc_files", "run", ":target"},
 		},
 	}
 
@@ -188,11 +220,77 @@ func TestStripBBBoolFlag(t *testing.T) {
 			stripped, err := args.StripBBBoolFlag(test.flagToStrip)
 			require.NoError(t, err)
 			require.Equal(t, test.expectedStripped, stripped)
-			require.NotContains(t, args.Forwarded, test.flagToStrip)
-			require.NotContains(t, args.Resolved, test.flagToStrip)
+			require.NotContains(t, args.Forwarded(), test.flagToStrip)
+			require.NotContains(t, args.Resolved(), test.flagToStrip)
 
-			require.Equal(t, []string{"run", ":target"}, args.Forwarded)
-			require.Equal(t, []string{"--ignore_all_rc_files", "run", ":target"}, args.Resolved)
+			require.Equal(t, test.expectedForwarded, args.Forwarded())
+			require.Equal(t, test.expectedResolved, args.Resolved())
+			require.Equal(t, []string{":target"}, args.GetTargets())
+		})
+	}
+}
+
+func TestStripBBFlag(t *testing.T) {
+	tests := []struct {
+		name              string
+		args              []string
+		flagToStrip       string
+		expectedStripped  string
+		expectedForwarded []string
+		expectedResolved  []string
+	}{
+		{
+			name:              "flag set",
+			args:              []string{"run", "--on_stream_run_logs_failure=fail", ":target"},
+			flagToStrip:       "on_stream_run_logs_failure",
+			expectedStripped:  "fail",
+			expectedForwarded: []string{"run", ":target"},
+			expectedResolved:  []string{"--ignore_all_rc_files", "run", ":target"},
+		},
+		{
+			name: "flag set multiple times",
+			args: []string{
+				"run",
+				"--on_stream_run_logs_failure=ignore",
+				"--on_stream_run_logs_failure=fail",
+				":target",
+			},
+			flagToStrip:       "on_stream_run_logs_failure",
+			expectedStripped:  "fail",
+			expectedForwarded: []string{"run", ":target"},
+			expectedResolved:  []string{"--ignore_all_rc_files", "run", ":target"},
+		},
+		{
+			name:              "flag set with separate value",
+			args:              []string{"run", "--on_stream_run_logs_failure", "fail", ":target"},
+			flagToStrip:       "on_stream_run_logs_failure",
+			expectedStripped:  "fail",
+			expectedForwarded: []string{"run", ":target"},
+			expectedResolved:  []string{"--ignore_all_rc_files", "run", ":target"},
+		},
+		{
+			name:              "flag not set",
+			args:              []string{"run", ":target"},
+			flagToStrip:       "on_stream_run_logs_failure",
+			expectedStripped:  "",
+			expectedForwarded: []string{"run", ":target"},
+			expectedResolved:  []string{"--ignore_all_rc_files", "run", ":target"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			setupWorkspace(t, "")
+			args, err := NewBazelArgs(test.args)
+			require.NoError(t, err)
+			stripped, err := args.StripBBFlag(test.flagToStrip)
+			require.NoError(t, err)
+			require.Equal(t, test.expectedStripped, stripped)
+			require.NotContains(t, args.Forwarded(), test.flagToStrip)
+			require.NotContains(t, args.Resolved(), test.flagToStrip)
+
+			require.Equal(t, test.expectedForwarded, args.Forwarded())
+			require.Equal(t, test.expectedResolved, args.Resolved())
 			require.Equal(t, []string{":target"}, args.GetTargets())
 		})
 	}
