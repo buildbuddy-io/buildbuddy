@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/github",
     visibility = ["//visibility:public"],
     deps = [
+        "//codesearch/indexprofile",
         "//codesearch/schema",
         "//codesearch/types",
         "//proto:index_go_proto",

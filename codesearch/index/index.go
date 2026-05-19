@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/indexprofile"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/posting"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
@@ -387,7 +388,7 @@ func (w *Writer) CompactDeletes() error {
 			w.batch.Delete(iter.Key(), nil)
 			delCount++
 		} else if pl.GetCardinality() != beforeCard {
-			w.updatePostingList(iter.Key(), pl, w.batch.SetDeferred)
+			w.updatePostingList(iter.Key(), pl, "", "", w.batch.SetDeferred)
 			changeCount++
 		} // else unchanged, do nothing
 	}
@@ -407,7 +408,9 @@ func (w *Writer) CompactDeletes() error {
 // Note: This implementation does not handle file renames - clients must explicitly
 // delete the old file and add (or update) the new file when renames happen.
 func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) error {
+	stop := indexprofile.Timer(indexprofile.PhaseDeleteExisting)
 	err := w.DeleteDocumentByMatchField(matchField)
+	stop()
 	if err != nil {
 		return err
 	}
@@ -415,16 +418,56 @@ func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) e
 	return w.AddDocument(newDoc)
 }
 
+type addDocStats struct {
+	fields              int64
+	tokens              int64
+	postingListsCreated int64
+	storedFieldsSet     int64
+	pebbleBatchSets     int64
+	pebbleBatchSetBytes int64
+	tokenizerNextDur    time.Duration
+	postingMutationDur  time.Duration
+	storedFieldSetDur   time.Duration
+	pebbleBatchSetDur   time.Duration
+}
+
+func (s *addDocStats) flush(p *indexprofile.Profiler) {
+	p.RecordN(indexprofile.PhaseTokenizerNext, s.tokens, s.tokenizerNextDur)
+	p.RecordN(indexprofile.PhasePostingMutation, s.tokens, s.postingMutationDur)
+	p.RecordN(indexprofile.PhaseStoredFieldSet, s.storedFieldsSet, s.storedFieldSetDur)
+	p.RecordN(indexprofile.PhasePebbleBatchSet, s.pebbleBatchSets, s.pebbleBatchSetDur)
+	p.Add(indexprofile.CounterDocsAdded, 1)
+	p.Add(indexprofile.CounterFieldsIndexed, s.fields)
+	p.Add(indexprofile.CounterTokensIndexed, s.tokens)
+	p.Add(indexprofile.CounterPostingListLookups, s.tokens)
+	p.Add(indexprofile.CounterPostingListsCreated, s.postingListsCreated)
+	p.Add(indexprofile.CounterStoredFieldsSet, s.storedFieldsSet)
+	p.Add(indexprofile.CounterPebbleBatchSets, s.pebbleBatchSets)
+	p.Add(indexprofile.CounterPebbleBatchSetBytes, s.pebbleBatchSetBytes)
+}
+
 func (w *Writer) AddDocument(doc types.Document) error {
+	profiler := indexprofile.Current()
+	var s addDocStats
+	if profiler != nil {
+		defer s.flush(profiler)
+	}
+	defer indexprofile.Timer(indexprofile.PhaseAddDocument)()
+
 	w.docIndex++
 
 	// **Always store DocID.**
 	docID := uint64(w.generation)<<32 | uint64(w.docIndex)
 	idKey := w.storedFieldKey(docID, types.DocIDField)
+	t := profiler.Now()
 	w.batch.Set(idKey, Uint64ToBytes(docID), nil)
+	s.pebbleBatchSetDur += profiler.Since(t)
+	s.pebbleBatchSets++
+	s.pebbleBatchSetBytes += int64(len(idKey) + 8)
 
 	for _, fieldName := range doc.Fields() {
 		field := doc.Field(fieldName)
+		s.fields++
 
 		if _, ok := w.fieldPostingLists[field.Name()]; !ok {
 			w.fieldPostingLists[field.Name()] = make(postingLists, 0)
@@ -439,17 +482,35 @@ func (w *Writer) AddDocument(doc types.Document) error {
 
 		tokenizer.Reset(bytes.NewReader(field.Contents()))
 
-		for tokenizer.Next() == nil {
+		for {
+			t := profiler.Now()
+			err := tokenizer.Next()
+			s.tokenizerNextDur += profiler.Since(t)
+			if err != nil {
+				break
+			}
+
+			t = profiler.Now()
 			ngram := string(tokenizer.Ngram())
 			if _, ok := postingLists[ngram]; !ok {
 				postingLists[ngram] = posting.NewList()
+				s.postingListsCreated++
 			}
 			postingLists[ngram].Add(docID)
+			s.postingMutationDur += profiler.Since(t)
+			s.tokens++
 		}
 
 		if field.Schema().Stored() {
 			storedFieldKey := w.storedFieldKey(docID, field.Name())
+			t := profiler.Now()
 			w.batch.Set(storedFieldKey, field.Contents(), nil)
+			d := profiler.Since(t)
+			s.storedFieldSetDur += d
+			s.pebbleBatchSetDur += d
+			s.storedFieldsSet++
+			s.pebbleBatchSets++
+			s.pebbleBatchSetBytes += int64(len(storedFieldKey) + len(field.Contents()))
 		}
 	}
 	if w.batch.Len() >= batchFlushSizeBytes {
@@ -465,23 +526,38 @@ func (w *Writer) flushBatch() error {
 		return nil
 	}
 	w.log.Infof("Batch size is %d", w.batch.Len())
+	commitSize := w.batch.Len()
+	stop := indexprofile.Timer(indexprofile.PhasePebbleBatchCommit)
 	if err := w.batch.Commit(pebble.NoSync); err != nil {
 		return err
 	}
+	stop()
+	indexprofile.Add(indexprofile.CounterPebbleBatchCommits, 1)
+	indexprofile.Add(indexprofile.CounterPebbleBatchCommitBytes, int64(commitSize))
 	w.log.Debugf("flushed batch")
 	w.batch = w.db.NewBatch()
 	return nil
 }
 
-func (w *Writer) updatePostingList(key []byte, pl posting.List, deferOp func(int, int) *pebble.DeferredBatchOp) error {
+func (w *Writer) updatePostingList(key []byte, pl posting.List, field, ngram string, deferOp func(int, int) *pebble.DeferredBatchOp) error {
+	defer indexprofile.Timer(indexprofile.PhaseUpdatePostingList)()
+
 	valueLength := int(pl.GetSerializedSizeInBytes())
 	keyLength := len(key)
+	indexprofile.Add(indexprofile.CounterPostingListsFlushed, 1)
+	indexprofile.Add(indexprofile.CounterPostingListKeyBytes, int64(keyLength))
+	indexprofile.Add(indexprofile.CounterPostingListValueBytes, int64(valueLength))
+	if field != "" {
+		indexprofile.RecordPostingList(field, ngram, pl.GetCardinality(), int64(keyLength), int64(valueLength))
+	}
 
 	op := deferOp(keyLength, valueLength)
 	copy(op.Key, key)
+	stopMarshal := indexprofile.Timer(indexprofile.PhasePostingListMarshal)
 	if err := pl.MarshalInto(op.Value[:0]); err != nil {
 		return err
 	}
+	stopMarshal()
 	if err := op.Finish(); err != nil {
 		return err
 	}
@@ -495,13 +571,15 @@ func (w *Writer) updatePostingList(key []byte, pl posting.List, deferOp func(int
 }
 
 func (w *Writer) Flush() error {
+	defer indexprofile.Timer(indexprofile.PhaseFlush)()
+
 	mu := sync.Mutex{}
 	eg := new(errgroup.Group)
 	eg.SetLimit(runtime.GOMAXPROCS(0))
-	writePLs := func(key []byte, pl posting.List) error {
+	writePLs := func(key []byte, pl posting.List, field, ngram string) error {
 		mu.Lock()
 		defer mu.Unlock()
-		w.updatePostingList(key, pl, w.batch.MergeDeferred)
+		w.updatePostingList(key, pl, field, ngram, w.batch.MergeDeferred)
 		return nil
 	}
 
@@ -514,14 +592,14 @@ func (w *Writer) Flush() error {
 			fieldName := fieldName
 			docIDs := docIDs
 			eg.Go(func() error {
-				return writePLs(w.postingListKey(ngram, fieldName), docIDs)
+				return writePLs(w.postingListKey(ngram, fieldName), docIDs, fieldName, ngram)
 			})
 		}
 	}
 	if w.deletes.GetCardinality() > 0 {
 		eg.Go(func() error {
 			plKey := w.postingListKey(types.DeletesField, types.DeletesField)
-			return writePLs(plKey, w.deletes)
+			return writePLs(plKey, w.deletes, "", "")
 		})
 	}
 	if err := eg.Wait(); err != nil {
