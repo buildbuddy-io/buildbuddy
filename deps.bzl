@@ -243,20 +243,20 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux",
-        sha256 = "59937dcfd2c681a1a6ed5915922bb29735fd2f3004ac9490edb3af4a465d5e81",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-59937dcfd2c681a1a6ed5915922bb29735fd2f3004ac9490edb3af4a465d5e81"],
+        sha256 = "0e1ec2bd6a3a6e5a50b220401dd14174eee234b532dcf1279777a181221d502f",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-0e1ec2bd6a3a6e5a50b220401dd14174eee234b532dcf1279777a181221d502f"],
         executable = True,
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux-6.1",
-        sha256 = "9110b8339c31e83c65afd3cd891a9c70ec5f6f801076f8802f6f92725f0ebc82",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.1-9110b8339c31e83c65afd3cd891a9c70ec5f6f801076f8802f6f92725f0ebc82"],
+        sha256 = "39c4877e80bdf15c6fbd6b3cf9417a65684a97c204da384c2c01e04b597138bf",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.1-39c4877e80bdf15c6fbd6b3cf9417a65684a97c204da384c2c01e04b597138bf"],
         executable = True,
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux-arm64",
-        sha256 = "6e10d53bdf88678143cd9d008a426c43f789b77d47335d8e411a66a365ed658a",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-6e10d53bdf88678143cd9d008a426c43f789b77d47335d8e411a66a365ed658a"],
+        sha256 = "e6870fdc288621a5c9e3424bcd7ddee03816483e61846368de25e93f3db8e52e",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-e6870fdc288621a5c9e3424bcd7ddee03816483e61846368de25e93f3db8e52e"],
         executable = True,
     )
     http_file(
