@@ -111,11 +111,10 @@ type Store struct {
 	grpcServer    *grpc.Server
 	apiClient     *client.APIClient
 	liveness      *nodeliveness.Liveness
-	// This session is used by most of the SyncPropose traffic
 	// session is used for batches that arrive at gRPC Store.SyncPropose
-	// without a pre-attached session. Sender and the txn Coordinator always
-	// pre-attach sessions, so this is reached only by direct gRPC callers
-	// (e.g. usagetracker eviction deletes, metadata atime updates).
+	// without a pre-attached session. The txn Coordinator always pre-attaches
+	// sessions, while generic multi-key write paths such as metadata Set/Delete,
+	// metadata atime updates, and eviction deletes currently do not.
 	session *client.Session
 	// session for StartShard
 	shardStarterSession *client.Session

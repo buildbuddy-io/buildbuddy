@@ -455,7 +455,11 @@ func isConflictKeyError(err error) bool {
 // cache and try the fn again with the new replica information. If the
 // fn succeeds with the new replicas, the range cache will be updated with
 // the new ownership information.
-func (s *Sender) run(ctx context.Context, key []byte, fn runFunc, mods ...Option) (returnedErr error) {
+// runRead is the read-path retry loop: look up the range, walk its
+// replicas via the supplied fn, refresh the range cache and retry on
+// OutOfRange/ConflictKey errors. It does not touch batch.Session — write
+// paths use runPropose to attach a retry-stable session.
+func (s *Sender) runRead(ctx context.Context, key []byte, fn runFunc, mods ...Option) (returnedErr error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer func() {
 		tracing.RecordErrorToSpan(spn, returnedErr)
@@ -472,7 +476,7 @@ func (s *Sender) run(ctx context.Context, key []byte, fn runFunc, mods ...Option
 	for retrier.Next() {
 		rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key, skipRangeCache)
 		if err != nil {
-			log.CtxWarningf(ctx, "sender.run error getting rd for %q: %s, %+v", key, err, s.rangeCache.Get(key))
+			log.CtxWarningf(ctx, "sender.runRead error getting rd for %q: %s, %+v", key, err, s.rangeCache.Get(key))
 			continue
 		}
 		i, err := s.tryReplicas(ctx, rangeDescriptor, fn, opts.ConsistencyMode)
@@ -489,7 +493,7 @@ func (s *Sender) run(ctx context.Context, key []byte, fn runFunc, mods ...Option
 		}
 		lastError = err
 	}
-	return status.UnavailableErrorf("sender.run retries exceeded for key: %q err: %s", key, lastError)
+	return status.UnavailableErrorf("sender.runRead retries exceeded for key: %q err: %s", key, lastError)
 }
 
 func (s *Sender) setupProposeSessionForRange(rangeID uint64, batchCmd *rfpb.BatchCmdRequest) func() {
@@ -503,7 +507,9 @@ func (s *Sender) setupProposeSessionForRange(rangeID uint64, batchCmd *rfpb.Batc
 	// Stamp range_id once, on the first successful range lookup. We do
 	// not re-stamp on retries: if a retry crosses ranges (e.g. on a
 	// split), the destination's dedup record is keyed by (id, range_id)
-	// and the old range_id will miss — that is the desired behavior.
+	// and the old range_id will miss. Sender-owned sessions therefore only
+	// provide idempotent replay while a logical request stays within the same
+	// range namespace.
 	// Sender owns this field on the propose path; pre-attached sessions
 	// (e.g. txn coordinator) leave it at 0 and get stamped here.
 	if batchCmd.Session.GetRangeId() == 0 {
@@ -522,11 +528,14 @@ func (s *Sender) setupProposeSessionForRange(rangeID uint64, batchCmd *rfpb.Batc
 
 // runPropose is the SyncPropose-specific variant of run: it assigns the
 // batch's idempotency session once, before the first proposal attempt, and
-// preserves it across every retry to a different replica or range. This makes
-// retries idempotent so that a post-apply transport failure cannot cause the
-// state machine to apply the same logical write twice. If the batch already
-// carries a session (e.g. a coordinator-derived txn session) we honor it and
-// skip sender-side session allocation.
+// preserves it across retries to different replicas for the same range
+// namespace. This makes ordinary post-apply transport retries idempotent for
+// single-range writes such as CAS/Increment. It does not provide universal
+// exactly-once across split-time range movement; once a retry is rerouted into
+// a different range namespace, replay depends on higher-level operation
+// semantics or explicit migration of dedup state. If the batch already carries
+// a session (e.g. a coordinator-derived txn session) we honor it and skip
+// sender-side session allocation.
 func (s *Sender) runPropose(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest, fn runFunc, mods ...Option) (returnedErr error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer func() {
@@ -640,21 +649,17 @@ func (s *Sender) partitionKeysByRange(ctx context.Context, keys []*KeyMeta, skip
 
 type runMultiKeyFunc func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*KeyMeta) (any, error)
 
-type buildMultiKeyBatchFunc func(keys []*KeyMeta) (*rfpb.BatchCmdRequest, error)
-type parseMultiKeyBatchFunc func(keys []*KeyMeta, batchRsp *rfpb.BatchCmdResponse) (any, error)
-
-type pendingMultiKeyPropose struct {
-	keys      []*KeyMeta
-	batch     *rfpb.BatchCmdRequest
-	cleanupFn func()
-}
-
 // RunMultiKey is similar to Run but works on multiple keys to support batch
 // operations.
 //
 // This method takes care of partitioning the keys into different
 // ranges and passing appropriate replica information to the user provided
 // function.
+//
+// This helper intentionally does not attach sender-owned sessions. It is safe
+// for replay-tolerant operations, but it does not provide strict
+// response-idempotent retry semantics once a logical batch can repartition
+// across ranges (for example after a split).
 //
 // RunMultiKey returns a combined slice of the values returned from successful
 // fn calls.
@@ -727,114 +732,6 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 	return nil, status.UnavailableErrorf("sender.RunMultiKey retries exceeded, err: %s", lastError)
 }
 
-// RunMultiKeyPropose is the propose-specific variant of RunMultiKey. It
-// partitions keys by range, builds one BatchCmdRequest per range, assigns a
-// retry-stable session for each range-batch, and preserves that exact batch
-// across retries to different replicas for the same range. This gives batched
-// writes the same idempotency guarantees as SyncPropose.
-func (s *Sender) RunMultiKeyPropose(ctx context.Context, keys []*KeyMeta, build buildMultiKeyBatchFunc, parse parseMultiKeyBatchFunc, mods ...Option) ([]any, error) {
-	ctx, spn := tracing.StartSpan(ctx)
-	defer spn.End()
-	opts := defaultOptions()
-	for _, mod := range mods {
-		mod(opts)
-	}
-
-	retrier := retry.DefaultWithContext(ctx)
-	skipRangeCache := false
-	var mu sync.Mutex
-	var rsps []any
-	remainingKeys := keys
-	var lastError error
-	pendingByRange := make(map[uint64]*pendingMultiKeyPropose)
-	defer func() {
-		for _, pending := range pendingByRange {
-			if pending.cleanupFn != nil {
-				pending.cleanupFn()
-			}
-		}
-	}()
-
-	for retrier.Next() {
-		keysByRange, err := s.partitionKeysByRange(ctx, remainingKeys, skipRangeCache)
-		if err != nil {
-			return nil, err
-		}
-
-		remainingKeys = nil
-
-		eg, egCtx := errgroup.WithContext(ctx)
-		eg.SetLimit(100)
-		for _, rk := range keysByRange {
-			rk := rk
-			eg.Go(func() error {
-				mu.Lock()
-				pending, ok := pendingByRange[rk.rd.GetRangeId()]
-				if !ok {
-					batchCmd, err := build(rk.keys)
-					if err != nil {
-						mu.Unlock()
-						return err
-					}
-					pending = &pendingMultiKeyPropose{
-						keys:      rk.keys,
-						batch:     batchCmd,
-						cleanupFn: s.setupProposeSessionForRange(rk.rd.GetRangeId(), batchCmd),
-					}
-					pendingByRange[rk.rd.GetRangeId()] = pending
-				}
-				mu.Unlock()
-
-				var rangeRsp any
-				i, err := s.tryReplicas(egCtx, rk.rd, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
-					rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
-						Header: h,
-						Batch:  pending.batch,
-					})
-					if err != nil {
-						return err
-					}
-					rangeRsp, err = parse(rk.keys, rsp.GetBatch())
-					return err
-				}, opts.ConsistencyMode)
-				if err != nil {
-					if !status.IsOutOfRangeError(err) {
-						return err
-					}
-					mu.Lock()
-					remainingKeys = append(remainingKeys, rk.keys...)
-					lastError = err
-					mu.Unlock()
-				} else {
-					if i != 0 {
-						replica := rk.rd.GetReplicas()[i]
-						s.rangeCache.SetPreferredReplica(ctx, replica, rk.rd)
-					}
-					mu.Lock()
-					rsps = append(rsps, rangeRsp)
-					if pending.cleanupFn != nil {
-						pending.cleanupFn()
-						pending.cleanupFn = nil
-					}
-					delete(pendingByRange, rk.rd.GetRangeId())
-					mu.Unlock()
-				}
-				return nil
-			})
-		}
-
-		if err := eg.Wait(); err != nil {
-			return nil, err
-		}
-
-		if len(remainingKeys) == 0 {
-			return rsps, nil
-		}
-		skipRangeCache = true
-	}
-	return nil, status.UnavailableErrorf("sender.RunMultiKeyPropose retries exceeded, err: %s", lastError)
-}
-
 func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
@@ -865,6 +762,8 @@ func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.Bat
 
 // SyncProposeWithRangeDescriptor calls SyncPropose on different replicas
 // specified in the given range descriptor, until one of the replica succeeds.
+// Txn callers are expected to pre-attach their own deterministic session; the
+// sender only fills in the ordinary single-range session path when needed.
 func (s *Sender) SyncProposeWithRangeDescriptor(ctx context.Context, rd *rfpb.RangeDescriptor, batchCmd *rfpb.BatchCmdRequest, makeHeaderFn header.MakeFunc) (*rfpb.SyncProposeResponse, error) {
 	var syncRsp *rfpb.SyncProposeResponse
 	cleanupFn := s.setupProposeSessionForRange(rd.GetRangeId(), batchCmd)
@@ -900,7 +799,7 @@ func (s *Sender) SyncRead(ctx context.Context, key []byte, batchCmd *rfpb.BatchC
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 	var rsp *rfpb.SyncReadResponse
-	err := s.run(ctx, key, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
+	err := s.runRead(ctx, key, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		r, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
 			Header: h,
 			Batch:  batchCmd,

@@ -9,7 +9,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -165,7 +164,7 @@ func TestFetchPartitionDescriptors(t *testing.T) {
 	require.Equal(t, uint64(4), pd2.GetFirstRangeId())
 }
 
-func TestDuplicateApplyOnReplicaRetry(t *testing.T) {
+func TestSyncProposeIsIdempotentOnReplicaRetry(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_driver", false)
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
@@ -216,7 +215,7 @@ func TestDuplicateApplyOnReplicaRetry(t *testing.T) {
 	require.Equal(t, uint64(1), binary.LittleEndian.Uint64(buf))
 }
 
-func TestSyncProposeWithRangeDescriptorDuplicateApplyOnReplicaRetry(t *testing.T) {
+func TestSyncProposeWithRangeDescriptorIsIdempotentOnReplicaRetry(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_driver", false)
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
@@ -272,13 +271,16 @@ func TestSyncProposeWithRangeDescriptorDuplicateApplyOnReplicaRetry(t *testing.T
 	require.Equal(t, uint64(1), binary.LittleEndian.Uint64(buf))
 }
 
-func TestRunMultiKeyProposeDuplicateApplyOnReplicaRetry(t *testing.T) {
+func TestSyncProposeCASIsIdempotentOnReplicaRetry(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_driver", false)
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 
-	key := []byte("PTdefault/dup-apply-multikey")
+	key := []byte("PTdefault/dup-apply-cas")
+	oldValue := []byte("initial")
+	newValue := []byte("updated")
+
 	var faultInjected atomic.Bool
 	interceptor := func(
 		ctx context.Context,
@@ -290,8 +292,8 @@ func TestRunMultiKeyProposeDuplicateApplyOnReplicaRetry(t *testing.T) {
 		syncReq, ok := req.(*rfpb.SyncProposeRequest)
 		shouldFault := ok &&
 			len(syncReq.GetBatch().GetUnion()) == 1 &&
-			syncReq.GetBatch().GetUnion()[0].GetIncrement() != nil &&
-			string(syncReq.GetBatch().GetUnion()[0].GetIncrement().GetKey()) == string(key)
+			syncReq.GetBatch().GetUnion()[0].GetCas() != nil &&
+			string(syncReq.GetBatch().GetUnion()[0].GetCas().GetKv().GetKey()) == string(key)
 		if err == nil &&
 			strings.HasSuffix(info.FullMethod, "/SyncPropose") &&
 			shouldFault &&
@@ -312,20 +314,33 @@ func TestRunMultiKeyProposeDuplicateApplyOnReplicaRetry(t *testing.T) {
 	testutil.WaitForRangeLease(t, ctx, stores, 1)
 	testutil.WaitForRangeLease(t, ctx, stores, 2)
 
-	_, err := s1.Sender().RunMultiKeyPropose(ctx, []*sender.KeyMeta{{Key: key}},
-		func(keys []*sender.KeyMeta) (*rfpb.BatchCmdRequest, error) {
-			return rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
-				Key:   keys[0].Key,
-				Delta: 1,
-			}).ToProto()
-		},
-		func(keys []*sender.KeyMeta, batchRsp *rfpb.BatchCmdResponse) (any, error) {
-			return nil, rbuilder.NewBatchResponseFromProto(batchRsp).AnyError()
-		},
-	)
+	// Seed the key with oldValue. The interceptor only faults CAS requests
+	// to this key, so the seeding write passes through normally.
+	writeBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{Key: key, Value: oldValue},
+	}).ToProto()
 	require.NoError(t, err)
+	_, err = s1.Sender().SyncPropose(ctx, key, writeBatch)
+	require.NoError(t, err)
+
+	// CAS oldValue -> newValue. The first attempt applies on the replica
+	// (so state is already newValue), then the interceptor returns
+	// Unavailable so the sender retries. Without idempotency the retry
+	// would see current=newValue, expected=oldValue and report a
+	// CAS mismatch error.
+	casBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
+		Kv:            &rfpb.KV{Key: key, Value: newValue},
+		ExpectedValue: oldValue,
+	}).ToProto()
+	require.NoError(t, err)
+
+	rsp, err := s1.Sender().SyncPropose(ctx, key, casBatch)
+	require.NoError(t, err)
+	casRsp, err := rbuilder.NewBatchResponseFromProto(rsp).CASResponse(0)
+	require.NoError(t, err)
+	require.Equal(t, newValue, casRsp.GetKv().GetValue())
 
 	buf, err := s1.Sender().DirectRead(ctx, key)
 	require.NoError(t, err)
-	require.Equal(t, uint64(1), binary.LittleEndian.Uint64(buf))
+	require.Equal(t, newValue, buf)
 }

@@ -449,6 +449,9 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 		start := rc.clock.Now()
 		defer metrics.RaftBatchAtimeUpdateDurationUsec.Observe(float64(rc.clock.Since(start).Microseconds()))
 
+		// UpdateAtime is safe to send through RunMultiKey: retries may be
+		// re-executed on current state rather than replaying the original
+		// response, but the state-machine effect is monotonic/no-op on replay.
 		_, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 			batch := rbuilder.NewBatchBuilder()
 			for _, k := range keys {
@@ -733,7 +736,7 @@ func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRespo
 	}
 
 	// Shard the query by key and query shards in parallel.
-	_, err = rc.sender().RunMultiKeyPropose(ctx, keys, func(keys []*sender.KeyMeta) (*rfpb.BatchCmdRequest, error) {
+	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			setOp := k.Meta.(*mdpb.SetRequest_SetOperation)
@@ -748,9 +751,14 @@ func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRespo
 		if err != nil {
 			return nil, err
 		}
-		return batchProto, nil
-	}, func(keys []*sender.KeyMeta, batchRsp *rfpb.BatchCmdResponse) (any, error) {
-		return nil, rbuilder.NewBatchResponseFromProto(batchRsp).AnyError()
+		rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+			Header: h,
+			Batch:  batchProto,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return nil, rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).AnyError()
 	}, sender.WithConsistencyMode(rfpb.Header_RANGELEASE))
 	if err != nil {
 		return nil, err
@@ -785,7 +793,9 @@ func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.De
 	}
 
 	// Shard the query by key and query shards in parallel.
-	_, err = rc.sender().RunMultiKeyPropose(ctx, keys, func(keys []*sender.KeyMeta) (*rfpb.BatchCmdRequest, error) {
+	// Delete is safe to send through RunMultiKey: once the key is gone,
+	// duplicate retries still return success.
+	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			deleteOp := k.Meta.(*mdpb.DeleteRequest_DeleteOperation)
@@ -798,9 +808,14 @@ func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.De
 		if err != nil {
 			return nil, err
 		}
-		return batchProto, nil
-	}, func(keys []*sender.KeyMeta, batchRsp *rfpb.BatchCmdResponse) (any, error) {
-		return nil, rbuilder.NewBatchResponseFromProto(batchRsp).AnyError()
+		rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+			Header: h,
+			Batch:  batchProto,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return nil, rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).AnyError()
 	}, sender.WithConsistencyMode(rfpb.Header_RANGELEASE))
 	if err != nil {
 		return nil, err

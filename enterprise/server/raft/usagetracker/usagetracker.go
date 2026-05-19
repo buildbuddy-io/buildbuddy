@@ -35,6 +35,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
 
@@ -225,7 +226,9 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 	start := pu.clock.Now()
 	defer metrics.RaftBatchDeleteDurationUsec.Observe(float64(pu.clock.Since(start).Microseconds()))
 
-	rsps, err := pu.sender.RunMultiKeyPropose(ctx, keys, func(keys []*sender.KeyMeta) (*rfpb.BatchCmdRequest, error) {
+	// Eviction delete is replay-safe: a duplicate retry after the entry is gone
+	// still returns success, so this path does not need sender-owned sessions.
+	rsps, err := pu.sender.RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			sample, ok := k.Meta.(*approxlru.Sample[*evictionKey])
@@ -241,22 +244,27 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 		if err != nil {
 			return nil, fmt.Errorf("could not construct delete req proto: %s", err)
 		}
-		return batchCmd, nil
-	}, func(keys []*sender.KeyMeta, batchRsp *rfpb.BatchCmdResponse) (any, error) {
+		rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+			Header: h,
+			Batch:  batchCmd,
+		})
+		if err != nil {
+			return nil, err
+		}
+		parsed := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
 		res := make([]*approxlru.Sample[*evictionKey], 0)
-		parsed := rbuilder.NewBatchResponseFromProto(batchRsp)
 		errCount := 0
-		var err error
+		var lastErr error
 		for i, k := range keys {
-			_, err = parsed.DeleteResponse(i)
-			if err == nil {
+			_, lastErr = parsed.DeleteResponse(i)
+			if lastErr == nil {
 				res = append(res, k.Meta.(*approxlru.Sample[*evictionKey]))
 			} else {
 				errCount++
 			}
 		}
 		if errCount > 0 {
-			return res, fmt.Errorf("failed to evict %d keys in partition %s, last error: %s", errCount, pu.part.ID, err)
+			return res, fmt.Errorf("failed to evict %d keys in partition %s, last error: %s", errCount, pu.part.ID, lastErr)
 		}
 		return res, nil
 	})
