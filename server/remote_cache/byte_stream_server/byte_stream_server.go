@@ -132,8 +132,9 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	bazelMetadata := bazel_request.GetRequestMetadata(ctx)
-	if span.IsRecording() && r.GetCompressor() == repb.Compressor_IDENTITY && r.GetDigest().GetSizeBytes() > 1000 {
+	if span.IsRecording() && r.GetCompressor() == repb.Compressor_IDENTITY && r.GetDigest().GetSizeBytes() > 4*1024*1024 {
 		// TODO(go/b/7355): remove this once we understand why some clients are not requesting compressed downloads
+		log.CtxInfof(ctx, "Tracing uncompressed bytestream Read with trace ID: %v", span.SpanContext().TraceID())
 		c := usageutil.CollectionFromRPCContext(ctx)
 		span.SetAttributes(
 			attribute.String("compressor", r.GetCompressor().String()),
