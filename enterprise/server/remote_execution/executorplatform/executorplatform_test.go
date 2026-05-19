@@ -486,37 +486,44 @@ func TestContainerImageNameRewrite(t *testing.T) {
 
 func TestForceNetworkIsolationType(t *testing.T) {
 	for _, testCase := range []struct {
+		name                       string
+		networkValue               string
 		dockerNetworkValue         string
 		workloadIsolationType      string
 		forcedNetworkIsolationType string
 		expectedIsolationType      string
 	}{
 		// No override set -- behavior unchanged.
-		{"", "podman", "", "podman"},
-		{"host", "podman", "", "podman"},
-		{"none", "podman", "", "podman"},
+		{"no override", "", "", "podman", "", "podman"},
+		{"no override host network", "", "host", "podman", "", "podman"},
+		{"no override none network", "", "none", "podman", "", "podman"},
 
-		// Override set: everything except "none" should
+		// Override set: everything except disabled networking should
 		// trigger an override.
-		{"", "podman", "firecracker", "firecracker"},
-		{"host", "podman", "firecracker", "firecracker"},
-		{"none", "podman", "firecracker", "podman"},
+		{"forced override default network", "", "", "podman", "firecracker", "firecracker"},
+		{"forced override host network", "", "host", "podman", "firecracker", "firecracker"},
+		{"forced override legacy none network", "", "none", "podman", "firecracker", "podman"},
+		{"forced override network off", "off", "", "podman", "firecracker", "podman"},
+		{"forced override network external", "external", "", "podman", "firecracker", "firecracker"},
 	} {
-		plat := &repb.Platform{Properties: []*repb.Platform_Property{
-			{Name: "container-image", Value: "docker://alpine"},
-			{Name: "dockerNetwork", Value: testCase.dockerNetworkValue},
-			{Name: "workload-isolation-type", Value: testCase.workloadIsolationType},
-		}}
+		t.Run(testCase.name, func(t *testing.T) {
+			plat := &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "container-image", Value: "docker://alpine"},
+				{Name: "network", Value: testCase.networkValue},
+				{Name: "dockerNetwork", Value: testCase.dockerNetworkValue},
+				{Name: "workload-isolation-type", Value: testCase.workloadIsolationType},
+			}}
 
-		flags.Set(t, "executor.forced_network_isolation_type", testCase.forcedNetworkIsolationType)
+			flags.Set(t, "executor.forced_network_isolation_type", testCase.forcedNetworkIsolationType)
 
-		platformProps, err := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
-		require.NoError(t, err)
-		env := testenv.GetTestEnv(t)
-		env.SetXcodeLocator(&xcodeLocator{})
-		err = ApplyOverrides(env, podmanAndFirecracker, platformProps, &repb.Command{})
-		assert.NoError(t, err)
-		assert.Equal(t, testCase.expectedIsolationType, platformProps.WorkloadIsolationType, testCase)
+			platformProps, err := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+			require.NoError(t, err)
+			env := testenv.GetTestEnv(t)
+			env.SetXcodeLocator(&xcodeLocator{})
+			err = ApplyOverrides(env, podmanAndFirecracker, platformProps, &repb.Command{})
+			assert.NoError(t, err)
+			assert.Equal(t, testCase.expectedIsolationType, platformProps.WorkloadIsolationType, testCase)
+		})
 	}
 }
 

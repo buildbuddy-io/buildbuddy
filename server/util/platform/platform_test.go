@@ -429,3 +429,27 @@ func TestParse_ExecrootPath(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", platformProps.ExecrootPath)
 }
+
+func TestGetEffectiveDockerNetwork_NetworkOffDisablesNetworking(t *testing.T) {
+	network, err := GetEffectiveDockerNetwork("off", "")
+	require.NoError(t, err)
+	require.Equal(t, "none", network)
+	require.True(t, IsDockerNetworkDisabled(network))
+}
+
+func TestIsDockerNetworkDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		network  string
+		disabled bool
+	}{
+		{"off", true},
+		{"none", true},
+		{"OFF", true},
+		{"NONE", true},
+		{"", false},
+		{"bridge", false},
+		{"host", false},
+	} {
+		require.Equal(t, tc.disabled, IsDockerNetworkDisabled(tc.network), tc.network)
+	}
+}

@@ -883,3 +883,7 @@ func GetEffectiveDockerNetwork(network, dockerNetwork string) (string, error) {
 	return "", status.InvalidArgumentErrorf(
 		"Unsupported dockerNetwork property value: %s", dockerNetwork)
 }
+
+func IsDockerNetworkDisabled(network string) bool {
+	return strings.EqualFold(network, "off") || strings.EqualFold(network, "none")
+}

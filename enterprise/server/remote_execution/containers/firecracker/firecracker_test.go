@@ -2948,6 +2948,45 @@ func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
 	testFirecrackerRunWithDockerOverUDS(t, imageWithDockerInstalled)
 }
 
+func TestFirecrackerRunWithDockerOverUDSNetworkOff(t *testing.T) {
+	if *skipDockerTests {
+		t.Skip()
+	}
+
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	networkMode, err := firecracker.NetworkMode("off", true)
+	require.NoError(t, err)
+	require.Equal(t, fcpb.NetworkMode_NETWORK_MODE_LOCAL, networkMode)
+
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `docker info >/dev/null && echo ok`},
+	}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         imageWithDockerInstalled,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			NetworkMode:       networkMode,
+			InitDockerd:       true,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "ok\n", string(res.Stdout))
+	assert.Equal(t, "", string(res.Stderr))
+}
+
 func TestFirecrackerRunWithDockerV28OverUDS(t *testing.T) {
 	// docker v28 requires nf_raw in order to bind ports, so this tests that the
 	// 'raw' table is properly set up in the guest.
@@ -4277,19 +4316,15 @@ func TestNetworkMode_Off(t *testing.T) {
 	assert.Equal(t, fcpb.NetworkMode_NETWORK_MODE_OFF, mode)
 }
 
-// TestNetworkMode_OffWithInitDockerd is the security regression test:
-// network=off must not produce a networking-enabled mode regardless of
-// init-dockerd. Combining network=off with init-dockerd=true must either
-// return an error or resolve to NETWORK_MODE_OFF — never NETWORK_MODE_LOCAL,
-// which grants the VM host-local connectivity.
+// TestNetworkMode_OffWithInitDockerd confirms network=off with init-dockerd
+// keeps the host-local networking needed for MMDS dockerd config, without
+// enabling external networking.
 func TestNetworkMode_OffWithInitDockerd(t *testing.T) {
 	mode, err := firecracker.NetworkMode("off", true)
-	if err != nil {
-		// Acceptable: reject the combination with a clear error.
-		return
-	}
-	assert.False(t, firecracker.NetworkingEnabled(mode),
-		"network=off + init-dockerd=true must not produce a networking-enabled mode; got %v", mode)
+	require.NoError(t, err)
+	assert.Equal(t, fcpb.NetworkMode_NETWORK_MODE_LOCAL, mode)
+	assert.True(t, firecracker.NetworkingEnabled(mode))
+	assert.False(t, firecracker.ExternalNetworkingEnabled(mode))
 }
 
 // TestNetworkMode_ExternalVariants confirms the non-off paths are unaffected.
