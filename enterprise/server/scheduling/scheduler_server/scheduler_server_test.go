@@ -2,6 +2,7 @@ package scheduler_server
 
 import (
 	"context"
+	"errors"
 	"io"
 	"slices"
 	"sort"
@@ -508,33 +509,41 @@ func (e *fakeExecutor) Register() {
 				return
 			case msg := <-recvChan:
 				rsp, err := msg.Value, msg.Err
-				if status.IsUnavailableError(err) {
+				if streamClosed(ctx, err) {
 					return
 				}
 				require.NoError(e.t, err)
 				log.CtxInfof(ctx, "Received scheduler message: %+v", rsp)
-				if e.unhealthy.Load() {
-					log.CtxInfof(ctx, "Executor %s got task %q but is unhealthy -- ignoring so it times out", e.id, rsp.GetEnqueueTaskReservationRequest().GetTaskId())
-				} else {
-					err = stream.Send(&scpb.RegisterAndStreamWorkRequest{
-						EnqueueTaskReservationResponse: &scpb.EnqueueTaskReservationResponse{
-							TaskId: rsp.GetEnqueueTaskReservationRequest().GetTaskId(),
-						},
-					})
-					require.NoError(e.t, err)
-					e.mu.Lock()
-					log.CtxInfof(ctx, "Executor %s got task %q with scheduling delay %s", e.id, rsp.GetEnqueueTaskReservationRequest().GetTaskId(), rsp.GetEnqueueTaskReservationRequest().GetDelay())
-					taskID := rsp.GetEnqueueTaskReservationRequest().GetTaskId()
-					e.tasks[taskID] = task{delay: rsp.GetEnqueueTaskReservationRequest().GetDelay().AsDuration()}
-					e.mu.Unlock()
-					// Best effort: notify the test of every scheduler reply.
-					select {
-					case e.schedulerMessages <- rsp:
-					default:
+				if req := rsp.GetEnqueueTaskReservationRequest(); req != nil {
+					if e.unhealthy.Load() {
+						log.CtxInfof(ctx, "Executor %s got task %q but is unhealthy -- ignoring so it times out", e.id, req.GetTaskId())
+					} else {
+						err = stream.Send(&scpb.RegisterAndStreamWorkRequest{
+							EnqueueTaskReservationResponse: &scpb.EnqueueTaskReservationResponse{
+								TaskId: req.GetTaskId(),
+							},
+						})
+						if streamClosed(ctx, err) {
+							return
+						}
+						require.NoError(e.t, err)
+						e.mu.Lock()
+						log.CtxInfof(ctx, "Executor %s got task %q with scheduling delay %s", e.id, req.GetTaskId(), req.GetDelay())
+						taskID := req.GetTaskId()
+						e.tasks[taskID] = task{delay: req.GetDelay().AsDuration()}
+						e.mu.Unlock()
 					}
+				}
+				// Best effort: notify the test of every scheduler reply.
+				select {
+				case e.schedulerMessages <- rsp:
+				default:
 				}
 			case req := <-e.send:
 				err := stream.Send(req)
+				if streamClosed(ctx, err) {
+					return
+				}
 				require.NoError(e.t, err)
 			}
 		}
@@ -543,6 +552,31 @@ func (e *fakeExecutor) Register() {
 	// Give the executor a moment to register with the scheduler.
 	// TODO: explicitly wait for a scheduler reply.
 	time.Sleep(100 * time.Millisecond)
+}
+
+func streamClosed(ctx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	return ctx.Err() != nil || errors.Is(err, io.EOF) || status.IsCanceledError(err) || status.IsUnavailableError(err)
+}
+
+func (e *fakeExecutor) NextSchedulerMessage() *scpb.RegisterAndStreamWorkResponse {
+	select {
+	case msg := <-e.schedulerMessages:
+		return msg
+	case <-time.After(5 * time.Second):
+		require.FailNowf(e.t, "executor did not receive scheduler message", "executor %s", e.id)
+	}
+	return nil
+}
+
+func (e *fakeExecutor) EnsureNoSchedulerMessage() {
+	select {
+	case msg := <-e.schedulerMessages:
+		require.FailNowf(e.t, "executor received scheduler message but was not expecting it", "executor %s message: %+v", e.id, msg)
+	case <-time.After(100 * time.Millisecond):
+	}
 }
 
 func (e *fakeExecutor) wait() {
@@ -1090,15 +1124,11 @@ func TestEnqueueTaskReservation_RoutingConfig(t *testing.T) {
 			require.NoError(t, err)
 
 			for _, ex := range []*fakeExecutor{ex1, ex2} {
-				var msg *scpb.RegisterAndStreamWorkResponse
-				select {
-				case msg = <-ex.schedulerMessages:
-				default:
-				}
 				if slices.Contains(tc.expectRoutedToHosts, ex.node.GetHost()) {
+					msg := ex.NextSchedulerMessage()
 					require.Equal(t, req.GetTaskId(), msg.GetEnqueueTaskReservationRequest().GetTaskId())
 				} else {
-					require.Nil(t, msg)
+					ex.EnsureNoSchedulerMessage()
 				}
 			}
 		})
