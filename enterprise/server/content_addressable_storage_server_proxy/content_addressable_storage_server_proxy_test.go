@@ -189,6 +189,26 @@ func update(ctx context.Context, client repb.ContentAddressableStorageClient, bl
 	}
 }
 
+func TestBatchUpdateBlobsCompressorMetricsLabelsAreBounded(t *testing.T) {
+	cm := newCacheMetrics().addUpdateMetrics([]*repb.BatchUpdateBlobsRequest_Request{
+		{Compressor: repb.Compressor_IDENTITY, Data: []byte("a")},
+		{Compressor: repb.Compressor_ZSTD, Data: []byte("bb")},
+		{Compressor: repb.Compressor_Value(123), Data: []byte("ccc")},
+		{Compressor: repb.Compressor_Value(456), Data: []byte("dddd")},
+	})
+
+	gotDigests := map[string]int{}
+	gotBytes := map[string]int{}
+	for _, byCompressor := range cm.digestsPerStatusAndCompressor {
+		maps.Copy(gotDigests, byCompressor)
+	}
+	for _, byCompressor := range cm.bytesPerStatusAndCompressor {
+		maps.Copy(gotBytes, byCompressor)
+	}
+	require.Equal(t, map[string]int{"IDENTITY": 1, "ZSTD": 1, "unknown": 2}, gotDigests)
+	require.Equal(t, map[string]int{"IDENTITY": 1, "ZSTD": 2, "unknown": 7}, gotBytes)
+}
+
 func expectAtimeUpdate(t *testing.T, clock *clockwork.FakeClock, requestCount *atomic.Int32) {
 	requestCount.Store(0)
 	clock.Advance(atimeUpdatePeriod + time.Second)
