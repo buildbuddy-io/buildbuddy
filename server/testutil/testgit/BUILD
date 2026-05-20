@@ -9,8 +9,11 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testgit",
     deps = [
         "//server/interfaces",
+        "//server/tables",
         "//server/testutil/testfs",
         "//server/testutil/testshell",
+        "//server/util/db",
+        "//server/util/git",
         "//server/util/mockgitserver",
         "//server/util/status",
         "@com_github_google_go_github_v59//github",
