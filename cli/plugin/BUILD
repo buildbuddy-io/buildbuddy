@@ -29,6 +29,7 @@ go_test(
     srcs = ["plugin_test.go"],
     embed = [":plugin"],
     deps = [
+        "//cli/arg",
         "//cli/config",
         "//cli/log",
         "//cli/parser",

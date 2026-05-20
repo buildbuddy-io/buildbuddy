@@ -72,12 +72,7 @@ type ExecutorProperties struct {
 }
 
 func (p *ExecutorProperties) SupportsIsolation(c platform.ContainerType) bool {
-	for _, s := range p.SupportedIsolationTypes {
-		if s == c {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(p.SupportedIsolationTypes, c)
 }
 
 // GetExecutorProperties returns a struct of properties that the configured

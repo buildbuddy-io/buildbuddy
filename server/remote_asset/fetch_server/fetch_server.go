@@ -30,6 +30,7 @@ import (
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gerrdetails "google.golang.org/genproto/googleapis/rpc/errdetails"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
@@ -342,6 +343,9 @@ func (p *FetchServer) rewriteToCache(ctx context.Context, blobDigest *repb.Diges
 	}()
 
 	cacheRN := digest.NewCASResourceName(blobDigest, instanceName, fromFunc)
+	if remote_cache_config.ZstdTranscodingEnabled() {
+		cacheRN.SetCompressor(repb.Compressor_ZSTD)
+	}
 	if err := cachetools.GetBlob(ctx, getByteStreamClient(p.env), cacheRN, tmpFile); err != nil {
 		log.CtxErrorf(ctx, "Failed to read blob from cache for %s: %s", digest.String(blobDigest), err)
 		return nil

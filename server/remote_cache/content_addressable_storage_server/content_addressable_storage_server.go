@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -122,13 +123,19 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		return nil, err
 	}
 
-	if len(missing) > 0 && chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
+	// The chunked-manifest fallback lookup is skipped when the caller signals
+	// that these digests are individual content-defined chunks, not whole blobs.
+	// This is a safety guard against misaligned MaxChunkSizeBytes during rolling
+	// deploys: without the header, a chunk sized above the server's current
+	// MaxChunkSizeBytes would slip past the size guard below and trigger a
+	// spurious (and expensive) AC manifest lookup.
+	if len(missing) > 0 && !cdc.IsChunked(ctx) && chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
 		checker := chunking.NewMissingChunkChecker(s.cache)
 
 		// https://go.dev/wiki/SliceTricks#filtering-without-allocating
 		stillMissing := missing[:0]
 		for _, d := range missing {
-			if d.GetSizeBytes() <= chunking.MinChunkedReadFallbackSizeBytes() {
+			if d.GetSizeBytes() <= chunking.MaxChunkSizeBytes() {
 				stillMissing = append(stillMissing, d)
 				continue
 			}
@@ -454,12 +461,7 @@ func clientAcceptsCompressor(acceptableCompressors []repb.Compressor_Value, comp
 	if compressor == repb.Compressor_IDENTITY {
 		return true
 	}
-	for _, c := range acceptableCompressors {
-		if c == compressor {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(acceptableCompressors, compressor)
 }
 
 func zstdDecompress(data []byte, decompressedLength int64) ([]byte, error) {
@@ -1141,8 +1143,7 @@ func isComplete(children []*capb.DirectoryWithDigest) bool {
 			return false
 		}
 		for _, dirNode := range child.GetDirectory().GetDirectories() {
-			grn := digest.NewResourceName(dirNode.GetDigest(), "", rspb.CacheType_CAS, rn.GetDigestFunction())
-			if grn.IsEmpty() {
+			if digest.IsEmptyHash(dirNode.GetDigest(), rn.GetDigestFunction()) {
 				continue
 			}
 			if _, ok := allDigests[dirNode.GetDigest().GetHash()]; !ok {

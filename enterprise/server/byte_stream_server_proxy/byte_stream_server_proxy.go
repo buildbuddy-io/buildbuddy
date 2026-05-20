@@ -1093,10 +1093,12 @@ func recordWriteMetrics(bsm byteStreamMetrics) {
 		}
 		if bsm.chunkBytesTotal > 0 {
 			metrics.ByteStreamChunkedWriteChunkBytes.With(chunkedLabels).Add(float64(bsm.chunkBytesTotal))
+			metrics.ByteStreamChunkedWriteChunkBytesByGroup.With(chunkedLabelsWithGroup).Add(float64(bsm.chunkBytesTotal))
 			metrics.ByteStreamChunkedWriteChunkBytesByActionMnemonic.With(chunkedLabelsWithActionMnemonic).Add(float64(bsm.chunkBytesTotal))
 		}
 		if bsm.chunkBytesDeduped > 0 {
 			metrics.ByteStreamChunkedWriteDedupedChunkBytes.With(chunkedLabels).Add(float64(bsm.chunkBytesDeduped))
+			metrics.ByteStreamChunkedWriteDedupedChunkBytesByGroup.With(chunkedLabelsWithGroup).Add(float64(bsm.chunkBytesDeduped))
 			metrics.ByteStreamChunkedWriteDedupedChunkBytesByActionMnemonic.With(chunkedLabelsWithActionMnemonic).Add(float64(bsm.chunkBytesDeduped))
 		}
 		totalDuration := bsm.chunkingDuration + bsm.remoteDuration
@@ -1131,11 +1133,13 @@ func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
 	if bazel_request.GetRequestMetadata(ctx).GetActionId() == "bes-upload" {
 		return false
 	}
-	if cdc.EnabledViaHeader(ctx) {
-		return true
+	// The write is already a content-defined chunk — never re-chunk it.
+	if cdc.IsChunked(ctx) {
+		return false
 	}
-	return chunking.Enabled(ctx, s.efp) &&
-		(s.efp == nil || s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", true))
+	return s.efp != nil &&
+		s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", false) &&
+		chunking.Enabled(ctx, s.efp)
 }
 
 type writeChunkedResult struct {
@@ -1186,7 +1190,10 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	digestFunction := rn.GetDigestFunction()
 	instanceName := rn.GetInstanceName()
 	compressor := rn.GetCompressor()
-	uploader, err := newChunkUploader(ctx, s, instanceName, digestFunction)
+	// Tag outgoing chunk uploads so intermediaries downstream of this proxy
+	// do not re-chunk them.
+	chunkUploadCtx := cdc.ContextWithChunked(ctx)
+	uploader, err := newChunkUploader(chunkUploadCtx, s, instanceName, digestFunction)
 	if err != nil {
 		return writeChunkedResult{}, err
 	}
@@ -1236,7 +1243,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		return nil
 	}
 
-	chunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), chunkWriteFn)
+	chunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes(ctx, s.efp)), chunkWriteFn)
 	if err != nil {
 		return writeChunkedResult{}, status.InternalErrorf("creating chunker: %s", err)
 	}

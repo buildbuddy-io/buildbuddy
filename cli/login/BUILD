@@ -9,7 +9,6 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/log",
-        "//cli/parser",
         "//cli/storage",
         "//cli/terminal",
         "//proto:buildbuddy_service_go_proto",
@@ -25,6 +24,9 @@ go_test(
     srcs = ["login_test.go"],
     embed = [":login"],
     deps = [
+        "//cli/arg",
+        "//cli/parser",
+        "//cli/parser/test_data",
         "//cli/storage",
         "//server/testutil/testgit",
         "//server/util/status",

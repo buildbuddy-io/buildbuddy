@@ -4,11 +4,18 @@ import (
 	"os"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	parser.SetBazelHelpForTesting(test_data.BazelHelpFlagsAsProtoOutput)
+}
 
 func TestAPIKeyDiscovery(t *testing.T) {
 	for _, testCase := range []struct {
@@ -24,9 +31,10 @@ func TestAPIKeyDiscovery(t *testing.T) {
 			envAPIKey:      "env-api-key",
 			expectedAPIKey: "env-api-key",
 			expectedArgs: []string{
+				"--ignore_all_rc_files",
 				"build",
-				"//foo:bar",
 				"--remote_header=x-buildbuddy-api-key=env-api-key",
+				"//foo:bar",
 			},
 		},
 		{
@@ -34,9 +42,10 @@ func TestAPIKeyDiscovery(t *testing.T) {
 			repoAPIKey:     "repo-api-key",
 			expectedAPIKey: "repo-api-key",
 			expectedArgs: []string{
+				"--ignore_all_rc_files",
 				"build",
-				"//foo:bar",
 				"--remote_header=x-buildbuddy-api-key=repo-api-key",
+				"//foo:bar",
 			},
 		},
 		{
@@ -45,14 +54,15 @@ func TestAPIKeyDiscovery(t *testing.T) {
 			repoAPIKey:     "repo-api-key",
 			expectedAPIKey: "env-api-key",
 			expectedArgs: []string{
+				"--ignore_all_rc_files",
 				"build",
-				"//foo:bar",
 				"--remote_header=x-buildbuddy-api-key=env-api-key",
+				"//foo:bar",
 			},
 		},
 		{
 			name:              "neither env nor .git/config defined",
-			expectedArgs:      []string{"build", "//foo:bar"},
+			expectedArgs:      []string{"--ignore_all_rc_files", "build", "//foo:bar"},
 			expectedGetAPIErr: true,
 		},
 	} {
@@ -86,10 +96,12 @@ func TestAPIKeyDiscovery(t *testing.T) {
 			}
 
 			// Supported Bazel commands should receive the discovered API key.
-			args, err := ConfigureAPIKey([]string{"build", "//foo:bar"})
+			args, err := arg.NewBazelArgs([]string{"build", "//foo:bar"})
+			require.NoError(t, err)
+			err = ConfigureAPIKey(args)
 
 			require.NoError(t, err)
-			require.Equal(t, testCase.expectedArgs, args)
+			require.Equal(t, testCase.expectedArgs, args.Resolved())
 		})
 	}
 }

@@ -44,9 +44,12 @@ go_test(
         "//server/util/claims",
         "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

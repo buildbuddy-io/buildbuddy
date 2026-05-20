@@ -898,9 +898,6 @@ type UsageAlertingRule struct {
 	// Window is the usage alerting window enum value.
 	Window usagepb.UsageAlertingWindow_Value `gorm:"not null;default:0;uniqueIndex:usage_alerting_rule_group_config_idx,priority:4"`
 
-	// LastEvaluationUsec is the last time this rule was evaluated.
-	LastEvaluationUsec int64 `gorm:"not null;default:0"`
-
 	// LastFiredUsec is the last time this rule fired.
 	LastFiredUsec int64 `gorm:"not null;default:0"`
 }

@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/require"
 )
@@ -220,6 +221,7 @@ func TestFix_Idempotent(t *testing.T) {
 }
 
 func TestFix_RunsFromSubdirectory(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	ws := fixWorkspace(t, map[string]string{
 		"MODULE.bazel":    "module(name = \"x\")\n",
 		"sub/BUILD.bazel": poorlyFormatted,

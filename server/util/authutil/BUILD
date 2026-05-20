@@ -27,6 +27,10 @@ go_test(
     srcs = ["authutil_test.go"],
     embed = [":authutil"],
     deps = [
+        "//server/environment",
+        "//server/interfaces",
+        "//server/util/status",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )

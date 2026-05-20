@@ -139,16 +139,111 @@ func TestWriteChunkedFallsBackAboveMaxSize(t *testing.T) {
 }
 
 func TestWriteChunkingEnabledSkipsBESUpload(t *testing.T) {
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(cdc.EnabledHeaderName, "true"))
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache_proxy.intercept_and_chunk_large_writes": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+	ctx := context.Background()
 	ctx = bazel_request.OverrideRequestMetadata(ctx, &repb.RequestMetadata{ActionId: "bes-upload"})
 	s := &ByteStreamServerProxy{
 		localCache: testenv.GetTestEnv(t).GetCache(),
 		remoteCAS:  &noOpCASClient{},
+		efp:        fp,
 	}
 	require.False(t, s.writeChunkingEnabled(ctx))
 
 	ctx = bazel_request.OverrideRequestMetadata(context.Background(), &repb.RequestMetadata{ActionId: "compile"})
 	require.True(t, s.writeChunkingEnabled(ctx))
+}
+
+func TestWriteChunkingEnabledSkipsChunkedWrites(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache_proxy.intercept_and_chunk_large_writes": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+		cdc.ChunkedHeaderName, "true",
+	))
+	s := &ByteStreamServerProxy{
+		localCache: testenv.GetTestEnv(t).GetCache(),
+		remoteCAS:  &noOpCASClient{},
+		efp:        fp,
+	}
+	require.False(t, s.writeChunkingEnabled(ctx))
+}
+
+func TestWriteChunkingEnabledRequiresExperimentInterceptFlag(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		hasEFP bool
+		efp    bool
+		want   bool
+	}{
+		{
+			name: "default disabled without experiment flag provider",
+			want: false,
+		},
+		{
+			name:   "experiment flag disabled",
+			hasEFP: true,
+			efp:    false,
+			want:   false,
+		},
+		{
+			name:   "experiment flag enabled",
+			hasEFP: true,
+			efp:    true,
+			want:   true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var fp interfaces.ExperimentFlagProvider
+			if tc.hasEFP {
+				providerName := t.Name()
+				provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+					"cache_proxy.intercept_and_chunk_large_writes": {
+						State:          memprovider.Enabled,
+						DefaultVariant: strconv.FormatBool(tc.efp),
+						Variants: map[string]any{
+							"true":  true,
+							"false": false,
+						},
+					},
+				})
+				require.NoError(t, openfeature.SetNamedProviderAndWait(providerName, provider))
+				var err error
+				fp, err = experiments.NewFlagProvider(providerName)
+				require.NoError(t, err)
+			}
+
+			ctx := context.Background()
+			s := &ByteStreamServerProxy{
+				localCache: testenv.GetTestEnv(t).GetCache(),
+				remoteCAS:  &noOpCASClient{},
+				efp:        fp,
+			}
+			require.Equal(t, tc.want, s.writeChunkingEnabled(ctx))
+		})
+	}
 }
 
 type casRPCRecorder struct {
@@ -3225,7 +3320,7 @@ func prepareChunkedReadBenchmarkData(b *testing.B, ctx context.Context, size int
 		})
 		return nil
 	}
-	cdcChunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes(ctx, nil)), writeChunkFn)
 	require.NoError(b, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(b, err)

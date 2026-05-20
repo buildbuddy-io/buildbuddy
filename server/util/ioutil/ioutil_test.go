@@ -35,6 +35,59 @@ func TestCustomCommitWriteCloser_SecondCommitFails(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestReadAllLimited(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		body      string
+		limit     int64
+		wantBody  string
+		wantError error
+	}{
+		{
+			name:     "under limit",
+			body:     "hello",
+			limit:    10,
+			wantBody: "hello",
+		},
+		{
+			name:     "at limit",
+			body:     "hello",
+			limit:    5,
+			wantBody: "hello",
+		},
+		{
+			name:      "over limit",
+			body:      "hello",
+			limit:     4,
+			wantError: ioutil.ErrLimitExceeded,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			// Read a small body so the test can spell out exactly where the
+			// configured limit is expected to accept or reject it.
+			got, err := ioutil.ReadAllLimited(bytes.NewBufferString(testCase.body), testCase.limit)
+			if testCase.wantError != nil {
+				require.ErrorIs(t, err, testCase.wantError)
+				return
+			}
+
+			// The helper should return the complete body when the body is at or
+			// under the configured limit.
+			require.NoError(t, err)
+			require.Equal(t, []byte(testCase.wantBody), got)
+		})
+	}
+}
+
+func TestNewByteRepeater(t *testing.T) {
+	// Repeat a byte enough times to prove the reader can fill a larger buffer.
+	got := make([]byte, 7)
+	n, err := io.ReadFull(ioutil.NewByteRepeater('x'), got)
+	require.NoError(t, err)
+	require.Equal(t, len(got), n)
+	require.Equal(t, []byte("xxxxxxx"), got)
+}
+
 func TestCustomCommitWriteCloser_SeekerPropagation(t *testing.T) {
 	f, err := os.CreateTemp(t.TempDir(), "seekable-*")
 	require.NoError(t, err)

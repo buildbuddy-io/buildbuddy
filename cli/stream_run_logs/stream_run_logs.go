@@ -11,9 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 	"github.com/buildbuddy-io/buildbuddy/cli/stream_run_logs/option_definitions"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -58,30 +57,25 @@ type Opts struct {
 }
 
 // If streaming run logs is requested with --stream_run_logs, parse required args.
-func Configure(args []string, besBackend string) ([]string, *Opts, error) {
-	parsedArgs, err := parser.ParseArgs(args)
+func Configure(args *arg.BazelArgs, besBackend string) (*arg.BazelArgs, *Opts, error) {
+	enabled, onFailure, err := parseFlags(args)
 	if err != nil {
-		return args, nil, status.WrapErrorf(err, "failed to parse args")
-	}
-
-	enabled, onFailure, err := parseFlags(parsedArgs)
-	if err != nil {
-		return parsedArgs.Format(), nil, err
+		return args, nil, err
 	} else if !enabled {
-		return parsedArgs.Format(), nil, nil
+		return args, nil, nil
 	}
 
 	// If output is being written to a pipe or file, it likely doesn't need to be streamed to the server and displayed in the UI.
 	// TODO: Handle the case where one of either stderr or stdout is connected to a terminal and the other is not.
 	if !terminal.IsTTY(os.Stdout) || !terminal.IsTTY(os.Stderr) {
-		return parsedArgs.Format(), nil, handleErr("streaming run logs is only supported when both stdout and stderr are connected to a terminal", onFailure)
+		return args, nil, handleErr("streaming run logs is only supported when both stdout and stderr are connected to a terminal", onFailure)
 	}
 
-	apiKey := parser.GetRemoteHeaderVal(parsedArgs, "x-buildbuddy-api-key")
+	apiKey := args.GetRemoteHeaderVal("x-buildbuddy-api-key")
 	if apiKey == "" {
 		log.Warnf("To stream run logs, authenticate your request with `bb login` or add an API key to your run with " +
 			"`--remote_header=x-buildbuddy-api-key=XXX`")
-		return parsedArgs.Format(), nil, handleErr("unauthenticated request", onFailure)
+		return args, nil, handleErr("unauthenticated request", onFailure)
 	}
 
 	if besBackend == "" {
@@ -90,23 +84,19 @@ func Configure(args []string, besBackend string) ([]string, *Opts, error) {
 
 	// In order to stream run logs to the same invocation URL as the build, we must pre-generate the
 	// invocation ID to pass it to `Execute`.
-	iid, _ := parser.GetBazelCommandOptionVal(parsedArgs, "invocation_id")
+	iid := args.Get("invocation_id")
 	if iid == "" {
 		invocationUUID, err := guuid.NewRandom()
 		if err != nil {
-			return parsedArgs.Format(), nil, handleErr(fmt.Sprintf("failed to generate invocation ID: %s", err), onFailure)
+			return args, nil, handleErr(fmt.Sprintf("failed to generate invocation ID: %s", err), onFailure)
 		}
 		iid = invocationUUID.String()
-		opt, err := parser.MakeCommandOption("invocation_id", &iid)
-		if err != nil {
-			return parsedArgs.Format(), nil, handleErr(fmt.Sprintf("failed to make invocation ID option: %s", err), onFailure)
+		if err := args.Append("--invocation_id=" + iid); err != nil {
+			return args, nil, handleErr(fmt.Sprintf("failed to append invocation ID: %s", err), onFailure)
 		}
-		parsedArgs.Append(opt)
 	}
 
-	updatedArgs := parsedArgs.Format()
-
-	return updatedArgs, &Opts{
+	return args, &Opts{
 		BesBackend:   besBackend,
 		InvocationID: iid,
 		ApiKey:       apiKey,
@@ -114,14 +104,14 @@ func Configure(args []string, besBackend string) ([]string, *Opts, error) {
 	}, nil
 }
 
-func parseFlags(parsedArgs *parsed.OrderedArgs) (enabled bool, onFailure FailureMode, err error) {
-	enabled, err = parser.IsCLICommandOptionSet(parsedArgs, option_definitions.StreamRunLogs.Name())
+func parseFlags(args *arg.BazelArgs) (enabled bool, onFailure FailureMode, err error) {
+	enabled, err = args.StripBBBoolFlag(option_definitions.StreamRunLogs.Name())
 	if err != nil {
 		return false, "", err
 	}
 
 	onFailure = FailureModeFail
-	onFailureVal, err := parser.GetCLICommandOptionVal(parsedArgs, option_definitions.OnStreamRunLogsFailure.Name())
+	onFailureVal, err := args.StripBBFlag(option_definitions.OnStreamRunLogsFailure.Name())
 	if err != nil {
 		return false, "", err
 	} else if !isValidFailureMode(onFailureVal) {

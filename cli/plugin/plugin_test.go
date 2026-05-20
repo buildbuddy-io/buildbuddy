@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/config"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
@@ -242,10 +243,52 @@ func TestParsePluginSpec(t *testing.T) {
 }
 
 func TestPreBazel(t *testing.T) {
-	ws, _ := setup(t)
-	testfs.WriteAllFileContents(t, ws, map[string]string{
-		// Plugin 1 sets a bunch of non-canonicalized flags.
-		"plugins/plugin1/pre_bazel.sh": `cat > "$1" <<'EOF'
+	originalArgs := []string{"test", "//initial"}
+	resolvedOriginalArgs := []string{"--ignore_all_rc_files", "test", "//initial"}
+	canonicalizedArgs := []string{
+		"test",
+		"--compilation_mode=opt",
+		"--bes_backend=grpc://new",
+		"--remote_header=x-buildbuddy-foo=1",
+		"--remote_header=x-buildbuddy-bar=2",
+		"//foo",
+	}
+	resolvedArgs := append([]string{"--ignore_all_rc_files"}, canonicalizedArgs...)
+
+	tests := []struct {
+		name                  string
+		fileToWrite           string
+		expectedForwardedArgs []string
+		expectedResolvedArgs  []string
+	}{
+		{
+			name:                  "writes to the forwarded args file",
+			fileToWrite:           "$FORWARDED_BAZEL_ARGS_FILE",
+			expectedForwardedArgs: canonicalizedArgs,
+			expectedResolvedArgs:  resolvedArgs,
+		},
+		{
+			name:                  "writes to the deprecated args file",
+			fileToWrite:           "$1",
+			expectedForwardedArgs: canonicalizedArgs,
+			// In the deprecated flow, we do not re-resolve the args.
+			expectedResolvedArgs: canonicalizedArgs,
+		},
+		// The resolved args file is read-only, so we expect the args to be unchanged.
+		{
+			name:                  "writes to the resolved args file",
+			fileToWrite:           "$RESOLVED_BAZEL_ARGS_FILE",
+			expectedForwardedArgs: originalArgs,
+			expectedResolvedArgs:  resolvedOriginalArgs,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ws, _ := setup(t)
+			testfs.WriteAllFileContents(t, ws, map[string]string{
+				// Plugin 1 sets a bunch of non-canonicalized flags.
+				"plugins/plugin1/pre_bazel.sh": `cat > "` + test.fileToWrite + `" <<'EOF'
 test
 -c
 opt
@@ -260,42 +303,40 @@ x-buildbuddy-bar=2
 //foo
 EOF
 `,
-	})
+			})
 
-	plugin1 := testPlugin(t, ws, "./plugins/plugin1")
+			plugin1 := testPlugin(t, ws, "./plugins/plugin1")
+			args, err := arg.NewBazelArgs(originalArgs)
+			require.NoError(t, err)
 
-	args, execArgs, err := plugin1.PreBazel([]string{"test", "//initial"}, []string{"--exec"})
-	require.NoError(t, err)
+			args, execArgs, err := plugin1.PreBazel(args, []string{"--exec"})
+			require.NoError(t, err)
 
-	// We expect the output args to be canonicalized.
-	expectedArgs := []string{
-		"test",
-		"--compilation_mode=opt",
-		"--bes_backend=grpc://new",
-		"--remote_header=x-buildbuddy-foo=1",
-		"--remote_header=x-buildbuddy-bar=2",
-		"//foo",
+			// We expect the output args to be canonicalized.
+			require.Equal(t, test.expectedForwardedArgs, args.Forwarded())
+			require.Equal(t, test.expectedResolvedArgs, args.Resolved())
+			// Exec args should be passed through unchanged.
+			require.Equal(t, []string{"--exec"}, execArgs)
+		})
 	}
-	require.Equal(t, expectedArgs, args)
-	// Exec args should be passed through unchanged.
-	require.Equal(t, []string{"--exec"}, execArgs)
 }
 
-// TODO(#7216): Refactor the CLI to resolve flags after each plugin,
-// so each plugin sees the fully resolved args.
 func TestPreBazel_AddConfig(t *testing.T) {
 	ws, _ := setup(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		".bazelrc":                    "test:plugin_cfg --test_output=all\n",
-		"plugins/config/pre_bazel.sh": `echo '--config=plugin-cfg' >> "$1"`,
+		".bazelrc":                    "test:plugin-cfg --test_output=all\n",
+		"plugins/config/pre_bazel.sh": `echo '--config=plugin-cfg' >> "$FORWARDED_BAZEL_ARGS_FILE"`,
 	})
 	p := testPlugin(t, ws, "./plugins/config")
-
-	args, execArgs, err := p.PreBazel([]string{"test", "//initial"}, nil)
+	args, err := arg.NewBazelArgs([]string{"test", "//initial"})
 	require.NoError(t, err)
-	require.Equal(t, []string{"test", "--config=plugin-cfg", "//initial"}, args)
+
+	args, execArgs, err := p.PreBazel(args, nil)
+	require.NoError(t, err)
 	require.Empty(t, execArgs)
-	require.NotContains(t, args, "--test_output=all")
+
+	require.Equal(t, []string{"test", "--config=plugin-cfg", "//initial"}, args.Forwarded())
+	require.Equal(t, []string{"--ignore_all_rc_files", "test", "--test_output=all", "//initial"}, args.Resolved())
 }
 
 // TestPipelineWriter_HandlesFinalLine guards against a regression in which

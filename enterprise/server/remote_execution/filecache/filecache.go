@@ -399,6 +399,18 @@ func filecachePath(rootDir, key string) string {
 	return rootDir + "/" + key
 }
 
+func validateFilecacheHash(hash string) error {
+	if hash == "" {
+		return status.InvalidArgumentErrorf("invalid filecache digest hash %q", hash)
+	}
+	for _, ch := range hash {
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+			return status.InvalidArgumentErrorf("invalid filecache digest hash %q", hash)
+		}
+	}
+	return nil
+}
+
 const sep = string(filepath.Separator)
 
 func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (string, *repb.FileNode, error) {
@@ -452,6 +464,9 @@ func (c *fileCache) scanDir() {
 			return nil
 		}
 		if err := c.addFileWithKeyPrefix(keyPrefix, node, path); err != nil {
+			if status.IsInvalidArgumentError(err) {
+				return nil
+			}
 			// Any errors here are unexpected - this addFileWithKeyPrefix call should
 			// just be updating LRU state. There is a chance that it will
 			// trigger an eviction, but any error from the associated unlink
@@ -592,11 +607,15 @@ func isValidScannedCachePath(rootDir, fullPath, keyPrefix string, node *repb.Fil
 	return name == expectedName
 }
 
-func namespacedKey(keyPrefix string, node *repb.FileNode) string {
-	if node.GetIsExecutable() {
-		return keyPrefix + "/" + node.GetDigest().GetHash() + "." + executableSuffix
+func namespacedKey(keyPrefix string, node *repb.FileNode) (string, error) {
+	hash := node.GetDigest().GetHash()
+	if err := validateFilecacheHash(hash); err != nil {
+		return "", err
 	}
-	return keyPrefix + "/" + node.GetDigest().GetHash()
+	if node.GetIsExecutable() {
+		return keyPrefix + "/" + hash + "." + executableSuffix, nil
+	}
+	return keyPrefix + "/" + hash, nil
 }
 
 func groupIDStringFromContext(ctx context.Context) string {
@@ -609,7 +628,7 @@ func groupIDStringFromContext(ctx context.Context) string {
 	return interfaces.AuthAnonymousUser
 }
 
-func key(ctx context.Context, node *repb.FileNode) string {
+func key(ctx context.Context, node *repb.FileNode) (string, error) {
 	return namespacedKey(keyPrefixFromContext(ctx), node)
 }
 
@@ -628,7 +647,10 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 	}()
 
 	keyPrefix := keyPrefixFromContext(ctx)
-	key := namespacedKey(keyPrefix, node)
+	key, err := namespacedKey(keyPrefix, node)
+	if err != nil {
+		return false
+	}
 
 	if !c.containsWithStatFallback(key) {
 		return false
@@ -649,7 +671,10 @@ func (c *fileCache) Open(ctx context.Context, node *repb.FileNode) (f *os.File, 
 	}()
 
 	keyPrefix := keyPrefixFromContext(ctx)
-	key := namespacedKey(keyPrefix, node)
+	key, err := namespacedKey(keyPrefix, node)
+	if err != nil {
+		return nil, err
+	}
 
 	if !c.containsWithStatFallback(key) {
 		return nil, status.NotFoundError("not found")
@@ -672,7 +697,10 @@ func (c *fileCache) addFileWithKeyPrefix(keyPrefix string, node *repb.FileNode, 
 		return wrapOSError(err, "estimate disk usage")
 	}
 
-	k := namespacedKey(keyPrefix, node)
+	k, err := namespacedKey(keyPrefix, node)
+	if err != nil {
+		return err
+	}
 	fp := filecachePath(c.rootDir, k)
 
 	// Ensure the parent directory exists. (We can skip this if the source and
@@ -873,7 +901,10 @@ func (c *fileCache) initExternalDirectoryEntry(key, path string, size int64, cre
 }
 
 func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
-	k := key(ctx, node)
+	k, err := key(ctx, node)
+	if err != nil {
+		return false
+	}
 	return c.containsWithStatFallback(k)
 }
 
@@ -881,7 +912,10 @@ func (c *fileCache) DeleteFile(ctx context.Context, node *repb.FileNode) bool {
 	if c.checkClosed() {
 		return false
 	}
-	k := key(ctx, node)
+	k, err := key(ctx, node)
+	if err != nil {
+		return false
+	}
 
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -1045,6 +1079,9 @@ func (c *fileCache) Writer(ctx context.Context, node *repb.FileNode, digestFunct
 }
 
 func (c *fileCache) tempPath(name string) (string, error) {
+	if strings.Contains(name, "..") {
+		return "", status.InvalidArgumentErrorf("invalid filecache temp name %q", name)
+	}
 	randStr, err := random.RandomString(10)
 	if err != nil {
 		return "", err

@@ -12,6 +12,7 @@ go_test(
     },
     deps = [
         "//cli/testutil/testcli",
+        "//server/testutil/quarantine",
         "//server/testutil/testfs",
         "@com_github_stretchr_testify//require",
     ],

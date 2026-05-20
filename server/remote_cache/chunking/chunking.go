@@ -16,7 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -32,7 +33,7 @@ import (
 
 var (
 	chunkedManifestSalt             = flag.String("cache.chunking.ac_key_salt", "", "If set, salt the AC key with this value.")
-	avgChunkSizeBytes               = flag.Int64("cache.avg_chunk_size_bytes", 1024*1024, "This is the average size of a chunk. Only blobs larger (non-inclusive) than 4x this value will be chunked. The maximum chunk size will be 4x this value, and the minimum will be 1/4 this value (default 1MB).")
+	avgChunkSizeBytes               = flag.Int64("cache.avg_chunk_size_bytes", 512*1024, "This is the average size of a chunk. Only blobs larger (non-inclusive) than 4x this value will be chunked. The maximum chunk size will be 4x this value, and the minimum will be 1/4 this value (default 512KB).")
 	minChunkedReadFallbackSizeBytes = flag.Int64("cache.min_chunked_read_fallback_size_bytes", 2*1024*1024, "Only blobs larger (non-inclusive) than this value will use the server-side chunked read fallback after a normal blob lookup misses.")
 )
 
@@ -45,13 +46,25 @@ const (
 	defaultMaxChunkedWriteSizeBytes = -1
 )
 
-func AvgChunkSizeBytes() int64 {
+func AvgChunkSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
+	if efp == nil {
+		return *avgChunkSizeBytes
+	}
+	if v := efp.Int64(ctx, "cache.avg_chunk_size_override", 0); v > 0 {
+		if v < 1024 || v > 1024*1024 || v&(v-1) != 0 {
+			alert.CtxUnexpectedEvent(ctx, "invalid_cache_avg_chunk_size_override", "Ignoring invalid cache.avg_chunk_size_override %d", v)
+			return *avgChunkSizeBytes
+		}
+		return v
+	}
 	return *avgChunkSizeBytes
 }
 
 // FastCDCParams returns the FastCDC2020 parameters if chunking is configured.
-func FastCDCParams() *repb.FastCdc2020Params {
-	v := *avgChunkSizeBytes
+// The avg chunk size may vary by group. This is safe because manifests are AC
+// entries, and AC entries are namespaced by group in the cache key.
+func FastCDCParams(ctx context.Context, efp interfaces.ExperimentFlagProvider) *repb.FastCdc2020Params {
+	v := AvgChunkSizeBytes(ctx, efp)
 	if v <= 0 {
 		return nil
 	}
@@ -62,7 +75,7 @@ func FastCDCParams() *repb.FastCdc2020Params {
 }
 
 func FastCDCWriteParams(ctx context.Context, efp interfaces.ExperimentFlagProvider) *repb.FastCdc2020Params {
-	params := FastCDCParams()
+	params := FastCDCParams(ctx, efp)
 	if params != nil {
 		params.BuildbuddyMaxChunkedWriteSizeBytes = MaxWriteSizeBytes(ctx, efp)
 	}
@@ -89,7 +102,7 @@ func MaxWriteSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvide
 }
 
 func ShouldUploadChunked(ctx context.Context, efp interfaces.ExperimentFlagProvider, d *repb.Digest) bool {
-	return ShouldUploadChunkedWithMax(d, AvgChunkSizeBytes(), MaxWriteSizeBytes(ctx, efp))
+	return ShouldUploadChunkedWithMax(d, AvgChunkSizeBytes(ctx, efp), MaxWriteSizeBytes(ctx, efp))
 }
 
 // ShouldUploadChunkedWithMax returns whether a blob is eligible for chunked upload.
@@ -113,9 +126,6 @@ func ValidateConfig() error {
 }
 
 func Enabled(ctx context.Context, efp interfaces.ExperimentFlagProvider) bool {
-	if cdc.EnabledViaHeader(ctx) {
-		return true
-	}
 	return efp == nil || efp.Boolean(ctx, "cache.chunking_enabled", true)
 }
 
@@ -130,8 +140,7 @@ func ShouldReadChunked(ctx context.Context, efp interfaces.ExperimentFlagProvide
 func ShouldReadChunkedOnProxy(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes, offset, limit int64) bool {
 	return digestSizeBytes > MaxChunkSizeBytes() &&
 		limit == 0 &&
-		(cdc.EnabledViaHeader(ctx) ||
-			efp == nil ||
+		(efp == nil ||
 			efp.Boolean(ctx, "cache_proxy.attempt_chunked_reads", true))
 }
 
@@ -463,13 +472,18 @@ func (cm *Manifest) verifyChunks(ctx context.Context, cache interfaces.Cache) er
 	// but low enough to avoid buffering too much data in memory. The
 	// distributed cache sends requests to shards in parallel.
 	const batchSize = 20
+	readCompressed := cache.SupportsCompressor(repb.Compressor_ZSTD)
+	var decompressedData []byte
+	if readCompressed {
+		decompressedData = make([]byte, 0, MaxChunkSizeBytes())
+	}
 	resources := make([]*rspb.ResourceName, 0, batchSize)
 	for chunkDigestsPart := range slices.Chunk(cm.ChunkDigests, batchSize) {
 		for _, chunkDigest := range chunkDigestsPart {
-			// TODO(vanja): Maybe read these compressed and decompress while
-			// hashing, to save network bandwidth, instead of decompressing on
-			// the server.
 			chunkRN := digest.NewCASResourceName(chunkDigest, cm.InstanceName, cm.DigestFunction)
+			if readCompressed {
+				chunkRN.SetCompressor(repb.Compressor_ZSTD)
+			}
 			if err := chunkRN.Validate(); err != nil {
 				return status.InvalidArgumentErrorf("invalid chunk resource name %v for blob %s: %s", chunkRN, cm.BlobDigest.GetHash(), err)
 			}
@@ -483,6 +497,13 @@ func (cm *Manifest) verifyChunks(ctx context.Context, cache interfaces.Cache) er
 			chunkData, ok := chunks[r.GetDigest()]
 			if !ok {
 				return status.InvalidArgumentErrorf("invalid manifest: chunk %v not found in the CAS for blob %v", r.GetDigest().GetHash(), cm.BlobDigest.GetHash())
+			}
+			if readCompressed {
+				decompressedData, err = compression.DecompressZstd(decompressedData, chunkData)
+				if err != nil {
+					return status.WrapErrorf(err, "decompress chunk %s for blob %s", r.GetDigest().GetHash(), cm.BlobDigest.GetHash())
+				}
+				chunkData = decompressedData
 			}
 			_, err := hasher.Write(chunkData)
 			if err != nil {

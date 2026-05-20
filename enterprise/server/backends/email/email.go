@@ -40,8 +40,8 @@ type Message struct {
 	// From is the sender address. If empty, the configured default sender is
 	// used.
 	From Address
-	// To is the primary recipient.
-	To Address
+	// ToAddresses are recipients who each receive their own addressed email.
+	ToAddresses []Address
 	// Subject is the email subject.
 	Subject string
 	// Body is the HTML email body.
@@ -121,8 +121,14 @@ func buildEmail(msg *Message) (*sendgridmail.SGMailV3, error) {
 	if from.Email == "" {
 		return nil, status.FailedPreconditionError("SendGrid sender email address is required")
 	}
-	if msg.To.Email == "" {
+	recipients := msg.ToAddresses
+	if len(recipients) == 0 {
 		return nil, status.InvalidArgumentError("recipient is required")
+	}
+	for _, recipient := range recipients {
+		if recipient.Email == "" {
+			return nil, status.InvalidArgumentError("recipient email address is required")
+		}
 	}
 	if msg.Subject == "" {
 		return nil, status.InvalidArgumentError("subject is required")
@@ -136,9 +142,11 @@ func buildEmail(msg *Message) (*sendgridmail.SGMailV3, error) {
 	email.Subject = msg.Subject
 	email.AddContent(sendgridmail.NewContent("text/html", msg.Body))
 
-	personalization := sendgridmail.NewPersonalization()
-	personalization.AddTos(toSendGridAddress(msg.To))
-	email.AddPersonalizations(personalization)
+	for _, recipient := range recipients {
+		personalization := sendgridmail.NewPersonalization()
+		personalization.AddTos(toSendGridAddress(recipient))
+		email.AddPersonalizations(personalization)
+	}
 
 	return email, nil
 }

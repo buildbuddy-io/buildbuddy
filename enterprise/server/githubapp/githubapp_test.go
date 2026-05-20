@@ -6,13 +6,16 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-github/v59/github"
 	"github.com/stretchr/testify/require"
@@ -339,4 +342,19 @@ func TestValidateWebhookPayload(t *testing.T) {
 			require.Equal(t, payload, got)
 		})
 	}
+}
+
+func TestHandleWebhookRequest_RejectsPayloadOverLimit(t *testing.T) {
+	app := &GitHubApp{
+		webhookSecret: "primary-secret",
+	}
+
+	body := io.LimitReader(ioutil.NewByteRepeater('x'), githubWebhookMaxPayloadSize+1)
+	req, err := http.NewRequest("POST", "http://localhost/webhooks/github/app", body)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	app.handleWebhookRequest(w, req)
+	require.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
 }

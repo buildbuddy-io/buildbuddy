@@ -828,16 +828,6 @@ func (s stringSet) have() bool {
 	return s != nil
 }
 
-// contains reports whether s contains str.
-func (s stringSet) contains(str string) bool {
-	for _, ss := range s {
-		if ss == str {
-			return true
-		}
-	}
-	return false
-}
-
 type byPrefix []string
 
 func (x *byPrefix) Len() int           { return len(*x) }

@@ -1,7 +1,7 @@
 package peerset
 
 import (
-	"math/rand"
+	"slices"
 )
 
 const maxFailedFallbackPeers = 3
@@ -11,41 +11,26 @@ type PeerSet struct {
 	FallbackPeers       []string
 	FailedPeers         []string
 	FailedFallbackPeers []string
-	i                   int // next peer index
+	// BlockBackfills lists peers that GetBackfillTargets must exclude even
+	// when they appear in PreferredPeers before the source. Used when
+	// PreferredPeers contains peers that should be consulted for reads but
+	// should not be written to as part of a backfill (e.g. non-canonical
+	// same-zone peers that may hold a read-through cached copy).
+	BlockBackfills []string
+	i              int // next peer index
 }
 
 func New(preferredPeers, fallbackPeers []string) *PeerSet {
 	return &PeerSet{
-		i:                   0,
-		PreferredPeers:      preferredPeers,
-		FallbackPeers:       fallbackPeers,
-		FailedPeers:         nil,
-		FailedFallbackPeers: nil,
+		PreferredPeers: preferredPeers,
+		FallbackPeers:  fallbackPeers,
 	}
-}
-
-func NewRead(localhost string, preferredPeers, fallbackPeers []string) *PeerSet {
-	rest := make([]string, 0, len(preferredPeers))
-	first := make([]string, 0, 1)
-	for _, p := range preferredPeers {
-		if p == localhost {
-			first = append(first, p)
-		} else {
-			rest = append(rest, p)
-		}
-	}
-	rand.Shuffle(len(rest), func(i, j int) {
-		rest[i], rest[j] = rest[j], rest[i]
-	})
-	return New(append(first, rest...), fallbackPeers)
 }
 
 func (p *PeerSet) MarkPeerAsFailed(failedPeer string) {
-	for _, peer := range p.PreferredPeers {
-		if peer == failedPeer {
-			p.FailedPeers = append(p.FailedPeers, failedPeer)
-			return
-		}
+	if slices.Contains(p.PreferredPeers, failedPeer) {
+		p.FailedPeers = append(p.FailedPeers, failedPeer)
+		return
 	}
 	p.FailedFallbackPeers = append(p.FailedFallbackPeers, failedPeer)
 }
@@ -113,7 +98,7 @@ func (p *PeerSet) GetBackfillTargets() (string, []string) {
 	lastUsedIndex := p.i - 1
 
 	source := ""
-	targets := make([]string, 0)
+	var targets []string
 
 	if lastUsedIndex < len(p.PreferredPeers) {
 		source, targets = p.PreferredPeers[lastUsedIndex], p.PreferredPeers[:lastUsedIndex]
@@ -124,24 +109,16 @@ func (p *PeerSet) GetBackfillTargets() (string, []string) {
 		}
 	}
 	// Ensure no failed peers are returned.
-	for _, f := range p.FailedPeers {
-		if f == source {
-			return "", []string{}
-		}
+	if slices.Contains(p.FailedPeers, source) {
+		return "", []string{}
 	}
 
 	filteredTargets := make([]string, 0, len(targets))
 	for _, t := range targets {
-		isFailed := false
-		for _, f := range p.FailedPeers {
-			if t == f {
-				isFailed = true
-				break
-			}
+		if slices.Contains(p.FailedPeers, t) || slices.Contains(p.BlockBackfills, t) {
+			continue
 		}
-		if !isFailed {
-			filteredTargets = append(filteredTargets, t)
-		}
+		filteredTargets = append(filteredTargets, t)
 	}
 	return source, filteredTargets
 }

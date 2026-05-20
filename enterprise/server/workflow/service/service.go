@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -121,6 +122,9 @@ const (
 	// workflow invocation results after the user-specified timeout is reached.
 	timeoutGracePeriod = 10 * time.Minute
 
+	// How often to scan for due scheduled workflows.
+	scheduleScanInterval = 15 * time.Minute
+
 	// Only one server should try to schedule a given workflow at a time. It has this much
 	// time to dispatch the workflow before another server can acquire the lease and schedule the run.
 	// Given that dispatching a workflow is expected to be quick, this should be more than enough time,
@@ -134,6 +138,11 @@ const (
 	// Max number of times a scheduled workflow can exhaust all its retries.
 	// Afterwards, the scheduled workflow will be paused and requires manual re-enabling.
 	ScheduledWorkflowMaxConsecutiveFailures = 20
+
+	// Minimum interval between cron triggers for scheduled workflows.
+	scheduledWorkflowMinInterval = 15 * time.Minute
+
+	suppressWorkflowExecutionExperimentName = "remote_execution.suppress_workflow_execution"
 )
 
 var (
@@ -205,6 +214,7 @@ func NewWorkflowService(env environment.Env) *workflowService {
 		bbUrl: build_buddy_url.WithPath(""),
 	}
 	ws.startBackgroundWorkers()
+	ws.startScheduleScanner()
 	return ws
 }
 
@@ -569,6 +579,25 @@ func (ws *workflowService) filterActions(ctx context.Context, wf *tables.Workflo
 			return nil, status.NotFoundErrorf("requested workflow actions %v not found", actionFilter)
 		}
 	}
+
+	efp := ws.env.GetExperimentFlagProvider()
+	if efp == nil {
+		return filteredActions, nil
+	}
+	filteredActions = slices.DeleteFunc(filteredActions, func(a *config.Action) bool {
+		suppressWorkflowExecution := efp.Boolean(ctx, suppressWorkflowExecutionExperimentName, false,
+			experiments.WithContext("group_id", wf.GroupID),
+			experiments.WithContext("workflow_action_name", a.Name),
+			experiments.WithContext("workflow_event_name", wd.EventName),
+			experiments.WithContext("pushed_repo_url", wd.PushedRepoURL),
+			experiments.WithContext("target_repo_url", wd.TargetRepoURL),
+		)
+		if suppressWorkflowExecution {
+			log.CtxInfof(ctx, "Suppressing workflow execution via experiment (WFID: %q, Repo: %q, Event: %s, Action: %q)", wf.WorkflowID, wf.RepoURL, wd.EventName, a.Name)
+			return true
+		}
+		return false
+	})
 
 	return filteredActions, nil
 }
@@ -1386,6 +1415,10 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider 
 		if err != nil {
 			return nil, err
 		}
+
+		if err := ws.validateCronTriggers(c); err != nil {
+			return nil, err
+		}
 	} else {
 		if status.IsNotFoundError(err) {
 			if workflow.GitRepository != nil && !workflow.GitRepository.UseDefaultWorkflowConfig {
@@ -1478,12 +1511,12 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 		return err
 	}
 
-	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
-	if err != nil {
-		if err := ws.createWorkflowConfigErrorStatus(ctx, wf, wd); err != nil {
+	cfg, fetchErr := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
+	if fetchErr != nil {
+		if err := ws.createWorkflowConfigErrorStatus(ctx, wf, wd, fetchErr); err != nil {
 			log.CtxWarningf(ctx, "Failed to create workflow config error status: %s", err)
 		}
-		return status.WrapError(err, "fetch workflow config")
+		return status.WrapError(fetchErr, "fetch workflow config")
 	}
 
 	if shouldUpdateScheduledWorkflows(wd, wf.GitRepository) {
@@ -1806,13 +1839,17 @@ func isFork(wd *interfaces.WebhookData) bool {
 	return wd.TargetRepoURL != "" && wd.PushedRepoURL != wd.TargetRepoURL
 }
 
-func (ws *workflowService) createWorkflowConfigErrorStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData) error {
+func (ws *workflowService) createWorkflowConfigErrorStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, cfgErr error) error {
+	msg := "Invalid buildbuddy.yaml: " + cfgErr.Error()
+	if len(msg) > 140 {
+		msg = msg[:137] + "..."
+	}
 	// For now just point to docs. Eventually it'd be nice to link to BB code
 	// and highlight the YAML syntax error.
 	status := github.NewGithubStatusPayload(
 		"BuildBuddy Workflows",
 		"https://buildbuddy.io/docs/workflows-config",
-		"Invalid buildbuddy.yaml",
+		msg,
 		github.ErrorState)
 	statusReportingURL := getStatusReportingURL(wd)
 	provider, err := ws.providerForRepo(statusReportingURL)
@@ -1907,7 +1944,46 @@ func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariab
 		ctx, platform.EnvOverridesPropertyName, strings.Join(assignments, ","))
 }
 
+func (ws *workflowService) startScheduleScanner() {
+	if efp := ws.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ws.env.GetServerContext(), "remote_execution.enable_scheduled_workflows", false) {
+		return
+	}
+
+	ctx, cancel := context.WithCancel(ws.env.GetServerContext())
+	ticker := time.NewTicker(scheduleScanInterval)
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-ticker.C:
+				if err := ws.RunScheduledWorkflows(ctx); err != nil {
+					log.CtxErrorf(ctx, "Failed to run scheduled workflows: %s", err)
+				}
+			case <-ctx.Done():
+				ticker.Stop()
+				return
+			}
+		}
+	}()
+
+	ws.env.GetHealthChecker().RegisterShutdownFunction(func(shutdownCtx context.Context) error {
+		cancel()
+		select {
+		case <-done:
+		case <-shutdownCtx.Done():
+			return shutdownCtx.Err()
+		}
+		return nil
+	})
+}
+
 func (ws *workflowService) RunScheduledWorkflows(ctx context.Context) error {
+	if efp := ws.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, "remote_execution.enable_scheduled_workflows", false) {
+		return nil
+	}
+
 	if ws.env.GetDBHandle() == nil || ws.env.GetGitHubAppService() == nil {
 		return status.InternalError("database or GitHub app service not available")
 	}
@@ -1922,8 +1998,8 @@ func (ws *workflowService) RunScheduledWorkflows(ctx context.Context) error {
 		if scheduled == nil {
 			break
 		}
-		if err := ws.dispatchScheduledWorkflow(ctx, scheduled); err != nil {
-			if err := ws.handleScheduledWorkflowFailure(ctx, scheduled, err); err != nil {
+		if dispatchErr := ws.dispatchScheduledWorkflow(ctx, scheduled); dispatchErr != nil {
+			if err := ws.handleScheduledWorkflowFailure(ctx, scheduled, dispatchErr); err != nil {
 				log.CtxWarningf(ctx, "Failed to handle scheduled workflow failure %s: %s", scheduled.ScheduleID, err)
 			}
 			continue
@@ -1936,7 +2012,7 @@ func (ws *workflowService) claimScheduledWorkflow(ctx context.Context) (*tables.
 	dbh := ws.env.GetDBHandle()
 	scheduled := &tables.ScheduledRun{}
 	err := dbh.Transaction(ctx, func(tx interfaces.DB) error {
-		now := ws.env.GetClock().Now()
+		now := ws.env.GetClock().Now().UTC()
 		nowUsec := now.UnixMicro()
 		err := tx.NewQuery(ctx, "workflow_service_lock_scheduled_run").Raw(`
 			SELECT *
@@ -1984,7 +2060,7 @@ func (ws *workflowService) handleScheduledWorkflowFailure(ctx context.Context, s
 	if currentAttempt+1 < ScheduledWorkflowMaxRetries {
 		// Multiply the backoff by 2 for each retry, starting at 30 seconds.
 		backoff := 30 * time.Second << uint(currentAttempt)
-		nextRunUsec := ws.env.GetClock().Now().Add(backoff).UnixMicro()
+		nextRunUsec := ws.env.GetClock().Now().UTC().Add(backoff).UnixMicro()
 		log.CtxWarningf(ctx, "Scheduled workflow %s failed attempt %v: %s", scheduled.ScheduleID, currentAttempt, dispatchErr)
 		return ws.unclaimScheduledWorkflow(ctx, scheduled.ScheduleID, scheduled.LeaseExpiresUsec, nextRunUsec, currentAttempt)
 	}
@@ -2083,22 +2159,43 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	if err != nil {
 		return err
 	}
-	var allActions []*config.Action
 	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
 	if err != nil {
 		return status.WrapError(err, "fetch workflow config")
-	} else if cfg != nil {
-		allActions = cfg.Actions
+	} else if cfg == nil {
+		log.CtxInfof(ctx, "Workflow config not found for scheduled run %s; deleting", scheduled.ScheduleID)
+		if err := ws.deleteScheduledRun(ctx, scheduled.ScheduleID, scheduled.LeaseExpiresUsec); err != nil {
+			msg := fmt.Sprintf("Failed to delete scheduled run %s: %s", scheduled.ScheduleID, err)
+			log.CtxError(ctx, msg)
+			return fmt.Errorf("%s", msg)
+		}
+		return nil
 	}
 
-	actions, err := ws.filterActions(ctx, wf, wd, allActions, []string{scheduled.ActionName})
+	actions, err := ws.filterActions(ctx, wf, wd, cfg.Actions, []string{scheduled.ActionName})
 	if err != nil {
 		return err
 	}
+	if len(actions) == 0 {
+		log.CtxInfof(ctx, "Skipping suppressed scheduled workflow action %q for scheduled run %s", scheduled.ActionName, scheduled.ScheduleID)
+		return ws.advanceScheduledWorkflow(ctx, scheduled)
+	}
+
 	if len(actions) != 1 {
-		return status.InvalidArgumentErrorf("expected one action named %s, found %d", scheduled.ActionName, len(actions))
+		return fmt.Errorf("expected one action named %s, found %d", scheduled.ActionName, len(actions))
 	}
 	action := actions[0]
+
+	if !isScheduleStillValid(action, scheduled) {
+		log.CtxInfof(ctx, "Schedule %q for action %q no longer valid for scheduled run %s; deleting", scheduled.CronExpr, scheduled.ActionName, scheduled.ScheduleID)
+		if err := ws.deleteScheduledRun(ctx, scheduled.ScheduleID, scheduled.LeaseExpiresUsec); err != nil {
+			msg := fmt.Sprintf("Failed to delete scheduled run %s: %s", scheduled.ScheduleID, err)
+			log.CtxError(ctx, msg)
+			return fmt.Errorf("%s", msg)
+		}
+		return nil
+	}
+
 	invocationUUID, err := guuid.NewRandom()
 	if err != nil {
 		return err
@@ -2106,6 +2203,10 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, true /*isTrusted*/, action, invocationUUID.String(), nil /*extraCIRunnerArgs*/, nil /*env*/, true /*shouldRetry*/); err != nil {
 		return status.WrapErrorf(err, "failed to start scheduled workflow action %q", scheduled.ActionName)
 	}
+	return ws.advanceScheduledWorkflow(ctx, scheduled)
+}
+
+func (ws *workflowService) advanceScheduledWorkflow(ctx context.Context, scheduled *tables.ScheduledRun) error {
 	nextRunUsec, err := ws.calculateNextRunTimeUsec(scheduled.CronExpr)
 	if err != nil {
 		alert.CtxUnexpectedEvent(ctx, "Failed to calculate next run time for scheduled workflow %s: %s", scheduled.ScheduleID, err)
@@ -2118,6 +2219,38 @@ func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, schedu
 	return nil
 }
 
+// Validate that the schedule configured in the fetched workflow config matches what we have in the database.
+func isScheduleStillValid(fetchedAction *config.Action, storedSchedule *tables.ScheduledRun) bool {
+	if fetchedAction.Triggers == nil || fetchedAction.Triggers.Schedule == nil {
+		return false
+	}
+	return slices.Contains(fetchedAction.Triggers.Schedule.Crons, storedSchedule.CronExpr)
+}
+
+// validateCronTriggers checks that all cron expressions in the config are valid.
+func (ws *workflowService) validateCronTriggers(cfg *config.BuildBuddyConfig) error {
+	now := ws.env.GetClock().Now().UTC()
+	for _, action := range cfg.Actions {
+		if action == nil || action.Triggers == nil || action.Triggers.Schedule == nil {
+			continue
+		}
+		for _, cronExpr := range action.Triggers.Schedule.Crons {
+			sched, err := cronParser.Parse(cronExpr)
+			if err != nil {
+				return status.InvalidArgumentErrorf("action %q: invalid cron expression %q: %s", action.Name, cronExpr, err)
+			}
+
+			// Check that the cron expression does not fire more frequently than once every 15 minutes.
+			t1 := sched.Next(now)
+			t2 := sched.Next(t1)
+			if t2.Sub(t1) < scheduledWorkflowMinInterval {
+				return status.InvalidArgumentErrorf("cron %q for %q fires more than once every %s", cronExpr, action.Name, scheduledWorkflowMinInterval)
+			}
+		}
+	}
+	return nil
+}
+
 // calculateNextRunTimeUsec uses the given cron expression to return the next
 // scheduled time, using the current time as the minimum.
 func (ws *workflowService) calculateNextRunTimeUsec(cronExpr string) (int64, error) {
@@ -2125,7 +2258,7 @@ func (ws *workflowService) calculateNextRunTimeUsec(cronExpr string) (int64, err
 	if err != nil {
 		return 0, err
 	}
-	now := ws.env.GetClock().Now()
+	now := ws.env.GetClock().Now().UTC()
 	return sched.Next(now).UnixMicro(), nil
 }
 
@@ -2149,6 +2282,17 @@ func (ws *workflowService) advanceWorkflowSchedule(ctx context.Context, schedule
 		return fmt.Errorf("failed to advance scheduled workflow %s", scheduleID)
 	}
 	return nil
+}
+
+// deleteScheduledRun deletes a scheduled run that is no longer valid (e.g. config file deleted or
+// cron expression removed). We filter on lease_expires_usec to avoid race conditions.
+func (ws *workflowService) deleteScheduledRun(ctx context.Context, scheduleID string, leaseExpiresUsec int64) error {
+	result := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_delete_scheduled_run").Raw(`
+		DELETE FROM "ScheduledRuns"
+		WHERE schedule_id = ?
+		  AND lease_expires_usec = ?
+	`, scheduleID, leaseExpiresUsec).Exec()
+	return result.Error
 }
 
 // updateScheduledWorkflows checks for changes regarding scheduled workflows in the workflow config,
@@ -2242,10 +2386,5 @@ func shouldUpdateScheduledWorkflows(wd *interfaces.WebhookData, repo *tables.Git
 		wd.PushedBranch != wd.TargetRepoDefaultBranch {
 		return false
 	}
-	for _, f := range wd.ChangedFiles {
-		if f == config.FilePath {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(wd.ChangedFiles, config.FilePath)
 }

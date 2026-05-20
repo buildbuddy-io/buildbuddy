@@ -241,6 +241,7 @@ common:download-minimal --nobuild_runfile_links
 common:remote-shared --config=cache-shared
 common:remote-shared --jobs=100
 common:remote-shared --verbose_failures
+common:remote-shared --rewind_lost_inputs
 
 # Flags shared for prod RBE and cache
 common:remote-prod-shared --config=remote-shared

@@ -13,6 +13,8 @@ import rpcService, { type Cancelable } from "../../../app/service/rpc_service";
 import { usage } from "../../../proto/usage_ts_proto";
 import {
   USAGE_ALERTING_METRICS,
+  usageAlertingAbsoluteThresholdFromInput,
+  usageAlertingDurationThresholdToMinutes,
   usageAlertingMetricLabel,
   usageAlertingMetricUnit,
   type UsageAlertingMetric,
@@ -266,10 +268,12 @@ export default class UsageAlertsComponent extends React.Component<{}, UsageAlert
     if (threshold === undefined) {
       thresholdPreview = "";
     } else {
-      switch (usageAlertingMetricUnit(metric)) {
+      const unit = usageAlertingMetricUnit(metric);
+      switch (unit) {
         case "bytes":
           thresholdPreview = formatBytes(threshold);
           break;
+        case "duration_usec":
         case "duration_nanos":
           thresholdPreview = formatUsageAlertingMinutes(threshold, true);
           break;
@@ -362,6 +366,9 @@ export default class UsageAlertsComponent extends React.Component<{}, UsageAlert
     return (
       <>
         <div className="usage-alerting-header">
+          <p>
+            Usage alerts send emails to all Admin users in the organization when a usage metric exceeds a threshold.
+          </p>
           <FilledButton onClick={this.onClickOpenCreateAlertModal.bind(this)}>Create new alert</FilledButton>
         </div>
         {this.state.alertingLoading && <Spinner />}
@@ -387,17 +394,17 @@ export default class UsageAlertsComponent extends React.Component<{}, UsageAlert
               <tbody>
                 {rules.map((rule, index) => {
                   const ruleID = rule.metadata?.usageAlertingRuleId || String(index);
+                  const metric = rule.configuration?.metric;
                   const threshold = Long.fromValue(rule.configuration?.absoluteThreshold ?? 0);
+                  const unit = usageAlertingMetricUnit(metric);
                   let preciseThresholdLabel: string;
-                  switch (usageAlertingMetricUnit(rule.configuration?.metric)) {
+                  switch (unit) {
                     case "bytes":
                       preciseThresholdLabel = `${formatWithCommas(threshold)} ${pluralize("byte", threshold)}`;
                       break;
+                    case "duration_usec":
                     case "duration_nanos":
-                      preciseThresholdLabel = formatUsageAlertingMinutes(
-                        Long.fromNumber(Math.round(Number(threshold) / 60e9)),
-                        false
-                      );
+                      preciseThresholdLabel = formatUsageAlertingDurationThreshold(metric, threshold, false);
                       break;
                     case "count":
                       preciseThresholdLabel = formatWithCommas(threshold);
@@ -433,11 +440,13 @@ function usageAlertingWindowLabel(window?: UsageAlertingWindow): string {
 
 function formatUsageAlertingThreshold(config?: usage.UsageAlertingRuleConfiguration | null): string {
   const threshold = Long.fromValue(config?.absoluteThreshold ?? 0);
-  switch (usageAlertingMetricUnit(config?.metric)) {
+  const unit = usageAlertingMetricUnit(config?.metric);
+  switch (unit) {
     case "bytes":
       return formatBytes(threshold);
+    case "duration_usec":
     case "duration_nanos":
-      return formatUsageAlertingMinutes(Long.fromNumber(Math.round(Number(threshold) / 60e9)), true);
+      return formatUsageAlertingDurationThreshold(config?.metric, threshold, true);
     case "count":
       return formatCount(threshold);
   }
@@ -451,13 +460,12 @@ function parseUsageAlertingThresholdInput(value?: string): Long | undefined {
   return Long.fromString(trimmedValue);
 }
 
-function usageAlertingAbsoluteThresholdFromInput(metric: UsageAlertingMetric, threshold: Long): Long {
-  switch (usageAlertingMetricUnit(metric)) {
-    case "duration_nanos":
-      return threshold.multiply(60e9);
-    default:
-      return threshold;
-  }
+function formatUsageAlertingDurationThreshold(
+  metric: UsageAlertingMetric | undefined,
+  threshold: Long,
+  compact: boolean
+): string {
+  return formatUsageAlertingMinutes(usageAlertingDurationThresholdToMinutes(metric, threshold), compact);
 }
 
 function formatUsageAlertingMinutes(minutes: Long, compact: boolean): string {

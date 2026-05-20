@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"runtime"
+	"slices"
 	"sync"
 	"time"
 
@@ -111,13 +112,11 @@ func CredentialsFromProperties(props *platform.Properties) (Credentials, error) 
 	}
 	refHostname := reference.Domain(ref)
 	for _, cfg := range *registries {
-		for _, cfgHostname := range cfg.Hostnames {
-			if refHostname == cfgHostname {
-				return Credentials{
-					Username: cfg.Username,
-					Password: cfg.Password,
-				}, nil
-			}
+		if slices.Contains(cfg.Hostnames, refHostname) {
+			return Credentials{
+				Username: cfg.Username,
+				Password: cfg.Password,
+			}, nil
 		}
 	}
 

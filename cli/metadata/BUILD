@@ -9,7 +9,6 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/log",
-        "//cli/parser",
         "//cli/workspace",
         "//server/util/git",
     ],
@@ -21,6 +20,8 @@ go_test(
     embed = [":metadata"],
     deps = [
         "//cli/arg",
+        "//cli/parser",
+        "//cli/parser/test_data",
         "//cli/workspace",
         "//server/testutil/testgit",
         "@com_github_stretchr_testify//require",

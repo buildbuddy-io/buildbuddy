@@ -14,7 +14,9 @@ go_library(
         "//server/testutil/testshell",
         "//server/util/db",
         "//server/util/git",
+        "//server/util/mockgitserver",
         "//server/util/status",
         "@com_github_google_go_github_v59//github",
+        "@com_github_stretchr_testify//require",
     ],
 )

@@ -10,7 +10,6 @@ go_library(
         "//cli/arg",
         "//cli/flaghistory",
         "//cli/login",
-        "//cli/parser",
         "//cli/plugin",
         "//cli/sidecar",
         "//cli/tooltag",

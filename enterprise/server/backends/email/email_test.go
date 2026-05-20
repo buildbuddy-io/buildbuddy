@@ -15,9 +15,9 @@ import (
 
 func TestSend(t *testing.T) {
 	validMessage := &email.Message{
-		To:      email.Address{Name: "Dev", Email: "dev@example.com"},
-		Subject: "Build complete",
-		Body:    "<p>The build completed.</p>",
+		ToAddresses: []email.Address{{Name: "Dev", Email: "dev@example.com"}},
+		Subject:     "Build complete",
+		Body:        "<p>The build completed.</p>",
 	}
 	validPayload := sendgridPayload{
 		From:    payloadAddress{Name: "BuildBuddy", Email: "notifications@buildbuddy.io"},
@@ -43,6 +43,27 @@ func TestSend(t *testing.T) {
 	messageSenderPayload.From = payloadAddress{Name: "Usage Alerts", Email: "usage@buildbuddy.io"}
 	messageSenderRequest := validRequest
 	messageSenderRequest.payload = messageSenderPayload
+	multiRecipientPayload := sendgridPayload{
+		From:    payloadAddress{Name: "BuildBuddy", Email: "notifications@buildbuddy.io"},
+		Subject: "Build complete",
+		Personalizations: []payloadPersonalization{
+			{
+				To: []payloadAddress{
+					{Name: "Dev", Email: "dev@example.com"},
+				},
+			},
+			{
+				To: []payloadAddress{
+					{Name: "Admin", Email: "admin@example.com"},
+				},
+			},
+		},
+		Content: []payloadContent{
+			{Type: "text/html", Value: "<p>The build completed.</p>"},
+		},
+	}
+	multiRecipientRequest := validRequest
+	multiRecipientRequest.payload = multiRecipientPayload
 
 	for _, testCase := range []struct {
 		name         string
@@ -62,13 +83,26 @@ func TestSend(t *testing.T) {
 		{
 			name: "uses message sender",
 			message: &email.Message{
-				From:    email.Address{Name: "Usage Alerts", Email: "usage@buildbuddy.io"},
-				To:      email.Address{Name: "Dev", Email: "dev@example.com"},
+				From:        email.Address{Name: "Usage Alerts", Email: "usage@buildbuddy.io"},
+				ToAddresses: []email.Address{{Name: "Dev", Email: "dev@example.com"}},
+				Subject:     "Build complete",
+				Body:        "<p>The build completed.</p>",
+			},
+			statusCode:   http.StatusAccepted,
+			wantRequests: []capturedRequest{messageSenderRequest},
+		},
+		{
+			name: "posts multiple individually addressed recipients",
+			message: &email.Message{
+				ToAddresses: []email.Address{
+					{Name: "Dev", Email: "dev@example.com"},
+					{Name: "Admin", Email: "admin@example.com"},
+				},
 				Subject: "Build complete",
 				Body:    "<p>The build completed.</p>",
 			},
 			statusCode:   http.StatusAccepted,
-			wantRequests: []capturedRequest{messageSenderRequest},
+			wantRequests: []capturedRequest{multiRecipientRequest},
 		},
 		{
 			name:         "returns SendGrid failure",
@@ -111,10 +145,20 @@ func TestSend(t *testing.T) {
 			wantErr:    "recipient is required",
 		},
 		{
+			name: "requires non-empty recipient address",
+			message: &email.Message{
+				ToAddresses: []email.Address{{Name: "Admin"}},
+				Subject:     "Build complete",
+				Body:        "<p>The build completed.</p>",
+			},
+			statusCode: http.StatusAccepted,
+			wantErr:    "recipient email address is required",
+		},
+		{
 			name: "requires subject",
 			message: &email.Message{
-				To:   email.Address{Name: "Dev", Email: "dev@example.com"},
-				Body: "<p>The build completed.</p>",
+				ToAddresses: []email.Address{{Name: "Dev", Email: "dev@example.com"}},
+				Body:        "<p>The build completed.</p>",
 			},
 			statusCode: http.StatusAccepted,
 			wantErr:    "subject is required",
@@ -122,8 +166,8 @@ func TestSend(t *testing.T) {
 		{
 			name: "requires body",
 			message: &email.Message{
-				To:      email.Address{Name: "Dev", Email: "dev@example.com"},
-				Subject: "Build complete",
+				ToAddresses: []email.Address{{Name: "Dev", Email: "dev@example.com"}},
+				Subject:     "Build complete",
 			},
 			statusCode: http.StatusAccepted,
 			wantErr:    "body is required",

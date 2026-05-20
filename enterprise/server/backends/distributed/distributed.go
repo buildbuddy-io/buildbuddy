@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -106,18 +107,13 @@ func (o *hintedHandoffOrder) String() string {
 	return fmt.Sprintf("{digest:%q isolation:{%s}}", hash, isolation)
 }
 
-type peerInfo struct {
-	lastContact time.Time
-	zone        string
-}
-
 // TODO(go/b/6456): use memory cache instead of LRU for lookaside cache
 type Cache struct {
 	authenticator        interfaces.Authenticator
 	local                interfaces.Cache
 	log                  log.Logger
 	lookaside            lru.LRU[lookasideCacheEntry]
-	peerMetadata         map[string]*peerInfo
+	peerZones            map[string]string
 	hintedHandoffsMu     *sync.RWMutex
 	hintedHandoffsByPeer map[string]chan *hintedHandoffOrder
 	distributedProxy     *distributed_client.Proxy
@@ -125,7 +121,7 @@ type Cache struct {
 	extraConsistentHash  *consistent_hash.ConsistentHash
 	heartbeatChannel     *heartbeat.Channel
 	kubeDiscoveryChannel *kubediscovery.PeerWatcher
-	heartbeatMu          *sync.Mutex
+	heartbeatMu          *sync.RWMutex
 	shutdownMu           *sync.RWMutex
 	shutDownChan         chan struct{}
 	finishedShutdown     bool
@@ -233,11 +229,11 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 		consistentHash:      chash,
 		extraConsistentHash: extraCHash,
 
-		heartbeatMu:      &sync.Mutex{},
+		heartbeatMu:      &sync.RWMutex{},
 		shutdownMu:       &sync.RWMutex{},
 		shutDownChan:     nil,
 		finishedShutdown: true,
-		peerMetadata:     make(map[string]*peerInfo, 0),
+		peerZones:        make(map[string]string),
 
 		hintedHandoffsMu:     &sync.RWMutex{},
 		hintedHandoffsByPeer: make(map[string]chan *hintedHandoffOrder, 0),
@@ -343,9 +339,9 @@ func (c *Cache) Check(ctx context.Context) error {
 	// Next check that we're participating in the network:
 	// basically, that enough configured peers have *ever* contacted us.
 	// TODO(tylerw): Should we have some recency threshold here?
-	c.heartbeatMu.Lock()
-	nodesInNetwork := len(c.peerMetadata)
-	c.heartbeatMu.Unlock()
+	c.heartbeatMu.RLock()
+	nodesInNetwork := len(c.peerZones)
+	c.heartbeatMu.RUnlock()
 
 	if nodesInNetwork < c.opts.ClusterSize {
 		return status.UnavailableErrorf("%d nodes in network but cluster size is %d.", nodesInNetwork, c.opts.ClusterSize)
@@ -560,15 +556,11 @@ func combineCommittedWriteClosers(a, b interfaces.CommittedWriteCloser) interfac
 }
 
 func (c *Cache) recvHeartbeatCallback(ctx context.Context, peer string) {
-	pi := &peerInfo{
-		lastContact: time.Now(),
-	}
 	if zoneVals := metadata.ValueFromIncomingContext(ctx, resources.ZoneHeader); len(zoneVals) == 1 {
-		pi.zone = zoneVals[0]
+		c.heartbeatMu.Lock()
+		c.peerZones[peer] = zoneVals[0]
+		c.heartbeatMu.Unlock()
 	}
-	c.heartbeatMu.Lock()
-	c.peerMetadata[peer] = pi
-	c.heartbeatMu.Unlock()
 }
 
 func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer string, r *rspb.ResourceName) {
@@ -677,14 +669,11 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	return c.distributedProxy.Shutdown(ctx)
 }
 
-func (c *Cache) peerZone(peer string) (string, bool) {
-	c.heartbeatMu.Lock()
-	pi, ok := c.peerMetadata[peer]
-	c.heartbeatMu.Unlock()
-	if ok && pi.zone != "" {
-		return pi.zone, true
-	}
-	return "", false
+func (c *Cache) peerZone(peer string) string {
+	c.heartbeatMu.RLock()
+	zone := c.peerZones[peer]
+	c.heartbeatMu.RUnlock()
+	return zone
 }
 
 // writePeers returns the ordered slice of replicationFactor peers responsible
@@ -697,7 +686,38 @@ func (c *Cache) writePeers(d *repb.Digest) (*peerset.PeerSet, error) {
 	if len(allPeers) < c.opts.ReplicationFactor {
 		return nil, status.UnavailableErrorf("Not enough peers (%d) available to satisfy replication factor (%d).", len(allPeers), c.opts.ReplicationFactor)
 	}
+	if c.localReadthroughEnabled() {
+		return ensureSameZonePrimary(allPeers, c.opts.ReplicationFactor, c.opts.ListenAddr, c.zone, c.peerZone), nil
+	}
 	return peerset.New(allPeers[:c.opts.ReplicationFactor], allPeers[c.opts.ReplicationFactor:]), nil
+}
+
+// ensureSameZonePrimary promotes self into the primary peer set if none of the
+// existing primaries are in self's zone (and self isn't already a primary).
+// This is used under read-through caching so that every write places at least
+// one copy in the local zone. The relative order of every other peer is
+// preserved. Callers must not reuse the input slice after this call.
+func ensureSameZonePrimary(
+	peers []string, primaryCount int,
+	self string, myZone string,
+	zoneOf func(string) string,
+) *peerset.PeerSet {
+	if myZone == "" || slices.ContainsFunc(peers[:primaryCount], func(peer string) bool {
+		return peer == self || myZone == zoneOf(peer)
+	}) {
+		return peerset.New(peers[:primaryCount], peers[primaryCount:])
+	}
+	selfIdx := slices.Index(peers[primaryCount:], self)
+	if selfIdx == -1 {
+		peers = append(peers, self)
+		selfIdx = len(peers) - 1
+	} else {
+		selfIdx += primaryCount
+	}
+	// Move self into the primary section, shifting others to the right.
+	copy(peers[primaryCount+1:selfIdx+1], peers[primaryCount:selfIdx])
+	peers[primaryCount] = self
+	return peerset.New(peers[:primaryCount+1], peers[primaryCount+1:])
 }
 
 func dedupe(in []string) []string {
@@ -713,17 +733,16 @@ func dedupe(in []string) []string {
 	return out
 }
 
-// readPeers returns a slice of peers responsible for this key. If this peer is
-// a member of the set, it is returned first. Other
-// peers are returned in random order.
+// readPeers returns a PeerSet for reading, where the order is self, same zone
+// peers, other peers. If local read-through is enabled, it ensures that at
+// least one primary peer is in the local zone.
 func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 	peers := c.consistentHash.GetAllReplicas(d.GetHash())
 	var primaryPeers, secondaryPeers []string
 	// To prevent a panic if replication is misconfigured to be higher than peer count.
-	if len(peers) >= c.opts.ReplicationFactor {
-		primaryPeers = peers[:c.opts.ReplicationFactor]
-		secondaryPeers = peers[c.opts.ReplicationFactor:]
-	}
+	primaryCount := min(len(peers), c.opts.ReplicationFactor)
+	primaryPeers = peers[:primaryCount]
+	secondaryPeers = peers[primaryCount:]
 
 	if len(c.opts.NewNodes) > 0 {
 		extendedPeerList := c.extraConsistentHash.GetAllReplicas(d.GetHash())
@@ -745,10 +764,15 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 		}
 	}
 
+	var blockBackfills []string
+	if c.localReadthroughEnabled() {
+		primaryPeers, secondaryPeers, blockBackfills = readThroughPeers(primaryPeers, secondaryPeers, c.opts.ListenAddr, c.zone, c.peerZone)
+	}
+
 	sortVal := func(peer string) int {
 		if peer == c.opts.ListenAddr {
 			return 0
-		} else if zone, ok := c.peerZone(peer); ok && zone == c.zone {
+		} else if z := c.peerZone(peer); z != "" && z == c.zone {
 			return 1
 		} else {
 			return 2
@@ -757,7 +781,42 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 	sort.Slice(primaryPeers, func(i, j int) bool {
 		return sortVal(primaryPeers[i]) < sortVal(primaryPeers[j])
 	})
-	return peerset.New(primaryPeers, secondaryPeers)
+	ps := peerset.New(primaryPeers, secondaryPeers)
+	ps.BlockBackfills = blockBackfills
+	return ps
+}
+
+// readThroughPeers reshapes the (primary, secondary) split for reads
+// under read-through caching. When neither self nor any same-zone peer appears
+// in primary, it appends same-zone secondaries onto primary so the read can
+// find an in-zone peer (which may hold a read-through cached copy) before any
+// cross-zone peer. The caller is expected to apply the locality sort to the
+// returned primary.
+//
+// The returned blockBackfills list names the promoted peers. They're not
+// canonical replicas for the key, so a successful read further down the
+// preferred list must not trigger an unwanted cross-zone write to each one.
+func readThroughPeers(
+	primaryPeers, secondaryPeers []string,
+	self string, myZone string,
+	zoneOf func(string) string,
+) (primary, secondary, blockBackfills []string) {
+	if myZone == "" || slices.ContainsFunc(primaryPeers, func(peer string) bool {
+		return peer == self || myZone == zoneOf(peer)
+	}) {
+		return primaryPeers, secondaryPeers, nil
+	}
+	var promoted []string
+	newSecondary := make([]string, 0, len(secondaryPeers))
+	for _, p := range secondaryPeers {
+		if myZone == zoneOf(p) {
+			primaryPeers = append(primaryPeers, p)
+			promoted = append(promoted, p)
+		} else {
+			newSecondary = append(newSecondary, p)
+		}
+	}
+	return primaryPeers, newSecondary, promoted
 }
 
 func (c *Cache) remoteContains(ctx context.Context, peer string, r *rspb.ResourceName) (bool, error) {

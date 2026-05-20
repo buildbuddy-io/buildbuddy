@@ -92,7 +92,7 @@ require (
 	github.com/gliderlabs/ssh v0.3.8
 	github.com/go-enry/go-enry/v2 v2.8.7
 	github.com/go-faker/faker/v4 v4.0.0-beta.3
-	github.com/go-git/go-git/v5 v5.18.0
+	github.com/go-git/go-git/v5 v5.19.0
 	github.com/go-redis/redis/extra/redisotel/v8 v8.11.5
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/go-sql-driver/mysql v1.8.1
@@ -117,7 +117,7 @@ require (
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/jsimonetti/rtnetlink v1.3.3
 	github.com/klauspost/compress v1.18.5
-	github.com/klauspost/cpuid/v2 v2.2.7
+	github.com/klauspost/cpuid/v2 v2.3.0
 	github.com/lestrrat-go/jwx v1.2.29
 	github.com/lni/dragonboat/v4 v4.0.0-20240618143154-6a1623140f27
 	github.com/lni/goutils v1.4.0
@@ -174,7 +174,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.50.0
-	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546
+	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f
 	golang.org/x/mod v0.35.0
 	golang.org/x/net v0.53.0
 	golang.org/x/oauth2 v0.36.0
@@ -303,7 +303,7 @@ require (
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
-	github.com/go-git/go-billy/v5 v5.8.0 // indirect
+	github.com/go-git/go-billy/v5 v5.9.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -419,7 +419,7 @@ require (
 	github.com/otiai10/copy v1.14.0 // indirect
 	github.com/paulmach/orb v0.12.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
-	github.com/pjbgf/sha1cd v0.3.2 // indirect
+	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20221212215047-62379fc7944b // indirect
 	github.com/prometheus/otlptranslator v0.0.2 // indirect

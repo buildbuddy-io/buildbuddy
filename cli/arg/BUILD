@@ -6,11 +6,21 @@ go_library(
     name = "arg",
     srcs = ["arg.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/arg",
+    deps = [
+        "//cli/parser",
+        "//cli/parser/parsed",
+    ],
 )
 
 go_test(
     name = "arg_test",
     srcs = ["arg_test.go"],
     embed = [":arg"],
-    deps = ["@com_github_stretchr_testify//assert"],
+    deps = [
+        "//cli/parser",
+        "//cli/parser/test_data",
+        "//cli/workspace",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
 )

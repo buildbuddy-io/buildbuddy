@@ -187,12 +187,7 @@ func (d *UserDB) authorizeGroupAdminRole(ctx context.Context, groupID string) er
 }
 
 func isInOwnedDomainBlocklist(email string) bool {
-	for _, item := range blockList {
-		if item == email {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(blockList, email)
 }
 
 func (d *UserDB) getDomainOwnerGroup(ctx context.Context, h interfaces.DB, domain string) (*tables.Group, error) {
@@ -233,10 +228,8 @@ func (d *UserDB) validateURLIdentifier(ctx context.Context, groupID string, urlI
 	}
 
 	if subdomain.Enabled() {
-		for _, sd := range subdomain.DefaultSubdomains() {
-			if urlIdentifier == sd {
-				return false, nil
-			}
+		if slices.Contains(subdomain.DefaultSubdomains(), urlIdentifier) {
+			return false, nil
 		}
 	}
 

@@ -1337,17 +1337,30 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	return exitCode, err
 }
 
-func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string, err error) {
-	bazelArgs, execArgs = arg.SplitExecutableArgs(commandLineArgs)
+func parseArgs(commandLineArgs []string) ([]string, []string, error) {
+	bazelArgs, execArgs := arg.SplitExecutableArgs(commandLineArgs)
 
-	bazelArgs, err = login.ConfigureAPIKey(bazelArgs)
-	if err != nil {
-		return nil, nil, fmt.Errorf("configure api key: %w", err)
-	}
+	var err error
 	bazelArgs, err = parser.CanonicalizeArgs(bazelArgs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("canonicalize bazel args: %w", err)
 	}
+
+	// Because Remote Bazel just forwards the command to a remote runner, it
+	// doesn't need to use the traditional CLI parser, which attempts
+	// to expand --config and --bazelrc flags for an internal view of resolved flags.
+	// (Attempting to use the parser would actually fail, because we add --config flags that
+	// are only defined on the remote runners.)
+	// Manually construct a BazelArgs struct because the login code expects it.
+	// TODO: Find a less hacky way to handle this.
+	bazelArgsStruct, err := arg.NewBazelArgsNoResolve(bazelArgs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse bazel args: %w", err)
+	}
+	if err := login.ConfigureAPIKey(bazelArgsStruct); err != nil {
+		return nil, nil, fmt.Errorf("configure api key: %w", err)
+	}
+	bazelArgs = bazelArgsStruct.Resolved()
 
 	// Ensure all bazel remote runs use the remote cache.
 	// The goal is to keep remote workloads close to our servers, so use the same

@@ -168,7 +168,7 @@ func SetCredential(cmd *exec.Cmd, spec string) error {
 			return status.InternalErrorf("groups lookup failed: %s", err)
 		}
 		for _, s := range gidStrings {
-			gid, err := strconv.Atoi(s)
+			gid, err := strconv.ParseUint(s, 10, 32)
 			if err != nil {
 				return status.InternalErrorf("failed to parse groups: %s", err)
 			}
@@ -191,11 +191,11 @@ func SetCredential(cmd *exec.Cmd, spec string) error {
 		g = &user.Group{Gid: strconv.Itoa(os.Getgid())}
 	}
 
-	uid, err := strconv.Atoi(u.Uid)
+	uid, err := strconv.ParseUint(u.Uid, 10, 32)
 	if err != nil {
 		return status.InternalErrorf("failed to parse uid: %s", err)
 	}
-	gid, err := strconv.Atoi(g.Gid)
+	gid, err := strconv.ParseUint(g.Gid, 10, 32)
 	if err != nil {
 		return status.InternalErrorf("failed to parse gid: %s", err)
 	}

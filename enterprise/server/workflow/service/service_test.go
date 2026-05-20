@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -35,6 +36,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-github/v59/github"
 	"github.com/jonboulle/clockwork"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -216,6 +219,23 @@ func getExecutedActionName(t *testing.T, ctx context.Context, te *testenv.TestEn
 	}
 	t.Fatalf("no action name found in execute request: %+v", executeRequest)
 	return ""
+}
+
+func configureExperiments(t *testing.T, env *testenv.TestEnv, flags map[string]bool) {
+	inMemoryFlags := make(map[string]memprovider.InMemoryFlag, len(flags))
+	for name, enabled := range flags {
+		inMemoryFlags[name] = memprovider.InMemoryFlag{
+			State:          memprovider.Enabled,
+			DefaultVariant: "default",
+			Variants:       map[string]any{"default": enabled},
+		}
+	}
+	testProvider := memprovider.NewInMemoryProvider(inMemoryFlags)
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
 }
 
 // pingLegacyWorkflowWebhook makes an empty request to the given webhook URL. The fake git
@@ -662,6 +682,45 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
 		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
+}
+
+func TestWebhook_WorkflowSuppressedByExperiment(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	clientConn := runBBServer(ctx, t, te)
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:          "push",
+		TargetRepoURL:      "https://github.com/acme-inc/acme",
+		TargetBranch:       "main",
+		PushedRepoURL:      "https://github.com/acme-inc/acme",
+		PushedBranch:       "main",
+		SHA:                "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic: true,
+	}
+	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
+	configureExperiments(t, te, map[string]bool{
+		"remote_execution.suppress_workflow_execution": true,
+	})
+
+	// The webhook has a matching workflow action, but the experiment suppresses
+	// workflow execution.
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	// The matching webhook action was suppressed, so no execution request should be sent.
+	require.Zero(t, len(execClient.executeRequests))
 }
 
 func TestWebhook_TrustedTagPush_StartsTrustedWorkflow(t *testing.T) {
@@ -1132,9 +1191,62 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 	}
 }
 
+func TestScheduledWorkflow_SuppressedByExperiment(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	_ = runBBServer(ctx, t, te)
+	_, _, gid := authenticate(t, ctx, te)
+	createWorkflow(t, te, repoURL, gid, false)
+	provider.FileContents = map[string]string{
+		config.FilePath: `
+actions:
+  - name: "Should Skip"
+    bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 * * * *"]
+`,
+	}
+
+	now := threePM
+	te.SetClock(clockwork.NewFakeClockAt(now))
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID: "should-skip",
+		GroupID:    gid,
+		RepoURL:    repoURL,
+		ActionName: "Should Skip",
+		CronExpr:   "0 * * * *",
+		// The scheduled run is due now and should be evaluated for suppression.
+		NextRunUsec: now.UnixMicro(),
+	})
+
+	configureExperiments(t, te, map[string]bool{
+		"remote_execution.enable_scheduled_workflows":  true,
+		"remote_execution.suppress_workflow_execution": true,
+	})
+
+	// The matching scheduled action exists, but the experiment suppresses
+	// workflow execution.
+	err := te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	// The matching scheduled action was suppressed, so no execution request should be sent.
+	require.Zero(t, len(execClient.executeRequests))
+	scheduled := getScheduledRun(t, te, "Should Skip")
+	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), scheduled.NextRunUsec)
+	require.Zero(t, scheduled.FailedAttemptCount)
+	require.Zero(t, scheduled.ConsecutiveScheduleFailureCount)
+	require.Zero(t, scheduled.LeaseExpiresUsec)
+}
+
 func TestScheduledWorkflow(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
+	configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	provider := setupFakeGitProvider(t, te)
@@ -1147,10 +1259,29 @@ func TestScheduledWorkflow(t *testing.T) {
 actions:
   - name: "Should Run"
     bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 * * * *"]
   - name: "Should Run 2"
     bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["55 * * * *"]
+  - name: "Not Time Yet"
+    bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 19 * * *"]
+  - name: "Already Leased"
+    bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 * * * *"]
   - name: "Expired Lease"
     bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 * * * *"]
 `,
 	}
 
@@ -1289,6 +1420,7 @@ func TestScheduledWorkflow_NoEligibleSchedules(t *testing.T) {
 func TestScheduledWorkflow_ConcurrentServers(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
+	configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
 	authCtx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
@@ -1301,8 +1433,14 @@ func TestScheduledWorkflow_ConcurrentServers(t *testing.T) {
 actions:
   - name: "Test"
     bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 * * * *"]
   - name: "Test 2"
     bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 * * * *"]
 `,
 	}
 
@@ -1798,10 +1936,101 @@ actions:
 		return len(listScheduledRuns(t, te, gid, repoURL)) == 0
 	}, 1*time.Second, 100*time.Millisecond)
 }
+func TestScheduledWorkflows_ConfigValidation_InvalidCron(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	_, _, gid := authenticate(t, ctx, te)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+
+	// Even if the push is to a PR branch, we should validate the cron expression.
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:     "push",
+		TargetRepoURL: "https://github.com/acme-inc/acme",
+		TargetBranch:  "main",
+		PushedRepoURL: "https://github.com/acme-inc/acme",
+		PushedBranch:  "pr",
+		ChangedFiles:  []string{config.FilePath},
+	}
+	provider.FileContents = map[string]string{"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    bazel_commands: ["test //..."]
+    triggers:
+      schedule:
+        crons: ["not-a-valid-cron"]
+`}
+
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	select {
+	case st := <-provider.Statuses:
+		payload := st.Payload.(*github.RepoStatus)
+		require.Equal(t, "error", payload.GetState())
+		require.Contains(t, payload.GetDescription(), "not-a-valid-cron")
+		require.LessOrEqual(t, len(payload.GetDescription()), 140)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for GitHub error status")
+	}
+
+	require.Empty(t, execClient.executeRequests, "expected no executions to be triggered for invalid config")
+}
+
+func TestScheduledWorkflows_ConfigValidation_TooFrequentCron(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	_, _, gid := authenticate(t, ctx, te)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	// Even if the push is to a PR branch, we should validate the cron expression.
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:     "push",
+		TargetRepoURL: "https://github.com/acme-inc/acme",
+		TargetBranch:  "main",
+		PushedRepoURL: "https://github.com/acme-inc/acme",
+		PushedBranch:  "pr",
+		ChangedFiles:  []string{config.FilePath},
+	}
+
+	// "*/5 * * * *" fires every 5 minutes, which exceeds the 15-minute minimum.
+	provider.FileContents = map[string]string{"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    bazel_commands: ["test //..."]
+    triggers:
+      schedule:
+        crons: ["*/5 * * * *"]
+`}
+
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	select {
+	case st := <-provider.Statuses:
+		payload := st.Payload.(*github.RepoStatus)
+		require.Equal(t, "error", payload.GetState())
+		require.Contains(t, payload.GetDescription(), "fires more than once every 15m0s")
+		require.LessOrEqual(t, len(payload.GetDescription()), 140)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for GitHub error status")
+	}
+
+	require.Empty(t, execClient.executeRequests, "expected no executions to be triggered for invalid config")
+}
 
 func TestScheduledWorkflow_DispatchFailure(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
+	configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
 	authCtx, _, gid := authenticate(t, ctx, te)
 	repoURL := makeTempRepo(t)
 	provider := setupFakeGitProvider(t, te)
@@ -1847,6 +2076,9 @@ func TestScheduledWorkflow_DispatchFailure(t *testing.T) {
 actions:
   - name: "Test"
     bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 * * * *"]
 `,
 	}
 
@@ -1876,6 +2108,7 @@ actions:
 func TestScheduledWorkflow_FailedMaxAttempts(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
+	configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
 	_ = runBBServer(ctx, t, te)
 
 	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
@@ -1907,6 +2140,7 @@ func TestScheduledWorkflow_FailedMaxAttempts(t *testing.T) {
 func TestScheduledWorkflow_MaxConsecutiveFailures(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
+	configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
 	_ = runBBServer(ctx, t, te)
 
 	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
@@ -1943,4 +2177,133 @@ func TestScheduledWorkflow_MaxConsecutiveFailures(t *testing.T) {
 	require.Equal(t, int64(workflow.ScheduledWorkflowMaxConsecutiveFailures), sr.ConsecutiveScheduleFailureCount)
 	require.Equal(t, int64(0), sr.FailedAttemptCount)
 	require.Equal(t, now.Add(1*time.Hour).UnixMicro(), sr.NextRunUsec)
+}
+
+func TestScheduledWorkflow_StaleCronDeletesSchedule(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		configContents string
+	}{
+		{
+			name: "mismatched cron in config",
+			configContents: `
+actions:
+  - name: "Nightly"
+    triggers:
+      schedule:
+        crons: ["0 0 * * *"]
+    bazel_commands: ["test //..."]
+`,
+		},
+		{
+			name: "no schedule trigger in config",
+			configContents: `
+actions:
+  - name: "Nightly"
+    bazel_commands: ["test //..."]
+`,
+		},
+		{
+			name:           "no config at all",
+			configContents: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			te := newTestEnv(t)
+			configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
+			provider := setupFakeGitProvider(t, te)
+			repoURL := makeTempRepo(t)
+			_ = runBBServer(ctx, t, te)
+			_, _, gid := authenticate(t, ctx, te)
+			createWorkflow(t, te, repoURL, gid, false)
+
+			if tc.configContents != "" {
+				provider.FileContents = map[string]string{config.FilePath: tc.configContents}
+			}
+
+			now := threePM
+			te.SetClock(clockwork.NewFakeClockAt(now))
+
+			insertScheduledRun(t, te, &tables.ScheduledRun{
+				ScheduleID:  "stale-nightly",
+				GroupID:     gid,
+				RepoURL:     repoURL,
+				ActionName:  "Nightly",
+				CronExpr:    "0 * * * *",
+				NextRunUsec: now.UnixMicro(),
+			})
+
+			err := te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+			require.NoError(t, err)
+
+			// No execution should have been dispatched.
+			require.Zero(t, len(te.GetRemoteExecutionClient().(*fakeExecutionClient).executeRequests))
+
+			// The stale schedule should have been deleted.
+			runs := listScheduledRuns(t, te, gid, repoURL)
+			require.Empty(t, runs)
+		})
+	}
+}
+
+func TestScheduledWorkflow_GitProviderError_Retries(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
+	authCtx, _, gid := authenticate(t, ctx, te)
+	repoURL := makeTempRepo(t)
+	provider := setupFakeGitProvider(t, te)
+	_ = runBBServer(ctx, t, te)
+	createWorkflow(t, te, repoURL, gid, false /*useDefaultWorkflowConfig*/)
+
+	now := time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC)
+	te.SetClock(clockwork.NewFakeClockAt(now))
+
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID:  "test",
+		GroupID:     gid,
+		RepoURL:     repoURL,
+		ActionName:  "Test",
+		CronExpr:    "0 * * * *",
+		NextRunUsec: now.UnixMicro(),
+	})
+
+	provider.FileContents = map[string]string{
+		config.FilePath: `
+actions:
+  - name: "Test"
+    bazel_commands: [ "test //..." ]
+    triggers:
+      schedule:
+        crons: ["0 * * * *"]
+`,
+	}
+	// Simulate a transient GitHub provider error (not a 404).
+	provider.GetFileContentsError = status.InternalError("GitHub API unavailable")
+
+	err := te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	// Row should not be deleted; retry logic should have applied.
+	sr := getScheduledRun(t, te, "Test")
+	require.Equal(t, int64(1), sr.FailedAttemptCount)
+
+	// Unset the error to simulate the transient error has been resolved.
+	provider.GetFileContentsError = nil
+
+	// Advance clock to the next scheduled time and verify the workflow is scheduled.
+	te.SetClock(clockwork.NewFakeClockAt(now.Add(1 * time.Minute)))
+
+	err = te.GetWorkflowService().RunScheduledWorkflows(t.Context())
+	require.NoError(t, err)
+
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	select {
+	case execReq := <-execClient.executeRequests:
+		actionName := getExecutedActionName(t, authCtx, te, execReq.Payload)
+		require.Equal(t, "Test", actionName)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for scheduled workflow execution")
+	}
 }

@@ -6,6 +6,8 @@ export type LinkProps = {
   resetFilters?: boolean;
 } & React.AnchorHTMLAttributes<HTMLAnchorElement>;
 
+const SCHEME_PATTERN = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+
 /**
  * `Link` renders an unstyled, router-aware `<a>` element.
  *
@@ -21,10 +23,9 @@ export type LinkProps = {
  */
 export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAnchorElement>) => {
   const { className, href, target, onClick, resetFilters, ...rest } = props;
-  const isExternal = Boolean(target) || Boolean(href && (href.startsWith("http://") || href.startsWith("https://")));
-  const onClickWrapped = isExternal
-    ? onClick
-    : (e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
+  const shouldHandleWithRouter = !!href && !target && !SCHEME_PATTERN.test(href) && !href.startsWith("//");
+  const onClickWrapped = shouldHandleWithRouter
+    ? (e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
         if (onClick) {
           onClick(e);
           if (e.defaultPrevented) return;
@@ -34,14 +35,15 @@ export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAncho
         }
         e.preventDefault();
         if (href) router.navigateTo(href, resetFilters);
-      };
+      }
+    : onClick;
   return (
     <a
       ref={ref}
       className={`link-wrapper ${className || ""}`}
       onClick={onClickWrapped}
       href={href}
-      target={target ?? (isExternal ? "_blank" : undefined)}
+      target={target ?? (href?.startsWith("http://") || href?.startsWith("https://") ? "_blank" : undefined)}
       {...rest}
     />
   );
