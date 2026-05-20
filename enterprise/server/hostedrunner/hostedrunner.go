@@ -35,6 +35,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
 
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -189,7 +190,13 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		}
 		requestedTimeout = &timeoutDuration
 	}
-	timeout, err := ci_runner_util.RunnerTimeout(ctx, r.env.GetExperimentFlagProvider(), requestedTimeout)
+	var groupID string
+	var groupStatus grpb.Group_GroupStatus
+	if u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
+		groupID = u.GetGroupID()
+		groupStatus = u.GetGroupStatus()
+	}
+	timeout, err := ci_runner_util.RunnerTimeout(ctx, r.env.GetExperimentFlagProvider(), requestedTimeout, groupID, groupStatus, runAction.Name)
 	if err != nil {
 		return nil, err
 	}

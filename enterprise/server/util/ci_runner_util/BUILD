@@ -8,7 +8,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util",
     deps = [
         "//enterprise/server/cmd/ci_runner/bundle",
+        "//enterprise/server/experiments",
         "//enterprise/server/util/ci_runner_env",
+        "//proto:group_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
@@ -33,6 +35,7 @@ go_test(
         "//enterprise/server/githubapp",
         "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/util/ci_runner_env",
+        "//proto:group_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
