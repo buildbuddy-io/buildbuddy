@@ -342,11 +342,18 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		return nil, err
 	}
 
-	if qm := s.env.GetQuotaManager(); qm != nil {
-		totalDownloadSize := int64(0)
-		for _, readDigest := range req.GetDigests() {
-			totalDownloadSize += readDigest.GetSizeBytes()
+	totalDownloadSize := int64(0)
+	for _, readDigest := range req.GetDigests() {
+		size := readDigest.GetSizeBytes()
+		if size < 0 {
+			return nil, status.InvalidArgumentError("Invalid (negative) digest size")
 		}
+		if totalDownloadSize > rpcutil.GRPCMaxSizeBytes-size {
+			return nil, status.InvalidArgumentErrorf("BatchReadBlobs request exceeds server limit of %d bytes", rpcutil.GRPCMaxSizeBytes)
+		}
+		totalDownloadSize += size
+	}
+	if qm := s.env.GetQuotaManager(); qm != nil {
 		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), totalDownloadSize); err != nil {
 			return nil, err
 		}
@@ -1219,6 +1226,9 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 }
 
 func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, readZstd bool) ([]byte, error) {
+	if blobDigest.GetSizeBytes() > rpcutil.GRPCMaxSizeBytes {
+		return nil, status.NotFoundErrorf("blob %s not found", blobDigest.GetHash())
+	}
 	manifest, err := chunking.LoadManifest(ctx, s.cache, blobDigest, instanceName, digestFunction)
 	if err != nil {
 		return nil, err
