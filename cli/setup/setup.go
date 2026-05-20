@@ -29,15 +29,9 @@ type Result struct {
 
 // Setup prepares us to run a bazel command. It loads plugins, handles auth,
 // configures the sidecar, and runs pre-bazel handlers.
-func Setup(args []string, tempDir string) (*Result, error) {
+func Setup(bazelArgs *arg.BazelArgs, execArgs []string, tempDir string) (*Result, error) {
 	// Load plugins
 	plugins, err := plugin.LoadAll(tempDir)
-	if err != nil {
-		return nil, err
-	}
-
-	bazelArgsStr, execArgs := arg.SplitExecutableArgs(args)
-	bazelArgs, err := arg.NewBazelArgs(bazelArgsStr)
 	if err != nil {
 		return nil, err
 	}

@@ -163,21 +163,17 @@ func run() (exitCode int, err error) {
 
 	// This was neither a bb CLI command nor a help command; interpret it as a
 	// bazel command.
-	parsedArgs, err := parser.ParseArgs(os.Args[1:])
+	bazelArgsStr, execArgs := arg.SplitExecutableArgs(os.Args[1:])
+	bazelArgs, err := arg.NewBazelArgs(bazelArgsStr)
 	if err != nil {
 		return -1, err
 	}
-	Configure(parsedArgs.RemoveStartupOptions(logoptdef.Verbose.Name(), watchoptdef.Watch.Name(), watchoptdef.WatcherFlags.Name()))
+	Configure(bazelArgs.StripBBStartupOptions(logoptdef.Verbose.Name(), watchoptdef.Watch.Name(), watchoptdef.WatcherFlags.Name()))
 	StartupDebug(start)
-	parsedArgs, err = parser.ResolveArgs(parsedArgs)
-	if err != nil {
-		return -1, err
-	}
-	canonicalizedArgs := parsedArgs.Canonicalized()
 
 	// If none of the CLI subcommand handlers were triggered, assume we should
 	// handle it as a bazel command.
-	return handleBazelCommand(start, canonicalizedArgs.Format(), originalArgs)
+	return handleBazelCommand(start, bazelArgs, execArgs, originalArgs)
 }
 
 // interpretAsBBCliCommand strips the bb options from the beginning of a bb
@@ -291,9 +287,9 @@ func runHelp(args *parsed.OrderedArgs) (int, error) {
 //
 // originalArgs contains the command as originally typed. We pass it as
 // EXPLICIT_COMMAND_LINE metadata to the bazel invocation.
-func handleBazelCommand(start time.Time, args []string, originalArgs []string) (exitCode int, err error) {
+func handleBazelCommand(start time.Time, bazelArgs *arg.BazelArgs, execArgs []string, originalArgs []string) (exitCode int, err error) {
 	// Maybe run interactively (watching for changes to files).
-	if exitCode, err := watcher.Watch(append([]string{os.Args[0]}, args...)); exitCode >= 0 || err != nil {
+	if exitCode, err := watcher.Watch(append([]string{os.Args[0]}, arg.JoinExecutableArgs(bazelArgs.Forwarded(), execArgs)...)); exitCode >= 0 || err != nil {
 		return exitCode, err
 	}
 
@@ -320,13 +316,13 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 		}
 	}()
 
-	setupResult, err := setup.Setup(args, tempDir)
+	setupResult, err := setup.Setup(bazelArgs, execArgs, tempDir)
 	if err != nil {
 		return 1, err
 	}
 	plugins := setupResult.Plugins
-	bazelArgs := setupResult.BazelArgs
-	execArgs := setupResult.ExecArgs
+	bazelArgs = setupResult.BazelArgs
+	execArgs = setupResult.ExecArgs
 	sidecar := setupResult.Sidecar
 
 	// Show a picker if the target is omitted. Note: we do this after expanding

@@ -165,6 +165,8 @@ func (a *BazelArgs) GetAllFlagsWithName(flagName string) []string {
 
 // StripBBFlag removes a CLI-only string flag from the args (so it is
 // not passed to Bazelisk) and returns its value.
+// TODO(#7389): If we support setting CLI flags via config, make sure we support reading them correctly
+// from the resolved args.
 func (a *BazelArgs) StripBBFlag(flagName string) (string, error) {
 	// GetCLICommandOptionVal removes the flag from a.forwarded in place.
 	flagVal, err := parser.GetCLICommandOptionVal(a.forwarded, flagName)
@@ -177,6 +179,8 @@ func (a *BazelArgs) StripBBFlag(flagName string) (string, error) {
 
 // StripBBBoolFlag removes a CLI-only bool flag from the forwarded args (so it
 // is not passed to Bazelisk) and returns whether it was set.
+// TODO(#7389): If we support setting CLI flags via config, make sure we support reading them correctly
+// from the resolved args.
 func (a *BazelArgs) StripBBBoolFlag(flagName string) (bool, error) {
 	// IsCLICommandOptionSet removes the flag from a.forwarded in place.
 	set, err := parser.IsCLICommandOptionSet(a.forwarded, flagName)
@@ -185,6 +189,14 @@ func (a *BazelArgs) StripBBBoolFlag(flagName string) (bool, error) {
 	}
 	a.resolved.RemoveCommandOptions(flagName)
 	return set, nil
+}
+
+// StripBBStartupOptions removes CLI-only startup options and returns the removed options.
+// TODO(#7389): If we support setting CLI flags via config, make sure we support reading them correctly.
+func (a *BazelArgs) StripBBStartupOptions(optionNames ...string) []*parsed.IndexedOption {
+	a.forwarded.RemoveStartupOptions(optionNames...)
+	removed := a.resolved.RemoveStartupOptions(optionNames...)
+	return removed
 }
 
 // GetRemoteHeaderVal returns the value of a --remote_header flag matching the
