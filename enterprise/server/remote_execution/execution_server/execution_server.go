@@ -1259,22 +1259,6 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 	}
 }
 
-// runUntil runs f every tick until either f returns false or the context is done.
-func runUntil(ctx context.Context, clock clockwork.Clock, tick time.Duration, f func() bool) {
-	ticker := clock.NewTicker(tick)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.Chan():
-			if shouldContinue := f(); !shouldContinue {
-				return
-			}
-		}
-	}
-}
-
 func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string, reason error) error {
 	r, err := digest.ParseUploadResourceName(taskID)
 	if err != nil {
@@ -1349,7 +1333,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		return err
 	}
 	lastOp := &longrunningpb.Operation{}
-	wroteToDB := false
+	updatedExecution := false
 	taskID := ""
 	// Once the executor has called PublishOperation, we're in EXECUTING stage.
 	stage := repb.ExecutionStage_EXECUTING
@@ -1362,22 +1346,35 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	// At least one of these writes will happen. The first write must not happen
 	// if the second one did.
 	start := s.clock.Now()
-	go runUntil(ctx, s.clock, time.Second, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		if wroteToDB {
-			return false
-		}
-		if s.clock.Since(start) > 5*time.Second && taskID != "" {
-			// We only write additional metadata when the operation has completed, so
-			// we don't need to pass those fields here for intermediary updates.
-			if err := s.updateExecution(ctx, taskID, stage, operation.ExtractExecuteResponse(lastOp), nil, nil, nil, nil); err != nil {
-				log.CtxWarningf(ctx, "PublishOperation: FlushWrite: error updating execution: %s", err)
+	go func() {
+		ticker := s.clock.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.Chan():
+				mu.Lock()
+				wroteToDB := updatedExecution
+				taskID := taskID
+				stage := stage
+				lastOp := lastOp
+				mu.Unlock()
+				if wroteToDB {
+					return
+				}
+				if s.clock.Since(start) > 5*time.Second && taskID != "" {
+					// We only write additional metadata when the operation has completed, so
+					// we don't need to pass those fields here for intermediary updates.
+					if err := s.updateExecution(ctx, taskID, stage, operation.ExtractExecuteResponse(lastOp), nil, nil, nil, nil); err != nil {
+						log.CtxWarningf(ctx, "PublishOperation: FlushWrite: error updating execution: %s", err)
+					} else {
+						return // only write once
+					}
+				}
 			}
-			return false
 		}
-		return true
-	})
+	}()
 
 	deletePendingExecutionOnce := sync.OnceFunc(func() {
 		if taskID == "" {
@@ -1494,7 +1491,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
-				wroteToDB = true
+				updatedExecution = true
 				// TODO(Maggie): After receiving cleanup stats, update execution in OLAP again.
 				// TODO(Maggie): Flush execution data to DB when the stream is closed.
 				// Don't flush early here.
