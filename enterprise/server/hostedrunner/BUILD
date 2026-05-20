@@ -13,7 +13,6 @@ go_library(
         "//enterprise/server/util/ci_runner_env",
         "//enterprise/server/util/ci_runner_util",
         "//enterprise/server/workflow/config",
-        "//proto:group_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",

@@ -1155,11 +1155,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		return nil, err
 	}
 
-	var groupStatus grpb.Group_GroupStatus
-	if c, err := claims.ClaimsFromContext(ctx); err == nil {
-		groupStatus = c.GetGroupStatus()
-	}
-	timeout, err := ci_runner_util.RunnerTimeout(ctx, ws.env.GetExperimentFlagProvider(), workflowAction.Timeout, wf.GroupID, groupStatus, workflowAction.Name)
+	timeout, err := ci_runner_util.RunnerTimeout(ctx, ws.env.GetExperimentFlagProvider(), workflowAction.Timeout, workflowAction.Name)
 	if err != nil {
 		return nil, err
 	}

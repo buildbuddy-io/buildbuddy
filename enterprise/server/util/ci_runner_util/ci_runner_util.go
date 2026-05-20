@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cli_bundle "github.com/buildbuddy-io/buildbuddy/server/util/bb"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -36,12 +35,14 @@ var (
 	InitCIRunnerFromCache   = flag.Bool("remote_execution.init_ci_runner_from_cache", true, "Whether the apps should upload ci_runner binaries to the cache so executors can fetch the latest versions without upgrading.")
 )
 
-func RunnerTimeout(ctx context.Context, efp interfaces.ExperimentFlagProvider, requestedTimeout *time.Duration, groupID string, groupStatus grpb.Group_GroupStatus, actionName string) (time.Duration, error) {
+func RunnerTimeout(ctx context.Context, efp interfaces.ExperimentFlagProvider, requestedTimeout *time.Duration, actionName string) (time.Duration, error) {
+	if requestedTimeout != nil && *requestedTimeout <= 0 {
+		return 0, status.InvalidArgumentError("requested timeout is not positive")
+	}
+
 	if efp != nil {
 		timeoutString := efp.String(ctx, DefaultTimeoutExperimentName, "",
-			experiments.WithContext("group_id", groupID),
-			experiments.WithContext("group_status", groupStatus.String()),
-			experiments.WithContext("action_name", actionName))
+			experiments.WithContext("workflow_action_name", actionName))
 		if timeoutString != "" {
 			timeout, err := time.ParseDuration(timeoutString)
 			if err != nil {

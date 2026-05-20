@@ -21,7 +21,6 @@ import (
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -91,7 +90,7 @@ func TestRunnerTimeout(t *testing.T) {
 			if tc.requestedTimeoutPresent {
 				requestedTimeout = &tc.requestedTimeout
 			}
-			timeout, err := RunnerTimeout(ctx, efp, requestedTimeout, "", grpb.Group_UNKNOWN_GROUP_STATUS, "")
+			timeout, err := RunnerTimeout(ctx, efp, requestedTimeout, "test-action")
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedTimeout, timeout)
 		})
