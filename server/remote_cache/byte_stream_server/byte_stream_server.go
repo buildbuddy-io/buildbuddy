@@ -49,6 +49,25 @@ var (
 	maxDirectWriteSizeBytes = flag.Int64("cache.max_direct_write_size_bytes", 16384, "For bytestream requests smaller than this size, write straight to the cache without checking if the entry already exists.")
 )
 
+type skipWriteValidationKey struct{}
+
+// ContextWithSkipWriteValidation returns a process-local context that tells the
+// ByteStreamServer to commit uploads without validating the digest or size and,
+// for caches that support ZSTD, without decompressing incoming ZSTD frames to
+// validate their contents. This is not based on gRPC metadata, so external
+// clients cannot request this behavior; only in-process callers with access to
+// this helper can set it. Only use this when an upstream write path performs
+// full validation before the local cache can commit, such as cache-proxy dual
+// writes; otherwise corrupt data can poison the cache.
+func ContextWithSkipWriteValidation(ctx context.Context) context.Context {
+	return context.WithValue(ctx, skipWriteValidationKey{}, true)
+}
+
+func skipWriteValidation(ctx context.Context) bool {
+	v, _ := ctx.Value(skipWriteValidationKey{}).(bool)
+	return v
+}
+
 type ByteStreamServer struct {
 	env        environment.Env
 	cache      interfaces.Cache
@@ -570,10 +589,6 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		}
 	}
 
-	hasher, err := digest.HashForDigestType(r.GetDigestFunction())
-	if err != nil {
-		return nil, err
-	}
 	var committedWriteCloser interfaces.CommittedWriteCloser
 	if r.IsEmpty() {
 		committedWriteCloser = ioutil.DiscardWriteCloser()
@@ -585,35 +600,48 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		committedWriteCloser = cacheWriter
 	}
 	hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
+	skipValidation := skipWriteValidation(ctx)
 	ws := &writeHandler{
 		transferTimer:      hitTracker.TrackUpload(r.GetDigest()),
 		resourceName:       r,
 		resourceNameString: req.ResourceName,
 		cacheCommitter:     committedWriteCloser,
 		cacheCloser:        committedWriteCloser,
-		checksum:           NewChecksum(hasher, r.GetDigestFunction()),
 	}
 
-	// Write to the cache first. This gives more time between the final cache
-	// write and the commit, reducing the amount of time that the commit has to
-	// wait to flush writes.
-	ws.writer = io.MultiWriter(committedWriteCloser, ws.checksum)
+	if skipValidation {
+		ws.writer = committedWriteCloser
+	} else {
+		hasher, err := digest.HashForDigestType(r.GetDigestFunction())
+		if err != nil {
+			ws.Close()
+			return nil, err
+		}
+		ws.checksum = NewChecksum(hasher, r.GetDigestFunction())
+		// Write to the cache first. This gives more time between the final cache
+		// write and the commit, reducing the amount of time that the commit has to
+		// wait to flush writes.
+		ws.writer = io.MultiWriter(committedWriteCloser, ws.checksum)
+	}
 
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		// The incoming data is compressed.
 		if s.cache.SupportsCompressor(r.GetCompressor()) {
-			// If the cache supports compression, write the already compressed
-			// bytes to the cache with committedWriteCloser but wrap the
-			// checksum in a decompressor to validate the decompressed data.
-			decompressingChecksum, err := compression.NewZstdDecompressor(ws.checksum)
-			if err != nil {
-				ws.Close()
-				return nil, err
+			if !skipValidation {
+				// If the cache supports compression, write the already compressed
+				// bytes to the cache with committedWriteCloser but wrap the
+				// checksum in a decompressor to validate the decompressed data.
+				decompressingChecksum, err := compression.NewZstdDecompressor(ws.checksum)
+				if err != nil {
+					ws.Close()
+					return nil, err
+				}
+				ws.writer = io.MultiWriter(committedWriteCloser, decompressingChecksum)
+				ws.bufioCloser = decompressingChecksum
 			}
-			ws.writer = io.MultiWriter(committedWriteCloser, decompressingChecksum)
-			ws.bufioCloser = decompressingChecksum
 		} else {
-			// If the cache doesn't support compression, wrap both the checksum and cache writer in a decompressor
+			// If the cache doesn't support compression, decompress before writing
+			// to the cache.
 			decompressor, err := compression.NewZstdDecompressor(ws.writer)
 			if err != nil {
 				ws.Close()
@@ -632,7 +660,11 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 			ws.Close()
 			return nil, err
 		}
-		ws.writer = io.MultiWriter(compressor, ws.checksum)
+		if skipValidation {
+			ws.writer = compressor
+		} else {
+			ws.writer = io.MultiWriter(compressor, ws.checksum)
+		}
 		ws.bufioCloser = compressor
 	}
 
@@ -674,10 +706,12 @@ func (w *writeHandler) commit() error {
 		}
 	}
 
-	// Verify the checksum. If it does not match, note that the cache writer is
-	// not committed, since that persists the file to cache.
-	if err := w.checksum.Check(w.resourceName); err != nil {
-		return err
+	if w.checksum != nil {
+		// Verify the checksum. If it does not match, note that the cache writer is
+		// not committed, since that persists the file to cache.
+		if err := w.checksum.Check(w.resourceName); err != nil {
+			return err
+		}
 	}
 
 	return w.cacheCommitter.Commit()
