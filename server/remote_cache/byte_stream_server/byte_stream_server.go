@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -26,7 +27,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc/peer"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -92,6 +96,9 @@ func checkReadPreconditions(req *bspb.ReadRequest) error {
 }
 
 func rpcPeerAddr(ctx context.Context) string {
+	if ip := clientip.Get(ctx); ip != "" {
+		return ip
+	}
 	if p, ok := peer.FromContext(ctx); ok {
 		return p.Addr.String()
 	}
@@ -122,8 +129,31 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	if err != nil {
 		return err
 	}
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+	bazelMetadata := bazel_request.GetRequestMetadata(ctx)
+	if span.IsRecording() && r.GetCompressor() == repb.Compressor_IDENTITY && r.GetDigest().GetSizeBytes() > 4*1024*1024 {
+		// TODO(go/b/7355): remove this once we understand why some clients are not requesting compressed downloads
+		log.CtxInfof(ctx, "Tracing uncompressed bytestream Read with trace ID: %v", span.SpanContext().TraceID())
+		c := usageutil.CollectionFromRPCContext(ctx)
+		span.SetAttributes(
+			attribute.String("compressor", r.GetCompressor().String()),
+			attribute.Int64("resource_size", r.GetDigest().GetSizeBytes()),
+			attribute.String("peer", rpcPeerAddr(ctx)),
+			attribute.String("invocation_id", bazelMetadata.GetToolInvocationId()),
+			attribute.String("action_id", bazelMetadata.GetActionId()),
+			attribute.String("action_mnemonic", bazelMetadata.GetActionMnemonic()),
+			attribute.String("target_id", bazelMetadata.GetTargetId()),
+			attribute.String("tool_name", bazelMetadata.GetToolDetails().GetToolName()),
+			attribute.String("tool_version", bazelMetadata.GetToolDetails().GetToolVersion()),
+			attribute.String("group_id", c.GroupID),
+			attribute.String("client", c.Client),
+			attribute.String("origin", c.Origin),
+			attribute.String("server", c.Server),
+		)
+	}
 
-	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
+	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazelMetadata)
 	if r.IsEmpty() {
 		dt := ht.TrackDownload(r.GetDigest())
 		if err := dt.CloseWithBytesTransferred(0, 0, r.GetCompressor(), "byte_stream_server"); err != nil {
