@@ -510,19 +510,19 @@ func TestGetRemoteRunnerTarget(t *testing.T) {
 		},
 		{
 			name:       "env set, no flag",
-			envValue:   "env-runner.dev",
-			wantRunner: "env-runner.dev",
+			envValue:   "grpcs://env-runner.dev",
+			wantRunner: "grpcs://env-runner.dev",
 		},
 		{
 			name:       "flag takes precedence over env",
-			envValue:   "env-runner.dev",
-			flagArgs:   []string{"--remote_runner=flag-runner.dev", "build", "//..."},
-			wantRunner: "flag-runner.dev",
+			envValue:   "grpcs://env-runner.dev",
+			flagArgs:   []string{"--remote_runner=grpc://flag-runner.dev", "build", "//..."},
+			wantRunner: "grpc://flag-runner.dev",
 		},
 		{
 			name:       "flag set, no env",
-			flagArgs:   []string{"--remote_runner=flag-runner.dev", "build", "//..."},
-			wantRunner: "flag-runner.dev",
+			flagArgs:   []string{"--remote_runner=grpcs://flag-runner.dev", "build", "//..."},
+			wantRunner: "grpcs://flag-runner.dev",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -532,16 +532,7 @@ func TestGetRemoteRunnerTarget(t *testing.T) {
 			// prior parses don't leak.
 			_ = RemoteFlagset.Set("remote_runner", login.DefaultApiTarget)
 
-			// If the test simulates passing --remote_runner on the command line,
-			// parse it so *remoteRunner reflects the flag value.
-			explicitFlag := false
-			if len(tc.flagArgs) > 0 {
-				explicitFlag = true
-				_, err := parseRemoteCliFlags(tc.flagArgs)
-				require.NoError(t, err)
-			}
-
-			actual := getRemoteRunnerTarget(explicitFlag)
+			actual := getRemoteRunnerTarget(tc.flagArgs)
 			require.Equal(t, tc.wantRunner, actual)
 		})
 	}

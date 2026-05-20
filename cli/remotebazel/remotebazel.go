@@ -1224,13 +1224,20 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 	return inRsp, execRsp, nil
 }
 
+func normalizeGRPCTarget(target string) string {
+	if strings.HasPrefix(target, "grpc://") || strings.HasPrefix(target, "grpcs://") {
+		return target
+	}
+	return "grpcs://" + target
+}
+
 // getRemoteRunnerTarget returns the remote runner target to use.
-// If explicitFlag is true (the --remote_runner flag was passed on the command
-// line), the parsed flag value is used. Otherwise, BUILDBUDDY_REMOTE_RUNNER
-// is checked. If neither is set, the default target is used.
-func getRemoteRunnerTarget(explicitFlag bool) string {
-	if explicitFlag {
-		return *remoteRunner
+// If --remote_runner was passed on the command line, that value is used.
+// Otherwise, BUILDBUDDY_REMOTE_RUNNER is checked. If neither is set, the
+// default target is used.
+func getRemoteRunnerTarget(commandLineArgs []string) string {
+	if runner := arg.Get(commandLineArgs, "remote_runner"); runner != "" {
+		return runner
 	}
 	if env := os.Getenv("BUILDBUDDY_REMOTE_RUNNER"); env != "" {
 		return env
@@ -1239,9 +1246,8 @@ func getRemoteRunnerTarget(explicitFlag bool) string {
 }
 
 func HandleRemoteBazel(commandLineArgs []string) (int, error) {
-	// Check whether --remote_runner was explicitly set *before* parseRemoteCliFlags
-	// strips it from the argument list.
-	explicitRemoteRunner := arg.Has(commandLineArgs, "remote_runner")
+	runner := normalizeGRPCTarget(getRemoteRunnerTarget(commandLineArgs))
+
 	commandLineArgs, err := parseRemoteCliFlags(commandLineArgs)
 	if err != nil {
 		return 1, status.WrapError(err, "parse cli flags")
@@ -1268,13 +1274,6 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	workingDirectory, err := getWorkingDirectory(wsFilePath)
 	if err != nil {
 		return 1, status.WrapError(err, "determine working directory")
-	}
-
-	// If no remote_runner was explicitly set on the command line, fall back
-	// to the BUILDBUDDY_REMOTE_RUNNER environment variable.
-	runner := getRemoteRunnerTarget(explicitRemoteRunner)
-	if !strings.HasPrefix(runner, "grpc") {
-		runner = "grpcs://" + runner
 	}
 
 	cmd := ""
