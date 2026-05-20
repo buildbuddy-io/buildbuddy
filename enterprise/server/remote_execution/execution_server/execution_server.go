@@ -1355,12 +1355,12 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				return
 			case <-ticker.Chan():
 				mu.Lock()
-				wroteToDB := updatedExecution
+				updatedExecution := updatedExecution
 				taskID := taskID
 				stage := stage
 				lastOp := lastOp
 				mu.Unlock()
-				if wroteToDB {
+				if updatedExecution {
 					return
 				}
 				if s.clock.Since(start) > 5*time.Second && taskID != "" {
