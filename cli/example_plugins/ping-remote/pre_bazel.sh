@@ -3,7 +3,7 @@
 # Look for the effective (last) "--remote_executor" flag value,
 # converting "--remote_executor\n<value>" to "--remote_executor=<value>".
 REMOTE_EXECUTOR=$(
-  perl -p -e 's@^--remote_executor\n@--remote_executor=@' "$1" |
+  perl -p -e 's@^--remote_executor\n@--remote_executor=@' "$RESOLVED_BAZEL_ARGS_FILE" |
     grep -E '^--remote_executor=' |
     perl -p -e 's@^--remote_executor=(grpcs?://)?(.*?)(:\d+)?$@\2@' |
     tail -n 1
@@ -20,6 +20,6 @@ function timeout() {
 # Make sure we can ping the remote execution service in 500ms.
 if ! timeout 0.5 ping -c 1 "$REMOTE_EXECUTOR" &>/dev/null; then
   # Network is spotty; disable remote execution.
-  echo "--remote_executor=" >>"$1"
+  echo "--remote_executor=" >>"$FORWARDED_BAZEL_ARGS_FILE"
   echo >&2 -e "\x1b[33mWarning: failed to reach $REMOTE_EXECUTOR. Disabling remote execution.\x1b[m"
 fi

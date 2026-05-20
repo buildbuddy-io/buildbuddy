@@ -243,8 +243,7 @@ func ConfigureSidecar(args *arg.BazelArgs) (*Instance, error) {
 		return nil, nil
 	}
 
-	// TODO(#7216): Use the forwarded args here.
-	originalArgs := slices.Clone(args.Resolved)
+	originalArgs := args.Forwarded()
 
 	log.Debugf("Configuring sidecar")
 
