@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
@@ -494,4 +495,45 @@ func TestParseArgs(t *testing.T) {
 	}, bazelArgs)
 	// Exec args should be preserved.
 	require.Equal(t, []string{"--exec_arg"}, execArgs)
+}
+
+func TestGetRemoteRunnerTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		envValue   string
+		flagArgs   []string
+		wantRunner string
+	}{
+		{
+			name:       "neither flag nor env set",
+			wantRunner: login.DefaultApiTarget,
+		},
+		{
+			name:       "env set, no flag",
+			envValue:   "grpcs://env-runner.dev",
+			wantRunner: "grpcs://env-runner.dev",
+		},
+		{
+			name:       "flag takes precedence over env",
+			envValue:   "grpcs://env-runner.dev",
+			flagArgs:   []string{"--remote_runner=grpc://flag-runner.dev", "build", "//..."},
+			wantRunner: "grpc://flag-runner.dev",
+		},
+		{
+			name:       "flag set, no env",
+			flagArgs:   []string{"--remote_runner=grpcs://flag-runner.dev", "build", "//..."},
+			wantRunner: "grpcs://flag-runner.dev",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("BUILDBUDDY_REMOTE_RUNNER", tc.envValue)
+
+			// Reset the remoteRunner flag to its default before each subtest so
+			// prior parses don't leak.
+			_ = RemoteFlagset.Set("remote_runner", login.DefaultApiTarget)
+
+			actual := getRemoteRunnerTarget(tc.flagArgs)
+			require.Equal(t, tc.wantRunner, actual)
+		})
+	}
 }
