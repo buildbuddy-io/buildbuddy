@@ -173,7 +173,7 @@ func TestComplexScreenWriting(t *testing.T) {
 	}
 }
 
-func TestANSICursorBufferWriterCloseKeepsCursorControlBlankTail(t *testing.T) {
+func TestANSICursorBufferWriterCloseTrimsCursorControlBlankTail(t *testing.T) {
 	ctx := context.Background()
 	tailLog := &testLog{}
 	screen, err := terminal.NewScreenWriter(math.MaxInt, 4)
@@ -187,10 +187,10 @@ func TestANSICursorBufferWriterCloseKeepsCursorControlBlankTail(t *testing.T) {
 	require.NoError(t, w.Close(ctx))
 
 	assert.Contains(t, tailLog.String(), "INFO:")
-	assert.True(
+	assert.False(
 		t,
 		strings.HasSuffix(tailLog.String(), "\n\n"),
-		"cursor-control tail should show current blank-row behavior: %q",
+		"tail should not end with blank curses rows: %q",
 		tailLog.String(),
 	)
 }
