@@ -53,7 +53,6 @@ go_test(
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
         "//server/buildbuddy_server",
-        "//server/interfaces",
         "//server/remote_cache/byte_stream_server",
         "//server/tables",
         "//server/testutil/testauth",
