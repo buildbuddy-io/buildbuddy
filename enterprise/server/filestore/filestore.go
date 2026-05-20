@@ -531,8 +531,10 @@ func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 	if len(parts[0]) > 1 {
 		lastPart := parts[len(parts)-1]
 		if bytes.ContainsRune(lastPart[:1], 'v') {
-			if s, err := strconv.ParseUint(string(lastPart[1:]), 10, 32); err == nil {
-				version = PebbleKeyVersion(s)
+			if s, err := strconv.ParseInt(string(lastPart[1:]), 10, strconv.IntSize); err == nil {
+				if s >= 0 {
+					version = PebbleKeyVersion(s)
+				}
 			}
 		}
 	}
