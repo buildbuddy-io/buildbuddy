@@ -33,8 +33,8 @@ func TestAPIKeyDiscovery(t *testing.T) {
 			expectedArgs: []string{
 				"--ignore_all_rc_files",
 				"build",
-				"//foo:bar",
 				"--remote_header=x-buildbuddy-api-key=env-api-key",
+				"//foo:bar",
 			},
 		},
 		{
@@ -44,8 +44,8 @@ func TestAPIKeyDiscovery(t *testing.T) {
 			expectedArgs: []string{
 				"--ignore_all_rc_files",
 				"build",
-				"//foo:bar",
 				"--remote_header=x-buildbuddy-api-key=repo-api-key",
+				"//foo:bar",
 			},
 		},
 		{
@@ -56,8 +56,8 @@ func TestAPIKeyDiscovery(t *testing.T) {
 			expectedArgs: []string{
 				"--ignore_all_rc_files",
 				"build",
-				"//foo:bar",
 				"--remote_header=x-buildbuddy-api-key=env-api-key",
+				"//foo:bar",
 			},
 		},
 		{
@@ -101,7 +101,7 @@ func TestAPIKeyDiscovery(t *testing.T) {
 			err = ConfigureAPIKey(args)
 
 			require.NoError(t, err)
-			require.Equal(t, testCase.expectedArgs, args.Resolved)
+			require.Equal(t, testCase.expectedArgs, args.Resolved())
 		})
 	}
 }

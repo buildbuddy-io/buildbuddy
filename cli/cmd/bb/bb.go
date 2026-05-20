@@ -369,7 +369,7 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 	outputPath := filepath.Join(tempDir, "bazel.log")
 	// TODO(#7216): Use the forwarded args here.
 	exitCode, err = plugin.RunBazeliskWithPlugins(
-		arg.JoinExecutableArgs(bazelArgs.Resolved, execArgs),
+		arg.JoinExecutableArgs(bazelArgs.Resolved(), execArgs),
 		outputPath, plugins)
 	if err != nil {
 		return 1, err

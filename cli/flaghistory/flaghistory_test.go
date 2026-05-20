@@ -151,7 +151,7 @@ func TestSaveFlags_NonBazelCommands(t *testing.T) {
 	_, err = SaveFlags(args2)
 	require.NoError(t, err)
 
-	require.Equal(t, []string{"--ignore_all_rc_files", "fetch", "--bes_backend=shouldnt_apply"}, args2.Resolved)
+	require.Equal(t, []string{"--ignore_all_rc_files", "fetch", "--bes_backend=shouldnt_apply"}, args2.Resolved())
 	requirePreviousFlag(t, besBackendFlagName, "grpc://backend.example")
 }
 

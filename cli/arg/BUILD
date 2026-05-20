@@ -6,7 +6,10 @@ go_library(
     name = "arg",
     srcs = ["arg.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/arg",
-    deps = ["//cli/parser"],
+    deps = [
+        "//cli/parser",
+        "//cli/parser/parsed",
+    ],
 )
 
 go_test(
