@@ -2,7 +2,9 @@ package schema
 
 import (
 	"bufio"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"strings"
@@ -43,6 +45,19 @@ type Table interface {
 	AdditionalFields() []string
 }
 
+// View represents a ClickHouse "normal view", which is essentially just a saved
+// query.
+//
+// To define a new view, declare a new struct implementing this interface, and
+// add it to [getAllViews].
+//
+// For more on views, see:
+// https://clickhouse.com/docs/sql-reference/statements/create/view
+type View interface {
+	ViewName() string
+	ViewQuery() string
+}
+
 func getAllTables() []Table {
 	tbls := []Table{
 		&Invocation{},
@@ -52,6 +67,12 @@ func getAllTables() []Table {
 		&RawUsage{},
 	}
 	return tbls
+}
+
+func getAllViews() []View {
+	return []View{
+		&Usage{},
+	}
 }
 
 func getTableClusterOption() string {
@@ -516,6 +537,92 @@ type Usage struct {
 	Count       int64
 }
 
+func (u *Usage) ViewName() string {
+	return "Usage"
+}
+
+func (u *Usage) ViewQuery() string {
+	return "SELECT group_id, period_start, sku, labels, SUM(count) AS count " +
+		"FROM RawUsage FINAL GROUP BY group_id, period_start, sku, labels"
+}
+
+func execCreateView(gdb *gorm.DB, view View, replace, ifNotExists bool) error {
+	q := "CREATE"
+	if replace {
+		q += " OR REPLACE"
+	}
+	q += " VIEW"
+	if ifNotExists {
+		q += " IF NOT EXISTS"
+	}
+	q += fmt.Sprintf(" %q", view.ViewName())
+	if clusterOption := getTableClusterOption(); clusterOption != "" {
+		q += " " + clusterOption
+	}
+	q += " AS " + view.ViewQuery()
+	return gdb.Exec(q).Error
+}
+
+func ensureView(gdb *gorm.DB, view View) error {
+	expectedQuery := view.ViewQuery()
+	existingView, err := lookupExistingView(gdb, view.ViewName())
+	if err != nil {
+		return err
+	}
+	if existingView == nil {
+		// Another app may create the view after this app observes it as
+		// missing, so use IF NOT EXISTS to make concurrent startup harmless.
+		return execCreateView(gdb, view, false /*=replace*/, true /*=ifNotExists*/)
+	}
+	if sameViewQuery(existingView.SelectQuery, expectedQuery, existingView.Database) {
+		return nil
+	}
+	return execCreateView(gdb, view, true /*=replace*/, false /*=ifNotExists*/)
+}
+
+type viewMetadata struct {
+	// Database is the DB where the view is defined.
+	Database string `gorm:"column:current_database"`
+
+	// SelectQuery is the saved SELECT query for the view. We compare it against
+	// ViewQuery to decide whether startup migrations need to replace the view.
+	SelectQuery string `gorm:"column:as_select"`
+
+	// Engine is the table engine - should always be "View" for views.
+	Engine string `gorm:"column:engine"`
+}
+
+func lookupExistingView(gdb *gorm.DB, viewName string) (*viewMetadata, error) {
+	row := &viewMetadata{}
+	err := gdb.Raw(`
+		SELECT currentDatabase() AS current_database, engine, as_select
+		FROM system.tables
+		WHERE database = currentDatabase() AND name = ?
+	`, viewName).Row().Scan(&row.Database, &row.Engine, &row.SelectQuery)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if row.Engine != "View" {
+		return nil, status.FailedPreconditionErrorf("%q exists but has ClickHouse engine %q, not View", viewName, row.Engine)
+	}
+	return row, nil
+}
+
+func sameViewQuery(a, b, currentDatabase string) bool {
+	return normalizeViewQuery(a, currentDatabase) == normalizeViewQuery(b, currentDatabase)
+}
+
+func normalizeViewQuery(query, currentDatabase string) string {
+	query = strings.ReplaceAll(query, "`", "")
+	if currentDatabase != "" {
+		query = strings.ReplaceAll(query, currentDatabase+".", "")
+	}
+	return strings.ToLower(strings.Join(strings.Fields(query), " "))
+}
+
 // hasProjection checks whether a projection exist in the clickhouse
 // schema.
 // gorm-clickhouse doesn't support migration projection.
@@ -605,6 +712,11 @@ func RunMigrations(gdb *gorm.DB) error {
 		gdb = gdb.Set("gorm:table_options", t.TableOptions(versionStr))
 		if err := gdb.AutoMigrate(t); err != nil {
 			return err
+		}
+	}
+	for _, v := range getAllViews() {
+		if err := ensureView(gdb, v); err != nil {
+			return status.InternalErrorf("ensure view %q: %s", v.ViewName(), err)
 		}
 	}
 	// Add Projection/
