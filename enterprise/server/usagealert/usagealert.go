@@ -603,7 +603,7 @@ func buildAlertEmail(alert *alertRule, metric *metricDefinition, recipients []em
 	if alert.groupURLIdentifier != "" && subdomain.Enabled() {
 		usageURL = subdomain.ReplaceURLSubdomainForGroup(usageURL, &tables.Group{URLIdentifier: alert.groupURLIdentifier})
 	}
-	subject := fmt.Sprintf("[BuildBuddy Usage Alert] [%s] %s %s threshold reached", groupDisplayName, usageAlertingWindowLabel(rule.Window), metric.Display)
+	subject := fmt.Sprintf("[BuildBuddy Usage] %s %s threshold reached (%s)", usageAlertingWindowLabel(rule.Window), metric.Display, groupDisplayName)
 	bodyTemplate, err := alertEmailBodyTemplate()
 	if err != nil {
 		return nil, fmt.Errorf("load email body template: %w", err)

@@ -171,7 +171,7 @@ func TestEvaluatorFormatsDurationAlertsAsMinutes(t *testing.T) {
 	// it should not show raw nanosecond values to the recipient.
 	require.Equal(t, &EvaluationResult{RulesEvaluated: 1, AlertsSent: 1}, result)
 	require.Len(t, sender.messages, 1)
-	assert.Equal(t, "[BuildBuddy Usage Alert] [GR1] Daily Cached build minutes threshold reached", sender.messages[0].Subject)
+	assert.Equal(t, "[BuildBuddy Usage] Daily Cached build minutes threshold reached (GR1)", sender.messages[0].Subject)
 	assert.Contains(t, sender.messages[0].Body, "Cached build minutes")
 	assert.Contains(t, sender.messages[0].Body, "2 minutes")
 	assert.Contains(t, sender.messages[0].Body, "1 minute")
@@ -328,7 +328,7 @@ func TestAlertEmailUsesGroupNameAndSubdomainUsageURL(t *testing.T) {
 	}, metricDefinitions[usagepb.UsageAlertingMetric_INVOCATIONS], []email.Address{{Email: "admin@example.com"}}, 2, start, end)
 	require.NoError(t, err)
 
-	assert.Equal(t, "[BuildBuddy Usage Alert] [Acme <Corp>] Weekly Invocations threshold reached", msg.Subject)
+	assert.Equal(t, "[BuildBuddy Usage] Weekly Invocations threshold reached (Acme <Corp>)", msg.Subject)
 	assert.Equal(t, `<p><strong>Weekly Invocations</strong> usage alert fired for organization <strong>Acme &lt;Corp&gt;</strong>.</p>
 <p>Usage for <strong>Invocations</strong> is <strong>2</strong>, which exceeds the configured threshold of <strong>1</strong>.</p>
 <p>Window: 2026-05-11T00:00:00Z to 2026-05-18T00:00:00Z UTC</p>
@@ -356,7 +356,7 @@ func TestAlertEmailUsesGroupSlugAndBaseUsageURL(t *testing.T) {
 	}, metricDefinitions[usagepb.UsageAlertingMetric_INVOCATIONS], []email.Address{{Email: "admin@example.com"}}, 2, start, end)
 	require.NoError(t, err)
 
-	assert.Equal(t, "[BuildBuddy Usage Alert] [acme] Monthly Invocations threshold reached", msg.Subject)
+	assert.Equal(t, "[BuildBuddy Usage] Monthly Invocations threshold reached (acme)", msg.Subject)
 	assert.Equal(t, `<p><strong>Monthly Invocations</strong> usage alert fired for organization <strong>acme</strong>.</p>
 <p>Usage for <strong>Invocations</strong> is <strong>2</strong>, which exceeds the configured threshold of <strong>1</strong>.</p>
 <p>Window: 2026-05-11T00:00:00Z to 2026-05-18T00:00:00Z UTC</p>
