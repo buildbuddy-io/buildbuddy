@@ -18,6 +18,7 @@ go_library(
         "//server/interfaces",
         "//server/real_environment",
         "//server/tables",
+        "//server/util/authutil",
         "//server/util/clickhouse",
         "//server/util/db",
         "//server/util/flag",
