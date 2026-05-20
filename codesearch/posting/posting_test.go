@@ -83,6 +83,28 @@ func TestAddMany(t *testing.T) {
 	assert.Equal(t, []uint64{1, 2, 3, 4, 5}, pl.ToArray())
 }
 
+func TestBuilderList(t *testing.T) {
+	pl := posting.NewBuilderList()
+	pl.Add(1)
+	pl.Add(2)
+	pl.Add(2)
+	pl.Add(3)
+	pl.Add(1)
+
+	assert.Equal(t, []uint64{1, 2, 3}, pl.ToArray())
+}
+
+func TestBuilderListOutOfOrderAdd(t *testing.T) {
+	pl := posting.NewBuilderList()
+	pl.Add(10)
+	pl.Add(12)
+	pl.Add(11)
+	pl.Add(9)
+	pl.Add(10)
+
+	assert.Equal(t, []uint64{9, 10, 11, 12}, pl.ToArray())
+}
+
 func TestMarshal(t *testing.T) {
 	pl := posting.NewList(1, 2, 3, 4, 5)
 	buf, err := pl.Marshal()
@@ -93,6 +115,95 @@ func TestMarshal(t *testing.T) {
 
 	assert.Equal(t, []uint64{1, 2, 3, 4, 5}, pl.ToArray())
 	assert.Equal(t, []uint64{1, 2, 3, 4, 5}, pl2.ToArray())
+}
+
+func TestBuilderListMarshal(t *testing.T) {
+	pl := posting.NewBuilderList(1, 2, 3, 4, 5, 4294967296, 4294967297)
+	buf, err := pl.Marshal()
+	assert.NoError(t, err)
+
+	pl2, err := posting.Unmarshal(buf)
+	assert.NoError(t, err)
+
+	pl3, err := posting.UnmarshalReadOnly(buf)
+	assert.NoError(t, err)
+
+	assert.Equal(t, []uint64{1, 2, 3, 4, 5, 4294967296, 4294967297}, pl.ToArray())
+	assert.Equal(t, []uint64{1, 2, 3, 4, 5, 4294967296, 4294967297}, pl2.ToArray())
+	assert.Equal(t, []uint64{1, 2, 3, 4, 5, 4294967296, 4294967297}, pl3.ToArray())
+}
+
+func TestBuilderListOr(t *testing.T) {
+	pl := posting.NewBuilderList(1, 3)
+	pl.Or(posting.NewBuilderList(2, 3))
+
+	assert.Equal(t, []uint64{1, 2, 3}, pl.ToArray())
+}
+
+func TestBuilderListAnd(t *testing.T) {
+	pl := posting.NewBuilderList(1, 2, 3, 4)
+	pl.And(posting.NewList(2, 4, 6))
+
+	assert.Equal(t, []uint64{2, 4}, pl.ToArray())
+}
+
+func TestBuilderListAndNot(t *testing.T) {
+	pl := posting.NewBuilderList(1, 2, 3, 4)
+	pl.AndNot(posting.NewList(2, 4, 6))
+
+	assert.Equal(t, []uint64{1, 3}, pl.ToArray())
+}
+
+func TestBuilderListRemove(t *testing.T) {
+	pl := posting.NewBuilderList(1, 2, 3)
+	pl.Remove(2)
+	assert.Equal(t, []uint64{1, 3}, pl.ToArray())
+
+	pl.Remove(1)
+	assert.Equal(t, []uint64{3}, pl.ToArray())
+
+	pl.Add(5)
+	assert.Equal(t, []uint64{3, 5}, pl.ToArray())
+}
+
+func TestBuilderListClearThenReuse(t *testing.T) {
+	pl := posting.NewBuilderList(1, 2, 3)
+	pl.Clear()
+	assert.Empty(t, pl.ToArray())
+
+	pl.Add(4)
+	pl.Add(5)
+	assert.Equal(t, []uint64{4, 5}, pl.ToArray())
+}
+
+func TestBuilderListMarshalIntoTooSmall(t *testing.T) {
+	pl := posting.NewBuilderList(1, 2, 3)
+	size := int(pl.GetSerializedSizeInBytes())
+
+	err := pl.MarshalInto(make([]byte, 0, size-1))
+
+	assert.Error(t, err)
+}
+
+func TestBuilderListMarshalInto(t *testing.T) {
+	pl := posting.NewBuilderList(1, 2, 3)
+	want, err := pl.Marshal()
+	require.NoError(t, err)
+	buf := make([]byte, 0, pl.GetSerializedSizeInBytes())
+
+	err = pl.MarshalInto(buf)
+
+	require.NoError(t, err)
+	assert.Equal(t, want, buf[:len(want)])
+}
+
+func TestBuilderListSetFromRoaringCollapsesToOne(t *testing.T) {
+	pl := posting.NewBuilderList(1, 2, 3)
+	pl.And(posting.NewList(2, 4))
+	assert.Equal(t, []uint64{2}, pl.ToArray())
+
+	pl.Add(5)
+	assert.Equal(t, []uint64{2, 5}, pl.ToArray())
 }
 
 func TestConcat2(t *testing.T) {
