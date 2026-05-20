@@ -38,28 +38,24 @@ type roaringWrapper struct {
 	*roaring64.Bitmap
 }
 
+type BuilderList struct {
+	first      uint64
+	ids        []uint64
+	last       uint64
+	count      int
+	serialized []byte
+}
+
 func (w *roaringWrapper) Or(l ReadOnlyList) {
-	bm, ok := l.(*roaringWrapper)
-	if !ok {
-		panic("not roaringWrapper")
-	}
-	w.Bitmap.Or(bm.Bitmap)
+	w.Bitmap.Or(readOnlyListToRoaring(l))
 }
 func (w *roaringWrapper) And(l ReadOnlyList) {
-	bm, ok := l.(*roaringWrapper)
-	if !ok {
-		panic("not roaringWrapper")
-	}
-	w.Bitmap.And(bm.Bitmap)
+	w.Bitmap.And(readOnlyListToRoaring(l))
 }
 
 // AndNot is the same as set difference, equivalent to w - l
 func (w *roaringWrapper) AndNot(l ReadOnlyList) {
-	bm, ok := l.(*roaringWrapper)
-	if !ok {
-		panic("not roaringWrapper")
-	}
-	w.Bitmap.AndNot(bm.Bitmap)
+	w.Bitmap.AndNot(readOnlyListToRoaring(l))
 }
 
 func NewReadOnlyList(ids ...uint64) ReadOnlyList {
@@ -74,6 +70,18 @@ func NewList(ids ...uint64) List {
 	return &roaringWrapper{bm}
 }
 
+// NewBuilderList returns a posting list optimized for the indexing path.
+// It assumes doc IDs are usually added in increasing order, avoiding roaring
+// container maintenance in the indexing hot loop. Boolean operations convert
+// through roaring and are not the intended fast path.
+func NewBuilderList(ids ...uint64) *BuilderList {
+	pl := &BuilderList{}
+	for _, id := range ids {
+		pl.Add(id)
+	}
+	return pl
+}
+
 func (w *roaringWrapper) MarshalInto(buf []byte) error {
 	stream := bytes.NewBuffer(buf)
 	_, err := w.Bitmap.WriteTo(stream)
@@ -84,6 +92,160 @@ func (w *roaringWrapper) Marshal() ([]byte, error) {
 	stream := bytes.NewBuffer(make([]byte, 0, int(w.GetSerializedSizeInBytes())))
 	_, err := w.Bitmap.WriteTo(stream)
 	return stream.Bytes(), err
+}
+
+func (l *BuilderList) Add(id uint64) {
+	if l.count > 0 && id == l.last {
+		return
+	}
+	if l.count > 0 && id < l.last {
+		bm := l.toRoaring()
+		bm.Add(id)
+		l.setFromRoaring(bm)
+		return
+	}
+	l.serialized = nil
+	switch l.count {
+	case 0:
+		l.first = id
+	case 1:
+		l.ids = append(l.ids, l.first, id)
+	default:
+		l.ids = append(l.ids, id)
+	}
+	l.last = id
+	l.count++
+}
+
+func (l *BuilderList) Remove(id uint64) {
+	bm := l.toRoaring()
+	bm.Remove(id)
+	l.setFromRoaring(bm)
+}
+
+func (l *BuilderList) Clear() {
+	l.first = 0
+	l.ids = l.ids[:0]
+	l.last = 0
+	l.count = 0
+	l.serialized = nil
+}
+
+func (l *BuilderList) Or(other ReadOnlyList) {
+	bm := l.toRoaring()
+	bm.Or(readOnlyListToRoaring(other))
+	l.setFromRoaring(bm)
+}
+
+func (l *BuilderList) And(other ReadOnlyList) {
+	bm := l.toRoaring()
+	bm.And(readOnlyListToRoaring(other))
+	l.setFromRoaring(bm)
+}
+
+func (l *BuilderList) AndNot(other ReadOnlyList) {
+	bm := l.toRoaring()
+	bm.AndNot(readOnlyListToRoaring(other))
+	l.setFromRoaring(bm)
+}
+
+func (l *BuilderList) GetCardinality() uint64 {
+	return uint64(l.count)
+}
+
+func (l *BuilderList) ToArray() []uint64 {
+	switch l.count {
+	case 0:
+		return []uint64{}
+	case 1:
+		return []uint64{l.first}
+	default:
+		out := make([]uint64, len(l.ids))
+		copy(out, l.ids)
+		return out
+	}
+}
+
+func (l *BuilderList) Iterator() roaring64.IntPeekable64 {
+	return l.toRoaring().Iterator()
+}
+
+func (l *BuilderList) GetSerializedSizeInBytes() uint64 {
+	if err := l.ensureSerialized(); err != nil {
+		return 0
+	}
+	return uint64(len(l.serialized))
+}
+
+func (l *BuilderList) MarshalInto(buf []byte) error {
+	if err := l.ensureSerialized(); err != nil {
+		return err
+	}
+	if cap(buf) < len(l.serialized) {
+		return fmt.Errorf("buffer too small: got capacity %d, need %d", cap(buf), len(l.serialized))
+	}
+	copy(buf[:len(l.serialized)], l.serialized)
+	return nil
+}
+
+func (l *BuilderList) Marshal() ([]byte, error) {
+	if err := l.ensureSerialized(); err != nil {
+		return nil, err
+	}
+	out := make([]byte, len(l.serialized))
+	copy(out, l.serialized)
+	return out, nil
+}
+
+func (l *BuilderList) ensureSerialized() error {
+	if l.serialized != nil {
+		return nil
+	}
+	bm := l.toRoaring()
+	stream := bytes.NewBuffer(make([]byte, 0, int(bm.GetSerializedSizeInBytes())))
+	if _, err := bm.WriteTo(stream); err != nil {
+		return err
+	}
+	l.serialized = stream.Bytes()
+	return nil
+}
+
+func (l *BuilderList) toRoaring() *roaring64.Bitmap {
+	bm := roaring64.New()
+	switch l.count {
+	case 0:
+	case 1:
+		bm.Add(l.first)
+	default:
+		bm.AddMany(l.ids)
+	}
+	return bm
+}
+
+func (l *BuilderList) setFromRoaring(bm *roaring64.Bitmap) {
+	l.Clear()
+	ids := bm.ToArray()
+	if len(ids) == 0 {
+		return
+	}
+	l.first = ids[0]
+	l.last = ids[len(ids)-1]
+	l.count = len(ids)
+	if len(ids) > 1 {
+		l.ids = append(l.ids, ids...)
+	}
+}
+
+func readOnlyListToRoaring(l ReadOnlyList) *roaring64.Bitmap {
+	if bm, ok := l.(*roaringWrapper); ok {
+		return bm.Bitmap
+	}
+	if bm, ok := l.(*BuilderList); ok {
+		return bm.toRoaring()
+	}
+	bm := roaring64.New()
+	bm.AddMany(l.ToArray())
+	return bm
 }
 
 func Unmarshal(buf []byte) (List, error) {

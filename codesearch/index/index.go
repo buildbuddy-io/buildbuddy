@@ -34,7 +34,7 @@ const (
 	generationKey       = "__generation__"
 )
 
-type postingLists map[string]posting.List
+type postingLists map[string]*posting.BuilderList
 
 // Writer is not thread-safe. A single instance should not be used concurrently.
 // Multiple instances can be used concurrently without crashing, however CRUD operations are
@@ -491,9 +491,9 @@ func (w *Writer) AddDocument(doc types.Document) error {
 			}
 
 			t = profiler.Now()
-			ngram := string(tokenizer.Ngram())
+			ngram := tokenizer.NgramString()
 			if _, ok := postingLists[ngram]; !ok {
-				postingLists[ngram] = posting.NewList()
+				postingLists[ngram] = posting.NewBuilderList()
 				s.postingListsCreated++
 			}
 			postingLists[ngram].Add(docID)

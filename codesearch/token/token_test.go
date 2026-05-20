@@ -78,7 +78,7 @@ func tokenizeBuf(buf string, tt types.Tokenizer) []string {
 	tt.Reset(strings.NewReader(buf))
 	tokens := make([]string, 0)
 	for tt.Next() == nil {
-		tokens = append(tokens, string(tt.Ngram()))
+		tokens = append(tokens, tt.NgramString())
 	}
 	return tokens
 }
@@ -138,6 +138,67 @@ func TestSparseNgramTokenizer(t *testing.T) {
 	assert.ElementsMatch(t, allNgrams("hell"), tokenizeBuf("hell", tt))
 	assert.ElementsMatch(t, allNgrams("hello world"), tokenizeBuf("hello world", tt))
 	assert.ElementsMatch(t, allNgrams("¿dónde estás?"), tokenizeBuf("¿dónde estás?", tt))
+}
+
+func TestSparseNgramTokenizerByteAndRuneBuffersMatch(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		input     string
+		lowercase bool
+	}{
+		{
+			name:      "lowercase",
+			input:     "Hello WORLD with ASCII only",
+			lowercase: true,
+		},
+		{
+			name:      "preserve case",
+			input:     "Hello WORLD with ASCII only",
+			lowercase: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mods := []Option{WithMaxNgramLength(10), WithLowerCase(tc.lowercase)}
+			bytePath := tokenizeBuf(tc.input, NewSparseNgramTokenizer(mods...))
+
+			// Force the rune-buffer entry point for the same ASCII text; the normal
+			// scanner path would use the byte buffer.
+			tt := NewSparseNgramTokenizer(mods...)
+			tt.b = tt.b[:0]
+			runes := []rune(tc.input)
+			if tc.lowercase {
+				for i, r := range runes {
+					runes[i] = unicode.ToLower(r)
+				}
+			}
+			tt.s = append(tt.s[:0], runes...)
+			tt.buildAllNgrams()
+			runePath := append([]string(nil), tt.ngrams...)
+
+			assert.ElementsMatch(t, runePath, bytePath)
+		})
+	}
+}
+
+func TestSparseNgramTokenizerTestOrAddASCII(t *testing.T) {
+	tt := NewSparseNgramTokenizer(WithMaxNgramLength(10))
+
+	assert.False(t, tt.TestOrAddASCII([]byte("abcd")))
+	assert.True(t, tt.TestOrAddASCII([]byte("abcd")))
+	assert.False(t, tt.TestOrAddASCII([]byte("abcde")))
+	assert.True(t, tt.TestOrAddASCII([]byte("abcde")))
+	assert.False(t, tt.TestOrAddASCII([]byte("abcdefgh")))
+	assert.True(t, tt.TestOrAddASCII([]byte("abcdefgh")))
+
+	key, ok := compactASCIINgramKey([]byte("abcdefg"))
+	assert.True(t, ok)
+	assert.NotZero(t, key)
+
+	_, ok = compactASCIINgramKey([]byte("abcdefgh"))
+	assert.False(t, ok)
+
+	_, err := compactASCIIKey([]byte("abcdefgh"))
+	assert.ErrorContains(t, err, "max compact length is 7")
 }
 
 func TestBuildCoveringNgrams(t *testing.T) {

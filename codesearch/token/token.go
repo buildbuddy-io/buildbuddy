@@ -2,6 +2,7 @@ package token
 
 import (
 	"bufio"
+	"fmt"
 	"hash"
 	"hash/fnv"
 	"io"
@@ -75,6 +76,13 @@ func (tt *TrigramTokenizer) Type() types.FieldType {
 func (tt *TrigramTokenizer) Ngram() []byte {
 	return trigramToBytes(tt.tv)
 }
+func (tt *TrigramTokenizer) NgramString() string {
+	return string([]byte{
+		byte((tt.tv >> 16) & 255),
+		byte((tt.tv >> 8) & 255),
+		byte(tt.tv & 255),
+	})
+}
 
 func (tt *TrigramTokenizer) Next() error {
 	for {
@@ -131,6 +139,9 @@ func (wt *WhitespaceTokenizer) Type() types.FieldType {
 func (wt *WhitespaceTokenizer) Ngram() []byte {
 	return []byte(wt.tok)
 }
+func (wt *WhitespaceTokenizer) NgramString() string {
+	return wt.tok
+}
 
 func (wt *WhitespaceTokenizer) Next() error {
 	currentToken := func() string {
@@ -172,10 +183,21 @@ func HashBigram(buf []rune) uint32 {
 	return uint32(a + (^a >> 47))
 }
 
+func hashByteBigram(buf []byte) uint32 {
+	const kMul1 = uint64(0xc6a4a7935bd1e995)
+	const kMul2 = uint64(0x228876a7198b743)
+	a := uint64(buf[0])*kMul1 + uint64(buf[1])*kMul2
+	return uint32(a + (^a >> 47))
+}
+
 type hashAndPosition struct {
 	hash uint32
 	pos  int
 }
+
+// maxCompactASCIINgramLength is the most ASCII bytes that fit in the compact
+// uint64 key: one byte stores the length, and the remaining seven store data.
+const maxCompactASCIINgramLength = 7
 
 type Options struct {
 	// MaxNgramLength controls how long of ngrams will be emitted by
@@ -314,8 +336,10 @@ type SparseNgramTokenizer struct {
 	hasher       hash.Hash32
 	trigramsSeen *sparse.Set
 	longramsSeen *bloom.BloomFilter
+	asciiSeen    map[uint64]struct{}
 	ngrams       []string
 	s            []rune
+	b            []byte
 	st           []hashAndPosition
 	stringTemp   []byte
 }
@@ -331,8 +355,10 @@ func NewSparseNgramTokenizer(mods ...Option) *SparseNgramTokenizer {
 		hasher:       fnv.New32(),
 		trigramsSeen: sparse.NewSet(1 << 24),
 		longramsSeen: bloom.NewWithEstimates(100000, 0.0001),
+		asciiSeen:    make(map[uint64]struct{}),
 		ngrams:       make([]string, 0),
 		s:            make([]rune, bufio.MaxScanTokenSize),
+		b:            make([]byte, bufio.MaxScanTokenSize),
 		st:           make([]hashAndPosition, 0),
 		stringTemp:   make([]byte, utf8.UTFMax*opts.MaxNgramLength),
 	}
@@ -342,8 +368,10 @@ func (tt *SparseNgramTokenizer) Reset(r io.Reader) {
 	tt.scanner = bufio.NewScanner(r)
 	tt.trigramsSeen.Reset()
 	tt.longramsSeen.ClearAll()
+	clear(tt.asciiSeen)
 	tt.ngrams = tt.ngrams[:0]
 	tt.s = tt.s[:0]
+	tt.b = tt.b[:0]
 	tt.st = tt.st[:0]
 }
 
@@ -355,24 +383,100 @@ func (tt *SparseNgramTokenizer) Ngram() []byte {
 	gram := tt.ngrams[len(tt.ngrams)-1]
 	return unsafe.Slice(unsafe.StringData(gram), len(gram))
 }
+func (tt *SparseNgramTokenizer) NgramString() string {
+	return tt.ngrams[len(tt.ngrams)-1]
+}
 
 func (tt *SparseNgramTokenizer) TestOrAdd(buf []byte) bool {
 	if len(buf) < 3 {
 		panic("too short of a trigram")
 	} else if len(buf) == 3 {
-		tri := uint32(buf[0])<<16 | uint32(buf[1])<<8 | uint32(buf[2])
-		found := tt.trigramsSeen.Has(tri)
-		if !found {
-			tt.trigramsSeen.Add(tri)
-		}
-		return found
+		return tt.testOrAddTrigram(buf)
 	} else {
+		if key, ok := compactASCIINgramKey(buf); ok {
+			return tt.testOrAddASCIIKey(key)
+		}
 		return tt.longramsSeen.TestOrAdd(buf)
 	}
 }
 
+func (tt *SparseNgramTokenizer) TestOrAddASCII(buf []byte) bool {
+	if len(buf) < 3 {
+		panic("too short of a trigram")
+	} else if len(buf) == 3 {
+		return tt.testOrAddTrigram(buf)
+	} else if len(buf) <= maxCompactASCIINgramLength {
+		return tt.testOrAddASCIIKey(mustCompactASCIIKey(buf))
+	}
+	return tt.longramsSeen.TestOrAdd(buf)
+}
+
+func (tt *SparseNgramTokenizer) testOrAddTrigram(buf []byte) bool {
+	tri := uint32(buf[0])<<16 | uint32(buf[1])<<8 | uint32(buf[2])
+	found := tt.trigramsSeen.Has(tri)
+	if !found {
+		tt.trigramsSeen.Add(tri)
+	}
+	return found
+}
+
+func (tt *SparseNgramTokenizer) testOrAddASCIIKey(key uint64) bool {
+	if _, seen := tt.asciiSeen[key]; seen {
+		return true
+	}
+	tt.asciiSeen[key] = struct{}{}
+	return false
+}
+
+func compactASCIINgramKey(buf []byte) (uint64, bool) {
+	if len(buf) == 0 || len(buf) > maxCompactASCIINgramLength {
+		return 0, false
+	}
+	for _, c := range buf {
+		if c >= utf8.RuneSelf {
+			return 0, false
+		}
+	}
+	key, err := compactASCIIKeyAssumingASCII(buf)
+	if err != nil {
+		return 0, false
+	}
+	return key, true
+}
+
+func mustCompactASCIIKey(buf []byte) uint64 {
+	key, err := compactASCIIKeyAssumingASCII(buf)
+	if err != nil {
+		panic(err)
+	}
+	return key
+}
+
+func compactASCIIKey(buf []byte) (uint64, error) {
+	for i, c := range buf {
+		if c >= utf8.RuneSelf {
+			return 0, fmt.Errorf("cannot compact non-ASCII byte 0x%x at offset %d", c, i)
+		}
+	}
+	return compactASCIIKeyAssumingASCII(buf)
+}
+
+func compactASCIIKeyAssumingASCII(buf []byte) (uint64, error) {
+	if len(buf) == 0 {
+		return 0, fmt.Errorf("cannot compact empty ASCII ngram")
+	}
+	if len(buf) > maxCompactASCIINgramLength {
+		return 0, fmt.Errorf("cannot compact ASCII ngram of length %d; max compact length is %d", len(buf), maxCompactASCIINgramLength)
+	}
+	key := uint64(len(buf))
+	for i, c := range buf {
+		key |= uint64(c) << (8 * (i + 1))
+	}
+	return key, nil
+}
+
 func (tt *SparseNgramTokenizer) refillLine() error {
-	for len(tt.s) == 0 {
+	for len(tt.s) == 0 && len(tt.b) == 0 {
 		if !tt.scanner.Scan() {
 			return io.EOF
 		}
@@ -385,6 +489,24 @@ func (tt *SparseNgramTokenizer) refillLine() error {
 		if lineLength == 0 {
 			continue
 		}
+
+		tt.b = tt.b[:lineLength]
+		allASCII := true
+		for i, c := range buf {
+			if c >= utf8.RuneSelf {
+				allASCII = false
+				break
+			}
+			if tt.opts.LowerCase && 'A' <= c && c <= 'Z' {
+				c += 'a' - 'A'
+			}
+			tt.b[i] = c
+		}
+		if allASCII {
+			return nil
+		}
+		tt.b = tt.b[:0]
+
 		tt.s = tt.s[:lineLength]
 		i := 0
 		for ; len(buf) > 0; i++ {
@@ -433,7 +555,48 @@ func (tt *SparseNgramTokenizer) hashNgram(b []byte) uint32 {
 	return tt.hasher.Sum32()
 }
 
+func (tt *SparseNgramTokenizer) buildAllByteNgrams() {
+	s := tt.b
+	tt.st = tt.st[:0]
+
+	for i := 0; i+2 <= len(s); i++ {
+		p := hashAndPosition{
+			hash: hashByteBigram(s[i:]),
+			pos:  i,
+		}
+		for len(tt.st) > 0 && p.hash > tt.st[len(tt.st)-1].hash {
+			start := tt.st[len(tt.st)-1].pos
+			tt.addByteNgram(s, start, i+2)
+			for len(tt.st) > 1 && tt.st[len(tt.st)-1].hash == tt.st[len(tt.st)-2].hash {
+				tt.st = tt.st[:len(tt.st)-1]
+			}
+			tt.st = tt.st[:len(tt.st)-1]
+		}
+		if len(tt.st) != 0 {
+			start := tt.st[len(tt.st)-1].pos
+			tt.addByteNgram(s, start, i+2)
+		}
+		tt.st = append(tt.st, p)
+	}
+	tt.b = tt.b[:0]
+}
+
+func (tt *SparseNgramTokenizer) addByteNgram(s []byte, start, end int) {
+	if end-start > tt.opts.MaxNgramLength {
+		return
+	}
+	buf := s[start:end]
+	if !tt.TestOrAddASCII(buf) {
+		tt.ngrams = append(tt.ngrams, string(buf))
+	}
+}
+
 func (tt *SparseNgramTokenizer) buildAllNgrams() {
+	if len(tt.b) > 0 {
+		tt.buildAllByteNgrams()
+		return
+	}
+
 	s := tt.s
 	tt.st = tt.st[:0]
 
@@ -444,13 +607,7 @@ func (tt *SparseNgramTokenizer) buildAllNgrams() {
 		}
 		for len(tt.st) > 0 && p.hash > tt.st[len(tt.st)-1].hash {
 			start := tt.st[len(tt.st)-1].pos
-			count := i + 2 - start
-			if count <= tt.opts.MaxNgramLength {
-				buf := tt.toBytes(s[start : start+count])
-				if !tt.TestOrAdd(buf) {
-					tt.ngrams = append(tt.ngrams, string(buf))
-				}
-			}
+			tt.addRuneNgram(s, start, i+2)
 			for len(tt.st) > 1 && tt.st[len(tt.st)-1].hash == tt.st[len(tt.st)-2].hash {
 				tt.st = tt.st[:len(tt.st)-1]
 			}
@@ -458,17 +615,21 @@ func (tt *SparseNgramTokenizer) buildAllNgrams() {
 		}
 		if len(tt.st) != 0 {
 			start := tt.st[len(tt.st)-1].pos
-			count := i + 2 - start
-			if count <= tt.opts.MaxNgramLength {
-				buf := tt.toBytes(s[start : start+count])
-				if !tt.TestOrAdd(buf) {
-					tt.ngrams = append(tt.ngrams, string(buf))
-				}
-			}
+			tt.addRuneNgram(s, start, i+2)
 		}
 		tt.st = append(tt.st, p)
 	}
 	tt.s = tt.s[:0]
+}
+
+func (tt *SparseNgramTokenizer) addRuneNgram(s []rune, start, end int) {
+	if end-start > tt.opts.MaxNgramLength {
+		return
+	}
+	buf := tt.toBytes(s[start:end])
+	if !tt.TestOrAdd(buf) {
+		tt.ngrams = append(tt.ngrams, string(buf))
+	}
 }
 
 func (tt *SparseNgramTokenizer) Next() error {
