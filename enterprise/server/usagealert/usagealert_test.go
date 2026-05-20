@@ -68,6 +68,47 @@ func TestEvaluatorSendsAlertsToUniqueAdminEmailRecipients(t *testing.T) {
 	assert.Equal(t, now.UnixMicro(), rule.LastFiredUsec)
 }
 
+func TestEvaluatorSendsAlertsToUserListAdminRecipients(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 5, 11, 15, 30, 0, 0, time.UTC)
+	flags.Set(t, "auth.enable_user_lists", true)
+
+	// Create a rule whose usage exceeds the threshold. One admin is a direct
+	// group member, and another admin belongs only through a user list.
+	sender := &fakeEmailSender{}
+	evaluator, dbh := newTestEvaluatorWithUsage(t, now, sender, testEvaluatorMetrics(t), &fakeUsageReader{
+		values: map[usagepb.UsageAlertingMetric_Value]int64{
+			usagepb.UsageAlertingMetric_INVOCATIONS: 11,
+		},
+	})
+	createUsageAlertingRule(t, ctx, dbh, &tables.UsageAlertingRule{
+		UsageAlertingRuleID: "UR1",
+		GroupID:             "GR1",
+		UsageAlertingMetric: usagepb.UsageAlertingMetric_INVOCATIONS,
+		AbsoluteThreshold:   10,
+		Window:              usagepb.UsageAlertingWindow_DAY,
+	})
+	createAdminRecipient(t, ctx, dbh, "GR1", "UA1", "Direct", "Admin", "direct-admin@example.com")
+	createUser(t, ctx, dbh, "UL1", "List", "Admin", "list-admin@example.com")
+	createUserListMembership(t, ctx, dbh, "GR1", "LIST1", "UL1", uint32(role.Admin))
+	createUser(t, ctx, dbh, "UD1", "List", "Developer", "list-developer@example.com")
+	createUserListMembership(t, ctx, dbh, "GR1", "LIST2", "UD1", uint32(role.Developer))
+
+	result, err := evaluator.Run(ctx)
+	require.NoError(t, err)
+
+	// The alert should be delivered to both direct admins and admins whose
+	// membership comes from an IAM user list.
+	require.Equal(t, &EvaluationResult{RulesEvaluated: 1, AlertsSent: 2}, result)
+	require.Len(t, sender.messages, 1)
+	assert.Equal(t, []email.Address{
+		{Name: "Direct Admin", Email: "direct-admin@example.com"},
+		{Name: "List Admin", Email: "list-admin@example.com"},
+	}, sender.messages[0].ToAddresses)
+	rule := getUsageAlertingRule(t, ctx, dbh, "UR1")
+	assert.Equal(t, now.UnixMicro(), rule.LastFiredUsec)
+}
+
 func TestEvaluatorDoesNotRefireWithinSameWindow(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 5, 11, 15, 30, 0, 0, time.UTC)
@@ -525,6 +566,62 @@ func TestEvaluatorQueryRulesAndRecipientsReturnsUniqueAdminEmails(t *testing.T) 
 	}, rules[0].recipients)
 }
 
+func TestEvaluatorQueryRulesAndRecipientsIncludesUserListAdmins(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "auth.enable_user_lists", true)
+	te := testenv.GetTestEnv(t)
+	dbh := te.GetDBHandle()
+	evaluator := newDBOnlyEvaluator(dbh)
+
+	// Seed direct members and user list memberships. The query should include
+	// active admins from either source, while ignoring user lists that grant a
+	// non-admin role or grant admin in a different group.
+	for _, row := range []*tables.User{
+		{UserID: "UA1", FirstName: "Direct", LastName: "Admin", Email: "direct-admin@example.com"},
+		{UserID: "UL1", FirstName: "List", LastName: "Admin", Email: "list-admin@example.com"},
+		{UserID: "UC1", FirstName: "Combo", LastName: "Admin", Email: "combo-admin@example.com"},
+		{UserID: "UD1", FirstName: "List", LastName: "Developer", Email: "list-developer@example.com"},
+		{UserID: "UO1", FirstName: "Other", LastName: "Admin", Email: "other-group@example.com"},
+	} {
+		require.NoError(t, dbh.NewQuery(ctx, "usagealert_test_create_user").Create(row))
+	}
+	require.NoError(t, dbh.NewQuery(ctx, "usagealert_test_create_user_group").Create(&tables.UserGroup{
+		UserUserID:       "UA1",
+		GroupGroupID:     "GR1",
+		Role:             uint32(role.Admin),
+		MembershipStatus: int32(grpb.GroupMembershipStatus_MEMBER),
+	}))
+	require.NoError(t, dbh.NewQuery(ctx, "usagealert_test_create_user_group").Create(&tables.UserGroup{
+		UserUserID:       "UC1",
+		GroupGroupID:     "GR1",
+		Role:             uint32(role.Developer),
+		MembershipStatus: int32(grpb.GroupMembershipStatus_MEMBER),
+	}))
+	createUserListMembership(t, ctx, dbh, "GR1", "LIST1", "UL1", uint32(role.Admin))
+	createUserListMembership(t, ctx, dbh, "GR1", "LIST2", "UC1", uint32(role.Admin))
+	createUserListMembership(t, ctx, dbh, "GR1", "LIST3", "UD1", uint32(role.Developer))
+	createUserListMembership(t, ctx, dbh, "GR2", "LIST4", "UO1", uint32(role.Admin))
+	createUsageAlertingRule(t, ctx, dbh, &tables.UsageAlertingRule{
+		UsageAlertingRuleID: "UR1",
+		GroupID:             "GR1",
+		UsageAlertingMetric: usagepb.UsageAlertingMetric_INVOCATIONS,
+		AbsoluteThreshold:   1,
+		Window:              usagepb.UsageAlertingWindow_DAY,
+	})
+
+	rules, err := evaluator.queryRulesAndRecipients(ctx)
+	require.NoError(t, err)
+
+	// Direct admins, user list admins, and users whose combined memberships
+	// include admin should all be attached as recipients.
+	require.Len(t, rules, 1)
+	assert.Equal(t, []email.Address{
+		{Name: "Direct Admin", Email: "direct-admin@example.com"},
+		{Name: "Combo Admin", Email: "combo-admin@example.com"},
+		{Name: "List Admin", Email: "list-admin@example.com"},
+	}, rules[0].recipients)
+}
+
 func TestEvaluatorQueryRulesAndRecipientsOnlyReturnsGroupsWithAdminRecipients(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
@@ -688,17 +785,38 @@ func createAdminRecipient(t testing.TB, ctx context.Context, dbh interfaces.DBHa
 }
 
 func createUserAndMembership(t testing.TB, ctx context.Context, dbh interfaces.DBHandle, groupID, userID, firstName, lastName, emailAddress string, userRole uint32, membershipStatus int32) {
+	createUser(t, ctx, dbh, userID, firstName, lastName, emailAddress)
+	require.NoError(t, dbh.NewQuery(ctx, "usagealert_test_create_user_group").Create(&tables.UserGroup{
+		UserUserID:       userID,
+		GroupGroupID:     groupID,
+		Role:             userRole,
+		MembershipStatus: membershipStatus,
+	}))
+}
+
+func createUser(t testing.TB, ctx context.Context, dbh interfaces.DBHandle, userID, firstName, lastName, emailAddress string) {
 	require.NoError(t, dbh.NewQuery(ctx, "usagealert_test_create_user").Create(&tables.User{
 		UserID:    userID,
 		FirstName: firstName,
 		LastName:  lastName,
 		Email:     emailAddress,
 	}))
-	require.NoError(t, dbh.NewQuery(ctx, "usagealert_test_create_user_group").Create(&tables.UserGroup{
-		UserUserID:       userID,
-		GroupGroupID:     groupID,
-		Role:             userRole,
-		MembershipStatus: membershipStatus,
+}
+
+func createUserListMembership(t testing.TB, ctx context.Context, dbh interfaces.DBHandle, groupID, userListID, userID string, listRole uint32) {
+	require.NoError(t, dbh.NewQuery(ctx, "usagealert_test_create_user_list").Create(&tables.UserList{
+		UserListID: userListID,
+		GroupID:    groupID,
+		Name:       userListID,
+	}))
+	require.NoError(t, dbh.NewQuery(ctx, "usagealert_test_create_user_user_list").Create(&tables.UserUserList{
+		UserUserID:         userID,
+		UserListUserListID: userListID,
+	}))
+	require.NoError(t, dbh.NewQuery(ctx, "usagealert_test_create_user_list_group").Create(&tables.UserListGroup{
+		UserListUserListID: userListID,
+		GroupGroupID:       groupID,
+		Role:               listRole,
 	}))
 }
 
