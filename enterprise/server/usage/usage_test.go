@@ -58,20 +58,6 @@ func setupEnv(t *testing.T, opts ...testenv.TestEnvOption) *testenv.TestEnv {
 		flags.Set(t, "app.write_usage_to_olap_db", true)
 		err := clickhouse.Register(te)
 		require.NoError(t, err)
-
-		// Create the Usage view which is how we will actually query
-		// usage.
-		// TODO: move this to clickhouse schema package
-		dbh := te.GetOLAPDBHandle()
-		err = dbh.GORM(context.Background(), "create_usage_view").Exec(`
-			CREATE VIEW "Usage" AS
-			SELECT
-				group_id, period_start, sku, labels, SUM(count) AS count
-			FROM RawUsage FINAL
-			GROUP BY
-				group_id, period_start, sku, labels
-		`).Error
-		require.NoError(t, err)
 	}
 
 	redisTarget := testredis.Start(t).Target
