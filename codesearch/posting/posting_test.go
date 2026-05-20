@@ -133,6 +133,67 @@ func TestBuilderListMarshal(t *testing.T) {
 	assert.Equal(t, []uint64{1, 2, 3, 4, 5, 4294967296, 4294967297}, pl3.ToArray())
 }
 
+func TestBuilderListMarshalDenseCounts(t *testing.T) {
+	pl := posting.NewBuilderList()
+	pl.AddWithFrequency(1, 2)
+	pl.AddWithFrequency(2, 1)
+	pl.AddWithFrequency(3, 129)
+	buf, err := pl.Marshal()
+	require.NoError(t, err)
+
+	pl2, err := posting.Unmarshal(buf)
+	require.NoError(t, err)
+
+	assert.Equal(t, []uint64{1, 2, 3}, pl2.ToArray())
+	assert.Equal(t, uint32(2), pl2.Frequency(1))
+	assert.Equal(t, uint32(1), pl2.Frequency(2))
+	assert.Equal(t, uint32(129), pl2.Frequency(3))
+
+	pl3, err := posting.UnmarshalReadOnly(buf)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(2), pl3.Frequency(1))
+	assert.Equal(t, uint32(1), pl3.Frequency(2))
+	assert.Equal(t, uint32(129), pl3.Frequency(3))
+}
+
+func TestBuilderListMarshalBitsetCounts(t *testing.T) {
+	pl := posting.NewBuilderList()
+	for i := uint64(1); i <= 16; i++ {
+		pl.AddWithFrequency(i, 1)
+	}
+	pl.SetLastFrequency(16, 4)
+	buf, err := pl.Marshal()
+	require.NoError(t, err)
+
+	pl2, err := posting.Unmarshal(buf)
+	require.NoError(t, err)
+
+	assert.Equal(t, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, pl2.ToArray())
+	assert.Equal(t, uint32(1), pl2.Frequency(1))
+	assert.Equal(t, uint32(4), pl2.Frequency(16))
+
+	pl3, err := posting.UnmarshalReadOnly(buf)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(1), pl3.Frequency(1))
+	assert.Equal(t, uint32(4), pl3.Frequency(16))
+}
+
+func TestBuilderListOrAddsFrequencies(t *testing.T) {
+	pl := posting.NewBuilderList()
+	pl.AddWithFrequency(1, 2)
+	pl.AddWithFrequency(2, 3)
+	other := posting.NewBuilderList()
+	other.AddWithFrequency(2, 4)
+	other.AddWithFrequency(3, 5)
+
+	pl.Or(other)
+
+	assert.Equal(t, []uint64{1, 2, 3}, pl.ToArray())
+	assert.Equal(t, uint32(2), pl.Frequency(1))
+	assert.Equal(t, uint32(7), pl.Frequency(2))
+	assert.Equal(t, uint32(5), pl.Frequency(3))
+}
+
 func TestBuilderListOr(t *testing.T) {
 	pl := posting.NewBuilderList(1, 3)
 	pl.Or(posting.NewBuilderList(2, 3))

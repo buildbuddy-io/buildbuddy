@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"github.com/bits-and-blooms/bloom/v3"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/indexprofile"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/sparse"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -336,13 +337,31 @@ type SparseNgramTokenizer struct {
 	hasher       hash.Hash32
 	trigramsSeen *sparse.Set
 	longramsSeen *bloom.BloomFilter
-	asciiSeen    map[uint64]struct{}
+	asciiSeen    map[uint64]int
 	ngrams       []string
+	allNgrams    []string
+	ngramIndexes []int
+	ngramFreqs   []uint32
 	s            []rune
 	b            []byte
 	st           []hashAndPosition
 	stringTemp   []byte
+
+	trigramNgramIndexes []int
+	stringNgramIndexes  map[string]int
+	pendingNgramKind    ngramKind
+	pendingNgramIndex   int
+	pendingASCIIKey     uint64
 }
+
+type ngramKind int
+
+const (
+	ngramKindNone ngramKind = iota
+	ngramKindTrigram
+	ngramKindASCII
+	ngramKindString
+)
 
 func NewSparseNgramTokenizer(mods ...Option) *SparseNgramTokenizer {
 	opts := DefaultOptions()
@@ -355,8 +374,11 @@ func NewSparseNgramTokenizer(mods ...Option) *SparseNgramTokenizer {
 		hasher:       fnv.New32(),
 		trigramsSeen: sparse.NewSet(1 << 24),
 		longramsSeen: bloom.NewWithEstimates(100000, 0.0001),
-		asciiSeen:    make(map[uint64]struct{}),
+		asciiSeen:    make(map[uint64]int),
 		ngrams:       make([]string, 0),
+		allNgrams:    make([]string, 0),
+		ngramIndexes: make([]int, 0),
+		ngramFreqs:   make([]uint32, 0),
 		s:            make([]rune, bufio.MaxScanTokenSize),
 		b:            make([]byte, bufio.MaxScanTokenSize),
 		st:           make([]hashAndPosition, 0),
@@ -366,13 +388,23 @@ func NewSparseNgramTokenizer(mods ...Option) *SparseNgramTokenizer {
 
 func (tt *SparseNgramTokenizer) Reset(r io.Reader) {
 	tt.scanner = bufio.NewScanner(r)
+	if tt.stringNgramIndexes != nil {
+		clear(tt.stringNgramIndexes)
+	}
 	tt.trigramsSeen.Reset()
 	tt.longramsSeen.ClearAll()
 	clear(tt.asciiSeen)
 	tt.ngrams = tt.ngrams[:0]
+	tt.allNgrams = tt.allNgrams[:0]
+	tt.ngramIndexes = tt.ngramIndexes[:0]
+	tt.ngramFreqs = tt.ngramFreqs[:0]
+	tt.trigramNgramIndexes = tt.trigramNgramIndexes[:0]
 	tt.s = tt.s[:0]
 	tt.b = tt.b[:0]
 	tt.st = tt.st[:0]
+	tt.pendingNgramKind = ngramKindNone
+	tt.pendingNgramIndex = 0
+	tt.pendingASCIIKey = 0
 }
 
 func (tt *SparseNgramTokenizer) Type() types.FieldType {
@@ -387,7 +419,111 @@ func (tt *SparseNgramTokenizer) NgramString() string {
 	return tt.ngrams[len(tt.ngrams)-1]
 }
 
+func (tt *SparseNgramTokenizer) NgramFrequency() uint32 {
+	if len(tt.ngramIndexes) == 0 {
+		return 1
+	}
+	idx := tt.ngramIndexes[len(tt.ngramIndexes)-1]
+	if idx < 0 || idx >= len(tt.ngramFreqs) {
+		return 1
+	}
+	return tt.ngramFreqs[idx]
+}
+
+func (tt *SparseNgramTokenizer) ForEachTermFrequency(fn func(ngram string, frequency uint32)) {
+	for i, ngram := range tt.allNgrams {
+		fn(ngram, tt.ngramFreqs[i])
+	}
+}
+
+func (tt *SparseNgramTokenizer) TermFrequencyStats() indexprofile.TermFrequencyStats {
+	stats := indexprofile.TermFrequencyStats{}
+	for _, freq := range tt.ngramFreqs {
+		tf := uint64(freq)
+		stats.Occurrences += int64(tf)
+		stats.UniquePostings++
+		stats.CountBytesEstimate += int64(uvarintLen64(tf))
+		addTermFrequencyBucket(&stats, tf)
+		if freq > 1 {
+			duplicateCount := tf - 1
+			stats.DuplicatePostings++
+			stats.DuplicateOccurrences += int64(duplicateCount)
+			stats.ExceptionBytesEstimate += 1 + int64(uvarintLen64(duplicateCount))
+		}
+	}
+	return stats
+}
+
+func addTermFrequencyBucket(stats *indexprofile.TermFrequencyStats, tf uint64) {
+	switch {
+	case tf == 1:
+		stats.Count1++
+	case tf == 2:
+		stats.Count2++
+	case tf <= 4:
+		stats.Count3To4++
+	case tf <= 8:
+		stats.Count5To8++
+	case tf <= 16:
+		stats.Count9To16++
+	case tf <= 32:
+		stats.Count17To32++
+	case tf <= 64:
+		stats.Count33To64++
+	case tf <= 128:
+		stats.Count65To128++
+	default:
+		stats.Count129Plus++
+	}
+}
+
+func uvarintLen64(v uint64) int {
+	n := 1
+	for v >= 0x80 {
+		v >>= 7
+		n++
+	}
+	return n
+}
+
+func (tt *SparseNgramTokenizer) incrementNgramFrequency(idx int) {
+	if idx < 0 || idx >= len(tt.ngramFreqs) {
+		return
+	}
+	tt.ngramFreqs[idx]++
+}
+
+func (tt *SparseNgramTokenizer) appendNgram(buf []byte) {
+	ngram := string(buf)
+	idx := len(tt.allNgrams)
+	tt.allNgrams = append(tt.allNgrams, ngram)
+	tt.ngramFreqs = append(tt.ngramFreqs, 1)
+	tt.ngrams = append(tt.ngrams, ngram)
+	tt.ngramIndexes = append(tt.ngramIndexes, idx)
+
+	switch tt.pendingNgramKind {
+	case ngramKindNone:
+	case ngramKindTrigram:
+		if tt.pendingNgramIndex < len(tt.trigramNgramIndexes) {
+			tt.trigramNgramIndexes[tt.pendingNgramIndex] = idx
+		}
+	case ngramKindASCII:
+		tt.asciiSeen[tt.pendingASCIIKey] = idx
+	case ngramKindString:
+		if tt.stringNgramIndexes == nil {
+			tt.stringNgramIndexes = make(map[string]int)
+		}
+		tt.stringNgramIndexes[ngram] = idx
+	}
+	tt.pendingNgramKind = ngramKindNone
+	tt.pendingNgramIndex = 0
+	tt.pendingASCIIKey = 0
+}
+
 func (tt *SparseNgramTokenizer) TestOrAdd(buf []byte) bool {
+	tt.pendingNgramKind = ngramKindNone
+	tt.pendingNgramIndex = 0
+	tt.pendingASCIIKey = 0
 	if len(buf) < 3 {
 		panic("too short of a trigram")
 	} else if len(buf) == 3 {
@@ -396,11 +532,14 @@ func (tt *SparseNgramTokenizer) TestOrAdd(buf []byte) bool {
 		if key, ok := compactASCIINgramKey(buf); ok {
 			return tt.testOrAddASCIIKey(key)
 		}
-		return tt.longramsSeen.TestOrAdd(buf)
+		return tt.testOrAddString(buf)
 	}
 }
 
 func (tt *SparseNgramTokenizer) TestOrAddASCII(buf []byte) bool {
+	tt.pendingNgramKind = ngramKindNone
+	tt.pendingNgramIndex = 0
+	tt.pendingASCIIKey = 0
 	if len(buf) < 3 {
 		panic("too short of a trigram")
 	} else if len(buf) == 3 {
@@ -408,23 +547,47 @@ func (tt *SparseNgramTokenizer) TestOrAddASCII(buf []byte) bool {
 	} else if len(buf) <= maxCompactASCIINgramLength {
 		return tt.testOrAddASCIIKey(mustCompactASCIIKey(buf))
 	}
-	return tt.longramsSeen.TestOrAdd(buf)
+	return tt.testOrAddString(buf)
 }
 
 func (tt *SparseNgramTokenizer) testOrAddTrigram(buf []byte) bool {
 	tri := uint32(buf[0])<<16 | uint32(buf[1])<<8 | uint32(buf[2])
-	found := tt.trigramsSeen.Has(tri)
-	if !found {
-		tt.trigramsSeen.Add(tri)
+	if idx, seen := tt.trigramsSeen.Index(tri); seen {
+		if idx < len(tt.trigramNgramIndexes) {
+			tt.incrementNgramFrequency(tt.trigramNgramIndexes[idx])
+		}
+		return true
 	}
-	return found
+	tt.trigramsSeen.Add(tri)
+	tt.trigramNgramIndexes = append(tt.trigramNgramIndexes, -1)
+	tt.pendingNgramKind = ngramKindTrigram
+	tt.pendingNgramIndex = len(tt.trigramNgramIndexes) - 1
+	return false
 }
 
 func (tt *SparseNgramTokenizer) testOrAddASCIIKey(key uint64) bool {
-	if _, seen := tt.asciiSeen[key]; seen {
+	if idx, seen := tt.asciiSeen[key]; seen {
+		tt.incrementNgramFrequency(idx)
 		return true
 	}
-	tt.asciiSeen[key] = struct{}{}
+	tt.asciiSeen[key] = -1
+	tt.pendingNgramKind = ngramKindASCII
+	tt.pendingASCIIKey = key
+	return false
+}
+
+func (tt *SparseNgramTokenizer) testOrAddString(buf []byte) bool {
+	seen := tt.longramsSeen.TestOrAdd(buf)
+	if seen {
+		if len(buf) > 0 && tt.stringNgramIndexes != nil {
+			key := unsafe.String(&buf[0], len(buf))
+			if idx, ok := tt.stringNgramIndexes[key]; ok {
+				tt.incrementNgramFrequency(idx)
+			}
+		}
+		return true
+	}
+	tt.pendingNgramKind = ngramKindString
 	return false
 }
 
@@ -587,7 +750,7 @@ func (tt *SparseNgramTokenizer) addByteNgram(s []byte, start, end int) {
 	}
 	buf := s[start:end]
 	if !tt.TestOrAddASCII(buf) {
-		tt.ngrams = append(tt.ngrams, string(buf))
+		tt.appendNgram(buf)
 	}
 }
 
@@ -628,7 +791,7 @@ func (tt *SparseNgramTokenizer) addRuneNgram(s []rune, start, end int) {
 	}
 	buf := tt.toBytes(s[start:end])
 	if !tt.TestOrAdd(buf) {
-		tt.ngrams = append(tt.ngrams, string(buf))
+		tt.appendNgram(buf)
 	}
 }
 
@@ -636,6 +799,7 @@ func (tt *SparseNgramTokenizer) Next() error {
 	// Pop off the last ngram on each call to Next().
 	if len(tt.ngrams) > 0 {
 		tt.ngrams = tt.ngrams[:len(tt.ngrams)-1]
+		tt.ngramIndexes = tt.ngramIndexes[:len(tt.ngramIndexes)-1]
 	}
 
 	// Refill tt.ngrams if it's empty.

@@ -33,7 +33,7 @@ func initRoaringMerger(key, value []byte) (pebble.ValueMerger, error) {
 	// For now, we assume all values are posting lists.
 	if len(value) == 0 {
 		return &roaringValueMerger{
-			pl: posting.NewList(),
+			pl: posting.NewBuilderList(),
 		}, nil
 	}
 

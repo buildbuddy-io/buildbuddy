@@ -600,6 +600,36 @@ func TestMergeActuallyMerges(t *testing.T) {
 	assert.Equal(t, expectedBytes, plBytes)
 }
 
+func TestSparseNgramFrequenciesArePersisted(t *testing.T) {
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.SparseNgramField, "content", true),
+		},
+	)
+	doc := docSchema.MustMakeDocument(
+		map[string][]byte{
+			"id":      []byte("1"),
+			"content": []byte("abc abc abc"),
+		},
+	)
+
+	w, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+	require.NoError(t, w.AddDocument(doc))
+	require.NoError(t, w.Flush())
+
+	plBytes, closer, err := db.Get([]byte("testns:gra:abc:content"))
+	require.NoError(t, err)
+	defer closer.Close()
+
+	pl, err := posting.Unmarshal(plBytes)
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1}, pl.ToArray())
+	assert.Equal(t, uint32(3), pl.Frequency(1))
+}
+
 func printDB(t testing.TB, db *pebble.DB) {
 	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{0},
