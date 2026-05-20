@@ -40,7 +40,7 @@ func Register(env *real_environment.RealEnv) error {
 		if err != nil {
 			return err
 		}
-		intPort, err := strconv.Atoi(port)
+		intPort, err := strconv.ParseUint(port, 10, 16)
 		if err != nil {
 			return err
 		}
