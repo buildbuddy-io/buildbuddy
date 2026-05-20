@@ -109,7 +109,7 @@ func newTestEnv(t *testing.T) *testenv.TestEnv {
 	require.NoError(t, err)
 	te.SetRepoDownloader(repo_downloader.NewRepoDownloader())
 	te.SetWorkflowService(workflow.NewWorkflowService(te))
-	gh, err := githubapp.NewAppService(te, &testgit.FakeGitHubApp{MockAppID: mockGithubAppID}, nil)
+	gh, err := githubapp.NewAppService(te, &testgit.FakeGitHubApp{MockAppID: mockGithubAppID, DBHandle: te.GetDBHandle()}, nil)
 	require.NoError(t, err)
 	te.SetGitHubAppService(gh)
 

@@ -193,7 +193,7 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 			iss := invocation_search_service.NewInvocationSearchService(e, e.GetDBHandle(), e.GetOLAPDBHandle())
 			e.SetInvocationSearchService(iss)
 			e.SetByteStreamClient(env.GetByteStreamClient())
-			gh, err := githubapp.NewAppService(e, &testgit.FakeGitHubApp{MockAppID: mockGithubAppID}, nil)
+			gh, err := githubapp.NewAppService(e, &testgit.FakeGitHubApp{MockAppID: mockGithubAppID, DBHandle: e.GetDBHandle()}, nil)
 			require.NoError(t, err)
 			e.SetGitHubAppService(gh)
 			keyValStore, err := memory_kvstore.NewMemoryKeyValStore()

@@ -241,7 +241,7 @@ func runLocalServerAndExecutor(t *testing.T, repoURL, githubToken string, envMod
 			e.SetWorkflowService(service.NewWorkflowService(e))
 			iss := invocation_search_service.NewInvocationSearchService(e, e.GetDBHandle(), e.GetOLAPDBHandle())
 			e.SetInvocationSearchService(iss)
-			gh, err := githubapp.NewAppService(e, &testgit.FakeGitHubApp{Token: githubToken, MockAppID: mockGithubAppID}, nil)
+			gh, err := githubapp.NewAppService(e, &testgit.FakeGitHubApp{Token: githubToken, MockAppID: mockGithubAppID, DBHandle: e.GetDBHandle()}, nil)
 			require.NoError(t, err)
 			e.SetGitHubAppService(gh)
 			runner, err := hostedrunner.New(e)
