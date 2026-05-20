@@ -363,9 +363,8 @@ func handleBazelCommand(start time.Time, bazelArgs *arg.BazelArgs, execArgs []st
 	// plugins to control how the output is rendered to the terminal.
 	log.Debugf("bb initialized in %s", time.Since(start))
 	outputPath := filepath.Join(tempDir, "bazel.log")
-	// TODO(#7216): Use the forwarded args here.
 	exitCode, err = plugin.RunBazeliskWithPlugins(
-		arg.JoinExecutableArgs(bazelArgs.Resolved(), execArgs),
+		arg.JoinExecutableArgs(bazelArgs.Forwarded(), execArgs),
 		outputPath, plugins)
 	if err != nil {
 		return 1, err

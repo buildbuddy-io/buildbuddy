@@ -12,8 +12,6 @@ import (
 )
 
 type BazelArgs struct {
-	// TODO(#7216): Actually pass the forwarded args field to Bazelisk.
-	//
 	// forwarded are the Bazel args that are eventually passed to Bazelisk.
 	// bb might add to these, but --config and --bazelrc flags are not expanded.
 	// These should look fairly similarly to the user-supplied args, but with some additional bb-specific args.
