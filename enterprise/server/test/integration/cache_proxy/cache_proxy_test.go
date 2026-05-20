@@ -1,10 +1,12 @@
 package cache_proxy_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"runtime"
 	"strings"
 	"sync"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -22,9 +25,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/jonboulle/clockwork"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/pkg/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -34,6 +40,7 @@ import (
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	iprpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 func enableIPRules(t *testing.T, client bbspb.BuildBuddyServiceClient, ctx context.Context, groupID, clientIP string) {
@@ -70,6 +77,39 @@ func enableEncryption(t *testing.T, rbe *rbetest.Env, userID string) {
 	getResp, err := client.GetEncryptionConfig(ctx, &enpb.GetEncryptionConfigRequest{})
 	require.NoError(t, err)
 	require.True(t, getResp.Enabled, "Encryption should be enabled")
+}
+
+func writeBlob(t *testing.T, ctx context.Context, bs bspb.ByteStreamClient, uploadID, hash string, sizeBytes int64, data []byte) error {
+	t.Helper()
+	stream, err := bs.Write(ctx)
+	require.NoError(t, err)
+	err = stream.Send(&bspb.WriteRequest{
+		ResourceName: fmt.Sprintf("uploads/%s/blobs/%s/%d", uploadID, hash, sizeBytes),
+		Data:         data,
+		FinishWrite:  true,
+	})
+	if err != nil && err != io.EOF {
+		return err
+	}
+	_, err = stream.CloseAndRecv()
+	return err
+}
+
+func readBlob(t *testing.T, ctx context.Context, bs bspb.ByteStreamClient, hash string, sizeBytes int64) []byte {
+	t.Helper()
+	stream, err := bs.Read(ctx, &bspb.ReadRequest{
+		ResourceName: fmt.Sprintf("blobs/%s/%d", hash, sizeBytes),
+	})
+	require.NoError(t, err)
+	var data []byte
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			return data
+		}
+		require.NoError(t, err)
+		data = append(data, resp.GetData()...)
+	}
 }
 
 func TestES256Auth(t *testing.T) {
@@ -152,6 +192,46 @@ func TestES256Auth_RemoteExecution(t *testing.T) {
 	res := cmd.Wait()
 	require.Equal(t, 0, res.ExitCode)
 	require.Equal(t, "hello\n", res.Stdout)
+}
+
+func TestByteStreamWriteSkipValidationDoesNotPoisonLocalCache(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache_proxy.skip_write_validation": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true": true,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer()
+	proxy := rbe.AddCacheProxyWithOptions(&rbetest.CacheProxyOptions{
+		EnvModifier: func(env *testenv.TestEnv) {
+			env.SetExperimentFlagProvider(fp)
+		},
+	})
+	bs := proxy.GetByteStreamClient()
+
+	ctx := metadata.AppendToOutgoingContext(t.Context(), authutil.APIKeyHeader, rbe.APIKey1)
+	correct := bytes.Repeat([]byte("correct content"), 3_000)
+	corrupt := bytes.Clone(correct)
+	corrupt[0] = ^corrupt[0]
+	digest := sha256.Sum256(correct)
+	hash := hex.EncodeToString(digest[:])
+	sizeBytes := int64(len(correct))
+
+	err = writeBlob(t, ctx, bs, "2148e1f1-aacc-41eb-a31c-22b6da7c7ac1", hash, sizeBytes, corrupt)
+	require.True(t, status.IsInvalidArgumentError(err), "err = %v", err)
+
+	err = writeBlob(t, ctx, bs, "2148e1f1-aacc-41eb-a31c-22b6da7c7ac2", hash, sizeBytes, correct)
+	require.NoError(t, err)
+
+	require.Equal(t, correct, readBlob(t, ctx, bs, hash, sizeBytes))
 }
 
 func TestFindMissing_Encryption(t *testing.T) {
