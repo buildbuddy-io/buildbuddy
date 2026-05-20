@@ -11,8 +11,11 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-github/v59/github"
 )
@@ -178,11 +181,61 @@ func configure(t testing.TB, repoPath string) {
 // FakeGitHubApp implements the github app interface for tests.
 type FakeGitHubApp struct {
 	interfaces.GitHubApp
-	Token     string
-	MockAppID int64
+	Token           string
+	MockAppID       int64
+	DBHandle        interfaces.DBHandle
+	ExpectedGroupID string
+	ExpectedRepoURL string
+	ExpectedOwner   string
 }
 
 func (a *FakeGitHubApp) GetRepositoryInstallationToken(ctx context.Context, groupID, repoURL string) (string, error) {
+	if a.ExpectedGroupID != "" && groupID != a.ExpectedGroupID {
+		return "", status.FailedPreconditionErrorf("got groupID %q, want %q", groupID, a.ExpectedGroupID)
+	}
+	if a.ExpectedRepoURL != "" && repoURL != a.ExpectedRepoURL {
+		return "", status.FailedPreconditionErrorf("got repoURL %q, want %q", repoURL, a.ExpectedRepoURL)
+	}
+
+	if a.DBHandle == nil {
+		return a.Token, nil
+	}
+
+	parsedRepoURL, err := gitutil.ParseGitHubRepoURL(repoURL)
+	if err != nil {
+		return "", status.InvalidArgumentErrorf("invalid repo URL %s: %s", repoURL, err)
+	}
+	if a.ExpectedOwner != "" && parsedRepoURL.Owner != a.ExpectedOwner {
+		return "", status.FailedPreconditionErrorf("got repo owner %q, want %q", parsedRepoURL.Owner, a.ExpectedOwner)
+	}
+
+	gitRepository := &tables.GitRepository{}
+	err = a.DBHandle.NewQuery(ctx, "fake_github_app_get_repo_for_token").Raw(`
+		SELECT *
+		FROM "GitRepositories"
+		WHERE group_id = ?
+		AND repo_url = ?
+	`, groupID, parsedRepoURL.String()).Take(gitRepository)
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return "", status.NotFoundErrorf("repo %s not found", repoURL)
+		}
+		return "", status.InternalErrorf("failed to look up repo %s: %s", repoURL, err)
+	}
+
+	var installation tables.GitHubAppInstallation
+	err = a.DBHandle.NewQuery(ctx, "fake_github_app_get_installation_token").Raw(`
+		SELECT *
+		FROM "GitHubAppInstallations"
+		WHERE group_id = ?
+		AND owner = ?
+	`, groupID, parsedRepoURL.Owner).Take(&installation)
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return "", status.NotFoundErrorf("failed to look up GitHub app installation: %s", err)
+		}
+		return "", err
+	}
 	return a.Token, nil
 }
 

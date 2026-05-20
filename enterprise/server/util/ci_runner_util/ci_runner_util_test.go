@@ -64,7 +64,7 @@ func getEnv(t *testing.T, mockToken string) *testenv.TestEnv {
 		"user1":            testauth.User("user1", "group1"),
 		"workflow-api-key": testauth.User("user1", "group1"),
 	}))
-	gh, err := githubapp.NewAppService(env, nil, &testgit.FakeGitHubApp{Token: mockToken, MockAppID: mockGithubAppID})
+	gh, err := githubapp.NewAppService(env, nil, &testgit.FakeGitHubApp{Token: mockToken, MockAppID: mockGithubAppID, DBHandle: env.GetDBHandle()})
 	require.NoError(t, err)
 	env.SetGitHubAppService(gh)
 	return env
