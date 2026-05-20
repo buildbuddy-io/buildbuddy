@@ -716,7 +716,7 @@ func RunMigrations(gdb *gorm.DB) error {
 	}
 	for _, v := range getAllViews() {
 		if err := ensureView(gdb, v); err != nil {
-			return status.InternalErrorf("ensure view %q: %s", v.ViewName(), err)
+			return status.WrapErrorf(err, "ensure view %q", v.ViewName())
 		}
 	}
 	// Add Projection/
