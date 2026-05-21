@@ -2,8 +2,11 @@ package indexprofile
 
 import (
 	"container/heap"
+	"fmt"
+	"math/bits"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -119,26 +122,23 @@ func TermFrequencyStatsFromFrequencies(freqs []uint32) TermFrequencyStats {
 }
 
 func addTermFrequencyBucket(stats *TermFrequencyStats, tf uint64) {
-	switch {
-	case tf == 1:
-		stats.Count1++
-	case tf == 2:
-		stats.Count2++
-	case tf <= 4:
-		stats.Count3To4++
-	case tf <= 8:
-		stats.Count5To8++
-	case tf <= 16:
-		stats.Count9To16++
-	case tf <= 32:
-		stats.Count17To32++
-	case tf <= 64:
-		stats.Count33To64++
-	case tf <= 128:
-		stats.Count65To128++
-	default:
-		stats.Count129Plus++
+	bucket := bits.Len(uint(tf - 1))
+	if bucket >= types.NumTFLog2Buckets {
+		bucket = types.NumTFLog2Buckets - 1
 	}
+	stats.CountsByLog2Bucket[bucket]++
+}
+
+// tfLog2BucketLabel returns a "1", "2", "3-4", "5-8", … style label for the
+// given bucket index.
+func tfLog2BucketLabel(i int) string {
+	switch i {
+	case 0:
+		return "1"
+	case 1:
+		return "2"
+	}
+	return fmt.Sprintf("%d-%d", 1<<(i-1)+1, 1<<i)
 }
 
 func uvarintLen64(v uint64) int {
@@ -345,15 +345,9 @@ func (p *Profiler) RecordTermFrequencyStats(field string, stats TermFrequencySta
 	current.DuplicatePostings += stats.DuplicatePostings
 	current.ExceptionBytesEstimate += stats.ExceptionBytesEstimate
 	current.CountBytesEstimate += stats.CountBytesEstimate
-	current.Count1 += stats.Count1
-	current.Count2 += stats.Count2
-	current.Count3To4 += stats.Count3To4
-	current.Count5To8 += stats.Count5To8
-	current.Count9To16 += stats.Count9To16
-	current.Count17To32 += stats.Count17To32
-	current.Count33To64 += stats.Count33To64
-	current.Count65To128 += stats.Count65To128
-	current.Count129Plus += stats.Count129Plus
+	for i := range stats.CountsByLog2Bucket {
+		current.CountsByLog2Bucket[i] += stats.CountsByLog2Bucket[i]
+	}
 	p.termFrequencyByField[field] = current
 
 	p.counters[CounterTFNgramOccurrences] += stats.Occurrences
@@ -496,8 +490,15 @@ func (p *Profiler) PrettyPrint() {
 			}
 			log.Printf("  field=%-12q occurrences=%-12d unique_postings=%-12d duplicate_occurrences=%-12d postings_with_tf_gt_1=%-12d (%.2f%%) exception_bytes_estimate=%-12d count_bytes_estimate=%d",
 				row.field, s.Occurrences, s.UniquePostings, s.DuplicateOccurrences, s.DuplicatePostings, duplicatePercent, s.ExceptionBytesEstimate, s.CountBytesEstimate)
-			log.Printf("    tf_buckets: 1=%d 2=%d 3-4=%d 5-8=%d 9-16=%d 17-32=%d 33-64=%d 65-128=%d 129+=%d",
-				s.Count1, s.Count2, s.Count3To4, s.Count5To8, s.Count9To16, s.Count17To32, s.Count33To64, s.Count65To128, s.Count129Plus)
+			var sb strings.Builder
+			sb.WriteString("    tf_buckets:")
+			for i, count := range s.CountsByLog2Bucket {
+				if count == 0 {
+					continue
+				}
+				fmt.Fprintf(&sb, " %s=%d", tfLog2BucketLabel(i), count)
+			}
+			log.Print(sb.String())
 		}
 	}
 	printTopPostingLists("Index profile top content posting lists by value bytes:", topByValueBytes)

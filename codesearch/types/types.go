@@ -80,6 +80,11 @@ type Tokenizer interface {
 	TermFrequencyStats() TermFrequencyStats
 }
 
+// NumTFLog2Buckets is the size of CountsByLog2Bucket. It covers every
+// possible uint32 frequency: bucket index = bits.Len(uint(tf-1)), so tf=1
+// maps to 0 and tf == math.MaxUint32 maps to 32.
+const NumTFLog2Buckets = 33
+
 type TermFrequencyStats struct {
 	Occurrences            int64
 	UniquePostings         int64
@@ -87,15 +92,10 @@ type TermFrequencyStats struct {
 	DuplicatePostings      int64
 	ExceptionBytesEstimate int64
 	CountBytesEstimate     int64
-	Count1                 int64
-	Count2                 int64
-	Count3To4              int64
-	Count5To8              int64
-	Count9To16             int64
-	Count17To32            int64
-	Count33To64            int64
-	Count65To128           int64
-	Count129Plus           int64
+	// CountsByLog2Bucket[i] is the number of postings whose term frequency
+	// falls in (2^(i-1), 2^i], with bucket 0 reserved for tf == 1. Compute
+	// the index with bits.Len(uint(tf - 1)).
+	CountsByLog2Bucket [NumTFLog2Buckets]int64
 }
 
 type IndexWriter interface {
