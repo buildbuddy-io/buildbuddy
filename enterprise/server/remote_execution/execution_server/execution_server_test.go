@@ -1035,10 +1035,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	require.NoError(t, err)
 	assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
 
-	// Usage tracking now reads the merged StoredExecution from Redis on
-	// stream EOF, so the execution-duration counter only increments if
-	// Redis preserved the execution's invocation links. After a Redis
-	// restart those links are gone, so usage tracking is skipped.
+	// Should also have recorded usage, unless redis restart wiped it.
 	ut := env.GetUsageTracker().(*testusage.Tracker)
 	var foundExecutorUsage *testusage.Total
 	for _, u := range ut.Totals() {
@@ -1138,11 +1135,31 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 // stream disconnecting after publishing COMPLETED and being retried as a
 // separate stream that re-publishes the same operation. The execution should
 // be flushed once and usage should be counted exactly once.
+//
+// Runs under both values of the remote_execution.flush_executions_on_eof
+// experiment, since the retry-dedup mechanism (flushAndRecordUsage's
+// short-circuit when per-execution links are absent) gets exercised on
+// different call sites in each mode.
 func TestPublishOperation_RetriedStream(t *testing.T) {
+	for _, flushOnEOF := range []bool{false, true} {
+		name := "FlushOnComplete"
+		if flushOnEOF {
+			name = "FlushOnEOF"
+		}
+		t.Run(name, func(t *testing.T) {
+			testPublishOperationRetriedStream(t, flushOnEOF)
+		})
+	}
+}
+
+func testPublishOperationRetriedStream(t *testing.T, flushOnEOF bool) {
 	ctx := context.Background()
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
 	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
 	env, conn, _ := setupEnv(t)
+	if flushOnEOF {
+		setExperimentFlag(t, env, "remote_execution.flush_executions_on_eof", "true", true)
+	}
 	client := repb.NewExecutionClient(conn)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	env.SetAuthenticator(ta)
