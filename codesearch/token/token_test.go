@@ -97,6 +97,34 @@ func TestWhitespaceTokenizer(t *testing.T) {
 	assert.Equal(t, []string{"this", "is", "a", "string"}, tokens)
 }
 
+func TestWhitespaceTokenizerTermFrequencies(t *testing.T) {
+	tt := NewWhitespaceTokenizer()
+	assert.Equal(t, []string{"this", "this", "that"}, tokenizeBuf("this this that", tt))
+
+	frequencies := make(map[string]uint32)
+	tt.ForEachTermFrequency(func(ngram string, frequency uint32) {
+		frequencies[ngram] = frequency
+	})
+
+	assert.Equal(t, map[string]uint32{
+		"this": 2,
+		"that": 1,
+	}, frequencies)
+}
+
+func TestTrigramTokenizerTermFrequencies(t *testing.T) {
+	tt := NewTrigramTokenizer()
+	assert.Equal(t, []string{"abc", "bc ", "c a", " ab"}, tokenizeBuf("abc abc", tt))
+
+	frequencies := make(map[string]uint32)
+	tt.ForEachTermFrequency(func(ngram string, frequency uint32) {
+		frequencies[ngram] = frequency
+	})
+
+	assert.Equal(t, uint32(2), frequencies["abc"])
+	assert.Equal(t, uint32(1), frequencies["bc "])
+}
+
 // func TestBuildAllNgramsMatchesTrigrams(t *testing.T) {
 // 	allTokens := tokenizeBuf(sampleBuf, NewSparseNgramTokenizer())
 // 	triTokens := tokenizeBuf(sampleBuf, NewTrigramTokenizer())

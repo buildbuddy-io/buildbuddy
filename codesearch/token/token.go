@@ -12,7 +12,6 @@ import (
 	"unsafe"
 
 	"github.com/bits-and-blooms/bloom/v3"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/indexprofile"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/sparse"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -46,6 +45,7 @@ type TrigramTokenizer struct {
 	r io.ByteReader
 
 	trigrams *sparse.Set
+	freqs    []uint32
 	buf      []byte
 
 	n  uint64
@@ -66,6 +66,7 @@ func (tt *TrigramTokenizer) Reset(r io.Reader) {
 		tt.r = bufio.NewReader(r)
 	}
 	tt.trigrams.Reset()
+	tt.freqs = tt.freqs[:0]
 	tt.buf = tt.buf[:0]
 	tt.n = 0
 	tt.tv = 0
@@ -101,25 +102,42 @@ func (tt *TrigramTokenizer) Next() error {
 			continue
 		}
 
-		alreadySeen := tt.trigrams.Has(tt.tv)
-		if !alreadySeen && tt.tv != 1<<24-1 {
-			tt.trigrams.Add(tt.tv)
-			return nil
+		if tt.tv == 1<<24-1 {
+			continue
 		}
+		if idx, seen := tt.trigrams.Index(tt.tv); seen {
+			tt.freqs[idx]++
+			continue
+		}
+		tt.trigrams.Add(tt.tv)
+		tt.freqs = append(tt.freqs, 1)
+		return nil
 	}
+}
+
+func (tt *TrigramTokenizer) ForEachTermFrequency(fn func(ngram string, frequency uint32)) {
+	for i, trigram := range tt.trigrams.Dense() {
+		fn(string(trigramToBytes(trigram)), tt.freqs[i])
+	}
+}
+
+func (tt *TrigramTokenizer) TermFrequencyStats() types.TermFrequencyStats {
+	return termFrequencyStatsFromFrequencies(tt.freqs)
 }
 
 type WhitespaceTokenizer struct {
 	r io.ByteReader
 	n uint64
 
-	sb  *strings.Builder
-	tok string
+	sb    *strings.Builder
+	tok   string
+	freqs map[string]uint32
 }
 
 func NewWhitespaceTokenizer() *WhitespaceTokenizer {
 	return &WhitespaceTokenizer{
-		sb: &strings.Builder{},
+		sb:    &strings.Builder{},
+		freqs: make(map[string]uint32),
 	}
 }
 
@@ -130,6 +148,7 @@ func (wt *WhitespaceTokenizer) Reset(r io.Reader) {
 		wt.r = bufio.NewReader(r)
 	}
 	wt.sb.Reset()
+	clear(wt.freqs)
 	wt.n = 0
 	wt.tok = ""
 }
@@ -144,6 +163,11 @@ func (wt *WhitespaceTokenizer) NgramString() string {
 	return wt.tok
 }
 
+func (wt *WhitespaceTokenizer) setToken(tok string) {
+	wt.tok = tok
+	wt.freqs[tok]++
+}
+
 func (wt *WhitespaceTokenizer) Next() error {
 	currentToken := func() string {
 		ngram := wt.sb.String()
@@ -155,7 +179,7 @@ func (wt *WhitespaceTokenizer) Next() error {
 		b, err := wt.r.ReadByte()
 		if err != nil {
 			if wt.sb.Len() > 0 {
-				wt.tok = currentToken()
+				wt.setToken(currentToken())
 				return nil
 			}
 			return err
@@ -166,13 +190,27 @@ func (wt *WhitespaceTokenizer) Next() error {
 			wt.n++
 		} else {
 			if wt.sb.Len() > 0 {
-				wt.tok = currentToken()
+				wt.setToken(currentToken())
 				wt.n++
 				return nil
 			}
 			wt.n++
 		}
 	}
+}
+
+func (wt *WhitespaceTokenizer) ForEachTermFrequency(fn func(ngram string, frequency uint32)) {
+	for ngram, freq := range wt.freqs {
+		fn(ngram, freq)
+	}
+}
+
+func (wt *WhitespaceTokenizer) TermFrequencyStats() types.TermFrequencyStats {
+	freqs := make([]uint32, 0, len(wt.freqs))
+	for _, freq := range wt.freqs {
+		freqs = append(freqs, freq)
+	}
+	return termFrequencyStatsFromFrequencies(freqs)
 }
 
 // The following algorithm was inspired by github's codesearch blogpost and
@@ -436,9 +474,13 @@ func (tt *SparseNgramTokenizer) ForEachTermFrequency(fn func(ngram string, frequ
 	}
 }
 
-func (tt *SparseNgramTokenizer) TermFrequencyStats() indexprofile.TermFrequencyStats {
-	stats := indexprofile.TermFrequencyStats{}
-	for _, freq := range tt.ngramFreqs {
+func (tt *SparseNgramTokenizer) TermFrequencyStats() types.TermFrequencyStats {
+	return termFrequencyStatsFromFrequencies(tt.ngramFreqs)
+}
+
+func termFrequencyStatsFromFrequencies(freqs []uint32) types.TermFrequencyStats {
+	stats := types.TermFrequencyStats{}
+	for _, freq := range freqs {
 		tf := uint64(freq)
 		stats.Occurrences += int64(tf)
 		stats.UniquePostings++
@@ -454,7 +496,7 @@ func (tt *SparseNgramTokenizer) TermFrequencyStats() indexprofile.TermFrequencyS
 	return stats
 }
 
-func addTermFrequencyBucket(stats *indexprofile.TermFrequencyStats, tf uint64) {
+func addTermFrequencyBucket(stats *types.TermFrequencyStats, tf uint64) {
 	switch {
 	case tf == 1:
 		stats.Count1++

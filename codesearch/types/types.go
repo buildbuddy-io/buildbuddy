@@ -76,6 +76,26 @@ type Tokenizer interface {
 	Type() FieldType
 	Ngram() []byte
 	NgramString() string
+	ForEachTermFrequency(func(ngram string, frequency uint32))
+	TermFrequencyStats() TermFrequencyStats
+}
+
+type TermFrequencyStats struct {
+	Occurrences            int64
+	UniquePostings         int64
+	DuplicateOccurrences   int64
+	DuplicatePostings      int64
+	ExceptionBytesEstimate int64
+	CountBytesEstimate     int64
+	Count1                 int64
+	Count2                 int64
+	Count3To4              int64
+	Count5To8              int64
+	Count9To16             int64
+	Count17To32            int64
+	Count33To64            int64
+	Count65To128           int64
+	Count129Plus           int64
 }
 
 type IndexWriter interface {

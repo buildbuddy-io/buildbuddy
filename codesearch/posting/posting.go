@@ -58,8 +58,13 @@ type BuilderList struct {
 	serialized []byte
 }
 
+// countedReadOnlyList wraps a roaring bitmap and a parallel slice of per-doc
+// frequencies. It does NOT embed *roaringWrapper because the underlying bitmap
+// may be backed by pebble-owned memory (via FromUnsafeBytes), so mutating
+// methods like Or/And/AndNot would corrupt that memory. Only read-only methods
+// are exposed.
 type countedReadOnlyList struct {
-	*roaringWrapper
+	bm         *roaring64.Bitmap
 	freqs      []uint32
 	serialized []byte
 }
@@ -87,27 +92,31 @@ func (w *roaringWrapper) Frequency(id uint64) uint32 {
 	return 0
 }
 
+func (w *countedReadOnlyList) GetCardinality() uint64 {
+	return w.bm.GetCardinality()
+}
+
+func (w *countedReadOnlyList) ToArray() []uint64 {
+	return w.bm.ToArray()
+}
+
+func (w *countedReadOnlyList) Iterator() roaring64.IntPeekable64 {
+	return w.bm.Iterator()
+}
+
 func (w *countedReadOnlyList) Frequency(id uint64) uint32 {
-	it := w.Iterator()
-	idx := 0
-	for it.HasNext() {
-		v := it.Next()
-		if v == id {
-			if idx < len(w.freqs) {
-				return w.freqs[idx]
-			}
-			return 1
-		}
-		if v > id {
-			return 0
-		}
-		idx++
+	if !w.bm.Contains(id) {
+		return 0
 	}
-	return 0
+	idx := int(w.bm.Rank(id)) - 1
+	if idx >= 0 && idx < len(w.freqs) {
+		return w.freqs[idx]
+	}
+	return 1
 }
 
 func (w *countedReadOnlyList) forEachFrequency(fn func(id uint64, freq uint32)) {
-	it := w.Iterator()
+	it := w.bm.Iterator()
 	idx := 0
 	for it.HasNext() {
 		id := it.Next()
@@ -688,7 +697,7 @@ func readOnlyListToRoaring(l ReadOnlyList) *roaring64.Bitmap {
 		return bm.Bitmap
 	}
 	if bm, ok := l.(*countedReadOnlyList); ok {
-		return bm.Bitmap
+		return bm.bm
 	}
 	if bm, ok := l.(*BuilderList); ok {
 		return bm.toRoaring()
@@ -819,9 +828,9 @@ func unmarshalDenseCountedReadOnly(serialized, rest []byte) (*countedReadOnlyLis
 		return nil, fmt.Errorf("decoded %d frequencies for posting list with cardinality %d", len(freqs), cardinality)
 	}
 	return &countedReadOnlyList{
-		roaringWrapper: &roaringWrapper{pl},
-		freqs:          freqs,
-		serialized:     serialized,
+		bm:         pl,
+		freqs:      freqs,
+		serialized: serialized,
 	}, nil
 }
 
@@ -865,9 +874,9 @@ func unmarshalBitsetCountedReadOnly(serialized, rest []byte) (*countedReadOnlyLi
 		return nil, fmt.Errorf("counted posting list has %d trailing frequency bytes", len(countBuf))
 	}
 	return &countedReadOnlyList{
-		roaringWrapper: &roaringWrapper{pl},
-		freqs:          freqs,
-		serialized:     serialized,
+		bm:         pl,
+		freqs:      freqs,
+		serialized: serialized,
 	}, nil
 }
 

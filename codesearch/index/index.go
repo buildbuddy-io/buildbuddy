@@ -482,48 +482,6 @@ func (w *Writer) AddDocument(doc types.Document) error {
 
 		tokenizer.Reset(bytes.NewReader(field.Contents()))
 
-		if termFrequencyTokenizer, ok := tokenizer.(interface {
-			ForEachTermFrequency(func(ngram string, frequency uint32))
-		}); ok {
-			for {
-				t := profiler.Now()
-				err := tokenizer.Next()
-				s.tokenizerNextDur += profiler.Since(t)
-				if err != nil {
-					break
-				}
-			}
-
-			termFrequencyTokenizer.ForEachTermFrequency(func(ngram string, frequency uint32) {
-				t := profiler.Now()
-				if _, ok := postingLists[ngram]; !ok {
-					postingLists[ngram] = posting.NewBuilderList()
-					s.postingListsCreated++
-				}
-				postingLists[ngram].AddWithFrequency(docID, frequency)
-				s.postingMutationDur += profiler.Since(t)
-				s.tokens++
-			})
-			if statsTokenizer, ok := tokenizer.(interface {
-				TermFrequencyStats() indexprofile.TermFrequencyStats
-			}); ok {
-				indexprofile.RecordTermFrequencyStats(field.Name(), statsTokenizer.TermFrequencyStats())
-			}
-
-			if field.Schema().Stored() {
-				storedFieldKey := w.storedFieldKey(docID, field.Name())
-				t := profiler.Now()
-				w.batch.Set(storedFieldKey, field.Contents(), nil)
-				d := profiler.Since(t)
-				s.storedFieldSetDur += d
-				s.pebbleBatchSetDur += d
-				s.storedFieldsSet++
-				s.pebbleBatchSets++
-				s.pebbleBatchSetBytes += int64(len(storedFieldKey) + len(field.Contents()))
-			}
-			continue
-		}
-
 		for {
 			t := profiler.Now()
 			err := tokenizer.Next()
@@ -531,17 +489,19 @@ func (w *Writer) AddDocument(doc types.Document) error {
 			if err != nil {
 				break
 			}
+		}
 
-			t = profiler.Now()
-			ngram := tokenizer.NgramString()
+		tokenizer.ForEachTermFrequency(func(ngram string, frequency uint32) {
+			t := profiler.Now()
 			if _, ok := postingLists[ngram]; !ok {
 				postingLists[ngram] = posting.NewBuilderList()
 				s.postingListsCreated++
 			}
-			postingLists[ngram].Add(docID)
+			postingLists[ngram].AddWithFrequency(docID, frequency)
 			s.postingMutationDur += profiler.Since(t)
 			s.tokens++
-		}
+		})
+		indexprofile.RecordTermFrequencyStats(field.Name(), tokenizer.TermFrequencyStats())
 
 		if field.Schema().Stored() {
 			storedFieldKey := w.storedFieldKey(docID, field.Name())
