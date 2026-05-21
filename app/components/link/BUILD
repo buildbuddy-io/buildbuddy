@@ -1,4 +1,4 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -19,6 +19,14 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/tslib",
         "//app/router",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "link_test",
+    srcs = ["link_test.ts"],
+    deps = [
+        ":link",
     ],
 )
 

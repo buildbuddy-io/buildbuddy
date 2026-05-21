@@ -3,6 +3,7 @@ import React from "react";
 import { command_line } from "../../proto/command_line_ts_proto";
 import alert_service from "../alert/alert_service";
 import Banner from "../components/banner/banner";
+import { Link } from "../components/link/link";
 import format from "../format/format";
 import { copyToClipboard } from "../util/clipboard";
 import InvocationModel from "./invocation_model";
@@ -189,7 +190,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
               <div className="invocation-section">
                 <div className="invocation-section-title">GitHub repo</div>
                 <div>
-                  <a href={`${this.props.model.getGithubRepo()}`}>{this.props.model.getGithubRepo()}</a>
+                  <Link href={`${this.props.model.getGithubRepo()}`}>{this.props.model.getGithubRepo()}</Link>
                 </div>
               </div>
             )}
@@ -198,9 +199,9 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
               <div className="invocation-section">
                 <div className="invocation-section-title">GitHub branch</div>
                 <div>
-                  <a href={`${this.props.model.getGithubRepo()}/tree/${this.props.model.getGithubBranch()}`}>
+                  <Link href={`${this.props.model.getGithubRepo()}/tree/${this.props.model.getGithubBranch()}`}>
                     {this.props.model.getGithubBranch()}
-                  </a>
+                  </Link>
                 </div>
               </div>
             )}
@@ -209,12 +210,12 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
               <div className="invocation-section">
                 <div className="invocation-section-title">GitHub commit</div>
                 <div>
-                  <a
+                  <Link
                     href={`${this.props.model
                       .getGithubRepo()
                       .replace(/\.git$/, "")}/commit/${this.props.model.getGithubSHA()}`}>
                     {this.props.model.getGithubSHA()}
-                  </a>
+                  </Link>
                 </div>
               </div>
             )}
@@ -223,9 +224,9 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
               <div className="invocation-section">
                 <div className="invocation-section-title">GitHub run</div>
                 <div>
-                  <a href={`${this.props.model.getGithubRepo()}/actions/runs/${this.props.model.getGithubRun()}`}>
+                  <Link href={`${this.props.model.getGithubRepo()}/actions/runs/${this.props.model.getGithubRun()}`}>
                     {this.props.model.getGithubRun()}
-                  </a>
+                  </Link>
                 </div>
               </div>
             )}
