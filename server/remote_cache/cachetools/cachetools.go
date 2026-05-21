@@ -11,6 +11,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -171,6 +172,13 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	if r.GetCompressor() == repb.Compressor_IDENTITY && *log.LogLevel == "debug" {
+		stack := debug.Stack()
+		if !bytes.Contains(stack, []byte("ocicache.FetchBlobMetadataFromCache")) {
+			log.CtxDebugf(ctx, "cachetools.GetBlob called with identity compressor for resource %v. Stack trace:\n%s", r.ToProto().String(), stack)
+		}
+	}
 
 	req := &bspb.ReadRequest{
 		ResourceName: r.DownloadString(),
