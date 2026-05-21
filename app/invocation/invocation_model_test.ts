@@ -1,21 +1,6 @@
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
-
-declare function require(path: string): any;
-
-const testGlobal = globalThis as unknown as { window?: Record<string, unknown> };
-
-testGlobal.window = {
-  buildbuddyConfig: {},
-  location: {
-    host: "localhost",
-    pathname: "/",
-    search: "",
-    hash: "",
-  },
-};
-
-const InvocationModel = require("./invocation_model").default as typeof import("./invocation_model").default;
+import InvocationModel from "./invocation_model";
 
 function newInvocationModelWithBuildMetadata(metadata: Record<string, string>) {
   return new InvocationModel(

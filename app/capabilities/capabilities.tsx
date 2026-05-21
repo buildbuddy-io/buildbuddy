@@ -1,9 +1,12 @@
 import { config } from "../../proto/config_ts_proto";
 
 declare const window: Window & {
-  buildbuddyConfig: config.FrontendConfig;
   gtag?: (method: string, ...args: any[]) => void;
 };
+
+declare global {
+  var buildbuddyConfig: config.FrontendConfig | undefined;
+}
 
 /**
  * Returns the default frontend config, matching the server defaults. During
@@ -54,7 +57,7 @@ export class Capabilities {
 
     this.config = new config.FrontendConfig({
       ...defaultConfig(),
-      ...window.buildbuddyConfig,
+      ...(globalThis.buildbuddyConfig || {}),
     });
 
     // Note: Please don't add any new config fields below;
