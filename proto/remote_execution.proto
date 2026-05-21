@@ -3059,4 +3059,8 @@ message StoredExecution {
   // OS that the execution targeted (e.g. "linux", "darwin"). Sourced from
   // the OSFamily platform property.
   string os = 81;
+
+  // CPU architecture that the execution targeted (e.g. "amd64", "arm64").
+  // Sourced from the Arch platform property.
+  string arch = 82;
 }

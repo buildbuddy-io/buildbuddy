@@ -445,6 +445,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.RequestedPool = properties.Pool
 				executionProto.RecycleRunner = properties.RecycleRunner
 				executionProto.Os = properties.OS
+				executionProto.Arch = properties.Arch
 			}
 
 			schedulingMeta := auxMeta.GetSchedulingMetadata()
@@ -1393,8 +1394,20 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			// branch lets us pick up any post-COMPLETED updates the executor
 			// publishes before closing (e.g. cleanup or snapshot save stats
 			// produced during runner recycling).
-			if _, _, err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
+			execution, flushed, err := s.flushExecutionToOLAP(ctx, taskID)
+			if err != nil {
 				log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
+			}
+			// If the OLAP flush actually wrote work (links were present),
+			// usage hasn't been recorded yet. If the flush short-circuited
+			// because a prior PublishOperation stream already flushed and
+			// cleaned up the per-execution links, usage was recorded then
+			// and we must not double-count.
+			if flushed {
+				// TODO(vanja) should this be done when the executor got a cache hit?
+				if err := s.updateUsage(ctx, execution); err != nil {
+					log.CtxWarningf(ctx, "Failed to update usage for execution %q: %s", taskID, err)
+				}
 			}
 			return stream.SendAndClose(&repb.PublishOperationResponse{})
 		}
@@ -1586,20 +1599,15 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 		}
 	}
 
-	if err := s.updateUsage(ctx, executeResponse, properties); err != nil {
-		// TODO(vanja) should this be done when the executor got a cache hit?
-		log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", executeResponse, err)
-	}
-
 	return nil
 }
 
-func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb.ExecuteResponse, plat *platform.Properties) error {
+func (s *ExecutionServer) updateUsage(ctx context.Context, execution *repb.StoredExecution) error {
 	ut := s.env.GetUsageTracker()
 	if ut == nil {
 		return nil
 	}
-	dur, err := executionDuration(executeResponse.GetResult().GetExecutionMetadata())
+	dur, err := executionDuration(execution)
 	if err != nil {
 		// If the task encountered an error, it's somewhat expected that the
 		// execution duration will be unset, so don't return an error. For
@@ -1607,22 +1615,16 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 		// even begin. Note that an error doesn't necessarily imply a missing
 		// exec duration though; we may get a DeadlineExceeded error if the task
 		// times out, but still get an exec duration.
-		if execErr := gstatus.ErrorProto(executeResponse.GetStatus()); execErr != nil {
+		if execution.GetStatusCode() != 0 {
 			return nil
 		}
 		return err
 	}
 
-	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, plat.OS, plat.Arch, plat.Pool, plat.OriginalPool, plat.WorkflowID, plat.PoolType)
-	if err != nil {
-		return status.InternalErrorf("failed to determine executor pool: %s", err)
-	}
-
 	counts := &tables.UsageCounts{}
-	setExecutionDuration(counts, dur, pool, plat)
-	usg := executeResponse.GetResult().GetExecutionMetadata().GetUsageStats()
-	if !pool.IsSelfHosted && usg.GetCpuNanos() > 0 {
-		counts.CPUNanos = usg.GetCpuNanos()
+	setExecutionDuration(counts, dur, execution)
+	if !execution.GetSelfHosted() && execution.GetCpuNanos() > 0 {
+		counts.CPUNanos = execution.GetCpuNanos()
 
 		// If quota is exceeded, the next execution will be blocked.
 		if qm := s.env.GetQuotaManager(); qm != nil {
@@ -1713,36 +1715,33 @@ func redactExecutionAuxiliaryMetadata(ctx context.Context, auxAny *anypb.Any) {
 	}
 }
 
-func executionDuration(md *repb.ExecutedActionMetadata) (time.Duration, error) {
-	if err := md.GetWorkerStartTimestamp().CheckValid(); err != nil {
-		return 0, err
+func executionDuration(execution *repb.StoredExecution) (time.Duration, error) {
+	startUsec := execution.GetWorkerStartTimestampUsec()
+	endUsec := execution.GetWorkerCompletedTimestampUsec()
+	if startUsec == 0 || endUsec == 0 {
+		return 0, status.InternalErrorf("Execution worker timestamps not set")
 	}
-	if err := md.GetWorkerCompletedTimestamp().CheckValid(); err != nil {
-		return 0, err
-	}
-	start := md.GetWorkerStartTimestamp().AsTime()
-	end := md.GetWorkerCompletedTimestamp().AsTime()
-	dur := end.Sub(start)
+	dur := time.UnixMicro(endUsec).Sub(time.UnixMicro(startUsec))
 	if dur <= 0 {
 		return 0, status.InternalErrorf("Execution duration is <= 0")
 	}
 	return dur, nil
 }
 
-func setExecutionDuration(counts *tables.UsageCounts, duration time.Duration, pool *interfaces.PoolInfo, props *platform.Properties) {
+func setExecutionDuration(counts *tables.UsageCounts, duration time.Duration, execution *repb.StoredExecution) {
 	if duration < 0 {
 		return
 	}
-	if pool.IsSelfHosted {
-		if props.OS == platform.LinuxOperatingSystemName {
+	if execution.GetSelfHosted() {
+		if execution.GetOs() == platform.LinuxOperatingSystemName {
 			counts.SelfHostedLinuxExecutionDurationUsec += duration.Microseconds()
-		} else if props.OS == platform.DarwinOperatingSystemName {
+		} else if execution.GetOs() == platform.DarwinOperatingSystemName {
 			counts.SelfHostedMacExecutionDurationUsec += duration.Microseconds()
 		}
 	} else {
-		if props.OS == platform.LinuxOperatingSystemName {
+		if execution.GetOs() == platform.LinuxOperatingSystemName {
 			counts.LinuxExecutionDurationUsec += duration.Microseconds()
-		} else if props.OS == platform.DarwinOperatingSystemName {
+		} else if execution.GetOs() == platform.DarwinOperatingSystemName {
 			counts.MacExecutionDurationUsec += duration.Microseconds()
 		}
 	}

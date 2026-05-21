@@ -767,9 +767,10 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			},
 		},
 		{
-			name:                   "RedisRestart",
-			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
-			redisRestart:           true,
+			// Redis restart wipes the per-execution invocation links, which
+			// in turn skips both the OLAP flush and usage tracking on EOF.
+			name:         "RedisRestart",
+			redisRestart: true,
 		},
 		{
 			name:                   "DefaultPool",
@@ -1020,7 +1021,10 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	require.NoError(t, err)
 	assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
 
-	// Should also have recorded usage.
+	// Usage tracking now reads the merged StoredExecution from Redis on
+	// stream EOF, so the execution-duration counter only increments if
+	// Redis preserved the execution's invocation links. After a Redis
+	// restart those links are gone, so usage tracking is skipped.
 	ut := env.GetUsageTracker().(*testusage.Tracker)
 	var foundExecutorUsage *testusage.Total
 	for _, u := range ut.Totals() {
@@ -1067,6 +1071,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		SelfHosted:                   test.expectedSelfHosted,
 		Region:                       "test-region",
 		Os:                           "linux",
+		Arch:                         "amd64",
 		CommandSnippet:               "test",
 		OutputPath:                   "bazel-out/k8-fastbuild/bin/some/test",
 		RecycleRunner:                test.recycleRunner,
