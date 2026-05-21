@@ -340,6 +340,12 @@ func main() {
 
 	die(mkdirp("/sys/fs/cgroup", 0555))
 	die(mount("cgroup2", "/sys/fs/cgroup", "cgroup2", cgroupMountFlags, "nsdelegate"))
+	die(mkdirp("/sys/fs/bpf", 0755))
+	die(mount("bpf", "/sys/fs/bpf", "bpf", commonMountFlags, ""))
+	die(mkdirp("/sys/kernel/tracing", 0755))
+	die(mount("tracefs", "/sys/kernel/tracing", "tracefs", commonMountFlags, ""))
+	die(mkdirp("/sys/kernel/debug", 0755))
+	die(mount("debugfs", "/sys/kernel/debug", "debugfs", commonMountFlags, ""))
 
 	if err := rlimit.SetOpenFileDescriptorLimit(16384); err != nil {
 		log.Errorf("Unable to increase file open descriptor limit: %s", err)
