@@ -507,14 +507,13 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 }
 
 // flushExecutionToOLAP flushes execution data to Clickhouse. Returns the
-// merged StoredExecution and a boolean indicating whether the flush did any
-// work. Because operation updates can be retried, this function may be called
-// twice for the same execution. The Redis invocation-link cleanup at the end
-// of the first successful call ensures the second call short-circuits with
-// flushed=false.
-func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID string) (*repb.StoredExecution, bool, error) {
+// merged StoredExecution iff the execution was successfully flushed. Because
+// operation updates can be retried, this function may be called twice for the
+// same execution. The Redis invocation-link cleanup at the end of the first
+// successful call ensures the second call short-circuits with flushed=false.
+func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID string) (*repb.StoredExecution, error) {
 	if !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
-		return nil, false, nil
+		return nil, nil
 	}
 
 	// Always clean up invocationLinks and execution updates from the collector.
@@ -533,12 +532,15 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 
 	executionProto, err := s.executionCollector.GetInProgressExecution(ctx, executionID)
 	if err != nil {
-		return nil, false, status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
+		return nil, status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
 	}
 
 	links, err := s.executionCollector.GetExecutionInvocationLinks(ctx, executionID)
 	if err != nil {
-		return nil, false, status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
+		return nil, status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
+	}
+	if len(links) == 0 {
+		return nil, nil
 	}
 	for _, link := range links {
 		executionProto := executionProto.CloneVT()
@@ -570,15 +572,15 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 			}
 		}
 	}
-	return executionProto, len(links) > 0, nil
+	return executionProto, nil
 }
 
 func (s *ExecutionServer) flushAndRecordUsage(ctx context.Context, taskID string) {
-	execution, flushed, err := s.flushExecutionToOLAP(ctx, taskID)
+	execution, err := s.flushExecutionToOLAP(ctx, taskID)
 	if err != nil {
 		log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
 	}
-	if flushed {
+	if execution != nil {
 		// TODO(vanja) should this be done when the executor got a cache hit?
 		if err := s.updateUsage(ctx, execution); err != nil {
 			log.CtxWarningf(ctx, "Failed to update usage for execution %q: %s", taskID, err)
@@ -1332,7 +1334,7 @@ func (s *ExecutionServer) recordFailedExecution(ctx context.Context, taskID stri
 	if err := s.updateExecution(ctx, taskID, repb.ExecutionStage_COMPLETED, executeRsp, auxMetadata, properties, action, cmd); err != nil {
 		return err
 	}
-	if _, _, err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
+	if _, err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
 		log.CtxWarningf(ctx, "MarkExecutionFailed: failed to flush execution to clickhouse: %s", err)
 	}
 	return nil

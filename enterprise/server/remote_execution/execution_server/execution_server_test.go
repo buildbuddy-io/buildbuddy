@@ -1136,18 +1136,18 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 // separate stream that re-publishes the same operation. The execution should
 // be flushed once and usage should be counted exactly once.
 //
-// Runs under both values of the remote_execution.flush_executions_on_eof
+// Runs under both values of the remote_execution.flush_executions_after_cleanup
 // experiment, since the retry-dedup mechanism (flushAndRecordUsage's
 // short-circuit when per-execution links are absent) gets exercised on
 // different call sites in each mode.
 func TestPublishOperation_RetriedStream(t *testing.T) {
-	for _, flushOnEOF := range []bool{false, true} {
+	for _, flushAfterCleanup := range []bool{false, true} {
 		name := "FlushOnComplete"
-		if flushOnEOF {
-			name = "FlushOnEOF"
+		if flushAfterCleanup {
+			name = "FlushAfterCleanup"
 		}
 		t.Run(name, func(t *testing.T) {
-			testPublishOperationRetriedStream(t, flushOnEOF)
+			testPublishOperationRetriedStream(t, flushAfterCleanup)
 		})
 	}
 }
@@ -1158,7 +1158,7 @@ func testPublishOperationRetriedStream(t *testing.T, flushOnEOF bool) {
 	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
 	env, conn, _ := setupEnv(t)
 	if flushOnEOF {
-		setExperimentFlag(t, env, "remote_execution.flush_executions_on_eof", "true", true)
+		setExperimentFlag(t, env, "remote_execution.flush_executions_after_cleanup", "true", true)
 	}
 	client := repb.NewExecutionClient(conn)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
@@ -1252,17 +1252,15 @@ func testPublishOperationRetriedStream(t *testing.T, flushOnEOF bool) {
 	}
 
 	// Exactly one execution row should be recorded in the collector. The
-	// first stream's EOF flushes it to the per-invocation list and cleans up
-	// the per-execution invocation links; the second stream's EOF finds no
-	// links so it doesn't re-flush.
+	// first stream's flushAndRecordUsage call writes the row to the
+	// per-invocation list and deletes the per-execution invocation links;
+	// the second stream's call finds no links and short-circuits.
 	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
 	require.NoError(t, err)
 	assert.Equal(t, 1, len(collectedExecutions), "execution should be flushed exactly once across retried streams")
 
-	// Usage should be recorded. Note: currently this is tracked per
-	// COMPLETED operation received, which can over-count on retry. That
-	// pre-dates this change and is tracked separately; here we just assert
-	// that usage was recorded at all.
+	// Usage should be recorded exactly once: the second stream's
+	// flushAndRecordUsage finds no links, so it skips updateUsage.
 	ut := env.GetUsageTracker().(*testusage.Tracker)
 	var foundExecutorUsage *testusage.Total
 	for _, u := range ut.Totals() {
@@ -1272,7 +1270,7 @@ func testPublishOperationRetriedStream(t *testing.T, flushOnEOF bool) {
 		}
 	}
 	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
-	assert.GreaterOrEqual(t, foundExecutorUsage.Counts.LinuxExecutionDurationUsec, durationUsec)
+	assert.Equal(t, durationUsec, foundExecutorUsage.Counts.LinuxExecutionDurationUsec)
 }
 
 func TestMarkFailed(t *testing.T) {
