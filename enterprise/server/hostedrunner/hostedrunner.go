@@ -49,7 +49,7 @@ const (
 	nonRootUser = "buildbuddy"
 	rootUser    = "root"
 
-	timeoutGracePeriod = 10 * time.Second
+	TimeoutGracePeriod = 10 * time.Second
 )
 
 type runnerService struct {
@@ -181,13 +181,17 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 	serializedAction := base64.StdEncoding.EncodeToString(actionBytes)
 
-	timeout := *ci_runner_util.CIRunnerDefaultTimeout
+	var requestedTimeout *time.Duration
 	if req.GetTimeout() != "" {
-		d, err := time.ParseDuration(req.GetTimeout())
+		timeoutDuration, err := time.ParseDuration(req.GetTimeout())
 		if err != nil {
-			return nil, status.WrapError(err, "parse timeout from request")
+			return nil, status.InvalidArgumentErrorf("invalid timeout %s: %s", req.GetTimeout(), err)
 		}
-		timeout = d
+		requestedTimeout = &timeoutDuration
+	}
+	timeout, err := ci_runner_util.RunnerTimeout(ctx, r.env.GetExperimentFlagProvider(), requestedTimeout, "remote-bazel")
+	if err != nil {
+		return nil, err
 	}
 
 	args := []string{
@@ -331,7 +335,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	// that we allow the CI runner to finalize the outer workflow invocation
 	// once the timeout has elapsed, but if the CI runner takes too long to
 	// finalize, we can still kill the action.
-	actionTimeout := timeout + timeoutGracePeriod
+	actionTimeout := timeout + TimeoutGracePeriod
 	action := &repb.Action{
 		CommandDigest:   cmdDigest,
 		InputRootDigest: inputRootDigest,
