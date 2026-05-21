@@ -120,7 +120,7 @@ const (
 	// some time for the action setup (e.g. pulling the VM snapshot) as well as
 	// some extra time for the CI runner to finish publishing the "outer"
 	// workflow invocation results after the user-specified timeout is reached.
-	timeoutGracePeriod = 10 * time.Minute
+	TimeoutGracePeriod = 10 * time.Minute
 
 	// How often to scan for due scheduled workflows.
 	scheduleScanInterval = 15 * time.Minute
@@ -1155,9 +1155,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		return nil, err
 	}
 
-	timeout := *ci_runner_util.CIRunnerDefaultTimeout
-	if workflowAction.Timeout != nil {
-		timeout = *workflowAction.Timeout
+	timeout, err := ci_runner_util.RunnerTimeout(ctx, ws.env.GetExperimentFlagProvider(), workflowAction.Timeout, workflowAction.Name)
+	if err != nil {
+		return nil, err
 	}
 
 	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, ws.env.GetByteStreamClient(), ws.env.GetCache(), instanceName, os, workflowAction.Arch)
@@ -1287,7 +1287,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		// that we allow the CI runner to finalize the outer workflow invocation
 		// once the timeout has elapsed, but if the CI runner takes too long to
 		// finalize, we can still kill the action.
-		Timeout:  durationpb.New(timeout + timeoutGracePeriod),
+		Timeout:  durationpb.New(timeout + TimeoutGracePeriod),
 		Platform: cmd.GetPlatform(),
 	}
 

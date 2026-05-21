@@ -9,11 +9,13 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
@@ -25,12 +27,39 @@ import (
 
 const ExecutableName = "buildbuddy_ci_runner"
 const CLIBinaryName = "bb"
+const DefaultTimeoutExperimentName = "remote_execution.remote_runner_default_timeout"
 
 var (
 	RecycledCIRunnerMaxWait = flag.Duration("remote_execution.ci_runner_recycling_max_wait", 3*time.Second, "Max duration that a ci_runner task should wait for a warm runner before running on a potentially cold runner.")
 	CIRunnerDefaultTimeout  = flag.Duration("remote_execution.ci_runner_default_timeout", 8*time.Hour, "Default timeout applied to all ci runners.")
 	InitCIRunnerFromCache   = flag.Bool("remote_execution.init_ci_runner_from_cache", true, "Whether the apps should upload ci_runner binaries to the cache so executors can fetch the latest versions without upgrading.")
 )
+
+func RunnerTimeout(ctx context.Context, efp interfaces.ExperimentFlagProvider, requestedTimeout *time.Duration, actionName string) (time.Duration, error) {
+	if requestedTimeout != nil && *requestedTimeout <= 0 {
+		return 0, status.InvalidArgumentError("requested timeout is not positive")
+	}
+
+	if efp != nil {
+		timeoutString := efp.String(ctx, DefaultTimeoutExperimentName, "",
+			experiments.WithContext("workflow_action_name", actionName))
+		if timeoutString != "" {
+			timeout, err := time.ParseDuration(timeoutString)
+			if err != nil {
+				log.CtxErrorf(ctx, "Failed to parse %s experiment value %q: %s", DefaultTimeoutExperimentName, timeoutString, err)
+			} else {
+				if requestedTimeout != nil && *requestedTimeout < timeout {
+					return *requestedTimeout, nil
+				}
+				return timeout, nil
+			}
+		}
+	}
+	if requestedTimeout != nil {
+		return *requestedTimeout, nil
+	}
+	return *CIRunnerDefaultTimeout, nil
+}
 
 // CanInitFromCache The apps are built for linux/amd64. If the ci_runner will run on linux/amd64
 // as well, the apps can upload the ci_runner binary to the cache for the executors

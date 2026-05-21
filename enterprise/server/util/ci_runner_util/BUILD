@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util",
     deps = [
         "//enterprise/server/cmd/ci_runner/bundle",
+        "//enterprise/server/experiments",
         "//enterprise/server/util/ci_runner_env",
         "//proto:remote_execution_go_proto",
         "//server/environment",
@@ -15,6 +16,7 @@ go_library(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/bb",
+        "//server/util/log",
         "//server/util/platform",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
@@ -28,6 +30,7 @@ go_test(
     srcs = ["ci_runner_util_test.go"],
     embed = [":ci_runner_util"],
     deps = [
+        "//enterprise/server/experiments",
         "//enterprise/server/githubapp",
         "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/util/ci_runner_env",
@@ -40,6 +43,8 @@ go_test(
         "//server/testutil/testgit",
         "//server/util/platform",
         "//server/util/testing/flags",
+        "@com_github_open_feature_go_sdk//openfeature",
+        "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_stretchr_testify//require",
     ],
 )

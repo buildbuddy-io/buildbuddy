@@ -72,6 +72,7 @@ go_test(
         "//enterprise/server/githubapp",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
+        "//enterprise/server/util/ci_runner_util",
         "//enterprise/server/workflow/config",
         "//proto:buildbuddy_service_go_proto",
         "//proto:group_go_proto",
