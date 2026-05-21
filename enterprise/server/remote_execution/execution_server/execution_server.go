@@ -464,10 +464,24 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			executionProto.PredictedMemoryBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedMemoryBytes()
 			executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
 			executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
-			executionProto.SelfHosted = schedulingMeta == nil || (schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID())
 			if schedulingMeta != nil {
+				// Guarded so a second COMPLETED carrying only PostCompletionStats
+				// doesn't flip SelfHosted to true via the nil-default branch and
+				// clobber the merged StoredExecution.
+				executionProto.SelfHosted = schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID()
 				executionProto.EffectivePool = schedulingMeta.GetPool()
 			}
+
+			// Stats only present on a follow-up COMPLETED carrying
+			// PostCompletionStats (e.g. firecracker snapshot save stats).
+			// Nil-safe getters return zero values when this isn't set, which
+			// mergeExecutionUpdates' proto.Merge then skips.
+			postStats := auxMeta.GetPostCompletionStats()
+			executionProto.SnapshotSavedLocally = postStats.GetSnapshotSavedLocally()
+			executionProto.SnapshotSavedRemotely = postStats.GetSnapshotSavedRemotely()
+			executionProto.SnapshotIsDiff = postStats.GetSnapshotIsDiff()
+			executionProto.SnapshotSizeBytes = postStats.GetSnapshotSizeBytes()
+			executionProto.SnapshotPauseDurationUsec = postStats.GetPauseDurationUsec()
 
 			request := auxMeta.GetExecuteRequest()
 			executionProto.SkipCacheLookup = request.GetSkipCacheLookup()
@@ -592,39 +606,6 @@ func (s *ExecutionServer) flushAndRecordUsage(ctx context.Context, taskID string
 			log.CtxWarningf(ctx, "Failed to update usage for execution %q: %s", taskID, err)
 		}
 	}
-}
-
-// applyPostCompletionStats handles a stage=COMPLETED Operation that follows
-// the first COMPLETED for a given execution. The executor uses this to
-// deliver stats that are only known after the COMPLETED operation has been
-// streamed back to the client (e.g. firecracker snapshot save stats produced
-// during runner recycling). The Operation's ExecutedActionMetadata must
-// carry a PostCompletionStats message as auxiliary_metadata.
-//
-// Writes a sparse StoredExecution update to Redis so the snapshot fields
-// get merged into the existing execution state by mergeExecutionUpdates.
-// The proto-level merge is additive for non-zero fields, so the first
-// COMPLETED's fields stay intact.
-func (s *ExecutionServer) applyPostCompletionStats(ctx context.Context, taskID string, response *repb.ExecuteResponse) error {
-	stats := new(espb.PostCompletionStats)
-	ok, err := rexec.FindFirstAuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), stats)
-	if err != nil {
-		return status.WrapError(err, "parse PostCompletionStats")
-	}
-	if !ok {
-		return status.NotFoundError("post-completion Operation missing PostCompletionStats aux metadata")
-	}
-	sparse := &repb.StoredExecution{
-		ExecutionId:               taskID,
-		Stage:                     int64(repb.ExecutionStage_COMPLETED),
-		UpdatedAtUsec:             time.Now().UnixMicro(),
-		SnapshotSavedLocally:      stats.GetSnapshotSavedLocally(),
-		SnapshotSavedRemotely:     stats.GetSnapshotSavedRemotely(),
-		SnapshotIsDiff:            stats.GetSnapshotIsDiff(),
-		SnapshotSizeBytes:         stats.GetSnapshotSizeBytes(),
-		SnapshotPauseDurationUsec: stats.GetPauseDurationUsec(),
-	}
-	return s.executionCollector.UpdateInProgressExecution(ctx, sparse)
 }
 
 // getUnvalidatedActionResult fetches an action result from the cache but does
@@ -1505,50 +1486,56 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		// A second stage=COMPLETED Operation on the same stream is treated
 		// as a post-completion stats update (currently used by the executor
 		// to deliver firecracker snapshot save stats from runner
-		// recycling). It must skip the side effects of the first COMPLETED
-		// to avoid double-caching the action result, double-counting usage,
-		// or emitting duplicate response metrics.
+		// recycling). updateExecution still runs on both — it just picks
+		// up the additional snapshot fields from the second Operation's
+		// auxiliary metadata. The side effects of the first COMPLETED
+		// (action-cache write, markTaskComplete, recordResponseMetrics,
+		// cacheExecuteResponse, action/cmd fetch) are skipped to avoid
+		// double-caching, double-counting usage, or emitting duplicate
+		// metrics.
 		isPostCompletionUpdate := stage == repb.ExecutionStage_COMPLETED && firstCompletedSeen
 
 		var auxMeta *espb.ExecutionAuxiliaryMetadata
 		var properties *platform.Properties
 		var action *repb.Action
 		var cmd *repb.Command
-		if stage == repb.ExecutionStage_COMPLETED && response != nil && !isPostCompletionUpdate {
+		if stage == repb.ExecutionStage_COMPLETED && response != nil {
 			auxMeta = new(espb.ExecutionAuxiliaryMetadata)
 			ok, err := rexec.FindFirstAuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
 			if err != nil {
 				log.CtxWarningf(ctx, "Failed to parse ExecutionAuxiliaryMetadata: %s", err)
-			} else if !ok {
+			} else if !ok && !isPostCompletionUpdate {
 				log.CtxInfof(ctx, "Failed to find ExecutionAuxiliaryMetadata. Executor is probably self-hosted and not updated since 2024-12-13.")
 			}
-			actionCASRN, err := digest.ParseUploadResourceName(taskID)
-			if err != nil {
-				return status.WrapErrorf(err, "Failed to parse taskID")
-			}
-			action, cmd, err = s.fetchActionAndCommand(ctx, actionCASRN)
-			if err != nil {
-				return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
-			}
-			properties, err = platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd, PlatformOverrides: auxMeta.GetPlatformOverrides()})
-			if err != nil {
-				return status.InternalErrorf("Failed to parse platform properties: %s", err)
-			}
-			// Keep this close to, but before the cacheActionResult call: Since any action that can merge into this one
-			// may specify skip_cache_lookup, we need to ensure that the result is not visible in the cache before the
-			// action is merged. At the same time, we don't want the window between the calls to be too large to avoid
-			// reducing the effectiveness of merging.
-			deletePendingExecutionOnce()
-			actionRN := digest.NewACResourceName(actionCASRN.GetDigest(), actionCASRN.GetInstanceName(), actionCASRN.GetDigestFunction())
-			if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
-				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
-			}
-			if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties, flushExecutionsOnEOF); err != nil {
-				// Errors updating the router or recording usage are non-fatal.
-				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
-			}
+			if !isPostCompletionUpdate {
+				actionCASRN, err := digest.ParseUploadResourceName(taskID)
+				if err != nil {
+					return status.WrapErrorf(err, "Failed to parse taskID")
+				}
+				action, cmd, err = s.fetchActionAndCommand(ctx, actionCASRN)
+				if err != nil {
+					return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
+				}
+				properties, err = platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd, PlatformOverrides: auxMeta.GetPlatformOverrides()})
+				if err != nil {
+					return status.InternalErrorf("Failed to parse platform properties: %s", err)
+				}
+				// Keep this close to, but before the cacheActionResult call: Since any action that can merge into this one
+				// may specify skip_cache_lookup, we need to ensure that the result is not visible in the cache before the
+				// action is merged. At the same time, we don't want the window between the calls to be too large to avoid
+				// reducing the effectiveness of merging.
+				deletePendingExecutionOnce()
+				actionRN := digest.NewACResourceName(actionCASRN.GetDigest(), actionCASRN.GetInstanceName(), actionCASRN.GetDigestFunction())
+				if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
+					return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
+				}
+				if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties, flushExecutionsOnEOF); err != nil {
+					// Errors updating the router or recording usage are non-fatal.
+					log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
+				}
 
-			recordResponseMetrics(response, auxMeta, s.getGroupIDForMetrics(ctx))
+				recordResponseMetrics(response, auxMeta, s.getGroupIDForMetrics(ctx))
+			}
 		}
 		data, err := proto.Marshal(op)
 		if err != nil {
@@ -1564,18 +1551,17 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				mu.Lock()
 				defer mu.Unlock()
 
-				if isPostCompletionUpdate {
-					if err := s.applyPostCompletionStats(ctx, taskID, response); err != nil {
-						log.CtxWarningf(ctx, "PublishOperation: error applying post-completion stats for %q: %s", taskID, err)
-					}
-					return nil
-				}
-
 				if err := s.updateExecution(ctx, taskID, stage, response, auxMeta, properties, action, cmd); err != nil {
 					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
-				if !flushExecutionsOnEOF {
+				if !flushExecutionsOnEOF && !isPostCompletionUpdate {
+					// Legacy path: usage was already recorded in
+					// markTaskComplete from the live ExecuteResponse on the
+					// first COMPLETED, so we only need to flush the OLAP
+					// row here. A post-completion update has nothing new to
+					// flush (Redis was cleaned up by the first call) and
+					// must not trigger an extra flush.
 					if _, err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
 						log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
 					}

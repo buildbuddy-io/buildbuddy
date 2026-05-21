@@ -144,38 +144,6 @@ message Execution {
   string executor_hostname = 16;
 }
 
-// PostCompletionStats carries observability data that the executor only
-// learns about after publishing the COMPLETED operation to the client. For
-// example, firecracker runners save their snapshot during runner recycling
-// (via Container.Pause), which runs in a deferred call after the executor
-// has streamed COMPLETED. The executor publishes a second stage=COMPLETED
-// Operation carrying this message so the execution row in OLAP includes the
-// snapshot stats.
-//
-// This is stored in the auxiliary_metadata field of ExecutedActionMetadata
-// of the second COMPLETED Operation.
-message PostCompletionStats {
-  // Whether the snapshot was actually saved to the local cache. This is the
-  // resolved value after Pause, not the prediction reported in VMMetadata
-  // before Pause runs.
-  bool snapshot_saved_locally = 1;
-
-  // Whether the snapshot was actually saved to the remote cache.
-  bool snapshot_saved_remotely = 2;
-
-  // Whether the saved snapshot was a diff snapshot (vs full).
-  bool snapshot_is_diff = 3;
-
-  // Total uncompressed bytes written for the snapshot. For diff snapshots,
-  // this counts only the modified chunks (i.e. the bytes that materially
-  // changed since the base snapshot).
-  int64 snapshot_size_bytes = 4;
-
-  // Wall-clock time spent in Container.Pause, in microseconds. Includes
-  // snapshot creation, chunk uploads, and VM teardown.
-  int64 pause_duration_usec = 5;
-}
-
 // Auxiliary metadata with BuildBuddy-specific information.
 // This is stored in the auxiliary_metadata field of
 // ExecutedActionMetadata.
@@ -206,6 +174,40 @@ message ExecutionAuxiliaryMetadata {
 
   // Metadata containing more detail about the input fetch phase of execution.
   InputFetchMetadata input_fetch_detailed_stats = 11;
+
+  // Stats the executor learns only after the first stage=COMPLETED
+  // Operation has been streamed to the client (e.g. firecracker snapshot
+  // save stats produced during runner recycling). The executor publishes a
+  // second stage=COMPLETED Operation carrying an ExecutionAuxiliaryMetadata
+  // whose only populated field is this one.
+  PostCompletionStats post_completion_stats = 12;
+}
+
+// PostCompletionStats carries observability data that the executor only
+// learns about after publishing the COMPLETED operation to the client. For
+// example, firecracker runners save their snapshot during runner recycling
+// (via Container.Pause), which runs in a deferred call after the executor
+// has streamed COMPLETED.
+message PostCompletionStats {
+  // Whether the snapshot was actually saved to the local cache. This is the
+  // resolved value after Pause, not the prediction reported in VMMetadata
+  // before Pause runs.
+  bool snapshot_saved_locally = 1;
+
+  // Whether the snapshot was actually saved to the remote cache.
+  bool snapshot_saved_remotely = 2;
+
+  // Whether the saved snapshot was a diff snapshot (vs full).
+  bool snapshot_is_diff = 3;
+
+  // Total uncompressed bytes written for the snapshot. For diff snapshots,
+  // this counts only the modified chunks (i.e. the bytes that materially
+  // changed since the base snapshot).
+  int64 snapshot_size_bytes = 4;
+
+  // Wall-clock time spent in Container.Pause, in microseconds. Includes
+  // snapshot creation, chunk uploads, and VM teardown.
+  int64 pause_duration_usec = 5;
 }
 
 message RunnerMetadata {

@@ -1614,22 +1614,23 @@ func TestPublishOperation_SecondCompletedCarriesSnapshotStats(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, stream.Send(firstOp))
 
-	// Second COMPLETED: only PostCompletionStats in aux metadata. This is
-	// what the executor sends after TryRecycle -> Pause has run for a
-	// firecracker runner.
-	postStats := &espb.PostCompletionStats{
-		SnapshotSavedLocally:  true,
-		SnapshotSavedRemotely: true,
-		SnapshotIsDiff:        true,
-		SnapshotSizeBytes:     12345,
-		PauseDurationUsec:     67890,
-	}
-	statsAny, err := anypb.New(postStats)
+	// Second COMPLETED: an ExecutionAuxiliaryMetadata whose only populated
+	// field is PostCompletionStats. This is what the executor sends after
+	// TryRecycle -> Pause has run for a firecracker runner.
+	secondAuxAny, err := anypb.New(&espb.ExecutionAuxiliaryMetadata{
+		PostCompletionStats: &espb.PostCompletionStats{
+			SnapshotSavedLocally:  true,
+			SnapshotSavedRemotely: true,
+			SnapshotIsDiff:        true,
+			SnapshotSizeBytes:     12345,
+			PauseDurationUsec:     67890,
+		},
+	})
 	require.NoError(t, err)
 	secondOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
 		Result: &repb.ActionResult{
 			ExecutionMetadata: &repb.ExecutedActionMetadata{
-				AuxiliaryMetadata: []*anypb.Any{statsAny},
+				AuxiliaryMetadata: []*anypb.Any{secondAuxAny},
 			},
 		},
 	})
