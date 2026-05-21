@@ -2,8 +2,6 @@ package execution_server_test
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -43,6 +41,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -824,7 +823,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	}
 	env, conn, r := setupEnv(t)
 	if test.flushAfterCleanup {
-		setExperimentFlag(t, env, "remote_execution.flush_executions_after_cleanup", "true", true)
+		configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
 	}
 	client := repb.NewExecutionClient(conn)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
@@ -1158,7 +1157,7 @@ func testPublishOperationRetriedStream(t *testing.T, flushOnEOF bool) {
 	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
 	env, conn, _ := setupEnv(t)
 	if flushOnEOF {
-		setExperimentFlag(t, env, "remote_execution.flush_executions_after_cleanup", "true", true)
+		configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
 	}
 	client := repb.NewExecutionClient(conn)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
@@ -1464,29 +1463,17 @@ func withIncomingMetadata(t *testing.T, ctx context.Context, rmd *repb.RequestMe
 	return metadata.NewIncomingContext(ctx, metadata.Pairs(bazel_request.RequestMetadataKey, string(b)))
 }
 
-// setExperimentFlag installs a flagd-backed experiment provider on env that
-// resolves a single named flag to the given value. The value parameter is the
-// flagd "variant" key (any unique string); typedValue is the actual value
-// returned for that variant.
-func setExperimentFlag(t *testing.T, env *testenv.TestEnv, flagName string, variant string, typedValue any) {
-	t.Helper()
-	encoded, err := json.Marshal(typedValue)
-	require.NoError(t, err)
-	cfg := fmt.Sprintf(`{
-  "$schema": "https://flagd.dev/schema/v0/flags.json",
-  "flags": {
-    %q: {
-      "state": "ENABLED",
-      "variants": { %q: %s },
-      "defaultVariant": %q
-    }
-  }
-}`, flagName, variant, string(encoded), variant)
-	tmp := testfs.MakeTempDir(t)
-	cfgPath := testfs.WriteFile(t, tmp, "config.flagd.json", cfg)
-	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(cfgPath))
-	require.NoError(t, err)
-	openfeature.SetProviderAndWait(provider)
+func configureExperiments(t *testing.T, env *testenv.TestEnv, flags map[string]bool) {
+	inMemoryFlags := make(map[string]memprovider.InMemoryFlag, len(flags))
+	for name, enabled := range flags {
+		inMemoryFlags[name] = memprovider.InMemoryFlag{
+			State:          memprovider.Enabled,
+			DefaultVariant: "default",
+			Variants:       map[string]any{"default": enabled},
+		}
+	}
+	testProvider := memprovider.NewInMemoryProvider(inMemoryFlags)
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)

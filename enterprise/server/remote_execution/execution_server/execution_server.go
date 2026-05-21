@@ -507,10 +507,11 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 }
 
 // flushExecutionToOLAP flushes execution data to Clickhouse. Returns the
-// merged StoredExecution iff the execution was successfully flushed. Because
-// operation updates can be retried, this function may be called twice for the
-// same execution. The Redis invocation-link cleanup at the end of the first
-// successful call ensures the second call short-circuits with flushed=false.
+// merged StoredExecution if and only if the execution was successfully flushed.
+// Because operation updates can be retried, this function may be called twice
+// for the same execution. The Redis invocation-link cleanup at the end of the
+// first successful call ensures the second call short-circuits and returns a
+// nil StoredExecution.
 func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID string) (*repb.StoredExecution, error) {
 	if !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
 		return nil, nil
@@ -1403,7 +1404,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 
 	flushExecutionsOnEOF := false
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
-		flushExecutionsOnEOF, _ = fp.BooleanDetails(ctx, "remote_execution.flush_executions_after_cleanup", false)
+		flushExecutionsOnEOF = fp.Boolean(ctx, "remote_execution.flush_executions_after_cleanup", false)
 	}
 
 	for {
