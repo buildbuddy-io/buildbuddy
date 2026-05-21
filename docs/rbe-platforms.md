@@ -379,7 +379,7 @@ The following execution properties provide more customization.
   These are not needed if the image is public. We recommend setting these
   via remote headers, to avoid storing them in the cache. For AWS ECR, Google
   Artifact Registry, and GCR images, you can use
-  [`container-registry-auth-method=oidc`](#openid-connect-credentials) instead
+  [`container-registry-auth-source=oidc`](#openid-connect-credentials) instead
   of passing explicit registry credentials.
 - `dockerUser`: determines which user the action should be run with inside
   the container. The default is the user set on the image.
@@ -454,18 +454,28 @@ at task lease time that the action can exchange at the app. The OIDC issuer is
 issuer.
 
 When token exchange is enabled, BuildBuddy injects cloud credentials as secret
-environment variables. For GCP, BuildBuddy writes the exchanged OAuth access
-token to `.buildbuddy/gcloud_access_token` in the action workspace and sets
-`CLOUDSDK_AUTH_ACCESS_TOKEN_FILE` so `gcloud` commands can use it directly.
-Provider-specific variables are also injected where useful, such as AWS SDK
-environment variables. These values are redacted from action cache entries and
-workflow logs. Exchanged credentials are cached per BuildBuddy group and
-provider configuration until shortly before expiration.
+environment variables. For GCP, BuildBuddy exposes the exchanged OAuth access
+token as `BUILDBUDDY_GCP_ACCESS_TOKEN`. Provider-specific variables are also
+injected where useful, such as AWS SDK environment variables. These values are
+redacted from action cache entries and workflow logs. Exchanged credentials are
+cached per BuildBuddy group and provider configuration until shortly before
+expiration.
 
-Set `container-registry-auth-method` to `oidc` to use exchanged credentials for
+Set `container-registry-auth-source` to `oidc` to use exchanged credentials for
 pulling the action's container image. If unset, the default value is `explicit`,
 which preserves the existing `container-registry-username` and
 `container-registry-password` behavior.
+
+When OIDC registry credentials are available, BuildBuddy also exposes
+`BUILDBUDDY_DOCKER_CONFIG_JSON` as a secret environment variable. To use the
+same credentials with Docker-compatible CLIs inside the action, write it to
+Docker's standard config path:
+
+```bash
+mkdir -p ~/.docker
+printf %s "$BUILDBUDDY_DOCKER_CONFIG_JSON" > ~/.docker/config.json
+docker ...
+```
 
 Bazel targets use `exec_properties` to request these credentials. Workflow
 actions in `buildbuddy.yaml` use the equivalent `platform_properties` field on
@@ -570,8 +580,15 @@ actions:
       - run: ./deploy_to_gcp.sh
 ```
 
+For `gcloud` CLI commands, pass the BuildBuddy-provided access token using
+`--access-token-file`:
+
+```bash
+gcloud --access-token-file=<(printf %s "$BUILDBUDDY_GCP_ACCESS_TOKEN") COMMAND ...
+```
+
 To use OIDC credentials for Google Artifact Registry or GCR image pulls, also
-set `container-registry-auth-method` to `oidc`:
+set `container-registry-auth-source` to `oidc`:
 
 ```python title="BUILD"
 platform(
@@ -582,7 +599,7 @@ platform(
     ],
     exec_properties = {
         "container-image": "docker://us-docker.pkg.dev/PROJECT/REPO/IMAGE:TAG",
-        "container-registry-auth-method": "oidc",
+        "container-registry-auth-source": "oidc",
         "oidc-provider": "gcp",
         "oidc-token-audience": "//iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID",
         "oidc-gcp-service-account": "SERVICE_ACCOUNT_EMAIL",
@@ -648,7 +665,7 @@ keys, use the issuer host and path without the `https://` prefix:
 ```
 
 To use OIDC credentials for private Amazon ECR image pulls, also set
-`container-registry-auth-method` to `oidc`. BuildBuddy derives the ECR region
+`container-registry-auth-source` to `oidc`. BuildBuddy derives the ECR region
 and registry ID from the image name:
 
 ```python title="BUILD"
@@ -660,7 +677,7 @@ platform(
     ],
     exec_properties = {
         "container-image": "docker://123456789012.dkr.ecr.us-west-2.amazonaws.com/repo/image:tag",
-        "container-registry-auth-method": "oidc",
+        "container-registry-auth-source": "oidc",
         "oidc-provider": "aws",
         "oidc-aws-role-arn": "arn:aws:iam::123456789012:role/buildbuddy-rbe",
     },

@@ -25,7 +25,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/rbeoidc"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -127,9 +126,6 @@ const (
 	// invalidate the snapshot the action was run in. This can be written
 	// if the action detects that the snapshot was corrupted upon startup.
 	invalidateSnapshotMarkerFile = ".BUILDBUDDY_INVALIDATE_SNAPSHOT"
-
-	firecrackerGuestWorkspaceDir = "/workspace"
-	firecrackerGuestVFSDir       = "/vfs"
 )
 
 func GetBuildRoot() string {
@@ -228,10 +224,6 @@ type taskRunner struct {
 	// Keeps track of whether or not we encountered any errors that make the runner non-reusable.
 	doNotReuse bool
 
-	// Tracks whether this runner wrote a gcloud access token file into the
-	// workspace so it can be removed before the next recycled task.
-	gcloudAccessTokenFileCreated bool
-
 	// A function that is invoked after the runner is removed. Controlled by the
 	// runner pool.
 	removeCallback func()
@@ -271,12 +263,6 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 			log.CtxErrorf(ctx, "Failed to clean workspace: %s", err)
 			return err
 		}
-	}
-	if r.gcloudAccessTokenFileCreated {
-		if err := rbeoidc.RemoveGCloudAccessTokenFile(r.Workspace.Path()); err != nil {
-			return err
-		}
-		r.gcloudAccessTokenFileCreated = false
 	}
 	if err := r.Workspace.CreateOutputDirs(); err != nil {
 		return status.UnavailableErrorf("Error creating output directory: %s", err)
@@ -345,22 +331,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 			return err
 		}
 	}
-	created, err := rbeoidc.MaterializeGCloudAccessTokenFile(r.task.GetCommand(), r.Workspace.Path(), r.actionWorkspacePath())
-	if err != nil {
-		return err
-	}
-	r.gcloudAccessTokenFileCreated = created
 	return nil
-}
-
-func (r *taskRunner) actionWorkspacePath() string {
-	if platform.ContainerType(r.PlatformProperties.WorkloadIsolationType) != platform.FirecrackerContainerType {
-		return r.Workspace.Path()
-	}
-	if r.PlatformProperties.EnableVFS {
-		return firecrackerGuestVFSDir
-	}
-	return firecrackerGuestWorkspaceDir
 }
 
 // Run runs the task that is currently bound to the command runner.

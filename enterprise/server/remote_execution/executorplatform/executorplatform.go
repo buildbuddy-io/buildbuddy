@@ -323,7 +323,7 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 	var oidcSecretEnvVars []string
 	if rbeoidc.ExchangeEnabled(platformProps) {
 		var err error
-		oidcEnvVars, oidcSecretEnvVars, err = rbeoidc.ApplyCredentialOverrides(ctx, env, task, platformProps)
+		oidcEnvVars, oidcSecretEnvVars, err = rbeoidc.ApplyCredentialOverrides(task, platformProps)
 		if err != nil {
 			return err
 		}

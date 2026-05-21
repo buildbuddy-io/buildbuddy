@@ -46,9 +46,9 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
-	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 )
 
 const (

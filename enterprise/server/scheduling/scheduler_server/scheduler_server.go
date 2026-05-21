@@ -45,11 +45,11 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
-	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/server/scheduling/scheduler_server/config"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
+	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
+	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/server/scheduling/scheduler_server/config"
 )
 
 var (
@@ -2149,8 +2149,8 @@ func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostna
 			return nil, err
 		}
 		taskProto.OidcCredentials = credentials
-	} else if props.OIDCTokenAudience != "" && !rbeoidc.RequestEnvPresent(taskProto) {
-		envVars, secretEnvVars, err := rbeoidc.GenerateRequestEnvForGroup(ctx, s.env, taskProto, props.OIDCTokenAudience, taskGroupID, "" /*userID*/)
+	} else if props.OIDCTokenAudience != "" {
+		envVars, secretEnvVars, err := rbeoidc.GenerateRequestEnvForGroup(s.env, taskProto, props.OIDCTokenAudience, taskGroupID, "" /*userID*/)
 		if err != nil {
 			return nil, err
 		}

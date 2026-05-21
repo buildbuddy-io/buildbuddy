@@ -8,19 +8,18 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
-	"fmt"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oidcissuer"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/awsoidc"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/gcpoidc"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/golang-jwt/jwt/v4"
@@ -34,10 +33,6 @@ func TestGenerateRequestEnvAndToken(t *testing.T) {
 	key := setSigningKey(t)
 	env := testenv.GetTestEnv(t)
 	setBuildBuddyURL(t, "https://buildbuddy.example.com")
-	ctx := claims.AuthContext(context.Background(), &claims.Claims{
-		GroupID: "GR123",
-		UserID:  "US456",
-	})
 	task := &repb.ExecutionTask{
 		InvocationId: "INV123",
 		ExecutionId:  "EXEC123",
@@ -52,7 +47,7 @@ func TestGenerateRequestEnvAndToken(t *testing.T) {
 		},
 	}
 
-	envVars, secretEnvVars, err := GenerateRequestEnv(ctx, env, task, "sts.amazonaws.com")
+	envVars, secretEnvVars, err := GenerateRequestEnvForGroup(env, task, "sts.amazonaws.com", "GR123", "US456")
 	require.NoError(t, err)
 	require.Len(t, envVars, 1)
 	require.Len(t, secretEnvVars, 1)
@@ -60,7 +55,7 @@ func TestGenerateRequestEnvAndToken(t *testing.T) {
 	require.True(t, strings.HasPrefix(secretEnvVars[0], TokenRequestTokenEnvVar+"="))
 
 	requestToken := strings.TrimPrefix(secretEnvVars[0], TokenRequestTokenEnvVar+"=")
-	provider, err := NewProvider(env)
+	provider, err := newProvider(env)
 	require.NoError(t, err)
 	rc, err := provider.parseRequestToken(requestToken)
 	require.NoError(t, err)
@@ -80,7 +75,7 @@ func TestGenerateRequestEnvAndToken(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/oidc/token?audience=override-audience", nil)
 	req.Header.Set("Authorization", "bearer "+requestToken)
 	rec := httptest.NewRecorder()
-	provider.Token(rec, req)
+	provider.token(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	var tokenResp tokenResponse
@@ -111,16 +106,15 @@ func TestTokenUsesDefaultAudience(t *testing.T) {
 	key := setSigningKey(t)
 	env := testenv.GetTestEnv(t)
 	setBuildBuddyURL(t, "https://buildbuddy.example.com")
-	ctx := claims.AuthContext(context.Background(), &claims.Claims{GroupID: "GR123"})
-	requestToken, err := GenerateRequestToken(ctx, env, &repb.ExecutionTask{}, "sts.amazonaws.com")
+	requestToken, err := generateRequestToken(env, &repb.ExecutionTask{}, "sts.amazonaws.com", "GR123", "")
 	require.NoError(t, err)
-	provider, err := NewProvider(env)
+	provider, err := newProvider(env)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/oidc/token", nil)
 	req.Header.Set("Authorization", "Bearer "+requestToken)
 	rec := httptest.NewRecorder()
-	provider.Token(rec, req)
+	provider.token(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	var tokenResp tokenResponse
@@ -138,27 +132,26 @@ func TestTokenRejectsInternalRequestTokenAudience(t *testing.T) {
 	setSigningKey(t)
 	env := testenv.GetTestEnv(t)
 	setBuildBuddyURL(t, "https://buildbuddy.example.com")
-	ctx := claims.AuthContext(context.Background(), &claims.Claims{GroupID: "GR123"})
-	_, err := GenerateRequestToken(ctx, env, &repb.ExecutionTask{}, requestTokenAudience)
+	_, err := generateRequestToken(env, &repb.ExecutionTask{}, requestTokenAudience, "GR123", "")
 	require.Error(t, err)
 
-	requestToken, err := GenerateRequestToken(ctx, env, &repb.ExecutionTask{}, "sts.amazonaws.com")
+	requestToken, err := generateRequestToken(env, &repb.ExecutionTask{}, "sts.amazonaws.com", "GR123", "")
 	require.NoError(t, err)
-	provider, err := NewProvider(env)
+	provider, err := newProvider(env)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/oidc/token?audience="+url.QueryEscape(requestTokenAudience), nil)
 	req.Header.Set("Authorization", "Bearer "+requestToken)
 	rec := httptest.NewRecorder()
-	provider.Token(rec, req)
+	provider.token(rec, req)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
 func TestIDTokenCannotBeUsedAsRequestToken(t *testing.T) {
-	key := setSigningKey(t)
+	setSigningKey(t)
 	env := testenv.GetTestEnv(t)
 	setBuildBuddyURL(t, "https://buildbuddy.example.com")
-	provider, err := NewProvider(env)
+	provider, err := newProvider(env)
 	require.NoError(t, err)
 
 	now := env.GetClock().Now()
@@ -170,10 +163,12 @@ func TestIDTokenCannotBeUsedAsRequestToken(t *testing.T) {
 			NotBefore: now.Unix(),
 			Subject:   subject("GR123"),
 		},
-		TokenUse:          idTokenUse,
-		BuildBuddyGroupID: "GR123",
+		executionClaims: executionClaims{
+			TokenUse:          idTokenUse,
+			BuildBuddyGroupID: "GR123",
+		},
 	}
-	idToken, err := sign(key, provider.keyID, idClaims)
+	idToken, err := provider.issuer.Sign(idClaims)
 	require.NoError(t, err)
 
 	_, err = provider.parseRequestToken(idToken)
@@ -181,50 +176,38 @@ func TestIDTokenCannotBeUsedAsRequestToken(t *testing.T) {
 	require.Contains(t, err.Error(), "invalid token use")
 }
 
-func TestGenerateRequestTokenRequiresAuth(t *testing.T) {
+func TestGenerateRequestTokenRequiresGroup(t *testing.T) {
 	setSigningKey(t)
 	env := testenv.GetTestEnv(t)
-	_, err := GenerateRequestToken(context.Background(), env, &repb.ExecutionTask{}, "sts.amazonaws.com")
+	_, err := generateRequestToken(env, &repb.ExecutionTask{}, "sts.amazonaws.com", "", "")
 	require.Error(t, err)
 }
 
 func TestApplyCredentialOverrides_GCPAccessTokenIsCached(t *testing.T) {
-	setSigningKey(t)
+	key := setSigningKey(t)
 	resetTokenExchangeState(t)
 	env := testenv.GetTestEnv(t)
 	now := time.Now()
 	env.SetClock(clockwork.NewFakeClockAt(now))
 	setBuildBuddyURL(t, "https://buildbuddy.example.com")
-	ctx := claims.AuthContext(context.Background(), &claims.Claims{GroupID: "GR-GCP-CACHE"})
+	ctx := context.Background()
 
-	var stsRequests atomic.Int64
-	var iamRequests atomic.Int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/token":
-			stsRequests.Add(1)
-			require.NoError(t, r.ParseForm())
-			require.Equal(t, "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider", r.Form.Get("audience"))
-			require.NotEmpty(t, r.Form.Get("subject_token"))
-			writeJSON(w, &gcpSTSResponse{
-				AccessToken: "sts-access-token",
-				ExpiresIn:   3600,
-				TokenType:   "Bearer",
-			})
-		case strings.Contains(r.URL.Path, ":generateAccessToken"):
-			iamRequests.Add(1)
-			require.Equal(t, "Bearer sts-access-token", r.Header.Get("Authorization"))
-			writeJSON(w, &gcpServiceAccountTokenResponse{
-				AccessToken: "impersonated-access-token",
-				ExpireTime:  now.Add(time.Hour).Format(time.RFC3339),
-			})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-	gcpSTSEndpoint = server.URL + "/token"
-	gcpIAMCredentialsEndpoint = server.URL + "/v1"
+	var gcpRequests int
+	exchanger := NewExchanger(&fakeCloudTokenExchanger{
+		t: t,
+		exchangeGCP: func(ctx context.Context, cfg gcpoidc.Config, idToken string) (*gcpoidc.Credentials, error) {
+			gcpRequests++
+			require.Equal(t, "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider", cfg.Audience)
+			require.Equal(t, "rbe@example.iam.gserviceaccount.com", cfg.ServiceAccount)
+			requireIDTokenGroup(t, key, idToken, "GR-GCP-CACHE")
+			return &gcpoidc.Credentials{
+				Proto: &repb.OIDCCredentials{
+					SecretEnvVars: []string{gcpoidc.AccessTokenEnvVar + "=impersonated-access-token"},
+				},
+				ExpiresAt: now.Add(time.Hour),
+			}, nil
+		},
+	})
 
 	props := &platform.Properties{
 		OIDCProvider:          platform.OIDCProviderGCP,
@@ -232,16 +215,15 @@ func TestApplyCredentialOverrides_GCPAccessTokenIsCached(t *testing.T) {
 		OIDCGCPServiceAccount: "rbe@example.iam.gserviceaccount.com",
 	}
 
-	creds, err := ExchangeCredentials(ctx, env, nil, props, "" /*registryHost*/)
+	creds, err := exchanger.GenerateExchangedCredentialsForGroup(ctx, env, props, "GR-GCP-CACHE")
 	require.NoError(t, err)
-	require.Empty(t, creds.EnvVars)
-	require.Contains(t, creds.SecretEnvVars, AccessTokenEnvVar+"=impersonated-access-token")
+	require.Empty(t, creds.GetEnvVars())
+	require.Contains(t, creds.GetSecretEnvVars(), gcpoidc.AccessTokenEnvVar+"=impersonated-access-token")
 
-	creds, err = ExchangeCredentials(ctx, env, nil, props, "" /*registryHost*/)
+	creds, err = exchanger.GenerateExchangedCredentialsForGroup(ctx, env, props, "GR-GCP-CACHE")
 	require.NoError(t, err)
-	require.Contains(t, creds.SecretEnvVars, AccessTokenEnvVar+"=impersonated-access-token")
-	require.Equal(t, int64(1), stsRequests.Load())
-	require.Equal(t, int64(1), iamRequests.Load())
+	require.Contains(t, creds.GetSecretEnvVars(), gcpoidc.AccessTokenEnvVar+"=impersonated-access-token")
+	require.Equal(t, 1, gcpRequests)
 }
 
 func TestApplyCredentialOverrides_UsesLeasedCredentials(t *testing.T) {
@@ -250,10 +232,7 @@ func TestApplyCredentialOverrides_UsesLeasedCredentials(t *testing.T) {
 	appEnv := testenv.GetTestEnv(t)
 	now := time.Now()
 	appEnv.SetClock(clockwork.NewFakeClockAt(now))
-	ctx := claims.AuthContext(context.Background(), &claims.Claims{
-		GroupID: "GR-APP-EXCHANGE",
-		UserID:  "US-APP-EXCHANGE",
-	})
+	ctx := context.Background()
 	task := &repb.ExecutionTask{
 		InvocationId: "INV-APP-EXCHANGE",
 		ExecutionId:  "EXEC-APP-EXCHANGE",
@@ -264,39 +243,46 @@ func TestApplyCredentialOverrides_UsesLeasedCredentials(t *testing.T) {
 		OIDCTokenAudience: "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
 	}
 
-	var stsRequests atomic.Int64
-	stsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		stsRequests.Add(1)
-		require.Equal(t, "/token", r.URL.Path)
-		require.NoError(t, r.ParseForm())
-		idClaims := &idTokenClaims{}
-		parsed, err := jwt.ParseWithClaims(r.Form.Get("subject_token"), idClaims, func(token *jwt.Token) (interface{}, error) {
-			return &key.PublicKey, nil
-		})
-		require.NoError(t, err)
-		require.True(t, parsed.Valid)
-		require.Equal(t, "GR-APP-EXCHANGE", idClaims.BuildBuddyGroupID)
-		writeJSON(w, &gcpSTSResponse{
-			AccessToken: "app-exchanged-access-token",
-			ExpiresIn:   3600,
-			TokenType:   "Bearer",
-		})
-	}))
-	defer stsServer.Close()
-	gcpSTSEndpoint = stsServer.URL + "/token"
+	var gcpRequests int
+	exchanger := NewExchanger(&fakeCloudTokenExchanger{
+		t: t,
+		exchangeGCP: func(ctx context.Context, cfg gcpoidc.Config, idToken string) (*gcpoidc.Credentials, error) {
+			gcpRequests++
+			require.Equal(t, "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider", cfg.Audience)
+			requireIDTokenGroup(t, key, idToken, "GR-APP-EXCHANGE")
+			return &gcpoidc.Credentials{
+				Proto: &repb.OIDCCredentials{
+					SecretEnvVars: []string{gcpoidc.AccessTokenEnvVar + "=app-exchanged-access-token"},
+				},
+				ExpiresAt: now.Add(time.Hour),
+			}, nil
+		},
+	})
 
-	creds, err := GenerateExchangedCredentials(ctx, appEnv, props)
+	creds, err := exchanger.GenerateExchangedCredentialsForGroup(ctx, appEnv, props, "GR-APP-EXCHANGE")
 	require.NoError(t, err)
 	require.NotNil(t, creds)
 	task.OidcCredentials = creds
 
-	executorEnv := testenv.GetTestEnv(t)
-	executorEnv.SetClock(clockwork.NewFakeClockAt(now))
-	_, exchangedSecretEnvVars, err := ApplyCredentialOverrides(ctx, executorEnv, task, props)
+	_, exchangedSecretEnvVars, err := ApplyCredentialOverrides(task, props)
 	require.NoError(t, err)
-	require.Contains(t, exchangedSecretEnvVars, AccessTokenEnvVar+"=app-exchanged-access-token")
+	require.Contains(t, exchangedSecretEnvVars, gcpoidc.AccessTokenEnvVar+"=app-exchanged-access-token")
 	require.Nil(t, task.GetOidcCredentials())
-	require.Equal(t, int64(1), stsRequests.Load())
+	require.Equal(t, 1, gcpRequests)
+}
+
+func TestGenerateExchangedCredentialsForGroup_RequiresGroupID(t *testing.T) {
+	props := &platform.Properties{
+		OIDCProvider:      platform.OIDCProviderGCP,
+		OIDCTokenAudience: "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
+	}
+
+	// OIDC exchange is a group scoped feature, so the app refuses to mint or
+	// exchange credentials if the task is not associated with a BuildBuddy group.
+	creds, err := GenerateExchangedCredentialsForGroup(context.Background(), testenv.GetTestEnv(t), props, "")
+	require.Error(t, err)
+	require.Nil(t, creds)
+	require.Contains(t, err.Error(), "authenticated BuildBuddy group")
 }
 
 func TestApplyCredentialOverrides_RequiresAppExchangedCredentials(t *testing.T) {
@@ -304,7 +290,7 @@ func TestApplyCredentialOverrides_RequiresAppExchangedCredentials(t *testing.T) 
 		OIDCProvider:      platform.OIDCProviderGCP,
 		OIDCTokenAudience: "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
 	}
-	_, _, err := ApplyCredentialOverrides(context.Background(), testenv.GetTestEnv(t), &repb.ExecutionTask{}, props)
+	_, _, err := ApplyCredentialOverrides(&repb.ExecutionTask{}, props)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "OIDC credentials were not attached to the leased task")
 }
@@ -323,19 +309,24 @@ func TestCachedCredentials_RefreshesHalfwayThroughLifetime(t *testing.T) {
 
 	// Provider credentials stay cached for the first half of their lifetime, so
 	// actions sharing a group do not repeat the cloud token exchange.
-	storeCachedCredentials(env, key, &CloudCredentials{
-		SecretEnvVars: []string{AccessTokenEnvVar + "=cached-token"},
-		ExpiresAt:     now.Add(time.Hour),
-	})
+	require.NoError(t, storeCachedCredentials(env, key, &exchangedCredentials{
+		credentials: &repb.OIDCCredentials{
+			SecretEnvVars: []string{gcpoidc.AccessTokenEnvVar + "=cached-token"},
+		},
+		expiresAt: now.Add(time.Hour),
+	}))
 	clock.Advance(29*time.Minute + 59*time.Second)
-	creds := cachedCredentials(env, key)
+	creds, err := cachedCredentials(env, key)
+	require.NoError(t, err)
 	require.NotNil(t, creds)
-	require.Contains(t, creds.SecretEnvVars, AccessTokenEnvVar+"=cached-token")
+	require.Contains(t, creds.GetSecretEnvVars(), gcpoidc.AccessTokenEnvVar+"=cached-token")
 
 	// Once half the lifetime has elapsed, the next action refreshes instead of
 	// receiving credentials with less buffer remaining.
 	clock.Advance(time.Second)
-	require.Nil(t, cachedCredentials(env, key))
+	creds, err = cachedCredentials(env, key)
+	require.NoError(t, err)
+	require.Nil(t, creds)
 }
 
 func TestCachedCredentials_ShortLifetimeRefreshesHalfwayThroughLifetime(t *testing.T) {
@@ -352,201 +343,162 @@ func TestCachedCredentials_ShortLifetimeRefreshesHalfwayThroughLifetime(t *testi
 
 	// Short-lived credentials follow the same halfway refresh rule, so a small
 	// provider lifetime does not make every cache lookup miss immediately.
-	storeCachedCredentials(env, key, &CloudCredentials{
-		SecretEnvVars: []string{AccessTokenEnvVar + "=short-token"},
-		ExpiresAt:     now.Add(5 * time.Minute),
-	})
-	creds := cachedCredentials(env, key)
+	require.NoError(t, storeCachedCredentials(env, key, &exchangedCredentials{
+		credentials: &repb.OIDCCredentials{
+			SecretEnvVars: []string{gcpoidc.AccessTokenEnvVar + "=short-token"},
+		},
+		expiresAt: now.Add(5 * time.Minute),
+	}))
+	creds, err := cachedCredentials(env, key)
+	require.NoError(t, err)
 	require.NotNil(t, creds)
-	require.Contains(t, creds.SecretEnvVars, AccessTokenEnvVar+"=short-token")
+	require.Contains(t, creds.GetSecretEnvVars(), gcpoidc.AccessTokenEnvVar+"=short-token")
 
 	// The second half of the short lifetime is kept as expiration slack for
 	// longer running actions.
 	clock.Advance(2*time.Minute + 29*time.Second)
-	require.NotNil(t, cachedCredentials(env, key))
+	creds, err = cachedCredentials(env, key)
+	require.NoError(t, err)
+	require.NotNil(t, creds)
 	clock.Advance(time.Second)
-	require.Nil(t, cachedCredentials(env, key))
+	creds, err = cachedCredentials(env, key)
+	require.NoError(t, err)
+	require.Nil(t, creds)
 }
 
 func TestApplyCredentialOverrides_GCPRegistryCredentials(t *testing.T) {
-	setSigningKey(t)
+	key := setSigningKey(t)
 	resetTokenExchangeState(t)
 	env := testenv.GetTestEnv(t)
 	now := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	env.SetClock(clockwork.NewFakeClockAt(now))
 	setBuildBuddyURL(t, "https://buildbuddy.example.com")
-	ctx := claims.AuthContext(context.Background(), &claims.Claims{GroupID: "GR-GCP-REGISTRY"})
+	ctx := context.Background()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/token", r.URL.Path)
-		require.NoError(t, r.ParseForm())
-		require.NotEmpty(t, r.Form.Get("subject_token"))
-		writeJSON(w, &gcpSTSResponse{
-			AccessToken: "gcp-registry-access-token",
-			ExpiresIn:   3600,
-			TokenType:   "Bearer",
-		})
-	}))
-	defer server.Close()
-	gcpSTSEndpoint = server.URL + "/token"
+	exchanger := NewExchanger(&fakeCloudTokenExchanger{
+		t: t,
+		exchangeGCP: func(ctx context.Context, cfg gcpoidc.Config, idToken string) (*gcpoidc.Credentials, error) {
+			require.Equal(t, "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider", cfg.Audience)
+			requireIDTokenGroup(t, key, idToken, "GR-GCP-REGISTRY")
+			return &gcpoidc.Credentials{
+				Proto: &repb.OIDCCredentials{
+					SecretEnvVars:             []string{gcpoidc.AccessTokenEnvVar + "=gcp-registry-access-token"},
+					ContainerRegistryUsername: gcpoidc.RegistryUsername,
+					ContainerRegistryPassword: "gcp-registry-access-token",
+				},
+				ExpiresAt: now.Add(time.Hour),
+			}, nil
+		},
+	})
 
 	props := &platform.Properties{
 		ContainerImage:              "us-docker.pkg.dev/project/repo/image:tag",
-		ContainerRegistryAuthMethod: platform.ContainerRegistryAuthMethodOIDC,
+		ContainerRegistryAuthSource: platform.ContainerRegistryAuthSourceOIDC,
 		OIDCProvider:                platform.OIDCProviderGCP,
 		OIDCTokenAudience:           "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/pool/providers/provider",
 	}
 
-	creds, err := ExchangeCredentials(ctx, env, nil, props, imageRegistryHost(props.ContainerImage))
+	creds, err := exchanger.GenerateExchangedCredentialsForGroup(ctx, env, props, "GR-GCP-REGISTRY")
 	require.NoError(t, err)
-	task := &repb.ExecutionTask{OidcCredentials: credentialsProto(creds)}
-	_, secretEnvVars, err := ApplyCredentialOverrides(context.Background(), env, task, props)
+	task := &repb.ExecutionTask{OidcCredentials: creds}
+	_, secretEnvVars, err := ApplyCredentialOverrides(task, props)
 	require.NoError(t, err)
-	require.Contains(t, secretEnvVars, AccessTokenEnvVar+"=gcp-registry-access-token")
-	require.Equal(t, gcpRegistryUsername, props.ContainerRegistryUsername)
+	require.Contains(t, secretEnvVars, gcpoidc.AccessTokenEnvVar+"=gcp-registry-access-token")
+	require.Equal(t, gcpoidc.RegistryUsername, props.ContainerRegistryUsername)
 	require.Equal(t, "gcp-registry-access-token", props.ContainerRegistryPassword)
+	// Actions can write the Docker config JSON directly to ~/.docker/config.json
+	// when they need to run Docker-compatible commands against the registry.
+	requireDockerConfigAuth(t, secretEnvVars, "us-docker.pkg.dev", gcpoidc.RegistryUsername, "gcp-registry-access-token")
 }
 
 func TestApplyCredentialOverrides_AWSECRCredentials(t *testing.T) {
-	setSigningKey(t)
+	key := setSigningKey(t)
 	resetTokenExchangeState(t)
 	env := testenv.GetTestEnv(t)
 	now := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 	env.SetClock(clockwork.NewFakeClockAt(now))
 	setBuildBuddyURL(t, "https://buildbuddy.example.com")
-	ctx := claims.AuthContext(context.Background(), &claims.Claims{GroupID: "GR-AWS-REGISTRY"})
+	ctx := context.Background()
 
 	registryPassword := "ecr-password"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.Header.Get("X-Amz-Target"), "GetAuthorizationToken") {
-			writeJSON(w, map[string]interface{}{
-				"authorizationData": []map[string]interface{}{
-					{
-						"authorizationToken": base64.StdEncoding.EncodeToString([]byte("AWS:" + registryPassword)),
-						"expiresAt":          now.Add(time.Hour).Unix(),
+	exchanger := NewExchanger(&fakeCloudTokenExchanger{
+		t: t,
+		exchangeAWS: func(ctx context.Context, cfg awsoidc.Config, idToken, groupID string) (*awsoidc.Credentials, error) {
+			require.Equal(t, "GR-AWS-REGISTRY", groupID)
+			require.Equal(t, "arn:aws:iam::123456789012:role/buildbuddy-rbe", cfg.RoleARN)
+			require.Equal(t, "us-west-2", cfg.Region)
+			require.Equal(t, "123456789012", cfg.RegistryID)
+			requireIDTokenGroup(t, key, idToken, "GR-AWS-REGISTRY")
+			return &awsoidc.Credentials{
+				Proto: &repb.OIDCCredentials{
+					EnvVars: []string{awsoidc.RegionEnvVar + "=us-west-2"},
+					SecretEnvVars: []string{
+						awsoidc.AccessKeyIDEnvVar + "=AKIA_TEST",
+						awsoidc.SecretAccessKeyEnvVar + "=secret-access-key",
+						awsoidc.SessionTokenEnvVar + "=session-token",
 					},
+					ContainerRegistryUsername: "AWS",
+					ContainerRegistryPassword: registryPassword,
 				},
-			})
-			return
-		}
-		require.NoError(t, r.ParseForm())
-		require.Equal(t, "AssumeRoleWithWebIdentity", r.Form.Get("Action"))
-		require.NotEmpty(t, r.Form.Get("WebIdentityToken"))
-		w.Header().Set("Content-Type", "text/xml")
-		fmt.Fprintf(w, `<AssumeRoleWithWebIdentityResponse>
-<AssumeRoleWithWebIdentityResult>
-<Credentials>
-<AccessKeyId>AKIA_TEST</AccessKeyId>
-<SecretAccessKey>secret-access-key</SecretAccessKey>
-<SessionToken>session-token</SessionToken>
-<Expiration>%s</Expiration>
-</Credentials>
-</AssumeRoleWithWebIdentityResult>
-</AssumeRoleWithWebIdentityResponse>`, now.Add(time.Hour).Format(time.RFC3339))
-	}))
-	defer server.Close()
-	awsSTSEndpoint = server.URL
-	awsECREndpoint = server.URL
+				ExpiresAt: now.Add(time.Hour),
+			}, nil
+		},
+	})
 
 	props := &platform.Properties{
 		ContainerImage:              "123456789012.dkr.ecr.us-west-2.amazonaws.com/repo/image:tag",
-		ContainerRegistryAuthMethod: platform.ContainerRegistryAuthMethodOIDC,
+		ContainerRegistryAuthSource: platform.ContainerRegistryAuthSourceOIDC,
 		OIDCProvider:                platform.OIDCProviderAWS,
 		OIDCAWSRoleARN:              "arn:aws:iam::123456789012:role/buildbuddy-rbe",
 	}
 
-	creds, err := ExchangeCredentials(ctx, env, nil, props, imageRegistryHost(props.ContainerImage))
+	creds, err := exchanger.GenerateExchangedCredentialsForGroup(ctx, env, props, "GR-AWS-REGISTRY")
 	require.NoError(t, err)
-	task := &repb.ExecutionTask{OidcCredentials: credentialsProto(creds)}
-	envVars, secretEnvVars, err := ApplyCredentialOverrides(context.Background(), env, task, props)
+	task := &repb.ExecutionTask{OidcCredentials: creds}
+	envVars, secretEnvVars, err := ApplyCredentialOverrides(task, props)
 	require.NoError(t, err)
-	require.Contains(t, envVars, awsRegionEnvVar+"=us-west-2")
-	require.NotContains(t, secretEnvVars, AccessTokenEnvVar+"=session-token")
-	require.Contains(t, secretEnvVars, awsAccessKeyIDEnvVar+"=AKIA_TEST")
-	require.Contains(t, secretEnvVars, awsSecretAccessKeyEnvVar+"=secret-access-key")
-	require.Contains(t, secretEnvVars, awsSessionTokenEnvVar+"=session-token")
+	require.Contains(t, envVars, awsoidc.RegionEnvVar+"=us-west-2")
+	require.NotContains(t, secretEnvVars, gcpoidc.AccessTokenEnvVar+"=session-token")
+	require.Contains(t, secretEnvVars, awsoidc.AccessKeyIDEnvVar+"=AKIA_TEST")
+	require.Contains(t, secretEnvVars, awsoidc.SecretAccessKeyEnvVar+"=secret-access-key")
+	require.Contains(t, secretEnvVars, awsoidc.SessionTokenEnvVar+"=session-token")
 	require.Equal(t, "AWS", props.ContainerRegistryUsername)
 	require.Equal(t, registryPassword, props.ContainerRegistryPassword)
-}
-
-func TestMaterializeGCloudAccessTokenFile(t *testing.T) {
-	tmp := t.TempDir()
-	command := &repb.Command{
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: AccessTokenEnvVar, Value: "gcp-access-token"},
-		},
-	}
-
-	// The runner writes the raw OAuth access token into the action workspace
-	// after inputs are downloaded, so gcloud can read its standard token file.
-	created, err := MaterializeGCloudAccessTokenFile(command, tmp, "/workspace")
-	require.NoError(t, err)
-	require.True(t, created)
-
-	tokenPath := filepath.Join(tmp, ".buildbuddy", "gcloud_access_token")
-	tokenBytes, err := os.ReadFile(tokenPath)
-	require.NoError(t, err)
-	require.Equal(t, "gcp-access-token", string(tokenBytes))
-
-	// The action sees the file at the workspace path used by the container, not
-	// necessarily the host path where the executor wrote it.
-	gcloudTokenPath, ok := commandEnvValue(command, GCloudAccessTokenFileEnvVar)
-	require.True(t, ok)
-	require.Equal(t, "/workspace/.buildbuddy/gcloud_access_token", gcloudTokenPath)
-	accessToken, ok := commandEnvValue(command, AccessTokenEnvVar)
-	require.True(t, ok)
-	require.Equal(t, "gcp-access-token", accessToken)
-}
-
-func TestRemoveGCloudAccessTokenFile(t *testing.T) {
-	tmp := t.TempDir()
-	command := &repb.Command{
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: AccessTokenEnvVar, Value: "gcp-access-token"},
-		},
-	}
-
-	// A recycled runner cleans up the token file before the next action's inputs
-	// are downloaded, preventing a previous action's token from lingering.
-	created, err := MaterializeGCloudAccessTokenFile(command, tmp, tmp)
-	require.NoError(t, err)
-	require.True(t, created)
-	err = RemoveGCloudAccessTokenFile(tmp)
-	require.NoError(t, err)
-
-	_, err = os.Stat(filepath.Join(tmp, ".buildbuddy", "gcloud_access_token"))
-	require.True(t, os.IsNotExist(err))
+	// Actions can write the Docker config JSON directly to ~/.docker/config.json
+	// when they need to run Docker-compatible commands against the registry.
+	requireDockerConfigAuth(t, secretEnvVars, "123456789012.dkr.ecr.us-west-2.amazonaws.com", "AWS", registryPassword)
 }
 
 func TestWellKnownAndJWKS(t *testing.T) {
-	setSigningKey(t)
+	signingKey := setSigningKey(t)
 	env := testenv.GetTestEnv(t)
 	setBuildBuddyURL(t, "https://buildbuddy.example.com")
-	provider, err := NewProvider(env)
+	provider, err := newProvider(env)
 	require.NoError(t, err)
 
 	rec := httptest.NewRecorder()
-	provider.WellKnownOpenIDConfiguration(rec, httptest.NewRequest(http.MethodGet, wellKnownPath, nil))
+	provider.issuer.ServeWellKnownOpenIDConfiguration(rec, httptest.NewRequest(http.MethodGet, wellKnownPath, nil))
 	require.Equal(t, http.StatusOK, rec.Code)
-	var config configurationJSON
+	var config oidcissuer.ProviderMetadata
 	require.NoError(t, jsonDecode(rec.Body.String(), &config))
 	require.Equal(t, "https://buildbuddy.example.com/oidc", config.Issuer)
-	require.Equal(t, "https://buildbuddy.example.com/oidc/.well-known/jwks", config.JwksURI)
+	require.Equal(t, "https://buildbuddy.example.com/oidc/.well-known/jwks", config.JWKSURI)
 	require.Contains(t, config.IdTokenSigningAlgValuesSupported, "RS256")
 	require.Contains(t, config.ClaimsSupported, "sub")
 
 	rec = httptest.NewRecorder()
-	provider.JWKS(rec, httptest.NewRequest(http.MethodGet, jwksPath, nil))
+	provider.issuer.ServeJWKS(rec, httptest.NewRequest(http.MethodGet, jwksPath, nil))
 	require.Equal(t, http.StatusOK, rec.Code)
-	var keySet jwksJSON
+	var keySet oidcissuer.JWKS
 	require.NoError(t, jsonDecode(rec.Body.String(), &keySet))
 	require.Len(t, keySet.Keys, 1)
-	require.Equal(t, "RSA", keySet.Keys[0].Kty)
-	require.Equal(t, "sig", keySet.Keys[0].Use)
-	require.Equal(t, "RS256", keySet.Keys[0].Alg)
-	require.NotEmpty(t, keySet.Keys[0].Kid)
-	require.NotEmpty(t, keySet.Keys[0].N)
-	require.Equal(t, "AQAB", keySet.Keys[0].E)
+	publicKey := keySet.Keys[0]
+	require.Equal(t, "RSA", publicKey.Kty)
+	require.Equal(t, "sig", publicKey.Use)
+	require.Equal(t, "RS256", publicKey.Alg)
+	require.NotEmpty(t, publicKey.Kid)
+	require.Equal(t, base64.RawURLEncoding.EncodeToString(signingKey.PublicKey.N.Bytes()), publicKey.N)
+	require.Equal(t, base64.RawURLEncoding.EncodeToString(big.NewInt(int64(signingKey.PublicKey.E)).Bytes()), publicKey.E)
 }
 
 func setSigningKey(t *testing.T) *rsa.PrivateKey {
@@ -571,6 +523,59 @@ func jsonDecode(s string, v interface{}) error {
 	return json.NewDecoder(strings.NewReader(s)).Decode(v)
 }
 
+func requireDockerConfigAuth(t *testing.T, envVars []string, registryHost, username, password string) {
+	dockerConfig, ok := envOverrideValue(envVars, DockerConfigJSONEnvVar)
+	require.True(t, ok)
+	var config dockerConfigFile
+	require.NoError(t, jsonDecode(dockerConfig, &config))
+	auth, ok := config.Auths[registryHost]
+	require.True(t, ok)
+	require.Equal(t, base64.StdEncoding.EncodeToString([]byte(username+":"+password)), auth.Auth)
+}
+
+func envOverrideValue(envVars []string, name string) (string, bool) {
+	for i := len(envVars) - 1; i >= 0; i-- {
+		n, v, _ := strings.Cut(envVars[i], "=")
+		if n == name {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+type fakeCloudTokenExchanger struct {
+	t           *testing.T
+	exchangeAWS func(context.Context, awsoidc.Config, string, string) (*awsoidc.Credentials, error)
+	exchangeGCP func(context.Context, gcpoidc.Config, string) (*gcpoidc.Credentials, error)
+}
+
+func (f *fakeCloudTokenExchanger) ExchangeAWS(ctx context.Context, cfg awsoidc.Config, idToken, groupID string) (*awsoidc.Credentials, error) {
+	if f.exchangeAWS == nil {
+		f.t.Fatalf("unexpected AWS exchange")
+		return nil, nil
+	}
+	return f.exchangeAWS(ctx, cfg, idToken, groupID)
+}
+
+func (f *fakeCloudTokenExchanger) ExchangeGCP(ctx context.Context, cfg gcpoidc.Config, idToken string) (*gcpoidc.Credentials, error) {
+	if f.exchangeGCP == nil {
+		f.t.Fatalf("unexpected GCP exchange")
+		return nil, nil
+	}
+	return f.exchangeGCP(ctx, cfg, idToken)
+}
+
+func requireIDTokenGroup(t *testing.T, key *rsa.PrivateKey, idToken, groupID string) {
+	idClaims := &idTokenClaims{}
+	parser := jwt.Parser{SkipClaimsValidation: true}
+	parsed, err := parser.ParseWithClaims(idToken, idClaims, func(token *jwt.Token) (interface{}, error) {
+		return &key.PublicKey, nil
+	})
+	require.NoError(t, err)
+	require.True(t, parsed.Valid)
+	require.Equal(t, groupID, idClaims.BuildBuddyGroupID)
+}
+
 func resetTokenExchangeState(t *testing.T) {
 	oldHTTPClient := httpClient
 	oldAWSSTSEndpoint := awsSTSEndpoint
@@ -579,13 +584,13 @@ func resetTokenExchangeState(t *testing.T) {
 	oldGCPIAMCredentialsEndpoint := gcpIAMCredentialsEndpoint
 	tokenExchangeCacheMu.Lock()
 	oldTokenExchangeCache := tokenExchangeCache
-	tokenExchangeCache = map[tokenExchangeCacheKey]*CloudCredentials{}
+	tokenExchangeCache = nil
 	tokenExchangeCacheMu.Unlock()
 	httpClient = http.DefaultClient
 	awsSTSEndpoint = ""
 	awsECREndpoint = ""
-	gcpSTSEndpoint = "https://sts.googleapis.com/v1/token"
-	gcpIAMCredentialsEndpoint = "https://iamcredentials.googleapis.com/v1"
+	gcpSTSEndpoint = gcpoidc.DefaultSTSEndpoint
+	gcpIAMCredentialsEndpoint = gcpoidc.DefaultIAMCredentialsEndpoint
 	t.Cleanup(func() {
 		tokenExchangeCacheMu.Lock()
 		tokenExchangeCache = oldTokenExchangeCache

@@ -61,7 +61,7 @@ const (
 
 	containerRegistryUsernamePropertyName   = "container-registry-username"
 	containerRegistryPasswordPropertyName   = "container-registry-password"
-	ContainerRegistryAuthMethodPropertyName = "container-registry-auth-method"
+	ContainerRegistryAuthSourcePropertyName = "container-registry-auth-source"
 	containerRegistryBypassPropertyName     = "container-registry-bypass"
 	useOCIFetcherPropertyName               = "use-oci-fetcher"
 
@@ -183,8 +183,8 @@ const (
 )
 
 const (
-	ContainerRegistryAuthMethodExplicit = "explicit"
-	ContainerRegistryAuthMethodOIDC     = "oidc"
+	ContainerRegistryAuthSourceExplicit = "explicit"
+	ContainerRegistryAuthSourceOIDC     = "oidc"
 
 	OIDCProviderAWS = "aws"
 	OIDCProviderGCP = "gcp"
@@ -260,7 +260,7 @@ type Properties struct {
 	ContainerImage              string
 	ContainerRegistryUsername   string
 	ContainerRegistryPassword   string
-	ContainerRegistryAuthMethod string
+	ContainerRegistryAuthSource string
 	WorkloadIsolationType       string
 	DockerForceRoot             bool
 	DockerInit                  bool
@@ -566,11 +566,11 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		shmSizeBytes = &n
 	}
 
-	containerRegistryAuthMethod := strings.ToLower(stringProp(m, ContainerRegistryAuthMethodPropertyName, ContainerRegistryAuthMethodExplicit))
-	switch containerRegistryAuthMethod {
-	case ContainerRegistryAuthMethodExplicit, ContainerRegistryAuthMethodOIDC:
+	containerRegistryAuthSource := strings.ToLower(stringProp(m, ContainerRegistryAuthSourcePropertyName, ContainerRegistryAuthSourceExplicit))
+	switch containerRegistryAuthSource {
+	case ContainerRegistryAuthSourceExplicit, ContainerRegistryAuthSourceOIDC:
 	default:
-		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the `%s` platform property", containerRegistryAuthMethod, ContainerRegistryAuthMethodPropertyName)
+		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the `%s` platform property", containerRegistryAuthSource, ContainerRegistryAuthSourcePropertyName)
 	}
 
 	return &Properties{
@@ -587,7 +587,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		ContainerImage:              stringProp(m, containerImagePropertyName, ""),
 		ContainerRegistryUsername:   stringProp(m, containerRegistryUsernamePropertyName, ""),
 		ContainerRegistryPassword:   stringProp(m, containerRegistryPasswordPropertyName, ""),
-		ContainerRegistryAuthMethod: containerRegistryAuthMethod,
+		ContainerRegistryAuthSource: containerRegistryAuthSource,
 		WorkloadIsolationType:       isolationType,
 		InitDockerd:                 boolProp(m, initDockerdPropertyName, false),
 		EnableDockerdTCP:            boolProp(m, enableDockerdTCPPropertyName, false),
