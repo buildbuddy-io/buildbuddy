@@ -2,6 +2,8 @@ package execution_server_test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -783,9 +785,20 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			recycleRunner:          true,
 		},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			testExecuteAndPublishOperation(t, test)
-		})
+		// Run each case twice: once with the legacy
+		// flush-on-COMPLETED path and once with the
+		// flush-on-EOF experiment enabled.
+		for _, flushOnEOF := range []bool{false, true} {
+			test := test
+			test.flushOnEOF = flushOnEOF
+			name := test.name
+			if flushOnEOF {
+				name += "/FlushOnEOF"
+			}
+			t.Run(name, func(t *testing.T) {
+				testExecuteAndPublishOperation(t, test)
+			})
+		}
 	}
 }
 
@@ -802,6 +815,12 @@ type publishTest struct {
 	redisRestart             bool
 	useDefaultPool           bool
 	recycleRunner            bool
+	// flushOnEOF enables the
+	// "remote_execution.flush_executions_on_eof" experiment so the OLAP
+	// flush + usage update happen on stream EOF instead of inside the
+	// COMPLETED handler. The end-to-end behavior observed by the test
+	// should be identical, so each subtest also runs with this flipped.
+	flushOnEOF bool
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
@@ -812,6 +831,9 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		flags.Set(t, k, v)
 	}
 	env, conn, r := setupEnv(t)
+	if test.flushOnEOF {
+		setExperimentFlag(t, env, "remote_execution.flush_executions_on_eof", "true", true)
+	}
 	client := repb.NewExecutionClient(conn)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	env.SetAuthenticator(ta)
@@ -1433,6 +1455,34 @@ func withIncomingMetadata(t *testing.T, ctx context.Context, rmd *repb.RequestMe
 	b, err := proto.Marshal(rmd)
 	require.NoError(t, err)
 	return metadata.NewIncomingContext(ctx, metadata.Pairs(bazel_request.RequestMetadataKey, string(b)))
+}
+
+// setExperimentFlag installs a flagd-backed experiment provider on env that
+// resolves a single named flag to the given value. The value parameter is the
+// flagd "variant" key (any unique string); typedValue is the actual value
+// returned for that variant.
+func setExperimentFlag(t *testing.T, env *testenv.TestEnv, flagName string, variant string, typedValue any) {
+	t.Helper()
+	encoded, err := json.Marshal(typedValue)
+	require.NoError(t, err)
+	cfg := fmt.Sprintf(`{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    %q: {
+      "state": "ENABLED",
+      "variants": { %q: %s },
+      "defaultVariant": %q
+    }
+  }
+}`, flagName, variant, string(encoded), variant)
+	tmp := testfs.MakeTempDir(t)
+	cfgPath := testfs.WriteFile(t, tmp, "config.flagd.json", cfg)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(cfgPath))
+	require.NoError(t, err)
+	openfeature.SetProviderAndWait(provider)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
 }
 
 func makeAuxAny(t *testing.T, props []*repb.Platform_Property) *anypb.Any {

@@ -77,6 +77,15 @@ const (
 	// be discarded after this time. There may be multiple waiters for a single
 	// action so we cannot discard the channel immediately.
 	completedPubSubChanExpiration = 15 * time.Minute
+
+	// flushExecutionsOnEOFExperiment names the boolean experiment flag that
+	// controls when PublishOperation flushes execution data to ClickHouse
+	// (and records usage). When true, the flush happens on the stream's
+	// io.EOF instead of inline with the stage==COMPLETED handler, which
+	// lets the executor publish post-COMPLETED updates (e.g. firecracker
+	// snapshot save stats produced during runner recycling) that the
+	// OLAP row picks up.
+	flushExecutionsOnEOFExperiment = "remote_execution.flush_executions_on_eof"
 )
 
 var (
@@ -571,6 +580,25 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 		}
 	}
 	return executionProto, len(links) > 0, nil
+}
+
+// flushAndRecordUsage flushes the merged execution state to ClickHouse and
+// records execution-duration usage. It is called either inside the
+// stage==COMPLETED handler or on stream EOF, depending on the
+// `remote_execution.flush_executions_on_eof` experiment flag. Usage is only
+// recorded when the flush actually wrote new data, so retried
+// PublishOperation streams don't double-count.
+func (s *ExecutionServer) flushAndRecordUsage(ctx context.Context, taskID string) {
+	execution, flushed, err := s.flushExecutionToOLAP(ctx, taskID)
+	if err != nil {
+		log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
+	}
+	if flushed {
+		// TODO(vanja) should this be done when the executor got a cache hit?
+		if err := s.updateUsage(ctx, execution); err != nil {
+			log.CtxWarningf(ctx, "Failed to update usage for execution %q: %s", taskID, err)
+		}
+	}
 }
 
 // getUnvalidatedActionResult fetches an action result from the cache but does
@@ -1351,6 +1379,19 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	taskID := ""
 	// Once the executor has called PublishOperation, we're in EXECUTING stage.
 	stage := repb.ExecutionStage_EXECUTING
+	// flushExecutionsOnEOF controls whether the OLAP flush + usage update
+	// happens when the executor closes the PublishOperation stream (true)
+	// or inline with the stage==COMPLETED handler (false). Doing the work
+	// on EOF lets the executor publish post-COMPLETED updates (e.g.
+	// firecracker snapshot save stats produced during runner recycling)
+	// that get merged into the OLAP row. Gated by experiment for gradual
+	// rollout; resolved once per stream so the choice is consistent if
+	// COMPLETED and EOF fire on opposite sides of a flag flip.
+	flushExecutionsOnEOF := false
+	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
+		flushExecutionsOnEOF, _ = fp.BooleanDetails(ctx, flushExecutionsOnEOFExperiment, false)
+	}
+
 	mu := sync.Mutex{}
 	// 80% of executions take < 10 seconds in total. So here, we delay
 	// writes to the database if pubsub.Publish is successful, in an
@@ -1389,25 +1430,8 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	for {
 		op, err := stream.Recv()
 		if err == io.EOF {
-			// Flush execution data to clickhouse once the executor closes the
-			// stream. Doing this on EOF rather than inside the COMPLETED
-			// branch lets us pick up any post-COMPLETED updates the executor
-			// publishes before closing (e.g. cleanup or snapshot save stats
-			// produced during runner recycling).
-			execution, flushed, err := s.flushExecutionToOLAP(ctx, taskID)
-			if err != nil {
-				log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
-			}
-			// If the OLAP flush actually wrote work (links were present),
-			// usage hasn't been recorded yet. If the flush short-circuited
-			// because a prior PublishOperation stream already flushed and
-			// cleaned up the per-execution links, usage was recorded then
-			// and we must not double-count.
-			if flushed {
-				// TODO(vanja) should this be done when the executor got a cache hit?
-				if err := s.updateUsage(ctx, execution); err != nil {
-					log.CtxWarningf(ctx, "Failed to update usage for execution %q: %s", taskID, err)
-				}
+			if flushExecutionsOnEOF {
+				s.flushAndRecordUsage(ctx, taskID)
 			}
 			return stream.SendAndClose(&repb.PublishOperationResponse{})
 		}
@@ -1506,6 +1530,9 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
 				lastWrite = time.Now()
+				if !flushExecutionsOnEOF {
+					s.flushAndRecordUsage(ctx, taskID)
+				}
 				return nil
 			}()
 			if err != nil {
