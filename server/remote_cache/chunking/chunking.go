@@ -82,16 +82,24 @@ func FastCDCWriteParams(ctx context.Context, efp interfaces.ExperimentFlagProvid
 	return params
 }
 
-func MaxChunkSizeBytes() int64 {
-	return *avgChunkSizeBytes * 4
+func MaxChunkSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
+	return AvgChunkSizeBytes(ctx, efp) * 4
+}
+
+// MaxSupportedChunkSizeBytes is the process-wide chunk size buffer consumers
+// must support. This supports temporarily doubling cache.avg_chunk_size_override
+// from the default 512KiB to 1MiB; do not set the override higher without
+// increasing this and auditing buffer consumers.
+func MaxSupportedChunkSizeBytes() int64 {
+	return 4 * 1024 * 1024
 }
 
 // MinChunkedReadFallbackSizeBytes can be configured independently from the
 // write threshold so server-side miss fallback paths can still read older
 // chunked blobs that were written with a smaller chunk size, but is clamped to
 // at most MaxChunkSizeBytes().
-func MinChunkedReadFallbackSizeBytes() int64 {
-	return min(*minChunkedReadFallbackSizeBytes, MaxChunkSizeBytes())
+func MinChunkedReadFallbackSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
+	return min(*minChunkedReadFallbackSizeBytes, MaxChunkSizeBytes(ctx, efp))
 }
 
 func MaxWriteSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
@@ -132,13 +140,13 @@ func Enabled(ctx context.Context, efp interfaces.ExperimentFlagProvider) bool {
 func ShouldReadChunked(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes, offset, limit int64) bool {
 	// Check digest first since it's faster than reading efp flag
 	// and very likely to be false.
-	return digestSizeBytes > MinChunkedReadFallbackSizeBytes() &&
+	return digestSizeBytes > MinChunkedReadFallbackSizeBytes(ctx, efp) &&
 		limit == 0 &&
 		Enabled(ctx, efp)
 }
 
 func ShouldReadChunkedOnProxy(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes, offset, limit int64) bool {
-	return digestSizeBytes > MaxChunkSizeBytes() &&
+	return digestSizeBytes > MaxChunkSizeBytes(ctx, efp) &&
 		limit == 0 &&
 		(efp == nil ||
 			(Enabled(ctx, efp) && efp.Boolean(ctx, "cache_proxy.attempt_chunked_reads", true)))
@@ -475,7 +483,15 @@ func (cm *Manifest) verifyChunks(ctx context.Context, cache interfaces.Cache) er
 	readCompressed := cache.SupportsCompressor(repb.Compressor_ZSTD)
 	var decompressedData []byte
 	if readCompressed {
-		decompressedData = make([]byte, 0, MaxChunkSizeBytes())
+		var maxChunkSize int64
+		for _, chunkDigest := range cm.ChunkDigests {
+			chunkSize := chunkDigest.GetSizeBytes()
+			if chunkSize < 0 || chunkSize > MaxSupportedChunkSizeBytes() {
+				return status.InvalidArgumentErrorf("invalid manifest: chunk %v has invalid size %d for blob %v", chunkDigest.GetHash(), chunkSize, cm.BlobDigest.GetHash())
+			}
+			maxChunkSize = max(maxChunkSize, chunkSize)
+		}
+		decompressedData = make([]byte, 0, int(maxChunkSize))
 	}
 	resources := make([]*rspb.ResourceName, 0, batchSize)
 	for chunkDigestsPart := range slices.Chunk(cm.ChunkDigests, batchSize) {
@@ -499,9 +515,13 @@ func (cm *Manifest) verifyChunks(ctx context.Context, cache interfaces.Cache) er
 				return status.InvalidArgumentErrorf("invalid manifest: chunk %v not found in the CAS for blob %v", r.GetDigest().GetHash(), cm.BlobDigest.GetHash())
 			}
 			if readCompressed {
+				chunkSize := r.GetDigest().GetSizeBytes()
 				decompressedData, err = compression.DecompressZstd(decompressedData, chunkData)
 				if err != nil {
 					return status.WrapErrorf(err, "decompress chunk %s for blob %s", r.GetDigest().GetHash(), cm.BlobDigest.GetHash())
+				}
+				if int64(len(decompressedData)) != chunkSize {
+					return status.InvalidArgumentErrorf("invalid manifest: chunk %v decompressed to %d bytes, expected %d bytes for blob %v", r.GetDigest().GetHash(), len(decompressedData), chunkSize, cm.BlobDigest.GetHash())
 				}
 				chunkData = decompressedData
 			}

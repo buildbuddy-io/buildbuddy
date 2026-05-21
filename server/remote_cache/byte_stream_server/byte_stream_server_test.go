@@ -1160,7 +1160,7 @@ func TestNewByteStreamServer_BufferPoolAccommodatesCompressedChunkOverhead(t *te
 	s, err := NewByteStreamServer(te)
 	require.NoError(t, err)
 
-	want := compression.ZstdCompressBound(chunking.MaxChunkSizeBytes())
+	want := compression.ZstdCompressBound(chunking.MaxSupportedChunkSizeBytes())
 	buf := s.bufferPool.Get(want)
 	defer s.bufferPool.Put(buf)
 

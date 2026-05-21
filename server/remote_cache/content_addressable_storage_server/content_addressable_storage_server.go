@@ -129,13 +129,14 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	// deploys: without the header, a chunk sized above the server's current
 	// MaxChunkSizeBytes would slip past the size guard below and trigger a
 	// spurious (and expensive) AC manifest lookup.
-	if len(missing) > 0 && !cdc.IsChunked(ctx) && chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
+	if efp := s.env.GetExperimentFlagProvider(); len(missing) > 0 && !cdc.IsChunked(ctx) && chunking.Enabled(ctx, efp) {
 		checker := chunking.NewMissingChunkChecker(s.cache)
+		maxChunkSizeBytes := chunking.MaxChunkSizeBytes(ctx, efp)
 
 		// https://go.dev/wiki/SliceTricks#filtering-without-allocating
 		stillMissing := missing[:0]
 		for _, d := range missing {
-			if d.GetSizeBytes() <= chunking.MaxChunkSizeBytes() {
+			if d.GetSizeBytes() <= maxChunkSizeBytes {
 				stillMissing = append(stillMissing, d)
 				continue
 			}
@@ -367,7 +368,12 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	cacheRequest := make([]*rspb.ResourceName, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
 	clientAcceptsZstd := remote_cache_config.ZstdTranscodingEnabled() && clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD)
-	chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
+	efp := s.env.GetExperimentFlagProvider()
+	chunkingEnabled := chunking.Enabled(ctx, efp)
+	chunkedReadFallbackSizeBytes := int64(0)
+	if chunkingEnabled {
+		chunkedReadFallbackSizeBytes = chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
+	}
 	readZstd := clientAcceptsZstd && s.cache.SupportsCompressor(repb.Compressor_ZSTD)
 
 	requestedResources := make([]*digest.ResourceName, 0, len(req.GetDigests()))
@@ -407,7 +413,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		// It's unexpected, but BatchReadBlobs may be used for blobs that are
 		// large enough to be chunked. If the blob was not found and it's large
 		// enough to be chunked, try to reassemble it from CDC chunks.
-		if (!ok || os.IsNotExist(err)) && rn.GetDigest().GetSizeBytes() > chunking.MinChunkedReadFallbackSizeBytes() && chunkingEnabled {
+		if (!ok || os.IsNotExist(err)) && chunkingEnabled && rn.GetDigest().GetSizeBytes() > chunkedReadFallbackSizeBytes {
 			if assembled, assembleErr := s.readChunkedBlob(ctx, rn.GetDigest(), req.GetInstanceName(), req.GetDigestFunction(), readZstd); assembleErr == nil {
 				data = assembled
 				ok = true

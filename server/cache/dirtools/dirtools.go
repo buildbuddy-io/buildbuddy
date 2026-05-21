@@ -1053,7 +1053,7 @@ func (ff *BatchFileFetcher) shouldDownloadChunked(fileNode *repb.FileNode) bool 
 	return ff.opts != nil &&
 		ff.opts.ChunkedInputFiles &&
 		ff.env.GetContentAddressableStorageClient() != nil &&
-		fileNode.GetDigest().GetSizeBytes() > chunking.MaxChunkSizeBytes()
+		fileNode.GetDigest().GetSizeBytes() > chunking.MaxSupportedChunkSizeBytes()
 }
 
 // downloadBlobToFile writes fileNode into path, creating or truncating it.
