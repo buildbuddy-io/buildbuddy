@@ -1333,7 +1333,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		return err
 	}
 	lastOp := &longrunningpb.Operation{}
-	updatedExecution := false
 	taskID := ""
 	// Once the executor has called PublishOperation, we're in EXECUTING stage.
 	stage := repb.ExecutionStage_EXECUTING
@@ -1355,12 +1354,13 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				return
 			case <-ticker.Chan():
 				mu.Lock()
-				updatedExecution := updatedExecution
 				taskID := taskID
 				stage := stage
 				lastOp := lastOp
 				mu.Unlock()
-				if updatedExecution {
+				if stage == repb.ExecutionStage_COMPLETED {
+					// The main loop will handle this write. If it fails, the
+					// client will retry the PublishOperation call.
 					return
 				}
 				if s.clock.Since(start) > 5*time.Second && taskID != "" {
@@ -1491,7 +1491,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
-				updatedExecution = true
 				// TODO(Maggie): After receiving cleanup stats, update execution in OLAP again.
 				// TODO(Maggie): Flush execution data to DB when the stream is closed.
 				// Don't flush early here.
