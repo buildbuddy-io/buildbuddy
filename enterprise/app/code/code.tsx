@@ -30,7 +30,6 @@ import error_service from "../../../app/errors/error_service";
 import { GithubIcon } from "../../../app/icons/github";
 import picker_service, { PickerModel } from "../../../app/picker/picker_service";
 import router from "../../../app/router/router";
-import { linkReadWriteGitHubAppURL } from "../../../app/util/github";
 import { parseLcov } from "../../../app/util/lcov";
 import { github } from "../../../proto/github_ts_proto";
 import { build } from "../../../proto/remote_execution_ts_proto";
@@ -884,11 +883,18 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.updateState({ temporaryFiles: this.state.temporaryFiles });
   }
 
-  // TODO: Have a better way to manage which features require write permissions
-  // and gate them for users that have installed the read-only app.
   handleGitHubClicked() {
-    const userID = this.props.user.displayUser.userId?.id || "";
-    window.location.href = linkReadWriteGitHubAppURL(userID, "");
+    rpcService.service
+      .getGitHubAppInstallPath(new github.GetGithubAppInstallPathRequest())
+      .then((response) => {
+        const userID = this.props.user.displayUser.userId?.id || "";
+        const path = `${response.installPath}?${new URLSearchParams({
+          user_id: userID,
+          redirect_url: window.location.href,
+        })}`;
+        window.location.href = path;
+      })
+      .catch((e) => error_service.handleError(e));
   }
 
   handleUpdatePR() {
