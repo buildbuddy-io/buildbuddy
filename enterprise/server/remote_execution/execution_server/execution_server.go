@@ -594,6 +594,39 @@ func (s *ExecutionServer) flushAndRecordUsage(ctx context.Context, taskID string
 	}
 }
 
+// applyPostCompletionStats handles a stage=COMPLETED Operation that follows
+// the first COMPLETED for a given execution. The executor uses this to
+// deliver stats that are only known after the COMPLETED operation has been
+// streamed back to the client (e.g. firecracker snapshot save stats produced
+// during runner recycling). The Operation's ExecutedActionMetadata must
+// carry a PostCompletionStats message as auxiliary_metadata.
+//
+// Writes a sparse StoredExecution update to Redis so the snapshot fields
+// get merged into the existing execution state by mergeExecutionUpdates.
+// The proto-level merge is additive for non-zero fields, so the first
+// COMPLETED's fields stay intact.
+func (s *ExecutionServer) applyPostCompletionStats(ctx context.Context, taskID string, response *repb.ExecuteResponse) error {
+	stats := new(espb.PostCompletionStats)
+	ok, err := rexec.FindFirstAuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), stats)
+	if err != nil {
+		return status.WrapError(err, "parse PostCompletionStats")
+	}
+	if !ok {
+		return status.NotFoundError("post-completion Operation missing PostCompletionStats aux metadata")
+	}
+	sparse := &repb.StoredExecution{
+		ExecutionId:               taskID,
+		Stage:                     int64(repb.ExecutionStage_COMPLETED),
+		UpdatedAtUsec:             time.Now().UnixMicro(),
+		SnapshotSavedLocally:      stats.GetSnapshotSavedLocally(),
+		SnapshotSavedRemotely:     stats.GetSnapshotSavedRemotely(),
+		SnapshotIsDiff:            stats.GetSnapshotIsDiff(),
+		SnapshotSizeBytes:         stats.GetSnapshotSizeBytes(),
+		SnapshotPauseDurationUsec: stats.GetPauseDurationUsec(),
+	}
+	return s.executionCollector.UpdateInProgressExecution(ctx, sparse)
+}
+
 // getUnvalidatedActionResult fetches an action result from the cache but does
 // not validate it.
 // N.B. This should only be used if the calling code has already ensured the
@@ -1416,6 +1449,15 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		flushExecutionsOnEOF = fp.Boolean(ctx, "remote_execution.flush_executions_after_cleanup", false)
 	}
 
+	// firstCompletedSeen tracks whether we've already processed a
+	// stage==COMPLETED Operation for this stream. The executor publishes a
+	// follow-up COMPLETED carrying PostCompletionStats (e.g. firecracker
+	// snapshot save stats from runner recycling) after the first one. The
+	// follow-up must skip the side effects of the first COMPLETED
+	// (cacheActionResult, markTaskComplete, recordResponseMetrics) and
+	// only merge its aux fields into Redis.
+	firstCompletedSeen := false
+
 	for {
 		op, err := stream.Recv()
 		if err == io.EOF {
@@ -1460,11 +1502,19 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 
 		log.CtxDebugf(ctx, "PublishOperation: stage: %s", stage)
 
+		// A second stage=COMPLETED Operation on the same stream is treated
+		// as a post-completion stats update (currently used by the executor
+		// to deliver firecracker snapshot save stats from runner
+		// recycling). It must skip the side effects of the first COMPLETED
+		// to avoid double-caching the action result, double-counting usage,
+		// or emitting duplicate response metrics.
+		isPostCompletionUpdate := stage == repb.ExecutionStage_COMPLETED && firstCompletedSeen
+
 		var auxMeta *espb.ExecutionAuxiliaryMetadata
 		var properties *platform.Properties
 		var action *repb.Action
 		var cmd *repb.Command
-		if stage == repb.ExecutionStage_COMPLETED && response != nil {
+		if stage == repb.ExecutionStage_COMPLETED && response != nil && !isPostCompletionUpdate {
 			auxMeta = new(espb.ExecutionAuxiliaryMetadata)
 			ok, err := rexec.FindFirstAuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
 			if err != nil {
@@ -1514,6 +1564,13 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				mu.Lock()
 				defer mu.Unlock()
 
+				if isPostCompletionUpdate {
+					if err := s.applyPostCompletionStats(ctx, taskID, response); err != nil {
+						log.CtxWarningf(ctx, "PublishOperation: error applying post-completion stats for %q: %s", taskID, err)
+					}
+					return nil
+				}
+
 				if err := s.updateExecution(ctx, taskID, stage, response, auxMeta, properties, action, cmd); err != nil {
 					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
@@ -1528,8 +1585,9 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				return err
 			}
+			firstCompletedSeen = true
 
-			if response != nil {
+			if response != nil && !isPostCompletionUpdate {
 				// TODO(vanja) should this be done when the executor got a
 				// cache hit?
 				if err := s.cacheExecuteResponse(ctx, taskID, response); err != nil {

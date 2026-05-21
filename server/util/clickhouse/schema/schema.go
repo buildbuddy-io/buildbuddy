@@ -193,6 +193,15 @@ type Execution struct {
 	OS         string `gorm:"type:LowCardinality(String)"`
 	Arch       string `gorm:"type:LowCardinality(String)"`
 
+	// Snapshot save stats from runner recycling, reported by the executor
+	// after the COMPLETED operation has been streamed back. Zero for
+	// non-firecracker runners.
+	SnapshotSavedLocally      bool
+	SnapshotSavedRemotely     bool
+	SnapshotIsDiff            bool
+	SnapshotSizeBytes         int64 `gorm:"codec:T64,ZSTD(1)"`
+	SnapshotPauseDurationUsec int64 `gorm:"codec:T64,ZSTD(1)"`
+
 	Stage int64 `gorm:"codec:T64,ZSTD(1)"`
 
 	// RequestMetadata
@@ -384,6 +393,11 @@ func (e *Execution) AdditionalFields() []string {
 		"SelfHosted",
 		"OS",
 		"Arch",
+		"SnapshotSavedLocally",
+		"SnapshotSavedRemotely",
+		"SnapshotIsDiff",
+		"SnapshotSizeBytes",
+		"SnapshotPauseDurationUsec",
 		"ExecutorHostname",
 		"Experiments",
 		"ClientIP",
