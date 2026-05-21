@@ -557,8 +557,12 @@ func TestEnabled_UsesExperimentFlag(t *testing.T) {
 
 func TestShouldReadChunkedOnProxy_UsesExperimentFlag(t *testing.T) {
 	ctx := context.Background()
+	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, chunking.MaxChunkSizeBytes()+1, 0, 0))
 	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, booleanFlagProvider{
 		values: map[string]bool{"cache_proxy.attempt_chunked_reads": false},
+	}, chunking.MaxChunkSizeBytes()+1, 0, 0))
+	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, booleanFlagProvider{
+		values: map[string]bool{"cache.chunking_enabled": false},
 	}, chunking.MaxChunkSizeBytes()+1, 0, 0))
 }
 

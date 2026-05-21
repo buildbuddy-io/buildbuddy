@@ -141,7 +141,7 @@ func ShouldReadChunkedOnProxy(ctx context.Context, efp interfaces.ExperimentFlag
 	return digestSizeBytes > MaxChunkSizeBytes() &&
 		limit == 0 &&
 		(efp == nil ||
-			efp.Boolean(ctx, "cache_proxy.attempt_chunked_reads", true))
+			(Enabled(ctx, efp) && efp.Boolean(ctx, "cache_proxy.attempt_chunked_reads", true)))
 }
 
 type WriteFunc func([]byte) error
