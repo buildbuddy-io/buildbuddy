@@ -77,15 +77,6 @@ const (
 	// be discarded after this time. There may be multiple waiters for a single
 	// action so we cannot discard the channel immediately.
 	completedPubSubChanExpiration = 15 * time.Minute
-
-	// flushExecutionsOnEOFExperiment names the boolean experiment flag that
-	// controls when PublishOperation flushes execution data to ClickHouse
-	// (and records usage). When true, the flush happens on the stream's
-	// io.EOF instead of inline with the stage==COMPLETED handler, which
-	// lets the executor publish post-COMPLETED updates (e.g. firecracker
-	// snapshot save stats produced during runner recycling) that the
-	// OLAP row picks up.
-	flushExecutionsOnEOFExperiment = "remote_execution.flush_executions_on_eof"
 )
 
 var (
@@ -582,12 +573,6 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 	return executionProto, len(links) > 0, nil
 }
 
-// flushAndRecordUsage flushes the merged execution state to ClickHouse and
-// records execution-duration usage. It is called either inside the
-// stage==COMPLETED handler or on stream EOF, depending on the
-// `remote_execution.flush_executions_on_eof` experiment flag. Usage is only
-// recorded when the flush actually wrote new data, so retried
-// PublishOperation streams don't double-count.
 func (s *ExecutionServer) flushAndRecordUsage(ctx context.Context, taskID string) {
 	execution, flushed, err := s.flushExecutionToOLAP(ctx, taskID)
 	if err != nil {
@@ -1379,19 +1364,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	taskID := ""
 	// Once the executor has called PublishOperation, we're in EXECUTING stage.
 	stage := repb.ExecutionStage_EXECUTING
-	// flushExecutionsOnEOF controls whether the OLAP flush + usage update
-	// happens when the executor closes the PublishOperation stream (true)
-	// or inline with the stage==COMPLETED handler (false). Doing the work
-	// on EOF lets the executor publish post-COMPLETED updates (e.g.
-	// firecracker snapshot save stats produced during runner recycling)
-	// that get merged into the OLAP row. Gated by experiment for gradual
-	// rollout; resolved once per stream so the choice is consistent if
-	// COMPLETED and EOF fire on opposite sides of a flag flip.
-	flushExecutionsOnEOF := false
-	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
-		flushExecutionsOnEOF, _ = fp.BooleanDetails(ctx, flushExecutionsOnEOFExperiment, false)
-	}
-
 	mu := sync.Mutex{}
 	// 80% of executions take < 10 seconds in total. So here, we delay
 	// writes to the database if pubsub.Publish is successful, in an
@@ -1426,6 +1398,11 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		}
 	})
 	defer deletePendingExecutionOnce()
+
+	flushExecutionsOnEOF := false
+	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
+		flushExecutionsOnEOF, _ = fp.BooleanDetails(ctx, "remote_execution.flush_executions_after_cleanup", false)
+	}
 
 	for {
 		op, err := stream.Recv()

@@ -785,15 +785,12 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			recycleRunner:          true,
 		},
 	} {
-		// Run each case twice: once with the legacy
-		// flush-on-COMPLETED path and once with the
-		// flush-on-EOF experiment enabled.
-		for _, flushOnEOF := range []bool{false, true} {
+		for _, flushAfterCleanup := range []bool{false, true} {
 			test := test
-			test.flushOnEOF = flushOnEOF
+			test.flushAfterCleanup = flushAfterCleanup
 			name := test.name
-			if flushOnEOF {
-				name += "/FlushOnEOF"
+			if flushAfterCleanup {
+				name += "/FlushAfterCleanup"
 			}
 			t.Run(name, func(t *testing.T) {
 				testExecuteAndPublishOperation(t, test)
@@ -815,12 +812,7 @@ type publishTest struct {
 	redisRestart             bool
 	useDefaultPool           bool
 	recycleRunner            bool
-	// flushOnEOF enables the
-	// "remote_execution.flush_executions_on_eof" experiment so the OLAP
-	// flush + usage update happen on stream EOF instead of inside the
-	// COMPLETED handler. The end-to-end behavior observed by the test
-	// should be identical, so each subtest also runs with this flipped.
-	flushOnEOF bool
+	flushAfterCleanup        bool
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
@@ -831,8 +823,8 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		flags.Set(t, k, v)
 	}
 	env, conn, r := setupEnv(t)
-	if test.flushOnEOF {
-		setExperimentFlag(t, env, "remote_execution.flush_executions_on_eof", "true", true)
+	if test.flushAfterCleanup {
+		setExperimentFlag(t, env, "remote_execution.flush_executions_after_cleanup", "true", true)
 	}
 	client := repb.NewExecutionClient(conn)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
