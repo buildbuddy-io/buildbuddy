@@ -99,7 +99,9 @@ func TestWhitespaceTokenizer(t *testing.T) {
 
 func TestWhitespaceTokenizerTermFrequencies(t *testing.T) {
 	tt := NewWhitespaceTokenizer()
-	assert.Equal(t, []string{"this", "this", "that"}, tokenizeBuf("this this that", tt))
+	// Duplicate tokens are deduped at Next() time; frequencies are recorded
+	// in the side-channel exposed by ForEachTermFrequency.
+	assert.Equal(t, []string{"this", "that"}, tokenizeBuf("this this that", tt))
 
 	frequencies := make(map[string]uint32)
 	tt.ForEachTermFrequency(func(ngram string, frequency uint32) {

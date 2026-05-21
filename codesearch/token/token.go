@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"github.com/bits-and-blooms/bloom/v3"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/indexprofile"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/sparse"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -122,7 +123,7 @@ func (tt *TrigramTokenizer) ForEachTermFrequency(fn func(ngram string, frequency
 }
 
 func (tt *TrigramTokenizer) TermFrequencyStats() types.TermFrequencyStats {
-	return termFrequencyStatsFromFrequencies(tt.freqs)
+	return indexprofile.TermFrequencyStatsFromFrequencies(tt.freqs)
 }
 
 type WhitespaceTokenizer struct {
@@ -163,9 +164,18 @@ func (wt *WhitespaceTokenizer) NgramString() string {
 	return wt.tok
 }
 
-func (wt *WhitespaceTokenizer) setToken(tok string) {
+// recordToken bumps the frequency for tok and reports whether this is the
+// first occurrence of tok in the current document. wt.tok is only updated on
+// the first occurrence so that Ngram/NgramString — valid only after a nil
+// return from Next — always reflects the unique token Next just yielded.
+func (wt *WhitespaceTokenizer) recordToken(tok string) bool {
+	if _, seen := wt.freqs[tok]; seen {
+		wt.freqs[tok]++
+		return false
+	}
+	wt.freqs[tok] = 1
 	wt.tok = tok
-	wt.freqs[tok]++
+	return true
 }
 
 func (wt *WhitespaceTokenizer) Next() error {
@@ -178,23 +188,26 @@ func (wt *WhitespaceTokenizer) Next() error {
 	for {
 		b, err := wt.r.ReadByte()
 		if err != nil {
-			if wt.sb.Len() > 0 {
-				wt.setToken(currentToken())
+			if wt.sb.Len() == 0 {
+				return err
+			}
+			if wt.recordToken(currentToken()) {
 				return nil
 			}
+			// Trailing token was a duplicate; report EOF on this call.
 			return err
 		}
 		c := byte(unicode.ToLower(rune(b)))
+		wt.n++
 		if c != ' ' {
 			wt.sb.WriteByte(c)
-			wt.n++
-		} else {
-			if wt.sb.Len() > 0 {
-				wt.setToken(currentToken())
-				wt.n++
-				return nil
-			}
-			wt.n++
+			continue
+		}
+		if wt.sb.Len() == 0 {
+			continue
+		}
+		if wt.recordToken(currentToken()) {
+			return nil
 		}
 	}
 }
@@ -210,7 +223,7 @@ func (wt *WhitespaceTokenizer) TermFrequencyStats() types.TermFrequencyStats {
 	for _, freq := range wt.freqs {
 		freqs = append(freqs, freq)
 	}
-	return termFrequencyStatsFromFrequencies(freqs)
+	return indexprofile.TermFrequencyStatsFromFrequencies(freqs)
 }
 
 // The following algorithm was inspired by github's codesearch blogpost and
@@ -475,57 +488,7 @@ func (tt *SparseNgramTokenizer) ForEachTermFrequency(fn func(ngram string, frequ
 }
 
 func (tt *SparseNgramTokenizer) TermFrequencyStats() types.TermFrequencyStats {
-	return termFrequencyStatsFromFrequencies(tt.ngramFreqs)
-}
-
-func termFrequencyStatsFromFrequencies(freqs []uint32) types.TermFrequencyStats {
-	stats := types.TermFrequencyStats{}
-	for _, freq := range freqs {
-		tf := uint64(freq)
-		stats.Occurrences += int64(tf)
-		stats.UniquePostings++
-		stats.CountBytesEstimate += int64(uvarintLen64(tf))
-		addTermFrequencyBucket(&stats, tf)
-		if freq > 1 {
-			duplicateCount := tf - 1
-			stats.DuplicatePostings++
-			stats.DuplicateOccurrences += int64(duplicateCount)
-			stats.ExceptionBytesEstimate += 1 + int64(uvarintLen64(duplicateCount))
-		}
-	}
-	return stats
-}
-
-func addTermFrequencyBucket(stats *types.TermFrequencyStats, tf uint64) {
-	switch {
-	case tf == 1:
-		stats.Count1++
-	case tf == 2:
-		stats.Count2++
-	case tf <= 4:
-		stats.Count3To4++
-	case tf <= 8:
-		stats.Count5To8++
-	case tf <= 16:
-		stats.Count9To16++
-	case tf <= 32:
-		stats.Count17To32++
-	case tf <= 64:
-		stats.Count33To64++
-	case tf <= 128:
-		stats.Count65To128++
-	default:
-		stats.Count129Plus++
-	}
-}
-
-func uvarintLen64(v uint64) int {
-	n := 1
-	for v >= 0x80 {
-		v >>= 7
-		n++
-	}
-	return n
+	return indexprofile.TermFrequencyStatsFromFrequencies(tt.ngramFreqs)
 }
 
 func (tt *SparseNgramTokenizer) incrementNgramFrequency(idx int) {

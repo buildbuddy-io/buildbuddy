@@ -100,6 +100,56 @@ type postingListTopEntry struct {
 
 type TermFrequencyStats = types.TermFrequencyStats
 
+func TermFrequencyStatsFromFrequencies(freqs []uint32) TermFrequencyStats {
+	stats := TermFrequencyStats{}
+	for _, freq := range freqs {
+		tf := uint64(freq)
+		stats.Occurrences += int64(tf)
+		stats.UniquePostings++
+		stats.CountBytesEstimate += int64(uvarintLen64(tf))
+		addTermFrequencyBucket(&stats, tf)
+		if freq > 1 {
+			duplicateCount := tf - 1
+			stats.DuplicatePostings++
+			stats.DuplicateOccurrences += int64(duplicateCount)
+			stats.ExceptionBytesEstimate += 1 + int64(uvarintLen64(duplicateCount))
+		}
+	}
+	return stats
+}
+
+func addTermFrequencyBucket(stats *TermFrequencyStats, tf uint64) {
+	switch {
+	case tf == 1:
+		stats.Count1++
+	case tf == 2:
+		stats.Count2++
+	case tf <= 4:
+		stats.Count3To4++
+	case tf <= 8:
+		stats.Count5To8++
+	case tf <= 16:
+		stats.Count9To16++
+	case tf <= 32:
+		stats.Count17To32++
+	case tf <= 64:
+		stats.Count33To64++
+	case tf <= 128:
+		stats.Count65To128++
+	default:
+		stats.Count129Plus++
+	}
+}
+
+func uvarintLen64(v uint64) int {
+	n := 1
+	for v >= 0x80 {
+		v >>= 7
+		n++
+	}
+	return n
+}
+
 type topPostingListHeap struct {
 	entries []postingListTopEntry
 	less    func(a, b postingListTopEntry) bool
