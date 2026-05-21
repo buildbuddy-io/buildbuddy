@@ -194,6 +194,80 @@ func TestBuilderListOrAddsFrequencies(t *testing.T) {
 	assert.Equal(t, uint32(5), pl.Frequency(3))
 }
 
+func TestBuilderListAndPreservesFrequencies(t *testing.T) {
+	pl := posting.NewBuilderList()
+	pl.AddWithFrequency(1, 2)
+	pl.AddWithFrequency(2, 3)
+	pl.AddWithFrequency(3, 4)
+	other := posting.NewBuilderList()
+	other.AddWithFrequency(2, 99)
+	other.AddWithFrequency(3, 99)
+	other.AddWithFrequency(4, 99)
+
+	pl.And(other)
+
+	assert.Equal(t, []uint64{2, 3}, pl.ToArray())
+	// And keeps the left-hand side's frequencies.
+	assert.Equal(t, uint32(3), pl.Frequency(2))
+	assert.Equal(t, uint32(4), pl.Frequency(3))
+	assert.Equal(t, uint32(0), pl.Frequency(1))
+	assert.Equal(t, uint32(0), pl.Frequency(4))
+}
+
+func TestBuilderListAndNotPreservesFrequencies(t *testing.T) {
+	pl := posting.NewBuilderList()
+	pl.AddWithFrequency(1, 2)
+	pl.AddWithFrequency(2, 3)
+	pl.AddWithFrequency(3, 4)
+	other := posting.NewBuilderList()
+	other.AddWithFrequency(2, 99)
+
+	pl.AndNot(other)
+
+	assert.Equal(t, []uint64{1, 3}, pl.ToArray())
+	assert.Equal(t, uint32(2), pl.Frequency(1))
+	assert.Equal(t, uint32(4), pl.Frequency(3))
+	assert.Equal(t, uint32(0), pl.Frequency(2))
+}
+
+func TestBuilderListRemovePreservesFrequencies(t *testing.T) {
+	pl := posting.NewBuilderList()
+	pl.AddWithFrequency(1, 2)
+	pl.AddWithFrequency(2, 3)
+	pl.AddWithFrequency(3, 4)
+
+	pl.Remove(2)
+
+	assert.Equal(t, []uint64{1, 3}, pl.ToArray())
+	assert.Equal(t, uint32(2), pl.Frequency(1))
+	assert.Equal(t, uint32(4), pl.Frequency(3))
+	assert.Equal(t, uint32(0), pl.Frequency(2))
+}
+
+func TestCountedReadOnlyListFrequencySparseIDs(t *testing.T) {
+	// Use sparse, non-contiguous IDs to exercise Rank rather than a tight
+	// iteration that would happen to match a sequential scan.
+	pl := posting.NewBuilderList()
+	pl.AddWithFrequency(10, 5)
+	pl.AddWithFrequency(1000, 7)
+	pl.AddWithFrequency(1<<32, 9)
+	pl.AddWithFrequency(1<<40, 11)
+	buf, err := pl.Marshal()
+	require.NoError(t, err)
+
+	roList, err := posting.UnmarshalReadOnly(buf)
+	require.NoError(t, err)
+
+	assert.Equal(t, uint32(5), roList.Frequency(10))
+	assert.Equal(t, uint32(7), roList.Frequency(1000))
+	assert.Equal(t, uint32(9), roList.Frequency(1<<32))
+	assert.Equal(t, uint32(11), roList.Frequency(1<<40))
+	// Missing IDs return 0.
+	assert.Equal(t, uint32(0), roList.Frequency(0))
+	assert.Equal(t, uint32(0), roList.Frequency(11))
+	assert.Equal(t, uint32(0), roList.Frequency(1<<40+1))
+}
+
 func TestBuilderListOr(t *testing.T) {
 	pl := posting.NewBuilderList(1, 3)
 	pl.Or(posting.NewBuilderList(2, 3))
