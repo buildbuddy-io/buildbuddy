@@ -181,7 +181,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
               <div className="invocation-section">
                 <div className="invocation-section-title">GitHub user</div>
                 <div>
-                  <a href={`${this.props.model.getGithubUser()}`}>{this.props.model.getGithubUser()}</a>
+                  <Link href={`${this.props.model.getGithubUser()}`}>{this.props.model.getGithubUser()}</Link>
                 </div>
               </div>
             )}
@@ -235,10 +235,10 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
               <div className="invocation-section">
                 <div className="invocation-section-title">GKE project</div>
                 <div>
-                  <a
+                  <Link
                     href={`http://console.cloud.google.com/home/dashboard?project=${this.props.model.getGKEProject()}`}>
                     {this.props.model.getGKEProject()}
-                  </a>
+                  </Link>
                 </div>
               </div>
             )}
@@ -247,10 +247,10 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
               <div className="invocation-section">
                 <div className="invocation-section-title">GKE cluster</div>
                 <div>
-                  <a
+                  <Link
                     href={`https://console.cloud.google.com/kubernetes/list?project=${this.props.model.getGKEProject()}&filter=name:${this.props.model.getGKECluster()}`}>
                     {this.props.model.getGKECluster()}
-                  </a>
+                  </Link>
                 </div>
               </div>
             )}
@@ -320,12 +320,12 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                               {option.optionName?.startsWith("//") || option.optionName?.startsWith("@") ? (
                                 <span className="invocation-option-name">{option.optionName}</span>
                               ) : (
-                                <a
+                                <Link
                                   className="invocation-option-name"
                                   href={`https://bazel.build/reference/command-line-reference#flag--${option.optionName}`}
                                   target="_blank">
                                   {option.optionName}
-                                </a>
+                                </Link>
                               )}
 
                               {option.optionValue !== undefined && (
