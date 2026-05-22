@@ -120,7 +120,7 @@ func RunAccessControlTests(t *testing.T, setup SetupFunc) {
 
 func runClaim1Anonymous(t *testing.T, setup SetupFunc) {
 	t.Run("FetchManifest", func(t *testing.T) {
-		t.Skip("Claim 1 (anonymous skip cache) not yet implemented for FetchManifest; tracking PR #12175")
+		// t.Skip("Claim 1 (anonymous skip cache) not yet implemented for FetchManifest; tracking PR #12175")
 		ctx := context.Background()
 		reg, counter := newAnonymousRegistry(t)
 		imageName, img := reg.PushNamedImage(t, "claim1-fetchmanifest", nil)
@@ -171,7 +171,7 @@ func runClaim1Anonymous(t *testing.T, setup SetupFunc) {
 	})
 
 	t.Run("FetchBlobMetadata", func(t *testing.T) {
-		t.Skip("Claim 1 (anonymous skip cache) not yet implemented for FetchBlobMetadata; tracking PR #12175")
+		// t.Skip("Claim 1 (anonymous skip cache) not yet implemented for FetchBlobMetadata; tracking PR #12175")
 		ctx := context.Background()
 		reg, counter := newAnonymousRegistry(t)
 		imageName, img := reg.PushNamedImage(t, "claim1-fetchblobmeta", nil)
@@ -194,7 +194,7 @@ func runClaim1Anonymous(t *testing.T, setup SetupFunc) {
 	})
 
 	t.Run("FetchBlob", func(t *testing.T) {
-		t.Skip("Claim 1 (anonymous skip cache) not yet implemented for FetchBlob; tracking PR #12175")
+		// t.Skip("Claim 1 (anonymous skip cache) not yet implemented for FetchBlob; tracking PR #12175")
 		ctx := context.Background()
 		reg, counter := newAnonymousRegistry(t)
 		imageName, img := reg.PushNamedImage(t, "claim1-fetchblob", nil)
@@ -293,17 +293,15 @@ func runClaim2BypassRegistry(t *testing.T, setup SetupFunc) {
 			require.True(t, status.IsPermissionDeniedError(err), "non-admin bypass must be denied with PermissionDenied, got: %v", err)
 			require.Empty(t, counter.Snapshot(), "denied bypass must not contact the registry")
 		})
-		t.Run("AdminBypassNotSupportedOrFromCache", func(t *testing.T) {
+		t.Run("AdminBypassNotSupported", func(t *testing.T) {
 			counter.Reset()
 			_, err := client.FetchManifestMetadata(userCtx(AdminUser), &ofpb.FetchManifestMetadataRequest{Ref: ref, BypassRegistry: true})
 			// Current implementation returns NotFound for admin bypass on
 			// FetchManifestMetadata because it is not yet supported.
-			// PR #12175 makes admin bypass serve from AC when a manifest
-			// entry is present; either outcome (NotFound or success) is
-			// acceptable here — what matters is no registry traffic.
-			if err != nil {
-				require.True(t, status.IsNotFoundError(err), "admin bypass must succeed or return NotFound (no registry fallback), got: %v", err)
-			}
+			// When support lands, replace this assertion with a successful
+			// cache-read assertion instead of accepting both outcomes.
+			require.Error(t, err)
+			require.True(t, status.IsNotFoundError(err), "admin bypass is not supported yet; got: %v", err)
 			require.Empty(t, counter.Snapshot(), "admin bypass must never contact the registry")
 		})
 	})
@@ -414,7 +412,7 @@ func runClaim3CredentialedCache(t *testing.T, setup SetupFunc) {
 
 		for _, cc := range credCases {
 			t.Run(cc.name, func(t *testing.T) {
-				t.Skip("Claim 3 (creds required for cache reads) not yet enforced for FetchManifest; tracking PR #12196")
+				// t.Skip("Claim 3 (creds required for cache reads) not yet enforced for FetchManifest; tracking PR #12196")
 				_, err := client.FetchManifest(authedCtx(ctx), &ofpb.FetchManifestRequest{Ref: ref, Credentials: cc.creds})
 				require.Error(t, err)
 				require.True(t, status.IsUnauthenticatedError(err),
@@ -459,7 +457,7 @@ func runClaim3CredentialedCache(t *testing.T, setup SetupFunc) {
 
 		for _, cc := range credCases {
 			t.Run(cc.name, func(t *testing.T) {
-				t.Skip("Claim 3 (creds required for cache reads) not yet enforced for FetchBlobMetadata; tracking PR #12196")
+				// t.Skip("Claim 3 (creds required for cache reads) not yet enforced for FetchBlobMetadata; tracking PR #12196")
 				_, err := client.FetchBlobMetadata(authedCtx(ctx), &ofpb.FetchBlobMetadataRequest{Ref: ref, Credentials: cc.creds})
 				require.Error(t, err)
 				require.True(t, status.IsUnauthenticatedError(err),
@@ -480,7 +478,7 @@ func runClaim3CredentialedCache(t *testing.T, setup SetupFunc) {
 
 		for _, cc := range credCases {
 			t.Run(cc.name, func(t *testing.T) {
-				t.Skip("Claim 3 (creds required for cache reads) not yet enforced for FetchBlob; tracking PR #12196")
+				// t.Skip("Claim 3 (creds required for cache reads) not yet enforced for FetchBlob; tracking PR #12196")
 				err := doFetchBlob(client, authedCtx(ctx), &ofpb.FetchBlobRequest{Ref: ref, Credentials: cc.creds})
 				require.Error(t, err)
 				require.True(t, status.IsUnauthenticatedError(err),
