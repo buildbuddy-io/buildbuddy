@@ -10,11 +10,6 @@
 // The tests are written against the OCIFetcherClient gRPC surface so that
 // both ocifetcher (the in-app service) and ocifetcher_server_proxy (the
 // executor-side proxy) can share them.
-//
-// Tests that exercise claims not yet implemented in the production code
-// path call t.Skip with a reference to the open PR that adds enforcement.
-// Once enforcement lands, removing the t.Skip line is the only edit needed
-// to enable the test.
 package ocifetchertest
 
 import (
@@ -120,7 +115,6 @@ func RunAccessControlTests(t *testing.T, setup SetupFunc) {
 
 func runAnonymousSkipsCache(t *testing.T, setup SetupFunc) {
 	t.Run("FetchManifest", func(t *testing.T) {
-		t.Skip("anonymous skip cache not yet enforced for FetchManifest; tracking PR #12175")
 		ctx := context.Background()
 		reg, counter := newAnonymousRegistry(t)
 		imageName, img := reg.PushNamedImage(t, "anon-fetchmanifest", nil)
@@ -171,7 +165,6 @@ func runAnonymousSkipsCache(t *testing.T, setup SetupFunc) {
 	})
 
 	t.Run("FetchBlobMetadata", func(t *testing.T) {
-		t.Skip("anonymous skip cache not yet enforced for FetchBlobMetadata; tracking PR #12175")
 		ctx := context.Background()
 		reg, counter := newAnonymousRegistry(t)
 		imageName, img := reg.PushNamedImage(t, "anon-fetchblobmeta", nil)
@@ -194,7 +187,6 @@ func runAnonymousSkipsCache(t *testing.T, setup SetupFunc) {
 	})
 
 	t.Run("FetchBlob", func(t *testing.T) {
-		t.Skip("anonymous skip cache not yet enforced for FetchBlob; tracking PR #12175")
 		ctx := context.Background()
 		reg, counter := newAnonymousRegistry(t)
 		imageName, img := reg.PushNamedImage(t, "anon-fetchblob", nil)
@@ -412,7 +404,6 @@ func runCredentialedCacheRequiresCreds(t *testing.T, setup SetupFunc) {
 
 		for _, cc := range credCases {
 			t.Run(cc.name, func(t *testing.T) {
-				t.Skip("creds required for cache reads not yet enforced for FetchManifest; tracking PR #12196")
 				_, err := client.FetchManifest(authedCtx(ctx), &ofpb.FetchManifestRequest{Ref: ref, Credentials: cc.creds})
 				require.Error(t, err)
 				require.True(t, status.IsUnauthenticatedError(err),
@@ -457,7 +448,6 @@ func runCredentialedCacheRequiresCreds(t *testing.T, setup SetupFunc) {
 
 		for _, cc := range credCases {
 			t.Run(cc.name, func(t *testing.T) {
-				t.Skip("creds required for cache reads not yet enforced for FetchBlobMetadata; tracking PR #12196")
 				_, err := client.FetchBlobMetadata(authedCtx(ctx), &ofpb.FetchBlobMetadataRequest{Ref: ref, Credentials: cc.creds})
 				require.Error(t, err)
 				require.True(t, status.IsUnauthenticatedError(err),
@@ -478,7 +468,6 @@ func runCredentialedCacheRequiresCreds(t *testing.T, setup SetupFunc) {
 
 		for _, cc := range credCases {
 			t.Run(cc.name, func(t *testing.T) {
-				t.Skip("creds required for cache reads not yet enforced for FetchBlob; tracking PR #12196")
 				err := doFetchBlob(client, authedCtx(ctx), &ofpb.FetchBlobRequest{Ref: ref, Credentials: cc.creds})
 				require.Error(t, err)
 				require.True(t, status.IsUnauthenticatedError(err),

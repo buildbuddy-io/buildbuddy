@@ -15,6 +15,7 @@ go_library(
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/claims",
         "//server/util/log",
         "//server/util/status",
         "//third_party/singleflight",
