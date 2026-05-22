@@ -24,6 +24,7 @@ go_library(
         "//server/util/region",
         "//server/util/status",
         "//server/util/usageutil",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/column/orderedmap",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
@@ -51,6 +52,7 @@ go_test(
         "//server/util/clickhouse/schema",
         "//server/util/db",
         "//server/util/testing/flags",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/column/orderedmap",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_go_sql_driver_mysql//:mysql",
         "@com_github_jonboulle_clockwork//:clockwork",
@@ -70,7 +72,7 @@ go_test(
         # TODO(bduffany): Remove test filter, add ClickHouse test logic to all
         # test cases, and enable test sharding before we fully enable
         # ClickHouse in prod.
-        "-test.run=TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod",
+        "-test.run=TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod|TestClickHouseUsageView_DedupesDuplicateRawUsageRows",
     ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
@@ -96,6 +98,7 @@ go_test(
         "//server/util/clickhouse/schema",
         "//server/util/db",
         "//server/util/testing/flags",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/column/orderedmap",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_go_sql_driver_mysql//:mysql",
         "@com_github_jonboulle_clockwork//:clockwork",
@@ -141,6 +144,7 @@ go_test(
         "//server/util/clickhouse/schema",
         "//server/util/db",
         "//server/util/testing/flags",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/column/orderedmap",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_go_sql_driver_mysql//:mysql",
         "@com_github_jonboulle_clockwork//:clockwork",
@@ -186,6 +190,7 @@ go_test(
         "//server/util/clickhouse/schema",
         "//server/util/db",
         "//server/util/testing/flags",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/column/orderedmap",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_go_sql_driver_mysql//:mysql",
         "@com_github_jonboulle_clockwork//:clockwork",

@@ -65,6 +65,7 @@ go_test(
         "//server/util/clickhouse/schema",
         "//server/util/role",
         "//server/util/testing/flags",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/column/orderedmap",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/testutil",
