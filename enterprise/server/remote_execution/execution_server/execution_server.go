@@ -1353,24 +1353,26 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			case <-ctx.Done():
 				return
 			case <-ticker.Chan():
-				mu.Lock()
-				taskID := taskID
-				stage := stage
-				lastOp := lastOp
-				mu.Unlock()
-				if stage == repb.ExecutionStage_COMPLETED {
-					// The main loop will handle this write. If it fails, the
-					// client will retry the PublishOperation call.
-					return
-				}
-				if s.clock.Since(start) > 5*time.Second && taskID != "" {
-					// We only write additional metadata when the operation has completed, so
-					// we don't need to pass those fields here for intermediary updates.
-					if err := s.updateExecution(ctx, taskID, stage, operation.ExtractExecuteResponse(lastOp), nil, nil, nil, nil); err != nil {
-						log.CtxWarningf(ctx, "PublishOperation: FlushWrite: error updating execution: %s", err)
-					} else {
-						return // only write once
+				if func() (exit bool) {
+					mu.Lock()
+					defer mu.Unlock()
+					if stage == repb.ExecutionStage_COMPLETED {
+						// The main loop will handle this write. If it fails, the
+						// client will retry the PublishOperation call.
+						return true
 					}
+					if s.clock.Since(start) > 5*time.Second && taskID != "" {
+						// We only write additional metadata when the operation has completed, so
+						// we don't need to pass those fields here for intermediary updates.
+						if err := s.updateExecution(ctx, taskID, stage, operation.ExtractExecuteResponse(lastOp), nil, nil, nil, nil); err != nil {
+							log.CtxWarningf(ctx, "PublishOperation: FlushWrite: error updating execution: %s", err)
+						} else {
+							return true // only write once
+						}
+					}
+					return false
+				}() {
+					return
 				}
 			}
 		}
