@@ -442,6 +442,11 @@ func (a *OrderedArgs) RemoveStartupOptions(optionNames ...string) []*IndexedOpti
 	return removeOptions[*StartupOption, *Command](a, optionNames...)
 }
 
+// RemoveAndAccumulateStartupOption removes all the startup options with
+// optionName from the passed args and accumulates all of the options into a
+// single value, with the zero value of the type T as the starting accumulator
+// value. It exists primarily to strip options from the arguments that will be
+// passed to bazel and resolve them into a value to be used by the caller.
 func RemoveAndAccumulateStartupOption[T options.ValueType](a *OrderedArgs, optionName string) (T, error) {
 	opts := a.RemoveStartupOptions(optionName)
 	return accumulateHelper[T](opts)
@@ -451,6 +456,11 @@ func (a *OrderedArgs) RemoveCommandOptions(optionNames ...string) []*IndexedOpti
 	return removeOptions[*CommandOption, *DoubleDash](a, optionNames...)
 }
 
+// RemoveAndAccumulateCommandpOption removes all the command options with
+// optionName from the passed args and accumulates all of the options into a
+// single value, with the zero value of the type T as the starting accumulator
+// value. It exists primarily to strip options from the arguments that will be
+// passed to bazel and resolve them into a value to be used by the caller.
 func RemoveAndAccumulateCommandOption[T options.ValueType](a *OrderedArgs, optionName string) (T, error) {
 	opts := a.RemoveCommandOptions(optionName)
 	return accumulateHelper[T](opts)
