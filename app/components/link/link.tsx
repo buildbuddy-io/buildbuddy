@@ -1,12 +1,16 @@
 import React from "react";
 import router from "../../router/router";
 
+const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001F\u007F-\u009F]/;
+const SCHEME_PATTERN = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+const SAFE_LINK_HREF_PROTOCOLS = new Set(["http:", "https:", "blob:"]);
+
 export type LinkProps = {
+  /** Link destination. Raw strings are sanitized before rendering. */
+  href?: string;
   /** Prevents existing filter state from being preserved when navigating. */
   resetFilters?: boolean;
-} & React.AnchorHTMLAttributes<HTMLAnchorElement>;
-
-const SCHEME_PATTERN = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+} & Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, "href">;
 
 /**
  * `Link` renders an unstyled, router-aware `<a>` element.
@@ -22,7 +26,9 @@ const SCHEME_PATTERN = /^[A-Za-z][A-Za-z0-9+.-]*:/;
  * handler, navigation is canceled, as is the case for normal `<a>` elements.
  */
 export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAnchorElement>) => {
-  const { className, href, target, onClick, resetFilters, ...rest } = props;
+  const { className, href: unvalidatedHref, target, onClick, resetFilters, ...rest } = props;
+
+  const href = sanitizeLinkHref(unvalidatedHref);
   const shouldHandleWithRouter = !!href && !target && !SCHEME_PATTERN.test(href) && !href.startsWith("//");
   const onClickWrapped = shouldHandleWithRouter
     ? (e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
@@ -68,3 +74,24 @@ export const TextLink = React.forwardRef((props: TextLinkProps, ref: React.Ref<H
 });
 
 export default Link;
+
+/**
+ * sanitizeLinkHref returns a safe href for app-rendered links. It rejects
+ * disallowed URL schemes such as "javascript:" and also rejects potentially
+ * unsafe control characters.
+ */
+export function sanitizeLinkHref(href: string | null | undefined): string | undefined {
+  const cleaned = (href ?? "").trim() || undefined;
+  if (!cleaned || cleaned.startsWith("//")) return undefined;
+  // Reject potentially unsafe control characters.
+  if (CONTROL_CHARACTER_PATTERN.test(cleaned)) return undefined;
+  if (!SCHEME_PATTERN.test(cleaned)) return cleaned;
+
+  try {
+    const parsed = new URL(cleaned);
+    if (!SAFE_LINK_HREF_PROTOCOLS.has(parsed.protocol)) return undefined;
+    return parsed.href;
+  } catch (e) {
+    return undefined;
+  }
+}

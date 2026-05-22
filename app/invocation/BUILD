@@ -342,6 +342,7 @@ ts_library(
         "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/components/banner",
+        "//app/components/link",
         "//app/format",
         "//app/invocation:invocation_model",
         "//app/util:clipboard",
