@@ -94,19 +94,19 @@ type SetupFunc func(t *testing.T, ctx context.Context, reg *testregistry.Registr
 // RunAccessControlTests runs the shared access-control test suite against
 // the given implementation factory.
 func RunAccessControlTests(t *testing.T, setup SetupFunc) {
-	t.Run("Claim1_AnonymousSkipsCache", func(t *testing.T) {
-		runClaim1Anonymous(t, setup)
+	t.Run("AnonymousSkipsCache", func(t *testing.T) {
+		runAnonymousSkipsCache(t, setup)
 	})
-	t.Run("Claim2_BypassRegistryRequiresAdmin", func(t *testing.T) {
-		runClaim2BypassRegistry(t, setup)
+	t.Run("BypassRegistryRequiresAdmin", func(t *testing.T) {
+		runBypassRegistryRequiresAdmin(t, setup)
 	})
-	t.Run("Claim3_CredentialedCacheRequiresCreds", func(t *testing.T) {
-		runClaim3CredentialedCache(t, setup)
+	t.Run("CredentialedCacheRequiresCreds", func(t *testing.T) {
+		runCredentialedCacheRequiresCreds(t, setup)
 	})
 }
 
 // -----------------------------------------------------------------------------
-// Claim 1: anonymous requests do not read from or write to AC/CAS.
+// Anonymous requests do not read from or write to AC/CAS.
 // -----------------------------------------------------------------------------
 //
 // Strategy: pre-populate the cache via an authenticated fetch, then make two
@@ -118,12 +118,12 @@ func RunAccessControlTests(t *testing.T, setup SetupFunc) {
 // Anonymous == no authenticated user info on the context. The shared suite
 // uses context.Background() to represent that.
 
-func runClaim1Anonymous(t *testing.T, setup SetupFunc) {
+func runAnonymousSkipsCache(t *testing.T, setup SetupFunc) {
 	t.Run("FetchManifest", func(t *testing.T) {
-		// t.Skip("Claim 1 (anonymous skip cache) not yet implemented for FetchManifest; tracking PR #12175")
+		t.Skip("anonymous skip cache not yet enforced for FetchManifest; tracking PR #12175")
 		ctx := context.Background()
 		reg, counter := newAnonymousRegistry(t)
-		imageName, img := reg.PushNamedImage(t, "claim1-fetchmanifest", nil)
+		imageName, img := reg.PushNamedImage(t, "anon-fetchmanifest", nil)
 		manifestDigest, _, _ := imageMetadata(t, img)
 		ref := imageName + "@" + manifestDigest
 		client := setup(t, ctx, reg)
@@ -148,11 +148,11 @@ func runClaim1Anonymous(t *testing.T, setup SetupFunc) {
 
 	t.Run("FetchManifestMetadata", func(t *testing.T) {
 		// FetchManifestMetadata never reads or writes cache by design,
-		// so claim 1 holds for it today. Keep the test live as a
-		// regression guard.
+		// so anonymous requests bypass it today. Keep the test live as
+		// a regression guard.
 		ctx := context.Background()
 		reg, counter := newAnonymousRegistry(t)
-		imageName, img := reg.PushNamedImage(t, "claim1-fetchmanifestmeta", nil)
+		imageName, img := reg.PushNamedImage(t, "anon-fetchmanifestmeta", nil)
 		manifestDigest, _, _ := imageMetadata(t, img)
 		ref := imageName + "@" + manifestDigest
 		client := setup(t, ctx, reg)
@@ -171,10 +171,10 @@ func runClaim1Anonymous(t *testing.T, setup SetupFunc) {
 	})
 
 	t.Run("FetchBlobMetadata", func(t *testing.T) {
-		// t.Skip("Claim 1 (anonymous skip cache) not yet implemented for FetchBlobMetadata; tracking PR #12175")
+		t.Skip("anonymous skip cache not yet enforced for FetchBlobMetadata; tracking PR #12175")
 		ctx := context.Background()
 		reg, counter := newAnonymousRegistry(t)
-		imageName, img := reg.PushNamedImage(t, "claim1-fetchblobmeta", nil)
+		imageName, img := reg.PushNamedImage(t, "anon-fetchblobmeta", nil)
 		layerDigest := firstLayerDigest(t, img)
 		ref := imageName + "@" + layerDigest
 		client := setup(t, ctx, reg)
@@ -194,10 +194,10 @@ func runClaim1Anonymous(t *testing.T, setup SetupFunc) {
 	})
 
 	t.Run("FetchBlob", func(t *testing.T) {
-		// t.Skip("Claim 1 (anonymous skip cache) not yet implemented for FetchBlob; tracking PR #12175")
+		t.Skip("anonymous skip cache not yet enforced for FetchBlob; tracking PR #12175")
 		ctx := context.Background()
 		reg, counter := newAnonymousRegistry(t)
-		imageName, img := reg.PushNamedImage(t, "claim1-fetchblob", nil)
+		imageName, img := reg.PushNamedImage(t, "anon-fetchblob", nil)
 		layerDigest := firstLayerDigest(t, img)
 		ref := imageName + "@" + layerDigest
 		client := setup(t, ctx, reg)
@@ -217,7 +217,7 @@ func runClaim1Anonymous(t *testing.T, setup SetupFunc) {
 }
 
 // -----------------------------------------------------------------------------
-// Claim 2: bypass_registry requires a server admin.
+// bypass_registry requires a server admin.
 // -----------------------------------------------------------------------------
 //
 // Strategy: pre-populate the cache via an authenticated fetch. Then for each
@@ -226,13 +226,13 @@ func runClaim1Anonymous(t *testing.T, setup SetupFunc) {
 // touching the upstream registry; admin must serve the cached entry, also
 // without touching the upstream registry.
 
-func runClaim2BypassRegistry(t *testing.T, setup SetupFunc) {
+func runBypassRegistryRequiresAdmin(t *testing.T, setup SetupFunc) {
 	flags.Set(t, "auth.admin_group_id", AdminGroupID)
 
 	t.Run("FetchManifest", func(t *testing.T) {
 		ctx := context.Background()
 		reg, counter := newAnonymousRegistry(t)
-		imageName, img := reg.PushNamedImage(t, "claim2-fetchmanifest", nil)
+		imageName, img := reg.PushNamedImage(t, "bypass-fetchmanifest", nil)
 		manifestDigest, _, _ := imageMetadata(t, img)
 		ref := imageName + "@" + manifestDigest
 		client := setup(t, ctx, reg)
@@ -267,7 +267,7 @@ func runClaim2BypassRegistry(t *testing.T, setup SetupFunc) {
 	t.Run("FetchManifestMetadata", func(t *testing.T) {
 		ctx := context.Background()
 		reg, counter := newAnonymousRegistry(t)
-		imageName, img := reg.PushNamedImage(t, "claim2-fetchmanifestmeta", nil)
+		imageName, img := reg.PushNamedImage(t, "bypass-fetchmanifestmeta", nil)
 		manifestDigest, _, _ := imageMetadata(t, img)
 		ref := imageName + "@" + manifestDigest
 		client := setup(t, ctx, reg)
@@ -309,7 +309,7 @@ func runClaim2BypassRegistry(t *testing.T, setup SetupFunc) {
 	t.Run("FetchBlobMetadata", func(t *testing.T) {
 		ctx := context.Background()
 		reg, counter := newAnonymousRegistry(t)
-		imageName, img := reg.PushNamedImage(t, "claim2-fetchblobmeta", nil)
+		imageName, img := reg.PushNamedImage(t, "bypass-fetchblobmeta", nil)
 		layerDigest := firstLayerDigest(t, img)
 		ref := imageName + "@" + layerDigest
 		client := setup(t, ctx, reg)
@@ -342,7 +342,7 @@ func runClaim2BypassRegistry(t *testing.T, setup SetupFunc) {
 	t.Run("FetchBlob", func(t *testing.T) {
 		ctx := context.Background()
 		reg, counter := newAnonymousRegistry(t)
-		imageName, img := reg.PushNamedImage(t, "claim2-fetchblob", nil)
+		imageName, img := reg.PushNamedImage(t, "bypass-fetchblob", nil)
 		layerDigest := firstLayerDigest(t, img)
 		ref := imageName + "@" + layerDigest
 		client := setup(t, ctx, reg)
@@ -374,8 +374,8 @@ func runClaim2BypassRegistry(t *testing.T, setup SetupFunc) {
 }
 
 // -----------------------------------------------------------------------------
-// Claim 3: cache entries fetched with credentials cannot be served to
-// unauthenticated / wrong-credential requests.
+// Cache entries fetched with credentials cannot be served to unauthenticated
+// or wrong-credential requests.
 // -----------------------------------------------------------------------------
 //
 // Strategy: configure the test registry with basic-auth credentials, then
@@ -383,7 +383,7 @@ func runClaim2BypassRegistry(t *testing.T, setup SetupFunc) {
 // credentials. Subsequent calls with missing/invalid credentials must fail
 // with Unauthenticated and must not serve the cached data.
 
-func runClaim3CredentialedCache(t *testing.T, setup SetupFunc) {
+func runCredentialedCacheRequiresCreds(t *testing.T, setup SetupFunc) {
 	type credCase struct {
 		name string
 		// nil means "no credentials".
@@ -401,7 +401,7 @@ func runClaim3CredentialedCache(t *testing.T, setup SetupFunc) {
 	t.Run("FetchManifest", func(t *testing.T) {
 		ctx := context.Background()
 		reg, _ := newPrivateRegistry(t)
-		imageName, img := reg.PushNamedImage(t, "claim3-fetchmanifest", PrivateRegistryCreds)
+		imageName, img := reg.PushNamedImage(t, "creds-fetchmanifest", PrivateRegistryCreds)
 		manifestDigest, _, _ := imageMetadata(t, img)
 		ref := imageName + "@" + manifestDigest
 		client := setup(t, ctx, reg)
@@ -412,7 +412,7 @@ func runClaim3CredentialedCache(t *testing.T, setup SetupFunc) {
 
 		for _, cc := range credCases {
 			t.Run(cc.name, func(t *testing.T) {
-				// t.Skip("Claim 3 (creds required for cache reads) not yet enforced for FetchManifest; tracking PR #12196")
+				t.Skip("creds required for cache reads not yet enforced for FetchManifest; tracking PR #12196")
 				_, err := client.FetchManifest(authedCtx(ctx), &ofpb.FetchManifestRequest{Ref: ref, Credentials: cc.creds})
 				require.Error(t, err)
 				require.True(t, status.IsUnauthenticatedError(err),
@@ -427,7 +427,7 @@ func runClaim3CredentialedCache(t *testing.T, setup SetupFunc) {
 		// enforced today.
 		ctx := context.Background()
 		reg, _ := newPrivateRegistry(t)
-		imageName, img := reg.PushNamedImage(t, "claim3-fetchmanifestmeta", PrivateRegistryCreds)
+		imageName, img := reg.PushNamedImage(t, "creds-fetchmanifestmeta", PrivateRegistryCreds)
 		manifestDigest, _, _ := imageMetadata(t, img)
 		ref := imageName + "@" + manifestDigest
 		client := setup(t, ctx, reg)
@@ -448,7 +448,7 @@ func runClaim3CredentialedCache(t *testing.T, setup SetupFunc) {
 	t.Run("FetchBlobMetadata", func(t *testing.T) {
 		ctx := context.Background()
 		reg, _ := newPrivateRegistry(t)
-		imageName, img := reg.PushNamedImage(t, "claim3-fetchblobmeta", PrivateRegistryCreds)
+		imageName, img := reg.PushNamedImage(t, "creds-fetchblobmeta", PrivateRegistryCreds)
 		layerDigest := firstLayerDigest(t, img)
 		ref := imageName + "@" + layerDigest
 		client := setup(t, ctx, reg)
@@ -457,7 +457,7 @@ func runClaim3CredentialedCache(t *testing.T, setup SetupFunc) {
 
 		for _, cc := range credCases {
 			t.Run(cc.name, func(t *testing.T) {
-				// t.Skip("Claim 3 (creds required for cache reads) not yet enforced for FetchBlobMetadata; tracking PR #12196")
+				t.Skip("creds required for cache reads not yet enforced for FetchBlobMetadata; tracking PR #12196")
 				_, err := client.FetchBlobMetadata(authedCtx(ctx), &ofpb.FetchBlobMetadataRequest{Ref: ref, Credentials: cc.creds})
 				require.Error(t, err)
 				require.True(t, status.IsUnauthenticatedError(err),
@@ -469,7 +469,7 @@ func runClaim3CredentialedCache(t *testing.T, setup SetupFunc) {
 	t.Run("FetchBlob", func(t *testing.T) {
 		ctx := context.Background()
 		reg, _ := newPrivateRegistry(t)
-		imageName, img := reg.PushNamedImage(t, "claim3-fetchblob", PrivateRegistryCreds)
+		imageName, img := reg.PushNamedImage(t, "creds-fetchblob", PrivateRegistryCreds)
 		layerDigest := firstLayerDigest(t, img)
 		ref := imageName + "@" + layerDigest
 		client := setup(t, ctx, reg)
@@ -478,7 +478,7 @@ func runClaim3CredentialedCache(t *testing.T, setup SetupFunc) {
 
 		for _, cc := range credCases {
 			t.Run(cc.name, func(t *testing.T) {
-				// t.Skip("Claim 3 (creds required for cache reads) not yet enforced for FetchBlob; tracking PR #12196")
+				t.Skip("creds required for cache reads not yet enforced for FetchBlob; tracking PR #12196")
 				err := doFetchBlob(client, authedCtx(ctx), &ofpb.FetchBlobRequest{Ref: ref, Credentials: cc.creds})
 				require.Error(t, err)
 				require.True(t, status.IsUnauthenticatedError(err),
