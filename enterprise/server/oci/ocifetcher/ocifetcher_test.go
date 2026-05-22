@@ -653,9 +653,9 @@ func TestFetchBlobRetryOnCompressedError(t *testing.T) {
 		// Two blob GETs: first fails with 401 (simulating expired token),
 		// second succeeds after puller eviction and retry.
 		http.MethodGet + " " + blobPath: 2,
-		// One blob HEAD proves registry access before the blob is read
-		// from cache or fetched.
-		http.MethodHead + " " + blobPath: 1,
+		// Three blob HEADs: one access proof, then one metadata lookup per
+		// blob GET attempt.
+		http.MethodHead + " " + blobPath: 3,
 	})
 }
 
@@ -689,12 +689,12 @@ func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
 
 	blobPath := "/v2/test-metadata-fallback/blobs/" + layerDigest.String()
 	assertRequests(t, counter, map[string]int{
-		http.MethodGet + " /v2/": 3,
+		http.MethodGet + " /v2/": 1,
 		// Blob data is streamed despite metadata failures.
 		http.MethodGet + " " + blobPath: 1,
-		// Failed HEADs are retried by the registry client while proving
-		// access and gathering optional metadata before direct streaming.
-		http.MethodHead + " " + blobPath: 9,
+		// Failed HEADs during access proof skip cache and read-through caching,
+		// then fall back to direct streaming.
+		http.MethodHead + " " + blobPath: 3,
 	})
 
 	// Metadata lookup failures should skip read-through caching, so a subsequent
@@ -705,9 +705,8 @@ func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedLayerData, stream.collectData())
 	assertRequests(t, counter, map[string]int{
-		http.MethodGet + " /v2/":         2,
 		http.MethodGet + " " + blobPath:  1,
-		http.MethodHead + " " + blobPath: 9,
+		http.MethodHead + " " + blobPath: 3,
 	})
 }
 
@@ -1638,9 +1637,10 @@ func TestFetchBlobSingleflightDifferentCredentials(t *testing.T) {
 		// One blob GET for creds1. The invalid-credential request fails during
 		// the pre-cache HEAD access check before attempting a GET.
 		http.MethodGet + " " + blobPath: 1,
-		// Three blob HEADs for layer.Size(): one for creds1 (succeeds),
-		// two for creds2 (Size is fetched before Compressed, so each
-		// attempt calls it before the blob GET fails).
-		http.MethodHead + " " + blobPath: 3,
+		// Four blob HEADs: two for the valid-credential request (access
+		// proof, then metadata for cache write) and two for the
+		// invalid-credential request (initial 401, then retry with a fresh
+		// puller).
+		http.MethodHead + " " + blobPath: 4,
 	})
 }

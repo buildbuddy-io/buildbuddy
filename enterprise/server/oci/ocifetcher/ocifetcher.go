@@ -73,11 +73,6 @@ type blobFetchResult struct {
 	contentLength int64
 }
 
-type blobMetadata struct {
-	size      int64
-	mediaType string
-}
-
 // NewServer constructs an OCIFetcherServer that
 // fetches OCI blobs and manifests from remote registries.
 //
@@ -180,17 +175,15 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	result, _, err := s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (blobFetchResult, error) {
 		isLeader = true
 
-		remoteMeta, accessCheckErr := s.fetchBlobMetadataFromRemote(ctx, digestRef, req.GetCredentials())
-		if accessCheckErr != nil && (status.IsUnauthenticatedError(accessCheckErr) || status.IsPermissionDeniedError(accessCheckErr)) {
-			return blobFetchResult{}, accessCheckErr
+		size, err := s.fetchBlobSizeFromRemote(ctx, digestRef, req.GetCredentials())
+		if err != nil && (status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err)) {
+			return blobFetchResult{}, err
 		}
 
-		if accessCheckErr == nil {
-			err = s.fetchBlobFromCache(ctx, stream, repo, hash)
-			if err == nil {
-				return blobFetchResult{contentLength: remoteMeta.size}, nil
-			}
-			if !status.IsNotFoundError(err) {
+		if err == nil {
+			if err := s.fetchBlobFromCache(ctx, stream, repo, hash); err == nil {
+				return blobFetchResult{contentLength: size}, nil
+			} else if !status.IsNotFoundError(err) {
 				// It is possible this error occurred while writing to the stream.
 				// Since we do not know the state of the stream, it is not safe
 				// to write bytes to the stream past this point.
@@ -198,11 +191,12 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 				return blobFetchResult{}, err
 			}
 		} else {
-			log.CtxWarningf(ctx, "Could not prove blob access before cache lookup; skipping cache and fetching from registry: %s", accessCheckErr)
+			log.CtxWarningf(ctx, "Could not prove blob access before cache lookup; skipping cache and fetching from registry: %s", err)
 		}
 
-		contentLength, fetchErr := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), remoteMeta, stream)
-		return blobFetchResult{contentLength: contentLength}, fetchErr
+		skipMetadataLookup := err != nil
+		contentLength, err := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, req.GetCredentials(), nil, skipMetadataLookup, stream)
+		return blobFetchResult{contentLength: contentLength}, err
 	})
 
 	if isLeader {
@@ -264,9 +258,9 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 		return nil, status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
 	}
 
-	var remoteMeta *blobMetadata
+	var desc *gcr.Descriptor
 	if !req.GetBypassRegistry() {
-		remoteMeta, err = s.fetchBlobMetadataFromRemote(ctx, digestRef, req.GetCredentials())
+		desc, err = s.fetchBlobDescriptorFromRemote(ctx, digestRef, req.GetCredentials())
 		if err != nil {
 			return nil, err
 		}
@@ -287,7 +281,7 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 		return nil, status.NotFoundErrorf("bypassing registry, but blob metadata for %q not found in cache", blobRef)
 	}
 
-	return blobMetadataResponse(remoteMeta), nil
+	return blobDescriptorResponse(desc), nil
 }
 
 // FetchManifest returns an OCI manifest from the action cache if present,
@@ -466,17 +460,66 @@ func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.O
 	return ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, metadata.GetContentLength())
 }
 
-func blobMetadataResponse(meta *blobMetadata) *ofpb.FetchBlobMetadataResponse {
+func blobDescriptorResponse(desc *gcr.Descriptor) *ofpb.FetchBlobMetadataResponse {
 	return &ofpb.FetchBlobMetadataResponse{
-		Size:      meta.size,
-		MediaType: meta.mediaType,
+		Size:      desc.Size,
+		MediaType: string(desc.MediaType),
 	}
 }
 
-// fetchBlobMetadataFromRemote fetches blob metadata (size, media type) from the
-// upstream registry. It does not read from or write to the action cache.
-func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, digestRef gcrname.Digest, creds *rgpb.Credentials) (*blobMetadata, error) {
-	return withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (*blobMetadata, error) {
+// fetchBlobSizeFromRemote proves blob access. It does not read from or write to
+// the action cache.
+func (s *ociFetcherServer) fetchBlobSizeFromRemote(ctx context.Context, digestRef gcrname.Digest, creds *rgpb.Credentials) (int64, error) {
+	fetchSize := func(puller *remote.Puller) (int64, error) {
+		layer, err := puller.Layer(ctx, digestRef)
+		if err != nil {
+			return 0, err
+		}
+		return layer.Size()
+	}
+
+	puller, err := s.getOrCreatePuller(ctx, digestRef, creds)
+	if err != nil {
+		return 0, err
+	}
+
+	size, err := fetchSize(puller)
+	if err == nil {
+		return size, nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return 0, err
+	}
+	t, ok := err.(*transport.Error)
+	if !ok || t.StatusCode != http.StatusUnauthorized {
+		return 0, err
+	}
+
+	// Pullers from the LRU may have expired Bearer tokens. Retry auth failures
+	// once with a fresh puller, but do not retry other errors here since this
+	// call is only an access proof before a cache lookup.
+	s.evictPuller(digestRef, creds)
+	puller, err = s.getOrCreatePuller(ctx, digestRef, creds)
+	if err != nil {
+		return 0, err
+	}
+	size, err = fetchSize(puller)
+	if err == nil {
+		return size, nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return 0, err
+	}
+	if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+		return 0, status.UnauthenticatedErrorf("not authorized to access resource: %s", err)
+	}
+	return 0, err
+}
+
+// fetchBlobDescriptorFromRemote proves blob access and returns remote blob
+// metadata. It does not read from or write to the action cache.
+func (s *ociFetcherServer) fetchBlobDescriptorFromRemote(ctx context.Context, digestRef gcrname.Digest, creds *rgpb.Credentials) (*gcr.Descriptor, error) {
+	return withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (*gcr.Descriptor, error) {
 		layer, err := puller.Layer(ctx, digestRef)
 		if err != nil {
 			return nil, err
@@ -489,7 +532,7 @@ func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, dige
 		if err != nil {
 			return nil, err
 		}
-		return &blobMetadata{size: size, mediaType: string(mediaType)}, nil
+		return &gcr.Descriptor{Size: size, MediaType: mediaType}, nil
 	})
 }
 
@@ -497,7 +540,7 @@ func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, dige
 // registry, streams it to the response, and writes it to the cache
 // simultaneously using read-through caching.
 // It returns the content length of the blob (0 if metadata was unavailable).
-func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef gcrname.Digest, repo gcrname.Repository, hash gcr.Hash, creds *rgpb.Credentials, meta *blobMetadata, stream ofpb.OCIFetcher_FetchBlobServer) (int64, error) {
+func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef gcrname.Digest, repo gcrname.Repository, hash gcr.Hash, creds *rgpb.Credentials, desc *gcr.Descriptor, skipMetadataLookup bool, stream ofpb.OCIFetcher_FetchBlobServer) (int64, error) {
 	// All HTTP-triggering calls (Compressed, MediaType, Size) must be
 	// inside the retry scope so that token refresh covers them, not just
 	// the lazy Layer() reference creation.
@@ -509,9 +552,9 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 	// unavailable.
 	var mediaType string
 	var size int64
-	if meta != nil {
-		mediaType = meta.mediaType
-		size = meta.size
+	if desc != nil {
+		mediaType = string(desc.MediaType)
+		size = desc.Size
 	}
 	rc, err := withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (io.ReadCloser, error) {
 		layer, err := puller.Layer(ctx, digestRef)
@@ -519,7 +562,7 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 			return nil, err
 		}
 		// Best-effort metadata for read-through caching.
-		if meta == nil {
+		if desc == nil && !skipMetadataLookup {
 			if mt, err := layer.MediaType(); err != nil {
 				log.CtxWarningf(ctx, "Could not get media type for layer: %s", err)
 			} else {
