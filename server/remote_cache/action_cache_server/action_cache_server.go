@@ -65,7 +65,7 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 	}, nil
 }
 
-func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, digests []*rspb.ResourceName) error {
+func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, efp interfaces.ExperimentFlagProvider, digests []*rspb.ResourceName) error {
 	missing, err := cache.FindMissing(ctx, digests)
 	if err != nil {
 		return err
@@ -78,7 +78,7 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName s
 	}
 	checker := chunking.NewMissingChunkChecker(cache)
 	for _, d := range missing {
-		if d.GetSizeBytes() <= chunking.MinChunkedReadFallbackSizeBytes() {
+		if d.GetSizeBytes() <= chunking.MinChunkedReadFallbackSizeBytes(ctx, efp) {
 			return status.NotFoundErrorf("ActionResult output file %q not found in cache", digest.String(d))
 		}
 		manifest, err := chunking.LoadManifest(ctx, cache, d, instanceName, digestFunction)
@@ -96,7 +96,7 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName s
 	return nil
 }
 
-func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, r *repb.ActionResult) error {
+func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, efp interfaces.ExperimentFlagProvider, r *repb.ActionResult) error {
 	outputFileDigests := make([]*rspb.ResourceName, 0, len(r.OutputFiles))
 	mu := &sync.Mutex{}
 	appendDigest := func(d *repb.Digest) {
@@ -139,7 +139,7 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 		return err
 	}
 
-	return checkFilesExist(ctx, cache, remoteInstanceName, digestFunction, chunkingEnabled, outputFileDigests)
+	return checkFilesExist(ctx, cache, remoteInstanceName, digestFunction, chunkingEnabled, efp, outputFileDigests)
 }
 
 func setWorkerMetadata(ar *repb.ActionResult) {
@@ -197,7 +197,7 @@ func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.AC
 	}
 
 	chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
-	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), chunkingEnabled, rsp); err != nil {
+	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), chunkingEnabled, s.env.GetExperimentFlagProvider(), rsp); err != nil {
 		return nil, nil, 0, status.NotFoundErrorf("ActionResult (%s) not found: %s", req.GetActionDigest(), err)
 	}
 	// The default limit on incoming gRPC messages is 4MB and Bazel doesn't

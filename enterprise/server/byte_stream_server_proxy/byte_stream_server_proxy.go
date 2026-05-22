@@ -118,7 +118,7 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		efp:                env.GetExperimentFlagProvider(),
 		localCache:         env.GetCache(),
 		remoteCAS:          env.GetContentAddressableStorageClient(),
-		bufPool:            bytebufferpool.VariableSize(int(compression.ZstdCompressBound(chunking.MaxChunkSizeBytes()))),
+		bufPool:            bytebufferpool.VariableSize(int(compression.ZstdCompressBound(chunking.MaxSupportedChunkSizeBytes()))),
 	}, nil
 }
 

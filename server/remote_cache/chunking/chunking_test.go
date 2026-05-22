@@ -132,7 +132,9 @@ func TestReadFallbackThresholdClampsToMaxChunkSize(t *testing.T) {
 	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 4*1024*1024+1)
 
 	require.NoError(t, chunking.ValidateConfig())
-	require.Equal(t, chunking.MaxChunkSizeBytes(), chunking.MinChunkedReadFallbackSizeBytes())
+	ctx := context.Background()
+	efp := booleanFlagProvider{}
+	require.Equal(t, chunking.MaxChunkSizeBytes(ctx, efp), chunking.MinChunkedReadFallbackSizeBytes(ctx, efp))
 }
 
 func TestChunker_DeterministicChunking(t *testing.T) {
@@ -540,6 +542,10 @@ func (p booleanFlagProvider) Boolean(ctx context.Context, flagName string, defau
 	return v
 }
 
+func (p booleanFlagProvider) Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64 {
+	return defaultValue
+}
+
 func TestEnabled_FallsBackToExperimentFlag(t *testing.T) {
 	ctx := context.Background()
 	assert.True(t, chunking.Enabled(ctx, nil))
@@ -557,13 +563,14 @@ func TestEnabled_UsesExperimentFlag(t *testing.T) {
 
 func TestShouldReadChunkedOnProxy_UsesExperimentFlag(t *testing.T) {
 	ctx := context.Background()
-	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, chunking.MaxChunkSizeBytes()+1, 0, 0))
+	size := chunking.MaxChunkSizeBytes(ctx, nil) + 1
+	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, size, 0, 0))
 	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, booleanFlagProvider{
 		values: map[string]bool{"cache_proxy.attempt_chunked_reads": false},
-	}, chunking.MaxChunkSizeBytes()+1, 0, 0))
+	}, size, 0, 0))
 	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, booleanFlagProvider{
 		values: map[string]bool{"cache.chunking_enabled": false},
-	}, chunking.MaxChunkSizeBytes()+1, 0, 0))
+	}, size, 0, 0))
 }
 
 func BenchmarkStore(b *testing.B) {

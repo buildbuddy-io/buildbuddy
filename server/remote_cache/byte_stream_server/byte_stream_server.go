@@ -96,7 +96,7 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	return &ByteStreamServer{
 		env:        env,
 		cache:      cache,
-		bufferPool: bytebufferpool.VariableSize(max(*remote_cache_config.ReadBufSizeBytes, compressBufSize, int(compression.ZstdCompressBound(chunking.MaxChunkSizeBytes())))),
+		bufferPool: bytebufferpool.VariableSize(max(*remote_cache_config.ReadBufSizeBytes, compressBufSize, int(compression.ZstdCompressBound(chunking.MaxSupportedChunkSizeBytes())))),
 		warner:     bazel_deprecation.NewWarner(env),
 	}, nil
 }

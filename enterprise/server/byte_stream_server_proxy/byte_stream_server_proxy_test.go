@@ -315,7 +315,7 @@ func TestChunkUploaderGroupsFindMissingAndDedupesWithinBlob(t *testing.T) {
 	require.NoError(t, err)
 	s := &ByteStreamServerProxy{
 		remoteCAS: repb.NewContentAddressableStorageClient(conn),
-		bufPool:   bytebufferpool.VariableSize(int(chunking.MaxChunkSizeBytes())),
+		bufPool:   bytebufferpool.VariableSize(int(compression.ZstdCompressBound(chunking.MaxSupportedChunkSizeBytes()))),
 		efp:       fp,
 	}
 	uploader, err := newChunkUploader(context.Background(), s, "instance", repb.DigestFunction_BLAKE3)

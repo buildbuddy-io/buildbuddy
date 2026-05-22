@@ -591,7 +591,7 @@ func (s *ExecutionServer) getActionResultFromCache(ctx context.Context, d *diges
 		return nil, err
 	}
 	chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
-	if err := action_cache_server.ValidateActionResult(ctx, s.cache, d.GetInstanceName(), d.GetDigestFunction(), chunkingEnabled, actionResult); err != nil {
+	if err := action_cache_server.ValidateActionResult(ctx, s.cache, d.GetInstanceName(), d.GetDigestFunction(), chunkingEnabled, s.env.GetExperimentFlagProvider(), actionResult); err != nil {
 		return nil, err
 	}
 	return actionResult, nil
