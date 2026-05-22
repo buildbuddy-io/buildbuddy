@@ -768,12 +768,13 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			},
 		},
 		{
-			// Redis restart wipes the per-execution invocation links, so
-			// the OLAP flush is skipped (no invocation to associate the
-			// row with). Usage tracking is still done, however —
-			// flushExecutionToOLAP returns the merged StoredExecution
-			// even when the link list is empty, and flushAndRecordUsage
-			// uses it to record usage.
+			// Restarting Redis wipes the per-execution invocation links
+			// before the COMPLETED operation arrives, exercising the same
+			// "empty invocation links" path that normal-flow executions
+			// without an invocation context hit (teed requests, etc.).
+			// The OLAP flush is skipped (no invocation to associate the
+			// row with) but usage is still recorded from the merged
+			// StoredExecution that updateExecution wrote post-restart.
 			name:                   "RedisRestart",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			redisRestart:           true,
@@ -1278,13 +1279,21 @@ func TestPublishOperation_RetriedStream(t *testing.T) {
 }
 
 // TestPublishOperation_FlushWithEmptyLinks pins down the contract:
-// flushExecutionToOLAP and flushAndRecordUsage still record usage when the
-// merged StoredExecution exists in Redis but the per-execution invocation
-// links list is empty. That happens whenever Redis loses link state (e.g.
-// a Redis restart between when the execution was dispatched and when the
-// COMPLETED operation arrives). The OLAP row can't be written without an
+// flushAndRecordUsage still records usage when the merged StoredExecution
+// exists in Redis but the per-execution invocation links list is empty.
+//
+// Empty invocation links is a normal state, not a corner case. It happens
+// for any execution that isn't associated with a bazel invocation (teed
+// requests, executions invoked outside an invocation context, etc.), as
+// well as edge cases like Redis losing the link state between Dispatch
+// and the COMPLETED operation. The OLAP row can't be written without an
 // invocation to associate it with, but the per-group usage counter is
 // still accurate.
+//
+// This test reaches the "empty links" state by restarting Redis after
+// Dispatch but before the executor publishes COMPLETED — that's just a
+// convenient mechanism; the contract applies regardless of how the links
+// list ends up empty.
 func TestPublishOperation_FlushWithEmptyLinks(t *testing.T) {
 	for _, flushOnEOF := range []bool{false, true} {
 		name := "FlushOnComplete"
