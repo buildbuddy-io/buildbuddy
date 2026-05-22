@@ -434,6 +434,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		CachedResult:                       in.GetCachedResult(),
 		DoNotCache:                         in.GetDoNotCache(),
 		SkipCacheLookup:                    in.GetSkipCacheLookup(),
+		RecycleRunner:                      in.GetRecycleRunner(),
 		RequestedIsolationType:             in.GetRequestedIsolationType(),
 		EffectiveIsolationType:             in.GetEffectiveIsolationType(),
 		RequestedTimeoutUsec:               in.GetRequestedTimeoutUsec(),

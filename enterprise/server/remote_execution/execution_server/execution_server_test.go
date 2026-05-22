@@ -40,7 +40,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
-	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,14 +47,15 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 	gstatus "google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/anypb"
-	"google.golang.org/protobuf/types/known/durationpb"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -776,6 +776,11 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			useDefaultPool:         true,
 		},
+		{
+			name:                   "RecycleRunner",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			recycleRunner:          true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			testExecuteAndPublishOperation(t, test)
@@ -795,6 +800,7 @@ type publishTest struct {
 	publishMoreMetadata      bool
 	redisRestart             bool
 	useDefaultPool           bool
+	recycleRunner            bool
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
@@ -834,6 +840,9 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	}
 	if !test.useDefaultPool {
 		platformProperties = append(platformProperties, &repb.Platform_Property{Name: "pool", Value: "test-pool"})
+	}
+	if test.recycleRunner {
+		platformProperties = append(platformProperties, &repb.Platform_Property{Name: "recycle-runner", Value: "true"})
 	}
 	arn := uploadAction(clientCtx, t, env, instanceName, digestFunction, &repb.Action{
 		Timeout:    &durationpb.Duration{Seconds: 10},
@@ -1059,6 +1068,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		Region:                       "test-region",
 		CommandSnippet:               "test",
 		OutputPath:                   "bazel-out/k8-fastbuild/bin/some/test",
+		RecycleRunner:                test.recycleRunner,
 		QueuedTimestampUsec:          queuedTime.UnixMicro(),
 		WorkerStartTimestampUsec:     workerStartTime.UnixMicro(),
 		WorkerCompletedTimestampUsec: workerEndTime.UnixMicro(),
@@ -1093,7 +1103,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.IoPressureSomeStallUsec = 1030
 		expectedExecution.IoPressureFullStallUsec = 2030
 	}
-	diff := cmp.Diff(
+	require.Empty(t, cmp.Diff(
 		expectedExecution,
 		collectedExecutions[0],
 		protocmp.Transform(),
@@ -1101,8 +1111,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			&repb.StoredExecution{},
 			"created_at_usec",
 			"updated_at_usec",
-		))
-	assert.Emptyf(t, diff, "Recorded execution didn't match the expected one: %s", expectedExecution)
+		)))
 }
 
 func TestMarkFailed(t *testing.T) {

@@ -443,6 +443,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.RequestedMilliCpu = properties.EstimatedMilliCPU
 				executionProto.RequestedFreeDiskBytes = properties.EstimatedFreeDiskBytes
 				executionProto.RequestedPool = properties.Pool
+				executionProto.RecycleRunner = properties.RecycleRunner
 			}
 
 			schedulingMeta := auxMeta.GetSchedulingMetadata()

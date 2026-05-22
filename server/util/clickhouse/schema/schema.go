@@ -258,11 +258,14 @@ type Execution struct {
 	DoNotCache      bool
 	SkipCacheLookup bool
 
-	ExecutionPriority      int32  `gorm:"codec:T64,ZSTD(1)"`
+	ExecutionPriority int32 `gorm:"codec:T64,ZSTD(1)"`
+
+	// Platform properties
 	RequestedIsolationType string `gorm:"type:LowCardinality(String)"`
 	EffectiveIsolationType string `gorm:"type:LowCardinality(String)"` // This values comes from the executor
 	RequestedPool          string `gorm:"codec:ZSTD(1)"`
 	EffectivePool          string `gorm:"codec:ZSTD(1)"`
+	RecycleRunner          bool
 
 	// Runner metadata
 	RunnerID            string `gorm:"codec:ZSTD(1)"`
@@ -362,6 +365,7 @@ func (e *Execution) AdditionalFields() []string {
 		"PredictedMilliCPU",
 		"PredictedFreeDiskBytes",
 		"SkipCacheLookup",
+		"RecycleRunner",
 		"ExecutionPriority",
 		"RequestedIsolationType",
 		"EffectiveIsolationType",
