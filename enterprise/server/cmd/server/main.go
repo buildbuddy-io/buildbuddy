@@ -187,14 +187,17 @@ func main() {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
 
+	// Configure the experiment service early, in case experiment values are needed when
+	// initializing other services.
+	if err := experiments.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+
 	// Setup the prod fanciness in our environment
 	convertToProdOrDie(rootContext, realEnv)
 
 	libmain.StartMonitoringHandler(realEnv)
 
-	if err := experiments.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
 	// Register KMS and crypter before caches because distributed.Register()
 	// starts a gRPC listener that can receive peer requests immediately,
 	// and those requests need the crypter to be available.
