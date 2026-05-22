@@ -796,10 +796,12 @@ func TestGetBlobChunked_ManyChunksPartialLocal(t *testing.T) {
 		},
 	}
 
+	// Chunks are 1 MiB, so cachetools.GetBlob will upgrade reads to ZSTD.
 	bsData := make(map[string][]byte, numChunks)
 	for i, cd := range chunkDigests {
 		rn := digest.NewCASResourceName(cd, testInstance, repb.DigestFunction_BLAKE3)
-		bsData[rn.DownloadString()] = chunks[i]
+		rn.SetCompressor(repb.Compressor_ZSTD)
+		bsData[rn.DownloadString()] = compression.CompressZstd(nil, chunks[i])
 	}
 	bs := &fakeBytestreamClient{mu: &sync.Mutex{}, data: bsData}
 
