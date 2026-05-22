@@ -13,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/ocifetchertest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -260,6 +261,37 @@ func layerData(t *testing.T, layer v1.Layer) []byte {
 	data, err := io.ReadAll(rc)
 	require.NoError(t, err)
 	return data
+}
+
+// TestAccessControl runs the shared access-control suite (anonymous skip,
+// bypass_registry admin gate, credentialed cache) against the in-app
+// OCIFetcher service. The suite lives in
+// enterprise/server/testutil/ocifetchertest so the proxy can share it.
+func TestAccessControl(t *testing.T) {
+	ocifetchertest.RunAccessControlTests(t, func(t *testing.T, ctx context.Context, _ *testregistry.Registry) ofpb.OCIFetcherClient {
+		flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
+		_, bsClient, acClient := setupCacheEnv(t)
+
+		server, err := ocifetcher.NewServer(bsClient, acClient)
+		require.NoError(t, err)
+
+		// Run the OCIFetcher gRPC server on a separate test env: the
+		// cache env returned by setupCacheEnv has its own gRPC server
+		// registered for the byte stream / action cache services.
+		serverEnv := testenv.GetTestEnv(t)
+		// Wire JWT-parsing auth so admin claims set via
+		// testauth.WithAuthenticatedUserInfo propagate end-to-end.
+		serverEnv.SetAuthenticator(testauth.NewTestAuthenticator(t, nil))
+		grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, serverEnv)
+		ofpb.RegisterOCIFetcherServer(grpcServer, server)
+		go runFunc()
+		t.Cleanup(func() { grpcServer.GracefulStop() })
+
+		conn, err := testenv.LocalGRPCConn(ctx, lis)
+		require.NoError(t, err)
+		t.Cleanup(func() { conn.Close() })
+		return ofpb.NewOCIFetcherClient(conn)
+	})
 }
 
 func TestServerHappyPath(t *testing.T) {

@@ -32,6 +32,7 @@ go_test(
     deps = [
         "//enterprise/server/oci/ocifetcher",
         "//enterprise/server/testutil/enterprise_testenv",
+        "//enterprise/server/testutil/ocifetchertest",
         "//enterprise/server/testutil/testregistry",
         "//proto:capability_go_proto",
         "//proto:oci_fetcher_go_proto",

@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/ocifetchertest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -30,6 +31,19 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gproto "google.golang.org/protobuf/proto"
 )
+
+// TestAccessControl runs the shared access-control suite (anonymous skip,
+// bypass_registry admin gate, credentialed cache) against the
+// OCIFetcherServerProxy + a real upstream OCIFetcher service. The suite
+// lives in enterprise/server/testutil/ocifetchertest so both implementations
+// share it.
+func TestAccessControl(t *testing.T) {
+	ocifetchertest.RunAccessControlTests(t, func(t *testing.T, ctx context.Context, _ *testregistry.Registry) ofpb.OCIFetcherClient {
+		_, bsClient, acClient := setupCacheEnv(t)
+		upstream := runOCIFetcherServer(ctx, t, bsClient, acClient)
+		return runOCIFetcherProxy(ctx, t, upstream)
+	})
+}
 
 func TestNew_MissingOCIFetcherClient(t *testing.T) {
 	env := testenv.GetTestEnv(t)
