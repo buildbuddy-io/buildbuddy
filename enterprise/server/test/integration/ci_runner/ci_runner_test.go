@@ -2022,7 +2022,6 @@ actions:
 }
 
 func TestTimeout(t *testing.T) {
-	wsPath := testfs.MakeTempDir(t)
 	repoPath, _ := makeGitRepo(t, workspaceContentsWithRunScript)
 
 	baselineRunnerFlags := []string{
@@ -2039,14 +2038,36 @@ func TestTimeout(t *testing.T) {
 	app := buildbuddy.Run(t)
 	baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
 
-	runnerFlags := baselineRunnerFlags
+	tests := []struct {
+		name           string
+		extraFlags     []string
+		expectedOutput string
+	}{
+		{
+			name:           "default timeout",
+			expectedOutput: "Aborting...",
+		},
+		{
+			name:           "free tier timeout",
+			extraFlags:     []string{"--timeout_reason=free_tier_limit"},
+			expectedOutput: "due to free tier limitations",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			wsPath := testfs.MakeTempDir(t)
+			runnerFlags := append([]string{}, baselineRunnerFlags...)
+			runnerFlags = append(runnerFlags, tc.extraFlags...)
 
-	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
-	// Expect runner to timeout and exit early
-	require.NotEqual(t, 0, result.ExitCode)
-	runnerInvocation := getRunnerInvocation(t, app, result)
-	require.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, runnerInvocation.InvocationStatus)
-	require.Contains(t, runnerInvocation.ConsoleBuffer, "Remote run exceeded timeout")
+			result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+			// Expect runner to timeout and exit early
+			require.NotEqual(t, 0, result.ExitCode)
+			runnerInvocation := getRunnerInvocation(t, app, result)
+			require.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, runnerInvocation.InvocationStatus)
+			require.Contains(t, runnerInvocation.ConsoleBuffer, "Remote run exceeded timeout")
+			require.Contains(t, runnerInvocation.ConsoleBuffer, tc.expectedOutput)
+		})
+	}
 }
 
 func TestBazelLock(t *testing.T) {

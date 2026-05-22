@@ -204,11 +204,12 @@ func TestRun_WithoutRepoURL(t *testing.T) {
 
 func TestTimeout(t *testing.T) {
 	tests := []struct {
-		name            string
-		groupStatus     grpb.Group_GroupStatus
-		expectedTimeout time.Duration
+		name                  string
+		groupStatus           grpb.Group_GroupStatus
+		expectedTimeout       time.Duration
+		expectedTimeoutReason string
 	}{
-		{name: "timeout configured in experiment", groupStatus: grpb.Group_FREE_TIER_GROUP_STATUS, expectedTimeout: 1 * time.Hour},
+		{name: "timeout configured in experiment", groupStatus: grpb.Group_FREE_TIER_GROUP_STATUS, expectedTimeout: 1 * time.Hour, expectedTimeoutReason: ci_runner_util.FreeTierTimeoutReason},
 		{name: "timeout not configured in experiment", groupStatus: grpb.Group_ENTERPRISE_GROUP_STATUS, expectedTimeout: 24 * time.Hour},
 	}
 	for _, tc := range tests {
@@ -232,6 +233,11 @@ func TestTimeout(t *testing.T) {
 			exec := getExecution(t, ctx, te, execClient.executeRequests[0].Payload)
 			expectedTimeout := tc.expectedTimeout.String()
 			require.Contains(t, exec.Command.GetArguments(), "--timeout="+expectedTimeout)
+			if tc.expectedTimeoutReason != "" {
+				require.Contains(t, exec.Command.GetArguments(), "--timeout_reason="+tc.expectedTimeoutReason)
+			} else {
+				require.NotContains(t, exec.Command.GetArguments(), "--timeout_reason="+ci_runner_util.FreeTierTimeoutReason)
+			}
 			require.Equal(t, tc.expectedTimeout+TimeoutGracePeriod, exec.Action.GetTimeout().AsDuration())
 		})
 	}

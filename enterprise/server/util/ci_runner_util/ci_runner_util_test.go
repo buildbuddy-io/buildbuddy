@@ -21,6 +21,7 @@ import (
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -38,19 +39,30 @@ func TestRunnerTimeout(t *testing.T) {
 		requestedTimeout        time.Duration
 		requestedTimeoutPresent bool
 		defaultTimeout          time.Duration
+		groupStatus             grpb.Group_GroupStatus
 		expectedTimeout         time.Duration
+		expectedReason          string
 	}{
 		{
-			name:              "experiment set no requested timeout",
+			name:              "free tier experiment set no requested timeout",
 			experimentTimeout: "24h",
+			groupStatus:       grpb.Group_FREE_TIER_GROUP_STATUS,
 			expectedTimeout:   24 * time.Hour,
+			expectedReason:    FreeTierTimeoutReason,
 		},
 		{
 			name:                    "experiment set requested timeout lower",
 			experimentTimeout:       "24h",
 			requestedTimeout:        1 * time.Hour,
 			requestedTimeoutPresent: true,
+			groupStatus:             grpb.Group_FREE_TIER_GROUP_STATUS,
 			expectedTimeout:         1 * time.Hour,
+		},
+		{
+			name:              "enterprise experiment set no requested timeout",
+			experimentTimeout: "24h",
+			groupStatus:       grpb.Group_ENTERPRISE_GROUP_STATUS,
+			expectedTimeout:   24 * time.Hour,
 		},
 		{
 			name:            "no experiment",
@@ -62,19 +74,21 @@ func TestRunnerTimeout(t *testing.T) {
 			experimentTimeout:       "not-a-duration",
 			requestedTimeout:        2 * time.Hour,
 			requestedTimeoutPresent: true,
+			groupStatus:             grpb.Group_FREE_TIER_GROUP_STATUS,
 			expectedTimeout:         2 * time.Hour,
 		},
 		{
 			name:              "invalid experiment fallback to default timeout",
 			experimentTimeout: "not-a-duration",
 			defaultTimeout:    3 * time.Hour,
+			groupStatus:       grpb.Group_FREE_TIER_GROUP_STATUS,
 			expectedTimeout:   3 * time.Hour,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := contextWithGroupStatus(tc.groupStatus)
 			if tc.defaultTimeout != 0 {
 				flags.Set(t, "remote_execution.ci_runner_default_timeout", tc.defaultTimeout)
 			}
@@ -90,11 +104,21 @@ func TestRunnerTimeout(t *testing.T) {
 			if tc.requestedTimeoutPresent {
 				requestedTimeout = &tc.requestedTimeout
 			}
-			timeout, err := RunnerTimeout(ctx, efp, requestedTimeout, "test-action")
+			timeout, err := RunnerTimeout(ctx, efp, requestedTimeout, "test-action", tc.groupStatus)
 			require.NoError(t, err)
-			require.Equal(t, tc.expectedTimeout, timeout)
+			require.Equal(t, tc.expectedTimeout, timeout.Duration)
+			require.Equal(t, tc.expectedReason, timeout.Reason)
 		})
 	}
+}
+
+func contextWithGroupStatus(groupStatus grpb.Group_GroupStatus) context.Context {
+	if groupStatus == grpb.Group_UNKNOWN_GROUP_STATUS {
+		return context.Background()
+	}
+	u := testauth.User("user1", "group1")
+	u.GroupStatus = groupStatus
+	return testauth.WithAuthenticatedUserInfo(context.Background(), u)
 }
 
 func configureDefaultTimeoutExperiment(t *testing.T, env *testenv.TestEnv, timeout string) {
