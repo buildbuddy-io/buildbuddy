@@ -3028,6 +3028,7 @@ message StoredExecution {
   bool cached_result = 38;
   bool do_not_cache = 39;
   bool skip_cache_lookup = 50;
+  bool recycle_runner = 80;
 
   int32 execution_priority = 51;
   string requested_isolation_type = 52;
