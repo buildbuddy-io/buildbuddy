@@ -412,7 +412,6 @@ func runCredentialedCacheRequiresCreds(t *testing.T, setup SetupFunc) {
 
 		for _, cc := range credCases {
 			t.Run(cc.name, func(t *testing.T) {
-				t.Skip("creds required for cache reads not yet enforced for FetchManifest; tracking PR #12196")
 				_, err := client.FetchManifest(authedCtx(ctx), &ofpb.FetchManifestRequest{Ref: ref, Credentials: cc.creds})
 				require.Error(t, err)
 				require.True(t, status.IsUnauthenticatedError(err),
@@ -457,7 +456,6 @@ func runCredentialedCacheRequiresCreds(t *testing.T, setup SetupFunc) {
 
 		for _, cc := range credCases {
 			t.Run(cc.name, func(t *testing.T) {
-				t.Skip("creds required for cache reads not yet enforced for FetchBlobMetadata; tracking PR #12196")
 				_, err := client.FetchBlobMetadata(authedCtx(ctx), &ofpb.FetchBlobMetadataRequest{Ref: ref, Credentials: cc.creds})
 				require.Error(t, err)
 				require.True(t, status.IsUnauthenticatedError(err),
@@ -478,7 +476,6 @@ func runCredentialedCacheRequiresCreds(t *testing.T, setup SetupFunc) {
 
 		for _, cc := range credCases {
 			t.Run(cc.name, func(t *testing.T) {
-				t.Skip("creds required for cache reads not yet enforced for FetchBlob; tracking PR #12196")
 				err := doFetchBlob(client, authedCtx(ctx), &ofpb.FetchBlobRequest{Ref: ref, Credentials: cc.creds})
 				require.Error(t, err)
 				require.True(t, status.IsUnauthenticatedError(err),

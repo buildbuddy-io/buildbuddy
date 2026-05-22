@@ -32,6 +32,13 @@ import (
 	gproto "google.golang.org/protobuf/proto"
 )
 
+func authenticatedTestContext() context.Context {
+	return testauth.WithAuthenticatedUserInfo(context.Background(), &claims.Claims{
+		UserID:  "US-test",
+		GroupID: "GR-test",
+	})
+}
+
 // TestAccessControl runs the shared access-control suite (anonymous skip,
 // bypass_registry admin gate, credentialed cache) against the
 // OCIFetcherServerProxy + a real upstream OCIFetcher service. The suite
@@ -247,7 +254,20 @@ func TestFetchBlob_ForwardsRequestUnchanged(t *testing.T) {
 // the blob is written to the proxy's local BS cache and can be served from
 // there on a subsequent request.
 func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
-	ctx := context.Background()
+	ctx := authenticatedTestContext()
+	const adminGroupID = "GR123"
+	flags.Set(t, "auth.admin_group_id", adminGroupID)
+	adminCtx := testauth.WithAuthenticatedUserInfo(context.Background(), &claims.Claims{
+		UserID:        "US1",
+		GroupID:       adminGroupID,
+		AllowedGroups: []string{adminGroupID},
+		GroupMemberships: []*interfaces.GroupMembership{
+			{
+				GroupID:      adminGroupID,
+				Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
+			},
+		},
+	})
 
 	reg := setupTestRegistry(t, nil)
 	imageName, img := reg.PushNamedImage(t, "test-image", nil)
@@ -277,8 +297,11 @@ func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
 	err = reg.Shutdown()
 	require.NoError(t, err)
 
-	// Second fetch: should be served from local BS cache.
-	stream2, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	// Second fetch: server-admin bypass should be served from local BS cache.
+	stream2, err := proxyClient.FetchBlob(adminCtx, &ofpb.FetchBlobRequest{
+		Ref:            ref,
+		BypassRegistry: true,
+	})
 	require.NoError(t, err)
 	data2 := collectBlobData(t, stream2)
 	require.Equal(t, expectedData, data2)

@@ -428,7 +428,7 @@ func TestServerHappyPath(t *testing.T) {
 			blobRequests := counter.Snapshot()[http.MethodGet+" /v2/test-image/blobs/"+digest.String()]
 			require.Greater(t, blobRequests, 0, "expected at least one blob request to registry on cache miss")
 
-			// Second fetch - cache hit, should NOT hit registry
+			// Second fetch - should prove registry access, then serve from cache.
 			counter.Reset()
 			stream = &mockFetchBlobServer{ctx: context.Background()}
 			err = server.FetchBlob(&ofpb.FetchBlobRequest{
@@ -438,8 +438,9 @@ func TestServerHappyPath(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, expectedData, stream.collectData())
 
-			// Verify registry was NOT hit (served from cache)
-			assertRequests(t, counter, map[string]int{})
+			assertRequests(t, counter, map[string]int{
+				http.MethodHead + " /v2/test-image/blobs/" + digest.String(): 1,
+			})
 		})
 	}
 }
@@ -652,10 +653,9 @@ func TestFetchBlobRetryOnCompressedError(t *testing.T) {
 		// Two blob GETs: first fails with 401 (simulating expired token),
 		// second succeeds after puller eviction and retry.
 		http.MethodGet + " " + blobPath: 2,
-		// Two blob HEADs for layer.Size(): one per attempt (Size is
-		// fetched before Compressed to avoid leaking the reader on
-		// retry).
-		http.MethodHead + " " + blobPath: 2,
+		// One blob HEAD proves registry access before the blob is read
+		// from cache or fetched.
+		http.MethodHead + " " + blobPath: 1,
 	})
 }
 
@@ -689,13 +689,12 @@ func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
 
 	blobPath := "/v2/test-metadata-fallback/blobs/" + layerDigest.String()
 	assertRequests(t, counter, map[string]int{
-		http.MethodGet + " /v2/": 1,
+		http.MethodGet + " /v2/": 3,
 		// Blob data is streamed despite metadata failures.
 		http.MethodGet + " " + blobPath: 1,
-		// Three blob HEADs: MediaType() HEAD (500), Size() HEAD (500),
-		// plus one internal HEAD from go-containerregistry during
-		// Compressed() to determine content length.
-		http.MethodHead + " " + blobPath: 3,
+		// Failed HEADs are retried by the registry client while proving
+		// access and gathering optional metadata before direct streaming.
+		http.MethodHead + " " + blobPath: 9,
 	})
 
 	// Metadata lookup failures should skip read-through caching, so a subsequent
@@ -706,9 +705,9 @@ func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedLayerData, stream.collectData())
 	assertRequests(t, counter, map[string]int{
-		// No /v2/ ping: puller stays cached across metadata failures.
+		http.MethodGet + " /v2/":         2,
 		http.MethodGet + " " + blobPath:  1,
-		http.MethodHead + " " + blobPath: 3,
+		http.MethodHead + " " + blobPath: 9,
 	})
 }
 
@@ -828,17 +827,18 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedLayerData, stream.collectData())
 
-	// FetchBlob: second fetch serves from cache (no network calls), even with short timeout
-	// Since blob is cached, there's no network call to timeout, so this succeeds instantly
+	// FetchBlob: second fetch proves registry access, then serves from
+	// cache, even with short timeout.
 	counter.Reset()
 	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Millisecond)
 	stream = &mockFetchBlobServer{ctx: ctx}
 	err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: imageName + "@" + layerDigest.String()}, stream)
 	cancel()
-	require.NoError(t, err, "cached blob should serve without network calls")
+	require.NoError(t, err, "cached blob should serve after registry access check")
 	require.Equal(t, expectedLayerData, stream.collectData())
-	// Verify no registry requests were made (served from cache)
-	assertRequests(t, counter, map[string]int{})
+	assertRequests(t, counter, map[string]int{
+		http.MethodHead + " /v2/test-image/blobs/" + layerDigest.String(): 1,
+	})
 }
 
 func TestServerBypassRegistry(t *testing.T) {
@@ -1037,7 +1037,7 @@ func TestServerBypassRegistry(t *testing.T) {
 		}, stream)
 		require.NoError(t, err)
 
-		// Now fetch metadata - should be served from cache
+		// Now fetch metadata - should prove registry access, then serve from cache.
 		counter.Reset()
 		resp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
 			Ref: imageName + "@" + digest.String(),
@@ -1046,8 +1046,9 @@ func TestServerBypassRegistry(t *testing.T) {
 		require.Equal(t, expectedSize, resp.GetSize())
 		require.Equal(t, expectedMediaType, resp.GetMediaType())
 
-		// Verify no registry requests were made (served from cache)
-		assertRequests(t, counter, map[string]int{})
+		assertRequests(t, counter, map[string]int{
+			http.MethodHead + " /v2/test-image/blobs/" + digest.String(): 1,
+		})
 	})
 
 	// Test that FetchBlobMetadata with bypass_registry serves from cache when metadata is cached
@@ -1149,7 +1150,7 @@ func TestServerBypassRegistry(t *testing.T) {
 		// Verify registry was hit
 		require.Greater(t, counter.Snapshot()[http.MethodGet+" /v2/test-image/manifests/"+digest], 0)
 
-		// Second fetch by digest - should serve from cache
+		// Second fetch by digest - should prove registry access, then serve from cache.
 		counter.Reset()
 		resp, err = server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
 			Ref: imageName + "@" + digest,
@@ -1157,8 +1158,9 @@ func TestServerBypassRegistry(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expectedManifest, resp.GetManifest())
 
-		// Verify no registry requests were made (served from cache)
-		assertRequests(t, counter, map[string]int{})
+		assertRequests(t, counter, map[string]int{
+			http.MethodHead + " /v2/test-image/manifests/" + digest: 1,
+		})
 	})
 
 	// Test that FetchManifest caching works for tag refs (HEAD to resolve, then cache lookup)
@@ -1363,8 +1365,8 @@ func TestFetchBlobSingleflightHappyPath(t *testing.T) {
 	}
 }
 
-// TestFetchBlobSingleflightCacheHit ensures concurrent callers hit the cache and do not
-// touch the registry when the blob is already cached.
+// TestFetchBlobSingleflightCacheHit ensures concurrent callers share one
+// registry access proof, then hit the blob cache.
 func TestFetchBlobSingleflightCacheHit(t *testing.T) {
 	const numRequests = 10
 
@@ -1398,7 +1400,9 @@ func TestFetchBlobSingleflightCacheHit(t *testing.T) {
 		},
 	)
 
-	assertRequests(t, counter, map[string]int{})
+	assertRequests(t, counter, map[string]int{
+		http.MethodHead + " /v2/test-image/blobs/" + digest.String(): 1,
+	})
 
 	for i, r := range results {
 		require.NoError(t, r.err, "request %d should succeed", i)
@@ -1631,9 +1635,9 @@ func TestFetchBlobSingleflightDifferentCredentials(t *testing.T) {
 		// Three /v2/ pings: one for each initial puller (creds1, creds2),
 		// plus one more when creds2 retries with a fresh puller after 401.
 		http.MethodGet + " /v2/": 3,
-		// Three blob GETs: one for creds1 (succeeds), two for creds2
-		// (first attempt 401, retry 401).
-		http.MethodGet + " " + blobPath: 3,
+		// One blob GET for creds1. The invalid-credential request fails during
+		// the pre-cache HEAD access check before attempting a GET.
+		http.MethodGet + " " + blobPath: 1,
 		// Three blob HEADs for layer.Size(): one for creds1 (succeeds),
 		// two for creds2 (Size is fetched before Compressed, so each
 		// attempt calls it before the blob GET fails).
