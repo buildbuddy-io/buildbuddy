@@ -768,10 +768,15 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			},
 		},
 		{
-			// Redis restart wipes the per-execution invocation links, which
-			// in turn skips both the OLAP flush and usage tracking on EOF.
-			name:         "RedisRestart",
-			redisRestart: true,
+			// Redis restart wipes the per-execution invocation links, so
+			// the OLAP flush is skipped (no invocation to associate the
+			// row with). Usage tracking is still done, however —
+			// flushExecutionToOLAP returns the merged StoredExecution
+			// even when the link list is empty, and flushAndRecordUsage
+			// uses it to record usage.
+			name:                   "RedisRestart",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			redisRestart:           true,
 		},
 		{
 			name:                   "DefaultPool",
@@ -1130,35 +1135,26 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		)))
 }
 
-// TestPublishOperation_RetriedStream simulates the executor's PublishOperation
-// stream disconnecting after publishing COMPLETED and being retried as a
-// separate stream that re-publishes the same operation. The execution should
-// be flushed once and usage should be counted exactly once.
+// TestPublishOperation_RetriedStream simulates the executor's
+// PublishOperation stream being interrupted mid-flight and the retryingClient
+// re-opening a new stream to re-publish the same COMPLETED operation. The
+// server should flush the OLAP row and record usage exactly once across the
+// retry chain.
 //
-// Runs under both values of the remote_execution.flush_executions_after_cleanup
-// experiment, since the retry-dedup mechanism (flushAndRecordUsage's
-// short-circuit when per-execution links are absent) gets exercised on
-// different call sites in each mode.
+// Only run with the flush_executions_after_cleanup experiment enabled: that's
+// where the exactly-once guarantee comes from. The recv loop only calls
+// flushAndRecordUsage on io.EOF, and the retryingClient only opens a new
+// stream after a non-EOF error — so at most one stream in the chain ever
+// triggers the flush. Under the legacy COMPLETED-flush path the flush runs
+// inline with the COMPLETED handler regardless of how the stream ends, so
+// retries are inherently subject to over-counting; that's pre-existing
+// behavior and not what this test pins down.
 func TestPublishOperation_RetriedStream(t *testing.T) {
-	for _, flushAfterCleanup := range []bool{false, true} {
-		name := "FlushOnComplete"
-		if flushAfterCleanup {
-			name = "FlushAfterCleanup"
-		}
-		t.Run(name, func(t *testing.T) {
-			testPublishOperationRetriedStream(t, flushAfterCleanup)
-		})
-	}
-}
-
-func testPublishOperationRetriedStream(t *testing.T, flushOnEOF bool) {
 	ctx := context.Background()
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
 	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
 	env, conn, _ := setupEnv(t)
-	if flushOnEOF {
-		configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
-	}
+	configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
 	client := repb.NewExecutionClient(conn)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	env.SetAuthenticator(ta)
@@ -1229,17 +1225,32 @@ func testPublishOperationRetriedStream(t *testing.T, flushOnEOF bool) {
 	)
 	require.NoError(t, err)
 
-	// Open two distinct PublishOperation streams sequentially. Each one sends
-	// COMPLETED and closes. This simulates the executor's retryingClient
-	// reconnecting after a transient disconnect: the server sees two separate
-	// streams for the same execution.
-	for i := 0; i < 2; i++ {
-		stream, err := client.PublishOperation(executorCtx)
-		require.NoError(t, err)
-		require.NoError(t, stream.Send(completedOp))
-		_, err = stream.CloseAndRecv()
-		require.NoError(t, err, "stream %d closed cleanly", i)
-	}
+	// Stream 1: send COMPLETED and then break the stream by cancelling its
+	// context before the client cleanly closes it. The server's recv loop
+	// sees context.Canceled (or grpc Canceled), not io.EOF, so
+	// flushAndRecordUsage does not run on this stream. Poll Redis to
+	// confirm the server processed the COMPLETED (updateExecution wrote)
+	// before cancelling so the test isn't racy.
+	stream1Ctx, cancelStream1 := context.WithCancel(executorCtx)
+	stream1, err := client.PublishOperation(stream1Ctx)
+	require.NoError(t, err)
+	require.NoError(t, stream1.Send(completedOp))
+	require.Eventually(t, func() bool {
+		execProto, err := env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
+		return err == nil && execProto != nil
+	}, 5*time.Second, 10*time.Millisecond, "stream 1's COMPLETED should be processed by updateExecution")
+	cancelStream1()
+	// CloseAndRecv on a cancelled stream returns an error — we expect that.
+	_, _ = stream1.CloseAndRecv()
+
+	// Stream 2 (the retry): re-publish the same COMPLETED and cleanly
+	// close. This is the only stream whose recv loop returns EOF and so
+	// the only one that triggers flushAndRecordUsage.
+	stream2, err := client.PublishOperation(executorCtx)
+	require.NoError(t, err)
+	require.NoError(t, stream2.Send(completedOp))
+	_, err = stream2.CloseAndRecv()
+	require.NoError(t, err, "retry stream closed cleanly")
 
 	// Drain the /Execute stream so the test doesn't leak goroutines.
 	for {
@@ -1250,16 +1261,141 @@ func testPublishOperationRetriedStream(t *testing.T, flushOnEOF bool) {
 		require.NoError(t, err)
 	}
 
-	// Exactly one execution row should be recorded in the collector. The
-	// first stream's flushAndRecordUsage call writes the row to the
-	// per-invocation list and deletes the per-execution invocation links;
-	// the second stream's call finds no links and short-circuits.
 	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
 	require.NoError(t, err)
-	assert.Equal(t, 1, len(collectedExecutions), "execution should be flushed exactly once across retried streams")
+	assert.Equal(t, 1, len(collectedExecutions), "execution should be flushed to OLAP exactly once across retried streams")
 
-	// Usage should be recorded exactly once: the second stream's
-	// flushAndRecordUsage finds no links, so it skips updateUsage.
+	ut := env.GetUsageTracker().(*testusage.Tracker)
+	var foundExecutorUsage *testusage.Total
+	for _, u := range ut.Totals() {
+		if u.Labels.Client == "executor" {
+			foundExecutorUsage = &u
+			break
+		}
+	}
+	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
+	assert.Equal(t, durationUsec, foundExecutorUsage.Counts.LinuxExecutionDurationUsec, "usage should be recorded exactly once")
+}
+
+// TestPublishOperation_FlushWithEmptyLinks pins down the contract:
+// flushExecutionToOLAP and flushAndRecordUsage still record usage when the
+// merged StoredExecution exists in Redis but the per-execution invocation
+// links list is empty. That happens whenever Redis loses link state (e.g.
+// a Redis restart between when the execution was dispatched and when the
+// COMPLETED operation arrives). The OLAP row can't be written without an
+// invocation to associate it with, but the per-group usage counter is
+// still accurate.
+func TestPublishOperation_FlushWithEmptyLinks(t *testing.T) {
+	for _, flushOnEOF := range []bool{false, true} {
+		name := "FlushOnComplete"
+		if flushOnEOF {
+			name = "FlushAfterCleanup"
+		}
+		t.Run(name, func(t *testing.T) {
+			testPublishOperationFlushWithEmptyLinks(t, flushOnEOF)
+		})
+	}
+}
+
+func testPublishOperationFlushWithEmptyLinks(t *testing.T, flushOnEOF bool) {
+	ctx := context.Background()
+	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+	env, conn, r := setupEnv(t)
+	if flushOnEOF {
+		configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
+	}
+	client := repb.NewExecutionClient(conn)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
+
+	const instanceName = "test-instance"
+	const invocationID = "93383cc1-5d6c-4ad1-a321-8ee87c2f6816"
+
+	clientCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: invocationID,
+		TargetId:         "//some:test",
+		ActionMnemonic:   "TestRunner",
+	})
+	require.NoError(t, err)
+
+	arn := uploadAction(clientCtx, t, env, instanceName, repb.DigestFunction_SHA256, &repb.Action{
+		Timeout: &durationpb.Duration{Seconds: 10},
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "pool", Value: "test-pool"},
+				{Name: "workload-isolation-type", Value: "oci"},
+			},
+		},
+	})
+	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+	require.NoError(t, executionClient.CloseSend())
+	op, err := executionClient.Recv()
+	require.NoError(t, err)
+	taskID := op.GetName()
+
+	// Wipe Redis after the invocation links were written by Dispatch but
+	// before the executor publishes COMPLETED. The per-execution links
+	// list is now gone, but updateExecution on the server will repopulate
+	// the in-progress execution list from the COMPLETED operation.
+	r.Restart()
+
+	executorCtx := metadata.AppendToOutgoingContext(clientCtx, usageutil.ClientHeaderName, "executor")
+	executorCtx = metadata.AppendToOutgoingContext(executorCtx, "x-buildbuddy-executor-region", "test-region")
+	queuedTime := time.Unix(100, 0)
+	workerStartTime := queuedTime.Add(1 * time.Second)
+	workerEndTime := workerStartTime.Add(5 * time.Second)
+	durationUsec := workerEndTime.Sub(workerStartTime).Microseconds()
+	aux := &espb.ExecutionAuxiliaryMetadata{
+		PlatformOverrides: &repb.Platform{},
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			ExecutorGroupId: sharedPoolGroupID,
+			Pool:            "test-pool",
+		},
+	}
+	auxAny, err := anypb.New(aux)
+	require.NoError(t, err)
+	completedOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+		Result: &repb.ActionResult{
+			ExecutionMetadata: &repb.ExecutedActionMetadata{
+				QueuedTimestamp:          tspb.New(queuedTime),
+				WorkerStartTimestamp:     tspb.New(workerStartTime),
+				WorkerCompletedTimestamp: tspb.New(workerEndTime),
+				AuxiliaryMetadata:        []*anypb.Any{auxAny},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	stream, err := client.PublishOperation(executorCtx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(completedOp))
+	_, err = stream.CloseAndRecv()
+	require.NoError(t, err)
+
+	for {
+		_, err := executionClient.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+	}
+
+	// Per-invocation execution list should be empty: no invocation link
+	// means the OLAP flush has nothing to append the execution to.
+	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
+	require.NoError(t, err)
+	assert.Equal(t, 0, len(collectedExecutions), "no OLAP row expected when invocation links are missing")
+
+	// Usage should still be recorded — the merged StoredExecution exists
+	// in Redis, which is all flushAndRecordUsage needs to compute usage.
 	ut := env.GetUsageTracker().(*testusage.Tracker)
 	var foundExecutorUsage *testusage.Total
 	for _, u := range ut.Totals() {

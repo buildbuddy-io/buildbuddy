@@ -540,9 +540,6 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 	if err != nil {
 		return nil, status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
-	if len(links) == 0 {
-		return nil, nil
-	}
 	for _, link := range links {
 		executionProto := executionProto.CloneVT()
 		executil.SetInvocationLink(executionProto, link)
