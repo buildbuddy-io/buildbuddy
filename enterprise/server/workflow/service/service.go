@@ -1155,7 +1155,11 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		return nil, err
 	}
 
-	timeout, err := ci_runner_util.RunnerTimeout(ctx, ws.env.GetExperimentFlagProvider(), workflowAction.Timeout, workflowAction.Name)
+	var groupStatus grpb.Group_GroupStatus
+	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+		groupStatus = c.GetGroupStatus()
+	}
+	runnerTimeout, err := ci_runner_util.RunnerTimeout(ctx, ws.env.GetExperimentFlagProvider(), workflowAction.Timeout, workflowAction.Name, groupStatus)
 	if err != nil {
 		return nil, err
 	}
@@ -1193,8 +1197,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--trigger_event=" + wd.EventName,
 		"--bazel_command=" + ws.ciRunnerBazelCommand(ctx, wf, workflowAction),
 		"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
-		"--timeout=" + timeout.String(),
+		"--timeout=" + runnerTimeout.Duration.String(),
 		"--serialized_action=" + serializedAction,
+		"--timeout_reason=" + runnerTimeout.Reason,
 	}
 
 	// Recycle workflow runners by default, but not Kythe ones, to avoid
@@ -1287,7 +1292,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		// that we allow the CI runner to finalize the outer workflow invocation
 		// once the timeout has elapsed, but if the CI runner takes too long to
 		// finalize, we can still kill the action.
-		Timeout:  durationpb.New(timeout + TimeoutGracePeriod),
+		Timeout:  durationpb.New(runnerTimeout.Duration + TimeoutGracePeriod),
 		Platform: cmd.GetPlatform(),
 	}
 

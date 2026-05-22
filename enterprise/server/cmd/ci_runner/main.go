@@ -150,6 +150,9 @@ const (
 	// We don't apply these to customer-supplied bazel commands, but we sometimes
 	// run cleanup-related bazel commands that shouldn't cause Bazel server restarts.
 	lastStartupOptionsFile = ".BUILDBUDDY_LAST_STARTUP_OPTIONS"
+
+	// Keep in sync with ci_runner_util.FreeTierTimeoutReason.
+	freeTierTimeoutReason = "free_tier_limit"
 )
 
 var (
@@ -174,6 +177,7 @@ var (
 	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
 	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
 	timeout            = flag.Duration("timeout", 0, "Timeout before all commands will be canceled automatically.")
+	timeoutReason      = flag.String("timeout_reason", "", "Reason for the configured timeout.")
 
 	// Flags to configure setting up git repo
 	skipAutomaticCheckout = flag.Bool("skip_auto_checkout", false, "Whether to skip the automatic GitHub setup steps on the remote runner.")
@@ -2419,8 +2423,8 @@ func runCommand(ctx context.Context, executable string, args []string, env map[s
 	err = cmd.Wait()
 	<-copyOutputDone
 
-	if ctxErr := ctx.Err(); ctxErr == context.DeadlineExceeded {
-		_, _ = outputSink.Write([]byte(fmt.Sprintf("Remote run exceeded timeout (%s). Aborting...", timeout.String())))
+	if ctx.Err() == context.DeadlineExceeded {
+		_, _ = outputSink.Write([]byte(timeoutExceededMessage()))
 	}
 
 	if err != nil {
@@ -2428,6 +2432,13 @@ func runCommand(ctx context.Context, executable string, args []string, env map[s
 	}
 
 	return err
+}
+
+func timeoutExceededMessage() string {
+	if *timeoutReason == freeTierTimeoutReason {
+		return fmt.Sprintf("ERROR: Remote run exceeded timeout (%s) due to free tier limitations. Contact support@buildbuddy.io to upgrade your plan.\n", timeout.String())
+	}
+	return fmt.Sprintf("ERROR: Remote run exceeded timeout (%s). Aborting...\n", timeout.String())
 }
 
 func getExitCode(err error) int {
