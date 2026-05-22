@@ -12,6 +12,7 @@ ts_library(
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/rxjs",
+        "//:node_modules/tldts",
         "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/capabilities",

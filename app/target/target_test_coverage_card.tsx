@@ -1,6 +1,7 @@
 import { Percent } from "lucide-react";
 import React from "react";
 
+import { getDomain } from "tldts";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { TextLink } from "../components/link/link";
 import format from "../format/format";
@@ -87,7 +88,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
     }
 
     let repoPath = "";
-    if (this.props.repo?.includes("github.com")) {
+    if (getDomain(this.props.repo) === "github.com") {
       repoPath = `/code/${format.formatGitUrl(this.props.repo)}/`;
     }
 

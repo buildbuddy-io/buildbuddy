@@ -1,5 +1,6 @@
 import { ListChecks } from "lucide-react";
 import React from "react";
+import { getDomain } from "tldts";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import Button from "../components/button/button";
 import { TextLink } from "../components/link/link";
@@ -159,7 +160,7 @@ export default class InvocationCoverageCardComponent extends React.Component<Pro
     let testCoverageUrl = this.getReportFile()?.uri;
 
     let repoPath = "";
-    if (this.props.model.getRepo()?.includes("github.com")) {
+    if (getDomain(this.props.model.getRepo()) === "github.com") {
       repoPath = `/code/${format.formatGitUrl(this.props.model.getRepo())}/`;
     }
 

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import React from "react";
 import { fromEvent, Subscription } from "rxjs";
+import { getHostname } from "tldts";
 import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
@@ -471,14 +472,16 @@ export default class HistoryComponent extends React.Component<Props, State> {
     const commitLink =
       this.state.invocations?.length &&
       this.state.invocations[0].repoUrl &&
-      this.state.invocations[0].repoUrl.startsWith("https://github.com")
+      this.state.invocations[0].repoUrl.startsWith("https://") &&
+      getHostname(this.state.invocations[0].repoUrl) == "github.com"
         ? `${this.state.invocations[0].repoUrl}/commit/${this.props.commit}`
         : "";
 
     const branchLink =
       this.state.invocations?.length &&
       this.state.invocations[0].repoUrl &&
-      this.state.invocations[0].repoUrl.startsWith("https://github.com")
+      this.state.invocations[0].repoUrl.startsWith("https://") &&
+      getHostname(this.state.invocations[0].repoUrl) == "github.com"
         ? `${this.state.invocations[0].repoUrl}/tree/${this.props.branch}`
         : "";
 
