@@ -1345,7 +1345,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	// At least one of these writes will happen. The first write must not happen
 	// if the second one did.
 	start := s.clock.Now()
-	go func() {
+	go func(ctx context.Context) {
 		ticker := s.clock.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
@@ -1365,6 +1365,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 						// We only write additional metadata when the operation has completed, so
 						// we don't need to pass those fields here for intermediary updates.
 						if err := s.updateExecution(ctx, taskID, stage, operation.ExtractExecuteResponse(lastOp), nil, nil, nil, nil); err != nil {
+							ctx = log.EnrichContext(ctx, log.ExecutionIDKey, taskID)
 							log.CtxWarningf(ctx, "PublishOperation: FlushWrite: error updating execution: %s", err)
 						} else {
 							return true // only write once
@@ -1376,7 +1377,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				}
 			}
 		}
-	}()
+	}(ctx) // pass in the ctx because the main loop will modify it and race against ctx.Done() otherwise.
 
 	deletePendingExecutionOnce := sync.OnceFunc(func() {
 		if taskID == "" {
