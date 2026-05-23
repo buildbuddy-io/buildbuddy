@@ -270,6 +270,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 	}
 	dc.distributedProxy.SetHeartbeatCallbackFunc(dc.recvHeartbeatCallback)
 	dc.distributedProxy.SetHintedHandoffCallbackFunc(dc.recvHintedHandoffCallback)
+	dc.distributedProxy.SetEnableCompressedReads(opts.EnableLocalCompressionLookup)
 	if len(opts.Nodes) > 0 {
 		// Nodes are hardcoded. Set them once and be done with it.
 		chash.Set(opts.Nodes...)

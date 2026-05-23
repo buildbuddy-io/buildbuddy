@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"net"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,6 +37,34 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
+
+// spyCache records the resource compressor passed to Reader/GetMulti so tests
+// can assert on what was seen at the server side of the wire.
+type spyCache struct {
+	interfaces.Cache
+	mu                sync.Mutex
+	readerCompressors []repb.Compressor_Value
+	getMultiCompressors map[string]repb.Compressor_Value
+}
+
+func (s *spyCache) Reader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	s.mu.Lock()
+	s.readerCompressors = append(s.readerCompressors, rn.GetCompressor())
+	s.mu.Unlock()
+	return s.Cache.Reader(ctx, rn, offset, limit)
+}
+
+func (s *spyCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	s.mu.Lock()
+	if s.getMultiCompressors == nil {
+		s.getMultiCompressors = map[string]repb.Compressor_Value{}
+	}
+	for _, r := range resources {
+		s.getMultiCompressors[r.GetDigest().GetHash()] = r.GetCompressor()
+	}
+	s.mu.Unlock()
+	return s.Cache.GetMulti(ctx, resources)
+}
 
 const (
 	noHandoff = ""
@@ -1156,4 +1185,72 @@ func BenchmarkRead(b *testing.B) {
 			}
 		})
 	}
+}
+
+func setupCompressedReadProxy(t *testing.T, enabled bool) (*testenv.TestEnv, *distributed_client.Proxy, *spyCache, string, context.Context) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+	spy := &spyCache{Cache: &testcompression.CompressionCache{Cache: te.GetCache()}}
+	te.SetCache(spy)
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := distributed_client.New(te, te.GetCache(), peer)
+	c.SetEnableCompressedReads(enabled)
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+	return te, c, spy, peer, ctx
+}
+
+func TestRemoteReader_PullsCompressedFromPeer(t *testing.T) {
+	cases := []struct {
+		name              string
+		sizeBytes         int64
+		enabled           bool
+		offset, limit     int64
+		wantSeenAtServer  repb.Compressor_Value
+	}{
+		{"large_flag_on_rewrites", 200, true, 0, 0, repb.Compressor_ZSTD},
+		{"small_flag_on_skips", 50, true, 0, 0, repb.Compressor_IDENTITY},
+		{"large_flag_off_skips", 200, false, 0, 0, repb.Compressor_IDENTITY},
+		{"large_offset_skips", 200, true, 10, 0, repb.Compressor_IDENTITY},
+		{"large_limit_skips", 200, true, 0, 50, repb.Compressor_IDENTITY},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			te, c, spy, peer, ctx := setupCompressedReadProxy(t, tc.enabled)
+			rn, buf := testdigest.RandomCASResourceBuf(t, tc.sizeBytes)
+			require.NoError(t, te.GetCache().Set(ctx, rn, buf))
+
+			r, err := c.RemoteReader(ctx, peer, rn, tc.offset, tc.limit)
+			require.NoError(t, err)
+			got, err := io.ReadAll(r)
+			require.NoError(t, err)
+			require.NoError(t, r.Close())
+
+			expected := buf[tc.offset:]
+			if tc.limit != 0 && int64(len(expected)) > tc.limit {
+				expected = expected[:tc.limit]
+			}
+			require.Equal(t, expected, got)
+			require.Equal(t, []repb.Compressor_Value{tc.wantSeenAtServer}, spy.readerCompressors)
+		})
+	}
+}
+
+func TestRemoteGetMulti_PullsCompressedFromPeer(t *testing.T) {
+	te, c, spy, peer, ctx := setupCompressedReadProxy(t, true /*=enableCompressedReads*/)
+
+	smallRN, smallBuf := testdigest.RandomCASResourceBuf(t, 50)
+	largeRN, largeBuf := testdigest.RandomCASResourceBuf(t, 200)
+	require.NoError(t, te.GetCache().Set(ctx, smallRN, smallBuf))
+	require.NoError(t, te.GetCache().Set(ctx, largeRN, largeBuf))
+
+	isolation := &dcpb.Isolation{CacheType: rspb.CacheType_CAS}
+	got, err := c.RemoteGetMulti(ctx, peer, isolation, []*rspb.ResourceName{smallRN, largeRN})
+	require.NoError(t, err)
+	require.Equal(t, smallBuf, got[smallRN.GetDigest()])
+	require.Equal(t, largeBuf, got[largeRN.GetDigest()])
+
+	require.Equal(t, repb.Compressor_IDENTITY, spy.getMultiCompressors[smallRN.GetDigest().GetHash()])
+	require.Equal(t, repb.Compressor_ZSTD, spy.getMultiCompressors[largeRN.GetDigest().GetHash()])
 }
