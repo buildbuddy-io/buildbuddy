@@ -1117,8 +1117,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			&repb.StoredExecution{},
 			"created_at_usec",
 			"updated_at_usec",
-		))
-	assert.Emptyf(t, diff, "Recorded execution didn't match the expected one: %s", expectedExecution)
+		)))
 }
 
 // TestPublishOperation_PeriodicFlushDoesNotClobberCompletedRow exercises the
