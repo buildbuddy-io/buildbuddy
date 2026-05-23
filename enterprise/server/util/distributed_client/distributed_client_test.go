@@ -42,8 +42,8 @@ import (
 // can assert on what was seen at the server side of the wire.
 type spyCache struct {
 	interfaces.Cache
-	mu                sync.Mutex
-	readerCompressors []repb.Compressor_Value
+	mu                  sync.Mutex
+	readerCompressors   []repb.Compressor_Value
 	getMultiCompressors map[string]repb.Compressor_Value
 }
 
@@ -1203,11 +1203,11 @@ func setupCompressedReadProxy(t *testing.T, enabled bool) (*testenv.TestEnv, *di
 
 func TestRemoteReader_PullsCompressedFromPeer(t *testing.T) {
 	cases := []struct {
-		name              string
-		sizeBytes         int64
-		enabled           bool
-		offset, limit     int64
-		wantSeenAtServer  repb.Compressor_Value
+		name             string
+		sizeBytes        int64
+		enabled          bool
+		offset, limit    int64
+		wantSeenAtServer repb.Compressor_Value
 	}{
 		{"large_flag_on_rewrites", 200, true, 0, 0, repb.Compressor_ZSTD},
 		{"small_flag_on_skips", 50, true, 0, 0, repb.Compressor_IDENTITY},
