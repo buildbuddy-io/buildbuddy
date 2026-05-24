@@ -117,6 +117,7 @@ func TestHelpForBBCommands(t *testing.T) {
 
 	bbCommandNames := []string{
 		"add",
+		"install-mcp",
 		"analyze",
 		"ask",
 		"download",

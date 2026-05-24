@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/explain"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix"
 	"github.com/buildbuddy-io/buildbuddy/cli/index"
+	"github.com/buildbuddy-io/buildbuddy/cli/install_mcp"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
@@ -46,6 +47,12 @@ func register() {
 			Help:    "Adds a dependency to your WORKSPACE file.",
 			Handler: add.HandleAdd,
 			Flags:   add.Flags,
+		},
+		{
+			Name:    "install-mcp",
+			Help:    "Installs the BuildBuddy MCP server for AI coding agents.",
+			Handler: install_mcp.HandleInstallMCP,
+			Flags:   install_mcp.Flags,
 		},
 		{
 			Name:    "analyze",
