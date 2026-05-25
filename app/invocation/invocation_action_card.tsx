@@ -40,7 +40,7 @@ import UserPreferences from "../preferences/preferences";
 import router from "../router/router";
 import { Cancelable, CancelablePromise, default as rpcService } from "../service/rpc_service";
 import TerminalComponent from "../terminal/terminal";
-import { Profile, readProfile } from "../trace/trace_events";
+import { Profile, readProfile } from "../trace/compact_trace";
 import TraceViewer from "../trace/trace_viewer";
 import { digestToString, parseActionDigest } from "../util/cache";
 import { copyToClipboard } from "../util/clipboard";
