@@ -81,6 +81,29 @@ ts_library(
 )
 
 ts_library(
+    name = "typed_arrays",
+    srcs = ["typed_arrays.ts"],
+    deps = ["//:node_modules/tslib"],
+)
+
+ts_jasmine_node_test(
+    name = "typed_arrays_test",
+    srcs = ["typed_arrays_test.ts"],
+    deps = [":typed_arrays"],
+)
+
+ts_library(
+    name = "intern",
+    srcs = ["intern.ts"],
+)
+
+ts_jasmine_node_test(
+    name = "intern_test",
+    srcs = ["intern_test.ts"],
+    deps = [":intern"],
+)
+
+ts_library(
     name = "math",
     srcs = ["math.ts"],
 )
