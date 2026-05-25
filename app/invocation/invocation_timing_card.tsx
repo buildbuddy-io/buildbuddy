@@ -88,6 +88,27 @@ export default class InvocationTimingCardComponent extends React.Component<Props
   }
 
   getProfileFile(): build_event_stream.File | undefined {
+    // To override the auto-loaded profile (for debugging):
+    // - Upload a profile with `bb upload --target=grpc://localhost:1985 <profile_path>`
+    // - Copy the resulting resource name that it prints
+    // - Check whether the file is gzipped by running `file <profile_path>`
+    // - If it's gzipped, set ?debug_profile_gz=<resource_name> in the URL.
+    //   Otherwise, set ?debug_profile_json=<resource_name>
+    const debugProfileGzippedRN = new URLSearchParams(window.location.search).get("debug_profile_gz");
+    if (debugProfileGzippedRN) {
+      return new build_event_stream.File({
+        name: "timing_profile.gz",
+        uri: "bytestream://localhost:1985/" + debugProfileGzippedRN.replaceAll("^/", ""),
+      });
+    }
+    const debugProfileRN = new URLSearchParams(window.location.search).get("debug_profile_json");
+    if (debugProfileRN) {
+      return new build_event_stream.File({
+        name: "timing_profile.json",
+        uri: "bytestream://localhost:1985/" + debugProfileRN.replaceAll("^/", ""),
+      });
+    }
+
     // Bazel 8 semi-fixed the profile name with: https://github.com/bazelbuild/bazel/pull/22345
     const version = this.props.model?.getBazelVersion();
     if (version && version.major >= 8) {
