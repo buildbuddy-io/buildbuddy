@@ -79,7 +79,7 @@ export default class Panel {
   filter = "";
 
   // If set, visually highlight this event to indicate that it is the current search match.
-  highlightEvent?: TraceEvent;
+  highlightEvent?: { track: TrackModel; index: number };
 
   private theme: ThemeColors;
   private eventColorCache = new Map<string, string>();
@@ -104,9 +104,12 @@ export default class Panel {
     this.eventColorCache.clear();
     for (const section of this.model.sections) {
       for (const track of section.tracks ?? []) {
-        for (const id of track.colorIds) {
-          if (!this.eventColorCache.has(id)) {
-            this.eventColorCache.set(id, computeTraceEventColor(id));
+        const eventIndices = track.eventIndices;
+        const thread = track.thread;
+        for (let i = 0; i < eventIndices.length; i++) {
+          const colorKey = thread.getColorKey(eventIndices[i]);
+          if (!this.eventColorCache.has(colorKey)) {
+            this.eventColorCache.set(colorKey, computeTraceEventColor(colorKey));
           }
         }
       }
@@ -217,11 +220,18 @@ export default class Panel {
     const modelMouse = this.getMouseModelCoordinates();
 
     const onePx = 1 / this.canvasXPerModelX;
-    for (const event of track.events) {
-      if (modelMouse.x >= event.ts && modelMouse.x <= event.ts + Math.max(event.dur, onePx)) {
-        return event;
+    const eventIndices = track.eventIndices;
+    const thread = track.thread;
+    const ts = thread.ts;
+    const dur = thread.dur;
+    const eventCount = eventIndices.length;
+    for (let i = 0; i < eventCount; i++) {
+      const eventIndex = eventIndices[i];
+      const eventTs = ts[eventIndex];
+      if (modelMouse.x >= eventTs && modelMouse.x <= eventTs + Math.max(dur[eventIndex], onePx)) {
+        return thread.getEvent(eventIndex);
       }
-      if (event.ts > modelMouse.x) return null;
+      if (eventTs > modelMouse.x) return null;
     }
     return null;
   }
@@ -341,6 +351,7 @@ export default class Panel {
     const ctx = this.ctx;
     const xMin = this.scrollX / this.canvasXPerModelX;
     const xMax = (this.scrollX + this.canvasWidth) / this.canvasXPerModelX;
+    const lowerFilter = this.filter.toLowerCase();
     let i = 0;
     for (; i < this.model.sections.length; i++) {
       if (this.isSectionVisible(this.model.sections[i])) break;
@@ -370,7 +381,7 @@ export default class Panel {
           trackIndex * (constants.TRACK_HEIGHT + constants.TRACK_VERTICAL_GAP);
         // TODO: skip drawing track if not visible *within* the current section.
         // This may be needed if we have to render very tall sections.
-        this.drawTrack(track, trackY, xMin, xMax);
+        this.drawTrack(track, trackY, xMin, xMax, lowerFilter);
         trackIndex++;
       }
 
@@ -461,50 +472,50 @@ export default class Panel {
     ctx.globalAlpha = 1;
   }
 
-  private drawTrack(track: TrackModel, y: number, xMin: number, xMax: number) {
-    let i = 0;
-    let lastEventRendered = false;
-    for (; i < track.xs.length; i++) {
-      let modelX = track.xs[i];
+  private drawTrack(track: TrackModel, y: number, xMin: number, xMax: number, lowerFilter: string) {
+    const eventIndices = track.eventIndices;
+    const thread = track.thread;
+    const dur = thread.dur;
+    const ts = thread.ts;
+    const eventCount = eventIndices.length;
+    const scale = this.canvasXPerModelX;
+    const scrollX = this.scrollX;
+    let lastRenderedPixelRight = -Infinity;
+    for (let i = 0; i < eventCount; i++) {
+      const eventIndex = eventIndices[i];
+      let modelX = ts[eventIndex];
       if (modelX > xMax) break;
 
-      let modelWidth = track.widths[i];
+      let modelWidth = dur[eventIndex];
       if (modelX + modelWidth < xMin) continue;
 
-      if (
-        this.filter == "" ||
-        track.events[i].name.toLowerCase().includes(this.filter.toLowerCase()) ||
-        track.events[i].cat.toLowerCase().includes(this.filter.toLowerCase()) ||
-        track.events[i].args?.target?.toLowerCase().includes(this.filter.toLowerCase()) ||
-        track.events[i].args?.mnemonic?.toLowerCase().includes(this.filter.toLowerCase()) ||
-        track.events[i].out?.toLowerCase().includes(this.filter.toLowerCase())
-      ) {
-        this.ctx.fillStyle = this.eventColorCache.get(track.colorIds[i])!;
-      } else {
-        this.ctx.fillStyle = this.theme.eventFiltered;
-      }
-
       // TODO: only apply the horizontal gap if there's an event just after us.
-      let width = modelWidth * this.canvasXPerModelX - constants.EVENT_HORIZONTAL_GAP;
+      let width = modelWidth * scale - constants.EVENT_HORIZONTAL_GAP;
+      const x = modelX * scale - scrollX;
       if (width <= 0) {
-        // If the event is less than 1px side, and less than 1px away from the previous
-        // event start that rendered, don't render it.
-        if (
-          lastEventRendered &&
-          Math.abs(modelX - track.xs[i - 1]) * this.canvasXPerModelX <= constants.MIN_RENDER_PIXEL_WIDTH
-        ) {
-          lastEventRendered = false;
-          continue;
-        }
         width = constants.MIN_RENDER_PIXEL_WIDTH;
       }
-      const x = modelX * this.canvasXPerModelX - this.scrollX;
+
+      const isHighlighted = this.highlightEvent?.track === track && this.highlightEvent.index === i;
+      const pixelLeft = Math.floor(x);
+      const pixelRight = Math.max(pixelLeft + 1, Math.ceil(x + width));
+      // At low zoom, many consecutive events can collapse into the same pixel.
+      // Drawing all of them does extra canvas work without adding detail.
+      if (!isHighlighted && pixelRight <= lastRenderedPixelRight) {
+        continue;
+      }
+      lastRenderedPixelRight = pixelRight;
+
+      if (lowerFilter && !thread.matchesFilter(eventIndex, lowerFilter)) {
+        this.ctx.fillStyle = this.theme.eventFiltered;
+      } else {
+        this.ctx.fillStyle = this.eventColorCache.get(thread.getColorKey(eventIndex))!;
+      }
       this.ctx.fillRect(x, y, width, constants.TRACK_HEIGHT);
-      lastEventRendered = true;
 
       // If this event is the one currently selected via search, draw a border
       // around it so it's easy to spot.
-      if (track.events[i] === this.highlightEvent) {
+      if (isHighlighted) {
         this.ctx.lineWidth = 2;
         this.ctx.strokeStyle = this.theme.eventHighlightStroke;
         this.ctx.strokeRect(x, y, width, constants.TRACK_HEIGHT);
@@ -512,7 +523,6 @@ export default class Panel {
 
       const visibleWidth = width + Math.min(0, x);
       if (visibleWidth > constants.EVENT_LABEL_WIDTH_THRESHOLD) {
-        let name = track.events[i].name;
         this.ctx.font = `${constants.EVENT_LABEL_FONT_SIZE} ${this.fontFamily}`;
         this.ctx.fillStyle = this.theme.eventLabelFont;
         this.ctx.save();
@@ -520,7 +530,7 @@ export default class Panel {
         this.ctx.rect(x, y, width, constants.TRACK_HEIGHT);
         this.ctx.clip();
         this.ctx.fillText(
-          name,
+          thread.getName(eventIndex),
           // Pin label to left edge if out of view.
           Math.max(0, x) + 2,
           y + constants.TRACK_HEIGHT - 4
@@ -550,7 +560,7 @@ function formatMicroseconds(microseconds: number) {
  *
  * Returns undefined if x is out of bounds.
  */
-function interpolate(x: number, xs: number[], ys: number[]): number | undefined {
+function interpolate(x: number, xs: ArrayLike<number>, ys: ArrayLike<number>): number | undefined {
   if (!xs.length) return undefined;
   if (x < xs[0]) return undefined;
 

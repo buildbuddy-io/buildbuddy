@@ -1,5 +1,5 @@
 import React from "react";
-import { Profile, readProfile } from "./trace_events";
+import { Profile, readProfile } from "./compact_trace";
 
 interface Props {
   children: (state: State) => React.ReactNode;
