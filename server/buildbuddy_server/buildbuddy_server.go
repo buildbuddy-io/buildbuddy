@@ -39,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -59,6 +60,7 @@ import (
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -700,6 +702,202 @@ func (s *BuildBuddyServer) SetGroupStatus(ctx context.Context, req *grpb.SetGrou
 	}
 
 	return &grpb.SetGroupStatusResponse{}, nil
+}
+
+func (s *BuildBuddyServer) CreateUsageBasedBillingSetupSession(ctx context.Context, req *grpb.CreateUsageBasedBillingSetupSessionRequest) (*grpb.CreateUsageBasedBillingSetupSessionResponse, error) {
+	groupID, err := billingSetupGroupID(req.GetRequestContext())
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizeBillingSetup(ctx, groupID); err != nil {
+		return nil, err
+	}
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	group, err := userDB.GetGroupByID(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateUsageBasedBillingSetupGroup(group); err != nil {
+		return nil, err
+	}
+	billing, err := s.getGroupBilling(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	successURL, err := billingSetupRedirectURL(req.GetSuccessUrl(), "success")
+	if err != nil {
+		return nil, err
+	}
+	cancelURL, err := billingSetupRedirectURL(req.GetCancelUrl(), "cancel")
+	if err != nil {
+		return nil, err
+	}
+	billingService, err := s.usageBasedBillingService()
+	if err != nil {
+		return nil, err
+	}
+	session, err := billingService.CreateUsageBasedBillingSetupSession(ctx, group, billing.ExternalCustomerID, successURL, cancelURL)
+	if err != nil {
+		return nil, err
+	}
+
+	billing.ExternalCustomerID = session.CustomerID
+	billing.ExternalSetupSessionID = session.SetupSessionID
+	billing.ExternalPaymentSetupID = session.PaymentSetupID
+	if err := s.saveGroupBilling(ctx, billing); err != nil {
+		return nil, err
+	}
+
+	return &grpb.CreateUsageBasedBillingSetupSessionResponse{
+		SetupUrl:       session.SetupURL,
+		SetupSessionId: session.SetupSessionID,
+	}, nil
+}
+
+func (s *BuildBuddyServer) CompleteUsageBasedBillingSetup(ctx context.Context, req *grpb.CompleteUsageBasedBillingSetupRequest) (*grpb.CompleteUsageBasedBillingSetupResponse, error) {
+	groupID, err := billingSetupGroupID(req.GetRequestContext())
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizeBillingSetup(ctx, groupID); err != nil {
+		return nil, err
+	}
+	setupSessionID := strings.TrimSpace(req.GetSetupSessionId())
+	if setupSessionID == "" {
+		return nil, status.InvalidArgumentError("billing setup session ID is required")
+	}
+
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	group, err := userDB.GetGroupByID(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateUsageBasedBillingSetupGroup(group); err != nil {
+		return nil, err
+	}
+	billing, err := s.getGroupBilling(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	billingService, err := s.usageBasedBillingService()
+	if err != nil {
+		return nil, err
+	}
+	completion, err := billingService.CompleteUsageBasedBillingSetup(ctx, groupID, billing.ExternalSetupSessionID, billing.ExternalCustomerID, setupSessionID)
+	if err != nil {
+		return nil, err
+	}
+	billing.ExternalCustomerID = completion.CustomerID
+	billing.ExternalSetupSessionID = completion.SetupSessionID
+	billing.ExternalPaymentSetupID = completion.PaymentSetupID
+	if err := s.saveCompletedUsageBasedBillingSetup(ctx, billing, groupID); err != nil {
+		return nil, err
+	}
+	return &grpb.CompleteUsageBasedBillingSetupResponse{}, nil
+}
+
+func validateUsageBasedBillingSetupGroup(group *tables.Group) error {
+	if group.Status != grpb.Group_FREE_TIER_GROUP_STATUS {
+		return status.FailedPreconditionError("usage-based billing setup is only available for free tier organizations")
+	}
+	return nil
+}
+
+func (s *BuildBuddyServer) usageBasedBillingService() (interfaces.BillingService, error) {
+	billingService := s.env.GetBillingService()
+	if billingService == nil || !billingService.Configured() {
+		return nil, status.FailedPreconditionError("usage-based billing is not configured")
+	}
+	return billingService, nil
+}
+
+func billingSetupGroupID(ctx *ctxpb.RequestContext) (string, error) {
+	groupID := ctx.GetGroupId()
+	if groupID == "" {
+		return "", status.InvalidArgumentError("Missing organization identifier")
+	}
+	return groupID, nil
+}
+
+func (s *BuildBuddyServer) authorizeBillingSetup(ctx context.Context, groupID string) error {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	return authutil.AuthorizeOrgAdmin(u, groupID)
+}
+
+func billingSetupRedirectURL(rawURL, setupStatus string) (string, error) {
+	if rawURL != "" {
+		if err := build_buddy_url.ValidateRedirect(rawURL); err != nil {
+			return "", err
+		}
+		return rawURL, nil
+	}
+	u := build_buddy_url.WithPath("/settings/org/details")
+	q := u.Query()
+	q.Set("usage_billing_setup", setupStatus)
+	u.RawQuery = q.Encode()
+	if setupStatus == "success" {
+		u.RawQuery += "&setup_session_id={CHECKOUT_SESSION_ID}"
+	}
+	return u.String(), nil
+}
+
+func (s *BuildBuddyServer) getGroupBilling(ctx context.Context, groupID string) (*tables.GroupBilling, error) {
+	h := s.env.GetDBHandle()
+	if h == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	billing := &tables.GroupBilling{}
+	err := h.GORM(ctx, "buildbuddy_server_get_group_billing").Where("group_id = ?", groupID).Take(billing).Error
+	if db.IsRecordNotFound(err) {
+		return &tables.GroupBilling{GroupID: groupID}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return billing, nil
+}
+
+func (s *BuildBuddyServer) saveGroupBilling(ctx context.Context, billing *tables.GroupBilling) error {
+	h := s.env.GetDBHandle()
+	if h == nil {
+		return status.UnimplementedError("Not Implemented")
+	}
+	return h.GORM(ctx, "buildbuddy_server_save_group_billing").Save(billing).Error
+}
+
+func (s *BuildBuddyServer) saveCompletedUsageBasedBillingSetup(ctx context.Context, billing *tables.GroupBilling, groupID string) error {
+	h := s.env.GetDBHandle()
+	if h == nil {
+		return status.UnimplementedError("Not Implemented")
+	}
+	if err := h.Transaction(ctx, func(tx interfaces.DB) error {
+		if err := tx.GORM(ctx, "buildbuddy_server_save_completed_group_billing").Save(billing).Error; err != nil {
+			return err
+		}
+		return tx.NewQuery(ctx, "buildbuddy_server_update_group_status_for_billing").Raw(`
+			UPDATE "Groups" SET status = ?
+			WHERE group_id = ?`,
+			int32(grpb.Group_USAGE_BASED_GROUP_STATUS),
+			groupID,
+		).Exec().Error
+	}); err != nil {
+		return err
+	}
+	if qm := s.env.GetQuotaManager(); qm != nil {
+		if err := qm.ReloadBucketsAndNotify(ctx); err != nil {
+			log.Warningf("Error reloading quota buckets: %s", err)
+		}
+	}
+	return nil
 }
 
 func (s *BuildBuddyServer) GetSSOConfig(ctx context.Context, req *grpb.GetSSOConfigRequest) (*grpb.GetSSOConfigResponse, error) {

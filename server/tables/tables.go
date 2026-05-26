@@ -271,6 +271,22 @@ func (g *Group) TableName() string {
 	return "Groups"
 }
 
+type GroupBilling struct {
+	Model
+
+	GroupID string `gorm:"primaryKey"`
+
+	// External billing provider state for payment method setup. Actual payment
+	// method details are stored by the provider, not in BuildBuddy.
+	ExternalCustomerID     string `gorm:"not null;default:''"`
+	ExternalSetupSessionID string `gorm:"not null;default:''"`
+	ExternalPaymentSetupID string `gorm:"not null;default:''"`
+}
+
+func (gb *GroupBilling) TableName() string {
+	return "GroupBillings"
+}
+
 type UserGroup struct {
 	UserUserID   string `gorm:"primaryKey"`
 	GroupGroupID string `gorm:"primaryKey"`
@@ -1488,6 +1504,7 @@ func RegisterTables() {
 	registerTable("EX", &Execution{})
 	registerTable("GH", &GitHubAppInstallation{})
 	registerTable("GR", &Group{})
+	registerTable("GB", &GroupBilling{})
 	registerTable("IE", &InvocationExecution{})
 	registerTable("IN", &Invocation{})
 	registerTable("IR", &IPRule{})

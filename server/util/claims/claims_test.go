@@ -287,6 +287,7 @@ func TestGroupStatusPropagation(t *testing.T) {
 		grpb.Group_ENTERPRISE_GROUP_STATUS,
 		grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
 		grpb.Group_BLOCKED_GROUP_STATUS,
+		grpb.Group_USAGE_BASED_GROUP_STATUS,
 	}
 
 	for _, status := range statuses {

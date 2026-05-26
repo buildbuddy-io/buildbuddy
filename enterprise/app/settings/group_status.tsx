@@ -29,6 +29,7 @@ const STATUS_OPTIONS: Array<{ value: grp.Group.GroupStatus; label: string }> = [
   { value: grp.Group.GroupStatus.ENTERPRISE_GROUP_STATUS, label: "Enterprise" },
   { value: grp.Group.GroupStatus.ENTERPRISE_TRIAL_GROUP_STATUS, label: "Enterprise Trial" },
   { value: grp.Group.GroupStatus.BLOCKED_GROUP_STATUS, label: "Blocked" },
+  { value: grp.Group.GroupStatus.USAGE_BASED_GROUP_STATUS, label: "Usage Based" },
 ];
 
 const getStatusLabel = (status: grp.Group.GroupStatus): string => {

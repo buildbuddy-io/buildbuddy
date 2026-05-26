@@ -232,6 +232,25 @@ type BuildBuddyServer interface {
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
 
+type UsageBasedBillingSetupSession struct {
+	CustomerID     string
+	SetupSessionID string
+	PaymentSetupID string
+	SetupURL       string
+}
+
+type UsageBasedBillingSetupCompletion struct {
+	CustomerID     string
+	SetupSessionID string
+	PaymentSetupID string
+}
+
+type BillingService interface {
+	Configured() bool
+	CreateUsageBasedBillingSetupSession(ctx context.Context, group *tables.Group, existingCustomerID, successURL, cancelURL string) (*UsageBasedBillingSetupSession, error)
+	CompleteUsageBasedBillingSetup(ctx context.Context, groupID, expectedSetupSessionID, expectedCustomerID, setupSessionID string) (*UsageBasedBillingSetupCompletion, error)
+}
+
 type SSLService interface {
 	IsEnabled() bool
 	IsCertGenerationEnabled() bool

@@ -213,6 +213,9 @@ message FrontendConfig {
 
   // Maximum timing profile size that the UI will load.
   int64 timing_profile_max_size_bytes = 69;
+
+  // Whether usage-based billing setup is enabled.
+  bool usage_based_billing_enabled = 70;
 }
 
 message Region {

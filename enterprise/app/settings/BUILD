@@ -1,4 +1,4 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -31,6 +31,7 @@ ts_library(
         "//enterprise/app/settings:github_link",
         "//enterprise/app/settings:group_status",
         "//enterprise/app/settings:sso_config",
+        "//enterprise/app/settings:usage_based_billing",
         "//enterprise/app/settings:user_github_link",
     ],
 )
@@ -133,6 +134,35 @@ ts_library(
         "//app/components/modal",
         "//app/components/select",
         "//app/service:rpc_service",
+        "//proto:group_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "usage_based_billing",
+    srcs = ["usage_based_billing.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//app/alert:alert_service",
+        "//app/auth:auth_service",
+        "//app/capabilities",
+        "//app/components/button",
+        "//app/components/button:link_button",
+        "//app/errors:error_service",
+        "//app/service:rpc_service",
+        "//proto:group_ts_proto",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "usage_based_billing_test",
+    srcs = ["usage_based_billing_test.tsx"],
+    deps = [
+        ":usage_based_billing",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//proto:group_ts_proto",
     ],
 )

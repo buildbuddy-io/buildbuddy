@@ -202,6 +202,8 @@ var (
 		buildBuddyServicePrefix + "GetUsageAlertingRules",
 		buildBuddyServicePrefix + "CreateUsageAlertingRule",
 		buildBuddyServicePrefix + "DeleteUsageAlertingRule",
+		buildBuddyServicePrefix + "CreateUsageBasedBillingSetupSession",
+		buildBuddyServicePrefix + "CompleteUsageBasedBillingSetup",
 		// Encryption.
 		buildBuddyServicePrefix + "GetEncryptionConfig",
 		buildBuddyServicePrefix + "SetEncryptionConfig",

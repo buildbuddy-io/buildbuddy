@@ -20,6 +20,7 @@ import CompleteGitHubAppInstallationDialog from "./github_complete_installation"
 import GitHubLink from "./github_link";
 import GroupStatusComponent from "./group_status";
 import SSOConfigComponent from "./sso_config";
+import UsageBasedBillingComponent from "./usage_based_billing";
 import UserGitHubLink from "./user_github_link";
 
 export interface SettingsProps {
@@ -275,6 +276,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                         <div className="settings-section-subtitle">{this.props.user.selectedGroupName()}</div>
                       )}
                       {capabilities.createOrg && <EditOrgComponent search={this.props.search} user={this.props.user} />}
+                      <UsageBasedBillingComponent search={this.props.search} user={this.props.user} />
                       {this.props.user.isImpersonating && (
                         <div className="settings-internal-section">
                           <GroupStatusComponent user={this.props.user} />
