@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -265,4 +266,51 @@ func (w *logWriter) Write(b []byte) (int, error) {
 		log.Infof("[redis server] %s", line)
 	}
 	return len(b), nil
+}
+
+// CommandCounter counts Redis commands matching a command name.
+//
+// Example usage:
+//
+//	counter := testredis.NewCommandCounter("ZRANGE")
+//	rdb.AddHook(counter)
+//	rdb.ZRange(/* ... */)
+//	counter.Count() // returns 1
+type CommandCounter struct {
+	name  string
+	count atomic.Int64
+}
+
+// NewCommandCounter returns a Redis hook that counts commands matching name.
+func NewCommandCounter(name string) *CommandCounter {
+	return &CommandCounter{name: strings.ToLower(name)}
+}
+
+// Count returns the number of matching Redis commands observed.
+func (c *CommandCounter) Count() int64 {
+	return c.count.Load()
+}
+
+func (c *CommandCounter) countCommand(cmd redis.Cmder) {
+	if cmd.Name() != c.name {
+		return
+	}
+	c.count.Add(1)
+}
+
+func (c *CommandCounter) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
+	return ctx, nil
+}
+func (c *CommandCounter) AfterProcess(ctx context.Context, cmd redis.Cmder) error {
+	c.countCommand(cmd)
+	return nil
+}
+func (c *CommandCounter) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
+	return ctx, nil
+}
+func (c *CommandCounter) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
+	for _, cmd := range cmds {
+		c.countCommand(cmd)
+	}
+	return nil
 }
