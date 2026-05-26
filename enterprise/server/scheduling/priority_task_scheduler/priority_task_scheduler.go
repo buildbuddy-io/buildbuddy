@@ -48,6 +48,11 @@ var (
 	roundTaskCpuSize        = flag.Bool("executor.round_task_cpu_size", false, "If true, round tasks' CPU sizes up to the nearest whole number.")
 )
 
+const (
+	proactiveTaskCancellationRemovedFromQueue = "removed_from_queue"
+	proactiveTaskCancellationTaskNotFound     = "task_not_found"
+)
+
 var shuttingDownLogOnce sync.Once
 
 type queuedTask struct {
@@ -564,7 +569,9 @@ func (q *PriorityTaskScheduler) remove(taskID string) bool {
 func (q *PriorityTaskScheduler) CancelTaskReservation(ctx context.Context, taskID string) {
 	ctx = q.enrichContext(ctx)
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, taskID)
+	status := proactiveTaskCancellationTaskNotFound
 	if removed := q.remove(taskID); removed {
+		status = proactiveTaskCancellationRemovedFromQueue
 		log.CtxInfof(ctx, "Removed completed task from queue")
 		// If the task we removed was at the head of the queue, the task behind
 		// it in the queue might now be schedulable. Wake up the scheduler to
@@ -574,6 +581,9 @@ func (q *PriorityTaskScheduler) CancelTaskReservation(ctx context.Context, taskI
 		default:
 		}
 	}
+	metrics.RemoteExecutionProactiveTaskCancellationRequests.With(prometheus.Labels{
+		metrics.ProactiveTaskCancellationStatus: status,
+	}).Inc()
 }
 
 func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx context.Context, execTask *repb.ExecutionTask) context.Context {
