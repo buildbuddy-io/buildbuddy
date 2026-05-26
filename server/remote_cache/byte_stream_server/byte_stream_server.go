@@ -101,7 +101,8 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	}, nil
 }
 
-func checkReadPreconditions(req *bspb.ReadRequest) error {
+// CheckReadPreconditions validates a ByteStream ReadRequest before processing it.
+func CheckReadPreconditions(req *bspb.ReadRequest) error {
 	if req.ResourceName == "" {
 		return status.InvalidArgumentError("Missing resource name")
 	}
@@ -128,7 +129,7 @@ func rpcPeerAddr(ctx context.Context) string {
 // of bytes. The bytes are returned in a sequence of responses, and the
 // responses are delivered as the results of a server-side streaming FUNC (S *BYTESTREAMSERVER).
 func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
-	if err := checkReadPreconditions(req); err != nil {
+	if err := CheckReadPreconditions(req); err != nil {
 		return err
 	}
 	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())

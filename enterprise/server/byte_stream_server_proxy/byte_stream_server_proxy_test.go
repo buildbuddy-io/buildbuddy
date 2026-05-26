@@ -6,8 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -1399,28 +1397,41 @@ func TestReadChunked(t *testing.T) {
 	require.Equal(t, float64(len(originalData)), testutil.ToFloat64(metrics.ByteStreamProxiedReadBytes.With(proxiedReadHitLabels))-proxiedReadHitBytesBefore)
 }
 
-func TestReadChunkNegativeOffsetCrashesProcess(t *testing.T) {
-	if os.Getenv("TEST_PROXY_CHUNK_NEGATIVE_OFFSET_CRASH") == "1" {
-		rn := digest.NewCASResourceName(&repb.Digest{
-			Hash:      strings.Repeat("a", 64),
-			SizeBytes: 1,
-		}, "", repb.DigestFunction_SHA256)
-		s := &ByteStreamServerProxy{bufPool: bytebufferpool.VariableSize(1)}
-		resultChans := make([]chan chunkReadResult, 1)
-		s.fillChunkReadWindow(context.Background(), resultChans, []chunkReadRequest{{
-			rn:     rn,
-			offset: -1 << 63,
-		}}, 0, 0, false)
-		<-resultChans[0]
-		return
+func TestReadChecksPreconditions(t *testing.T) {
+	s := &ByteStreamServerProxy{}
+	for _, tc := range []struct {
+		name    string
+		req     *bspb.ReadRequest
+		wantErr func(error) bool
+	}{
+		{
+			name:    "missing_resource_name",
+			req:     &bspb.ReadRequest{},
+			wantErr: status.IsInvalidArgumentError,
+		},
+		{
+			name: "negative_read_offset",
+			req: &bspb.ReadRequest{
+				ResourceName: "invalid-resource-name",
+				ReadOffset:   -1,
+			},
+			wantErr: status.IsOutOfRangeError,
+		},
+		{
+			name: "negative_read_limit",
+			req: &bspb.ReadRequest{
+				ResourceName: "invalid-resource-name",
+				ReadLimit:    -1,
+			},
+			wantErr: status.IsOutOfRangeError,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := s.read(context.Background(), tc.req, &meteredReadServerStream{})
+			require.Error(t, err)
+			require.True(t, tc.wantErr(err), "unexpected error: %s", err)
+		})
 	}
-
-	cmd := exec.Command(os.Args[0], "-test.run=^TestReadChunkNegativeOffsetCrashesProcess$")
-	cmd.Env = append(os.Environ(), "TEST_PROXY_CHUNK_NEGATIVE_OFFSET_CRASH=1")
-	output, err := cmd.CombinedOutput()
-	require.Error(t, err)
-	require.Contains(t, string(output), "panic: runtime error")
-	require.Contains(t, string(output), "slice bounds out of range")
 }
 
 func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
