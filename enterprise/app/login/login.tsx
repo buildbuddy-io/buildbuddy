@@ -138,7 +138,7 @@ export default class LoginComponent extends React.Component<Props, State> {
     return (
       issuerURL?.hostname === "okta.com" ||
       // subdomains of "okta.com" are also acceptable.
-      issuerURL?.hostname.startsWith(".okta.com")
+      issuerURL?.hostname.endsWith(".okta.com")
     );
   }
 
