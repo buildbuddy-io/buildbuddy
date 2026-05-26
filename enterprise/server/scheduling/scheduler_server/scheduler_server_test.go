@@ -105,6 +105,9 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{
 		RedisTarget: redisTarget,
 	})
+	if opts.options.Clock != nil {
+		env.SetClock(opts.options.Clock)
+	}
 
 	flags.Set(t, "remote_execution.default_pool_name", "defaultPoolName")
 	flags.Set(t, "remote_execution.shared_executor_pool_group_id", "sharedGroupID")
@@ -1103,6 +1106,10 @@ func TestEnqueueTaskReservation_RoutingConfig(t *testing.T) {
 }
 
 func TestAskForMoreWork_OnlyEnqueuesTasksThatFitOnNode(t *testing.T) {
+	// Disable unclaimedTasks cache to simulate the TTL expiring immediately
+	// for the purposes of this test.
+	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+
 	clock := clockwork.NewFakeClock()
 	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
 
@@ -1181,6 +1188,59 @@ func TestAskForMoreWork_RespectRequestedExecutorID(t *testing.T) {
 	})
 	rsp = <-executor2.schedulerMessages
 	require.Greater(t, rsp.GetAskForMoreWorkResponse().GetDelay().AsDuration(), time.Duration(0))
+}
+
+func TestAskForMoreWork_CachesResultsToReduceRedisLoad(t *testing.T) {
+	for _, testCase := range []struct {
+		name                string
+		cacheTTL            time.Duration
+		expectedZrangeCount int64
+	}{
+		{
+			name:                "should dedupe ZRANGE calls within cache TTL",
+			cacheTTL:            time.Duration(1 * time.Minute),
+			expectedZrangeCount: 1,
+		},
+		{
+			name:     "should issue individual ZRANGE requests if cache TTL is disabled",
+			cacheTTL: 0,
+			// 1 request on registration + 1 for each AskForMoreWorkRequest
+			expectedZrangeCount: 11,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", testCase.cacheTTL)
+
+			clock := clockwork.NewFakeClock()
+			env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
+			zrangeCounter := testredis.NewCommandCounter("ZRANGE")
+			env.GetRemoteExecutionRedisClient().AddHook(zrangeCounter)
+
+			executor := newFakeExecutorWithId(ctx, t, "large", env.GetSchedulerClient())
+			executor.Register()
+
+			// Register an executor and have it ask for more work several times.
+			for range 10 {
+				executor.Send(&scpb.RegisterAndStreamWorkRequest{
+					AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
+				})
+				<-executor.schedulerMessages
+			}
+
+			require.Equal(t, testCase.expectedZrangeCount, zrangeCounter.Count())
+
+			// After advancing past cache TTL and issuing one more
+			// AskForMoreWorkRequest, we should expect to see more ZRANGE calls.
+			clock.Advance(testCase.cacheTTL + 1*time.Nanosecond)
+
+			executor.Send(&scpb.RegisterAndStreamWorkRequest{
+				AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
+			})
+			<-executor.schedulerMessages
+			require.Equal(t, testCase.expectedZrangeCount+1, zrangeCounter.Count())
+		})
+	}
+
 }
 
 // registerLabeledExecutorPair registers two executors whose labels differ.
