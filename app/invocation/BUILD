@@ -858,7 +858,6 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
-        "//:node_modules/tldts",
         "//:node_modules/tslib",
         "//app/components/button",
         "//app/components/link",
@@ -869,6 +868,7 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:color",
         "//app/util:lcov",
+        "//app/util:url",
         "//proto:build_event_stream_ts_proto",
     ],
 )

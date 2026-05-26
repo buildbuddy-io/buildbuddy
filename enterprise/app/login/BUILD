@@ -9,7 +9,6 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
-        "//:node_modules/tldts",
         "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
@@ -21,6 +20,7 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//app/util:popup",
+        "//app/util:url",
         "//proto:group_ts_proto",
     ],
 )

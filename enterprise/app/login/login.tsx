@@ -1,6 +1,5 @@
 import { ArrowRight, Lock, User } from "lucide-react";
 import React from "react";
-import { getDomain, getHostname } from "tldts";
 import alertService from "../../../app/alert/alert_service";
 import authService from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
@@ -11,6 +10,7 @@ import { GoogleIcon } from "../../../app/icons/google";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import popup from "../../../app/util/popup";
+import { tryParseURL } from "../../../app/util/url";
 import { grp } from "../../../proto/group_ts_proto";
 
 interface State {
@@ -127,12 +127,18 @@ export default class LoginComponent extends React.Component<Props, State> {
   isGoogleConfigured() {
     return (
       capabilities.config.configuredIssuers.length &&
-      getHostname(capabilities.config.configuredIssuers[0]) === "accounts.google.com"
+      tryParseURL(capabilities.config.configuredIssuers[0])?.hostname === "accounts.google.com"
     );
   }
   isOktaConfigured() {
+    if (!capabilities.config.configuredIssuers.length) {
+      return false;
+    }
+    const issuerURL = tryParseURL(capabilities.config.configuredIssuers[0]);
     return (
-      capabilities.config.configuredIssuers.length && getDomain(capabilities.config.configuredIssuers[0]) === "okta.com"
+      issuerURL?.hostname === "okta.com" ||
+      // subdomains of "okta.com" are also acceptable.
+      issuerURL?.hostname.startsWith(".okta.com")
     );
   }
 

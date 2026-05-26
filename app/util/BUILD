@@ -252,3 +252,8 @@ ts_library(
     name = "file_types",
     srcs = ["file_types.ts"],
 )
+
+ts_library(
+    name = "url",
+    srcs = ["url.ts"],
+)
