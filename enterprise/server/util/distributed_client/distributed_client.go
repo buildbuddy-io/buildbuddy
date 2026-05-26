@@ -17,11 +17,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
@@ -64,6 +66,7 @@ type Proxy struct {
 	hintedHandoffCallback func(ctx context.Context, peer string, r *rspb.ResourceName)
 	listenAddr            string
 	zone                  string
+	enableCompressedReads bool
 }
 
 func New(env environment.Env, c interfaces.Cache, listenAddr string) *Proxy {
@@ -126,6 +129,19 @@ func (c *Proxy) SetHeartbeatCallbackFunc(fn func(ctx context.Context, peer strin
 
 func (c *Proxy) SetHintedHandoffCallbackFunc(fn func(ctx context.Context, peer string, r *rspb.ResourceName)) {
 	c.hintedHandoffCallback = fn
+}
+
+func (c *Proxy) SetEnableCompressedReads(enabled bool) {
+	c.enableCompressedReads = enabled
+}
+
+// Size threshold matches the pebble default --cache.pebble.min_bytes_auto_zstd_compression
+// used by distributed.copyFile.
+func (c *Proxy) shouldReadCompressed(rn *rspb.ResourceName) bool {
+	return c.enableCompressedReads &&
+		rn.GetCompressor() == repb.Compressor_IDENTITY &&
+		rn.GetDigest().GetSizeBytes() > 100 &&
+		c.cache.SupportsCompressor(repb.Compressor_ZSTD)
 }
 
 func digestFromKey(k *dcpb.Key) *repb.Digest {
@@ -514,10 +530,16 @@ func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 		Isolation: isolation,
 	}
 	hashDigests := make(map[string]*repb.Digest, len(resources))
+	compressedHashes := make(set.Set[string], len(resources))
 	for _, r := range resources {
 		key := digestToKey(r.GetDigest())
 		hashDigests[r.GetDigest().GetHash()] = r.GetDigest()
 		req.Key = append(req.Key, key)
+		if c.shouldReadCompressed(r) {
+			r = r.CloneVT()
+			r.Compressor = repb.Compressor_ZSTD
+			compressedHashes.Add(r.GetDigest().GetHash())
+		}
 		req.Resources = append(req.Resources, r)
 	}
 	client, err := c.getClient(ctx, peer)
@@ -531,9 +553,17 @@ func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 	resultMap := make(map[*repb.Digest][]byte, len(rsp.GetKeyValue()))
 	for _, keyValue := range rsp.GetKeyValue() {
 		d, ok := hashDigests[keyValue.GetKey().GetKey()]
-		if ok {
-			resultMap[d] = keyValue.GetValue()
+		if !ok {
+			continue
 		}
+		buf := keyValue.GetValue()
+		if compressedHashes.Contains(d.GetHash()) {
+			buf, err = compression.DecompressZstd(make([]byte, d.GetSizeBytes()), buf)
+			if err != nil {
+				return nil, err
+			}
+		}
+		resultMap[d] = buf
 	}
 	return resultMap, nil
 }
@@ -542,6 +572,13 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
 		return nil, err
+	}
+	// Pebble rejects offset/limit when the request matches the stored compressor,
+	// so skip the rewrite on the partial-read path.
+	decompress := offset == 0 && limit == 0 && c.shouldReadCompressed(r)
+	if decompress {
+		r = r.CloneVT()
+		r.Compressor = repb.Compressor_ZSTD
 	}
 	req := &dcpb.ReadRequest{
 		Isolation: &dcpb.Isolation{
@@ -557,7 +594,15 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 	if err != nil {
 		return nil, err
 	}
-	return newDistributedCacheReader(stream, r.GetDigest().GetSizeBytes() == offset)
+	rc, err := newDistributedCacheReader(stream, r.GetDigest().GetSizeBytes() == offset)
+	if err != nil || !decompress {
+		return rc, err
+	}
+	dr, err := compression.NewZstdDecompressingReader(rc)
+	if err != nil {
+		rc.Close()
+	}
+	return dr, err
 }
 
 type distributedCacheReader struct {
