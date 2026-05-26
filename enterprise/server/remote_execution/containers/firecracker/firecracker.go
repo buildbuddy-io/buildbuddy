@@ -2529,7 +2529,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		c.observeStageDuration("task_lifecycle", timeSinceContainerInit)
 		c.observeStageDuration("exec", execDuration)
 		c.emitCOWAndUFFDMetrics(stage) // Emit metrics for the current stage, even if it failed.
-		c.emitFirecrackerErrorMetric(ctx, result, string(result.AuxiliaryLogs[vmLogTailFileName]))
+		c.emitFirecrackerErrorMetric(result, string(result.AuxiliaryLogs[vmLogTailFileName]))
 	}()
 
 	if c.fsLayout == nil {
@@ -3494,15 +3494,18 @@ func (c *FirecrackerContainer) parseOOMError(logTail string) error {
 	return status.ResourceExhaustedErrorf("some processes ran out of memory, and were killed:\n%s", oomLines.String())
 }
 
-func (c *FirecrackerContainer) emitFirecrackerErrorMetric(ctx context.Context, result *interfaces.CommandResult, logTail string) {
+func (c *FirecrackerContainer) emitFirecrackerErrorMetric(result *interfaces.CommandResult, logTail string) {
 	if result == nil || result.Error == nil {
 		return
 	}
-	if status.IsDeadlineExceededError(result.Error) || status.IsCanceledError(result.Error) {
+	if status.IsDeadlineExceededError(result.Error) ||
+		status.IsCanceledError(result.Error) ||
+		errors.Is(result.Error, context.DeadlineExceeded) ||
+		errors.Is(result.Error, context.Canceled) {
 		return
 	}
 
-	reasons := c.firecrackerErrorReasons(ctx, result.Error, logTail)
+	reasons := c.firecrackerErrorReasons(result.Error, logTail)
 	for _, reason := range reasons {
 		metrics.FirecrackerErrorCount.With(prometheus.Labels{
 			metrics.FirecrackerErrorReason: reason,
@@ -3510,7 +3513,7 @@ func (c *FirecrackerContainer) emitFirecrackerErrorMetric(ctx context.Context, r
 	}
 }
 
-func (c *FirecrackerContainer) firecrackerErrorReasons(ctx context.Context, execErr error, logTail string) []string {
+func (c *FirecrackerContainer) firecrackerErrorReasons(execErr error, logTail string) []string {
 	errorReasons := []string{}
 	msg := strings.ToLower(execErr.Error())
 
@@ -3528,6 +3531,10 @@ func (c *FirecrackerContainer) firecrackerErrorReasons(ctx context.Context, exec
 	}
 	if strings.Contains(logTail, "failed to update balloon stats, missing descriptor.") {
 		errorReasons = append(errorReasons, "balloon_stats_missing_descriptor")
+	}
+
+	if len(errorReasons) == 0 {
+		errorReasons = append(errorReasons, "unknown")
 	}
 
 	return errorReasons

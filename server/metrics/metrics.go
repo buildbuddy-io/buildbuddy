@@ -1678,7 +1678,6 @@ var (
 		FirecrackerErrorReason,
 	})
 
-
 	SnapshotRemoteCacheUploadSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
