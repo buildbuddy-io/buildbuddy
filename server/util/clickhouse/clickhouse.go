@@ -368,8 +368,12 @@ func FillExecutionResourceFieldsFromExecutionID(out *schema.Execution, execution
 // logic.
 func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*schema.Execution, error) {
 	out := &schema.Execution{
-		GroupID:                            in.GetGroupId(),
-		UpdatedAtUsec:                      in.GetUpdatedAtUsec(),
+		GroupID:       in.GetGroupId(),
+		UpdatedAtUsec: in.GetUpdatedAtUsec(),
+		// ExecutionID is no longer read on the OLAP path, but we keep
+		// dual-writing it so the column stays populated in case we need
+		// to roll back the read migration.
+		ExecutionID:                        in.GetExecutionId(),
 		InvocationUUID:                     in.GetInvocationUuid(),
 		CreatedAtUsec:                      in.GetCreatedAtUsec(),
 		UserID:                             in.GetUserId(),
