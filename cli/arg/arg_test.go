@@ -296,6 +296,27 @@ func TestStripBBFlag(t *testing.T) {
 	}
 }
 
+func TestStripBBStartupOptions(t *testing.T) {
+	setupWorkspace(t, "")
+
+	args, err := NewBazelArgs([]string{"--watch", "--watcher_flags=--from_rc", "--watcher_flags=--from_cli", "test", "//foo"})
+	require.NoError(t, err)
+
+	removed := args.StripBBStartupOptions("watch", "watcher_flags")
+	var removedArgs []string
+	for _, opt := range removed {
+		removedArgs = append(removedArgs, opt.Option.Normalized().Format()...)
+	}
+
+	require.Equal(t, []string{
+		"--watch",
+		"--watcher_flags=--from_rc",
+		"--watcher_flags=--from_cli",
+	}, removedArgs)
+	require.Equal(t, []string{"test", "//foo"}, args.Forwarded())
+	require.Equal(t, []string{"--ignore_all_rc_files", "test", "//foo"}, args.Resolved())
+}
+
 func TestFindLast(t *testing.T) {
 	for _, tc := range []struct {
 		Name          string
