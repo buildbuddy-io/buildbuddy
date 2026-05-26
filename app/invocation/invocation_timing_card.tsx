@@ -94,14 +94,15 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     // - Check whether the file is gzipped by running `file <profile_path>`
     // - If it's gzipped, set ?debug_profile_gz=<resource_name> in the URL.
     //   Otherwise, set ?debug_profile_json=<resource_name>
-    const debugProfileGzippedRN = new URLSearchParams(window.location.search).get("debug_profile_gz");
+    const params = new URLSearchParams(window.location.search);
+    const debugProfileGzippedRN = params.get("debug_profile_gz");
     if (debugProfileGzippedRN) {
       return new build_event_stream.File({
         name: "timing_profile.gz",
         uri: "bytestream://localhost:1985/" + debugProfileGzippedRN.replace(/^\/+/, ""),
       });
     }
-    const debugProfileRN = new URLSearchParams(window.location.search).get("debug_profile_json");
+    const debugProfileRN = params.get("debug_profile_json");
     if (debugProfileRN) {
       return new build_event_stream.File({
         name: "timing_profile.json",
