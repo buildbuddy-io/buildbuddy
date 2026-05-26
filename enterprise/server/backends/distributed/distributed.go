@@ -394,6 +394,10 @@ func isTreeCacheResource(r *rspb.ResourceName) bool {
 	return r.GetCacheType() == rspb.CacheType_AC && strings.HasPrefix(r.GetInstanceName(), digest.TreeCacheRemoteInstanceName)
 }
 
+func isLocalReadthroughCacheableResource(r *rspb.ResourceName) bool {
+	return r.GetCacheType() == rspb.CacheType_CAS || isTreeCacheResource(r)
+}
+
 // lookasideKey returns the resource's key in the lookaside cache and true,
 // or "" and false if the resource shouldn't be stored in the lookaside cache.
 func (c *Cache) lookasideKey(ctx context.Context, r *rspb.ResourceName) (key string, ok bool) {
@@ -678,7 +682,8 @@ func (c *Cache) peerZone(peer string) string {
 
 // writePeers returns the ordered slice of replicationFactor peers responsible
 // for writing this key. They should be tried in order.
-func (c *Cache) writePeers(d *repb.Digest) (*peerset.PeerSet, error) {
+func (c *Cache) writePeers(r *rspb.ResourceName) (*peerset.PeerSet, error) {
+	d := r.GetDigest()
 	allPeers := c.consistentHash.GetAllReplicas(d.GetHash())
 	if len(c.opts.NewNodes) > 0 && !*newNodesReadOnly {
 		allPeers = c.extraConsistentHash.GetAllReplicas(d.GetHash())
@@ -686,7 +691,7 @@ func (c *Cache) writePeers(d *repb.Digest) (*peerset.PeerSet, error) {
 	if len(allPeers) < c.opts.ReplicationFactor {
 		return nil, status.UnavailableErrorf("Not enough peers (%d) available to satisfy replication factor (%d).", len(allPeers), c.opts.ReplicationFactor)
 	}
-	if c.localReadthroughEnabled() {
+	if c.localReadthroughEnabled() && isLocalReadthroughCacheableResource(r) {
 		return ensureSameZonePrimary(allPeers, c.opts.ReplicationFactor, c.opts.ListenAddr, c.zone, c.peerZone), nil
 	}
 	return peerset.New(allPeers[:c.opts.ReplicationFactor], allPeers[c.opts.ReplicationFactor:]), nil
@@ -734,9 +739,10 @@ func dedupe(in []string) []string {
 }
 
 // readPeers returns a PeerSet for reading, where the order is self, same zone
-// peers, other peers. If local read-through is enabled, it ensures that at
-// least one primary peer is in the local zone.
-func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
+// peers, other peers. For read-through-cacheable resources, if local read-through
+// is enabled, it ensures that at least one primary peer is in the local zone.
+func (c *Cache) readPeers(r *rspb.ResourceName) *peerset.PeerSet {
+	d := r.GetDigest()
 	peers := c.consistentHash.GetAllReplicas(d.GetHash())
 	var primaryPeers, secondaryPeers []string
 	// To prevent a panic if replication is misconfigured to be higher than peer count.
@@ -765,7 +771,7 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 	}
 
 	var blockBackfills []string
-	if c.localReadthroughEnabled() {
+	if c.localReadthroughEnabled() && isLocalReadthroughCacheableResource(r) {
 		primaryPeers, secondaryPeers, blockBackfills = readThroughPeers(primaryPeers, secondaryPeers, c.opts.ListenAddr, c.zone, c.peerZone)
 	}
 
@@ -917,16 +923,14 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 
 	var readCloser io.ReadCloser
 
-	// Check if the blob is in the local read-through cache, if that feature
-	// is enabled. If not, configure localWriter so the blob can be written
-	// to the local cache as it is read.
-	if c.localReadthroughEnabled() {
+	// Check if an immutable blob is in the local read-through cache, if that
+	// feature is enabled. If not, configure localWriter so the blob can be
+	// written to the local cache as it is read.
+	if c.localReadthroughEnabled() && isLocalReadthroughCacheableResource(r) {
 		if rc, err := c.local.Reader(ctx, r, offset, limit); err == nil {
 			c.log.CtxDebugf(ctx, "Reader(%q) found locally", distributed_client.ResourceIsolationString(r))
 			readCloser = rc
-		} else if cacheable && (r.GetCacheType() == rspb.CacheType_CAS || isTreeCacheResource(r)) {
-			// AC entries can be updated, so we don't want to hold on to an old
-			// version.
+		} else if cacheable {
 			if local, err := c.local.Writer(ctx, r); err == nil {
 				localWriter = local
 			}
@@ -1120,7 +1124,7 @@ func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error
 	if _, found := c.getLookasideEntry(ctx, r); found {
 		return true, nil
 	}
-	ps := c.readPeers(r.GetDigest())
+	ps := c.readPeers(r)
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(r, ps)); err != nil {
 			c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
@@ -1147,7 +1151,7 @@ func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error
 
 func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	d := r.GetDigest()
-	ps := c.readPeers(d)
+	ps := c.readPeers(r)
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		md, err := c.remoteMetadata(ctx, peer, r)
@@ -1183,7 +1187,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		hash := r.GetDigest().GetHash()
 		hashResources[hash] = append(hashResources[hash], r)
 		if _, ok := peerMap[hash]; !ok {
-			peerMap[hash] = c.readPeers(r.GetDigest())
+			peerMap[hash] = c.readPeers(r)
 		}
 	}
 
@@ -1320,7 +1324,7 @@ func getIsolation(resources []*rspb.ResourceName) *dcpb.Isolation {
 //
 // Values found on a non-primary replica will be backfilled to the primary.
 func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64, metricsLabel string) (io.ReadCloser, error) {
-	ps := c.readPeers(rn.GetDigest())
+	ps := c.readPeers(rn)
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(rn, ps)); err != nil {
 			c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
@@ -1389,7 +1393,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 		hash := r.GetDigest().GetHash()
 		hashResources[hash] = append(hashResources[hash], r)
 		if _, ok := peerMap[hash]; !ok {
-			peerMap[hash] = c.readPeers(r.GetDigest())
+			peerMap[hash] = c.readPeers(r)
 		}
 	}
 
@@ -1559,7 +1563,7 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 		return nil, err
 	}
 
-	ps, err := c.writePeers(r.GetDigest())
+	ps, err := c.writePeers(r)
 	if err != nil {
 		return nil, err
 	}
@@ -1631,7 +1635,7 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte)
 }
 
 func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
-	ps := c.readPeers(r.GetDigest())
+	ps := c.readPeers(r)
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		err := c.remoteDelete(ctx, peer, r)
 		if err != nil {

@@ -200,7 +200,7 @@ func TestReadPeers_FewerNodesThanReplicationFactor(t *testing.T) {
 	require.NoError(t, err)
 
 	rn, _ := testdigest.RandomCASResourceBuf(t, 100)
-	ps := c.readPeers(rn.GetDigest())
+	ps := c.readPeers(rn)
 	require.ElementsMatch(t, []string{peer1, peer2}, ps.PreferredPeers)
 	require.Empty(t, ps.FallbackPeers)
 }
@@ -1157,7 +1157,7 @@ func TestHintedHandoff(t *testing.T) {
 	// that these were successfully handed off below.
 	hintedHandoffs := make([]*rspb.ResourceName, 0)
 	for _, d := range digestsWritten {
-		ps := dc3.readPeers(d.Digest)
+		ps := dc3.readPeers(d)
 		if slices.Contains(ps.PreferredPeers, peer3) {
 			hintedHandoffs = append(hintedHandoffs, d)
 		}
@@ -2378,6 +2378,128 @@ func TestReadThroughLocalCache(t *testing.T) {
 	assert.Equal(t, opCountBefore[peer2]+len(allResources), len(memoryCache2.ops))
 	assert.Equal(t, opCountBefore[peer3]+len(allResources), len(memoryCache3.ops))
 
+}
+
+func newReadthroughPeerSelectionCache(t *testing.T) *Cache {
+	env, _, _ := getEnvAuthAndCtx(t)
+	nodes := []string{"b1", "b2", "b3", "a1", "a2", "a3"}
+	c, err := NewDistributedCache(env, newMemoryCache(t, 1000000), Options{
+		ListenAddr:            "a1",
+		ReplicationFactor:     3,
+		Nodes:                 nodes,
+		DisableLocalLookup:    true,
+		ReadThroughLocalCache: true,
+	}, env.GetHealthChecker())
+	require.NoError(t, err)
+	c.zone = "A"
+	c.peerZones = map[string]string{
+		"a1": "A",
+		"a2": "A",
+		"a3": "A",
+		"b1": "B",
+		"b2": "B",
+		"b3": "B",
+	}
+	return c
+}
+
+func digestWithNoSameZonePrimary(t *testing.T, c *Cache) *repb.Digest {
+	for i := 0; i < 10000; i++ {
+		buf := []byte(fmt.Sprintf("readthrough-peer-selection-%d", i))
+		d, err := digest.Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		peers := c.consistentHash.GetAllReplicas(d.GetHash())
+		primaryPeers := peers[:c.opts.ReplicationFactor]
+		if slices.ContainsFunc(primaryPeers, func(peer string) bool {
+			return peer == c.opts.ListenAddr || c.peerZone(peer) == c.zone
+		}) {
+			continue
+		}
+		if !slices.Contains(peers[c.opts.ReplicationFactor:], c.opts.ListenAddr) {
+			continue
+		}
+		return d
+	}
+	t.Fatal("could not find digest with no same-zone primary")
+	return nil
+}
+
+func TestReadThroughPeerSelectionSkipsMutableAC(t *testing.T) {
+	c := newReadthroughPeerSelectionCache(t)
+	d := digestWithNoSameZonePrimary(t, c)
+	allPeers := c.consistentHash.GetAllReplicas(d.GetHash())
+	canonicalPeers := slices.Clone(allPeers[:c.opts.ReplicationFactor])
+	require.NotContains(t, canonicalPeers, c.opts.ListenAddr)
+	promotedPeers := append(slices.Clone(canonicalPeers), c.opts.ListenAddr)
+
+	casResource := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
+	acResource := digest.NewResourceName(d, "", rspb.CacheType_AC, repb.DigestFunction_SHA256).ToProto()
+	treeResource := digest.NewResourceName(d, digest.GetTreeCacheInstanceName(d), rspb.CacheType_AC, repb.DigestFunction_SHA256).ToProto()
+
+	acWritePeers, err := c.writePeers(acResource)
+	require.NoError(t, err)
+	assert.Equal(t, canonicalPeers, acWritePeers.PreferredPeers)
+	assert.NotContains(t, acWritePeers.PreferredPeers, c.opts.ListenAddr)
+
+	casWritePeers, err := c.writePeers(casResource)
+	require.NoError(t, err)
+	assert.Equal(t, promotedPeers, casWritePeers.PreferredPeers)
+
+	treeWritePeers, err := c.writePeers(treeResource)
+	require.NoError(t, err)
+	assert.Equal(t, promotedPeers, treeWritePeers.PreferredPeers)
+
+	acReadPeers := c.readPeers(acResource)
+	assert.Equal(t, canonicalPeers, acReadPeers.PreferredPeers)
+	assert.Empty(t, acReadPeers.BlockBackfills)
+	assert.NotContains(t, acReadPeers.PreferredPeers, c.opts.ListenAddr)
+
+	casReadPeers := c.readPeers(casResource)
+	assert.Contains(t, casReadPeers.PreferredPeers, c.opts.ListenAddr)
+	assert.Contains(t, casReadPeers.BlockBackfills, c.opts.ListenAddr)
+
+	treeReadPeers := c.readPeers(treeResource)
+	assert.Contains(t, treeReadPeers.PreferredPeers, c.opts.ListenAddr)
+	assert.Contains(t, treeReadPeers.BlockBackfills, c.opts.ListenAddr)
+}
+
+func TestRemoteReaderSkipsLocalReadthroughForMutableAC(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:     1,
+		Nodes:                 []string{peer1, peer2},
+		DisableLocalLookup:    true,
+		ReadThroughLocalCache: true,
+	}
+
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	startNewDCache(t, env, config2, memoryCache2)
+
+	waitForReady(t, peer1)
+	waitForReady(t, peer2)
+
+	rn, _ := testdigest.RandomACResourceBuf(t, 100)
+	stale := []byte("stale action result")
+	fresh := []byte("fresh action result")
+	require.NoError(t, memoryCache1.Set(ctx, rn, stale))
+	require.NoError(t, memoryCache2.Set(ctx, rn, fresh))
+
+	reader, err := dc1.remoteReader(ctx, peer2, rn, 0, 0)
+	require.NoError(t, err)
+	got, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.NoError(t, reader.Close())
+	assert.Equal(t, fresh, got)
 }
 
 func TestReadThroughPeers(t *testing.T) {
