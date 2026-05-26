@@ -124,6 +124,9 @@ const (
 	// Reason for a runner not being added to the runner pool.
 	RunnerPoolFailedRecycleReason = "reason"
 
+	// Reason for a Firecracker task execution failure.
+	FirecrackerErrorReason = "reason"
+
 	// Effective workload isolation type used for an executed task, such as
 	// "docker", "podman", "firecracker", or "none".
 	IsolationTypeLabel = "isolation"
@@ -1664,6 +1667,15 @@ var (
 		Help:      "Time taken to dial the VM guest execution server after it has been started or resumed, in **microseconds**.",
 	}, []string{
 		CreatedFromSnapshot,
+	})
+
+	FirecrackerErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "execution_error_count",
+		Help:      "Count of Firecracker task execution errors, labeled by reason.",
+	}, []string{
+		FirecrackerErrorReason,
 	})
 
 	SnapshotRemoteCacheUploadSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
