@@ -281,13 +281,10 @@ func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, erro
 		return "", status.UnauthenticatedErrorf("You don't have permission to create a group")
 	}
 
-	// Groups default to unknown. If being created from a
-	// free tier or blocked group, the status will inherit.
+	// Group status is inherited.
+	g.Status = u.GetGroupStatus()
 	if g.Status == grpb.Group_UNKNOWN_GROUP_STATUS {
-		currentStatus := u.GetGroupStatus()
-		if currentStatus == grpb.Group_FREE_TIER_GROUP_STATUS || currentStatus == grpb.Group_BLOCKED_GROUP_STATUS {
-			g.Status = currentStatus
-		}
+		g.Status = grpb.Group_FREE_TIER_GROUP_STATUS
 	}
 
 	groupID := ""

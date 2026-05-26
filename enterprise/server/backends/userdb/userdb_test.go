@@ -527,10 +527,10 @@ func TestCreateGroup_StatusInheritance(t *testing.T) {
 		expectedStatus grpb.Group_GroupStatus
 	}{
 		{
-			name:           "UNKNOWN -> UNKNOWN",
+			name:           "UNKNOWN -> FREE_TIER (default)",
 			urlID:          "test-unknown",
 			parentStatus:   grpb.Group_UNKNOWN_GROUP_STATUS,
-			expectedStatus: grpb.Group_UNKNOWN_GROUP_STATUS,
+			expectedStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
 		},
 		{
 			name:           "FREE_TIER -> FREE_TIER (inherit)",
@@ -539,16 +539,16 @@ func TestCreateGroup_StatusInheritance(t *testing.T) {
 			expectedStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
 		},
 		{
-			name:           "ENTERPRISE -> UNKNOWN",
+			name:           "ENTERPRISE -> ENTERPRISE (inherit)",
 			urlID:          "test-ent",
 			parentStatus:   grpb.Group_ENTERPRISE_GROUP_STATUS,
-			expectedStatus: grpb.Group_UNKNOWN_GROUP_STATUS,
+			expectedStatus: grpb.Group_ENTERPRISE_GROUP_STATUS,
 		},
 		{
-			name:           "ENTERPRISE_TRIAL -> UNKNOWN",
+			name:           "ENTERPRISE_TRIAL -> ENTERPRISE_TRIAL (inherit)",
 			urlID:          "test-trial",
 			parentStatus:   grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
-			expectedStatus: grpb.Group_UNKNOWN_GROUP_STATUS,
+			expectedStatus: grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
 		},
 		{
 			name:           "BLOCKED -> BLOCKED (inherit)",
