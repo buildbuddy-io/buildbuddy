@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_proxy_registry_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_search_service"
@@ -286,6 +287,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := scheduler_server.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := cache_proxy_registry_server.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

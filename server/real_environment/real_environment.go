@@ -40,6 +40,7 @@ func (cc *executionClientConfig) DisableStreaming() bool {
 
 type RealEnv struct {
 	schedulerService                     interfaces.SchedulerService
+	cacheProxyRegistryService            interfaces.CacheProxyRegistryService
 	taskRouter                           interfaces.TaskRouter
 	taskSizer                            interfaces.TaskSizer
 	healthChecker                        interfaces.HealthChecker
@@ -388,6 +389,12 @@ func (r *RealEnv) SetSchedulerService(s interfaces.SchedulerService) {
 }
 func (r *RealEnv) GetSchedulerService() interfaces.SchedulerService {
 	return r.schedulerService
+}
+func (r *RealEnv) SetCacheProxyRegistryService(s interfaces.CacheProxyRegistryService) {
+	r.cacheProxyRegistryService = s
+}
+func (r *RealEnv) GetCacheProxyRegistryService() interfaces.CacheProxyRegistryService {
+	return r.cacheProxyRegistryService
 }
 func (r *RealEnv) SetTaskRouter(tr interfaces.TaskRouter) {
 	r.taskRouter = tr

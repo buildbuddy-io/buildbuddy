@@ -76,6 +76,7 @@ type Env interface {
 	GetFileCache() interfaces.FileCache
 	GetRemoteExecutionService() interfaces.RemoteExecutionService
 	GetSchedulerService() interfaces.SchedulerService
+	GetCacheProxyRegistryService() interfaces.CacheProxyRegistryService
 	GetCacheRoutingService() interfaces.CacheRoutingService
 	GetTaskRouter() interfaces.TaskRouter
 	GetTaskSizer() interfaces.TaskSizer
