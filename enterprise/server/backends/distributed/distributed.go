@@ -394,9 +394,6 @@ func isTreeCacheResource(r *rspb.ResourceName) bool {
 	return r.GetCacheType() == rspb.CacheType_AC && strings.HasPrefix(r.GetInstanceName(), digest.TreeCacheRemoteInstanceName)
 }
 
-// Only immutable resources can safely use local read-through caching. Tree
-// cache entries are stored as AC resources but are derived from immutable CAS
-// content.
 func isLocalReadthroughCacheableResource(r *rspb.ResourceName) bool {
 	return r.GetCacheType() == rspb.CacheType_CAS || isTreeCacheResource(r)
 }
