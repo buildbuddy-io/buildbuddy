@@ -463,7 +463,7 @@ export default class Panel {
 
   private drawTrack(track: TrackModel, y: number, xMin: number, xMax: number) {
     let i = 0;
-    let lastEventRendered = false;
+    let lastRenderedPixelRight = -Infinity;
     for (; i < track.xs.length; i++) {
       let modelX = track.xs[i];
       if (modelX > xMax) break;
@@ -487,24 +487,24 @@ export default class Panel {
       // TODO: only apply the horizontal gap if there's an event just after us.
       let width = modelWidth * this.canvasXPerModelX - constants.EVENT_HORIZONTAL_GAP;
       if (width <= 0) {
-        // If the event is less than 1px side, and less than 1px away from the previous
-        // event start that rendered, don't render it.
-        if (
-          lastEventRendered &&
-          Math.abs(modelX - track.xs[i - 1]) * this.canvasXPerModelX <= constants.MIN_RENDER_PIXEL_WIDTH
-        ) {
-          lastEventRendered = false;
-          continue;
-        }
         width = constants.MIN_RENDER_PIXEL_WIDTH;
       }
       const x = modelX * this.canvasXPerModelX - this.scrollX;
+      const isHighlighted = track.events[i] === this.highlightEvent;
+      const pixelLeft = Math.floor(x);
+      const pixelRight = Math.max(pixelLeft + 1, Math.ceil(x + width));
+      // At low zoom, many consecutive events can collapse into the same pixel.
+      // Drawing all of them does extra canvas work without adding detail.
+      if (!isHighlighted && pixelRight <= lastRenderedPixelRight) {
+        continue;
+      }
+      lastRenderedPixelRight = Math.max(lastRenderedPixelRight, pixelRight);
+
       this.ctx.fillRect(x, y, width, constants.TRACK_HEIGHT);
-      lastEventRendered = true;
 
       // If this event is the one currently selected via search, draw a border
       // around it so it's easy to spot.
-      if (track.events[i] === this.highlightEvent) {
+      if (isHighlighted) {
         this.ctx.lineWidth = 2;
         this.ctx.strokeStyle = this.theme.eventHighlightStroke;
         this.ctx.strokeRect(x, y, width, constants.TRACK_HEIGHT);
