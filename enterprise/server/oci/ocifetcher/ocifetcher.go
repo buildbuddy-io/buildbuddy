@@ -305,6 +305,14 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
 		}
+		// Prove the caller can access the manifest before serving from cache.
+		if !req.GetBypassRegistry() {
+			if _, err := withPullerRetry(ctx, s, imageRef, req.GetCredentials(), func(puller *remote.Puller) (*gcr.Descriptor, error) {
+				return puller.Head(ctx, imageRef)
+			}); err != nil {
+				return nil, err
+			}
+		}
 	} else {
 		if req.GetBypassRegistry() {
 			return nil, status.NotFoundErrorf("bypassing registry, but cannot resolve tag ref %q from cache", imageRef)

@@ -17,10 +17,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -35,6 +37,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -493,6 +496,48 @@ func getWithInlining(t *testing.T, ctx context.Context, client repb.ActionCacheC
 	resp, err := client.GetActionResult(ctx, req)
 	require.NoError(t, err)
 	return resp
+}
+
+// TestUserPrefixIsolatesGroups confirms an AC entry written under one group
+// is not visible to another group at the same action digest.
+func TestUserPrefixIsolatesGroups(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, nil))
+
+	clientConn := runACServer(ctx, t, te)
+	acClient := repb.NewActionCacheClient(clientConn)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	caps := []cappb.Capability{cappb.Capability_CACHE_WRITE}
+	ctxA := testauth.WithAuthenticatedUserInfo(ctx, &claims.Claims{
+		UserID: "US-A", GroupID: "GR-A", AllowedGroups: []string{"GR-A"},
+		Capabilities: caps,
+	})
+	ctxB := testauth.WithAuthenticatedUserInfo(ctx, &claims.Claims{
+		UserID: "US-B", GroupID: "GR-B", AllowedGroups: []string{"GR-B"},
+		Capabilities: caps,
+	})
+
+	payloadDigest, err := cachetools.UploadBlobToCAS(ctxA, bsClient, "", repb.DigestFunction_SHA256, []byte("group A data"))
+	require.NoError(t, err)
+	actionDigest := &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1024}
+	updateReq := &repb.UpdateActionResultRequest{
+		ActionDigest:   actionDigest,
+		DigestFunction: repb.DigestFunction_SHA256,
+		ActionResult: &repb.ActionResult{
+			OutputFiles: []*repb.OutputFile{{Path: "f", Digest: payloadDigest}},
+		},
+	}
+	_, err = acClient.UpdateActionResult(ctxA, updateReq)
+	require.NoError(t, err)
+
+	getReq := &repb.GetActionResultRequest{ActionDigest: actionDigest, DigestFunction: repb.DigestFunction_SHA256}
+	_, err = acClient.GetActionResult(ctxA, getReq)
+	require.NoError(t, err, "group A must see its own AC entry")
+
+	_, err = acClient.GetActionResult(ctxB, getReq)
+	require.True(t, status.IsNotFoundError(err), "group B must not see group A's AC entry; got: %v", err)
 }
 
 func runACServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
