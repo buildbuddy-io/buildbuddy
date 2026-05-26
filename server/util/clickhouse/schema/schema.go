@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/column/orderedmap"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
@@ -494,8 +495,10 @@ type RawUsage struct {
 	// This should only be used in cases where there may be a large number of
 	// possible dimensions (too many to be represented as a SKU) but the
 	// frequency of usage for each combination of dimensions is expected to be
-	// relatively low.
-	Labels map[sku.LabelName]sku.LabelValue `gorm:"type:Map(LowCardinality(String), LowCardinality(String))"`
+	// relatively low. Since RawUsage.labels is part of the ReplacingMergeTree
+	// ORDER BY key, callers must write labels with a deterministic key order so
+	// FINAL deduplication works reliably.
+	Labels *orderedmap.Map[sku.LabelName, sku.LabelValue] `gorm:"type:Map(LowCardinality(String), LowCardinality(String))"`
 
 	// PeriodStart is the start of the period during which the usage occurred.
 	// Currently, usage is collected in 1-minute intervals.

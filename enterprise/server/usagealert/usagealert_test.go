@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/column/orderedmap"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/email"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -773,7 +774,7 @@ func createRawUsage(t testing.TB, ctx context.Context, olapDBH interfaces.OLAPDB
 		{
 			GroupID:     groupID,
 			SKU:         usageSKU,
-			Labels:      labels,
+			Labels:      orderedmap.FromMap(labels),
 			PeriodStart: periodStart,
 			Count:       count,
 		},

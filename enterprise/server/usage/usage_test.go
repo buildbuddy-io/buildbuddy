@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/column/orderedmap"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
@@ -379,6 +380,58 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 			},
 		}, olapUsages)
 	}
+}
+
+func TestClickHouseUsageView_DedupesDuplicateRawUsageRows(t *testing.T) {
+	if !*clickhouseEnabled {
+		t.Skip("ClickHouse is not enabled")
+	}
+
+	te := setupEnv(t)
+	ctx := context.Background()
+
+	// Insert many duplicate RawUsage rows, recreating the labels map with
+	// different capacities and write orders each time. The Usage view should
+	// use RawUsage FINAL to collapse these duplicated flushes to a single row.
+	const numRows = 100
+	rows := make([]*olaptables.RawUsage, 0, numRows)
+	for i := range numRows {
+		labels := make(map[sku.LabelName]sku.LabelValue, i%11)
+		if i%2 == 0 {
+			labels[sku.Client] = "bazel"
+			labels[sku.Origin] = "internal"
+			labels[sku.Server] = "app"
+		} else {
+			labels[sku.Server] = "app"
+			labels[sku.Origin] = "internal"
+			labels[sku.Client] = "bazel"
+		}
+		rows = append(rows, &olaptables.RawUsage{
+			GroupID:     "GR1",
+			PeriodStart: period1Start,
+			SKU:         sku.RemoteCacheCASHits,
+			Labels:      orderedmap.FromMap(labels),
+			BufferID:    "us-west1:redis",
+			Count:       7,
+		})
+	}
+	require.NoError(t, te.GetOLAPDBHandle().FlushUsages(ctx, rows))
+
+	// The Usage view should read RawUsage FINAL and expose one deduped usage
+	// row, not the sum of every duplicate flush.
+	assert.Equal(t, []*olaptables.Usage{
+		{
+			GroupID:     "GR1",
+			PeriodStart: period1Start,
+			SKU:         sku.RemoteCacheCASHits,
+			Labels: map[sku.LabelName]sku.LabelValue{
+				sku.Client: "bazel",
+				sku.Origin: "internal",
+				sku.Server: "app",
+			},
+			Count: 7,
+		},
+	}, queryAllOLAPUsages(t, te))
 }
 
 func TestUsageTracker_Increment_ImpersonationSuppressesUsage(t *testing.T) {

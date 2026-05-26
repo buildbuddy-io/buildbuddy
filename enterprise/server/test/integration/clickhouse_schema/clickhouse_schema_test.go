@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/column/orderedmap"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
@@ -77,7 +78,7 @@ func insertRawUsage(t *testing.T, db *gorm.DB, count int64) {
 	err := db.Create(&schema.RawUsage{
 		GroupID:     "GR1",
 		SKU:         sku.BuildEventsBESCount,
-		Labels:      map[sku.LabelName]sku.LabelValue{},
+		Labels:      orderedmap.FromMap(map[sku.LabelName]sku.LabelValue(nil)),
 		PeriodStart: time.Date(2026, 1, 2, 3, 4, 0, 0, time.UTC),
 		BufferID:    "test:redis",
 		Count:       count,

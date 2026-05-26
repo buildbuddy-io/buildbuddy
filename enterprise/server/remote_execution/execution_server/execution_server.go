@@ -1,3 +1,8 @@
+// Package execution_server implements the Remote Execution API's Execution
+// gRPC service. It dispatches Execute requests to executors via the
+// scheduler, receives progress updates from executors over PublishOperation,
+// fans those updates out to WaitExecution clients via Redis pub/sub, and
+// records execution metadata to Redis, the primary DB, and Clickhouse.
 package execution_server
 
 import (
@@ -53,6 +58,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/go-redis/redis/v8"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/metadata"
@@ -177,6 +183,7 @@ type ExecutionServer struct {
 	invocationDB                      interfaces.InvocationDB
 	taskSizer                         interfaces.TaskSizer
 	actionCacheClient                 repb.ActionCacheClient
+	clock                             clockwork.Clock
 
 	mu          sync.Mutex
 	teeLimiters map[string]*rate.Limiter
@@ -242,6 +249,7 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 		invocationDB:                      invocationDB,
 		taskSizer:                         taskSizer,
 		actionCacheClient:                 actionCacheClient,
+		clock:                             env.GetClock(),
 	}, nil
 }
 
@@ -1271,25 +1279,6 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 	}
 }
 
-func loopAfterTimeout(ctx context.Context, timeout time.Duration, f func() bool) {
-	ticker := time.NewTicker(timeout)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			{
-				return
-			}
-		case <-ticker.C:
-			{
-				if shouldContinue := f(); !shouldContinue {
-					return
-				}
-			}
-		}
-	}
-}
-
 func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string, reason error) error {
 	r, err := digest.ParseUploadResourceName(taskID)
 	if err != nil {
@@ -1354,38 +1343,61 @@ func (s *ExecutionServer) metadataForClickhouse(ctx context.Context, taskID stri
 	return action, cmd, properties, nil
 }
 
+// PublishOperation is called by the executor to publish updates to the
+// execution operation as the execution progresses. The server will stream these
+// updates to the client via WaitExecution, and will also use these updates to
+// keep the execution status in the database up-to-date.
 func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperationServer) error {
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.authenticator)
 	if err != nil {
 		return err
 	}
 	lastOp := &longrunningpb.Operation{}
-	lastWrite := time.Now()
 	taskID := ""
 	// Once the executor has called PublishOperation, we're in EXECUTING stage.
 	stage := repb.ExecutionStage_EXECUTING
 	mu := sync.Mutex{}
-	// 80% of executions take < 10 seconds in total. So here, we delay
-	// writes to the database if pubsub.Publish is successful, in an
-	// attempt to reduce DB load. To ensure that executions complete, even
-	// if no pubsub listener receives our published updates, we *always*
-	// write the execution on stage == COMPLETE or after 5 seconds have
-	// passed with no writes.
-	go loopAfterTimeout(ctx, time.Second, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		if time.Since(lastWrite) > 5*time.Second && taskID != "" {
-			// We only write additional metadata when the operation has completed, so
-			// we don't need to pass those fields here for intermediary updates.
-			if err := s.updateExecution(ctx, taskID, stage, operation.ExtractExecuteResponse(lastOp), nil, nil, nil, nil); err != nil {
-				log.CtxWarningf(ctx, "PublishOperation: FlushWrite: error updating execution: %s", err)
-				return false
+	// Most actions are fast so it doesn't make sense to write to the DB.
+	// Delay the first write to the DB until either the execution has been
+	// running for 5 seconds. We will write at most 2 times:
+	// 1) An intermediary update after 5 seconds if the execution is still running, to capture long-running executions in the DB.
+	// 2) A final update when the execution completes, to capture metadata that's only available at the end of the execution (e.g. cache hit/miss, detailed timing info, etc).
+	// At least one of these writes will happen. The first write must not happen
+	// if the second one did.
+	start := s.clock.Now()
+	go func(ctx context.Context) {
+		ticker := s.clock.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.Chan():
+				if func() (exit bool) {
+					mu.Lock()
+					defer mu.Unlock()
+					if stage == repb.ExecutionStage_COMPLETED {
+						// The main loop will handle this write. If it fails, the
+						// client will retry the PublishOperation call.
+						return true
+					}
+					if s.clock.Since(start) > 5*time.Second && taskID != "" {
+						// We only write additional metadata when the operation has completed, so
+						// we don't need to pass those fields here for intermediary updates.
+						if err := s.updateExecution(ctx, taskID, stage, operation.ExtractExecuteResponse(lastOp), nil, nil, nil, nil); err != nil {
+							ctx = log.EnrichContext(ctx, log.ExecutionIDKey, taskID)
+							log.CtxWarningf(ctx, "PublishOperation: FlushWrite: error updating execution: %s", err)
+						} else {
+							return true // only write once
+						}
+					}
+					return false
+				}() {
+					return
+				}
 			}
-			lastWrite = time.Now()
-			return false
 		}
-		return true
-	})
+	}(ctx) // pass in the ctx because the main loop will modify it and race against ctx.Done() otherwise.
 
 	deletePendingExecutionOnce := sync.OnceFunc(func() {
 		if taskID == "" {
@@ -1506,7 +1518,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
-				lastWrite = time.Now()
 				if !flushExecutionsOnEOF {
 					s.flushAndRecordUsage(ctx, taskID)
 				}
