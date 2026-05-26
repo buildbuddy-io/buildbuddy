@@ -1254,3 +1254,22 @@ func TestRemoteGetMulti_PullsCompressedFromPeer(t *testing.T) {
 	require.Equal(t, repb.Compressor_IDENTITY, spy.getMultiCompressors[smallRN.GetDigest().GetHash()])
 	require.Equal(t, repb.Compressor_ZSTD, spy.getMultiCompressors[largeRN.GetDigest().GetHash()])
 }
+
+func TestRemoteGetMulti_MultipleCompressedBlobs(t *testing.T) {
+	te, c, _, peer, ctx := setupCompressedReadProxy(t, true /*=enableCompressedReads*/)
+
+	const n = 4
+	rns := make([]*rspb.ResourceName, n)
+	bufs := make([][]byte, n)
+	for i := 0; i < n; i++ {
+		rns[i], bufs[i] = testdigest.RandomCASResourceBuf(t, 200+int64(i)*50)
+		require.NoError(t, te.GetCache().Set(ctx, rns[i], bufs[i]))
+	}
+
+	isolation := &dcpb.Isolation{CacheType: rspb.CacheType_CAS}
+	got, err := c.RemoteGetMulti(ctx, peer, isolation, rns)
+	require.NoError(t, err)
+	for i, rn := range rns {
+		require.Equalf(t, bufs[i], got[rn.GetDigest()], "blob %d mismatch", i)
+	}
+}

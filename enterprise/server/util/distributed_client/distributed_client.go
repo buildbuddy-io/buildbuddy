@@ -531,7 +531,6 @@ func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 	}
 	hashDigests := make(map[string]*repb.Digest, len(resources))
 	compressedHashes := make(set.Set[string], len(resources))
-	maxSizeOfBlobToDecompress := int64(0)
 	for _, r := range resources {
 		key := digestToKey(r.GetDigest())
 		hashDigests[r.GetDigest().GetHash()] = r.GetDigest()
@@ -540,7 +539,6 @@ func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 			r = r.CloneVT()
 			r.Compressor = repb.Compressor_ZSTD
 			compressedHashes.Add(r.GetDigest().GetHash())
-			maxSizeOfBlobToDecompress = max(maxSizeOfBlobToDecompress, r.GetDigest().GetSizeBytes())
 		}
 		req.Resources = append(req.Resources, r)
 	}
@@ -553,7 +551,6 @@ func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 		return nil, err
 	}
 	resultMap := make(map[*repb.Digest][]byte, len(rsp.GetKeyValue()))
-	decompressBuf := make([]byte, 0, maxSizeOfBlobToDecompress)
 	for _, keyValue := range rsp.GetKeyValue() {
 		d, ok := hashDigests[keyValue.GetKey().GetKey()]
 		if !ok {
@@ -561,11 +558,10 @@ func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 		}
 		buf := keyValue.GetValue()
 		if compressedHashes.Contains(d.GetHash()) {
-			decompressBuf, err = compression.DecompressZstd(decompressBuf, buf)
+			buf, err = compression.DecompressZstd(make([]byte, d.GetSizeBytes()), buf)
 			if err != nil {
 				return nil, err
 			}
-			buf = decompressBuf
 		}
 		resultMap[d] = buf
 	}
