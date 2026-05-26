@@ -98,14 +98,14 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     if (debugProfileGzippedRN) {
       return new build_event_stream.File({
         name: "timing_profile.gz",
-        uri: "bytestream://localhost:1985/" + debugProfileGzippedRN.replaceAll("^/", ""),
+        uri: "bytestream://localhost:1985/" + debugProfileGzippedRN.replace(/^\/+/, ""),
       });
     }
     const debugProfileRN = new URLSearchParams(window.location.search).get("debug_profile_json");
     if (debugProfileRN) {
       return new build_event_stream.File({
         name: "timing_profile.json",
-        uri: "bytestream://localhost:1985/" + debugProfileRN.replaceAll("^/", ""),
+        uri: "bytestream://localhost:1985/" + debugProfileRN.replace(/^\/+/, ""),
       });
     }
 
