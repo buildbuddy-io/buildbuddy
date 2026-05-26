@@ -40,6 +40,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
+	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -105,8 +106,9 @@ func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bo
 	return true, nil
 }
 
-func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
+func setupEnvWithClock(t *testing.T, clock clockwork.Clock) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
 	env := testenv.GetTestEnv(t)
+	env.SetClock(clock)
 
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
@@ -137,6 +139,10 @@ func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Hand
 	conn, err := testenv.LocalGRPCConn(env.GetServerContext(), lis)
 	require.NoError(t, err)
 	return env, conn, r
+}
+
+func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
+	return setupEnvWithClock(t, clockwork.NewRealClock())
 }
 
 func createExecution(ctx context.Context, t *testing.T, db interfaces.DB, execution *tables.Execution) {
@@ -1112,6 +1118,112 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			"created_at_usec",
 			"updated_at_usec",
 		)))
+}
+
+// TestPublishOperation_PeriodicFlushDoesNotClobberCompletedRow exercises the
+// race where the periodic flush goroutine fires more than 5 seconds after
+// PublishOperation's main loop has already written the authoritative
+// COMPLETED row. With the bug, the goroutine wakes up, sees `lastWrite`
+// is stale, and pushes a partial update (auxMeta/properties/action/cmd
+// all nil) back into Redis — resurrecting an in-progress entry that
+// flushExecutionToOLAP had already cleaned up.
+func TestPublishOperation_PeriodicFlushDoesNotClobberCompletedRow(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+
+	fakeClock := clockwork.NewFakeClock()
+	env, conn, _ := setupEnvWithClock(t, fakeClock)
+	client := repb.NewExecutionClient(conn)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
+
+	const instanceName = "test-instance"
+	const invocationID = "93383cc1-5d6c-4ad1-a321-8ee87c2f6816"
+	const digestFunction = repb.DigestFunction_SHA256
+
+	clientCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: invocationID,
+		TargetId:         "//some:test",
+		ActionMnemonic:   "TestRunner",
+	})
+	require.NoError(t, err)
+	arn := uploadAction(clientCtx, t, env, instanceName, digestFunction, &repb.Action{
+		Timeout: &durationpb.Duration{Seconds: 10},
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "pool", Value: "test-pool"},
+		}},
+	})
+	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+	require.NoError(t, executionClient.CloseSend())
+	initialOp, err := executionClient.Recv()
+	require.NoError(t, err)
+	taskID := initialOp.GetName()
+
+	executorCtx := metadata.AppendToOutgoingContext(clientCtx, usageutil.ClientHeaderName, "executor")
+	executorCtx = metadata.AppendToOutgoingContext(executorCtx, "x-buildbuddy-executor-region", "test-region")
+	stream, err := client.PublishOperation(executorCtx)
+	require.NoError(t, err)
+
+	aux := &espb.ExecutionAuxiliaryMetadata{
+		ExecutorHostname: "exec-host-1",
+		IsolationType:    "firecracker",
+		Timeout:          &durationpb.Duration{Seconds: 11},
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			ExecutorGroupId: sharedPoolGroupID,
+			Pool:            "test-pool",
+		},
+	}
+	auxAny, err := anypb.New(aux)
+	require.NoError(t, err)
+	completedResponse := &repb.ExecuteResponse{
+		Result: &repb.ActionResult{
+			ExecutionMetadata: &repb.ExecutedActionMetadata{
+				AuxiliaryMetadata: []*anypb.Any{auxAny},
+			},
+		},
+		Status: gstatus.Convert(nil).Proto(),
+	}
+	completedOp, err := operation.Assemble(
+		taskID,
+		operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()),
+		completedResponse,
+	)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(completedOp))
+
+	// Wait for the main loop's COMPLETED write + flushExecutionToOLAP to
+	// land. The flush appends the merged execution to the per-invocation
+	// list and deletes the in-progress updates list.
+	require.Eventually(t, func() bool {
+		execs, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
+		return err == nil && len(execs) == 1
+	}, 5*time.Second, 10*time.Millisecond, "main loop's COMPLETED write never landed in the per-invocation list")
+
+	// Sanity check: in-progress data was cleaned up by flushExecutionToOLAP.
+	_, err = env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
+	require.Truef(t, status.IsNotFoundError(err), "expected in-progress data to be cleaned up after flush, got err=%v", err)
+
+	// Advance past the 5s flush threshold to let the periodic goroutine wake up
+	fakeClock.Advance(6 * time.Second)
+
+	// Give the periodic goroutine real wall-clock time to fire. With the
+	// fix in place it skips the write; with the bug it resurrects the
+	// in-progress entry.
+	require.Never(t, func() bool {
+		_, err := env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
+		return err == nil
+	}, 500*time.Millisecond, 25*time.Millisecond, "periodic flush resurrected the in-progress entry after the authoritative COMPLETED write")
+
+	// Close the stream cleanly so PublishOperation returns.
+	_, _ = stream.CloseAndRecv()
 }
 
 func TestMarkFailed(t *testing.T) {
