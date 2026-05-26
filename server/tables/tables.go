@@ -264,7 +264,7 @@ type Group struct {
 	IsParent bool `gorm:"not null;default:0"`
 
 	// The status of the group: free tier, enterprise, etc.
-	Status grpb.Group_GroupStatus `gorm:"not null;default:0"`
+	Status grpb.Group_GroupStatus `gorm:"not null;default:1"`
 }
 
 func (g *Group) TableName() string {
