@@ -200,7 +200,7 @@ func TestReadPeers_FewerNodesThanReplicationFactor(t *testing.T) {
 	require.NoError(t, err)
 
 	rn, _ := testdigest.RandomCASResourceBuf(t, 100)
-	ps := c.readPeers(rn.GetDigest())
+	ps := c.readPeers(rn)
 	require.ElementsMatch(t, []string{peer1, peer2}, ps.PreferredPeers)
 	require.Empty(t, ps.FallbackPeers)
 }
@@ -1157,7 +1157,7 @@ func TestHintedHandoff(t *testing.T) {
 	// that these were successfully handed off below.
 	hintedHandoffs := make([]*rspb.ResourceName, 0)
 	for _, d := range digestsWritten {
-		ps := dc3.readPeers(d.Digest)
+		ps := dc3.readPeers(d)
 		if slices.Contains(ps.PreferredPeers, peer3) {
 			hintedHandoffs = append(hintedHandoffs, d)
 		}
@@ -2424,7 +2424,7 @@ func digestWithNoSameZonePrimary(t *testing.T, c *Cache) *repb.Digest {
 	return nil
 }
 
-func TestReadThroughPeerSelectionPromotesMutableAC(t *testing.T) {
+func TestReadThroughPeerSelectionSkipsMutableAC(t *testing.T) {
 	c := newReadthroughPeerSelectionCache(t)
 	d := digestWithNoSameZonePrimary(t, c)
 	allPeers := c.consistentHash.GetAllReplicas(d.GetHash())
@@ -2436,32 +2436,34 @@ func TestReadThroughPeerSelectionPromotesMutableAC(t *testing.T) {
 	acResource := digest.NewResourceName(d, "", rspb.CacheType_AC, repb.DigestFunction_SHA256).ToProto()
 	treeResource := digest.NewResourceName(d, digest.GetTreeCacheInstanceName(d), rspb.CacheType_AC, repb.DigestFunction_SHA256).ToProto()
 
-	acWritePeers, err := c.writePeers(acResource.GetDigest())
+	acWritePeers, err := c.writePeers(acResource)
 	require.NoError(t, err)
-	assert.Equal(t, promotedPeers, acWritePeers.PreferredPeers)
+	assert.Equal(t, canonicalPeers, acWritePeers.PreferredPeers)
+	assert.NotContains(t, acWritePeers.PreferredPeers, c.opts.ListenAddr)
 
-	casWritePeers, err := c.writePeers(casResource.GetDigest())
+	casWritePeers, err := c.writePeers(casResource)
 	require.NoError(t, err)
 	assert.Equal(t, promotedPeers, casWritePeers.PreferredPeers)
 
-	treeWritePeers, err := c.writePeers(treeResource.GetDigest())
+	treeWritePeers, err := c.writePeers(treeResource)
 	require.NoError(t, err)
 	assert.Equal(t, promotedPeers, treeWritePeers.PreferredPeers)
 
-	acReadPeers := c.readPeers(acResource.GetDigest())
-	assert.Contains(t, acReadPeers.PreferredPeers, c.opts.ListenAddr)
-	assert.Contains(t, acReadPeers.BlockBackfills, c.opts.ListenAddr)
+	acReadPeers := c.readPeers(acResource)
+	assert.Equal(t, canonicalPeers, acReadPeers.PreferredPeers)
+	assert.Empty(t, acReadPeers.BlockBackfills)
+	assert.NotContains(t, acReadPeers.PreferredPeers, c.opts.ListenAddr)
 
-	casReadPeers := c.readPeers(casResource.GetDigest())
+	casReadPeers := c.readPeers(casResource)
 	assert.Contains(t, casReadPeers.PreferredPeers, c.opts.ListenAddr)
 	assert.Contains(t, casReadPeers.BlockBackfills, c.opts.ListenAddr)
 
-	treeReadPeers := c.readPeers(treeResource.GetDigest())
+	treeReadPeers := c.readPeers(treeResource)
 	assert.Contains(t, treeReadPeers.PreferredPeers, c.opts.ListenAddr)
 	assert.Contains(t, treeReadPeers.BlockBackfills, c.opts.ListenAddr)
 }
 
-func TestRemoteReaderServesLocalReadthroughForMutableAC(t *testing.T) {
+func TestRemoteReaderSkipsLocalReadthroughForMutableAC(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
@@ -2497,7 +2499,7 @@ func TestRemoteReaderServesLocalReadthroughForMutableAC(t *testing.T) {
 	got, err := io.ReadAll(reader)
 	require.NoError(t, err)
 	require.NoError(t, reader.Close())
-	assert.Equal(t, stale, got)
+	assert.Equal(t, fresh, got)
 }
 
 func TestReadThroughPeers(t *testing.T) {
