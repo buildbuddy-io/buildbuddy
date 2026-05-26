@@ -678,7 +678,7 @@ func TestGetBlobChunked_FallsBackWithoutManifest(t *testing.T) {
 	require.Equal(t, []byte("keep me"), got)
 }
 
-func TestGetBlobChunked_AcceptsMismatchedParentDigest(t *testing.T) {
+func TestGetBlobChunked_RejectsMismatchedParentDigest(t *testing.T) {
 	ctx := context.Background()
 	compute := func(data []byte) *repb.Digest {
 		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
@@ -712,7 +712,9 @@ func TestGetBlobChunked_AcceptsMismatchedParentDigest(t *testing.T) {
 	defer out.Close()
 
 	err = cachetools.GetBlobChunked(ctx, bs, cas, rn, &repb.FileNode{Digest: expectedDigest}, out, nil)
-	require.NoError(t, err)
+	require.Error(t, err)
+	require.Equal(t, codes.DataLoss, gstatus.Code(err))
+	require.ErrorContains(t, err, "Downloaded chunked content")
 
 	got, err := os.ReadFile(out.Name())
 	require.NoError(t, err)
