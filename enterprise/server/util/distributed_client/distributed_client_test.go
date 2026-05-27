@@ -769,7 +769,6 @@ func TestFindMissing(t *testing.T) {
 		{numExistingDigests: 10000, numMissingDigests: 10},
 	} {
 		remoteInstanceName := fmt.Sprintf("prefix/%d", tc.numExistingDigests)
-		isolation := &dcpb.Isolation{CacheType: rspb.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
 
 		existingDigests := make([]*rspb.ResourceName, 0, tc.numExistingDigests)
 		for i := 0; i < tc.numExistingDigests; i++ {
@@ -804,7 +803,7 @@ func TestFindMissing(t *testing.T) {
 			missingDigests = append(missingDigests, r.GetDigest())
 		}
 
-		remoteMissing, err := c.RemoteFindMissing(ctx, peer, isolation, append(existingDigests, missingResources...))
+		remoteMissing, err := c.RemoteFindMissing(ctx, peer, append(existingDigests, missingResources...))
 		require.NoError(t, err)
 		require.Empty(t, cmp.Diff(missingDigests, remoteMissing, protocmp.Transform()))
 	}
@@ -833,7 +832,6 @@ func TestGetMulti(t *testing.T) {
 
 	for _, numDigests := range testSizes {
 		remoteInstanceName := fmt.Sprintf("prefix/%d", numDigests)
-		isolation := &dcpb.Isolation{CacheType: rspb.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
 
 		digests := make([]*rspb.ResourceName, 0, numDigests)
 		for i := 0; i < numDigests; i++ {
@@ -861,7 +859,7 @@ func TestGetMulti(t *testing.T) {
 		}
 
 		// Ensure key exists.
-		gotMap, err := c.RemoteGetMulti(ctx, peer, isolation, digests)
+		gotMap, err := c.RemoteGetMulti(ctx, peer, digests)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -969,7 +967,6 @@ func TestMetadata(t *testing.T) {
 	}
 	waitUntilServerIsAlive(peer)
 
-	isolation := &dcpb.Isolation{CacheType: rspb.CacheType_CAS}
 	// Write to the cache
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	err = te.GetCache().Set(ctx, r, buf)
@@ -979,11 +976,6 @@ func TestMetadata(t *testing.T) {
 
 	// Verify cacheproxy returns same metadata as underlying cache
 	cacheproxyMetadata, err := c.Metadata(ctx, &dcpb.MetadataRequest{
-		Isolation: isolation,
-		Key: &dcpb.Key{
-			Key:       r.GetDigest().GetHash(),
-			SizeBytes: r.GetDigest().GetSizeBytes(),
-		},
 		Resource: r,
 	})
 	if err != nil {
@@ -1245,8 +1237,7 @@ func TestRemoteGetMulti_PullsCompressedFromPeer(t *testing.T) {
 	require.NoError(t, te.GetCache().Set(ctx, smallRN, smallBuf))
 	require.NoError(t, te.GetCache().Set(ctx, largeRN, largeBuf))
 
-	isolation := &dcpb.Isolation{CacheType: rspb.CacheType_CAS}
-	got, err := c.RemoteGetMulti(ctx, peer, isolation, []*rspb.ResourceName{smallRN, largeRN})
+	got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{smallRN, largeRN})
 	require.NoError(t, err)
 	require.Equal(t, smallBuf, got[smallRN.GetDigest()])
 	require.Equal(t, largeBuf, got[largeRN.GetDigest()])
@@ -1266,8 +1257,7 @@ func TestRemoteGetMulti_MultipleCompressedBlobs(t *testing.T) {
 		require.NoError(t, te.GetCache().Set(ctx, rns[i], bufs[i]))
 	}
 
-	isolation := &dcpb.Isolation{CacheType: rspb.CacheType_CAS}
-	got, err := c.RemoteGetMulti(ctx, peer, isolation, rns)
+	got, err := c.RemoteGetMulti(ctx, peer, rns)
 	require.NoError(t, err)
 	for i, rn := range rns {
 		require.Equalf(t, bufs[i], got[rn.GetDigest()], "blob %d mismatch", i)

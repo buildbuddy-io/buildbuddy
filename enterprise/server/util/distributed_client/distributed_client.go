@@ -144,13 +144,6 @@ func (c *Proxy) shouldReadCompressed(rn *rspb.ResourceName) bool {
 		c.cache.SupportsCompressor(repb.Compressor_ZSTD)
 }
 
-func digestFromKey(k *dcpb.Key) *repb.Digest {
-	return &repb.Digest{
-		Hash:      k.GetKey(),
-		SizeBytes: k.GetSizeBytes(),
-	}
-}
-
 func digestToKey(d *repb.Digest) *dcpb.Key {
 	return &dcpb.Key{
 		Key:       d.GetHash(),
@@ -199,49 +192,13 @@ func (c *Proxy) readWriteContext(ctx context.Context) (context.Context, error) {
 	return ctx, err
 }
 
-// Distributed cache requests now contain resource.ResourceName structs, replacing usage of the dcpb.Isolation and
-// dcpb.Key structs. However during a rollout, the new resource fields may not be set, and may require fallback to the
-// older deprecated fields
-func getResource(r *rspb.ResourceName, isolation *dcpb.Isolation, digestKey *dcpb.Key) *rspb.ResourceName {
-	if r != nil {
-		return r
-	}
-
-	d := digestFromKey(digestKey)
-	return &rspb.ResourceName{
-		Digest:       d,
-		CacheType:    isolation.GetCacheType(),
-		InstanceName: isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-	}
-}
-
-func getResources(resources []*rspb.ResourceName, isolation *dcpb.Isolation, digestKeys []*dcpb.Key) []*rspb.ResourceName {
-	if resources != nil {
-		return resources
-	}
-
-	log.Warningf("cacheproxy: falling back to digest keys; this should not happen")
-	instanceName := isolation.GetRemoteInstanceName()
-	cacheType := isolation.GetCacheType()
-	rns := make([]*rspb.ResourceName, 0)
-	for _, k := range digestKeys {
-		d := digestFromKey(k)
-		rn := digest.NewResourceName(d, instanceName, cacheType, repb.DigestFunction_SHA256).ToProto()
-		rns = append(rns, rn)
-	}
-
-	return rns
-}
-
 func (c *Proxy) FindMissing(ctx context.Context, req *dcpb.FindMissingRequest) (*dcpb.FindMissingResponse, error) {
 	ctx, err := c.readWriteContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	r := getResources(req.GetResources(), req.GetIsolation(), req.GetKey())
-	missing, err := c.cache.FindMissing(ctx, r)
+	missing, err := c.cache.FindMissing(ctx, req.GetResources())
 	if err != nil {
 		return nil, err
 	}
@@ -257,8 +214,7 @@ func (c *Proxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*dcpb.
 	if err != nil {
 		return nil, err
 	}
-	r := getResource(req.GetResource(), req.GetIsolation(), req.GetKey())
-	md, err := c.cache.Metadata(ctx, r)
+	md, err := c.cache.Metadata(ctx, req.GetResource())
 	if err != nil {
 		return nil, err
 	}
@@ -293,8 +249,7 @@ func (c *Proxy) Delete(ctx context.Context, req *dcpb.DeleteRequest) (*dcpb.Dele
 	if err != nil {
 		return nil, err
 	}
-	r := getResource(req.GetResource(), req.GetIsolation(), req.GetKey())
-	err = c.cache.Delete(ctx, r)
+	err = c.cache.Delete(ctx, req.GetResource())
 	if err != nil {
 		return nil, err
 	}
@@ -306,20 +261,14 @@ func (c *Proxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*dcpb.
 	if err != nil {
 		return nil, err
 	}
-	r := getResources(req.GetResources(), req.GetIsolation(), req.GetKey())
-	found, err := c.cache.GetMulti(ctx, r)
+	found, err := c.cache.GetMulti(ctx, req.GetResources())
 	if err != nil {
 		return nil, err
 	}
 	rsp := &dcpb.GetMultiResponse{}
 	for d, buf := range found {
 		if len(buf) == 0 {
-			rn := &rspb.ResourceName{
-				Digest:       d,
-				InstanceName: req.GetIsolation().GetRemoteInstanceName(),
-				CacheType:    req.GetIsolation().GetCacheType(),
-			}
-			c.log.Warningf("returned a zero-length response for %s", ResourceIsolationString(rn))
+			c.log.Warningf("returned a zero-length response for digest %q", d.GetHash())
 		}
 		rsp.KeyValue = append(rsp.KeyValue, &dcpb.KV{
 			Key:   digestToKey(d),
@@ -335,7 +284,7 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 		return err
 	}
 	up, _ := prefix.UserPrefixFromContext(ctx)
-	rn := getResource(req.GetResource(), req.GetIsolation(), req.GetKey())
+	rn := req.GetResource()
 	reader, err := c.cache.Reader(ctx, rn, req.GetOffset(), req.GetLimit())
 	if err != nil {
 		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
@@ -388,7 +337,7 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		if err != nil {
 			return err
 		}
-		rn := getResource(req.GetResource(), req.GetIsolation(), req.GetKey())
+		rn := req.GetResource()
 		if writeCloser == nil {
 			if rn.GetCacheType() == rspb.CacheType_CAS && req.GetCheckAlreadyExists() {
 				missing, err := c.cache.FindMissing(ctx, []*rspb.ResourceName{rn})
@@ -438,11 +387,7 @@ func (c *Proxy) Heartbeat(ctx context.Context, req *dcpb.HeartbeatRequest) (*dcp
 }
 
 func (c *Proxy) RemoteContains(ctx context.Context, peer string, r *rspb.ResourceName) (bool, error) {
-	isolation := &dcpb.Isolation{
-		CacheType:          r.GetCacheType(),
-		RemoteInstanceName: r.GetInstanceName(),
-	}
-	missing, err := c.RemoteFindMissing(ctx, peer, isolation, []*rspb.ResourceName{r})
+	missing, err := c.RemoteFindMissing(ctx, peer, []*rspb.ResourceName{r})
 	if err != nil {
 		return false, err
 	}
@@ -450,14 +395,8 @@ func (c *Proxy) RemoteContains(ctx context.Context, peer string, r *rspb.Resourc
 }
 
 func (c *Proxy) RemoteMetadata(ctx context.Context, peer string, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
-	isolation := &dcpb.Isolation{
-		CacheType:          r.GetCacheType(),
-		RemoteInstanceName: r.GetInstanceName(),
-	}
 	req := &dcpb.MetadataRequest{
-		Isolation: isolation,
-		Key:       digestToKey(r.GetDigest()),
-		Resource:  r,
+		Resource: r,
 	}
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
@@ -476,14 +415,9 @@ func (c *Proxy) RemoteMetadata(ctx context.Context, peer string, r *rspb.Resourc
 	}, nil
 }
 
-func (c *Proxy) RemoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+func (c *Proxy) RemoteFindMissing(ctx context.Context, peer string, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	req := &dcpb.FindMissingRequest{
-		Isolation: isolation,
-	}
-	for _, r := range resources {
-		key := digestToKey(r.GetDigest())
-		req.Key = append(req.Key, key)
-		req.Resources = append(req.Resources, r)
+		Resources: resources,
 	}
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
@@ -504,14 +438,8 @@ func (c *Proxy) RemoteFindMissing(ctx context.Context, peer string, isolation *d
 }
 
 func (c *Proxy) RemoteDelete(ctx context.Context, peer string, r *rspb.ResourceName) error {
-	isolation := &dcpb.Isolation{
-		CacheType:          r.GetCacheType(),
-		RemoteInstanceName: r.GetInstanceName(),
-	}
 	req := &dcpb.DeleteRequest{
-		Isolation: isolation,
-		Key:       digestToKey(r.GetDigest()),
-		Resource:  r,
+		Resource: r,
 	}
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
@@ -525,16 +453,12 @@ func (c *Proxy) RemoteDelete(ctx context.Context, peer string, r *rspb.ResourceN
 	return nil
 }
 
-func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
-	req := &dcpb.GetMultiRequest{
-		Isolation: isolation,
-	}
+func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	req := &dcpb.GetMultiRequest{}
 	hashDigests := make(map[string]*repb.Digest, len(resources))
 	compressedHashes := make(set.Set[string], len(resources))
 	for _, r := range resources {
-		key := digestToKey(r.GetDigest())
 		hashDigests[r.GetDigest().GetHash()] = r.GetDigest()
-		req.Key = append(req.Key, key)
 		if c.shouldReadCompressed(r) {
 			r = r.CloneVT()
 			r.Compressor = repb.Compressor_ZSTD
@@ -581,11 +505,6 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		r.Compressor = repb.Compressor_ZSTD
 	}
 	req := &dcpb.ReadRequest{
-		Isolation: &dcpb.Isolation{
-			CacheType:          r.GetCacheType(),
-			RemoteInstanceName: r.GetInstanceName(),
-		},
-		Key:      digestToKey(r.GetDigest()),
 		Offset:   offset,
 		Limit:    limit,
 		Resource: r,
@@ -676,8 +595,6 @@ type streamWriteCloser struct {
 	cancelFunc        context.CancelFunc
 	sender            rpcutil.Sender[*dcpb.WriteRequest, *dcpb.WriteResponse]
 	r                 *rspb.ResourceName
-	key               *dcpb.Key
-	isolation         *dcpb.Isolation
 	handoffPeer       string
 	sendTimeoutCause  error
 	closeTimeoutCause error
@@ -705,8 +622,6 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 		return len(data), nil
 	}
 	req := &dcpb.WriteRequest{
-		Isolation:          wc.isolation,
-		Key:                wc.key,
 		Data:               data,
 		FinishWrite:        false,
 		CheckAlreadyExists: true,
@@ -734,8 +649,6 @@ func (wc *streamWriteCloser) Commit() error {
 	}
 
 	req := &dcpb.WriteRequest{
-		Isolation:          wc.isolation,
-		Key:                wc.key,
 		FinishWrite:        true,
 		CheckAlreadyExists: true,
 		HandoffPeer:        wc.handoffPeer,
@@ -772,11 +685,6 @@ func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 		return nil, err
 	}
 
-	isolation := &dcpb.Isolation{
-		CacheType:          r.GetCacheType(),
-		RemoteInstanceName: r.GetInstanceName(),
-	}
-
 	ctx, cancel := context.WithCancel(ctx)
 	stream, err := client.Write(ctx)
 	if err != nil {
@@ -788,9 +696,7 @@ func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 	wc := &streamWriteCloser{
 		cancelFunc:        cancel,
 		sender:            rpcutil.NewSender[*dcpb.WriteRequest, *dcpb.WriteResponse](ctx, stream),
-		isolation:         isolation,
 		handoffPeer:       handoffPeer,
-		key:               digestToKey(r.GetDigest()),
 		r:                 r,
 		sendTimeoutCause:  status.DeadlineExceededErrorf("timed out sending distributed cache write to peer %q for %s", peer, resourceStr),
 		closeTimeoutCause: status.DeadlineExceededErrorf("timed out finalizing distributed cache write to peer %q for %s", peer, resourceStr),
