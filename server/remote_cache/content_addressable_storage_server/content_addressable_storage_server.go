@@ -125,18 +125,17 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 
 	// The chunked-manifest fallback lookup is skipped when the caller signals
 	// that these digests are individual content-defined chunks, not whole blobs.
-	// This is a safety guard against misaligned MaxChunkSizeBytes during rolling
-	// deploys: without the header, a chunk sized above the server's current
-	// MaxChunkSizeBytes would slip past the size guard below and trigger a
-	// spurious (and expensive) AC manifest lookup.
+	// Otherwise, use the same fallback threshold as read paths so blobs chunked
+	// with an older, smaller chunk size still count as present after increasing
+	// the current chunk size.
 	if efp := s.env.GetExperimentFlagProvider(); len(missing) > 0 && !cdc.IsChunked(ctx) && chunking.Enabled(ctx, efp) {
 		checker := chunking.NewMissingChunkChecker(s.cache)
-		maxChunkSizeBytes := chunking.MaxChunkSizeBytes(ctx, efp)
+		chunkedReadFallbackSizeBytes := chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
 
 		// https://go.dev/wiki/SliceTricks#filtering-without-allocating
 		stillMissing := missing[:0]
 		for _, d := range missing {
-			if d.GetSizeBytes() <= maxChunkSizeBytes {
+			if d.GetSizeBytes() <= chunkedReadFallbackSizeBytes {
 				stillMissing = append(stillMissing, d)
 				continue
 			}

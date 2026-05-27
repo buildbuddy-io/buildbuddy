@@ -1147,7 +1147,7 @@ func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
 	require.ElementsMatch(t, digestStrings(blobDigest, regularDigest), digestStrings(rsp.MissingBlobDigests...))
 }
 
-func TestFindMissingBlobsDoesNotUseReadFallbackThreshold(t *testing.T) {
+func TestFindMissingBlobsUsesReadFallbackThreshold(t *testing.T) {
 	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
 	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
 
@@ -1202,6 +1202,12 @@ func TestFindMissingBlobsDoesNotUseReadFallbackThreshold(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	require.Empty(t, rsp.MissingBlobDigests)
+
+	rsp, err = casClient.FindMissingBlobs(cdc.ContextWithChunked(ctx), &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{blobDigest},
+	})
+	require.NoError(t, err)
 	require.Len(t, rsp.MissingBlobDigests, 1)
 	require.Equal(t, blobDigest.GetHash(), rsp.MissingBlobDigests[0].GetHash())
 }
