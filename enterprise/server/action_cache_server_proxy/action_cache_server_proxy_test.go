@@ -1,25 +1,38 @@
 package action_cache_server_proxy
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
+	openfeatureTesting "github.com/open-feature/go-sdk/openfeature/testing"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 func runACServer(ctx context.Context, t *testing.T, ta *testauth.TestAuthenticator) repb.ActionCacheClient {
@@ -60,6 +73,122 @@ func runLocalActionCacheServerForProxy(ctx context.Context, env *testenv.TestEnv
 	return server
 }
 
+type localOnlyCache struct {
+	interfaces.Cache
+	mu     sync.Mutex
+	values map[string][]byte
+	mtimes map[string]int64
+}
+
+func cacheKey(r *rspb.ResourceName) string {
+	return fmt.Sprintf("%d/%s/%d/%s/%d/%d", r.GetCacheType(), r.GetInstanceName(), r.GetCompressor(), r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(), r.GetDigestFunction())
+}
+
+func newLocalOnlyCache() *localOnlyCache {
+	return &localOnlyCache{
+		values: make(map[string][]byte),
+		mtimes: make(map[string]int64),
+	}
+}
+
+func (c *localOnlyCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	v, ok := c.values[cacheKey(r)]
+	if !ok {
+		return nil, status.NotFoundError("not found")
+	}
+	return append([]byte(nil), v...), nil
+}
+
+func (c *localOnlyCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := cacheKey(r)
+	if _, ok := c.values[key]; !ok {
+		return nil, status.NotFoundError("not found")
+	}
+	return &interfaces.CacheMetadata{LastModifyTimeUsec: c.mtimes[key]}, nil
+}
+
+func (c *localOnlyCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
+	c.put(r, data, time.Now().UnixMicro())
+	return nil
+}
+
+func (c *localOnlyCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	w := &localWriteCloser{}
+	w.commit = func() error {
+		return c.Set(ctx, r, w.Bytes())
+	}
+	return w, nil
+}
+
+func (c *localOnlyCache) put(r *rspb.ResourceName, data []byte, mtime int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := cacheKey(r)
+	c.values[key] = append([]byte(nil), data...)
+	c.mtimes[key] = mtime
+}
+
+func seedLocalActionResult(t *testing.T, cache *localOnlyCache, req *repb.GetActionResultRequest, result *repb.ActionResult, mtime int64) *digest.ACResourceName {
+	localKey, err := getACKeyForGetActionResultRequest(req)
+	require.NoError(t, err)
+	casDigest, err := digest.ComputeForMessage(result, req.GetDigestFunction())
+	require.NoError(t, err)
+	casKey := digest.NewCASResourceName(casDigest, req.GetInstanceName(), req.GetDigestFunction())
+	resultBytes, err := proto.Marshal(result)
+	require.NoError(t, err)
+	casKeyBytes, err := proto.Marshal(casKey.ToProto())
+	require.NoError(t, err)
+
+	cache.put(localKey.ToProto(), casKeyBytes, mtime)
+	cache.put(casKey.ToProto(), resultBytes, mtime)
+	return localKey
+}
+
+type localWriteCloser struct {
+	bytes.Buffer
+	commit func() error
+}
+
+func (w *localWriteCloser) Close() error {
+	return nil
+}
+
+func (w *localWriteCloser) Commit() error {
+	return w.commit()
+}
+
+func setActionCacheTTL(t *testing.T, env *testenv.TestEnv, ttlSeconds int) {
+	testProvider := openfeatureTesting.NewTestProvider()
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		"cache_proxy.action_cache_ttl_seconds": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "enabled",
+			Variants: map[string]any{
+				"enabled": ttlSeconds,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	t.Cleanup(testProvider.Cleanup)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+}
+
+type unexpectedActionCacheClient struct {
+	repb.ActionCacheClient
+	t testing.TB
+}
+
+func (c *unexpectedActionCacheClient) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
+	c.t.Fatal("unexpected remote GetActionResult")
+	return nil, nil
+}
+
 func update(ctx context.Context, client repb.ActionCacheClient, digest *repb.Digest, code int32, t *testing.T) {
 	req := repb.UpdateActionResultRequest{
 		ActionDigest:   digest,
@@ -74,17 +203,6 @@ func get(ctx context.Context, client repb.ActionCacheClient, digest *repb.Digest
 	req := &repb.GetActionResultRequest{
 		ActionDigest:   digest,
 		DigestFunction: repb.DigestFunction_SHA256,
-	}
-	resp, err := client.GetActionResult(ctx, req)
-	require.NoError(t, err)
-	return resp
-}
-
-func getCached(ctx context.Context, client repb.ActionCacheClient, digest *repb.Digest, cachedValue *repb.Digest, t *testing.T) *repb.ActionResult {
-	req := &repb.GetActionResultRequest{
-		ActionDigest:             digest,
-		DigestFunction:           repb.DigestFunction_SHA256,
-		CachedActionResultDigest: cachedValue,
 	}
 	resp, err := client.GetActionResult(ctx, req)
 	require.NoError(t, err)
@@ -280,6 +398,274 @@ func TestActionCacheProxy_CachingEnabled(t *testing.T) {
 	require.Equal(t, 2, countingClient.cacheHitCount)
 }
 
+func TestActionCacheProxy_TTLServesFreshLocalResult(t *testing.T) {
+	flags.Set(t, "cache_proxy.cache_action_results", true)
+
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user", "GR123"))
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user")
+	require.NoError(t, err)
+
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(ta)
+	ut := testusage.NewTracker()
+	env.SetUsageTracker(ut)
+	setActionCacheTTL(t, env, 60)
+
+	digestA := &repb.Digest{
+		Hash:      strings.Repeat("a", 64),
+		SizeBytes: 1024,
+	}
+	req := &repb.GetActionResultRequest{
+		ActionDigest:   digestA,
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	localResult := &repb.ActionResult{
+		ExitCode: 1,
+		ExecutionMetadata: &repb.ExecutedActionMetadata{
+			ExecutionStartTimestamp:     timestamppb.New(time.Unix(10, 0)),
+			ExecutionCompletedTimestamp: timestamppb.New(time.Unix(11, 0)),
+		},
+	}
+	cache := newLocalOnlyCache()
+	seedLocalActionResult(t, cache, req, localResult, env.GetClock().Now().Add(-time.Second).UnixMicro())
+	proxy := &ActionCacheServerProxy{
+		supportsEncryption: func(context.Context) bool { return false },
+		env:                env,
+		authenticator:      env.GetAuthenticator(),
+		localCache:         cache,
+		remoteACClient:     &unexpectedActionCacheClient{t: t},
+	}
+	rsp, err := proxy.GetActionResult(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, int32(1), rsp.GetExitCode())
+
+	totals := ut.Totals()
+	require.Len(t, totals, 1)
+	require.Equal(t, "GR123", totals[0].GroupID)
+	require.Equal(t, int64(1), totals[0].Counts.ActionCacheHits)
+	require.Equal(t, digestA.GetSizeBytes(), totals[0].Counts.TotalDownloadSizeBytes)
+	require.Equal(t, int64(time.Second/time.Microsecond), totals[0].Counts.TotalCachedActionExecUsec)
+}
+
+func TestActionCacheProxy_TTLExpiredValidatesWithRemote(t *testing.T) {
+	flags.Set(t, "cache_proxy.cache_action_results", true)
+	flags.Set(t, "cache.check_client_action_result_digests", true)
+
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user", "GR123"))
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user")
+	require.NoError(t, err)
+
+	remoteAC := runACServer(ctx, t, ta)
+	countingClient := &countingActionCacheClient{realAC: remoteAC}
+
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(ta)
+	setActionCacheTTL(t, env, 60)
+
+	digestA := &repb.Digest{
+		Hash:      strings.Repeat("a", 64),
+		SizeBytes: 1024,
+	}
+	req := &repb.GetActionResultRequest{
+		ActionDigest:   digestA,
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	localResult, err := remoteAC.UpdateActionResult(ctx, &repb.UpdateActionResultRequest{
+		ActionDigest:   digestA,
+		DigestFunction: repb.DigestFunction_SHA256,
+		ActionResult:   &repb.ActionResult{ExitCode: 1},
+	})
+	require.NoError(t, err)
+	cache := newLocalOnlyCache()
+	oldMTime := env.GetClock().Now().Add(-2 * time.Minute).UnixMicro()
+	localKey := seedLocalActionResult(t, cache, req, localResult, oldMTime)
+	proxy := &ActionCacheServerProxy{
+		supportsEncryption: func(context.Context) bool { return false },
+		env:                env,
+		authenticator:      env.GetAuthenticator(),
+		localCache:         cache,
+		remoteACClient:     countingClient,
+	}
+
+	rsp, err := proxy.GetActionResult(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, int32(1), rsp.GetExitCode())
+	require.Equal(t, 1, countingClient.getCount)
+	require.Equal(t, 1, countingClient.cacheHitCount)
+
+	require.Eventually(t, func() bool {
+		md, err := cache.Metadata(ctx, localKey.ToProto())
+		return err == nil && md.LastModifyTimeUsec > oldMTime
+	}, time.Second, 10*time.Millisecond)
+
+	rsp, err = proxy.GetActionResult(ctx, &repb.GetActionResultRequest{
+		ActionDigest:   digestA,
+		DigestFunction: repb.DigestFunction_SHA256,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int32(1), rsp.GetExitCode())
+	require.Equal(t, 1, countingClient.getCount)
+}
+
+func TestActionCacheProxy_DoesNotCacheHashOnlyRemoteResponse(t *testing.T) {
+	flags.Set(t, "cache_proxy.cache_action_results", true)
+	flags.Set(t, "cache.check_client_action_result_digests", true)
+
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user", "GR123"))
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user")
+	require.NoError(t, err)
+
+	remoteAC := runACServer(ctx, t, ta)
+	countingClient := &countingActionCacheClient{realAC: remoteAC}
+
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(ta)
+	setActionCacheTTL(t, env, 60)
+
+	digestA := &repb.Digest{
+		Hash:      strings.Repeat("a", 64),
+		SizeBytes: 1024,
+	}
+	remoteResult, err := remoteAC.UpdateActionResult(ctx, &repb.UpdateActionResultRequest{
+		ActionDigest:   digestA,
+		DigestFunction: repb.DigestFunction_SHA256,
+		ActionResult:   &repb.ActionResult{ExitCode: 1},
+	})
+	require.NoError(t, err)
+	remoteResultDigest, err := digest.ComputeForMessage(remoteResult, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	proxy := &ActionCacheServerProxy{
+		supportsEncryption: func(context.Context) bool { return false },
+		env:                env,
+		authenticator:      env.GetAuthenticator(),
+		localCache:         newLocalOnlyCache(),
+		remoteACClient:     countingClient,
+	}
+
+	hashOnlyResp, err := proxy.GetActionResult(ctx, &repb.GetActionResultRequest{
+		ActionDigest:             digestA,
+		DigestFunction:           repb.DigestFunction_SHA256,
+		CachedActionResultDigest: remoteResultDigest,
+	})
+	require.NoError(t, err)
+	require.Equal(t, remoteResultDigest.GetHash(), hashOnlyResp.GetActionResultDigest().GetHash())
+	require.Equal(t, 1, countingClient.getCount)
+
+	fullResp, err := proxy.GetActionResult(ctx, &repb.GetActionResultRequest{
+		ActionDigest:   digestA,
+		DigestFunction: repb.DigestFunction_SHA256,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int32(1), fullResp.GetExitCode())
+	require.Empty(t, fullResp.GetActionResultDigest().GetHash())
+	require.Equal(t, 2, countingClient.getCount)
+}
+
+func TestActionCacheProxy_UpdateActionResultRefreshesLocalResultWithinTTL(t *testing.T) {
+	flags.Set(t, "cache_proxy.cache_action_results", true)
+
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user", "GR123"))
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user")
+	require.NoError(t, err)
+
+	remoteAC := runACServer(ctx, t, ta)
+	countingClient := &countingActionCacheClient{realAC: remoteAC}
+
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(ta)
+	setActionCacheTTL(t, env, 60)
+
+	digestA := &repb.Digest{
+		Hash:      strings.Repeat("a", 64),
+		SizeBytes: 1024,
+	}
+	getReq := &repb.GetActionResultRequest{
+		ActionDigest:   digestA,
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	cache := newLocalOnlyCache()
+	seedLocalActionResult(t, cache, getReq, &repb.ActionResult{ExitCode: 1}, env.GetClock().Now().Add(-time.Second).UnixMicro())
+	proxy := &ActionCacheServerProxy{
+		supportsEncryption: func(context.Context) bool { return false },
+		env:                env,
+		authenticator:      env.GetAuthenticator(),
+		localCache:         cache,
+		remoteACClient:     countingClient,
+	}
+
+	rsp, err := proxy.GetActionResult(ctx, getReq)
+	require.NoError(t, err)
+	require.Equal(t, int32(1), rsp.GetExitCode())
+	require.Equal(t, 0, countingClient.getCount)
+	require.Equal(t, 0, countingClient.updateCount)
+
+	_, err = proxy.UpdateActionResult(ctx, &repb.UpdateActionResultRequest{
+		ActionDigest:   digestA,
+		DigestFunction: repb.DigestFunction_SHA256,
+		ActionResult:   &repb.ActionResult{ExitCode: 2},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 0, countingClient.getCount)
+	require.Equal(t, 1, countingClient.updateCount)
+
+	rsp, err = proxy.GetActionResult(ctx, getReq)
+	require.NoError(t, err)
+	require.Equal(t, int32(2), rsp.GetExitCode())
+	require.Equal(t, 0, countingClient.getCount)
+	require.Equal(t, 1, countingClient.updateCount)
+}
+
+func TestActionCacheProxy_UpdateActionResultDoesNotLeaveFreshRequestVariantStale(t *testing.T) {
+	flags.Set(t, "cache_proxy.cache_action_results", true)
+
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user", "GR123"))
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user")
+	require.NoError(t, err)
+
+	remoteAC := runACServer(ctx, t, ta)
+	countingClient := &countingActionCacheClient{realAC: remoteAC}
+
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(ta)
+	setActionCacheTTL(t, env, 60)
+
+	digestA := &repb.Digest{
+		Hash:      strings.Repeat("a", 64),
+		SizeBytes: 1024,
+	}
+	getReq := &repb.GetActionResultRequest{
+		ActionDigest:        digestA,
+		DigestFunction:      repb.DigestFunction_SHA256,
+		IncludeTimelineData: true,
+	}
+	cache := newLocalOnlyCache()
+	seedLocalActionResult(t, cache, getReq, &repb.ActionResult{ExitCode: 1}, env.GetClock().Now().Add(-time.Second).UnixMicro())
+	proxy := &ActionCacheServerProxy{
+		supportsEncryption: func(context.Context) bool { return false },
+		env:                env,
+		authenticator:      env.GetAuthenticator(),
+		localCache:         cache,
+		remoteACClient:     countingClient,
+	}
+
+	_, err = proxy.UpdateActionResult(ctx, &repb.UpdateActionResultRequest{
+		ActionDigest:   digestA,
+		DigestFunction: repb.DigestFunction_SHA256,
+		ActionResult:   &repb.ActionResult{ExitCode: 2},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 0, countingClient.getCount)
+	require.Equal(t, 1, countingClient.updateCount)
+
+	rsp, err := proxy.GetActionResult(ctx, getReq)
+	require.NoError(t, err)
+	require.Equal(t, int32(2), rsp.GetExitCode())
+	require.Equal(t, 1, countingClient.getCount)
+	require.Equal(t, 1, countingClient.updateCount)
+}
+
 func TestSkipRemote(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user", "GR123"))
@@ -313,10 +699,13 @@ func TestSkipRemote(t *testing.T) {
 type countingActionCacheClient struct {
 	realAC        repb.ActionCacheClient
 	cacheHitCount int
+	getCount      int
+	updateCount   int
 }
 
 // GetActionResult implements remote_execution.ActionCacheClient.
 func (c *countingActionCacheClient) GetActionResult(ctx context.Context, in *repb.GetActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
+	c.getCount++
 	result, err := c.realAC.GetActionResult(ctx, in, opts...)
 	if result.GetActionResultDigest() != nil {
 		c.cacheHitCount++
@@ -326,6 +715,7 @@ func (c *countingActionCacheClient) GetActionResult(ctx context.Context, in *rep
 
 // UpdateActionResult implements remote_execution.ActionCacheClient.
 func (c *countingActionCacheClient) UpdateActionResult(ctx context.Context, in *repb.UpdateActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
+	c.updateCount++
 	return c.realAC.UpdateActionResult(ctx, in, opts...)
 }
 
