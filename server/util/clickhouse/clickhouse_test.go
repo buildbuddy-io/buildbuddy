@@ -79,9 +79,7 @@ func TestExecutionFromProto(t *testing.T) {
 			in: &repb.StoredExecution{
 				ExecutionId: executionID,
 			},
-			want: &schema.Execution{
-				ExecutionID: executionID,
-			},
+			want: &schema.Execution{},
 		},
 		{
 			name: "RecycleRunner",
@@ -90,7 +88,6 @@ func TestExecutionFromProto(t *testing.T) {
 				RecycleRunner: true,
 			},
 			want: &schema.Execution{
-				ExecutionID:   executionID,
 				RecycleRunner: true,
 			},
 		},
@@ -102,7 +99,6 @@ func TestExecutionFromProto(t *testing.T) {
 
 			// The row should preserve direct proto fields while also parsing
 			// the execution ID resource fields.
-			require.Equal(t, testCase.want.ExecutionID, execution.ExecutionID)
 			require.Equal(t, testCase.want.RecycleRunner, execution.RecycleRunner)
 			require.Equal(t, testCase.in.GetExecutionId(), reconstructExecutionID(t, execution))
 		})
