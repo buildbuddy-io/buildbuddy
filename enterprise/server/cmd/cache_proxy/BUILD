@@ -18,6 +18,7 @@ go_library(
         "//enterprise/server/backends/distributed",
         "//enterprise/server/backends/pebble_cache",
         "//enterprise/server/byte_stream_server_proxy",
+        "//enterprise/server/cache_proxy_registration",
         "//enterprise/server/capabilities_server_proxy",
         "//enterprise/server/clientidentity",
         "//enterprise/server/content_addressable_storage_server_proxy",
