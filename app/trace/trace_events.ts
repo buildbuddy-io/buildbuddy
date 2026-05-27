@@ -118,15 +118,15 @@ export const TIME_SERIES_EVENT_ORDER = new Map(Array.from(TIME_SERIES_METADATA).
 const GZIP_MAGIC_BYTE_0 = 0x1f;
 const GZIP_MAGIC_BYTE_1 = 0x8b;
 
+export type ProfileProgressCallback = (numBytesLoaded: number, done?: boolean) => void;
+export type TraceEventBatchCallback = (events: TraceEvent[]) => void;
+
 async function isGzipCompressed(blob: Blob): Promise<boolean> {
   const header = new Uint8Array(await blob.slice(0, 2).arrayBuffer());
   return header[0] === GZIP_MAGIC_BYTE_0 && header[1] === GZIP_MAGIC_BYTE_1;
 }
 
-export async function readProfileFile(
-  file: Blob,
-  progress?: (numBytesLoaded: number, done?: boolean) => void
-): Promise<Profile> {
+export async function readProfileFile(file: Blob, progress?: ProfileProgressCallback): Promise<Profile> {
   let stream = file.stream() as ReadableStream<Uint8Array>;
   if (await isGzipCompressed(file)) {
     if (typeof DecompressionStream === "undefined") {
@@ -139,13 +139,31 @@ export async function readProfileFile(
 
 export async function readProfile(
   body: ReadableStream<Uint8Array>,
-  progress?: (numBytesLoaded: number, done?: boolean) => void
+  progress?: ProfileProgressCallback
 ): Promise<Profile> {
+  const profile: Profile = { traceEvents: [] };
+  await readProfileEvents(
+    body,
+    (events) => {
+      for (const event of events) {
+        profile.traceEvents.push(event);
+      }
+    },
+    progress
+  );
+  return profile;
+}
+
+export async function readProfileEvents(
+  body: ReadableStream<Uint8Array>,
+  consumeEventBatch: TraceEventBatchCallback,
+  progress?: ProfileProgressCallback
+): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder("utf-8");
   let n = 0;
   let buffer = "";
-  let profile: Profile | null = null;
+  let foundTraceEvents = false;
 
   while (true) {
     const { value, done } = await reader.read();
@@ -159,21 +177,15 @@ export async function readProfile(
     // Keep accumulating into the buffer until we see the "traceEvents" array.
     // Each entry in this array is newline-delimited (a special property of
     // Google's trace event JSON format).
-    if (!profile) {
+    if (!foundTraceEvents) {
       const beginMarker = '"traceEvents":[\n';
       const index = buffer.indexOf(beginMarker);
       if (index < 0) continue;
 
-      const before = buffer.substring(0, index + beginMarker.length);
-      const after = buffer.substring(before.length);
-
-      const outerJSON = before + "]}";
-      profile = JSON.parse(outerJSON) as Profile;
-      buffer = after;
+      buffer = buffer.substring(index + beginMarker.length);
+      foundTraceEvents = true;
     }
-    if (profile) {
-      buffer = consumeEvents(buffer, profile);
-    }
+    buffer = consumeEvents(buffer, consumeEventBatch);
   }
   if (progress) {
     progress(n, true);
@@ -183,23 +195,24 @@ export async function readProfile(
     await nextAnimationFrame();
   }
 
+  buffer += decoder.decode();
+  if (!foundTraceEvents) {
+    throw new Error("failed to parse timing profile JSON");
+  }
+
   // Consume last event, which isn't guaranteed to end with ",\n"
   if (buffer) {
     const { chars, suffix } = trailingNonWhitespaceChars(buffer, 2);
     if (chars === "]}") {
       buffer = buffer.substring(0, buffer.length - suffix.length);
     }
-    if (buffer) {
-      const event = JSON.parse(buffer);
-      profile?.traceEvents.push(event);
-      buffer = "";
+    if (buffer.trim()) {
+      const eventJSON = buffer.trim();
+      consumeEventBatch([
+        JSON.parse(eventJSON.endsWith(",") ? eventJSON.substring(0, eventJSON.length - 1) : eventJSON),
+      ]);
     }
   }
-
-  if (!profile) {
-    throw new Error("failed to parse timing profile JSON");
-  }
-  return profile;
 }
 
 /**
@@ -219,12 +232,16 @@ function trailingNonWhitespaceChars(text: string, count: number) {
   return { chars: out, suffix: text.substring(i + 1) };
 }
 
-function consumeEvents(buffer: string, profile: Profile): string {
+function consumeEvents(buffer: string, consumeEventBatch: TraceEventBatchCallback): string {
   // Each event entry looks like "   { ... },\n"
   const parts = buffer.split(",\n");
   const completeEvents = parts.slice(0, parts.length - 1);
+  const events: TraceEvent[] = [];
   for (const rawEvent of completeEvents) {
-    profile!.traceEvents.push(JSON.parse(rawEvent));
+    events.push(JSON.parse(rawEvent));
+  }
+  if (events.length) {
+    consumeEventBatch(events);
   }
   // If there's a partial event at the end, that partial event becomes the new
   // buffer value.

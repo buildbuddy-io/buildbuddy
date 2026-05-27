@@ -1,11 +1,12 @@
 import { StringInterner } from "../util/intern";
 import { TypedArrayBuilder } from "../util/typed_arrays";
-import type { TraceEvent } from "./trace_events";
+import type { ProfileProgressCallback, TraceEvent } from "./trace_events";
 import {
   TIME_SERIES_EVENT_ORDER,
   TIME_SERIES_METADATA,
   isNumericTimeSeriesValue,
   normalizeThreadName,
+  readProfileEvents,
 } from "./trace_events";
 
 /**
@@ -156,6 +157,24 @@ export class TimeSeries {
     /** Sort order for known Bazel/executor series. */
     readonly order: number | undefined
   ) {}
+}
+
+/** Reads a trace profile stream. */
+export async function readProfile(
+  body: ReadableStream<Uint8Array>,
+  progress?: ProfileProgressCallback
+): Promise<Profile> {
+  const builder = new ProfileBuilder();
+  await readProfileEvents(
+    body,
+    (events) => {
+      for (const event of events) {
+        builder.addEvent(event);
+      }
+    },
+    progress
+  );
+  return builder.build();
 }
 
 /** Mutable builder for a compact trace profile. */
