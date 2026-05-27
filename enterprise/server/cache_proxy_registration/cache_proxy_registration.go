@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/metadata"
@@ -39,6 +40,13 @@ var (
 )
 
 var (
+	// Upper bound on how long we'll wait for the very first Send to land
+	// after opening the stream. grpc.Dial is non-blocking, so a black-hole
+	// target lets the conn come up "fine" and only the actual Send notices
+	// that the handshake never completed. Without this bound the retry
+	// loop in run() would never get to run.
+	initialSendTimeout = 10 * time.Second
+
 	// How often we re-send registration. Must be well under the server's
 	// maxRegistrationStaleness (10m) so a single dropped heartbeat doesn't
 	// make us disappear from the deployment view.
@@ -90,7 +98,7 @@ func Register(env *real_environment.RealEnv) {
 func run(ctx context.Context, env environment.Env, target, apiKey string, node *cppb.CacheProxyNode) {
 	ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey)
 	for {
-		conn, err := grpc_client.DialInternal(env, target)
+		conn, err := grpc_client.DialInternalWithPoolSize(env, target, 1)
 		if err == nil {
 			client := cppb.NewCacheProxyRegistryClient(conn)
 			if err := streamHeartbeats(ctx, client, node); err != nil && ctx.Err() == nil {
@@ -110,16 +118,14 @@ func run(ctx context.Context, env environment.Env, target, apiKey string, node *
 // plus one every heartbeatInterval, and returns when the stream breaks or
 // ctx is cancelled.
 func streamHeartbeats(ctx context.Context, client cppb.CacheProxyRegistryClient, node *cppb.CacheProxyNode) error {
-	stream, err := client.RegisterAndStreamHeartbeat(ctx)
+	stream, cleanup, err := openStream(ctx, client, node)
 	if err != nil {
 		return err
 	}
-	req := &cppb.RegisterCacheProxyRequest{Node: node}
-	if err := sendHeartbeat(stream, req); err != nil {
-		return err
-	}
+	defer cleanup()
 	log.Infof("Successfully registered Cache Proxy %q with the app", node.GetProxyId())
 
+	req := &cppb.RegisterCacheProxyRequest{Node: node}
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
 	for {
@@ -138,19 +144,49 @@ func streamHeartbeats(ctx context.Context, client cppb.CacheProxyRegistryClient,
 	}
 }
 
+func openStream(ctx context.Context, client cppb.CacheProxyRegistryClient, node *cppb.CacheProxyNode) (cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, func(), error) {
+	// The stream is opened on a child ctx. If setup hasn't completed by
+	// initialSendTimeout the AfterFunc cancels that child, failing the
+	// in-flight call so the caller's retry loop can back off. Once setup
+	// succeeds we stop the timer, leaving the child ctx alive for the
+	// lifetime of the stream — the caller's deferred cleanup eventually
+	// cancels it on exit.
+	setupCtx, cancelSetup := context.WithCancel(ctx)
+	setupTimer := time.AfterFunc(initialSendTimeout, cancelSetup)
+	fail := func(err error) (cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, func(), error) {
+		setupTimer.Stop()
+		cancelSetup()
+		// Distinguish our own timeout-induced cancellation from a real
+		// parent-ctx cancellation, so callers and logs see something
+		// meaningful.
+		if setupCtx.Err() != nil && ctx.Err() == nil {
+			return nil, nil, status.DeadlineExceededErrorf("Cache Proxy registration did not complete within %s", initialSendTimeout)
+		}
+		return nil, nil, err
+	}
+
+	stream, err := client.RegisterAndStreamHeartbeat(setupCtx)
+	if err != nil {
+		return fail(err)
+	}
+	if err := sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node}); err != nil {
+		return fail(err)
+	}
+	setupTimer.Stop()
+	return stream, cancelSetup, nil
+}
+
 // sendHeartbeat writes one heartbeat to the stream. If Send sees the server
 // has already terminated (io.EOF), it drains the trailer via CloseAndRecv to
 // surface the real status (PermissionDenied, etc.) instead of a bare EOF.
 func sendHeartbeat(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, req *cppb.RegisterCacheProxyRequest) error {
-	if err := stream.Send(req); err != nil {
-		if err == io.EOF {
-			if _, recvErr := stream.CloseAndRecv(); recvErr != nil {
-				return recvErr
-			}
+	err := stream.Send(req)
+	if err == io.EOF {
+		if _, recvErr := stream.CloseAndRecv(); recvErr != nil {
+			return recvErr
 		}
-		return err
 	}
-	return nil
+	return err
 }
 
 func sleepWithContext(ctx context.Context, d time.Duration) (cancelled bool) {

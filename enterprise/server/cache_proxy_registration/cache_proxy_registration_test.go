@@ -2,6 +2,7 @@ package cache_proxy_registration
 
 import (
 	"context"
+	"net"
 	"testing"
 	"time"
 
@@ -13,8 +14,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
@@ -141,4 +144,42 @@ func TestStreamHeartbeats_UnauthorizedReturnsError(t *testing.T) {
 	err := streamHeartbeats(streamCtx, client, &cppb.CacheProxyNode{Host: "h", ProxyId: "id"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "REGISTER_CACHE_PROXY", "expected capability error, got: %v", err)
+}
+
+// TestStreamHeartbeats_UnreachableTarget points the registration loop at a
+// TCP listener that accepts connections but never speaks gRPC, simulating a
+// black-hole app target. In production, run() passes a long-lived ctx (only
+// cancelled on shutdown), so streamHeartbeats needs to return on its own
+// when the dial/handshake fails — otherwise the surrounding retry-with-
+// backoff loop never gets to run. This test uses an undecorated
+// context.Background() to match that production scenario.
+func TestStreamHeartbeats_UnreachableTarget(t *testing.T) {
+	// Drive the initial-send timeout fast so the test doesn't have to wait
+	// the production default (10s).
+	prev := initialSendTimeout
+	initialSendTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { initialSendTimeout = prev })
+
+	// Accept TCP connections but never speak HTTP/2 — gRPC will keep
+	// retrying the handshake forever.
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = lis.Close() })
+
+	conn, err := grpc.Dial(lis.Addr().String(), grpc.WithInsecure())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	client := cppb.NewCacheProxyRegistryClient(conn)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- streamHeartbeats(context.Background(), client, &cppb.CacheProxyNode{Host: "h", ProxyId: "id"})
+	}()
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		assert.True(t, status.IsDeadlineExceededError(err), "expected deadline exceeded, got: %v", err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("streamHeartbeats blocked on an unreachable target — retry loop will never progress")
+	}
 }
