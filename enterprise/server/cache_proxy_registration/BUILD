@@ -8,7 +8,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_proxy_registration",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/cache_proxy_auth",
         "//proto:cache_proxy_go_proto",
         "//server/environment",
         "//server/real_environment",
