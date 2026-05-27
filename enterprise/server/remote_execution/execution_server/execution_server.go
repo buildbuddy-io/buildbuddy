@@ -1493,7 +1493,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
 				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
 			}
-			if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties); err != nil {
+			if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties, flushExecutionsOnEOF); err != nil {
 				// Errors updating the router or recording usage are non-fatal.
 				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
 			}
@@ -1519,7 +1519,12 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
 				if !flushExecutionsOnEOF {
-					s.flushAndRecordUsage(ctx, taskID)
+					// Legacy path: usage was already recorded in
+					// markTaskComplete from the live ExecuteResponse, so
+					// only flush the OLAP row here.
+					if _, err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
+						log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
+					}
 				}
 				return nil
 			}()
@@ -1589,7 +1594,12 @@ func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceN
 
 // markTaskComplete contains logic to be run when the task is complete but
 // before letting the client know that the task has completed.
-func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ACResourceName, executeResponse *repb.ExecuteResponse, action *repb.Action, cmd *repb.Command, properties *platform.Properties) error {
+//
+// When flushExecutionsOnEOF is false (the legacy path, experiment off),
+// usage is recorded here from the live ExecuteResponse + platform.Properties.
+// When true, usage is recorded later by flushAndRecordUsage from the merged
+// StoredExecution in Redis.
+func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ACResourceName, executeResponse *repb.ExecuteResponse, action *repb.Action, cmd *repb.Command, properties *platform.Properties, flushExecutionsOnEOF bool) error {
 	execErr := gstatus.ErrorProto(executeResponse.GetStatus())
 	router := s.env.GetTaskRouter()
 	if router != nil && !executeResponse.GetCachedResult() {
@@ -1614,7 +1624,92 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 		}
 	}
 
+	if !flushExecutionsOnEOF {
+		if err := s.updateUsageFromExecuteResponse(ctx, executeResponse, properties); err != nil {
+			// TODO(vanja) should this be done when the executor got a cache hit?
+			log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", executeResponse, err)
+		}
+	}
+
 	return nil
+}
+
+// updateUsageFromExecuteResponse records usage counters from the live
+// ExecuteResponse + platform.Properties available at COMPLETED time. This is
+// the legacy path used when the
+// remote_execution.flush_executions_after_cleanup experiment is OFF. When
+// the experiment is ON, usage is recorded later by flushAndRecordUsage
+// using the merged StoredExecution from Redis instead.
+func (s *ExecutionServer) updateUsageFromExecuteResponse(ctx context.Context, executeResponse *repb.ExecuteResponse, plat *platform.Properties) error {
+	ut := s.env.GetUsageTracker()
+	if ut == nil {
+		return nil
+	}
+	md := executeResponse.GetResult().GetExecutionMetadata()
+	dur, err := func() (time.Duration, error) {
+		if err := md.GetWorkerStartTimestamp().CheckValid(); err != nil {
+			return 0, err
+		}
+		if err := md.GetWorkerCompletedTimestamp().CheckValid(); err != nil {
+			return 0, err
+		}
+		d := md.GetWorkerCompletedTimestamp().AsTime().Sub(md.GetWorkerStartTimestamp().AsTime())
+		if d <= 0 {
+			return 0, status.InternalErrorf("Execution duration is <= 0")
+		}
+		return d, nil
+	}()
+	if err != nil {
+		// If the task encountered an error, it's somewhat expected that the
+		// execution duration will be unset, so don't return an error. For
+		// example, we may have failed to pull the image, so execution could not
+		// even begin. Note that an error doesn't necessarily imply a missing
+		// exec duration though; we may get a DeadlineExceeded error if the task
+		// times out, but still get an exec duration.
+		if execErr := gstatus.ErrorProto(executeResponse.GetStatus()); execErr != nil {
+			return nil
+		}
+		return err
+	}
+
+	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, plat.OS, plat.Arch, plat.Pool, plat.OriginalPool, plat.WorkflowID, plat.PoolType)
+	if err != nil {
+		return status.InternalErrorf("failed to determine executor pool: %s", err)
+	}
+
+	counts := &tables.UsageCounts{}
+	if dur >= 0 {
+		if pool.IsSelfHosted {
+			if plat.OS == platform.LinuxOperatingSystemName {
+				counts.SelfHostedLinuxExecutionDurationUsec += dur.Microseconds()
+			} else if plat.OS == platform.DarwinOperatingSystemName {
+				counts.SelfHostedMacExecutionDurationUsec += dur.Microseconds()
+			}
+		} else {
+			if plat.OS == platform.LinuxOperatingSystemName {
+				counts.LinuxExecutionDurationUsec += dur.Microseconds()
+			} else if plat.OS == platform.DarwinOperatingSystemName {
+				counts.MacExecutionDurationUsec += dur.Microseconds()
+			}
+		}
+	}
+	usg := md.GetUsageStats()
+	if !pool.IsSelfHosted && usg.GetCpuNanos() > 0 {
+		counts.CPUNanos = usg.GetCpuNanos()
+
+		// If quota is exceeded, the next execution will be blocked.
+		if qm := s.env.GetQuotaManager(); qm != nil {
+			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
+			if err := qm.Allow(ctx, namespace, counts.CPUNanos); err != nil {
+				log.CtxWarningf(ctx, "CPU time quota exhausted after execution: %s", err)
+			}
+		}
+	}
+	labels, err := usageutil.LabelsForUsageRecording(ctx, usageutil.ServerName())
+	if err != nil {
+		return status.WrapError(err, "compute usage labels")
+	}
+	return ut.Increment(ctx, labels, counts)
 }
 
 func (s *ExecutionServer) updateUsage(ctx context.Context, execution *repb.StoredExecution) error {
