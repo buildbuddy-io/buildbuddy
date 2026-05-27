@@ -1060,6 +1060,8 @@ func (np *nodePool) getAllTaskIDs(ctx context.Context) ([]string, error) {
 	// are more likely to happen if the list is large.
 	unclaimed, _, err := np.unclaimedTasksSingleFlight.Do(ctx, "" /*=key*/, func(ctx context.Context) ([]string, error) {
 		if !np.unclaimedTasksExpiry.IsZero() && np.clock.Now().Before(np.unclaimedTasksExpiry) {
+			np.unclaimedTasksMu.Lock()
+			defer np.unclaimedTasksMu.Unlock()
 			return np.unclaimedTasks, nil
 		}
 		unclaimed, err := np.rdb.ZRange(ctx, np.key.redisUnclaimedTasksKey(), 0, -1).Result()
