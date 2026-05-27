@@ -1519,9 +1519,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
 				if !flushExecutionsOnEOF {
-					// Legacy path: usage was already recorded in
-					// markTaskComplete from the live ExecuteResponse, so
-					// only flush the OLAP row here.
 					if _, err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
 						log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
 					}
@@ -1634,12 +1631,6 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 	return nil
 }
 
-// updateUsage records usage counters from the live ExecuteResponse +
-// platform.Properties available at COMPLETED time. This is the legacy path
-// used when the remote_execution.flush_executions_after_cleanup experiment
-// is OFF. When the experiment is ON, usage is recorded later by
-// flushAndRecordUsage via updateUsageFromStoredExecution using the merged
-// StoredExecution from Redis instead.
 func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb.ExecuteResponse, plat *platform.Properties) error {
 	ut := s.env.GetUsageTracker()
 	if ut == nil {
@@ -1686,8 +1677,7 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 }
 
 // updateUsageFromStoredExecution records usage counters from a merged
-// StoredExecution read out of Redis by flushExecutionToOLAP. Used on the
-// experiment-on path (flushAndRecordUsage on stream EOF).
+// StoredExecution read out of Redis by flushExecutionToOLAP.
 func (s *ExecutionServer) updateUsageFromStoredExecution(ctx context.Context, execution *repb.StoredExecution) error {
 	ut := s.env.GetUsageTracker()
 	if ut == nil {
