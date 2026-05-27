@@ -142,7 +142,7 @@ go_binary(
     embed = [":server_lib"],
 )
 
-PACKAGE_ROOT = "app/enterprise"
+PACKAGE_ROOT = "app"
 
 image_layer(
     name = "symlink_layer",
