@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_proxy_registration"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
@@ -152,6 +153,12 @@ func main() {
 	if err := startGRPCServers(env); err != nil {
 		log.Fatalf("%v", err)
 	}
+
+	// Optionally announce ourselves to the BuildBuddy app's cache proxy
+	// registry so we show up on the /cache-proxies admin page. This is a
+	// no-op unless --cache_proxy.app_target and --cache_proxy.api_key are
+	// both set, and never affects the cache-serving path.
+	cache_proxy_registration.Register(env)
 
 	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 	env.GetMux().Handle("/healthz", env.GetHealthChecker().LivenessHandler())
