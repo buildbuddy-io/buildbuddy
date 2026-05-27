@@ -247,6 +247,10 @@ class Router {
     this.navigateTo(Path.executorsPath);
   }
 
+  navigateToCacheProxies() {
+    this.navigateTo(Path.cacheProxiesPath);
+  }
+
   navigateToTap() {
     this.navigateTo(Path.tapPath);
   }
@@ -429,6 +433,10 @@ class Router {
     return capabilities.executors && Boolean(user?.canCall("getExecutionNodes"));
   }
 
+  canAccessCacheProxiesPage(user?: User) {
+    return Boolean(user?.canCall("getCacheProxies"));
+  }
+
   canAccessUsagePage(user?: User) {
     return capabilities.usage && Boolean(user?.canCall("getUsage"));
   }
@@ -551,6 +559,9 @@ class Router {
     if (path === Path.executorsPath && !this.canAccessExecutorsPage(user)) {
       return new URL(Path.home, window.location.href);
     }
+    if (path === Path.cacheProxiesPath && !this.canAccessCacheProxiesPage(user)) {
+      return new URL(Path.home, window.location.href);
+    }
     if (path === Path.workflowsPath && !this.canAccessWorkflowsPage()) {
       return new URL(Path.home, window.location.href);
     }
@@ -640,6 +651,7 @@ export class Path {
   static usageAlertingPath = "/usage/alerting";
   static auditLogsPath = "/audit-logs/";
   static executorsPath = "/executors/";
+  static cacheProxiesPath = "/cache-proxies/";
   static tapPath = "/tests/";
   static workflowsPath = "/workflows/";
   static codePath = "/code/";
@@ -676,6 +688,7 @@ function getUnavailableMessage(matchedPath: string) {
     case Path.trendsPath:
     case Path.targetsPath:
     case Path.executorsPath:
+    case Path.cacheProxiesPath:
     case Path.tapPath:
     case Path.userHistoryPath:
     case Path.hostHistoryPath:

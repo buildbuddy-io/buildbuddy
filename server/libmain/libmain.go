@@ -104,6 +104,7 @@ var (
 		"/usage/",
 		"/workflows/",
 		"/executors/",
+		"/cache-proxies/",
 		"/code/",
 		"/search/",
 		"/audit-logs/",

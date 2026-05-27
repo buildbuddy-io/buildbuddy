@@ -44,6 +44,7 @@ export class Capabilities {
   action: boolean = false;
   userOwnedExecutors: boolean = false;
   executorKeyCreation: boolean = false;
+  cacheProxyKeyCreation: boolean = false;
   code: boolean = false;
   sso: boolean = false;
   usage: boolean = false;
@@ -72,6 +73,7 @@ export class Capabilities {
     this.executors = this.config.remoteExecutionEnabled;
     this.userOwnedExecutors = this.config.userOwnedExecutorsEnabled;
     this.executorKeyCreation = this.config.executorKeyCreationEnabled;
+    this.cacheProxyKeyCreation = this.config.cacheProxyKeyCreationEnabled;
     this.code = this.config.codeEditorEnabled;
     this.usage = this.config.usageEnabled;
     this.readOnlyGitHubApp = this.config.readOnlyGithubAppEnabled;

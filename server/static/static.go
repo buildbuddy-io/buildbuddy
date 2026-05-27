@@ -47,6 +47,7 @@ var (
 	expandedSuggestionsEnabled             = flag.Bool("app.expanded_suggestions_enabled", false, "If set, enable more build suggestions in the UI.")
 	enableWorkflows                        = flag.Bool("remote_execution.enable_workflows", false, "Whether to enable BuildBuddy workflows.")
 	enableExecutorKeyCreation              = flag.Bool("remote_execution.enable_executor_key_creation", false, "If enabled, UI will allow executor keys to be created.")
+	enableCacheProxyKeyCreation            = flag.Bool("cache_proxy.enable_cache_proxy_key_creation", false, "If enabled, UI will allow cache proxy keys to be created.")
 	testOutputManifestsEnabled             = flag.Bool("app.test_output_manifests_enabled", true, "If set, the target page will render the contents of test output zips.")
 	patternFilterEnabled                   = flag.Bool("app.pattern_filter_enabled", true, "If set, allow filtering by pattern in the client.")
 	executionSearchEnabled                 = flag.Bool("app.execution_search_enabled", true, "If set, fetch lists of executions from the OLAP DB in the trends UI.")
@@ -186,6 +187,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		TestDashboardEnabled:                   target_tracker.TargetTrackingEnabled(),
 		UserOwnedExecutorsEnabled:              remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
 		ExecutorKeyCreationEnabled:             remote_execution_config.RemoteExecutionEnabled() && *enableExecutorKeyCreation,
+		CacheProxyKeyCreationEnabled:           *enableCacheProxyKeyCreation,
 		WorkflowsEnabled:                       remote_execution_config.RemoteExecutionEnabled() && *enableWorkflows,
 		CodeEditorEnabled:                      *features.CodeEditorEnabled || *features.CodeEditorV2Enabled,
 		RemoteExecutionEnabled:                 remote_execution_config.RemoteExecutionEnabled(),
