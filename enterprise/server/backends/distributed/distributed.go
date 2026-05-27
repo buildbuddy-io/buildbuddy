@@ -40,7 +40,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 
-	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gstatus "google.golang.org/grpc/status"
@@ -99,12 +98,8 @@ type lookasideCacheEntry struct {
 }
 
 func (o *hintedHandoffOrder) String() string {
-	hash := o.r.GetDigest().GetHash()
-	isolation := &dcpb.Isolation{
-		CacheType:          o.r.GetCacheType(),
-		RemoteInstanceName: o.r.GetInstanceName(),
-	}
-	return fmt.Sprintf("{digest:%q isolation:{%s}}", hash, isolation)
+	return fmt.Sprintf("{digest:%q cache_type:%s remote_instance_name:%q}",
+		o.r.GetDigest().GetHash(), o.r.GetCacheType(), o.r.GetInstanceName())
 }
 
 // TODO(go/b/6456): use memory cache instead of LRU for lookaside cache
@@ -840,7 +835,7 @@ func (c *Cache) remoteMetadata(ctx context.Context, peer string, r *rspb.Resourc
 	return c.distributedProxy.RemoteMetadata(ctx, peer, r)
 }
 
-func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, rns []*rspb.ResourceName) ([]*repb.Digest, error) {
+func (c *Cache) remoteFindMissing(ctx context.Context, peer string, rns []*rspb.ResourceName) ([]*repb.Digest, error) {
 	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
 		return c.local.FindMissing(ctx, rns)
 	}
@@ -856,10 +851,10 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *d
 	if len(stillMissing) == 0 {
 		return nil, nil
 	}
-	return c.distributedProxy.RemoteFindMissing(ctx, peer, isolation, stillMissing)
+	return c.distributedProxy.RemoteFindMissing(ctx, peer, stillMissing)
 }
 
-func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, rns []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+func (c *Cache) remoteGetMulti(ctx context.Context, peer string, rns []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
 		return c.local.GetMulti(ctx, rns)
 	}
@@ -877,7 +872,7 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 		return results, nil
 	}
 
-	remoteResults, err := c.distributedProxy.RemoteGetMulti(ctx, peer, isolation, stillMissing)
+	remoteResults, err := c.distributedProxy.RemoteGetMulti(ctx, peer, stillMissing)
 	if err != nil {
 		return nil, err
 	}
@@ -1175,8 +1170,7 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces
 }
 
 func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
-	isolation := getIsolation(resources)
-	if isolation == nil {
+	if len(resources) == 0 {
 		return nil, nil
 	}
 
@@ -1235,7 +1229,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 			peer := peer
 			resources := resources
 			eg.Go(func() error {
-				peerRsp, err := c.remoteFindMissing(gCtx, peer, isolation, resources)
+				peerRsp, err := c.remoteFindMissing(gCtx, peer, resources)
 				peerMissingHashes := make(map[string]struct{})
 				for _, d := range peerRsp {
 					peerMissingHashes[d.GetHash()] = struct{}{}
@@ -1307,17 +1301,6 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	return missing, nil
 }
 
-// Returns the isolation from the first resource name, assuming that all resources have the same isolation
-func getIsolation(resources []*rspb.ResourceName) *dcpb.Isolation {
-	if len(resources) == 0 {
-		return nil
-	}
-	return &dcpb.Isolation{
-		CacheType:          resources[0].GetCacheType(),
-		RemoteInstanceName: resources[0].GetInstanceName(),
-	}
-}
-
 // The first reader with a non-empty value will be returned. If all potential
 // peers for the digest are exhausted, then return a NotFoundError.
 //
@@ -1381,8 +1364,7 @@ func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) 
 }
 
 func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
-	isolation := getIsolation(resources)
-	if isolation == nil {
+	if len(resources) == 0 {
 		return nil, nil
 	}
 
@@ -1428,7 +1410,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 			peer := peer
 			resources := resources
 			eg.Go(func() error {
-				peerRsp, err := c.remoteGetMulti(gCtx, peer, isolation, resources)
+				peerRsp, err := c.remoteGetMulti(gCtx, peer, resources)
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
