@@ -374,6 +374,12 @@ func (w *Writer) CompactDeletes() error {
 	}
 	defer iter.Close()
 
+	// Snapshot the deleted IDs once so we can walk them per posting list
+	// without re-decoding. Calling pl.Remove(id) preserves the term frequency
+	// for surviving docs (BuilderList.Remove does not support a TF-preserving
+	// AndNot against arbitrary ReadOnlyLists; it's only this one call site).
+	deletedIDs := delPl.ToArray()
+
 	changeCount := 0
 	delCount := 0
 	for iter.First(); iter.Valid(); iter.Next() {
@@ -382,7 +388,9 @@ func (w *Writer) CompactDeletes() error {
 			return err
 		}
 		beforeCard := pl.GetCardinality()
-		pl.AndNot(delPl)
+		for _, id := range deletedIDs {
+			pl.Remove(id)
+		}
 
 		if pl.GetCardinality() == 0 {
 			w.batch.Delete(iter.Key(), nil)
@@ -491,7 +499,7 @@ func (w *Writer) AddDocument(doc types.Document) error {
 			}
 		}
 
-		tokenizer.ForEachTermFrequency(func(ngram string, frequency uint32) {
+		tokenizer.IterateTermFrequencies(func(ngram string, frequency uint32) {
 			t := profiler.Now()
 			if _, ok := postingLists[ngram]; !ok {
 				postingLists[ngram] = posting.NewBuilderList()

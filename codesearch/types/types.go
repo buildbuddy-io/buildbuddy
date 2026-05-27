@@ -76,7 +76,7 @@ type Tokenizer interface {
 	Type() FieldType
 	Ngram() []byte
 	NgramString() string
-	ForEachTermFrequency(func(ngram string, frequency uint32))
+	IterateTermFrequencies(func(ngram string, frequency uint32))
 	TermFrequencyStats() TermFrequencyStats
 }
 
@@ -86,12 +86,14 @@ type Tokenizer interface {
 const NumTFLog2Buckets = 33
 
 type TermFrequencyStats struct {
-	Occurrences            int64
-	UniquePostings         int64
-	DuplicateOccurrences   int64
-	DuplicatePostings      int64
-	ExceptionBytesEstimate int64
-	CountBytesEstimate     int64
+	Occurrences          int64
+	UniquePostings       int64
+	DuplicateOccurrences int64
+	DuplicatePostings    int64
+	// RLEBytesEstimate is the on-disk cost of the frequency tail when written
+	// in the run-length-encoded form used by the posting list serializer
+	// (sum of uvarint(runlen)+uvarint(value) per run).
+	RLEBytesEstimate int64
 	// CountsByLog2Bucket[i] is the number of postings whose term frequency
 	// falls in (2^(i-1), 2^i], with bucket 0 reserved for tf == 1. Compute
 	// the index with bits.Len(uint(tf - 1)).

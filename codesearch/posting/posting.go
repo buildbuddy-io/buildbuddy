@@ -9,12 +9,25 @@ import (
 	"github.com/RoaringBitmap/roaring/roaring64"
 )
 
-var countedListMagic = []byte{'C', 'S', 'T', 'F', 3}
-
-const (
-	countedListEncodingDense  byte = 1
-	countedListEncodingBitset byte = 2
-)
+// countedListMagic is the prefix that identifies a posting list whose
+// serialized bytes carry per-doc term frequencies in addition to the doc IDs.
+// "CSTF" stands for CodeSearch Term Frequency; the trailing byte is the format
+// version. Roaring bitmaps begin with their own cookie (0x3B30 / 0x3B31), so
+// this 5-byte sequence cannot be mistaken for a plain roaring payload.
+//
+// Layout (uvarint is encoding/binary.Uvarint):
+//
+//	magic      [5]byte             // {'C','S','T','F', version}
+//	roaringLen uvarint             // length of the roaring payload that follows
+//	roaring    [roaringLen]byte    // roaring64 serialization of the doc-ID set
+//	tail                           // RLE-encoded per-doc frequencies
+//
+// Frequency tail is run-length-encoded as (runlen, value) uvarint pairs in
+// the order the roaring iterator emits doc IDs. Decode loop sums runs until
+// the bitmap's cardinality is consumed. Chosen because real ngram TFs are
+// dominated by long runs of TF=1 punctuated by sparse outliers, which this
+// encoding compresses to a handful of bytes per list.
+var countedListMagic = []byte{'C', 'S', 'T', 'F', 4}
 
 // A ReadOnlyList is a read-only interface for a posting list. This interface exists to support
 // low/no-allocation reads of posting lists that are read from a pebble DB - a roaring.Bitmap
@@ -69,10 +82,6 @@ type countedReadOnlyList struct {
 	serialized []byte
 }
 
-type frequencyIterator interface {
-	forEachFrequency(func(id uint64, freq uint32))
-}
-
 func (w *roaringWrapper) Or(l ReadOnlyList) {
 	w.Bitmap.Or(readOnlyListToRoaring(l))
 }
@@ -113,20 +122,6 @@ func (w *countedReadOnlyList) Frequency(id uint64) uint32 {
 		return w.freqs[idx]
 	}
 	return 1
-}
-
-func (w *countedReadOnlyList) forEachFrequency(fn func(id uint64, freq uint32)) {
-	it := w.bm.Iterator()
-	idx := 0
-	for it.HasNext() {
-		id := it.Next()
-		freq := uint32(1)
-		if idx < len(w.freqs) {
-			freq = w.freqs[idx]
-		}
-		fn(id, freq)
-		idx++
-	}
 }
 
 func (w *countedReadOnlyList) GetSerializedSizeInBytes() uint64 {
@@ -217,18 +212,6 @@ func (l *BuilderList) AddWithFrequency(id uint64, freq uint32) {
 	l.count++
 }
 
-func (l *BuilderList) SetLastFrequency(id uint64, freq uint32) {
-	if freq == 0 || l.count == 0 || l.last != id {
-		return
-	}
-	l.serialized = nil
-	if l.count == 1 {
-		l.firstFreq = freq
-		return
-	}
-	l.freqs[len(l.freqs)-1] = freq
-}
-
 func (l *BuilderList) addFrequencyAt(idx int, freq uint32) {
 	if freq == 0 {
 		return
@@ -239,18 +222,6 @@ func (l *BuilderList) addFrequencyAt(idx int, freq uint32) {
 		return
 	}
 	l.freqs[idx] += freq
-}
-
-func (l *BuilderList) forEachFrequency(fn func(id uint64, freq uint32)) {
-	switch l.count {
-	case 0:
-	case 1:
-		fn(l.first, l.firstFreq)
-	default:
-		for i, id := range l.ids {
-			fn(id, l.freqs[i])
-		}
-	}
 }
 
 func (l *BuilderList) idAt(i int) uint64 {
@@ -338,63 +309,6 @@ func (l *BuilderList) orBuilder(other *BuilderList) {
 	l.setFromSortedSlices(ids, freqs)
 }
 
-func (l *BuilderList) andBuilder(other *BuilderList) {
-	if l.count == 0 || other.count == 0 {
-		l.Clear()
-		return
-	}
-
-	ids := make([]uint64, 0, min(l.count, other.count))
-	freqs := make([]uint32, 0, min(l.count, other.count))
-	i, j := 0, 0
-	for i < l.count && j < other.count {
-		leftID := l.idAt(i)
-		rightID := other.idAt(j)
-		switch {
-		case leftID < rightID:
-			i++
-		case rightID < leftID:
-			j++
-		default:
-			ids = append(ids, leftID)
-			freqs = append(freqs, l.frequencyAt(i))
-			i++
-			j++
-		}
-	}
-	l.setFromSortedSlices(ids, freqs)
-}
-
-func (l *BuilderList) andNotBuilder(other *BuilderList) {
-	if l.count == 0 || other.count == 0 {
-		return
-	}
-
-	ids := make([]uint64, 0, l.count)
-	freqs := make([]uint32, 0, l.count)
-	i, j := 0, 0
-	for i < l.count && j < other.count {
-		leftID := l.idAt(i)
-		rightID := other.idAt(j)
-		switch {
-		case leftID < rightID:
-			ids = append(ids, leftID)
-			freqs = append(freqs, l.frequencyAt(i))
-			i++
-		case rightID < leftID:
-			j++
-		default:
-			i++
-			j++
-		}
-	}
-	for ; i < l.count; i++ {
-		ids = append(ids, l.idAt(i))
-		freqs = append(freqs, l.frequencyAt(i))
-	}
-	l.setFromSortedSlices(ids, freqs)
-}
-
 func (l *BuilderList) Remove(id uint64) {
 	freqs := l.toFrequencyMap()
 	delete(freqs, id)
@@ -411,19 +325,16 @@ func (l *BuilderList) Clear() {
 	l.serialized = nil
 }
 
+// Or merges other into l, summing frequencies for shared doc IDs. The hot
+// path — the pebble value merger — always passes another *BuilderList here,
+// so that case is open-coded. Other input types fall through to a generic
+// (slower) path that iterates other via the ReadOnlyList interface.
 func (l *BuilderList) Or(other ReadOnlyList) {
 	if other, ok := other.(*BuilderList); ok {
 		l.orBuilder(other)
 		return
 	}
 	freqs := l.toFrequencyMap()
-	if other, ok := other.(frequencyIterator); ok {
-		other.forEachFrequency(func(id uint64, freq uint32) {
-			freqs[id] += freq
-		})
-		l.setFromFrequencyMap(freqs)
-		return
-	}
 	it := other.Iterator()
 	for it.HasNext() {
 		id := it.Next()
@@ -432,11 +343,9 @@ func (l *BuilderList) Or(other ReadOnlyList) {
 	l.setFromFrequencyMap(freqs)
 }
 
+// And intersects l with other, keeping l's frequencies for surviving doc IDs.
+// Not exercised on any production hot path; correctness over speed.
 func (l *BuilderList) And(other ReadOnlyList) {
-	if other, ok := other.(*BuilderList); ok {
-		l.andBuilder(other)
-		return
-	}
 	freqs := l.toFrequencyMap()
 	for id := range freqs {
 		if other.Frequency(id) == 0 {
@@ -446,11 +355,10 @@ func (l *BuilderList) And(other ReadOnlyList) {
 	l.setFromFrequencyMap(freqs)
 }
 
+// AndNot removes any doc IDs in other from l, keeping l's frequencies for
+// surviving doc IDs. Not exercised on any production hot path; CompactDeletes
+// uses a Remove loop instead.
 func (l *BuilderList) AndNot(other ReadOnlyList) {
-	if other, ok := other.(*BuilderList); ok {
-		l.andNotBuilder(other)
-		return
-	}
 	freqs := l.toFrequencyMap()
 	for id := range freqs {
 		if other.Frequency(id) != 0 {
@@ -543,46 +451,24 @@ func (l *BuilderList) ensureSerialized() error {
 		l.serialized = roaringBuf
 		return nil
 	}
-
-	denseCountBytes, bitsetCountBytes := l.countEncodingSizes()
-	if denseCountBytes <= bitsetCountBytes {
-		l.serialized = l.marshalDenseCounts(roaringBuf, denseCountBytes)
-		return nil
-	}
-	l.serialized = l.marshalBitsetCounts(roaringBuf, bitsetCountBytes)
+	l.serialized = l.marshalRLECounts(roaringBuf, l.rleCountSize())
 	return nil
 }
 
-func (l *BuilderList) marshalDenseCounts(roaringBuf []byte, countBytes int) []byte {
-	buf := make([]byte, 0, len(countedListMagic)+1+binary.MaxVarintLen64+len(roaringBuf)+countBytes)
+func (l *BuilderList) marshalRLECounts(roaringBuf []byte, countBytes int) []byte {
+	buf := make([]byte, 0, len(countedListMagic)+binary.MaxVarintLen64+len(roaringBuf)+countBytes)
 	buf = append(buf, countedListMagic...)
-	buf = append(buf, countedListEncodingDense)
 	buf = binary.AppendUvarint(buf, uint64(len(roaringBuf)))
 	buf = append(buf, roaringBuf...)
-	for i := 0; i < l.count; i++ {
-		buf = binary.AppendUvarint(buf, uint64(l.frequencyAt(i)))
-	}
-	return buf
-}
-
-func (l *BuilderList) marshalBitsetCounts(roaringBuf []byte, countBytes int) []byte {
-	bitsetLength := (l.count + 7) / 8
-	buf := make([]byte, 0, len(countedListMagic)+1+binary.MaxVarintLen64+len(roaringBuf)+countBytes)
-	buf = append(buf, countedListMagic...)
-	buf = append(buf, countedListEncodingBitset)
-	buf = binary.AppendUvarint(buf, uint64(len(roaringBuf)))
-	buf = append(buf, roaringBuf...)
-	bitsetOffset := len(buf)
-	for i := 0; i < bitsetLength; i++ {
-		buf = append(buf, 0)
-	}
-	for i := 0; i < l.count; i++ {
-		freq := l.frequencyAt(i)
-		if freq == 1 {
-			continue
+	for i := 0; i < l.count; {
+		v := l.frequencyAt(i)
+		j := i + 1
+		for j < l.count && l.frequencyAt(j) == v {
+			j++
 		}
-		buf[bitsetOffset+i/8] |= 1 << uint(i%8)
-		buf = binary.AppendUvarint(buf, uint64(freq-1))
+		buf = binary.AppendUvarint(buf, uint64(j-i))
+		buf = binary.AppendUvarint(buf, uint64(v))
+		i = j
 	}
 	return buf
 }
@@ -603,18 +489,25 @@ func (l *BuilderList) hasNonOneFrequency() bool {
 	}
 }
 
-func (l *BuilderList) countEncodingSizes() (denseBytes, bitsetBytes int) {
-	bitsetBytes = (l.count + 7) / 8
-	for i := 0; i < l.count; i++ {
-		freq := l.frequencyAt(i)
-		denseBytes += uvarintLen64(uint64(freq))
-		if freq != 1 {
-			bitsetBytes += uvarintLen64(uint64(freq - 1))
+// rleCountSize returns the byte length of the RLE-encoded frequency tail that
+// marshalRLECounts would produce. Used to pre-size the output buffer.
+func (l *BuilderList) rleCountSize() int {
+	n := 0
+	for i := 0; i < l.count; {
+		v := l.frequencyAt(i)
+		j := i + 1
+		for j < l.count && l.frequencyAt(j) == v {
+			j++
 		}
+		n += uvarintLen64(uint64(j-i)) + uvarintLen64(uint64(v))
+		i = j
 	}
-	return denseBytes, bitsetBytes
+	return n
 }
 
+// uvarintLen64 returns the number of bytes that binary.PutUvarint would write
+// for v, without actually allocating a buffer. Used to size the frequency
+// payload before allocating, and to estimate on-disk cost for profiling.
 func uvarintLen64(v uint64) int {
 	n := 1
 	for v >= 0x80 {
@@ -763,20 +656,45 @@ func unmarshalCountedReadOnly(buf []byte) (*countedReadOnlyList, error) {
 	if !bytes.HasPrefix(buf, countedListMagic) {
 		return nil, fmt.Errorf("unknown counted posting list format")
 	}
-	rest := buf[len(countedListMagic):]
-	if len(rest) == 0 {
-		return nil, fmt.Errorf("missing counted posting list encoding")
+	pl, countBuf, err := unmarshalCountedRoaring(buf[len(countedListMagic):])
+	if err != nil {
+		return nil, err
 	}
-	encoding := rest[0]
-	rest = rest[1:]
-	switch encoding {
-	case countedListEncodingDense:
-		return unmarshalDenseCountedReadOnly(buf, rest)
-	case countedListEncodingBitset:
-		return unmarshalBitsetCountedReadOnly(buf, rest)
-	default:
-		return nil, fmt.Errorf("unknown counted posting list encoding %d", encoding)
+	cardinality := pl.GetCardinality()
+	if cardinality > uint64(int(^uint(0)>>1)) {
+		return nil, fmt.Errorf("counted posting list cardinality %d overflows int", cardinality)
 	}
+	freqs := make([]uint32, 0, int(cardinality))
+	for len(countBuf) > 0 {
+		runlen, n := binary.Uvarint(countBuf)
+		if n <= 0 || runlen == 0 {
+			return nil, fmt.Errorf("invalid counted posting list run length")
+		}
+		countBuf = countBuf[n:]
+		value, n := binary.Uvarint(countBuf)
+		if n <= 0 {
+			return nil, fmt.Errorf("invalid counted posting list frequency")
+		}
+		if value > uint64(^uint32(0)) {
+			return nil, fmt.Errorf("posting list frequency %d overflows uint32", value)
+		}
+		countBuf = countBuf[n:]
+		if uint64(len(freqs))+runlen > cardinality {
+			return nil, fmt.Errorf("counted posting list runs total %d exceed cardinality %d", uint64(len(freqs))+runlen, cardinality)
+		}
+		freq := uint32(value)
+		for i := uint64(0); i < runlen; i++ {
+			freqs = append(freqs, freq)
+		}
+	}
+	if uint64(len(freqs)) != cardinality {
+		return nil, fmt.Errorf("decoded %d frequencies for posting list with cardinality %d", len(freqs), cardinality)
+	}
+	return &countedReadOnlyList{
+		bm:         pl,
+		freqs:      freqs,
+		serialized: buf,
+	}, nil
 }
 
 func unmarshalCountedRoaring(rest []byte) (*roaring64.Bitmap, []byte, error) {
@@ -800,84 +718,6 @@ func unmarshalCountedRoaring(rest []byte) (*roaring64.Bitmap, []byte, error) {
 		return nil, nil, fmt.Errorf("read only %d bytes of roaring buffer with size %d", read, len(roaringBuf))
 	}
 	return pl, rest, nil
-}
-
-func unmarshalDenseCountedReadOnly(serialized, rest []byte) (*countedReadOnlyList, error) {
-	pl, countBuf, err := unmarshalCountedRoaring(rest)
-	if err != nil {
-		return nil, err
-	}
-
-	cardinality := pl.GetCardinality()
-	if cardinality > uint64(int(^uint(0)>>1)) {
-		return nil, fmt.Errorf("counted posting list cardinality %d overflows int", cardinality)
-	}
-	freqs := make([]uint32, 0, int(cardinality))
-	for len(countBuf) > 0 {
-		freq, n := binary.Uvarint(countBuf)
-		if n <= 0 {
-			return nil, fmt.Errorf("invalid counted posting list frequency")
-		}
-		if freq > uint64(^uint32(0)) {
-			return nil, fmt.Errorf("posting list frequency %d overflows uint32", freq)
-		}
-		freqs = append(freqs, uint32(freq))
-		countBuf = countBuf[n:]
-	}
-	if uint64(len(freqs)) != cardinality {
-		return nil, fmt.Errorf("decoded %d frequencies for posting list with cardinality %d", len(freqs), cardinality)
-	}
-	return &countedReadOnlyList{
-		bm:         pl,
-		freqs:      freqs,
-		serialized: serialized,
-	}, nil
-}
-
-func unmarshalBitsetCountedReadOnly(serialized, rest []byte) (*countedReadOnlyList, error) {
-	pl, rest, err := unmarshalCountedRoaring(rest)
-	if err != nil {
-		return nil, err
-	}
-
-	cardinality := pl.GetCardinality()
-	if cardinality > uint64(int(^uint(0)>>1)) {
-		return nil, fmt.Errorf("counted posting list cardinality %d overflows int", cardinality)
-	}
-	bitsetLength := (int(cardinality) + 7) / 8
-	if len(rest) < bitsetLength {
-		return nil, fmt.Errorf("counted posting list frequency bitset length %d exceeds remaining buffer %d", bitsetLength, len(rest))
-	}
-	frequencyBitset := rest[:bitsetLength]
-	countBuf := rest[bitsetLength:]
-
-	freqs := make([]uint32, int(cardinality))
-	for i := range freqs {
-		freqs[i] = 1
-	}
-	for i := range freqs {
-		if frequencyBitset[i/8]&(1<<uint(i%8)) == 0 {
-			continue
-		}
-		duplicateCount, n := binary.Uvarint(countBuf)
-		if n <= 0 {
-			return nil, fmt.Errorf("invalid counted posting list frequency")
-		}
-		freq := duplicateCount + 1
-		if freq > uint64(^uint32(0)) {
-			return nil, fmt.Errorf("posting list frequency %d overflows uint32", freq)
-		}
-		freqs[i] = uint32(freq)
-		countBuf = countBuf[n:]
-	}
-	if len(countBuf) != 0 {
-		return nil, fmt.Errorf("counted posting list has %d trailing frequency bytes", len(countBuf))
-	}
-	return &countedReadOnlyList{
-		bm:         pl,
-		freqs:      freqs,
-		serialized: serialized,
-	}, nil
 }
 
 // A FieldMap is a collection of postingLists that are keyed by the field that

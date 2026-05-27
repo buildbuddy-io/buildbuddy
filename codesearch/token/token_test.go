@@ -100,11 +100,11 @@ func TestWhitespaceTokenizer(t *testing.T) {
 func TestWhitespaceTokenizerTermFrequencies(t *testing.T) {
 	tt := NewWhitespaceTokenizer()
 	// Duplicate tokens are deduped at Next() time; frequencies are recorded
-	// in the side-channel exposed by ForEachTermFrequency.
+	// in the side-channel exposed by IterateTermFrequencies.
 	assert.Equal(t, []string{"this", "that"}, tokenizeBuf("this this that", tt))
 
 	frequencies := make(map[string]uint32)
-	tt.ForEachTermFrequency(func(ngram string, frequency uint32) {
+	tt.IterateTermFrequencies(func(ngram string, frequency uint32) {
 		frequencies[ngram] = frequency
 	})
 
@@ -119,7 +119,7 @@ func TestTrigramTokenizerTermFrequencies(t *testing.T) {
 	assert.Equal(t, []string{"abc", "bc ", "c a", " ab"}, tokenizeBuf("abc abc", tt))
 
 	frequencies := make(map[string]uint32)
-	tt.ForEachTermFrequency(func(ngram string, frequency uint32) {
+	tt.IterateTermFrequencies(func(ngram string, frequency uint32) {
 		frequencies[ngram] = frequency
 	})
 
@@ -238,7 +238,7 @@ func TestSparseNgramTokenizerTermFrequencies(t *testing.T) {
 	assert.Contains(t, tokens, "abc")
 
 	frequencies := make(map[string]uint32)
-	tt.ForEachTermFrequency(func(ngram string, frequency uint32) {
+	tt.IterateTermFrequencies(func(ngram string, frequency uint32) {
 		frequencies[ngram] = frequency
 	})
 
@@ -261,7 +261,7 @@ func TestSparseNgramTokenizerTermFrequencyStats(t *testing.T) {
 	assert.Equal(t, int64(len(candidateCounts)), stats.UniquePostings)
 	assert.Greater(t, stats.DuplicateOccurrences, int64(0))
 	assert.Greater(t, stats.DuplicatePostings, int64(0))
-	assert.Greater(t, stats.CountBytesEstimate, int64(0))
+	assert.Greater(t, stats.RLEBytesEstimate, int64(0))
 }
 
 func mapKeys[V any](m map[string]V) []string {

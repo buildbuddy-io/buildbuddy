@@ -116,7 +116,7 @@ func (tt *TrigramTokenizer) Next() error {
 	}
 }
 
-func (tt *TrigramTokenizer) ForEachTermFrequency(fn func(ngram string, frequency uint32)) {
+func (tt *TrigramTokenizer) IterateTermFrequencies(fn func(ngram string, frequency uint32)) {
 	for i, trigram := range tt.trigrams.Dense() {
 		fn(string(trigramToBytes(trigram)), tt.freqs[i])
 	}
@@ -212,7 +212,7 @@ func (wt *WhitespaceTokenizer) Next() error {
 	}
 }
 
-func (wt *WhitespaceTokenizer) ForEachTermFrequency(fn func(ngram string, frequency uint32)) {
+func (wt *WhitespaceTokenizer) IterateTermFrequencies(fn func(ngram string, frequency uint32)) {
 	for ngram, freq := range wt.freqs {
 		fn(ngram, freq)
 	}
@@ -481,7 +481,7 @@ func (tt *SparseNgramTokenizer) NgramFrequency() uint32 {
 	return tt.ngramFreqs[idx]
 }
 
-func (tt *SparseNgramTokenizer) ForEachTermFrequency(fn func(ngram string, frequency uint32)) {
+func (tt *SparseNgramTokenizer) IterateTermFrequencies(fn func(ngram string, frequency uint32)) {
 	for i, ngram := range tt.allNgrams {
 		fn(ngram, tt.ngramFreqs[i])
 	}

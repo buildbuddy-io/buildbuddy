@@ -133,7 +133,9 @@ func TestBuilderListMarshal(t *testing.T) {
 	assert.Equal(t, []uint64{1, 2, 3, 4, 5, 4294967296, 4294967297}, pl3.ToArray())
 }
 
-func TestBuilderListMarshalDenseCounts(t *testing.T) {
+func TestBuilderListMarshalAlternatingFrequencies(t *testing.T) {
+	// Each doc is its own RLE run since adjacent TFs all differ. Also
+	// exercises a multi-byte uvarint value (129 needs 2 bytes).
 	pl := posting.NewBuilderList()
 	pl.AddWithFrequency(1, 2)
 	pl.AddWithFrequency(2, 1)
@@ -156,12 +158,14 @@ func TestBuilderListMarshalDenseCounts(t *testing.T) {
 	assert.Equal(t, uint32(129), pl3.Frequency(3))
 }
 
-func TestBuilderListMarshalBitsetCounts(t *testing.T) {
+func TestBuilderListMarshalLongRunWithOutlier(t *testing.T) {
+	// 15 docs with TF=1 followed by one doc with TF=4 — RLE compresses this
+	// to two (runlen, value) pairs: (15, 1) and (1, 4) = 4 varint bytes.
 	pl := posting.NewBuilderList()
-	for i := uint64(1); i <= 16; i++ {
+	for i := uint64(1); i <= 15; i++ {
 		pl.AddWithFrequency(i, 1)
 	}
-	pl.SetLastFrequency(16, 4)
+	pl.AddWithFrequency(16, 4)
 	buf, err := pl.Marshal()
 	require.NoError(t, err)
 

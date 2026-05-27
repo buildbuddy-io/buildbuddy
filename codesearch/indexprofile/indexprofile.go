@@ -66,8 +66,7 @@ const (
 	CounterTFUniquePostings       Counter = "tf_unique_postings"
 	CounterTFDuplicateOccurrences Counter = "tf_duplicate_occurrences"
 	CounterTFPostingsWithFreqGT1  Counter = "tf_postings_with_freq_gt_1"
-	CounterTFExceptionBytes       Counter = "tf_exception_bytes_estimate"
-	CounterTFCountBytes           Counter = "tf_count_bytes_estimate"
+	CounterTFRLEBytes             Counter = "tf_rle_bytes_estimate"
 )
 
 type phaseStats struct {
@@ -103,20 +102,32 @@ type postingListTopEntry struct {
 
 type TermFrequencyStats = types.TermFrequencyStats
 
+// TermFrequencyStatsFromFrequencies summarizes a per-posting frequency slice
+// in iteration order. freqs is expected to be in the order the posting list's
+// roaring iterator yields doc IDs — the same order used when serializing, so
+// that the RLE byte estimate matches what BuilderList.Marshal would write.
 func TermFrequencyStatsFromFrequencies(freqs []uint32) TermFrequencyStats {
 	stats := TermFrequencyStats{}
+	// Per-posting aggregates.
 	for _, freq := range freqs {
 		tf := uint64(freq)
 		stats.Occurrences += int64(tf)
 		stats.UniquePostings++
-		stats.CountBytesEstimate += int64(uvarintLen64(tf))
 		addTermFrequencyBucket(&stats, tf)
 		if freq > 1 {
-			duplicateCount := tf - 1
 			stats.DuplicatePostings++
-			stats.DuplicateOccurrences += int64(duplicateCount)
-			stats.ExceptionBytesEstimate += 1 + int64(uvarintLen64(duplicateCount))
+			stats.DuplicateOccurrences += int64(tf - 1)
 		}
+	}
+	// RLE byte estimate: walk runs of identical values.
+	for i := 0; i < len(freqs); {
+		v := freqs[i]
+		j := i + 1
+		for j < len(freqs) && freqs[j] == v {
+			j++
+		}
+		stats.RLEBytesEstimate += int64(uvarintLen64(uint64(j-i)) + uvarintLen64(uint64(v)))
+		i = j
 	}
 	return stats
 }
@@ -141,6 +152,9 @@ func tfLog2BucketLabel(i int) string {
 	return fmt.Sprintf("%d-%d", 1<<(i-1)+1, 1<<i)
 }
 
+// uvarintLen64 returns the number of bytes that binary.PutUvarint would write
+// for v, without actually allocating a buffer. Used here only to estimate the
+// on-disk byte cost of the term-frequency tail for profiling.
 func uvarintLen64(v uint64) int {
 	n := 1
 	for v >= 0x80 {
@@ -343,8 +357,7 @@ func (p *Profiler) RecordTermFrequencyStats(field string, stats TermFrequencySta
 	current.UniquePostings += stats.UniquePostings
 	current.DuplicateOccurrences += stats.DuplicateOccurrences
 	current.DuplicatePostings += stats.DuplicatePostings
-	current.ExceptionBytesEstimate += stats.ExceptionBytesEstimate
-	current.CountBytesEstimate += stats.CountBytesEstimate
+	current.RLEBytesEstimate += stats.RLEBytesEstimate
 	for i := range stats.CountsByLog2Bucket {
 		current.CountsByLog2Bucket[i] += stats.CountsByLog2Bucket[i]
 	}
@@ -354,8 +367,7 @@ func (p *Profiler) RecordTermFrequencyStats(field string, stats TermFrequencySta
 	p.counters[CounterTFUniquePostings] += stats.UniquePostings
 	p.counters[CounterTFDuplicateOccurrences] += stats.DuplicateOccurrences
 	p.counters[CounterTFPostingsWithFreqGT1] += stats.DuplicatePostings
-	p.counters[CounterTFExceptionBytes] += stats.ExceptionBytesEstimate
-	p.counters[CounterTFCountBytes] += stats.CountBytesEstimate
+	p.counters[CounterTFRLEBytes] += stats.RLEBytesEstimate
 }
 
 func addPostingListAggregate[K comparable](m map[K]postingListAggregate, key K, value postingListAggregate) {
@@ -488,8 +500,8 @@ func (p *Profiler) PrettyPrint() {
 			if s.UniquePostings > 0 {
 				duplicatePercent = 100 * float64(s.DuplicatePostings) / float64(s.UniquePostings)
 			}
-			log.Printf("  field=%-12q occurrences=%-12d unique_postings=%-12d duplicate_occurrences=%-12d postings_with_tf_gt_1=%-12d (%.2f%%) exception_bytes_estimate=%-12d count_bytes_estimate=%d",
-				row.field, s.Occurrences, s.UniquePostings, s.DuplicateOccurrences, s.DuplicatePostings, duplicatePercent, s.ExceptionBytesEstimate, s.CountBytesEstimate)
+			log.Printf("  field=%-12q occurrences=%-12d unique_postings=%-12d duplicate_occurrences=%-12d postings_with_tf_gt_1=%-12d (%.2f%%) rle_bytes_estimate=%d",
+				row.field, s.Occurrences, s.UniquePostings, s.DuplicateOccurrences, s.DuplicatePostings, duplicatePercent, s.RLEBytesEstimate)
 			var sb strings.Builder
 			sb.WriteString("    tf_buckets:")
 			for i, count := range s.CountsByLog2Bucket {
