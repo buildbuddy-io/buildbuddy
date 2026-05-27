@@ -19,7 +19,6 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_proxy_auth"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -36,6 +35,7 @@ import (
 )
 
 var (
+	apiKey    = flag.String("cache_proxy.api_key", "", "API Key used to authorize the cache proxy with the BuildBuddy app server.", flag.Secret)
 	appTarget = flag.String("cache_proxy.app_target", "", "Optional BuildBuddy app gRPC target the cache proxy registers itself with for the deployment view (e.g. grpcs://app.buildbuddy.io). Requires --cache_proxy.api_key. If unset, no registration is attempted.")
 )
 
@@ -58,7 +58,7 @@ var (
 
 func Register(env *real_environment.RealEnv) {
 	target := *appTarget
-	apiKey := cache_proxy_auth.APIKey()
+	apiKey := *apiKey
 	if target == "" || apiKey == "" {
 		if target == "" && apiKey == "" {
 			log.Debug("Skipping Cache Proxy registration because both --cache_proxy.app_target and --cache_proxy.api_key are unset")
