@@ -186,6 +186,7 @@ const STRING_TYPES: stat_filter.FilterType[] = [
   stat_filter.FilterType.BRANCH_FILTER_TYPE,
   stat_filter.FilterType.WORKER_FILTER_TYPE,
   stat_filter.FilterType.ROLE_FILTER_TYPE,
+  stat_filter.FilterType.INVOCATION_ID_FILTER_TYPE,
 ];
 
 const STRING_ARRAY_TYPES: stat_filter.FilterType[] = [stat_filter.FilterType.TAG_FILTER_TYPE];
@@ -228,6 +229,9 @@ function getType(stringRep: string): stat_filter.FilterType | undefined {
       return stat_filter.FilterType.EXECUTION_UPDATED_AT_USEC_FILTER_TYPE;
     case "tag":
       return stat_filter.FilterType.TAG_FILTER_TYPE;
+    case "inv_id":
+    case "invocation_id":
+      return stat_filter.FilterType.INVOCATION_ID_FILTER_TYPE;
   }
   return undefined;
 }
