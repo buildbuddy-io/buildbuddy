@@ -175,6 +175,12 @@ type readMetrics struct {
 }
 
 func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream) (readMetrics, error) {
+	if err := byte_stream_server.CheckReadPreconditions(req); err != nil {
+		return readMetrics{
+			cacheStatus: metrics.HitStatusLabel,
+			compressor:  "unknown",
+		}, err
+	}
 	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
 	if err != nil {
 		return readMetrics{

@@ -1397,6 +1397,43 @@ func TestReadChunked(t *testing.T) {
 	require.Equal(t, float64(len(originalData)), testutil.ToFloat64(metrics.ByteStreamProxiedReadBytes.With(proxiedReadHitLabels))-proxiedReadHitBytesBefore)
 }
 
+func TestReadChecksPreconditions(t *testing.T) {
+	s := &ByteStreamServerProxy{}
+	for _, tc := range []struct {
+		name    string
+		req     *bspb.ReadRequest
+		wantErr func(error) bool
+	}{
+		{
+			name:    "missing_resource_name",
+			req:     &bspb.ReadRequest{},
+			wantErr: status.IsInvalidArgumentError,
+		},
+		{
+			name: "negative_read_offset",
+			req: &bspb.ReadRequest{
+				ResourceName: "invalid-resource-name",
+				ReadOffset:   -1,
+			},
+			wantErr: status.IsOutOfRangeError,
+		},
+		{
+			name: "negative_read_limit",
+			req: &bspb.ReadRequest{
+				ResourceName: "invalid-resource-name",
+				ReadLimit:    -1,
+			},
+			wantErr: status.IsOutOfRangeError,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := s.read(context.Background(), tc.req, &meteredReadServerStream{})
+			require.Error(t, err)
+			require.True(t, tc.wantErr(err), "unexpected error: %s", err)
+		})
+	}
+}
+
 func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
 	// Setup environment.
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
