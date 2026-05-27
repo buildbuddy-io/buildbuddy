@@ -2380,6 +2380,226 @@ func TestReadThroughLocalCache(t *testing.T) {
 
 }
 
+func TestGetMultiReadThroughLocalCache(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:     1,
+		Nodes:                 []string{peer1, peer2, peer3},
+		DisableLocalLookup:    true,
+		ReadThroughLocalCache: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 1.
+	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+	allResources := make([]*rspb.ResourceName, 0)
+	for i := 0; i < 100; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
+			t.Fatal(err)
+		}
+		allResources = append(allResources, rn)
+	}
+
+	// Read everything via GetMulti once from each node so that the read-through
+	// caches get populated.
+	for _, distributedCache := range distributedCaches {
+		gotMap, err := distributedCache.GetMulti(ctx, allResources)
+		require.NoError(t, err)
+		require.Equal(t, len(allResources), len(gotMap))
+		for _, r := range allResources {
+			buf, ok := gotMap[r.GetDigest()]
+			assert.True(t, ok)
+			assert.Equal(t, r.GetDigest().GetSizeBytes(), int64(len(buf)))
+		}
+	}
+
+	opCountBefore := map[string]int{
+		peer1: len(memoryCache1.ops),
+		peer2: len(memoryCache2.ops),
+		peer3: len(memoryCache3.ops),
+	}
+
+	// Read everything again via GetMulti -- every resource should now be
+	// served directly from the local read-through cache, so each peer
+	// observes exactly one local op per call (the batched GetMulti).
+	for _, distributedCache := range distributedCaches {
+		gotMap, err := distributedCache.GetMulti(ctx, allResources)
+		require.NoError(t, err)
+		require.Equal(t, len(allResources), len(gotMap))
+		for _, r := range allResources {
+			buf, ok := gotMap[r.GetDigest()]
+			assert.True(t, ok)
+			assert.Equal(t, r.GetDigest().GetSizeBytes(), int64(len(buf)))
+		}
+	}
+	assert.Equal(t, opCountBefore[peer1]+len(allResources), len(memoryCache1.ops))
+	assert.Equal(t, opCountBefore[peer2]+len(allResources), len(memoryCache2.ops))
+	assert.Equal(t, opCountBefore[peer3]+len(allResources), len(memoryCache3.ops))
+}
+
+func TestGetMultiReadThroughLocalCacheSkipsMutableAC(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:     1,
+		Nodes:                 []string{peer1, peer2, peer3},
+		DisableLocalLookup:    true,
+		ReadThroughLocalCache: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 1.
+	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+	allResources := make([]*rspb.ResourceName, 0)
+	for i := 0; i < 100; i++ {
+		// Plain AC entries (not tree-cache) are mutable and must not be
+		// served from a read-through local cache.
+		rn, buf := testdigest.RandomACResourceBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
+			t.Fatal(err)
+		}
+		allResources = append(allResources, rn)
+	}
+
+	// Prime: read everything once from each node.
+	for _, distributedCache := range distributedCaches {
+		gotMap, err := distributedCache.GetMulti(ctx, allResources)
+		require.NoError(t, err)
+		require.Equal(t, len(allResources), len(gotMap))
+	}
+
+	opCountBefore := map[string]int{
+		peer1: len(memoryCache1.ops),
+		peer2: len(memoryCache2.ops),
+		peer3: len(memoryCache3.ops),
+	}
+
+	// Read again. Because these are mutable AC entries, they must not be
+	// served from the local read-through cache, and each node should see
+	// additional ops beyond the local batched read.
+	for _, distributedCache := range distributedCaches {
+		gotMap, err := distributedCache.GetMulti(ctx, allResources)
+		require.NoError(t, err)
+		require.Equal(t, len(allResources), len(gotMap))
+	}
+	assert.NotEqual(t, opCountBefore[peer1], len(memoryCache1.ops))
+	assert.NotEqual(t, opCountBefore[peer2], len(memoryCache2.ops))
+	assert.NotEqual(t, opCountBefore[peer3], len(memoryCache3.ops))
+}
+
+func TestGetMultiReadThroughLocalCacheWithLookaside(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:       1,
+		Nodes:                   []string{peer1, peer2, peer3},
+		DisableLocalLookup:      true,
+		ReadThroughLocalCache:   true,
+		LookasideCacheSizeBytes: 100_000,
+	}
+
+	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+	allResources := make([]*rspb.ResourceName, 0)
+	for i := 0; i < 100; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
+			t.Fatal(err)
+		}
+		allResources = append(allResources, rn)
+	}
+
+	// Prime: read everything once via GetMulti from each node. This populates
+	// both the lookaside cache and the local read-through cache.
+	for _, distributedCache := range distributedCaches {
+		gotMap, err := distributedCache.GetMulti(ctx, allResources)
+		require.NoError(t, err)
+		require.Equal(t, len(allResources), len(gotMap))
+	}
+
+	opCountBefore := map[string]int{
+		peer1: len(memoryCache1.ops),
+		peer2: len(memoryCache2.ops),
+		peer3: len(memoryCache3.ops),
+	}
+
+	// Subsequent GetMulti calls should be served entirely from the
+	// lookaside cache and not touch the local cache at all.
+	for _, distributedCache := range distributedCaches {
+		gotMap, err := distributedCache.GetMulti(ctx, allResources)
+		require.NoError(t, err)
+		require.Equal(t, len(allResources), len(gotMap))
+	}
+	assert.Equal(t, opCountBefore[peer1], len(memoryCache1.ops))
+	assert.Equal(t, opCountBefore[peer2], len(memoryCache2.ops))
+	assert.Equal(t, opCountBefore[peer3], len(memoryCache3.ops))
+}
+
 func newReadthroughPeerSelectionCache(t *testing.T) *Cache {
 	env, _, _ := getEnvAuthAndCtx(t)
 	nodes := []string{"b1", "b2", "b3", "a1", "a2", "a3"}

@@ -872,6 +872,37 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, rns []*rspb.Res
 		return results, nil
 	}
 
+	// Check the local read-through cache for any read-through-cacheable
+	// resources before going to a remote peer.
+	if c.localReadthroughEnabled() {
+		readthroughCheck := make([]*rspb.ResourceName, 0, len(stillMissing))
+		for _, r := range stillMissing {
+			if isLocalReadthroughCacheableResource(r) {
+				readthroughCheck = append(readthroughCheck, r)
+			}
+		}
+		if len(readthroughCheck) > 0 {
+			if localResults, err := c.local.GetMulti(ctx, readthroughCheck); err == nil {
+				notInLocal := stillMissing[:0]
+				for _, r := range stillMissing {
+					if buf, ok := localResults[r.GetDigest()]; ok && len(buf) > 0 {
+						results[r.GetDigest()] = buf
+						// Mirror remoteReader: a local read-through hit
+						// also populates the lookaside so subsequent
+						// lookups short-circuit without a local op.
+						c.addLookasideEntry(ctx, r, buf)
+					} else {
+						notInLocal = append(notInLocal, r)
+					}
+				}
+				stillMissing = notInLocal
+			}
+		}
+	}
+	if len(stillMissing) == 0 {
+		return results, nil
+	}
+
 	remoteResults, err := c.distributedProxy.RemoteGetMulti(ctx, peer, stillMissing)
 	if err != nil {
 		return nil, err
@@ -879,8 +910,14 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, rns []*rspb.Res
 
 	for _, r := range stillMissing {
 		buf, ok := remoteResults[r.GetDigest()]
-		if ok {
-			c.addLookasideEntry(ctx, r, buf)
+		if !ok {
+			continue
+		}
+		c.addLookasideEntry(ctx, r, buf)
+		if c.localReadthroughEnabled() && isLocalReadthroughCacheableResource(r) {
+			if err := c.local.Set(ctx, r, buf); err != nil {
+				c.log.CtxDebugf(ctx, "Error writing to local read-through cache: %s", err)
+			}
 		}
 	}
 	if len(results) == 0 {
