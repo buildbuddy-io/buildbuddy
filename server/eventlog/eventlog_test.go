@@ -173,6 +173,47 @@ func TestComplexScreenWriting(t *testing.T) {
 	}
 }
 
+func TestANSICursorBufferWriterCloseTrimsCursorControlBlankTail(t *testing.T) {
+	ctx := context.Background()
+	tailLog := &testLog{}
+	screen, err := terminal.NewScreenWriter(math.MaxInt, 4)
+	require.NoError(t, err)
+	w := eventlog.NewANSICursorBufferWriter(tailLog, screen)
+
+	_, err = w.Write(ctx, []byte("INFO: start\n"))
+	require.NoError(t, err)
+	_, err = w.Write(ctx, []byte("\x1b[1A\x1b[K\x1b[32mINFO:\x1b[m\n\n\n"))
+	require.NoError(t, err)
+	require.NoError(t, w.Close(ctx))
+
+	assert.Contains(t, tailLog.String(), "INFO:")
+	assert.False(
+		t,
+		strings.HasSuffix(tailLog.String(), "\n\n"),
+		"tail should not end with blank curses rows: %q",
+		tailLog.String(),
+	)
+}
+
+func TestANSICursorBufferWriterClosePreservesNonCursorBlankTail(t *testing.T) {
+	ctx := context.Background()
+	tailLog := &testLog{}
+	screen, err := terminal.NewScreenWriter(math.MaxInt, 4)
+	require.NoError(t, err)
+	w := eventlog.NewANSICursorBufferWriter(tailLog, screen)
+
+	_, err = w.Write(ctx, []byte("INFO: start\n\n\n"))
+	require.NoError(t, err)
+	require.NoError(t, w.Close(ctx))
+
+	assert.True(
+		t,
+		strings.HasSuffix(tailLog.String(), "\n\n"),
+		"non-cursor blank rows should be preserved: %q",
+		tailLog.String(),
+	)
+}
+
 // ansiDebugString replaces ANSI escape sequences with a string representation
 // that can be displayed as a diff without messing up the terminal.
 func ansiDebugString(s string) string {
