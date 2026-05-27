@@ -306,14 +306,19 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 		if ttl > 0 {
 			casRN := digest.NewCASResourceName(req.GetCachedActionResultDigest(), req.GetInstanceName(), req.GetDigestFunction()).ToProto()
 			casRNProto, marshalErr := proto.Marshal(casRN)
-			if marshalErr == nil {
+			if marshalErr != nil {
+				log.CtxInfof(ctx, "Error marshaling CAS resource name for AC entry refresh: %s", marshalErr)
+			} else {
 				refreshCtx, refreshCancel := background.ExtendContextForFinalization(ctx, 5*time.Second)
 				localKeyProto := localKey.ToProto()
 				go func() {
 					defer refreshCancel()
 					// Rewrite the AC pointer to refresh its mtime after the remote app
 					// confirmed the result is unchanged.
-					s.localCache.Set(refreshCtx, localKeyProto, casRNProto)
+					err := s.localCache.Set(refreshCtx, localKeyProto, casRNProto)
+					if err != nil {
+						log.CtxInfof(ctx, "Error setting AC entry during refresh: %s", err)
+					}
 				}()
 			}
 		}
