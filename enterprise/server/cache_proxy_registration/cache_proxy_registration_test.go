@@ -27,7 +27,7 @@ import (
 
 const (
 	testGroupID = "GR1"
-	apiKey      = "CP_KEY"
+	testAPIKey  = "CP_KEY"
 )
 
 // userWithCapabilities builds a claims.Claims (implementing
@@ -92,7 +92,7 @@ func TestStreamHeartbeats_RegistersProxy(t *testing.T) {
 	// the JWT field on its argument.
 	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
 	readerUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
-	registry, client := startTestRegistry(t, map[string]interfaces.UserInfo{apiKey: streamUser})
+	registry, client := startTestRegistry(t, map[string]interfaces.UserInfo{testAPIKey: streamUser})
 
 	node := &cppb.CacheProxyNode{
 		Host: "host-1", ProxyId: "proxy-1", OsFamily: "linux", Arch: "amd64", Version: "v1",
@@ -100,7 +100,7 @@ func TestStreamHeartbeats_RegistersProxy(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	streamCtx := outgoingCtx(ctx, apiKey)
+	streamCtx := outgoingCtx(ctx, testAPIKey)
 
 	// Run the stream loop in a goroutine; it returns once we cancel.
 	done := make(chan error, 1)

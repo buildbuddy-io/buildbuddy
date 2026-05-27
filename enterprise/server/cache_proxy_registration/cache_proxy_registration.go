@@ -57,12 +57,10 @@ var (
 )
 
 func Register(env *real_environment.RealEnv) {
-	target := *appTarget
-	apiKey := *apiKey
-	if target == "" || apiKey == "" {
-		if target == "" && apiKey == "" {
+	if *appTarget == "" || *apiKey == "" {
+		if *appTarget == "" && *apiKey == "" {
 			log.Debug("Skipping Cache Proxy registration because both --cache_proxy.app_target and --cache_proxy.api_key are unset")
-		} else if target == "" {
+		} else if *appTarget == "" {
 			log.Debug("Skipping Cache Proxy registration because --cache_proxy.app_target is unset")
 		} else {
 			log.Debug("Skipping Cache Proxy registration because --cache_proxy.api_key is unset")
@@ -92,7 +90,7 @@ func Register(env *real_environment.RealEnv) {
 		cancel()
 		return nil
 	})
-	go run(ctx, env, target, apiKey, node)
+	go run(ctx, env, *appTarget, *apiKey, node)
 }
 
 func run(ctx context.Context, env environment.Env, target, apiKey string, node *cppb.CacheProxyNode) {
