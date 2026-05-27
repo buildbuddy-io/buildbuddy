@@ -2,11 +2,22 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/changelog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2026-05-04T10:00:00.000Z</updated>
+    <updated>2026-05-27T10:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/changelog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Usage alerts]]></title>
+        <id>https://www.buildbuddy.io/changelog/usage-alerts</id>
+        <link href="https://www.buildbuddy.io/changelog/usage-alerts"/>
+        <updated>2026-05-27T10:00:00.000Z</updated>
+        <summary type="html"><![CDATA[You can now configure usage alerts for your BuildBuddy organization.]]></summary>
+        <author>
+            <name>Brandon Duffany</name>
+            <uri>https://www.linkedin.com/in/brandon-duffany-39b7217a</uri>
+        </author>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Auto-cancel duplicate CI runs on the same branch]]></title>
         <id>https://www.buildbuddy.io/changelog/workflow-auto-cancel</id>
