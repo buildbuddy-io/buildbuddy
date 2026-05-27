@@ -5,6 +5,8 @@
  * https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview#heading=h.yr4qxyxotyw
  */
 
+import { nextAnimationFrame } from "../util/async";
+
 /** Represents the profile data for an invocation. */
 export interface Profile {
   traceEvents: TraceEvent[];
@@ -121,7 +123,10 @@ async function isGzipCompressed(blob: Blob): Promise<boolean> {
   return header[0] === GZIP_MAGIC_BYTE_0 && header[1] === GZIP_MAGIC_BYTE_1;
 }
 
-export async function readProfileFile(file: Blob, progress?: (numBytesLoaded: number) => void): Promise<Profile> {
+export async function readProfileFile(
+  file: Blob,
+  progress?: (numBytesLoaded: number, done?: boolean) => void
+): Promise<Profile> {
   let stream = file.stream() as ReadableStream<Uint8Array>;
   if (await isGzipCompressed(file)) {
     if (typeof DecompressionStream === "undefined") {
@@ -134,7 +139,7 @@ export async function readProfileFile(file: Blob, progress?: (numBytesLoaded: nu
 
 export async function readProfile(
   body: ReadableStream<Uint8Array>,
-  progress?: (numBytesLoaded: number) => void
+  progress?: (numBytesLoaded: number, done?: boolean) => void
 ): Promise<Profile> {
   const reader = body.getReader();
   const decoder = new TextDecoder("utf-8");
@@ -170,6 +175,14 @@ export async function readProfile(
       buffer = consumeEvents(buffer, profile);
     }
   }
+  if (progress) {
+    progress(n, true);
+    // Allow drawing the final progress frame. Some heavy CPU work happens while
+    // finalizing the profile, so this helps the UI not appear "stuck" while
+    // this happens.
+    await nextAnimationFrame();
+  }
+
   // Consume last event, which isn't guaranteed to end with ",\n"
   if (buffer) {
     const { chars, suffix } = trailingNonWhitespaceChars(buffer, 2);

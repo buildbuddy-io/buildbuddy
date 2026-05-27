@@ -68,3 +68,17 @@ export class CancelablePromise<T = unknown> implements Promise<T> {
     if (this.parent) this.parent.cancel();
   }
 }
+
+/**
+ * Returns a promise that resolves after the browser has had a chance to paint
+ * the next frame. For non-browser environments, the returned promise resolves
+ * immediately.
+ */
+export function nextAnimationFrame(): Promise<void> {
+  if (typeof requestAnimationFrame === "undefined") return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    // RAF callbacks run before paint. Queue a timer from inside the callback so
+    // callers resume after the browser has had a chance to paint that frame.
+    requestAnimationFrame(() => setTimeout(resolve, 0));
+  });
+}

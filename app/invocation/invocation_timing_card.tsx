@@ -7,7 +7,7 @@ import LinkButton from "../components/button/link_button";
 import SetupCodeComponent from "../docs/setup_code";
 import errorService from "../errors/error_service";
 import format from "../format/format";
-import rpcService, { FileEncoding } from "../service/rpc_service";
+import rpcService, { CancelablePromise, FileEncoding } from "../service/rpc_service";
 import TimingProfileDropTarget from "../trace/timing_profile_drop_target";
 import { Profile, readProfile } from "../trace/trace_events";
 import TraceViewer from "../trace/trace_viewer";
@@ -76,6 +76,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
   };
 
   private progressRef = React.createRef<HTMLDivElement>();
+  private profileRPC?: CancelablePromise;
 
   componentDidMount() {
     this.fetchProfile();
@@ -83,8 +84,13 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
   componentDidUpdate(prevProps: Props) {
     if (this.props.model !== prevProps.model) {
+      this.cancelProfileLoad();
       this.setState(createEmptyProfileState(), () => this.fetchProfile());
     }
+  }
+
+  componentWillUnmount() {
+    this.cancelProfileLoad();
   }
 
   getProfileFile(): build_event_stream.File | undefined {
@@ -135,7 +141,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     return Boolean(this.getProfileFile()?.uri?.startsWith("bytestream://"));
   }
 
-  setProgress(bytesLoaded: number, digestSize: number, encoding: FileEncoding) {
+  setProgress(bytesLoaded: number, digestSize: number, encoding: FileEncoding, done = false) {
     const container = this.progressRef.current;
     if (!container) return;
 
@@ -144,7 +150,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       approxCompressionRatio = 11.3;
     }
 
-    const compressedBytesLoaded = Math.min(bytesLoaded / approxCompressionRatio, digestSize);
+    const compressedBytesLoaded = done ? digestSize : Math.min(bytesLoaded / approxCompressionRatio, digestSize);
     const progressPercent = 100 * Math.min(1, compressedBytesLoaded / digestSize);
 
     const spinner = container.querySelector(".loading") as HTMLElement;
@@ -153,13 +159,16 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     const progressContainer = container.querySelector(".timing-profile-progress")!;
     progressContainer.removeAttribute("hidden");
     const progressLabel = progressContainer.querySelector(".progress-label")!;
-    progressLabel.innerHTML = `Loading profile (${format.bytes(compressedBytesLoaded)} / ${format.bytes(digestSize)})`;
+    const label = done ? "Finalizing profile" : "Loading profile";
+    progressLabel.innerHTML = `${label} (${format.bytes(compressedBytesLoaded)} / ${format.bytes(digestSize)})`;
 
     const progressBarInner = progressContainer.querySelector(".progress-bar-inner") as HTMLElement;
     progressBarInner.style.width = `${progressPercent}%`;
   }
 
   fetchProfile(ignoreSizeLimit = false) {
+    this.cancelProfileLoad();
+
     if (!this.isTimingEnabled()) {
       this.setState({ loading: false });
     }
@@ -188,15 +197,23 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       // Set the stored encoding header to prevent the server from double-gzipping.
       headers: { "X-Stored-Encoding-Hint": storedEncoding },
     };
-    rpcService
+    this.profileRPC = rpcService
       .fetchBytestreamFile(profileFile.uri, this.props.model.getInvocationId(), "stream", { init })
       .then((response) => {
         if (!response.body) throw new Error("response body is null");
-        return readProfile(response.body, (n) => this.setProgress(n, digestSize, storedEncoding));
+        return readProfile(response.body, (n, done) => this.setProgress(n, digestSize, storedEncoding, done));
       })
       .then((profile) => this.updateProfile(profile))
       .catch((e) => errorService.handleError(e))
-      .finally(() => this.setState({ loading: false }));
+      .finally(() => {
+        this.profileRPC = undefined;
+        this.setState({ loading: false });
+      });
+  }
+
+  private cancelProfileLoad() {
+    this.profileRPC?.cancel();
+    this.profileRPC = undefined;
   }
 
   private buildDerivedProfileState(profile: Profile) {

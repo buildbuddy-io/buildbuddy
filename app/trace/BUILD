@@ -70,6 +70,7 @@ ts_library(
     srcs = ["trace_events.ts"],
     deps = [
         "//:node_modules/tslib",
+        "//app/util:async",
     ],
 )
 
