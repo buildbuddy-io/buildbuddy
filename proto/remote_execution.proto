@@ -3055,4 +3055,12 @@ message StoredExecution {
 
   // The IP address of the client that initiated the execution request.
   string client_ip = 79;
+
+  // OS that the execution targeted (e.g. "linux", "darwin"). Sourced from
+  // the OSFamily platform property.
+  string os = 81;
+
+  // CPU architecture that the execution targeted (e.g. "amd64", "arm64").
+  // Sourced from the Arch platform property.
+  string arch = 82;
 }

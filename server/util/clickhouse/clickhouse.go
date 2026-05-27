@@ -378,6 +378,8 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		ClientIP:                           in.GetClientIp(),
 		SelfHosted:                         in.GetSelfHosted(),
 		Region:                             in.GetRegion(),
+		OS:                                 in.GetOs(),
+		Arch:                               in.GetArch(),
 		Stage:                              in.GetStage(),
 		FileDownloadCount:                  in.GetFileDownloadCount(),
 		FileDownloadSizeBytes:              in.GetFileDownloadSizeBytes(),

@@ -452,6 +452,8 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.RequestedFreeDiskBytes = properties.EstimatedFreeDiskBytes
 				executionProto.RequestedPool = properties.Pool
 				executionProto.RecycleRunner = properties.RecycleRunner
+				executionProto.Os = properties.OS
+				executionProto.Arch = properties.Arch
 			}
 
 			schedulingMeta := auxMeta.GetSchedulingMetadata()
@@ -512,10 +514,15 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 	return dbErr
 }
 
-// flushExecutionToOLAP flushes execution data to Clickhouse.
-func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID string) error {
+// flushExecutionToOLAP flushes execution data to Clickhouse. Returns the
+// merged StoredExecution if and only if the execution was successfully flushed.
+// Because operation updates can be retried, this function may be called twice
+// for the same execution. The Redis invocation-link cleanup at the end of the
+// first successful call ensures the second call short-circuits and returns a
+// nil StoredExecution.
+func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID string) (*repb.StoredExecution, error) {
 	if !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
-		return nil
+		return nil, nil
 	}
 
 	// Always clean up invocationLinks and execution updates from the collector.
@@ -534,12 +541,12 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 
 	executionProto, err := s.executionCollector.GetInProgressExecution(ctx, executionID)
 	if err != nil {
-		return status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
+		return nil, status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
 	}
 
 	links, err := s.executionCollector.GetExecutionInvocationLinks(ctx, executionID)
 	if err != nil {
-		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
+		return nil, status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
 	for _, link := range links {
 		executionProto := executionProto.CloneVT()
@@ -571,7 +578,20 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 			}
 		}
 	}
-	return nil
+	return executionProto, nil
+}
+
+func (s *ExecutionServer) flushAndRecordUsage(ctx context.Context, taskID string) {
+	execution, err := s.flushExecutionToOLAP(ctx, taskID)
+	if err != nil {
+		log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
+	}
+	if execution != nil {
+		// TODO(vanja) should this be done when the executor got a cache hit?
+		if err := s.updateUsageFromStoredExecution(ctx, execution); err != nil {
+			log.CtxWarningf(ctx, "Failed to update usage for execution %q: %s", taskID, err)
+		}
+	}
 }
 
 // getUnvalidatedActionResult fetches an action result from the cache but does
@@ -1301,7 +1321,7 @@ func (s *ExecutionServer) recordFailedExecution(ctx context.Context, taskID stri
 	if err := s.updateExecution(ctx, taskID, repb.ExecutionStage_COMPLETED, executeRsp, auxMetadata, properties, action, cmd); err != nil {
 		return err
 	}
-	if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
+	if _, err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
 		log.CtxWarningf(ctx, "MarkExecutionFailed: failed to flush execution to clickhouse: %s", err)
 	}
 	return nil
@@ -1391,13 +1411,17 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	})
 	defer deletePendingExecutionOnce()
 
+	flushExecutionsOnEOF := false
+	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
+		flushExecutionsOnEOF = fp.Boolean(ctx, "remote_execution.flush_executions_after_cleanup", false)
+	}
+
 	for {
 		op, err := stream.Recv()
 		if err == io.EOF {
-			// TODO(Maggie): Flush execution data to DB when the stream is closed
-			//if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
-			//	log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
-			//}
+			if flushExecutionsOnEOF {
+				s.flushAndRecordUsage(ctx, taskID)
+			}
 			return stream.SendAndClose(&repb.PublishOperationResponse{})
 		}
 		if err != nil {
@@ -1469,7 +1493,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
 				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
 			}
-			if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties); err != nil {
+			if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties, flushExecutionsOnEOF); err != nil {
 				// Errors updating the router or recording usage are non-fatal.
 				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
 			}
@@ -1494,11 +1518,10 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
-				// TODO(Maggie): After receiving cleanup stats, update execution in OLAP again.
-				// TODO(Maggie): Flush execution data to DB when the stream is closed.
-				// Don't flush early here.
-				if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
-					log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
+				if !flushExecutionsOnEOF {
+					if _, err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
+						log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
+					}
 				}
 				return nil
 			}()
@@ -1568,7 +1591,12 @@ func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceN
 
 // markTaskComplete contains logic to be run when the task is complete but
 // before letting the client know that the task has completed.
-func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ACResourceName, executeResponse *repb.ExecuteResponse, action *repb.Action, cmd *repb.Command, properties *platform.Properties) error {
+//
+// When flushExecutionsOnEOF is false (the legacy path, experiment off),
+// usage is recorded here from the live ExecuteResponse + platform.Properties.
+// When true, usage is recorded later by flushAndRecordUsage from the merged
+// StoredExecution in Redis.
+func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ACResourceName, executeResponse *repb.ExecuteResponse, action *repb.Action, cmd *repb.Command, properties *platform.Properties, flushExecutionsOnEOF bool) error {
 	execErr := gstatus.ErrorProto(executeResponse.GetStatus())
 	router := s.env.GetTaskRouter()
 	if router != nil && !executeResponse.GetCachedResult() {
@@ -1593,9 +1621,11 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 		}
 	}
 
-	if err := s.updateUsage(ctx, executeResponse, properties); err != nil {
-		// TODO(vanja) should this be done when the executor got a cache hit?
-		log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", executeResponse, err)
+	if !flushExecutionsOnEOF {
+		if err := s.updateUsage(ctx, executeResponse, properties); err != nil {
+			// TODO(vanja) should this be done when the executor got a cache hit?
+			log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", executeResponse, err)
+		}
 	}
 
 	return nil
@@ -1630,6 +1660,47 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 	usg := executeResponse.GetResult().GetExecutionMetadata().GetUsageStats()
 	if !pool.IsSelfHosted && usg.GetCpuNanos() > 0 {
 		counts.CPUNanos = usg.GetCpuNanos()
+
+		// If quota is exceeded, the next execution will be blocked.
+		if qm := s.env.GetQuotaManager(); qm != nil {
+			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
+			if err := qm.Allow(ctx, namespace, counts.CPUNanos); err != nil {
+				log.CtxWarningf(ctx, "CPU time quota exhausted after execution: %s", err)
+			}
+		}
+	}
+	labels, err := usageutil.LabelsForUsageRecording(ctx, usageutil.ServerName())
+	if err != nil {
+		return status.WrapError(err, "compute usage labels")
+	}
+	return ut.Increment(ctx, labels, counts)
+}
+
+// updateUsageFromStoredExecution records usage counters from a merged
+// StoredExecution read out of Redis by flushExecutionToOLAP.
+func (s *ExecutionServer) updateUsageFromStoredExecution(ctx context.Context, execution *repb.StoredExecution) error {
+	ut := s.env.GetUsageTracker()
+	if ut == nil {
+		return nil
+	}
+	dur, err := executionDurationFromStored(execution)
+	if err != nil {
+		// If the task encountered an error, it's somewhat expected that the
+		// execution duration will be unset, so don't return an error. For
+		// example, we may have failed to pull the image, so execution could not
+		// even begin. Note that an error doesn't necessarily imply a missing
+		// exec duration though; we may get a DeadlineExceeded error if the task
+		// times out, but still get an exec duration.
+		if execution.GetStatusCode() != 0 {
+			return nil
+		}
+		return err
+	}
+
+	counts := &tables.UsageCounts{}
+	setExecutionDurationFromStored(counts, dur, execution)
+	if !execution.GetSelfHosted() && execution.GetCpuNanos() > 0 {
+		counts.CPUNanos = execution.GetCpuNanos()
 
 		// If quota is exceeded, the next execution will be blocked.
 		if qm := s.env.GetQuotaManager(); qm != nil {
@@ -1750,6 +1821,38 @@ func setExecutionDuration(counts *tables.UsageCounts, duration time.Duration, po
 		if props.OS == platform.LinuxOperatingSystemName {
 			counts.LinuxExecutionDurationUsec += duration.Microseconds()
 		} else if props.OS == platform.DarwinOperatingSystemName {
+			counts.MacExecutionDurationUsec += duration.Microseconds()
+		}
+	}
+}
+
+func executionDurationFromStored(execution *repb.StoredExecution) (time.Duration, error) {
+	startUsec := execution.GetWorkerStartTimestampUsec()
+	endUsec := execution.GetWorkerCompletedTimestampUsec()
+	if startUsec == 0 || endUsec == 0 {
+		return 0, status.InternalErrorf("Execution worker timestamps not set")
+	}
+	dur := time.UnixMicro(endUsec).Sub(time.UnixMicro(startUsec))
+	if dur <= 0 {
+		return 0, status.InternalErrorf("Execution duration is <= 0")
+	}
+	return dur, nil
+}
+
+func setExecutionDurationFromStored(counts *tables.UsageCounts, duration time.Duration, execution *repb.StoredExecution) {
+	if duration < 0 {
+		return
+	}
+	if execution.GetSelfHosted() {
+		if execution.GetOs() == platform.LinuxOperatingSystemName {
+			counts.SelfHostedLinuxExecutionDurationUsec += duration.Microseconds()
+		} else if execution.GetOs() == platform.DarwinOperatingSystemName {
+			counts.SelfHostedMacExecutionDurationUsec += duration.Microseconds()
+		}
+	} else {
+		if execution.GetOs() == platform.LinuxOperatingSystemName {
+			counts.LinuxExecutionDurationUsec += duration.Microseconds()
+		} else if execution.GetOs() == platform.DarwinOperatingSystemName {
 			counts.MacExecutionDurationUsec += duration.Microseconds()
 		}
 	}

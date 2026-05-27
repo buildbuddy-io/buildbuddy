@@ -108,6 +108,7 @@ go_test(
         "@com_github_google_uuid//:uuid",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_open_feature_go_sdk//openfeature",
+        "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_open_feature_go_sdk_contrib_providers_flagd//pkg",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
