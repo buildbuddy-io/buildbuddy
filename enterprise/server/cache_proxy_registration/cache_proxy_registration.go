@@ -52,7 +52,13 @@ func Register(env *real_environment.RealEnv) {
 	target := *appTarget
 	apiKey := cache_proxy_auth.APIKey()
 	if target == "" || apiKey == "" {
-		log.Debug("Skipping Cache Proxy registration because both --cache_proxy.app_target and --cache_proxy.api_key are empty")
+		if target == "" && apiKey == "" {
+			log.Debug("Skipping Cache Proxy registration because both --cache_proxy.app_target and --cache_proxy.api_key are unset")
+		} else if target == "" {
+			log.Debug("Skipping Cache Proxy registration because --cache_proxy.app_target is unset")
+		} else {
+			log.Debug("Skipping Cache Proxy registration because --cache_proxy.api_key is unset")
+		}
 		return
 	}
 
