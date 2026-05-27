@@ -1,7 +1,8 @@
 /**
  * Deduplicates repeated strings by assigning each unique string a numeric ID.
  * Callers can store IDs instead of many copies of the same string, reducing
- * memory usage.
+ * memory usage. IDs are one-based, so callers can use 0 as a sentinel for
+ * missing values in dense numeric arrays.
  */
 export class StringInterner {
   private strings: string[] = [];
@@ -16,7 +17,7 @@ export class StringInterner {
     const id = this.ids.get(value);
     if (id !== undefined) return id;
 
-    const nextID = this.strings.length;
+    const nextID = this.strings.length + 1;
     this.strings.push(value);
     this.ids.set(value, nextID);
     return nextID;
@@ -32,6 +33,6 @@ export class StringInterner {
 
   /** Returns the string for the given interned ID. */
   get(id: number): string {
-    return this.strings[id];
+    return this.strings[id - 1];
   }
 }

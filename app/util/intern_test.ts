@@ -7,8 +7,8 @@ describe("StringInterner", () => {
     const buildID = interner.intern("build");
     const testID = interner.intern("test");
 
-    expect(buildID).toBe(0);
-    expect(testID).toBe(1);
+    expect(buildID).toBe(1);
+    expect(testID).toBe(2);
     expect(buildID).toBe(interner.intern("build"));
     expect(testID).toBe(interner.intern("test"));
     expect(interner.get(buildID)).toBe("build");

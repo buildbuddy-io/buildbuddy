@@ -51,7 +51,7 @@ export type TimeSeries = {
   unit?: string;
 };
 
-type SeriesMetadata = {
+export type SeriesMetadata = {
   argKey: string;
   displayName?: string;
   unit?: string;
@@ -73,7 +73,7 @@ type SeriesMetadata = {
 //   ...,
 //   "args": {"cpu": 0.84}
 // }
-const TIME_SERIES_METADATA = new Map<string, SeriesMetadata[]>([
+export const TIME_SERIES_METADATA = new Map<string, SeriesMetadata[]>([
   // Event names/arg keys from Bazel profiles.
   // These are defined by bazel / not controlled by us.
   [
@@ -114,7 +114,7 @@ const TIME_SERIES_METADATA = new Map<string, SeriesMetadata[]>([
   ["Memory usage (ninja)", [{ argKey: "memory", unit: "MB" }]],
 ]);
 
-const TIME_SERIES_EVENT_ORDER = new Map(Array.from(TIME_SERIES_METADATA).map(([name], index) => [name, index]));
+export const TIME_SERIES_EVENT_ORDER = new Map(Array.from(TIME_SERIES_METADATA).map(([name], index) => [name, index]));
 const GZIP_MAGIC_BYTE_0 = 0x1f;
 const GZIP_MAGIC_BYTE_1 = 0x8b;
 
@@ -265,7 +265,8 @@ function timeSeriesEventComparator(a: TraceEvent, b: TraceEvent) {
   return tsDiff;
 }
 
-function isNumericTimeSeriesValue(value: unknown): value is number {
+/** Returns whether a trace event arg value can be plotted as a time series value. */
+export function isNumericTimeSeriesValue(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
@@ -311,11 +312,17 @@ function normalizeThreadNames(events: TraceEvent[]) {
   for (const event of events as ThreadEvent[]) {
     if (event.name === "thread_name") {
       // Job threads ("skyframe evaluators") will sometimes have inconsistent dashes.
-      if (event.args.name.startsWith("skyframe")) {
-        event.args.name = event.args.name.replace(/^skyframe[ \-]evaluator[ \-]/, "skyframe evaluator ");
-      }
+      event.args.name = normalizeThreadName(event.args.name);
     }
   }
+}
+
+/** Normalizes known variants of trace thread names for display and grouping. */
+export function normalizeThreadName(name: string) {
+  if (name.startsWith("skyframe")) {
+    return name.replace(/^skyframe[ \-]evaluator[ \-]/, "skyframe evaluator ");
+  }
+  return name;
 }
 
 export function buildTimeSeries(events: TraceEvent[]): TimeSeries[] {
