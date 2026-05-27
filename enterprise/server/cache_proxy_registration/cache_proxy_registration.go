@@ -151,24 +151,24 @@ func openStream(ctx context.Context, client cppb.CacheProxyRegistryClient, node 
 	// cancels it on exit.
 	setupCtx, cancelSetup := context.WithCancel(ctx)
 	setupTimer := time.AfterFunc(initialSendTimeout, cancelSetup)
-	fail := func(err error) (cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, func(), error) {
+	fail := func(err error) error {
 		setupTimer.Stop()
 		cancelSetup()
 		// Distinguish our own timeout-induced cancellation from a real
 		// parent-ctx cancellation, so callers and logs see something
 		// meaningful.
 		if setupCtx.Err() != nil && ctx.Err() == nil {
-			return nil, nil, status.DeadlineExceededErrorf("Cache Proxy registration did not complete within %s", initialSendTimeout)
+			return status.DeadlineExceededErrorf("Cache Proxy registration did not complete within %s", initialSendTimeout)
 		}
-		return nil, nil, err
+		return err
 	}
 
 	stream, err := client.RegisterAndStreamHeartbeat(setupCtx)
 	if err != nil {
-		return fail(err)
+		return nil, nil, fail(err)
 	}
 	if err := sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node}); err != nil {
-		return fail(err)
+		return nil, nil, fail(err)
 	}
 	setupTimer.Stop()
 	return stream, cancelSetup, nil
