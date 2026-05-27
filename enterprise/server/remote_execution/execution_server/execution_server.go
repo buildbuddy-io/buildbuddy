@@ -588,7 +588,7 @@ func (s *ExecutionServer) flushAndRecordUsage(ctx context.Context, taskID string
 	}
 	if execution != nil {
 		// TODO(vanja) should this be done when the executor got a cache hit?
-		if err := s.updateUsage(ctx, execution); err != nil {
+		if err := s.updateUsageFromStoredExecution(ctx, execution); err != nil {
 			log.CtxWarningf(ctx, "Failed to update usage for execution %q: %s", taskID, err)
 		}
 	}
@@ -1625,7 +1625,7 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 	}
 
 	if !flushExecutionsOnEOF {
-		if err := s.updateUsageFromExecuteResponse(ctx, executeResponse, properties); err != nil {
+		if err := s.updateUsage(ctx, executeResponse, properties); err != nil {
 			// TODO(vanja) should this be done when the executor got a cache hit?
 			log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", executeResponse, err)
 		}
@@ -1634,31 +1634,18 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 	return nil
 }
 
-// updateUsageFromExecuteResponse records usage counters from the live
-// ExecuteResponse + platform.Properties available at COMPLETED time. This is
-// the legacy path used when the
-// remote_execution.flush_executions_after_cleanup experiment is OFF. When
-// the experiment is ON, usage is recorded later by flushAndRecordUsage
-// using the merged StoredExecution from Redis instead.
-func (s *ExecutionServer) updateUsageFromExecuteResponse(ctx context.Context, executeResponse *repb.ExecuteResponse, plat *platform.Properties) error {
+// updateUsage records usage counters from the live ExecuteResponse +
+// platform.Properties available at COMPLETED time. This is the legacy path
+// used when the remote_execution.flush_executions_after_cleanup experiment
+// is OFF. When the experiment is ON, usage is recorded later by
+// flushAndRecordUsage via updateUsageFromStoredExecution using the merged
+// StoredExecution from Redis instead.
+func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb.ExecuteResponse, plat *platform.Properties) error {
 	ut := s.env.GetUsageTracker()
 	if ut == nil {
 		return nil
 	}
-	md := executeResponse.GetResult().GetExecutionMetadata()
-	dur, err := func() (time.Duration, error) {
-		if err := md.GetWorkerStartTimestamp().CheckValid(); err != nil {
-			return 0, err
-		}
-		if err := md.GetWorkerCompletedTimestamp().CheckValid(); err != nil {
-			return 0, err
-		}
-		d := md.GetWorkerCompletedTimestamp().AsTime().Sub(md.GetWorkerStartTimestamp().AsTime())
-		if d <= 0 {
-			return 0, status.InternalErrorf("Execution duration is <= 0")
-		}
-		return d, nil
-	}()
+	dur, err := executionDuration(executeResponse.GetResult().GetExecutionMetadata())
 	if err != nil {
 		// If the task encountered an error, it's somewhat expected that the
 		// execution duration will be unset, so don't return an error. For
@@ -1678,22 +1665,8 @@ func (s *ExecutionServer) updateUsageFromExecuteResponse(ctx context.Context, ex
 	}
 
 	counts := &tables.UsageCounts{}
-	if dur >= 0 {
-		if pool.IsSelfHosted {
-			if plat.OS == platform.LinuxOperatingSystemName {
-				counts.SelfHostedLinuxExecutionDurationUsec += dur.Microseconds()
-			} else if plat.OS == platform.DarwinOperatingSystemName {
-				counts.SelfHostedMacExecutionDurationUsec += dur.Microseconds()
-			}
-		} else {
-			if plat.OS == platform.LinuxOperatingSystemName {
-				counts.LinuxExecutionDurationUsec += dur.Microseconds()
-			} else if plat.OS == platform.DarwinOperatingSystemName {
-				counts.MacExecutionDurationUsec += dur.Microseconds()
-			}
-		}
-	}
-	usg := md.GetUsageStats()
+	setExecutionDuration(counts, dur, pool, plat)
+	usg := executeResponse.GetResult().GetExecutionMetadata().GetUsageStats()
 	if !pool.IsSelfHosted && usg.GetCpuNanos() > 0 {
 		counts.CPUNanos = usg.GetCpuNanos()
 
@@ -1712,12 +1685,15 @@ func (s *ExecutionServer) updateUsageFromExecuteResponse(ctx context.Context, ex
 	return ut.Increment(ctx, labels, counts)
 }
 
-func (s *ExecutionServer) updateUsage(ctx context.Context, execution *repb.StoredExecution) error {
+// updateUsageFromStoredExecution records usage counters from a merged
+// StoredExecution read out of Redis by flushExecutionToOLAP. Used on the
+// experiment-on path (flushAndRecordUsage on stream EOF).
+func (s *ExecutionServer) updateUsageFromStoredExecution(ctx context.Context, execution *repb.StoredExecution) error {
 	ut := s.env.GetUsageTracker()
 	if ut == nil {
 		return nil
 	}
-	dur, err := executionDuration(execution)
+	dur, err := executionDurationFromStored(execution)
 	if err != nil {
 		// If the task encountered an error, it's somewhat expected that the
 		// execution duration will be unset, so don't return an error. For
@@ -1732,7 +1708,7 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, execution *repb.Store
 	}
 
 	counts := &tables.UsageCounts{}
-	setExecutionDuration(counts, dur, execution)
+	setExecutionDurationFromStored(counts, dur, execution)
 	if !execution.GetSelfHosted() && execution.GetCpuNanos() > 0 {
 		counts.CPUNanos = execution.GetCpuNanos()
 
@@ -1825,7 +1801,42 @@ func redactExecutionAuxiliaryMetadata(ctx context.Context, auxAny *anypb.Any) {
 	}
 }
 
-func executionDuration(execution *repb.StoredExecution) (time.Duration, error) {
+func executionDuration(md *repb.ExecutedActionMetadata) (time.Duration, error) {
+	if err := md.GetWorkerStartTimestamp().CheckValid(); err != nil {
+		return 0, err
+	}
+	if err := md.GetWorkerCompletedTimestamp().CheckValid(); err != nil {
+		return 0, err
+	}
+	start := md.GetWorkerStartTimestamp().AsTime()
+	end := md.GetWorkerCompletedTimestamp().AsTime()
+	dur := end.Sub(start)
+	if dur <= 0 {
+		return 0, status.InternalErrorf("Execution duration is <= 0")
+	}
+	return dur, nil
+}
+
+func setExecutionDuration(counts *tables.UsageCounts, duration time.Duration, pool *interfaces.PoolInfo, props *platform.Properties) {
+	if duration < 0 {
+		return
+	}
+	if pool.IsSelfHosted {
+		if props.OS == platform.LinuxOperatingSystemName {
+			counts.SelfHostedLinuxExecutionDurationUsec += duration.Microseconds()
+		} else if props.OS == platform.DarwinOperatingSystemName {
+			counts.SelfHostedMacExecutionDurationUsec += duration.Microseconds()
+		}
+	} else {
+		if props.OS == platform.LinuxOperatingSystemName {
+			counts.LinuxExecutionDurationUsec += duration.Microseconds()
+		} else if props.OS == platform.DarwinOperatingSystemName {
+			counts.MacExecutionDurationUsec += duration.Microseconds()
+		}
+	}
+}
+
+func executionDurationFromStored(execution *repb.StoredExecution) (time.Duration, error) {
 	startUsec := execution.GetWorkerStartTimestampUsec()
 	endUsec := execution.GetWorkerCompletedTimestampUsec()
 	if startUsec == 0 || endUsec == 0 {
@@ -1838,7 +1849,7 @@ func executionDuration(execution *repb.StoredExecution) (time.Duration, error) {
 	return dur, nil
 }
 
-func setExecutionDuration(counts *tables.UsageCounts, duration time.Duration, execution *repb.StoredExecution) {
+func setExecutionDurationFromStored(counts *tables.UsageCounts, duration time.Duration, execution *repb.StoredExecution) {
 	if duration < 0 {
 		return
 	}
