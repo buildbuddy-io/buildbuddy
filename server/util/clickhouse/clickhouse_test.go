@@ -99,7 +99,6 @@ func TestExecutionFromProto(t *testing.T) {
 
 			// The row should preserve direct proto fields while also parsing
 			// the execution ID resource fields.
-			require.Equal(t, testCase.want.ExecutionID, reconstructExecutionID(t, execution))
 			require.Equal(t, testCase.want.RecycleRunner, execution.RecycleRunner)
 			require.Equal(t, testCase.in.GetExecutionId(), reconstructExecutionID(t, execution))
 		})
