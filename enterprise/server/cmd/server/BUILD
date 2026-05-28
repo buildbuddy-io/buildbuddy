@@ -286,11 +286,11 @@ pkg_tar(
 
 flatten(
     name = "config_tar",
+    tags = ["manual"],
     tars = [
         ":config_files_tar",
         ":config_symlink_tar",
     ],
-    tags = ["manual"],
 )
 
 layer_from_tar(

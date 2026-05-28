@@ -42,17 +42,18 @@ passwd(
 cacerts(
     name = "ca_certificates",
     package = "@debian13//ca-certificates/amd64:data",
+    tags = ["manual"],
     # the cacerts rule currently doesn't support running on Windows
     target_compatible_with = select({
         "@platforms//os:windows": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    tags = ["manual"],
 )
 
 [
     flatten(
         name = "tar_%s" % arch,
+        tags = ["manual"],
         target_compatible_with = [
             "@platforms//os:linux",
             "@platforms//cpu:%s" % {
@@ -69,7 +70,6 @@ cacerts(
             ":passwd",
             ":ca_certificates",
         ],
-        tags = ["manual"],
     )
     for arch in [
         "amd64",
@@ -89,6 +89,7 @@ cacerts(
             "org.opencontainers.image.vendor": "BuildBuddy",
         },
         compress = "gzip",
+        tags = ["manual"],
         target_compatible_with = [
             "@platforms//os:linux",
             "@platforms//cpu:%s" % {
@@ -96,7 +97,6 @@ cacerts(
                 "arm64": "aarch64",
             }[arch],
         ],
-    tags = ["manual"],
     )
     for arch in [
         "amd64",
@@ -115,8 +115,8 @@ image_manifest(
         "@platforms//cpu:arm64": [":layer_arm64"],
         "@platforms//cpu:x86_64": [":layer_amd64"],
     }),
-    user = "root",
     tags = ["manual"],
+    user = "root",
 )
 
 image_index(
@@ -126,6 +126,7 @@ image_index(
         "//platforms:linux_x86_64",
         "//platforms:linux_arm64",
     ],
+    tags = ["manual"],
     target_compatible_with = select({
         # the cacerts target referenced
         # from here currently doesn't
@@ -133,7 +134,6 @@ image_index(
         "@platforms//os:windows": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    tags = ["manual"],
 )
 
 # Load a multi-platform image
