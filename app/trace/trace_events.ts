@@ -119,6 +119,7 @@ const GZIP_MAGIC_BYTE_0 = 0x1f;
 const GZIP_MAGIC_BYTE_1 = 0x8b;
 
 export type ProfileProgressCallback = (numBytesLoaded: number, done?: boolean) => void;
+export type ProfileInput = Blob | ReadableStream<Uint8Array>;
 export type TraceEventBatchCallback = (events: TraceEvent[]) => void;
 
 async function isGzipCompressed(blob: Blob): Promise<boolean> {
@@ -126,24 +127,13 @@ async function isGzipCompressed(blob: Blob): Promise<boolean> {
   return header[0] === GZIP_MAGIC_BYTE_0 && header[1] === GZIP_MAGIC_BYTE_1;
 }
 
-export async function readProfileFile(file: Blob, progress?: ProfileProgressCallback): Promise<Profile> {
-  let stream = file.stream() as ReadableStream<Uint8Array>;
-  if (await isGzipCompressed(file)) {
-    if (typeof DecompressionStream === "undefined") {
-      throw new Error("This browser can't read gzipped timing profiles from local files.");
-    }
-    stream = stream.pipeThrough(new DecompressionStream("gzip"));
-  }
-  return readProfile(stream, progress);
-}
-
 export async function readProfile(
-  body: ReadableStream<Uint8Array>,
+  input: ProfileInput,
   progress?: ProfileProgressCallback
 ): Promise<Profile> {
   const profile: Profile = { traceEvents: [] };
   await readProfileEvents(
-    body,
+    input,
     (events) => {
       for (const event of events) {
         profile.traceEvents.push(event);
@@ -155,10 +145,22 @@ export async function readProfile(
 }
 
 export async function readProfileEvents(
-  body: ReadableStream<Uint8Array>,
+  input: ProfileInput,
   consumeEventBatch: TraceEventBatchCallback,
   progress?: ProfileProgressCallback
 ): Promise<void> {
+  let body: ReadableStream<Uint8Array>;
+  if (input instanceof Blob) {
+    body = input.stream() as ReadableStream<Uint8Array>;
+    if (await isGzipCompressed(input)) {
+      if (typeof DecompressionStream === "undefined") {
+        throw new Error("This browser can't read gzipped timing profiles from local files.");
+      }
+      body = body.pipeThrough(new DecompressionStream("gzip"));
+    }
+  } else {
+    body = input;
+  }
   const reader = body.getReader();
   const decoder = new TextDecoder("utf-8");
   let n = 0;

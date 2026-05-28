@@ -77,6 +77,11 @@ describe("parseProfile", () => {
     expect(numBytesRead).toBe(COMPLETE_PROFILE.length);
   });
 
+  it("should parse a complete profile blob", async () => {
+    const profile = await readProfile(new Blob([COMPLETE_PROFILE]));
+    expect(profile.traceEvents.length).toBe(7);
+  });
+
   it("should parse an incomplete profile", async () => {
     const stream = readableStreamFromString(INCOMPLETE_PROFILE);
     let numBytesRead = 0;

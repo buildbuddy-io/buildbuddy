@@ -79,6 +79,13 @@ describe("readProfile", () => {
     expect(numBytesRead).toBe(COMPLETE_PROFILE.length);
   });
 
+  it("parses a complete profile blob", async () => {
+    const profile = await readProfile(new Blob([COMPLETE_PROFILE]));
+
+    expect(profile.eventCount).toBe(7);
+    expect(profile.threads[0].name).toBe("Main Thread");
+  });
+
   it("parses an incomplete profile", async () => {
     const stream = readableStreamFromString(INCOMPLETE_PROFILE);
     let numBytesRead = 0;
