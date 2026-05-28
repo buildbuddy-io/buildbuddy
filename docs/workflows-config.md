@@ -211,7 +211,7 @@ actions:
       schedule:
         crons:
           - "0 * * * *" # top of every hour
-          - "30 * * * *" # bottom of every hour
+          - "30 * * * *" # middle of every hour
     steps:
       - run: "bazel test //integration/..."
 ```
