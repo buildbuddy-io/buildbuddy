@@ -1,3 +1,5 @@
+load("@io_bazel_rules_docker//container:container.bzl", "container_image")
+load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_distroless//distroless:defs.bzl", "flatten")
 load("@rules_img//img:image.bzl", "image_index", "image_manifest")
@@ -140,6 +142,33 @@ go_binary(
         ":runfiles",
     ],
     embed = [":server_lib"],
+)
+
+container_image(
+    name = "base_image",
+    base = "@buildbuddy_go_image_base//image",
+    symlinks = {
+        "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/%s/enterprise/config/buildbuddy.release.yaml" % runfiles_directory(),
+        "buildbuddy": "tmp",
+    },
+    tags = ["manual"],
+)
+
+# The go_image below can be used to build and run the server image.
+# The container_image target just builds and tags the image without running it.
+
+go_image(
+    name = "buildbuddy_go_image",
+    base = ":base_image",
+    binary = ":buildbuddy",
+    tags = ["manual"],
+)
+
+container_image(
+    name = "buildbuddy_image",
+    base = ":buildbuddy_go_image",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
 )
 
 PACKAGE_ROOT = "app"
@@ -286,7 +315,7 @@ image_manifest(
 )
 
 image_load(
-    name = "buildbuddy_image",
+    name = "image",
     # Explicitly use containerd for clarity. The container will be accessible
     # via `nerdctl` in the "moby" namespace.
     #
