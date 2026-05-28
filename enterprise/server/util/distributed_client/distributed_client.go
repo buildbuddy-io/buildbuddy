@@ -346,12 +346,15 @@ func (c *Proxy) openReadWithMetadata(ctx context.Context, req *dcpb.ReadRequest)
 	rn := req.GetResource()
 
 	if req.GetIncludeMetadata() && req.GetOffset() == 0 && req.GetLimit() == 0 {
-		if gm, ok := c.cache.(interfaces.GetterWithMetadata); ok {
-			data, md, err := gm.GetWithMetadata(ctx, rn)
-			if err != nil {
-				return nil, nil, err
+		// Avoid buffering large blobs in memory just to include metadata.
+		if d := rn.GetDigest(); d != nil && d.GetSizeBytes() <= int64(readResponseInitialBufSize) {
+			if gm, ok := c.cache.(interfaces.GetterWithMetadata); ok {
+				data, md, err := gm.GetWithMetadata(ctx, rn)
+				if err != nil {
+					return nil, nil, err
+				}
+				return io.NopCloser(bytes.NewReader(data)), cacheMetadataToProto(md), nil
 			}
-			return io.NopCloser(bytes.NewReader(data)), cacheMetadataToProto(md), nil
 		}
 	}
 
