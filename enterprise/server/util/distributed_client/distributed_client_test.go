@@ -992,6 +992,80 @@ func TestMetadata(t *testing.T) {
 	require.Equal(t, cacheMetadata.LastModifyTimeUsec, cacheproxyMetadata.LastModifyUsec)
 }
 
+func TestGetWithMetadata(t *testing.T) {
+	ctx := context.Background()
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := distributed_client.New(te, te.GetCache(), peer)
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, te.GetCache().Set(ctx, r, buf))
+
+	// Server handler: data + every metadata field matches the underlying cache.
+	rsp, err := c.GetWithMetadata(ctx, &dcpb.GetWithMetadataRequest{Resource: r})
+	require.NoError(t, err)
+	require.Equal(t, buf, rsp.GetData())
+
+	cacheMD, err := te.GetCache().Metadata(ctx, r)
+	require.NoError(t, err)
+	require.Equal(t, cacheMD.StoredSizeBytes, rsp.GetMetadata().GetStoredSizeBytes())
+	require.Equal(t, cacheMD.DigestSizeBytes, rsp.GetMetadata().GetDigestSizeBytes())
+	require.Equal(t, cacheMD.LastAccessTimeUsec, rsp.GetMetadata().GetLastAccessUsec())
+	require.Equal(t, cacheMD.LastModifyTimeUsec, rsp.GetMetadata().GetLastModifyUsec())
+}
+
+func TestRemoteGetWithMetadata(t *testing.T) {
+	ctx := context.Background()
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := distributed_client.New(te, te.GetCache(), peer)
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, te.GetCache().Set(ctx, r, buf))
+
+	// Client-side: data and metadata round-trip through the RPC.
+	data, md, err := c.RemoteGetWithMetadata(ctx, peer, r)
+	require.NoError(t, err)
+	require.Equal(t, buf, data)
+
+	cacheMD, err := te.GetCache().Metadata(ctx, r)
+	require.NoError(t, err)
+	require.Equal(t, cacheMD.StoredSizeBytes, md.StoredSizeBytes)
+	require.Equal(t, cacheMD.DigestSizeBytes, md.DigestSizeBytes)
+	require.Equal(t, cacheMD.LastAccessTimeUsec, md.LastAccessTimeUsec)
+	require.Equal(t, cacheMD.LastModifyTimeUsec, md.LastModifyTimeUsec)
+}
+
+func TestRemoteGetWithMetadata_NotFound(t *testing.T) {
+	ctx := context.Background()
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := distributed_client.New(te, te.GetCache(), peer)
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+
+	// Resource was never written; expect NotFound.
+	r, _ := testdigest.RandomCASResourceBuf(t, 100)
+	_, _, err = c.RemoteGetWithMetadata(ctx, peer, r)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
+}
+
 func copyChunked(t testing.TB, w interfaces.CommittedWriteCloser, data []byte, chunkSize int64) {
 	for len(data) > 0 {
 		if chunkSize > int64(len(data)) {
