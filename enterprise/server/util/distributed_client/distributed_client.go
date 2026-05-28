@@ -232,11 +232,7 @@ func (c *Proxy) GetWithMetadata(ctx context.Context, req *dcpb.GetWithMetadataRe
 		return nil, err
 	}
 	rn := req.GetResource()
-	data, err := c.cache.Get(ctx, rn)
-	if err != nil {
-		return nil, err
-	}
-	md, err := c.cache.Metadata(ctx, rn)
+	data, md, err := c.cache.GetWithMetadata(ctx, rn)
 	if err != nil {
 		return nil, err
 	}
