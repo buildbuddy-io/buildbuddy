@@ -43,7 +43,7 @@ class CacheProxySetup extends React.Component<CacheProxySetupProps> {
         {this.props.proxyKeys.length > 0 && (
           <>
             <div>
-              {this.props.proxyKeys.length == 1 && <p>You have a Cache Proxy API key available.</p>}
+              {this.props.proxyKeys.length == 1 && <p>You have one Cache Proxy API key available.</p>}
               {this.props.proxyKeys.length > 1 && (
                 <p>You have {this.props.proxyKeys.length} Cache Proxy API keys available.</p>
               )}
@@ -138,9 +138,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
       loading: [...prevState.loading, FetchType.ApiKeys],
     }));
     try {
-      const response = await rpcService.service.getApiKeys(
-        api_key.GetApiKeysRequest.create({ groupId: this.props.user.selectedGroup.id })
-      );
+      const response = await rpcService.service.getApiKeys(api_key.GetApiKeysRequest.create({}));
       const proxyKeys = response.apiKey.filter((key) =>
         key.capability.some((cap) => cap == capability.Capability.REGISTER_CACHE_PROXY)
       );

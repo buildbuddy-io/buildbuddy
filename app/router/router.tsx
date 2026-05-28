@@ -556,10 +556,10 @@ class Router {
     if (path === Path.orgAccessDeniedPath) {
       return new URL(Path.home, window.location.href);
     }
-    if (path === Path.executorsPath && !this.canAccessExecutorsPage(user)) {
+    if (path.startsWith(Path.executorsPath) && !this.canAccessExecutorsPage(user)) {
       return new URL(Path.home, window.location.href);
     }
-    if (path === Path.cacheProxiesPath && !this.canAccessCacheProxiesPage(user)) {
+    if (path.startsWith(Path.cacheProxiesPath) && !this.canAccessCacheProxiesPage(user)) {
       return new URL(Path.home, window.location.href);
     }
     if (path === Path.workflowsPath && !this.canAccessWorkflowsPage()) {
