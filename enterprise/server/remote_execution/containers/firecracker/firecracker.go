@@ -69,6 +69,7 @@ import (
 	"google.golang.org/grpc"
 
 	vmsupport_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/vmsupport"
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -732,6 +733,13 @@ type FirecrackerContainer struct {
 	}
 
 	useOCIFetcher bool
+
+	// postCompletionStats accumulates firecracker snapshot save stats
+	// during Pause so the executor can report them to the execution server
+	// in a follow-up COMPLETED Operation after runner recycling. Nil
+	// until Pause runs. Pause is called from a single goroutine per
+	// container so no synchronization is needed.
+	postCompletionStats *espb.PostCompletionStats
 }
 
 var _ container.VM = (*FirecrackerContainer)(nil)
@@ -2917,6 +2925,7 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	c.postCompletionStats = &espb.PostCompletionStats{}
 	start := time.Now()
 	err := c.pause(ctx)
 
@@ -2928,9 +2937,19 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 
 	pauseTime := time.Since(start)
 	log.CtxDebugf(ctx, "Pause took %s", pauseTime)
+	c.postCompletionStats.PauseDurationUsec = pauseTime.Microseconds()
 
 	c.observeStageDuration("pause", pauseTime)
 	return err
+}
+
+// PostCompletionStats returns observability data accumulated during the most
+// recent call to Pause: the resolved local/remote save decisions, whether a
+// diff snapshot was written, the uncompressed bytes written (modified
+// chunks only for diff snapshots), and the wall-clock duration of Pause.
+// Returns nil if Pause has not yet been called on this container.
+func (c *FirecrackerContainer) PostCompletionStats() *espb.PostCompletionStats {
+	return c.postCompletionStats
 }
 
 func (c *FirecrackerContainer) pause(ctx context.Context) error {
@@ -2942,6 +2961,16 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	snapDetails, err := c.snapshotDetails(ctx)
 	if err != nil {
 		return status.WrapError(err, "prepare snapshot details")
+	}
+
+	// Record the resolved save decisions and snapshot type into the
+	// stats accumulator. We set these before the save attempt so the
+	// reported values match the snapshot bytes accumulated below,
+	// even if the save fails partway through.
+	if c.postCompletionStats != nil {
+		c.postCompletionStats.SnapshotSavedLocally = snapDetails.saveLocalSnapshot
+		c.postCompletionStats.SnapshotSavedRemotely = snapDetails.saveRemoteSnapshot
+		c.postCompletionStats.SnapshotIsDiff = snapDetails.snapshotType == diffSnapshotType
 	}
 
 	shouldSaveSnapshot := snapDetails.saveRemoteSnapshot || snapDetails.saveLocalSnapshot
@@ -3029,11 +3058,17 @@ func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context) e
 		chunkedStores[memoryChunkDirName] = c.memoryStore
 	}
 
+	// Sum of uncompressed bytes written by the snapshot save: dirty
+	// chunks only for diff snapshots, all chunks for full snapshots.
+	// Reported back to the execution server via PostCompletionStats.
+	var totalSnapshotBytes int64
+	isDiff := c.postCompletionStats.GetSnapshotIsDiff()
+
 	for name, store := range chunkedStores {
 		chunks := store.SortedChunks()
 		chunkSourceCounter := make(map[snaputil.ChunkSource]int, 0)
 		bytesReadPerSource := make(map[snaputil.ChunkSource]int64, 0)
-		var dirtyBytes, dirtyChunkCount int64
+		var dirtyBytes, dirtyChunkCount, allChunkBytes int64
 		for _, chunk := range chunks {
 			chunkSrc := chunk.Source()
 			chunkSourceCounter[chunkSrc]++
@@ -3044,11 +3079,17 @@ func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context) e
 			}
 
 			bytesReadPerSource[chunkSrc] += chunkSize
+			allChunkBytes += chunkSize
 			dirty := store.Dirty(chunk.Offset)
 			if dirty {
 				dirtyBytes += chunkSize
 				dirtyChunkCount++
 			}
+		}
+		if isDiff {
+			totalSnapshotBytes += dirtyBytes
+		} else {
+			totalSnapshotBytes += allChunkBytes
 		}
 
 		var chunkSrcLog strings.Builder
@@ -3074,6 +3115,9 @@ func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context) e
 		}).Add(float64(dirtyBytes))
 
 		log.CtxDebugf(ctx, "For chunked %s snapshot, %d MB (%d chunks) were dirty%s", name, dirtyBytes/(1024*1024), dirtyChunkCount, chunkSrcLog.String())
+	}
+	if c.postCompletionStats != nil {
+		c.postCompletionStats.SnapshotSizeBytes = totalSnapshotBytes
 	}
 	return nil
 }

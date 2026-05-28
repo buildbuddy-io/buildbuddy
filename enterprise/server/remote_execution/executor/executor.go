@@ -316,6 +316,22 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		// that the runner is fully cleaned up (if applicable) before its
 		// resource claims are freed up by the priority_task_scheduler.
 		s.runnerPool.TryRecycle(ctx, r, reuseRunner)
+
+		// Recycling can produce observability data that wasn't available at
+		// COMPLETED publish time (e.g. firecracker snapshot save stats from
+		// Container.Pause). Publish a follow-up stage=COMPLETED Operation
+		// with those stats so the execution server can merge them into the
+		// OLAP row before the stream's EOF flush. Gated on the same
+		// experiment as the server-side flush timing: under the legacy
+		// flag the server would drop this follow-up anyway since the row
+		// was already flushed inline with the first COMPLETED.
+		if publishPostCompletionStatsEnabled(ctx, s.env) {
+			if stats := r.PostCompletionStats(); stats != nil {
+				if err := publishPostCompletionStatsOp(stream, taskID, adInstanceDigest.GetDigest(), stats); err != nil {
+					log.CtxWarningf(ctx, "Failed to publish post-completion stats: %s", err)
+				}
+			}
+		}
 	}()
 
 	log.CtxDebugf(ctx, "Preparing runner for task.")
@@ -524,6 +540,48 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		reuseRunner = true
 	}
 	return false, nil
+}
+
+// publishPostCompletionStatsEnabled returns true if the executor should send
+// a follow-up stage=COMPLETED Operation carrying PostCompletionStats after
+// runner recycling. Gated on the same experiment that controls server-side
+// flush-after-cleanup timing — under the legacy flag the server would drop
+// the follow-up anyway since the OLAP row was already flushed inline with
+// the first COMPLETED.
+func publishPostCompletionStatsEnabled(ctx context.Context, env environment.Env) bool {
+	fp := env.GetExperimentFlagProvider()
+	if fp == nil {
+		return false
+	}
+	return fp.Boolean(ctx, "remote_execution.flush_executions_after_cleanup", false)
+}
+
+// publishPostCompletionStatsOp builds a stage=COMPLETED Operation whose only
+// payload is a PostCompletionStats nested inside ExecutionAuxiliaryMetadata
+// in the ExecutedActionMetadata's auxiliary_metadata, and sends it on the
+// publish stream. The execution server recognizes this as a follow-up to
+// the first COMPLETED via its own firstCompletedSeen tracking; the side
+// effects of the first COMPLETED (action-cache write, markTaskComplete,
+// recordResponseMetrics) are skipped server-side.
+func publishPostCompletionStatsOp(stream interfaces.Publisher, taskID string, ad *repb.Digest, stats *espb.PostCompletionStats) error {
+	auxAny, err := anypb.New(&espb.ExecutionAuxiliaryMetadata{
+		PostCompletionStats: stats,
+	})
+	if err != nil {
+		return status.WrapError(err, "marshal ExecutionAuxiliaryMetadata")
+	}
+	rsp := &repb.ExecuteResponse{
+		Result: &repb.ActionResult{
+			ExecutionMetadata: &repb.ExecutedActionMetadata{
+				AuxiliaryMetadata: []*anypb.Any{auxAny},
+			},
+		},
+	}
+	op, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, ad), rsp)
+	if err != nil {
+		return status.WrapError(err, "assemble post-completion Operation")
+	}
+	return stream.Send(op)
 }
 
 func appendAuxiliaryMetadata(md *repb.ExecutedActionMetadata, message proto.Message) error {

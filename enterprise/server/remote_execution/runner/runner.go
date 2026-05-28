@@ -506,6 +506,20 @@ func (r *taskRunner) GetIsolationType() string {
 	return r.PlatformProperties.WorkloadIsolationType
 }
 
+// PostCompletionStats returns observability data produced by the underlying
+// Container during runner recycling, currently firecracker snapshot save
+// stats from Container.Pause. Returns nil for containers that don't expose
+// such stats.
+func (r *taskRunner) PostCompletionStats() *espb.PostCompletionStats {
+	type postCompletionStatsProvider interface {
+		PostCompletionStats() *espb.PostCompletionStats
+	}
+	if p, ok := r.Container.Delegate.(postCompletionStatsProvider); ok {
+		return p.PostCompletionStats()
+	}
+	return nil
+}
+
 // shutdown runs any manual cleanup required to clean up processes before
 // removing a runner from the pool. This has no effect for isolation types
 // that fully isolate all processes started by the runner and remove them

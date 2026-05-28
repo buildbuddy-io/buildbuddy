@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
@@ -28,6 +29,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/jonboulle/clockwork"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
+	openfeatureTesting "github.com/open-feature/go-sdk/openfeature/testing"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -296,6 +300,146 @@ func TestExecuteTaskAndStreamResults_CacheHit(t *testing.T) {
 	require.GreaterOrEqual(t, len(mockServer.operations), 1)
 	completedOp := mockServer.operations[len(mockServer.operations)-1]
 	require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
+}
+
+// TestExecuteTaskAndStreamResults_PostCompletionStats verifies that the
+// executor sends a follow-up stage=COMPLETED Operation carrying
+// PostCompletionStats after TryRecycle runs, when the runner exposes such
+// stats and the flush_executions_after_cleanup experiment is enabled.
+func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		experimentEnabled    bool
+		postCompletionStats  *espb.PostCompletionStats
+		expectFollowUpOp     bool
+		expectFollowUpStats  *espb.PostCompletionStats
+	}{
+		{
+			name:              "ExperimentOnWithStats",
+			experimentEnabled: true,
+			postCompletionStats: &espb.PostCompletionStats{
+				SnapshotSavedLocally:  true,
+				SnapshotSavedRemotely: true,
+				SnapshotIsDiff:        true,
+				SnapshotSizeBytes:     12345,
+				PauseDurationUsec:     67890,
+			},
+			expectFollowUpOp: true,
+			expectFollowUpStats: &espb.PostCompletionStats{
+				SnapshotSavedLocally:  true,
+				SnapshotSavedRemotely: true,
+				SnapshotIsDiff:        true,
+				SnapshotSizeBytes:     12345,
+				PauseDurationUsec:     67890,
+			},
+		},
+		{
+			name:              "ExperimentOffWithStats",
+			experimentEnabled: false,
+			postCompletionStats: &espb.PostCompletionStats{
+				SnapshotSavedLocally: true,
+				SnapshotSizeBytes:    12345,
+			},
+			expectFollowUpOp: false,
+		},
+		{
+			name:              "ExperimentOnWithoutStats",
+			experimentEnabled: true,
+			postCompletionStats: nil,
+			expectFollowUpOp:  false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := enterprise_testenv.New(t)
+			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+			clock := clockwork.NewFakeClock()
+			env.SetClock(clock)
+
+			// Set up the experiment provider.
+			if tc.experimentEnabled {
+				testProvider := openfeatureTesting.NewTestProvider()
+				require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+				t.Cleanup(testProvider.Cleanup)
+				testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+					"remote_execution.flush_executions_after_cleanup": {
+						State:          memprovider.Enabled,
+						DefaultVariant: "on",
+						Variants:       map[string]any{"on": true},
+					},
+				})
+				fp, err := experiments.NewFlagProvider("test-name")
+				require.NoError(t, err)
+				env.SetExperimentFlagProvider(fp)
+			}
+
+			_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
+			testcache.Setup(t, env, lis)
+			mockServer := &mockExecutionServer{finished: make(chan struct{})}
+			repb.RegisterExecutionServer(env.GetGRPCServer(), mockServer)
+			go runServer()
+
+			cacheRoot := testfs.MakeTempDir(t)
+			runnerPool := rbetest.NewTestRunnerPool(t, env, cacheRoot, rbetest.TestRunnerOverrides{
+				RunInterceptor:      rbetest.RunNoop(),
+				PostCompletionStats: tc.postCompletionStats,
+			})
+			exec, err := executor.NewExecutor(env, "executor-id", "host-id", "hostname", runnerPool)
+			require.NoError(t, err)
+
+			conn, err := testenv.LocalGRPCConn(context.Background(), lis)
+			require.NoError(t, err)
+			t.Cleanup(func() { conn.Close() })
+			execClient := repb.NewExecutionClient(conn)
+
+			task := getTask()
+			publisher, err := operation.Publish(ctx, execClient, task.ExecutionTask.ExecutionId)
+			require.NoError(t, err)
+
+			retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
+			require.NoError(t, err)
+			require.False(t, retry)
+			<-mockServer.finished
+
+			completedOps := func() []*longrunningpb.Operation {
+				ops := []*longrunningpb.Operation{}
+				for _, op := range mockServer.operations {
+					if operation.ExtractStage(op) == repb.ExecutionStage_COMPLETED {
+						ops = append(ops, op)
+					}
+				}
+				return ops
+			}
+
+			expectedCount := 1
+			if tc.expectFollowUpOp {
+				expectedCount = 2
+			}
+			require.Eventually(t, func() bool {
+				return len(completedOps()) >= expectedCount
+			}, 5*time.Second, 10*time.Millisecond, "expected %d COMPLETED ops", expectedCount)
+			// Give a brief moment to verify no additional ops sneak in.
+			time.Sleep(50 * time.Millisecond)
+
+			ops := completedOps()
+			require.Equal(t, expectedCount, len(ops))
+			if !tc.expectFollowUpOp {
+				return
+			}
+
+			followUp, err := rexec.UnpackOperation(ops[1])
+			require.NoError(t, err)
+			auxMeta := &espb.ExecutionAuxiliaryMetadata{}
+			ok, err := rexec.FindFirstAuxiliaryMetadata(followUp.ExecuteResponse.GetResult().GetExecutionMetadata(), auxMeta)
+			require.NoError(t, err)
+			require.True(t, ok, "follow-up COMPLETED should carry ExecutionAuxiliaryMetadata")
+			require.Empty(t, cmp.Diff(
+				tc.expectFollowUpStats,
+				auxMeta.GetPostCompletionStats(),
+				protocmp.Transform(),
+			))
+		})
+	}
 }
 
 func TestExecuteTaskAndStreamResults_PublishFailures(t *testing.T) {
