@@ -194,7 +194,7 @@ export default class Panel {
 
     const modelMouse = this.getMouseModelCoordinates();
     let trackY = section.y + constants.SECTION_LABEL_HEIGHT + constants.SECTION_LABEL_PADDING_BOTTOM;
-    const trackYIncrement = constants.TRACK_HEIGHT + constants.EVENT_HORIZONTAL_GAP;
+    const trackYIncrement = constants.TRACK_HEIGHT + constants.TRACK_VERTICAL_GAP;
     for (const track of section.tracks) {
       if (modelMouse.y >= trackY && modelMouse.y <= trackY + trackYIncrement) {
         if (modelMouse.y > trackY + constants.TRACK_HEIGHT) {
