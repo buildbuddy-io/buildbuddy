@@ -335,6 +335,63 @@ func targetedUsageLimitFlagConfig(fieldName, groupID string, limit int64) string
 }`, usageLimitsExperimentName, fieldName, limit, groupID)
 }
 
+func TestDisablingExperimentAllowsAllUsage(t *testing.T) {
+	ctx := context.Background()
+	env := setupEnv(t)
+
+	user := testauth.User("US001", "GR001")
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+		user.UserID: user,
+	}))
+	authCtx := testauth.WithAuthenticatedUserInfo(ctx, user)
+	field, ok := usage_service.UsageFieldForAlertingMetric(usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES)
+	require.True(t, ok)
+
+	flagPath := writeFlagConfig(t, usageLimitFlagConfig(field.Name, 100))
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(flagPath))
+	require.NoError(t, err)
+	t.Cleanup(provider.Shutdown)
+	domain := t.Name()
+	require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
+	fp, err := experiments.NewFlagProvider(domain)
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	// Insert usage that exceeds the limit.
+	start, _ := usageWindow(time.Now().UTC(), "month")
+	insertUsage(t, env, user.GroupID, sku.RemoteCacheCASDownloadedBytes, start.Add(12*time.Hour), 101)
+
+	limiter := newLimiterForTesting(env)
+
+	// Confirm the limit is enforced while the experiment is enabled.
+	require.True(t, status.IsResourceExhaustedError(
+		limiter.Check(authCtx, usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES, 1)))
+
+	// Disable the experiment.
+	require.NoError(t, os.WriteFile(flagPath, []byte(disabledFlagConfig()), 0644))
+
+	// All checks should now pass, including requests that were previously blocked.
+	require.Eventually(t, func() bool {
+		return limiter.Check(authCtx, usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES, 1) == nil
+	}, 5*time.Second, 50*time.Millisecond)
+	require.NoError(t, limiter.Check(authCtx, usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES, 200))
+}
+
+func disabledFlagConfig() string {
+	return fmt.Sprintf(`{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "%s": {
+      "state": "DISABLED",
+      "defaultVariant": "custom",
+      "variants": {
+        "custom": {}
+      }
+    }
+  }
+}`, usageLimitsExperimentName)
+}
+
 func writeFlagConfig(t testing.TB, data string) string {
 	t.Helper()
 	f, err := os.CreateTemp(os.Getenv("TEST_TMPDIR"), "buildbuddy-test-file-*.flagd.json")
