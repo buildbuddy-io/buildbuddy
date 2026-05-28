@@ -3064,10 +3064,10 @@ message StoredExecution {
   // Sourced from the Arch platform property.
   string arch = 82;
 
-  // Stats reported by the executor after the COMPLETED operation has been
-  // streamed to the client, currently used for firecracker snapshot stats
-  // collected during runner recycling. See execution_stats.PostCompletionStats.
+  // Whether a snapshot was saved locally for this execution. This should be
+  // true whenever a snapshot was saved, because remote saves also save locally.
   bool snapshot_saved_locally = 83;
+  // Whether a snapshot was saved remotely for this execution.
   bool snapshot_saved_remotely = 84;
   bool snapshot_is_diff = 85;
   // Uncompressed bytes written by the snapshot save. For diff snapshots,

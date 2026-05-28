@@ -175,19 +175,11 @@ message ExecutionAuxiliaryMetadata {
   // Metadata containing more detail about the input fetch phase of execution.
   InputFetchMetadata input_fetch_detailed_stats = 11;
 
-  // Stats the executor learns only after the first stage=COMPLETED
-  // Operation has been streamed to the client (e.g. firecracker snapshot
-  // save stats produced during runner recycling). The executor publishes a
-  // second stage=COMPLETED Operation carrying an ExecutionAuxiliaryMetadata
-  // whose only populated field is this one.
+  // Stats about work done after the COMPLETED operation is streamed back to the
+  // client.
   PostCompletionStats post_completion_stats = 12;
 }
 
-// PostCompletionStats carries observability data that the executor only
-// learns about after publishing the COMPLETED operation to the client. For
-// example, firecracker runners save their snapshot during runner recycling
-// (via Container.Pause), which runs in a deferred call after the executor
-// has streamed COMPLETED.
 message PostCompletionStats {
   // Whether the snapshot was actually saved to the local cache. This is the
   // resolved value after Pause, not the prediction reported in VMMetadata

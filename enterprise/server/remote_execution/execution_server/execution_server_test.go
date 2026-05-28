@@ -1531,18 +1531,41 @@ func TestPublishOperation_PeriodicFlushDoesNotClobberCompletedRow(t *testing.T) 
 
 // TestPublishOperation_SecondCompletedCarriesSnapshotStats verifies that a
 // second stage=COMPLETED Operation sent on the same PublishOperation stream,
-// carrying only PostCompletionStats in auxiliary_metadata, gets merged into
-// the recorded StoredExecution. The first COMPLETED's other fields must
-// survive the merge (proto.Merge semantics), the action result must not be
-// re-cached, and usage must be recorded exactly once.
+// carrying only PostCompletionStats in auxiliary_metadata, is handled
+// correctly under both experiment values.
+//
+// Under flush_executions_after_cleanup=true (the path this PR exists to
+// enable), the snapshot fields get merged into the recorded
+// StoredExecution. The first COMPLETED's other fields survive the merge
+// (proto.Merge semantics).
+//
+// Under flush_executions_after_cleanup=false (legacy path), the OLAP flush
+// already ran on the first COMPLETED, so the second COMPLETED is dropped
+// server-side — updateExecution and pubsub publish are skipped, and the
+// snapshot fields don't appear in the recorded row.
+//
+// In both modes the action result must not be re-cached and usage must be
+// recorded exactly once.
 func TestPublishOperation_SecondCompletedCarriesSnapshotStats(t *testing.T) {
+	for _, flushAfterCleanup := range []bool{false, true} {
+		name := "FlushOnComplete"
+		if flushAfterCleanup {
+			name = "FlushAfterCleanup"
+		}
+		t.Run(name, func(t *testing.T) {
+			testPublishOperationSecondCompletedCarriesSnapshotStats(t, flushAfterCleanup)
+		})
+	}
+}
+
+func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flushAfterCleanup bool) {
 	ctx := context.Background()
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
 	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
 	env, conn, _ := setupEnv(t)
-	// PR 2's value only materializes when the flush happens after the second
-	// COMPLETED is received; turn on the experiment that gates that timing.
-	configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
+	if flushAfterCleanup {
+		configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
+	}
 	client := repb.NewExecutionClient(conn)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	env.SetAuthenticator(ta)
@@ -1658,12 +1681,23 @@ func TestPublishOperation_SecondCompletedCarriesSnapshotStats(t *testing.T) {
 	assert.Equal(t, "//some:test", got.GetTargetLabel())
 	assert.Equal(t, workerStartTime.UnixMicro(), got.GetWorkerStartTimestampUsec())
 	assert.Equal(t, workerEndTime.UnixMicro(), got.GetWorkerCompletedTimestampUsec())
-	// Second-COMPLETED snapshot stats were merged in.
-	assert.True(t, got.GetSnapshotSavedLocally(), "snapshot_saved_locally")
-	assert.True(t, got.GetSnapshotSavedRemotely(), "snapshot_saved_remotely")
-	assert.True(t, got.GetSnapshotIsDiff(), "snapshot_is_diff")
-	assert.Equal(t, int64(12345), got.GetSnapshotSizeBytes())
-	assert.Equal(t, int64(67890), got.GetSnapshotPauseDurationUsec())
+	if flushAfterCleanup {
+		// Second-COMPLETED snapshot stats were merged in.
+		assert.True(t, got.GetSnapshotSavedLocally(), "snapshot_saved_locally")
+		assert.True(t, got.GetSnapshotSavedRemotely(), "snapshot_saved_remotely")
+		assert.True(t, got.GetSnapshotIsDiff(), "snapshot_is_diff")
+		assert.Equal(t, int64(12345), got.GetSnapshotSizeBytes())
+		assert.Equal(t, int64(67890), got.GetSnapshotPauseDurationUsec())
+	} else {
+		// Legacy path: the OLAP flush already ran on the first COMPLETED, so
+		// the second COMPLETED is dropped server-side and its snapshot
+		// fields don't make it to the recorded row.
+		assert.False(t, got.GetSnapshotSavedLocally(), "snapshot_saved_locally should be unset on legacy path")
+		assert.False(t, got.GetSnapshotSavedRemotely(), "snapshot_saved_remotely should be unset on legacy path")
+		assert.False(t, got.GetSnapshotIsDiff(), "snapshot_is_diff should be unset on legacy path")
+		assert.Zero(t, got.GetSnapshotSizeBytes(), "snapshot_size_bytes should be unset on legacy path")
+		assert.Zero(t, got.GetSnapshotPauseDurationUsec(), "snapshot_pause_duration_usec should be unset on legacy path")
+	}
 
 	// Action cache should hold the result from the first COMPLETED only.
 	// The sparse second COMPLETED must not have triggered another cache write.

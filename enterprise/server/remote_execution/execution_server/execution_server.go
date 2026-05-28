@@ -456,15 +456,14 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.Arch = properties.Arch
 			}
 
-			schedulingMeta := auxMeta.GetSchedulingMetadata()
-			executionProto.EstimatedFreeDiskBytes = schedulingMeta.GetTaskSize().GetEstimatedFreeDiskBytes()
-			executionProto.PreviousMeasuredMemoryBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMemoryBytes()
-			executionProto.PreviousMeasuredMilliCpu = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMilliCpu()
-			executionProto.PreviousMeasuredFreeDiskBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedFreeDiskBytes()
-			executionProto.PredictedMemoryBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedMemoryBytes()
-			executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
-			executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
-			if schedulingMeta != nil {
+			if schedulingMeta := auxMeta.GetSchedulingMetadata(); schedulingMeta != nil {
+				executionProto.EstimatedFreeDiskBytes = schedulingMeta.GetTaskSize().GetEstimatedFreeDiskBytes()
+				executionProto.PreviousMeasuredMemoryBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMemoryBytes()
+				executionProto.PreviousMeasuredMilliCpu = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMilliCpu()
+				executionProto.PreviousMeasuredFreeDiskBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedFreeDiskBytes()
+				executionProto.PredictedMemoryBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedMemoryBytes()
+				executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
+				executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
 				// Guarded so a second COMPLETED carrying only PostCompletionStats
 				// doesn't flip SelfHosted to true via the nil-default branch and
 				// clobber the merged StoredExecution.
@@ -474,14 +473,13 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 
 			// Stats only present on a follow-up COMPLETED carrying
 			// PostCompletionStats (e.g. firecracker snapshot save stats).
-			// Nil-safe getters return zero values when this isn't set, which
-			// mergeExecutionUpdates' proto.Merge then skips.
-			postStats := auxMeta.GetPostCompletionStats()
-			executionProto.SnapshotSavedLocally = postStats.GetSnapshotSavedLocally()
-			executionProto.SnapshotSavedRemotely = postStats.GetSnapshotSavedRemotely()
-			executionProto.SnapshotIsDiff = postStats.GetSnapshotIsDiff()
-			executionProto.SnapshotSizeBytes = postStats.GetSnapshotSizeBytes()
-			executionProto.SnapshotPauseDurationUsec = postStats.GetPauseDurationUsec()
+			if postStats := auxMeta.GetPostCompletionStats(); postStats != nil {
+				executionProto.SnapshotSavedLocally = postStats.GetSnapshotSavedLocally()
+				executionProto.SnapshotSavedRemotely = postStats.GetSnapshotSavedRemotely()
+				executionProto.SnapshotIsDiff = postStats.GetSnapshotIsDiff()
+				executionProto.SnapshotSizeBytes = postStats.GetSnapshotSizeBytes()
+				executionProto.SnapshotPauseDurationUsec = postStats.GetPauseDurationUsec()
+			}
 
 			request := auxMeta.GetExecuteRequest()
 			executionProto.SkipCacheLookup = request.GetSkipCacheLookup()
@@ -1430,15 +1428,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		flushExecutionsOnEOF = fp.Boolean(ctx, "remote_execution.flush_executions_after_cleanup", false)
 	}
 
-	// firstCompletedSeen tracks whether we've already processed a
-	// stage==COMPLETED Operation for this stream. The executor publishes a
-	// follow-up COMPLETED carrying PostCompletionStats (e.g. firecracker
-	// snapshot save stats from runner recycling) after the first one. The
-	// follow-up must skip the side effects of the first COMPLETED
-	// (cacheActionResult, markTaskComplete, recordResponseMetrics) and
-	// only merge its aux fields into Redis.
 	firstCompletedSeen := false
-
 	for {
 		op, err := stream.Recv()
 		if err == io.EOF {
@@ -1504,22 +1494,22 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			ok, err := rexec.FindFirstAuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
 			if err != nil {
 				log.CtxWarningf(ctx, "Failed to parse ExecutionAuxiliaryMetadata: %s", err)
-			} else if !ok && !isPostCompletionUpdate {
+			} else if !ok {
 				log.CtxInfof(ctx, "Failed to find ExecutionAuxiliaryMetadata. Executor is probably self-hosted and not updated since 2024-12-13.")
 			}
+			actionCASRN, err := digest.ParseUploadResourceName(taskID)
+			if err != nil {
+				return status.WrapErrorf(err, "Failed to parse taskID")
+			}
+			action, cmd, err = s.fetchActionAndCommand(ctx, actionCASRN)
+			if err != nil {
+				return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
+			}
+			properties, err = platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd, PlatformOverrides: auxMeta.GetPlatformOverrides()})
+			if err != nil {
+				return status.InternalErrorf("Failed to parse platform properties: %s", err)
+			}
 			if !isPostCompletionUpdate {
-				actionCASRN, err := digest.ParseUploadResourceName(taskID)
-				if err != nil {
-					return status.WrapErrorf(err, "Failed to parse taskID")
-				}
-				action, cmd, err = s.fetchActionAndCommand(ctx, actionCASRN)
-				if err != nil {
-					return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
-				}
-				properties, err = platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd, PlatformOverrides: auxMeta.GetPlatformOverrides()})
-				if err != nil {
-					return status.InternalErrorf("Failed to parse platform properties: %s", err)
-				}
 				// Keep this close to, but before the cacheActionResult call: Since any action that can merge into this one
 				// may specify skip_cache_lookup, we need to ensure that the result is not visible in the cache before the
 				// action is merged. At the same time, we don't want the window between the calls to be too large to avoid
@@ -1537,13 +1527,15 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				recordResponseMetrics(response, auxMeta, s.getGroupIDForMetrics(ctx))
 			}
 		}
-		data, err := proto.Marshal(op)
-		if err != nil {
-			return status.InternalErrorf("Failed to marshal Operation: %s", err)
-		}
-		if err := s.streamPubSub.Publish(ctx, s.pubSubChannelForExecutionID(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
-			log.CtxWarningf(ctx, "Error publishing task on stream pubsub: %s", err)
-			return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
+		if !isPostCompletionUpdate {
+			data, err := proto.Marshal(op)
+			if err != nil {
+				return status.InternalErrorf("Failed to marshal Operation: %s", err)
+			}
+			if err := s.streamPubSub.Publish(ctx, s.pubSubChannelForExecutionID(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
+				log.CtxWarningf(ctx, "Error publishing task on stream pubsub: %s", err)
+				return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
+			}
 		}
 
 		if stage == repb.ExecutionStage_COMPLETED {
@@ -1551,9 +1543,12 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				mu.Lock()
 				defer mu.Unlock()
 
-				if err := s.updateExecution(ctx, taskID, stage, response, auxMeta, properties, action, cmd); err != nil {
-					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
-					return status.WrapErrorf(err, "failed to update execution %q", taskID)
+				if flushExecutionsOnEOF || !isPostCompletionUpdate {
+					// Only update the execution in Redis on the first COMPLETED update, or if we're flushing on EOF.
+					if err := s.updateExecution(ctx, taskID, stage, response, auxMeta, properties, action, cmd); err != nil {
+						log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
+						return status.WrapErrorf(err, "failed to update execution %q", taskID)
+					}
 				}
 				if !flushExecutionsOnEOF && !isPostCompletionUpdate {
 					// Legacy path: usage was already recorded in
