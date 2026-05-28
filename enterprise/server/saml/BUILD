@@ -16,16 +16,22 @@ go_library(
         "//server/util/cookie",
         "//server/util/flag",
         "//server/util/log",
+        "//server/util/lru",
         "//server/util/status",
         "@com_github_crewjam_saml//:saml",
         "@com_github_crewjam_saml//samlsp",
         "@com_github_golang_jwt_jwt_v4//:jwt",
+        "@com_github_jonboulle_clockwork//:clockwork",
     ],
 )
 
 go_test(
     name = "saml_test",
-    srcs = ["saml_test.go"],
+    srcs = [
+        "saml_cache_test.go",
+        "saml_test.go",
+    ],
+    embed = [":saml"],
     deps = [
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//proto:group_go_proto",
@@ -34,6 +40,8 @@ go_test(
         "//server/testutil/testport",
         "@com_github_beevik_etree//:etree",
         "@com_github_crewjam_saml//:saml",
+        "@com_github_crewjam_saml//samlsp",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//encoding/protojson",
