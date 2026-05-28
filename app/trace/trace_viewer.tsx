@@ -7,9 +7,11 @@ import { AnimationLoop } from "../util/animation_loop";
 import { ClientXY } from "../util/dom";
 import { clamp } from "../util/math";
 import { modifierKey } from "../util/platform";
+import { TypedArrayBuilder } from "../util/typed_arrays";
+import { Profile } from "./compact_trace";
 import * as constants from "./constants";
 import EventHovercard from "./event_hovercard";
-import { Profile, TraceEvent } from "./trace_events";
+import { TraceEvent } from "./trace_events";
 import { buildTraceViewerModel, panelScrollHeight } from "./trace_viewer_model";
 import Panel from "./trace_viewer_panel";
 
@@ -85,23 +87,16 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
 
   private debounceTimer: number | undefined;
 
-  // Index of the most recently highlighted search result in `this.searchableEvents`.
+  // Index of the most recently highlighted search result in `this.matchSectionIndices`.
   // A value of -1 indicates that the next search should start from the
   // beginning.
   private searchIndex = -1;
 
-  // Cache of indices into `searchableEvents` that match the current filter.
-  private matchIndices: number[] = [];
-
-  // Flat list of all events in the events panel sorted by timestamp, along
-  // with their section and track indices, so we can efficiently jump to the
-  // next match when the user presses Enter.
-  private readonly searchableEvents: {
-    event: TraceEvent;
-    sectionIndex: number;
-    trackIndex: number;
-    searchText: string;
-  }[] = [];
+  // Search matches are kept as parallel typed arrays to avoid allocating an
+  // object per matching event on very large profiles.
+  private matchSectionIndices = new Uint32Array();
+  private matchTrackIndices = new Uint32Array();
+  private matchEventIndices = new Uint32Array();
 
   constructor(props: TraceViewProps) {
     super(props);
@@ -112,30 +107,6 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
       totalMatches: 0, // Calculated after mounting
       currentMatch: 0, // Calculated after mounting / search
     };
-
-    // Build a flattened list of all events (from the first panel – events
-    // panel) sorted by thread_id and timestamp so that we can quickly iterate
-    // to the next match.
-    const eventsPanel = this.model.panels[0];
-    if (eventsPanel) {
-      for (let sectionIndex = 0; sectionIndex < eventsPanel.sections.length; sectionIndex++) {
-        const section = eventsPanel.sections[sectionIndex];
-        if (!section.tracks) continue;
-        for (let trackIndex = 0; trackIndex < section.tracks.length; trackIndex++) {
-          const track = section.tracks[trackIndex];
-          for (const event of track.events) {
-            const searchText = [event.name, event.cat, event.args?.target, event.args?.mnemonic, event.out]
-              .join(" ")
-              .toLowerCase();
-            this.searchableEvents.push({ event, sectionIndex, trackIndex, searchText });
-          }
-        }
-      }
-      // Ensure events are ordered by thread_id and timestamp
-      this.searchableEvents.sort((a, b) =>
-        a.event.tid != b.event.tid ? a.event.tid - b.event.tid : a.event.ts - b.event.ts
-      );
-    }
   }
 
   componentDidMount() {
@@ -427,27 +398,48 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
 
     // Reset search state.
     this.searchIndex = -1;
-    this.matchIndices = [];
+    const matchSectionIndices = TypedArrayBuilder.of(Uint32Array);
+    const matchTrackIndices = TypedArrayBuilder.of(Uint32Array);
+    const matchEventIndices = TypedArrayBuilder.of(Uint32Array);
     if (this.panels.length) {
       this.panels[0].highlightEvent = undefined;
     }
 
     // Find all matches for the new filter.
-    if (filter) {
+    if (filter && this.model.panels.length) {
       const lowerCaseFilter = filter.toLowerCase();
-      for (let i = 0; i < this.searchableEvents.length; i++) {
-        if (this.searchableEvents[i].searchText.includes(lowerCaseFilter)) {
-          this.matchIndices.push(i);
+      const eventsPanel = this.model.panels[0];
+      for (let sectionIndex = 0; sectionIndex < eventsPanel.sections.length; sectionIndex++) {
+        const section = eventsPanel.sections[sectionIndex];
+        if (!section.tracks?.length) continue;
+        const thread = section.tracks[0].thread;
+        // Iterate through thread events in timestamp order within each thread.
+        // This needs a bit of extra bookkeeping for the current event index
+        // within each track, since we don't store an explicit lookup table from
+        // each event to its index within its depth track.
+        const nextEventIndexByTrack = new Uint32Array(section.tracks.length);
+        for (let threadEventIndex = 0; threadEventIndex < thread.length; threadEventIndex++) {
+          const trackIndex = thread.depth[threadEventIndex];
+          const eventIndex = nextEventIndexByTrack[trackIndex]++;
+          if (thread.matchesFilter(threadEventIndex, lowerCaseFilter)) {
+            matchSectionIndices.append(sectionIndex);
+            matchTrackIndices.append(trackIndex);
+            matchEventIndices.append(eventIndex);
+          }
         }
       }
     }
 
+    this.matchSectionIndices = matchSectionIndices.toArray();
+    this.matchTrackIndices = matchTrackIndices.toArray();
+    this.matchEventIndices = matchEventIndices.toArray();
+
     // Update the UI with the new match count.
-    this.setState({ totalMatches: this.matchIndices.length, currentMatch: 0 });
+    this.setState({ totalMatches: this.matchSectionIndices.length, currentMatch: 0 });
     this.update(); // Re-render panels with the new filter
 
     // Automatically jump to the first match.
-    if (this.matchIndices.length > 0) {
+    if (this.matchSectionIndices.length > 0) {
       // Needs a slight delay to allow panels to render before scrolling.
       requestAnimationFrame(() => this.scrollToNextMatch(1));
     }
@@ -455,7 +447,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
 
   // Scrolls to and highlights the next event that matches the current search filter.
   private scrollToNextMatch(direction: number) {
-    if (!this.matchIndices.length) {
+    if (!this.matchSectionIndices.length) {
       // If there are no matches, ensure any existing highlight is cleared.
       if (this.panels.length) {
         this.panels[0].highlightEvent = undefined;
@@ -467,30 +459,35 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
     }
 
     let nextMatchIndex;
-    const currentMatchIndex = this.matchIndices.indexOf(this.searchIndex);
+    const currentMatchIndex = this.searchIndex;
 
     if (currentMatchIndex === -1) {
       // If no match is currently selected, start from the beginning or end.
-      nextMatchIndex = direction > 0 ? 0 : this.matchIndices.length - 1;
+      nextMatchIndex = direction > 0 ? 0 : this.matchSectionIndices.length - 1;
     } else {
       // Cycle through the matches.
-      const total = this.matchIndices.length;
+      const total = this.matchSectionIndices.length;
       nextMatchIndex = (currentMatchIndex + direction + total) % total;
     }
 
-    const searchableEventIndex = this.matchIndices[nextMatchIndex];
-    this.highlightAndScrollToEvent(searchableEventIndex);
+    this.highlightAndScrollToEvent(nextMatchIndex);
     this.setState({ currentMatch: nextMatchIndex + 1 });
   }
 
-  // Highlights the event at `searchableEvents[index]` and scrolls it into view.
+  // Highlights the event with the given match index and scrolls it into view.
   private highlightAndScrollToEvent(index: number) {
     this.searchIndex = index;
-    const { event, sectionIndex, trackIndex } = this.searchableEvents[index];
+    const sectionIndex = this.matchSectionIndices[index];
+    const trackIndex = this.matchTrackIndices[index];
+    const eventIndex = this.matchEventIndices[index];
+    const track = this.model.panels[0].sections[sectionIndex].tracks![trackIndex];
+    const threadEventIndex = track.eventIndices[eventIndex];
+    const eventTs = track.thread.ts[threadEventIndex];
+    const eventDur = track.thread.dur[threadEventIndex];
 
     // Highlight the matched event so it is visually selected no matter what.
     const eventsPanel = this.panels[0];
-    eventsPanel.highlightEvent = event;
+    eventsPanel.highlightEvent = { track, index: eventIndex };
 
     // Determine whether the matched event is already fully visible in the
     // current viewport. If so, we simply update the highlight without
@@ -499,8 +496,8 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
     const scale = eventsPanel.canvasXPerModelX;
 
     // Horizontal visibility check.
-    const eventStartX = event.ts * scale;
-    const eventEndX = (event.ts + (event.dur ?? 0)) * scale;
+    const eventStartX = eventTs * scale;
+    const eventEndX = (eventTs + eventDur) * scale;
     const viewportStartX = eventsPanel.scrollX;
     const viewportEndX = viewportStartX + panelContainer.clientWidth;
     const isHorizontallyVisible = eventStartX >= viewportStartX && eventEndX <= viewportEndX;
@@ -520,8 +517,8 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
     const viewportEndY = viewportStartY + panelContainer.clientHeight;
     const isVerticallyVisible = trackTop >= viewportStartY && trackBottom <= viewportEndY;
 
-    const eventPixelWidth = (event.dur ?? 0) * scale;
-    const isTooSmall = event.dur && eventPixelWidth < constants.MIN_RENDER_PIXEL_WIDTH;
+    const eventPixelWidth = eventDur * scale;
+    const isTooSmall = eventDur && eventPixelWidth < constants.MIN_RENDER_PIXEL_WIDTH;
 
     if (isHorizontallyVisible && isVerticallyVisible && !isTooSmall) {
       // Already fully in view and large enough – only update the canvas so the highlight is
@@ -534,15 +531,15 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
     // zooming (if needed) and scrolling to center the match.
 
     // Adjust zoom so that the span has a reasonable on-screen width.
-    if (event.dur && event.dur > 0) {
+    if (eventDur && eventDur > 0) {
       const currentScale = this.canvasXPerModelX.value;
-      const currentPixelWidth = event.dur * currentScale;
+      const currentPixelWidth = eventDur * currentScale;
 
       let desiredScale = currentScale;
 
       // Zoom in if span is too small.
       if (currentPixelWidth < constants.MIN_RENDER_PIXEL_WIDTH) {
-        desiredScale = constants.MIN_RENDER_PIXEL_WIDTH / event.dur;
+        desiredScale = constants.MIN_RENDER_PIXEL_WIDTH / eventDur;
       }
       // Zoom out (all the way to min) if span is extremely large relative to
       // the viewport width.
@@ -583,7 +580,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
 
     // Horizontal scrolling – center the event start.
     const desiredScrollX = clamp(
-      event.ts * finalScale - panelContainer.clientWidth / 2,
+      eventTs * finalScale - panelContainer.clientWidth / 2,
       0,
       finalScale * this.model.xMax - panelContainer.clientWidth
     );
