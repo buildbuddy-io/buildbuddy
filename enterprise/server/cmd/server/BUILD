@@ -236,7 +236,7 @@ pkg_tar(
     include_runfiles = True,
     package_dir = PACKAGE_ROOT,
     remap_paths = {
-        ".runfiles/": "%s.runfiles/" % BINARY_NAME,
+        ".runfiles/%s/enterprise" % runfiles_directory(): "",
     },
 )
 
@@ -244,11 +244,7 @@ pkg_tar(
     name = "config_symlink_tar",
     mode = "0755",
     symlinks = {
-        "config.yaml": "/%s/%s.runfiles/%s/enterprise/config/buildbuddy.local.yaml" % (
-            PACKAGE_ROOT,
-            BINARY_NAME,
-            runfiles_directory(),
-        ),
+        "config.yaml": "%s/config/buildbuddy.local.yaml" % PACKAGE_ROOT,
     },
 )
 
