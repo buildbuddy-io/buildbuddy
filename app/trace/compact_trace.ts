@@ -1,6 +1,6 @@
 import { StringInterner } from "../util/intern";
 import { TypedArrayBuilder } from "../util/typed_arrays";
-import type { ProfileProgressCallback, TraceEvent } from "./trace_events";
+import type { ProfileInput, ProfileProgressCallback, TraceEvent } from "./trace_events";
 import {
   TIME_SERIES_EVENT_ORDER,
   TIME_SERIES_METADATA,
@@ -159,14 +159,11 @@ export class TimeSeries {
   ) {}
 }
 
-/** Reads a trace profile stream. */
-export async function readProfile(
-  body: ReadableStream<Uint8Array>,
-  progress?: ProfileProgressCallback
-): Promise<Profile> {
+/** Reads a trace profile from a local file or stream. */
+export async function readProfile(input: ProfileInput, progress?: ProfileProgressCallback): Promise<Profile> {
   const builder = new ProfileBuilder();
   await readProfileEvents(
-    body,
+    input,
     (events) => {
       for (const event of events) {
         builder.addEvent(event);
