@@ -101,17 +101,25 @@ func isDefaultGetActionResultRequest(req *repb.GetActionResultRequest) bool {
 // so there is digest validation on its value.
 // The remote result is always the source of truth. If the values do not
 // match, the local result should be discarded.
-func (s *ActionCacheServerProxy) getActionResultFromLocalCAS(ctx context.Context, key *digest.ACResourceName) (*repb.Digest, *repb.ActionResult, *interfaces.CacheMetadata, error) {
+func (s *ActionCacheServerProxy) getActionResultFromLocalCAS(ctx context.Context, key *digest.ACResourceName, fetchMetadata bool) (*repb.Digest, *repb.ActionResult, *interfaces.CacheMetadata, error) {
 	// NOTE: To avoid double-counting AC hits, we deliberately don't track
 	// download for these reads.  The remote server will count the full response
 	// size when checking the cached value.
-	data, acMD, err := s.localCache.GetWithMetadata(ctx, key.ToProto())
-	if err != nil {
-		return nil, nil, nil, err
-	}
 	ptr := &rspb.ResourceName{}
-	if err := proto.Unmarshal(data, ptr); err != nil {
-		return nil, nil, nil, err
+	var acMD *interfaces.CacheMetadata
+	if fetchMetadata {
+		data, md, err := s.localCache.GetWithMetadata(ctx, key.ToProto())
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if err := proto.Unmarshal(data, ptr); err != nil {
+			return nil, nil, nil, err
+		}
+		acMD = md
+	} else {
+		if err := cachetools.ReadProtoFromAC(ctx, s.localCache, key, ptr); err != nil {
+			return nil, nil, nil, err
+		}
 	}
 	casRN, err := digest.CASResourceNameFromProto(ptr)
 	if err != nil {
@@ -252,15 +260,18 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 		if err != nil {
 			return nil, err
 		}
+		// Only fetch AC entry metadata when we may serve the TTL fast path.
+		// Otherwise the extra Metadata call is wasted work.
+		ttlFastPathEligible := isDefaultGetActionResultRequest(req) && ttl > 0
 		var err error
-		localDigest, localResult, localACMD, err := s.getActionResultFromLocalCAS(ctx, localKey)
+		localDigest, localResult, localACMD, err := s.getActionResultFromLocalCAS(ctx, localKey, ttlFastPathEligible)
 		if err != nil && !status.IsNotFoundError(err) {
 			return nil, err
 		}
 		if localDigest != nil {
 			// TODO: Consider async app revalidation of TTL hits, updating or deleting
 			// the local AC entry if the authoritative result changed.
-			if isDefaultGetActionResultRequest(req) && s.isLocalActionResultFresh(localACMD, ttl) {
+			if ttlFastPathEligible && s.isLocalActionResultFresh(localACMD, ttl) {
 				// Skip checking for existence of output files. The app recently
 				// validated or updated this result, which refreshed the referenced
 				// outputs' atime. With remote_download_minimal, this proxy
