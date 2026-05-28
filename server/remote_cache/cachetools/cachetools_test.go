@@ -1530,3 +1530,203 @@ func TestBatchCASUploader_SkipsChunkedUploadAboveMaxSize(t *testing.T) {
 	})
 	require.True(t, status.IsNotFoundError(err))
 }
+
+// readProtoFromACTestCache fakes the bare minimum of interfaces.Cache used by
+// ReadProtoFromACWithMetadata: Get and Metadata. By default it does NOT
+// implement GetterWithMetadata, so ReadProtoFromACWithMetadata routes through
+// the Get + Metadata fallback path.
+type readProtoFromACTestCache struct {
+	interfaces.Cache
+	data     []byte
+	getErr   error
+	md       *interfaces.CacheMetadata
+	mdErr    error
+	getCalls int
+	mdCalls  int
+}
+
+func (c *readProtoFromACTestCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
+	c.getCalls++
+	if c.getErr != nil {
+		return nil, c.getErr
+	}
+	return c.data, nil
+}
+
+func (c *readProtoFromACTestCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
+	c.mdCalls++
+	if c.mdErr != nil {
+		return nil, c.mdErr
+	}
+	return c.md, nil
+}
+
+// readProtoAndMDFromACTestCache additionally implements GetterWithMetadata, so
+// ReadProtoFromACWithMetadata routes through the fused path and never invokes
+// the embedded Get/Metadata methods.
+type readProtoAndMDFromACTestCache struct {
+	readProtoFromACTestCache
+	gwmData  []byte
+	gwmMD    *interfaces.CacheMetadata
+	gwmErr   error
+	gwmCalls int
+}
+
+func (c *readProtoAndMDFromACTestCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	c.gwmCalls++
+	if c.gwmErr != nil {
+		return nil, nil, c.gwmErr
+	}
+	return c.gwmData, c.gwmMD, nil
+}
+
+func newTestACResourceName(t *testing.T) *digest.ACResourceName {
+	d, err := digest.Compute(bytes.NewReader([]byte("test-action")), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	return digest.NewACResourceName(d, testInstance, repb.DigestFunction_SHA256)
+}
+
+func marshalDigestProto(t *testing.T, hash string, size int64) []byte {
+	b, err := (&repb.Digest{Hash: hash, SizeBytes: size}).MarshalVT()
+	require.NoError(t, err)
+	return b
+}
+
+func TestReadProtoFromACWithMetadata_FusedPath(t *testing.T) {
+	ctx := context.Background()
+	want := &repb.Digest{Hash: "abc", SizeBytes: 42}
+	wantBytes, err := want.MarshalVT()
+	require.NoError(t, err)
+
+	wantMD := &interfaces.CacheMetadata{
+		StoredSizeBytes:    int64(len(wantBytes)),
+		DigestSizeBytes:    int64(len(wantBytes)),
+		LastModifyTimeUsec: 12345,
+		LastAccessTimeUsec: 67890,
+	}
+	cache := &readProtoAndMDFromACTestCache{
+		gwmData: wantBytes,
+		gwmMD:   wantMD,
+	}
+
+	var got repb.Digest
+	md, err := cachetools.ReadProtoFromACWithMetadata(ctx, cache, newTestACResourceName(t), &got)
+	require.NoError(t, err)
+	assert.Equal(t, 1, cache.gwmCalls)
+	assert.Equal(t, 0, cache.getCalls, "fused path should not invoke Get")
+	assert.Equal(t, 0, cache.mdCalls, "fused path should not invoke Metadata")
+	assert.Empty(t, cmp.Diff(want, &got, protocmp.Transform()))
+	assert.Equal(t, wantMD, md)
+}
+
+func TestReadProtoFromACWithMetadata_FusedPath_BestEffortMetadata(t *testing.T) {
+	ctx := context.Background()
+	want := &repb.Digest{Hash: "abc", SizeBytes: 42}
+	wantBytes, err := want.MarshalVT()
+	require.NoError(t, err)
+
+	// GetWithMetadata implementations are allowed to return (data, nil, nil)
+	// when the backend produced the data but couldn't atomically produce
+	// metadata. ReadProtoFromACWithMetadata must pass that through.
+	cache := &readProtoAndMDFromACTestCache{
+		gwmData: wantBytes,
+		gwmMD:   nil,
+	}
+
+	var got repb.Digest
+	md, err := cachetools.ReadProtoFromACWithMetadata(ctx, cache, newTestACResourceName(t), &got)
+	require.NoError(t, err)
+	assert.Nil(t, md)
+	assert.Empty(t, cmp.Diff(want, &got, protocmp.Transform()))
+}
+
+func TestReadProtoFromACWithMetadata_FusedPath_Error(t *testing.T) {
+	ctx := context.Background()
+	cache := &readProtoAndMDFromACTestCache{
+		gwmErr: status.NotFoundError("nope"),
+	}
+
+	var got repb.Digest
+	md, err := cachetools.ReadProtoFromACWithMetadata(ctx, cache, newTestACResourceName(t), &got)
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err))
+	assert.Nil(t, md)
+}
+
+func TestReadProtoFromACWithMetadata_FallbackPath(t *testing.T) {
+	ctx := context.Background()
+	want := &repb.Digest{Hash: "abc", SizeBytes: 42}
+	wantBytes, err := want.MarshalVT()
+	require.NoError(t, err)
+	wantMD := &interfaces.CacheMetadata{
+		StoredSizeBytes:    int64(len(wantBytes)),
+		DigestSizeBytes:    int64(len(wantBytes)),
+		LastModifyTimeUsec: 12345,
+		LastAccessTimeUsec: 67890,
+	}
+	cache := &readProtoFromACTestCache{
+		data: wantBytes,
+		md:   wantMD,
+	}
+
+	var got repb.Digest
+	md, err := cachetools.ReadProtoFromACWithMetadata(ctx, cache, newTestACResourceName(t), &got)
+	require.NoError(t, err)
+	assert.Equal(t, 1, cache.getCalls)
+	assert.Equal(t, 1, cache.mdCalls)
+	assert.Empty(t, cmp.Diff(want, &got, protocmp.Transform()))
+	assert.Equal(t, wantMD, md)
+}
+
+func TestReadProtoFromACWithMetadata_FallbackPath_MetadataErrorSwallowed(t *testing.T) {
+	ctx := context.Background()
+	want := &repb.Digest{Hash: "abc", SizeBytes: 42}
+	wantBytes := marshalDigestProto(t, "abc", 42)
+
+	// Get succeeds, but Metadata returns a transient error. The function
+	// should still return the unmarshaled proto and a nil metadata pointer
+	// instead of failing — this is the regression we want to lock in, since
+	// callers like the AC proxy rely on it to keep the TTL fast path
+	// optional rather than load-bearing.
+	cache := &readProtoFromACTestCache{
+		data:  wantBytes,
+		mdErr: status.UnavailableError("transient"),
+	}
+
+	var got repb.Digest
+	md, err := cachetools.ReadProtoFromACWithMetadata(ctx, cache, newTestACResourceName(t), &got)
+	require.NoError(t, err)
+	assert.Nil(t, md)
+	assert.Empty(t, cmp.Diff(want, &got, protocmp.Transform()))
+	assert.Equal(t, 1, cache.getCalls)
+	assert.Equal(t, 1, cache.mdCalls)
+}
+
+func TestReadProtoFromACWithMetadata_FallbackPath_GetError(t *testing.T) {
+	ctx := context.Background()
+	cache := &readProtoFromACTestCache{
+		getErr: status.NotFoundError("nope"),
+	}
+
+	var got repb.Digest
+	md, err := cachetools.ReadProtoFromACWithMetadata(ctx, cache, newTestACResourceName(t), &got)
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err))
+	assert.Nil(t, md)
+	assert.Equal(t, 1, cache.getCalls)
+	assert.Equal(t, 0, cache.mdCalls, "Metadata should not run when Get failed")
+}
+
+func TestReadProtoFromACWithMetadata_UnmarshalError(t *testing.T) {
+	ctx := context.Background()
+	// Garbage bytes that won't parse as a repb.Digest.
+	cache := &readProtoAndMDFromACTestCache{
+		gwmData: []byte{0xff, 0xff, 0xff, 0xff},
+		gwmMD:   &interfaces.CacheMetadata{LastModifyTimeUsec: 1},
+	}
+
+	var got repb.Digest
+	md, err := cachetools.ReadProtoFromACWithMetadata(ctx, cache, newTestACResourceName(t), &got)
+	require.Error(t, err)
+	assert.Nil(t, md)
+}
