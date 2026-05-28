@@ -3256,3 +3256,183 @@ func TestKubeDiscoveryPodJoins(t *testing.T) {
 		return len(dc2.consistentHash.GetItems()) == 2
 	}, 5*time.Second, 50*time.Millisecond, "dc2 should discover 2 peers")
 }
+
+func TestGetWithMetadata(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	metrics.DistributedCachePeerLookups.Reset()
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []*Cache{dc1, dc2, dc3}
+
+	testSizes := []int64{1, 100, 10000}
+	for i, testSize := range testSizes {
+		rn, buf := testdigest.NewRandomResourceAndBuf(t, testSize, rspb.CacheType_CAS, "")
+		require.NoError(t, distributedCaches[i%3].Set(ctx, rn, buf))
+
+		for _, dc := range distributedCaches {
+			data, md, err := dc.GetWithMetadata(ctx, rn)
+			require.NoError(t, err)
+			assert.Equal(t, buf, data)
+			require.NotNil(t, md)
+			// Queried with the right digest, StoredSizeBytes matches the
+			// uncompressed payload size since memory_cache doesn't compress.
+			assert.Equal(t, testSize, md.StoredSizeBytes)
+		}
+	}
+
+	// For each of the resources written, we did a GetWithMetadata on all 3
+	// distributed caches; each finds the data on the first peer it tries
+	// (1 lookup) since replication factor 3 puts the data on every node.
+	peerLookupMetrics := testmetrics.HistogramVecValues(t, metrics.DistributedCachePeerLookups)
+	assert.Equal(t, []testmetrics.HistogramValues{
+		{
+			Labels: map[string]string{
+				"op":                       "GetWithMetadata",
+				metrics.CacheHitMissStatus: metrics.HitStatusLabel,
+			},
+			Buckets: map[float64]uint64{1: uint64(len(testSizes) * len(distributedCaches))},
+		},
+	}, peerLookupMetrics)
+}
+
+func TestGetWithMetadata_NotFound(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	metrics.DistributedCachePeerLookups.Reset()
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:  2,
+		Nodes:              []string{peer1, peer2},
+		DisableLocalLookup: true,
+	}
+
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	_ = startNewDCache(t, env, config2, memoryCache2)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+
+	rn, _ := testdigest.NewRandomResourceAndBuf(t, 100, rspb.CacheType_CAS, "")
+	data, md, err := dc1.GetWithMetadata(ctx, rn)
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err))
+	assert.Nil(t, data)
+	assert.Nil(t, md)
+
+	// Should have recorded a miss across the available peers.
+	peerLookupMetrics := testmetrics.HistogramVecValues(t, metrics.DistributedCachePeerLookups)
+	var foundMiss bool
+	for _, hv := range peerLookupMetrics {
+		if hv.Labels["op"] == "GetWithMetadata" && hv.Labels[metrics.CacheHitMissStatus] == metrics.MissStatusLabel {
+			foundMiss = true
+		}
+	}
+	assert.True(t, foundMiss, "expected miss metric for GetWithMetadata")
+}
+
+func TestGetWithMetadata_Backfill(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:    3,
+		Nodes:                []string{peer1, peer2, peer3},
+		DisableLocalLookup:   true,
+		RPCHeartbeatInterval: 100 * time.Millisecond,
+	}
+
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2, memoryCache3}
+	distributedCaches := []*Cache{dc1, dc2, dc3}
+
+	resourcesWritten := make([]*rspb.ResourceName, 0, 100)
+	for i := 0; i < 100; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, distributedCaches[i%3].Set(ctx, rn, buf))
+		resourcesWritten = append(resourcesWritten, rn)
+		for _, baseCache := range baseCaches {
+			exists, err := baseCache.Contains(ctx, rn)
+			require.NoError(t, err)
+			require.True(t, exists)
+		}
+	}
+
+	// Zero out one of the base caches.
+	for _, r := range resourcesWritten {
+		require.NoError(t, memoryCache3.Delete(ctx, r))
+	}
+
+	// GetWithMetadata should find the data on the surviving peers and
+	// backfill memoryCache3.
+	for _, r := range resourcesWritten {
+		for _, dc := range distributedCaches {
+			data, md, err := dc.GetWithMetadata(ctx, r)
+			require.NoError(t, err)
+			assert.NotEmpty(t, data)
+			require.NotNil(t, md)
+		}
+	}
+
+	for _, r := range resourcesWritten {
+		for i, baseCache := range baseCaches {
+			exists, err := baseCache.Contains(ctx, r)
+			require.NoError(t, err, "basecache %d missing digest", i)
+			require.True(t, exists, "basecache %d missing digest", i)
+		}
+	}
+}
