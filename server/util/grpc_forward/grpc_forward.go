@@ -69,11 +69,12 @@ func getConnectionPool(dialer dialFn, target string) (*grpc_client.ClientConnPoo
 
 	// Note: dial should be non-blocking, so it's fine to do it with the mutex
 	// held.
-	newPool, err := dial(target)
-	if err == nil {
-		backendConnectionPools[target] = newPool
+	newPool, err := dialer(target)
+	if err != nil {
+		return nil, err
 	}
-	return newPool, err
+	backendConnectionPools[target] = newPool
+	return newPool, nil
 }
 
 func director(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
