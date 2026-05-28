@@ -20,6 +20,7 @@ package(default_visibility = ["//visibility:public"])
         tars = [
             "@debian13//libc6/%s" % arch,
         ],
+    tags = ["manual"],
     )
     for arch in [
         "amd64",
@@ -46,6 +47,7 @@ package(default_visibility = ["//visibility:public"])
                 "arm64": "aarch64",
             }[arch],
         ],
+    tags = ["manual"],
     )
     for arch in [
         "amd64",
@@ -62,6 +64,7 @@ image_manifest(
         "@platforms//cpu:x86_64": [":layer_amd64"],
     }),
     user = "root",
+    tags = ["manual"],
 )
 
 image_index(
@@ -78,6 +81,7 @@ image_index(
         "@platforms//os:windows": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    tags = ["manual"],
 )
 
 # Load a multi-platform image
@@ -94,4 +98,5 @@ image_load(
     daemon = "containerd",
     image = ":index",  # References an image_index
     tag = "bb-distroless_base-nossl:latest",
+    tags = ["manual"],
 )

@@ -18,6 +18,7 @@ group(
             users = ["root"],
         ),
     ],
+    tags = ["manual"],
 )
 
 # Create passwd entries (similar to useradd/passwd)
@@ -34,6 +35,7 @@ passwd(
             username = "root",
         ),
     ],
+    tags = ["manual"],
 )
 
 # Generate CA certificates bundle
@@ -45,6 +47,7 @@ cacerts(
         "@platforms//os:windows": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    tags = ["manual"],
 )
 
 [
@@ -66,6 +69,7 @@ cacerts(
             ":passwd",
             ":ca_certificates",
         ],
+        tags = ["manual"],
     )
     for arch in [
         "amd64",
@@ -92,6 +96,7 @@ cacerts(
                 "arm64": "aarch64",
             }[arch],
         ],
+    tags = ["manual"],
     )
     for arch in [
         "amd64",
@@ -111,6 +116,7 @@ image_manifest(
         "@platforms//cpu:x86_64": [":layer_amd64"],
     }),
     user = "root",
+    tags = ["manual"],
 )
 
 image_index(
@@ -127,6 +133,7 @@ image_index(
         "@platforms//os:windows": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    tags = ["manual"],
 )
 
 # Load a multi-platform image
@@ -143,4 +150,5 @@ image_load(
     daemon = "containerd",
     image = ":index",  # References an image_index
     tag = "bb-distroless_static:latest",
+    tags = ["manual"],
 )

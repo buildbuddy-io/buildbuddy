@@ -185,6 +185,7 @@ image_layer(
     symlinks = {
         "buildbuddy": "tmp",
     },
+    tags = ["manual"],
 )
 
 image_layer(
@@ -202,6 +203,7 @@ image_layer(
     # into a separate layer. This lets us use a base image without those files
     # when building our production images.
     include_runfiles = False,
+    tags = ["manual"],
 )
 
 pkg_tar(
@@ -216,6 +218,7 @@ pkg_tar(
     remap_paths = {
         ".runfiles/": "%s.runfiles/" % BINARY_NAME,
     },
+    tags = ["manual"],
 )
 
 layer_from_tar(
@@ -230,6 +233,7 @@ layer_from_tar(
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
     compress = "gzip",
+    tags = ["manual"],
 )
 
 image_manifest(
@@ -255,6 +259,7 @@ image_manifest(
         ":runfiles_layer",
         ":binary_layer",
     ],
+    tags = ["manual"],
 )
 
 pkg_tar(
@@ -267,6 +272,7 @@ pkg_tar(
     remap_paths = {
         ".runfiles/%s/enterprise" % runfiles_directory(): "",
     },
+    tags = ["manual"],
 )
 
 pkg_tar(
@@ -275,6 +281,7 @@ pkg_tar(
     symlinks = {
         "config.yaml": "%s/config/buildbuddy.local.yaml" % PACKAGE_ROOT,
     },
+    tags = ["manual"],
 )
 
 flatten(
@@ -283,6 +290,7 @@ flatten(
         ":config_files_tar",
         ":config_symlink_tar",
     ],
+    tags = ["manual"],
 )
 
 layer_from_tar(
@@ -295,6 +303,7 @@ layer_from_tar(
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
+    tags = ["manual"],
 )
 
 image_manifest(
@@ -312,6 +321,7 @@ image_manifest(
     layers = [
         ":config_layer",
     ],
+    tags = ["manual"],
 )
 
 image_load(
@@ -327,4 +337,5 @@ image_load(
     daemon = "containerd",
     image = ":image_manifest",
     tag = "buildbuddy_image:latest",
+    tags = ["manual"],
 )
