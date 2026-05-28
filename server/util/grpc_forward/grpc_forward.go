@@ -52,47 +52,39 @@ func getConnectionPool(dial dialFn, target string) (*grpc_client.ClientConnPool,
 	defer mu.Unlock()
 
 	// Check the map again since we briefly released the lock.
-	pool, ok = backendConnectionPools[target]
-	if ok {
+	if pool, ok := backendConnectionPools[target]; ok {
 		return pool, nil
 	}
 
 	// Note: dial should be non-blocking, so it's fine to do it with the mutex
 	// held.
 	newPool, err := dial(target)
-	if err != nil {
-		return nil, err
+	if err == nil {
+		backendConnectionPools[target] = newPool
 	}
-	backendConnectionPools[target] = newPool
-	return newPool, nil
+	return newPool, err
 }
 
-func getProxyDirector() proxy.StreamDirector {
-	if len(*proxyTargets) == 0 {
-		return nil
+func director(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
+	target, err := lookupProxyTarget(fullMethodName)
+	if err != nil {
+		return nil, nil, err
 	}
-	return func(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
-		target, err := lookupProxyTarget(fullMethodName)
-		if err != nil {
-			return nil, nil, err
-		}
 
-		pool, err := getConnectionPool(grpc_client.DialSimple, target)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		cc := pool.WaitForConn()
-		if md, ok := metadata.FromIncomingContext(ctx); ok {
-			ctx = metadata.NewOutgoingContext(ctx, md.Copy())
-		}
-		return ctx, cc, nil
+	pool, err := getConnectionPool(grpc_client.DialSimple, target)
+	if err != nil {
+		return nil, nil, err
 	}
+
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		ctx = metadata.NewOutgoingContext(ctx, md.Copy())
+	}
+	return ctx, pool, nil
 }
 
 func GetForwardingServerOption() grpc.ServerOption {
-	if director := getProxyDirector(); director != nil {
-		return grpc.UnknownServiceHandler(proxy.TransparentHandler(proxy.StreamDirector(director)))
+	if len(*proxyTargets) == 0 {
+		return nil
 	}
-	return nil
+	return grpc.UnknownServiceHandler(proxy.TransparentHandler(director))
 }
