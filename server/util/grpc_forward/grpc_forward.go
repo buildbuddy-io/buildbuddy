@@ -23,9 +23,8 @@ type proxyPair struct {
 var (
 	proxyTargets = flag.Slice("app.proxy_targets", []proxyPair{}, "")
 
-	once                   sync.Once
 	mu                     sync.RWMutex
-	backendConnectionPools map[string]*grpc_client.ClientConnPool
+	backendConnectionPools = map[string]*grpc_client.ClientConnPool{}
 )
 
 func lookupProxyTarget(fullMethodName string) (string, error) {
@@ -37,28 +36,35 @@ func lookupProxyTarget(fullMethodName string) (string, error) {
 	return "", status.UnimplementedErrorf("unknown service %s", fullMethodName)
 }
 
-func getConnectionPool(target string) (*grpc_client.ClientConnPool, error) {
-	once.Do(func() {
-		mu.Lock()
-		backendConnectionPools = make(map[string]*grpc_client.ClientConnPool)
-		mu.Unlock()
-	})
+type dialFn = func(string, ...grpc.DialOption) (*grpc_client.ClientConnPool, error)
 
+func getConnectionPool(dial dialFn, target string) (*grpc_client.ClientConnPool, error) {
+	// Fast path: take a non-exclusive lock and check for an existing
+	// connection.
 	mu.RLock()
 	pool, ok := backendConnectionPools[target]
 	mu.RUnlock()
-
-	if !ok {
-		newPool, err := grpc_client.DialSimple(target)
-		if err != nil {
-			return nil, err
-		}
-		mu.Lock()
-		backendConnectionPools[target] = newPool
-		mu.Unlock()
-		pool = newPool
+	if ok {
+		return pool, nil
 	}
-	return pool, nil
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Check the map again since we briefly released the lock.
+	pool, ok = backendConnectionPools[target]
+	if ok {
+		return pool, nil
+	}
+
+	// Note: dial should be non-blocking, so it's fine to do it with the mutex
+	// held.
+	newPool, err := dial(target)
+	if err != nil {
+		return nil, err
+	}
+	backendConnectionPools[target] = newPool
+	return newPool, nil
 }
 
 type directorFunc func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error)
@@ -73,7 +79,7 @@ func getProxyDirector() directorFunc {
 			return nil, nil, err
 		}
 
-		pool, err := getConnectionPool(target)
+		pool, err := getConnectionPool(grpc_client.DialSimple, target)
 		if err != nil {
 			return nil, nil, err
 		}
