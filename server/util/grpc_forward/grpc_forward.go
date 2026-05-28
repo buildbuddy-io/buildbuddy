@@ -61,13 +61,11 @@ func getConnectionPool(target string) (*grpc_client.ClientConnPool, error) {
 	return pool, nil
 }
 
-type directorFunc func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error)
-
-func getProxyDirector() directorFunc {
+func getProxyDirector() proxy.StreamDirector {
 	if len(*proxyTargets) == 0 {
 		return nil
 	}
-	return func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
+	return func(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
 		target, err := lookupProxyTarget(fullMethodName)
 		if err != nil {
 			return nil, nil, err
