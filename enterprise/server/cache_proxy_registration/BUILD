@@ -10,8 +10,10 @@ go_library(
     deps = [
         "//proto:cache_proxy_go_proto",
         "//server/environment",
+        "//server/hostid",
         "//server/real_environment",
         "//server/util/authutil",
+        "//server/util/disk",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/log",

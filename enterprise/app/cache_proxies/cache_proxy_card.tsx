@@ -35,12 +35,12 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
               <div>{this.props.node.host}</div>
             </div>
             <div className="cache-proxy-section">
-              <div className="cache-proxy-section-title">Proxy ID:</div>
+              <div className="cache-proxy-section-title">Proxy Instance ID:</div>
               <div>{this.props.node.proxyId}</div>
             </div>
             {this.props.node.proxyHostId && (
               <div className="cache-proxy-section">
-                <div className="cache-proxy-section-title">Host ID:</div>
+                <div className="cache-proxy-section-title">Proxy Host ID:</div>
                 <div>{this.props.node.proxyHostId}</div>
               </div>
             )}

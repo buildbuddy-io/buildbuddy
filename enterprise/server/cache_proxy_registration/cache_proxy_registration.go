@@ -21,8 +21,10 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -210,6 +212,29 @@ func sendHeartbeat(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClie
 		}
 	}
 	return err
+}
+
+// getProxyHostID returns an ID that identifies the host this cache proxy
+// process is running on. If --cache_proxy.metadata_directory is set and
+// writable, the ID is persisted there and survives process restarts
+// (mirroring the executor's getExecutorHostID). Otherwise the failsafe
+// is a per-process UUID, which is unique but resets on every restart and
+// so the proxy will appear as a new host in the deployment view after
+// each restart.
+func getProxyHostID() string {
+	dir := *metadataDirectory
+	if dir != "" {
+		if err := disk.EnsureDirectoryExists(dir); err == nil {
+			if id, err := hostid.GetHostID(dir); err == nil {
+				return id
+			} else {
+				log.Warningf("Cache Proxy: could not read/create stable host ID in %q: %s", dir, err)
+			}
+		} else {
+			log.Warningf("Cache Proxy: metadata directory %q is unusable: %s", dir, err)
+		}
+	}
+	return hostid.GetFailsafeHostID(dir)
 }
 
 func sleepWithContext(ctx context.Context, d time.Duration) (cancelled bool) {
