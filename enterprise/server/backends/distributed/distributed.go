@@ -850,7 +850,7 @@ func (c *Cache) remoteGetWithMetadata(ctx context.Context, peer string, r *rspb.
 		}
 		md, err := c.local.Metadata(ctx, r)
 		if err != nil {
-			log.Warningf("Error getting metadata for resource %q: %s. Returning data with nil metadata.", r, err)
+			log.Warningf("Error getting metadata for resource %q: %s. Returning data with nil metadata.", distributed_client.ResourceIsolationString(r), err)
 		}
 		return data, md, nil
 	}
