@@ -164,6 +164,18 @@ func (m *MemoryCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, er
 	return v, nil
 }
 
+func (m *MemoryCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	data, err := m.Get(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	md, err := m.Metadata(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data, md, nil
+}
+
 func (m *MemoryCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	// No parallelism here either. Not necessary for an in-memory cache.

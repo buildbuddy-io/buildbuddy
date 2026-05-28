@@ -489,6 +489,18 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.Res
 	return srcMissing, srcErr
 }
 
+func (mc *MigrationCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	data, err := mc.Get(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	md, err := mc.Metadata(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data, md, nil
+}
+
 func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	conf, err := mc.config(ctx)
 	if err != nil {

@@ -1732,6 +1732,18 @@ func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, er
 	return buf.Bytes(), err
 }
 
+func (p *PebbleCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	data, err := p.Get(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	md, err := p.Metadata(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data, md, nil
+}
+
 func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	db, err := p.leaser.DB()
 	if err != nil {

@@ -297,6 +297,7 @@ type Cache interface {
 	Metadata(ctx context.Context, r *rspb.ResourceName) (*CacheMetadata, error)
 	FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error)
 	Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error)
+	GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *CacheMetadata, error)
 	GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error)
 	Set(ctx context.Context, r *rspb.ResourceName, data []byte) error
 	SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error

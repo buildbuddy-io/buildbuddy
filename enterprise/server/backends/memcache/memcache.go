@@ -192,6 +192,18 @@ func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	return c.mcGet(k)
 }
 
+func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	data, err := c.Get(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	md, err := c.Metadata(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data, md, nil
+}
+
 func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	keys := make([]string, 0, len(resources))
 	digestsByKey := make(map[string]*repb.Digest, len(resources))

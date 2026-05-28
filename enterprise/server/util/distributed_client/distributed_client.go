@@ -226,6 +226,31 @@ func (c *Proxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*dcpb.
 	}, nil
 }
 
+func (c *Proxy) GetWithMetadata(ctx context.Context, req *dcpb.GetWithMetadataRequest) (*dcpb.GetWithMetadataResponse, error) {
+	ctx, err := c.readWriteContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rn := req.GetResource()
+	data, err := c.cache.Get(ctx, rn)
+	if err != nil {
+		return nil, err
+	}
+	md, err := c.cache.Metadata(ctx, rn)
+	if err != nil {
+		return nil, err
+	}
+	return &dcpb.GetWithMetadataResponse{
+		Data: data,
+		Metadata: &dcpb.MetadataResponse{
+			StoredSizeBytes: md.StoredSizeBytes,
+			DigestSizeBytes: md.DigestSizeBytes,
+			LastModifyUsec:  md.LastModifyTimeUsec,
+			LastAccessUsec:  md.LastAccessTimeUsec,
+		},
+	}, nil
+}
+
 type resourceIsolationStringer struct{ *rspb.ResourceName }
 
 func (r resourceIsolationStringer) String() string {
@@ -408,6 +433,24 @@ func (c *Proxy) RemoteMetadata(ctx context.Context, peer string, r *rspb.Resourc
 		return nil, err
 	}
 	return &interfaces.CacheMetadata{
+		StoredSizeBytes:    md.GetStoredSizeBytes(),
+		DigestSizeBytes:    md.GetDigestSizeBytes(),
+		LastAccessTimeUsec: md.GetLastAccessUsec(),
+		LastModifyTimeUsec: md.GetLastModifyUsec(),
+	}, nil
+}
+
+func (c *Proxy) RemoteGetWithMetadata(ctx context.Context, peer string, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	client, err := c.getClient(ctx, peer)
+	if err != nil {
+		return nil, nil, err
+	}
+	rsp, err := client.GetWithMetadata(ctx, &dcpb.GetWithMetadataRequest{Resource: r})
+	if err != nil {
+		return nil, nil, err
+	}
+	md := rsp.GetMetadata()
+	return rsp.GetData(), &interfaces.CacheMetadata{
 		StoredSizeBytes:    md.GetStoredSizeBytes(),
 		DigestSizeBytes:    md.GetDigestSizeBytes(),
 		LastAccessTimeUsec: md.GetLastAccessUsec(),

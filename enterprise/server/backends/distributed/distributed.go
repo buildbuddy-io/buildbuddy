@@ -835,6 +835,13 @@ func (c *Cache) remoteMetadata(ctx context.Context, peer string, r *rspb.Resourc
 	return c.distributedProxy.RemoteMetadata(ctx, peer, r)
 }
 
+func (c *Cache) remoteGetWithMetadata(ctx context.Context, peer string, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
+		return c.local.GetWithMetadata(ctx, r)
+	}
+	return c.distributedProxy.RemoteGetWithMetadata(ctx, peer, r)
+}
+
 func (c *Cache) remoteFindMissing(ctx context.Context, peer string, rns []*rspb.ResourceName) ([]*repb.Digest, error) {
 	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
 		return c.local.FindMissing(ctx, rns)
@@ -1167,6 +1174,30 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces
 
 	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to query metadata %q. Peerset: %+v", d.GetHash(), ps)
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to query metadata %q.", d.GetHash())
+}
+
+func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	d := r.GetDigest()
+	ps := c.readPeers(r)
+
+	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
+		data, md, err := c.remoteGetWithMetadata(ctx, peer, r)
+		if err == nil {
+			c.log.CtxDebugf(ctx, "GetWithMetadata(%q) found on peer %q", d, peer)
+			return data, md, nil
+		}
+		if status.IsNotFoundError(err) {
+			c.log.CtxDebugf(ctx, "GetWithMetadata(%q) not found on peer %s", distributed_client.ResourceIsolationString(r), peer)
+			continue
+		}
+		c.log.CtxDebugf(ctx, "GetWithMetadata(%q) lookup failed on peer %s: (err: %v)", distributed_client.ResourceIsolationString(r), peer, err)
+
+		// Got an error -- mark this peer as failed and try the next one.
+		ps.MarkPeerAsFailed(peer)
+	}
+
+	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to GetWithMetadata %q. Peerset: %+v", d.GetHash(), ps)
+	return nil, nil, status.NotFoundErrorf("Exhausted all peers attempting to GetWithMetadata %q.", d.GetHash())
 }
 
 func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {

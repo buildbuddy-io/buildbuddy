@@ -70,6 +70,15 @@ message MetadataResponse {
   int64 digest_size_bytes = 4;
 }
 
+message GetWithMetadataRequest {
+  resource.ResourceName resource = 1;
+}
+
+message GetWithMetadataResponse {
+  bytes data = 1;
+  MetadataResponse metadata = 2;
+}
+
 message KV {
   Key key = 1;
   bytes value = 2;
@@ -97,5 +106,6 @@ service DistributedCache {
   rpc Delete(DeleteRequest) returns (DeleteResponse);
   rpc FindMissing(FindMissingRequest) returns (FindMissingResponse);
   rpc GetMulti(GetMultiRequest) returns (GetMultiResponse);
+  rpc GetWithMetadata(GetWithMetadataRequest) returns (GetWithMetadataResponse);
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
 }
