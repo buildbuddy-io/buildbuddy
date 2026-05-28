@@ -914,8 +914,44 @@ func ReadProtoFromCAS(ctx context.Context, cache interfaces.Cache, r *digest.CAS
 	return readProtoFromCache(ctx, cache, r.ToProto(), out)
 }
 
-func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, r *digest.ACResourceName, out proto.Message) error {
-	return readProtoFromCache(ctx, cache, r.ToProto(), out)
+// ReadProtoFromACWithMetadata reads an AC entry and returns its CacheMetadata.
+// If the cache implements interfaces.GetterWithMetadata, both are fetched in a
+// single backend call; otherwise falls back to separate Get + Metadata calls.
+//
+// Metadata is best-effort: the returned CacheMetadata may be nil even when the
+// data was read successfully (e.g., the entry was evicted between the Get and
+// Metadata calls on the fallback path, or the underlying backend returned the
+// data but couldn't produce metadata). Callers must nil-check before reading
+// metadata fields.
+func ReadProtoFromACWithMetadata(ctx context.Context, cache interfaces.Cache, r *digest.ACResourceName, out proto.Message) (*interfaces.CacheMetadata, error) {
+	rn := r.ToProto()
+	var data []byte
+	var md *interfaces.CacheMetadata
+	if gm, ok := cache.(interfaces.GetterWithMetadata); ok {
+		var err error
+		data, md, err = gm.GetWithMetadata(ctx, rn)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		data, err = cache.Get(ctx, rn)
+		if err != nil {
+			return nil, err
+		}
+		// Don't fail the read just because Metadata couldn't be fetched —
+		// callers that need it can nil-check. This avoids turning transient
+		// metadata-only backend errors into a failure for callers (e.g., the
+		// AC proxy) that only need metadata for an optional TTL fast path.
+		md, err = cache.Metadata(ctx, rn)
+		if err != nil {
+			log.Warningf("ReadProtoFromACWithMetadata: Metadata call failed for %q: %s", rn.GetDigest().GetHash(), err)
+		}
+	}
+	if err := proto.Unmarshal(data, out); err != nil {
+		return nil, err
+	}
+	return md, nil
 }
 
 func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType rspb.CacheType, remoteInstanceName string, digestFunction repb.DigestFunction_Value, in io.ReadSeeker) (*repb.Digest, error) {

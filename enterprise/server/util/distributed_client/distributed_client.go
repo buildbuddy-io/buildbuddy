@@ -1,6 +1,7 @@
 package distributed_client
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -47,6 +48,12 @@ const (
 	// should be slightly smaller than 2^N, to allow for proto and gRPC
 	// overhead.
 	writeBufSizeBytes = 512 * 1000 // 512 KB
+
+	// readResponseInitialBufSize bounds the initial capacity of the buffer
+	// used to accumulate bytes from a Read RPC. Match the distributed cache's
+	// own initial-allocation cap so a crafted digest size can't trick us into
+	// a giant up-front allocation.
+	readResponseInitialBufSize = 4 * 1024 * 1024
 )
 
 var (
@@ -285,7 +292,8 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 	}
 	up, _ := prefix.UserPrefixFromContext(ctx)
 	rn := req.GetResource()
-	reader, err := c.cache.Reader(ctx, rn, req.GetOffset(), req.GetLimit())
+
+	reader, pendingMetadata, err := c.openReadWithMetadata(ctx, req)
 	if err != nil {
 		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
 		return err
@@ -304,13 +312,74 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 		if err != nil {
 			return err
 		}
-		if err := stream.Send(&dcpb.ReadResponse{Data: copyBuf[:n]}); err != nil {
+		rsp := &dcpb.ReadResponse{Data: copyBuf[:n]}
+		if pendingMetadata != nil {
+			rsp.Metadata = pendingMetadata
+			pendingMetadata = nil
+		}
+		if err := stream.Send(rsp); err != nil {
+			return err
+		}
+	}
+	// Handle the zero-byte case where the loop above sent nothing: still
+	// deliver the metadata.
+	if pendingMetadata != nil {
+		if err := stream.Send(&dcpb.ReadResponse{Metadata: pendingMetadata}); err != nil {
 			return err
 		}
 	}
 
 	c.log.Debugf("Read(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
 	return nil
+}
+
+// openReadWithMetadata opens an io.ReadCloser for the requested resource and,
+// when the request opts in via IncludeMetadata, also returns its
+// MetadataResponse. When the underlying cache implements GetterWithMetadata
+// and the request is a whole-blob read, both are fetched in a single backend
+// op (true server-side fuse). Otherwise we open a streaming Reader and follow
+// it with a best-effort Metadata call — a Metadata-only failure here is
+// logged and turned into a nil metadata response rather than failing the
+// stream, since callers can still use the data without the side-channel
+// info.
+func (c *Proxy) openReadWithMetadata(ctx context.Context, req *dcpb.ReadRequest) (io.ReadCloser, *dcpb.MetadataResponse, error) {
+	rn := req.GetResource()
+
+	if req.GetIncludeMetadata() && req.GetOffset() == 0 && req.GetLimit() == 0 {
+		if gm, ok := c.cache.(interfaces.GetterWithMetadata); ok {
+			data, md, err := gm.GetWithMetadata(ctx, rn)
+			if err != nil {
+				return nil, nil, err
+			}
+			return io.NopCloser(bytes.NewReader(data)), cacheMetadataToProto(md), nil
+		}
+	}
+
+	reader, err := c.cache.Reader(ctx, rn, req.GetOffset(), req.GetLimit())
+	if err != nil {
+		return nil, nil, err
+	}
+	if !req.GetIncludeMetadata() {
+		return reader, nil, nil
+	}
+	md, err := c.cache.Metadata(ctx, rn)
+	if err != nil {
+		c.log.Warningf("Read(%q): include_metadata Metadata() failed, returning data without metadata: %s", ResourceIsolationString(rn), err)
+		return reader, nil, nil
+	}
+	return reader, cacheMetadataToProto(md), nil
+}
+
+func cacheMetadataToProto(md *interfaces.CacheMetadata) *dcpb.MetadataResponse {
+	if md == nil {
+		return nil
+	}
+	return &dcpb.MetadataResponse{
+		StoredSizeBytes: md.StoredSizeBytes,
+		DigestSizeBytes: md.DigestSizeBytes,
+		LastModifyUsec:  md.LastModifyTimeUsec,
+		LastAccessUsec:  md.LastAccessTimeUsec,
+	}
 }
 
 func (c *Proxy) callHintedHandoffCB(ctx context.Context, peer string, r *rspb.ResourceName) {
@@ -490,6 +559,64 @@ func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, resources []*rs
 		resultMap[d] = buf
 	}
 	return resultMap, nil
+}
+
+// RemoteGetWithMetadata fetches a resource and its CacheMetadata from a peer
+// in a single Read RPC. Compressed-on-disk reads are decompressed here, mirroring
+// RemoteReader's behavior.
+func (c *Proxy) RemoteGetWithMetadata(ctx context.Context, peer string, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	client, err := c.getClient(ctx, peer)
+	if err != nil {
+		return nil, nil, err
+	}
+	decompress := c.shouldReadCompressed(r)
+	rn := r
+	if decompress {
+		rn = r.CloneVT()
+		rn.Compressor = repb.Compressor_ZSTD
+	}
+	req := &dcpb.ReadRequest{
+		Resource:        rn,
+		IncludeMetadata: true,
+	}
+	stream, err := client.Read(ctx, req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var md *interfaces.CacheMetadata
+	buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(rn, readResponseInitialBufSize)))
+	for {
+		rsp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		if md == nil && rsp.GetMetadata() != nil {
+			md = &interfaces.CacheMetadata{
+				StoredSizeBytes:    rsp.GetMetadata().GetStoredSizeBytes(),
+				DigestSizeBytes:    rsp.GetMetadata().GetDigestSizeBytes(),
+				LastAccessTimeUsec: rsp.GetMetadata().GetLastAccessUsec(),
+				LastModifyTimeUsec: rsp.GetMetadata().GetLastModifyUsec(),
+			}
+		}
+		if len(rsp.GetData()) > 0 {
+			if _, err := buf.Write(rsp.GetData()); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+
+	data := buf.Bytes()
+	if decompress {
+		data, err = compression.DecompressZstd(make([]byte, r.GetDigest().GetSizeBytes()), data)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return data, md, nil
 }
 
 func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {

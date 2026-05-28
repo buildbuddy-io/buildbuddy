@@ -15,11 +15,20 @@ message ReadRequest {
   int64 offset = 3;
   int64 limit = 5;
   resource.ResourceName resource = 6;
+
+  // If true, the server includes the entry's CacheMetadata on the first
+  // ReadResponse in the stream. Used by clients that want to fuse a Get +
+  // Metadata roundtrip.
+  bool include_metadata = 7;
 }
 
 message ReadResponse {
   option (vtproto.mempool) = true;
   bytes data = 1;
+
+  // Set on the first ReadResponse in the stream when the request set
+  // include_metadata. Subsequent responses leave this unset.
+  MetadataResponse metadata = 2;
 }
 
 // Next Tag: 9

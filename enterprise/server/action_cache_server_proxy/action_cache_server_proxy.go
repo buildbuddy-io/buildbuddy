@@ -92,7 +92,9 @@ func isDefaultGetActionResultRequest(req *repb.GetActionResultRequest) bool {
 }
 
 // getActionResultFromLocalCAS returns a locally cached action result saved via
-// `cacheActionResultToLocalCAS`.
+// `cacheActionResultToLocalCAS`, along with the CacheMetadata of the AC pointer
+// entry (so callers can do a TTL freshness check without a separate Metadata
+// roundtrip).
 //
 // This function should only be used when also fetching a remote action result.
 // Unlike typical action cache implementations, it doesn't validate that all blobs
@@ -101,25 +103,26 @@ func isDefaultGetActionResultRequest(req *repb.GetActionResultRequest) bool {
 // so there is digest validation on its value.
 // The remote result is always the source of truth. If the values do not
 // match, the local result should be discarded.
-func (s *ActionCacheServerProxy) getActionResultFromLocalCAS(ctx context.Context, key *digest.ACResourceName) (*repb.Digest, *repb.ActionResult, error) {
+func (s *ActionCacheServerProxy) getActionResultFromLocalCAS(ctx context.Context, key *digest.ACResourceName) (*repb.Digest, *repb.ActionResult, *interfaces.CacheMetadata, error) {
 	// NOTE: To avoid double-counting AC hits, we deliberately don't track
 	// download for these reads.  The remote server will count the full response
 	// size when checking the cached value.
 	ptr := &rspb.ResourceName{}
-	if err := cachetools.ReadProtoFromAC(ctx, s.localCache, key, ptr); err != nil {
-		return nil, nil, err
+	acMD, err := cachetools.ReadProtoFromACWithMetadata(ctx, s.localCache, key, ptr)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	casRN, err := digest.CASResourceNameFromProto(ptr)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	out := &repb.ActionResult{}
 	err = cachetools.ReadProtoFromCAS(ctx, s.localCache, casRN, out)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	return ptr.GetDigest(), out, nil
+	return ptr.GetDigest(), out, acMD, nil
 }
 
 // cacheActionResultToLocalCAS stores the ActionResult `resp` in the CAS and then
@@ -157,12 +160,8 @@ func (s *ActionCacheServerProxy) actionCacheTTL(ctx context.Context) time.Durati
 	return time.Duration(ttlSeconds) * time.Second
 }
 
-func (s *ActionCacheServerProxy) isLocalActionResultFresh(ctx context.Context, key *digest.ACResourceName, ttl time.Duration) bool {
-	if ttl <= 0 {
-		return false
-	}
-	md, err := s.localCache.Metadata(ctx, key.ToProto())
-	if err != nil || md.LastModifyTimeUsec <= 0 {
+func (s *ActionCacheServerProxy) isLocalActionResultFresh(md *interfaces.CacheMetadata, ttl time.Duration) bool {
+	if ttl <= 0 || md == nil || md.LastModifyTimeUsec <= 0 {
 		return false
 	}
 
@@ -254,14 +253,14 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 			return nil, err
 		}
 		var err error
-		localDigest, localResult, err := s.getActionResultFromLocalCAS(ctx, localKey)
+		localDigest, localResult, localACMD, err := s.getActionResultFromLocalCAS(ctx, localKey)
 		if err != nil && !status.IsNotFoundError(err) {
 			return nil, err
 		}
 		if localDigest != nil {
 			// TODO: Consider async app revalidation of TTL hits, updating or deleting
 			// the local AC entry if the authoritative result changed.
-			if isDefaultGetActionResultRequest(req) && s.isLocalActionResultFresh(ctx, localKey, ttl) {
+			if isDefaultGetActionResultRequest(req) && s.isLocalActionResultFresh(localACMD, ttl) {
 				// Skip checking for existence of output files. The app recently
 				// validated or updated this result, which refreshed the referenced
 				// outputs' atime. With remote_download_minimal, this proxy

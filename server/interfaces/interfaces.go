@@ -322,6 +322,13 @@ type StoppableCache interface {
 	Stop() error
 }
 
+// GetterWithMetadata is an optional interface a Cache may implement to fetch
+// data and metadata in a single backend operation. Callers should type-assert
+// against it and fall back to separate Get + Metadata calls when absent.
+type GetterWithMetadata interface {
+	GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *CacheMetadata, error)
+}
+
 type PooledByteStreamClient interface {
 	StreamBytestreamFile(ctx context.Context, url *url.URL, writer io.Writer) error
 	FetchBytestreamZipManifest(ctx context.Context, url *url.URL) (*zipb.Manifest, error)

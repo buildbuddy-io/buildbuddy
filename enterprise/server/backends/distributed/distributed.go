@@ -835,6 +835,28 @@ func (c *Cache) remoteMetadata(ctx context.Context, peer string, r *rspb.Resourc
 	return c.distributedProxy.RemoteMetadata(ctx, peer, r)
 }
 
+func (c *Cache) remoteGetWithMetadata(ctx context.Context, peer string, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
+		if gm, ok := c.local.(interfaces.GetterWithMetadata); ok {
+			return gm.GetWithMetadata(ctx, r)
+		}
+		// Fallback: the local backend doesn't implement GetterWithMetadata, so
+		// the data and metadata reads aren't atomic. Don't fail the whole call
+		// on a Metadata-only error — return nil metadata so the caller can
+		// still use the data.
+		data, err := c.local.Get(ctx, r)
+		if err != nil {
+			return nil, nil, err
+		}
+		md, err := c.local.Metadata(ctx, r)
+		if err != nil {
+			log.Warningf("Error getting metadata for resource %q: %s. Returning data with nil metadata.", r, err)
+		}
+		return data, md, nil
+	}
+	return c.distributedProxy.RemoteGetWithMetadata(ctx, peer, r)
+}
+
 func (c *Cache) remoteFindMissing(ctx context.Context, peer string, rns []*rspb.ResourceName) ([]*repb.Digest, error) {
 	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
 		return c.local.FindMissing(ctx, rns)
@@ -1167,6 +1189,50 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces
 
 	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to query metadata %q. Peerset: %+v", d.GetHash(), ps)
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to query metadata %q.", d.GetHash())
+}
+
+// GetWithMetadata implements interfaces.GetterWithMetadata. It fuses the Get
+// and Metadata roundtrips by extending the Read RPC to also carry CacheMetadata
+// on the first stream response.
+//
+// Metadata is best-effort: the returned CacheMetadata may be nil even on a
+// successful data fetch (e.g., the responding peer's backend couldn't produce
+// metadata atomically). Callers must nil-check before reading metadata fields.
+func (c *Cache) GetWithMetadata(ctx context.Context, rn *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	d := rn.GetDigest()
+	ps := c.readPeers(rn)
+	backfill := func() {
+		if err := c.backfillPeers(ctx, c.getBackfillOrders(rn, ps)); err != nil {
+			c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
+		}
+	}
+
+	lookups := 0
+	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
+		lookups++
+		data, md, err := c.remoteGetWithMetadata(ctx, peer, rn)
+		if err == nil {
+			backfill()
+			metrics.DistributedCachePeerLookups.WithLabelValues(
+				"GetWithMetadata",
+				metrics.HitStatusLabel,
+			).Observe(float64(lookups))
+			return data, md, nil
+		}
+		if status.IsNotFoundError(err) {
+			c.log.CtxDebugf(ctx, "GetWithMetadata(%q) not found on peer %s", distributed_client.ResourceIsolationString(rn), peer)
+			continue
+		}
+		c.log.CtxDebugf(ctx, "GetWithMetadata(%q) lookup failed on peer %s: (err: %v)", distributed_client.ResourceIsolationString(rn), peer, err)
+		ps.MarkPeerAsFailed(peer)
+	}
+
+	metrics.DistributedCachePeerLookups.WithLabelValues(
+		"GetWithMetadata",
+		metrics.MissStatusLabel,
+	).Observe(float64(lookups))
+	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to GetWithMetadata %q. Peerset: %+v", d.GetHash(), ps)
+	return nil, nil, status.NotFoundErrorf("Exhausted all peers attempting to GetWithMetadata %q.", d.GetHash())
 }
 
 func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
