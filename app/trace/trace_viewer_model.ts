@@ -182,7 +182,7 @@ function computeXMax(panels: PanelModel[]): number {
  */
 export function panelScrollHeight(panel: PanelModel): number {
   let height = constants.TIMESTAMP_HEADER_SIZE + constants.BOTTOM_CONTROLS_HEIGHT;
-  if (!panel.sections.length) height;
+  if (!panel.sections.length) return height;
 
   const lastSection = panel.sections[panel.sections.length - 1];
   height += lastSection.y + lastSection.height;

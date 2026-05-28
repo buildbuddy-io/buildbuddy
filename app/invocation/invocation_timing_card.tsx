@@ -171,6 +171,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
     if (!this.isTimingEnabled()) {
       this.setState({ loading: false });
+      return;
     }
 
     // Already fetched
