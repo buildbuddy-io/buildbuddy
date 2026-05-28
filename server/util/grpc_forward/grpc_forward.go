@@ -63,8 +63,7 @@ func getConnectionPool(dialer dialFn, target string) (*grpc_client.ClientConnPoo
 	defer mu.Unlock()
 
 	// Check the map again since we briefly released the lock.
-	pool, ok = backendConnectionPools[target]
-	if ok {
+	if pool, ok := backendConnectionPools[target]; ok {
 		return pool, nil
 	}
 
@@ -78,32 +77,26 @@ func getConnectionPool(dialer dialFn, target string) (*grpc_client.ClientConnPoo
 	return newPool, nil
 }
 
-func getProxyDirector() proxy.StreamDirector {
-	if len(*proxyTargets) == 0 {
-		return nil
+func director(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
+	target, err := lookupProxyTarget(fullMethodName)
+	if err != nil {
+		return nil, nil, err
 	}
-	return func(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
-		target, err := lookupProxyTarget(fullMethodName)
-		if err != nil {
-			return nil, nil, err
-		}
 
-		pool, err := getConnectionPool(dial, target)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		cc := pool.WaitForConn()
-		if md, ok := metadata.FromIncomingContext(ctx); ok {
-			ctx = metadata.NewOutgoingContext(ctx, md.Copy())
-		}
-		return ctx, cc, nil
+	pool, err := getConnectionPool(dial, target)
+	if err != nil {
+		return nil, nil, err
 	}
+
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		ctx = metadata.NewOutgoingContext(ctx, md.Copy())
+	}
+	return ctx, pool, nil
 }
 
 func GetForwardingServerOption() grpc.ServerOption {
-	if director := getProxyDirector(); director != nil {
-		return grpc.UnknownServiceHandler(proxy.TransparentHandler(proxy.StreamDirector(director)))
+	if len(*proxyTargets) == 0 {
+		return nil
 	}
-	return nil
+	return grpc.UnknownServiceHandler(proxy.TransparentHandler(director))
 }
