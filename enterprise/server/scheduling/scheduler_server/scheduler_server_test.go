@@ -2,7 +2,12 @@ package scheduler_server
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"io"
+	"net/url"
 	"slices"
 	"sort"
 	"sync"
@@ -31,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
@@ -693,6 +699,34 @@ func scheduleTask(ctx context.Context, t *testing.T, env environment.Env, props 
 	return req.GetTaskId()
 }
 
+func commandEnv(command *repb.Command, name string) string {
+	envVars := command.GetEnvironmentVariables()
+	for i := len(envVars) - 1; i >= 0; i-- {
+		envVar := envVars[i]
+		if envVar.GetName() == name {
+			return envVar.GetValue()
+		}
+	}
+	return ""
+}
+
+func setOIDCSigningKey(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	der := x509.MarshalPKCS1PrivateKey(key)
+	pemBytes := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: der,
+	})
+	flags.Set(t, "remote_execution.oidc.private_key", string(pemBytes))
+}
+
+func setBuildBuddyURL(t *testing.T, rawURL string) {
+	u, err := url.Parse(rawURL)
+	require.NoError(t, err)
+	flags.Set(t, "app.build_buddy_url", *u)
+}
+
 func enqueueTaskReservation(ctx context.Context, t *testing.T, env environment.Env, delay time.Duration) string {
 	id, err := uuid.NewRandom()
 	require.NoError(t, err)
@@ -894,6 +928,56 @@ func TestLeaseTask_RefreshToken_FailureDoesNotFailLease(t *testing.T) {
 	defer lease.Finalize()
 
 	require.Equal(t, task, lease.task)
+}
+
+func TestLeaseTask_SetsOIDCRequestTokenAtLeaseTime(t *testing.T) {
+	setOIDCSigningKey(t)
+	setBuildBuddyURL(t, "https://buildbuddy.example.com")
+	clock := clockwork.NewFakeClockAt(time.Now())
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	env.SetClock(clock)
+	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	fe.Register()
+
+	// Schedule a task requesting a raw BuildBuddy OIDC token. The scheduler
+	// should not put the short lived request token into the queued task.
+	req := newScheduleRequest(ctx, t, env, scheduleOpts{
+		props: map[string]string{
+			platform.OIDCTokenAudiencePropertyName: "sts.amazonaws.com",
+		},
+	})
+	req.Metadata.TaskGroupId = "GR-OIDC-LEASE"
+	_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+	require.NoError(t, err)
+
+	queuedTask := &repb.ExecutionTask{}
+	require.NoError(t, proto.Unmarshal(req.GetSerializedTask(), queuedTask))
+	require.Empty(t, commandEnv(queuedTask.GetCommand(), "BUILDBUDDY_OIDC_TOKEN_REQUEST_TOKEN"))
+
+	// Advance the action clock before the executor claims the task. The request
+	// token returned to the executor should be minted at lease time, after the
+	// queue wait, so its iat matches the advanced clock.
+	clock.Advance(45 * time.Minute)
+	fe.WaitForTask(req.GetTaskId())
+	lease := fe.Claim(req.GetTaskId())
+	defer lease.Finalize()
+
+	requestToken := commandEnv(lease.task.GetCommand(), "BUILDBUDDY_OIDC_TOKEN_REQUEST_TOKEN")
+	require.NotEmpty(t, requestToken)
+	require.Equal(t, "https://buildbuddy.example.com/oidc/token?api-version=2", commandEnv(lease.task.GetCommand(), "BUILDBUDDY_OIDC_TOKEN_REQUEST_URL"))
+
+	parsedClaims := struct {
+		jwt.StandardClaims
+		TokenUse          string `json:"token_use,omitempty"`
+		DefaultAudience   string `json:"default_audience,omitempty"`
+		BuildBuddyGroupID string `json:"buildbuddy_group_id,omitempty"`
+	}{}
+	_, _, err = new(jwt.Parser).ParseUnverified(requestToken, &parsedClaims)
+	require.NoError(t, err)
+	require.Equal(t, "buildbuddy-rbe-oidc-request-token", parsedClaims.TokenUse)
+	require.Equal(t, "sts.amazonaws.com", parsedClaims.DefaultAudience)
+	require.Equal(t, "GR-OIDC-LEASE", parsedClaims.BuildBuddyGroupID)
+	require.Equal(t, clock.Now().Unix(), parsedClaims.IssuedAt)
 }
 
 func TestSchedulingDelay_NoDelay(t *testing.T) {

@@ -47,6 +47,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/rbeoidc"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
@@ -72,14 +73,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
-
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
-
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/stats"
 
@@ -87,7 +86,6 @@ import (
 	remote_execution_redis_client "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/redis_client"
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
-
 	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver" // registers kube:// resolver.
 )
 
@@ -357,6 +355,9 @@ func main() {
 	defer executionCleanupService.Stop()
 
 	if err := selfauth.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := rbeoidc.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

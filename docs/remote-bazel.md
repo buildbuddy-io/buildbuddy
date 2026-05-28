@@ -375,6 +375,10 @@ can pass credentials via remote headers.
 See https://www.buildbuddy.io/docs/rbe-platforms/#passing-credentials-for-docker-images
 for more details on passing credentials for private images.
 
+For AWS ECR, Google Artifact Registry, and GCR images, you can use
+https://www.buildbuddy.io/docs/rbe-platforms/#openid-connect-credentials
+to let BuildBuddy exchange OIDC tokens for short-lived registry credentials.
+
 See `Configuring the remote runner` above for more information about remote headers.
 
 ```bash

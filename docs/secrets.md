@@ -18,6 +18,9 @@ servers, and stay encrypted until they are used.
 Builds that are executed remotely on BuildBuddy's servers may occasionally
 need access to an API key or other credentials. For example, you may want
 to [pass credentials for a Docker image](rbe-platforms#passing-credentials-for-docker-images).
+For AWS ECR, Google Artifact Registry, and GCR images, consider using
+[OIDC credential exchange](rbe-platforms#openid-connect-credentials) instead
+of storing registry credentials as secrets.
 
 Storing these sensitive parameters as plain environment variables is
 undesirable because those keys would be stored unencrypted in BuildBuddy's

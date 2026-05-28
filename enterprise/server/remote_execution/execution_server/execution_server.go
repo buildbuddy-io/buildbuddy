@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/rbeoidc"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
@@ -936,6 +937,10 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 				Value: string(serializedNames),
 			})
 		}
+	}
+
+	if err := rbeoidc.ValidateProperties(props); err != nil {
+		return nil, err
 	}
 
 	executionTask.QueuedTimestamp = timestamppb.Now()

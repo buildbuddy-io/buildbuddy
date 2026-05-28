@@ -1,6 +1,7 @@
 package executorplatform
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"strings"
@@ -59,7 +60,7 @@ func TestParse_ContainerImage_Success(t *testing.T) {
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.SetXcodeLocator(&xcodeLocator{})
-		err = ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
+		err = ApplyOverrides(context.Background(), env, testCase.execProps, platformProps, &repb.ExecutionTask{Command: &repb.Command{}})
 		require.NoError(t, err)
 		assert.Equal(t, testCase.expected, platformProps.ContainerImage, testCase)
 	}
@@ -84,7 +85,7 @@ func TestParse_ContainerImage_Error(t *testing.T) {
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.SetXcodeLocator(&xcodeLocator{})
-		err = ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
+		err = ApplyOverrides(context.Background(), env, testCase.execProps, platformProps, &repb.ExecutionTask{Command: &repb.Command{}})
 		assert.Error(t, err)
 	}
 }
@@ -273,7 +274,7 @@ func TestParse_ApplyOverrides(t *testing.T) {
 				"MacOSX11.3": "Platforms/MacOSX.platform/Developer/SDKs/MacOSX11.3.sdk",
 			},
 		})
-		err = ApplyOverrides(env, execProps, platformProps, command)
+		err = ApplyOverrides(context.Background(), env, execProps, platformProps, &repb.ExecutionTask{Command: command})
 		if testCase.errorExpected {
 			require.Error(t, err)
 		} else {
@@ -301,7 +302,7 @@ func TestEnvAndArgOverrides(t *testing.T) {
 		},
 	}
 	env := testenv.GetTestEnv(t)
-	err = ApplyOverrides(env, execProps, platformProps, command)
+	err = ApplyOverrides(context.Background(), env, execProps, platformProps, &repb.ExecutionTask{Command: command})
 	require.NoError(t, err)
 
 	expectedCmd := &repb.Command{
@@ -327,6 +328,32 @@ func TestEnvAndArgOverrides(t *testing.T) {
 	commandText, err := prototext.Marshal(command)
 	require.NoError(t, err)
 	require.Equal(t, expectedCmdText, commandText)
+}
+
+func TestOIDCTokenEnvRequiresAppRequestToken(t *testing.T) {
+	plat := &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: platform.OIDCTokenAudiencePropertyName, Value: "sts.amazonaws.com"},
+	}}
+	platformProps, err := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	require.NoError(t, err)
+	command := &repb.Command{
+		Arguments: []string{"./some_cmd"},
+		Platform:  plat,
+	}
+	task := &repb.ExecutionTask{
+		Command:      command,
+		InvocationId: "INV123",
+		ExecutionId:  "EXEC123",
+		RequestMetadata: &repb.RequestMetadata{
+			ActionId:       "ACTION123",
+			TargetId:       "//pkg:target",
+			ActionMnemonic: "Genrule",
+		},
+	}
+	env := testenv.GetTestEnv(t)
+	err = ApplyOverrides(context.Background(), env, bare, platformProps, task)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "OIDC request token was not attached to the leased task")
 }
 
 func TestRunUnder(t *testing.T) {
@@ -369,11 +396,20 @@ func TestRunUnder(t *testing.T) {
 			require.NoError(t, err)
 			command := &repb.Command{Arguments: tc.initialArgs}
 			env := testenv.GetTestEnv(t)
-			err = ApplyOverrides(env, bare, platformProps, command)
+			err = ApplyOverrides(context.Background(), env, bare, platformProps, &repb.ExecutionTask{Command: command})
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedArgs, command.Arguments)
 		})
 	}
+}
+
+func envValue(command *repb.Command, name string) (string, bool) {
+	for _, envVar := range command.GetEnvironmentVariables() {
+		if envVar.GetName() == name {
+			return envVar.GetValue(), true
+		}
+	}
+	return "", false
 }
 
 func TestExtraEnvVars(t *testing.T) {
@@ -411,7 +447,7 @@ func TestExtraEnvVars(t *testing.T) {
 			env := testenv.GetTestEnv(t)
 			cmd := &repb.Command{}
 			platformProps := &platform.Properties{}
-			ApplyOverrides(env, podmanAndFirecracker, platformProps, cmd)
+			ApplyOverrides(context.Background(), env, podmanAndFirecracker, platformProps, &repb.ExecutionTask{Command: cmd})
 			require.Empty(t, cmp.Diff(
 				tc.expectedEnvVars,
 				cmd.EnvironmentVariables,
@@ -514,7 +550,7 @@ func TestForceNetworkIsolationType(t *testing.T) {
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.SetXcodeLocator(&xcodeLocator{})
-		err = ApplyOverrides(env, podmanAndFirecracker, platformProps, &repb.Command{})
+		err = ApplyOverrides(context.Background(), env, podmanAndFirecracker, platformProps, &repb.ExecutionTask{Command: &repb.Command{}})
 		assert.NoError(t, err)
 		assert.Equal(t, testCase.expectedIsolationType, platformProps.WorkloadIsolationType, testCase)
 	}

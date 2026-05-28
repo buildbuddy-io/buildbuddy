@@ -2659,7 +2659,14 @@ message OriginMetadata {
   string invocation_id = 1;
 }
 
-// Next tag: 9
+message OIDCCredentials {
+  repeated string env_vars = 1;
+  repeated string secret_env_vars = 2;
+  string container_registry_username = 3;
+  string container_registry_password = 4;
+}
+
+// Next tag: 13
 message ExecutionTask {
   ExecuteRequest execute_request = 1;
   Action action = 4;
@@ -2672,6 +2679,7 @@ message ExecutionTask {
   RequestMetadata request_metadata = 9;
   repeated string experiments = 10;
   FastCdc2020Params fast_cdc_2020_params = 11;
+  OIDCCredentials oidc_credentials = 12;
 }
 
 // ScheduledTask encapsulates a task based on a client's ExecuteRequest as well

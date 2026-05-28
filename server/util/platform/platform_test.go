@@ -91,6 +91,31 @@ func TestParse_Pool(t *testing.T) {
 	assert.Equal(t, "", platformProps.Pool)
 }
 
+func TestParse_ContainerRegistryAuthSource(t *testing.T) {
+	// Actions keep using explicit registry credentials unless the OIDC auth
+	// source is requested.
+	platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{}}})
+	require.NoError(t, err)
+	assert.Equal(t, ContainerRegistryAuthSourceExplicit, platformProps.ContainerRegistryAuthSource)
+
+	// The OIDC auth source is parsed case insensitively so users can pass it
+	// through the same property channels as other platform options.
+	plat := &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: ContainerRegistryAuthSourcePropertyName, Value: "OIDC"},
+	}}
+	platformProps, err = ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	require.NoError(t, err)
+	assert.Equal(t, ContainerRegistryAuthSourceOIDC, platformProps.ContainerRegistryAuthSource)
+
+	// Unknown auth sources are rejected instead of silently falling back to an
+	// unauthenticated image pull.
+	plat = &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: ContainerRegistryAuthSourcePropertyName, Value: "magic"},
+	}}
+	_, err = ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	require.Error(t, err)
+}
+
 func TestParse_EstimatedBCU(t *testing.T) {
 	for _, testCase := range []struct {
 		name          string
