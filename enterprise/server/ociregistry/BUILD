@@ -34,17 +34,23 @@ go_library(
 go_test(
     name = "ociregistry_test",
     timeout = "short",
-    srcs = ["ociregistry_test.go"],
+    srcs = [
+        "oci_client_integration_test.go",
+        "ociregistry_test.go",
+    ],
     deps = [
         ":ociregistry",
         "//enterprise/server/clientidentity",
         "//enterprise/server/testutil/testregistry",
+        "//enterprise/server/util/testpodman",
         "//server/interfaces",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
+        "//server/testutil/testhttp",
         "//server/testutil/testport",
         "//server/util/random",
         "//server/util/testing/flags",
+        "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
     ],
 )
