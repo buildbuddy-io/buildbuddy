@@ -22,6 +22,7 @@ type proxyPair struct {
 
 var (
 	proxyTargets = flag.Slice("app.proxy_targets", []proxyPair{}, "")
+	poolSize     = flag.Int("app.proxy_pool_size", 0, "Number of gRPC connections to create for proxying unknown RPCs.")
 
 	mu                     sync.RWMutex
 	backendConnectionPools = map[string]*grpc_client.ClientConnPool{}
@@ -38,7 +39,17 @@ func lookupProxyTarget(fullMethodName string) (string, error) {
 
 type dialFn = func(string, ...grpc.DialOption) (*grpc_client.ClientConnPool, error)
 
-func getConnectionPool(dial dialFn, target string) (*grpc_client.ClientConnPool, error) {
+func dial(target string, opts ...grpc.DialOption) (*grpc_client.ClientConnPool, error) {
+	if *poolSize < 0 {
+		return nil, status.InvalidArgumentErrorf("Invalid pool size: %d", *poolSize)
+	}
+	if *poolSize == 0 {
+		return grpc_client.DialSimple(target, opts...)
+	}
+	return grpc_client.DialSimpleWithPoolSize(target, *poolSize, opts...)
+}
+
+func getConnectionPool(dialer dialFn, target string) (*grpc_client.ClientConnPool, error) {
 	// Fast path: take a non-exclusive lock and check for an existing
 	// connection.
 	mu.RLock()
