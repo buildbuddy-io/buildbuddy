@@ -49,6 +49,7 @@ go_test(
         "//proto:context_go_proto",
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
+        "//proto:stat_filter_go_proto",
         "//proto:stats_go_proto",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
@@ -58,6 +59,7 @@ go_test(
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 

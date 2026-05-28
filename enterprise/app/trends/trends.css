@@ -210,6 +210,10 @@
   margin: 0;
 }
 
+.drilldown-page-selection-group .select-wrapper + .select-wrapper {
+  margin-left: 8px;
+}
+
 .drilldown-selection-summary {
   font-size: 12px;
   margin-bottom: 4px;

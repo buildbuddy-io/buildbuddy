@@ -3,6 +3,7 @@ package invocation_stat_service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -11,10 +12,12 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	sfpb "github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	statspb "github.com/buildbuddy-io/buildbuddy/proto/stats"
 	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 )
@@ -132,4 +135,71 @@ func TestGetStatDrilldown(t *testing.T) {
 		RequestContext: reqCtx,
 	})
 	require.True(t, status.IsInvalidArgumentError(err))
+}
+
+func TestGetStatHeatmap_LogScale(t *testing.T) {
+	flags.Set(t, "testenv.use_clickhouse", true)
+	flags.Set(t, "app.trends_heatmap_enabled", true)
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	te.SetAuthenticator(ta)
+
+	// Insert invocations whose durations span several orders of magnitude, so a
+	// log-scale heatmap produces one powers-of-10 bucket per value.
+	windowStart := time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
+	updatedAt := windowStart.Add(time.Hour).UnixMicro()
+	durations := []int64{5, 50, 500, 5000, 50000}
+	invocations := make([]olaptables.Invocation, 0, len(durations))
+	uuids := []string{
+		"00000000000000000000000000000001",
+		"00000000000000000000000000000002",
+		"00000000000000000000000000000003",
+		"00000000000000000000000000000004",
+		"00000000000000000000000000000005",
+	}
+	for i, d := range durations {
+		invocations = append(invocations, olaptables.Invocation{
+			UpdatedAtUsec:    updatedAt,
+			GroupID:          "GR1",
+			InvocationUUID:   uuids[i],
+			DurationUsec:     d,
+			Success:          true,
+			InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
+		})
+	}
+	err := te.GetOLAPDBHandle().GORM(ctx, "test_create_invocations").Create(invocations).Error
+	require.NoError(t, err)
+
+	authCtx, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	reqCtx := testauth.RequestContext("US1", "GR1")
+
+	durationMetric := sfpb.InvocationMetricType_DURATION_USEC_INVOCATION_METRIC
+	iss := NewInvocationStatService(te, te.GetDBHandle(), te.GetOLAPDBHandle())
+	rsp, err := iss.GetStatHeatmap(authCtx, &statspb.GetStatHeatmapRequest{
+		RequestContext: reqCtx,
+		Metric:         &sfpb.Metric{Invocation: &durationMetric},
+		LogScale:       true,
+		Query: &statspb.TrendQuery{
+			UpdatedAfter:  timestamppb.New(windowStart),
+			UpdatedBefore: timestamppb.New(windowStart.Add(2 * time.Hour)),
+		},
+	})
+	require.NoError(t, err)
+
+	// Bucket boundaries are clean powers of 10 anchored at the floor power of 10
+	// of the minimum (5 -> 1) up to the smallest power of 10 above the max
+	// (50000 -> 100000).
+	require.Equal(t, []int64{1, 10, 100, 1000, 10000, 100000}, rsp.GetBucketBracket())
+	require.False(t, rsp.GetMetricHadNegativeValues())
+
+	// Every invocation should be counted exactly once across all buckets.
+	var total int64
+	for _, col := range rsp.GetColumn() {
+		for _, v := range col.GetValue() {
+			total += v
+		}
+	}
+	require.Equal(t, int64(len(durations)), total)
 }

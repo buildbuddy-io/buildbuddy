@@ -689,13 +689,15 @@ func getTableForMetric(metric *sfpb.Metric) string {
 	return "Invocations"
 }
 
-type MetricRange = struct {
-	Start      int64
-	BucketSize int64
-	NumBuckets int64
-}
+// maxNumMetricBuckets is the number of buckets used to split a metric's value
+// range in a heatmap. The linear scale always produces exactly this many
+// buckets; the log scale uses it as an upper bound on the number of
+// powers-of-10 buckets.
+const maxNumMetricBuckets = 20
 
-func (i *InvocationStatService) getMetricRange(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}) (*MetricRange, error) {
+// getMetricMinMax returns the smallest and largest values of the given metric
+// matching the where clause. found is false when there are no matching rows.
+func (i *InvocationStatService) getMetricMinMax(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}) (low int64, high int64, found bool, err error) {
 	rangeQuery := fmt.Sprintf(`SELECT min(%s) as low, max(%s) as high FROM "%s" %s`, metric, metric, table, whereClauseStr)
 	rq := i.olapdbh.NewQuery(ctx, "invocation_stat_service_metric_range").Raw(rangeQuery, whereClauseArgs...)
 	valueRange := struct {
@@ -704,52 +706,98 @@ func (i *InvocationStatService) getMetricRange(ctx context.Context, table string
 	}{}
 	if err := rq.Take(&valueRange); err != nil {
 		if db.IsRecordNotFound(err) {
-			return nil, nil
+			return 0, 0, false, nil
 		}
-		return nil, err
+		return 0, 0, false, err
 	}
-	// A fun hack: make "High" value 1 higher so that we can put an exclusive
-	// limit on the upper bound of requested ranges. Each bucket is [min, max).
-	width := valueRange.High + 1 - valueRange.Low
-	var step int64
+	return valueRange.Low, valueRange.High, true, nil
+}
 
-	bucketCount := int64(20)
-	if width <= bucketCount {
+// getLinearMetricBuckets evenly divides [low, high] into maxNumMetricBuckets
+// buckets and returns the maxNumMetricBuckets+1 bucket boundaries. Each bucket
+// is [start, end).
+func getLinearMetricBuckets(low int64, high int64) []int64 {
+	// A fun hack: make "high" value 1 higher so that we can put an exclusive
+	// limit on the upper bound of requested ranges. Each bucket is [min, max).
+	width := high + 1 - low
+	var step int64
+	if width <= maxNumMetricBuckets {
 		step = 1
 	} else {
-		step = width / bucketCount
-		if (width % bucketCount) != 0 {
+		step = width / maxNumMetricBuckets
+		if (width % maxNumMetricBuckets) != 0 {
 			step = step + 1
 		}
 	}
-
-	return &MetricRange{
-			Start:      valueRange.Low,
-			BucketSize: step,
-			NumBuckets: bucketCount,
-		},
-		nil
+	buckets := make([]int64, maxNumMetricBuckets+1)
+	for i := range buckets {
+		buckets[i] = low + int64(i)*step
+	}
+	return buckets
 }
 
-func (i *InvocationStatService) getMetricBuckets(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}) ([]int64, string, error) {
-	metricRange, err := i.getMetricRange(ctx, table, metric, whereClauseStr, whereClauseArgs)
-	if err != nil {
-		return nil, "", err
+// getLogMetricBuckets returns powers-of-10 bucket boundaries spanning
+// [low, high]. The lowest bucket is anchored at the largest power of 10 <= low,
+// and the final boundary is the smallest power of 10 strictly greater than high
+// (so high falls inside a [start, end) bucket). A true log scale can't
+// represent values < 1, so when low is below 1 a [0, 1) catch-all bucket is
+// prepended; when low is negative the bottom is clamped to 0 and hadNegative is
+// set so the caller can warn that negative values were grouped into that
+// bucket.
+func getLogMetricBuckets(low int64, high int64) (buckets []int64, hadNegative bool) {
+	hadNegative = low < 0
+	if low < 0 {
+		low = 0
 	}
-	if metricRange == nil {
-		return nil, "", nil
+	if high < 0 {
+		high = 0
 	}
 
-	metricBuckets := make([]int64, metricRange.NumBuckets+1)
-	for i := range metricBuckets[:] {
-		metricBuckets[i] = metricRange.Start + int64(i)*metricRange.BucketSize
+	buckets = make([]int64, 0, maxNumMetricBuckets+1)
+	power := int64(1)
+	if low < 1 {
+		// Prepend a [0, 1) catch-all bucket for sub-1 (and clamped negative)
+		// values.
+		buckets = append(buckets, 0)
+	} else {
+		for power*10 <= low {
+			power *= 10
+		}
 	}
-	mStr := make([]string, metricRange.NumBuckets)
+	buckets = append(buckets, power)
+	// Append powers of 10 until we pass high. The final boundary is the
+	// exclusive top of the highest bucket. Guard against int64 overflow and cap
+	// the total number of buckets.
+	for power <= high && power <= math.MaxInt64/10 && len(buckets) <= maxNumMetricBuckets {
+		power *= 10
+		buckets = append(buckets, power)
+	}
+	return buckets, hadNegative
+}
+
+func (i *InvocationStatService) getMetricBuckets(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}, logScale bool) (buckets []int64, arrayStr string, hadNegative bool, err error) {
+	low, high, found, err := i.getMetricMinMax(ctx, table, metric, whereClauseStr, whereClauseArgs)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if !found {
+		return nil, "", false, nil
+	}
+
+	if logScale {
+		buckets, hadNegative = getLogMetricBuckets(low, high)
+	} else {
+		buckets = getLinearMetricBuckets(low, high)
+	}
+
+	// The heatmap query buckets values with roundDown against the bucket starts,
+	// which are all boundaries except the final (exclusive) upper bound.
+	mStr := make([]string, len(buckets)-1)
 	for i := range mStr {
-		mStr[i] = fmt.Sprint(metricBuckets[i])
+		mStr[i] = fmt.Sprint(buckets[i])
 	}
-	metricArrayStr := "array(" + strings.Join(mStr, ",") + ")"
-	return metricBuckets, metricArrayStr, nil
+	arrayStr = "array(" + strings.Join(mStr, ",") + ")"
+	return buckets, arrayStr, hadNegative, nil
 }
 
 // Given a duration for which we are computing a heatmap, return an
@@ -843,19 +891,20 @@ func (i *InvocationStatService) getTimestampBuckets(q *stpb.TrendQuery, requestC
 }
 
 type HeatmapQueryInputs = struct {
-	PlaceholderBucketQuery string
-	TimestampBuckets       []int64
-	TimestampArrayStr      string
-	MetricBuckets          []int64
-	MetricArrayStr         string
+	PlaceholderBucketQuery  string
+	TimestampBuckets        []int64
+	TimestampArrayStr       string
+	MetricBuckets           []int64
+	MetricArrayStr          string
+	HadNegativeMetricValues bool
 }
 
-func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table string, metric string, q *stpb.TrendQuery, whereClauseStr string, whereClauseArgs []interface{}, requestContext *ctxpb.RequestContext) (*HeatmapQueryInputs, error) {
+func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table string, metric string, q *stpb.TrendQuery, whereClauseStr string, whereClauseArgs []interface{}, requestContext *ctxpb.RequestContext, logScale bool) (*HeatmapQueryInputs, error) {
 	timestampBuckets, timestampArrayStr, err := i.getTimestampBuckets(q, requestContext)
 	if err != nil {
 		return nil, err
 	}
-	metricBuckets, metricArrayStr, err := i.getMetricBuckets(ctx, table, metric, whereClauseStr, whereClauseArgs)
+	metricBuckets, metricArrayStr, hadNegative, err := i.getMetricBuckets(ctx, table, metric, whereClauseStr, whereClauseArgs, logScale)
 	if err != nil {
 		return nil, err
 	}
@@ -872,11 +921,12 @@ func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table s
 		timestampArrayStr, len(timestampBuckets)-1, metricArrayStr, len(metricBuckets)-1)
 
 	return &HeatmapQueryInputs{
-		PlaceholderBucketQuery: pbq,
-		TimestampBuckets:       timestampBuckets,
-		TimestampArrayStr:      timestampArrayStr,
-		MetricBuckets:          metricBuckets,
-		MetricArrayStr:         metricArrayStr}, nil
+		PlaceholderBucketQuery:  pbq,
+		TimestampBuckets:        timestampBuckets,
+		TimestampArrayStr:       timestampArrayStr,
+		MetricBuckets:           metricBuckets,
+		MetricArrayStr:          metricArrayStr,
+		HadNegativeMetricValues: hadNegative}, nil
 }
 
 func (i *InvocationStatService) getWhereClauseForHeatmapQuery(m *sfpb.Metric, q *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) (string, []interface{}, error) {
@@ -892,10 +942,11 @@ func (i *InvocationStatService) getWhereClauseForHeatmapQuery(m *sfpb.Metric, q 
 }
 
 type QueryAndBuckets = struct {
-	Query            string
-	QueryArgs        []interface{}
-	TimestampBuckets []int64
-	MetricBuckets    []int64
+	Query                   string
+	QueryArgs               []interface{}
+	TimestampBuckets        []int64
+	MetricBuckets           []int64
+	HadNegativeMetricValues bool
 }
 
 // getHeatmapQueryAndBuckets usually returns the query that should be run to
@@ -917,7 +968,7 @@ func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, r
 		return nil, err
 	}
 
-	qi, err := i.generateQueryInputs(ctx, table, metric, req.GetQuery(), whereClauseStr, whereClauseArgs, req.GetRequestContext())
+	qi, err := i.generateQueryInputs(ctx, table, metric, req.GetQuery(), whereClauseStr, whereClauseArgs, req.GetRequestContext(), req.GetLogScale())
 	if err != nil {
 		return nil, err
 	}
@@ -939,10 +990,11 @@ func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, r
 		qi.PlaceholderBucketQuery, qi.TimestampArrayStr, metric, qi.MetricArrayStr, table, whereClauseStr)
 
 	return &QueryAndBuckets{
-			TimestampBuckets: qi.TimestampBuckets,
-			MetricBuckets:    qi.MetricBuckets,
-			Query:            qStr,
-			QueryArgs:        whereClauseArgs,
+			TimestampBuckets:        qi.TimestampBuckets,
+			MetricBuckets:           qi.MetricBuckets,
+			Query:                   qStr,
+			QueryArgs:               whereClauseArgs,
+			HadNegativeMetricValues: qi.HadNegativeMetricValues,
 		},
 		nil
 }
@@ -970,9 +1022,10 @@ func (i *InvocationStatService) GetStatHeatmap(ctx context.Context, req *stpb.Ge
 	rq := i.olapdbh.NewQuery(ctx, "invocation_stat_service_heatmap").Raw(qAndBuckets.Query, qAndBuckets.QueryArgs...)
 
 	rsp := &stpb.GetStatHeatmapResponse{
-		TimestampBracket: qAndBuckets.TimestampBuckets,
-		BucketBracket:    qAndBuckets.MetricBuckets,
-		Column:           make([]*stpb.HeatmapColumn, 0),
+		TimestampBracket:        qAndBuckets.TimestampBuckets,
+		BucketBracket:           qAndBuckets.MetricBuckets,
+		Column:                  make([]*stpb.HeatmapColumn, 0),
+		MetricHadNegativeValues: qAndBuckets.HadNegativeMetricValues,
 	}
 
 	type stat struct {
