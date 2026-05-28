@@ -83,7 +83,7 @@ func director(ctx context.Context, fullMethodName string) (context.Context, grpc
 		return nil, nil, err
 	}
 
-	pool, err := getConnectionPool(grpc_client.DialSimple, target)
+	pool, err := getConnectionPool(dial, target)
 	if err != nil {
 		return nil, nil, err
 	}
