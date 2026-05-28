@@ -53,4 +53,4 @@ resources:
 
 ## Usage
 
-Now you can point Bazel hosts and remote executors in the same cluster at your cache proxy deployment, using its cluster IP. If you need to access the proxy from outside of the cluster, you can create and use an ingress.
+Now you can point Bazel hosts and remote executors in the same cluster at your cache proxy deployment, using its cluster IP. The relevant flags are `--remote_cache` for Bazel and `--executor.cache_target` for the BuildBuddy remote executor. If you need to access the proxy from outside of the cluster, you can create and use an ingress.
