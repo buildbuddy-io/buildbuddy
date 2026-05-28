@@ -4,10 +4,18 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/changelog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Wed, 27 May 2026 10:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Thu, 28 May 2026 10:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[Schedule Workflows with cron expressions]]></title>
+            <link>https://www.buildbuddy.io/changelog/scheduled-workflows</link>
+            <guid>https://www.buildbuddy.io/changelog/scheduled-workflows</guid>
+            <pubDate>Thu, 28 May 2026 10:00:00 GMT</pubDate>
+            <description><![CDATA[You can now run BuildBuddy Workflows on a recurring schedule using standard cron expressions. This is useful for nightly builds, periodic integration tests, or any job that should run independently of code pushes or pull requests.]]></description>
+            <category>CI</category>
+        </item>
         <item>
             <title><![CDATA[Usage alerts]]></title>
             <link>https://www.buildbuddy.io/changelog/usage-alerts</link>
