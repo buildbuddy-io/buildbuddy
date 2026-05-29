@@ -120,41 +120,8 @@ type SelectionData = {
   selectionYEnd: number;
 };
 
-// Returns true if v is a positive power of 10 (1, 10, 100, ...). Used to label
-// only decade boundaries on a log-scale y axis.
 function isPowerOfTen(v: number): boolean {
-  if (v < 1 || !Number.isInteger(v)) {
-    return false;
-  }
-  while (v > 1) {
-    if (v % 10 !== 0) {
-      return false;
-    }
-    v /= 10;
-  }
-  return v === 1;
-}
-
-// Returns the largest power of 10 that is <= n (for n >= 1).
-function largestPowerOfTenAtMost(n: number): number {
-  let p = 1;
-  while (p * 10 <= n) {
-    p *= 10;
-  }
-  return p;
-}
-
-// Returns true if v sits on the log grid -- a single significant digit times a
-// power of 10 (1, 2, ..., 9, 10, 20, ..., 700, ...), or the 0 catch-all boundary.
-// Used to tell log-scale buckets apart from sub-decade linear fallback buckets.
-function isLogScaleBoundary(v: number): boolean {
-  if (v <= 0) {
-    return true;
-  }
-  if (!Number.isInteger(v)) {
-    return false;
-  }
-  return v % largestPowerOfTenAtMost(v) === 0;
+  return Number.isInteger(Math.log10(v));
 }
 
 class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, State> {
@@ -465,9 +432,6 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
     const bTimestampIndex = selectionToDraw[1].timestampBucketIndex;
     const bMetricIndex = selectionToDraw[1].metricBucketIndex;
 
-    // Higher metric indices are higher on the chart (smaller y), so the top of
-    // the selection is the top of the highest-indexed bucket and the bottom is
-    // the bottom of the lowest-indexed bucket.
     const yStartIndex = Math.min(aMetricIndex, bMetricIndex);
     const yEndIndex = Math.max(aMetricIndex, bMetricIndex);
     const top = this.metricRowTops[yEndIndex] + CHART_MARGINS.top;
@@ -569,12 +533,8 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
     // fall back to linear-style labeling because the buckets are themselves
     // linear (server-side fallback).
     let lastLabelY = Infinity;
-    const decadeLabels = this.props.logScale && bracket.every((v) => isLogScaleBoundary(+v));
+    const decadeLabels = this.props.logScale && bracket.every((v) => isPowerOfTen(+v));
 
-    // Boundary bracket[i] sits at the bottom edge of bucket i; the final
-    // boundary sits at the top edge of the last bucket. When using decade
-    // labels we include that final boundary so the highest decade gets labeled.
-    const lastBoundaryIndex = decadeLabels ? numRows : numRows - 1;
     const boundaryYAt = (i: number) =>
       i < numRows ? this.metricRowTops[i] + this.metricRowHeights[i] : this.metricRowTops[numRows - 1];
 
@@ -583,7 +543,7 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
         color="#666"
         transform={`translate(${CHART_MARGINS.left}, ${this.props.height - CHART_MARGINS.bottom - height})`}>
         <line stroke="#666" x1="0" y1="0" x2="0" y2={height}></line>
-        {bracket.slice(0, lastBoundaryIndex + 1).map((v, i) => {
+        {bracket.slice(0, numRows + 1).map((v, i) => {
           const boundaryY = boundaryYAt(i);
           let label: string | null = null;
           if (
