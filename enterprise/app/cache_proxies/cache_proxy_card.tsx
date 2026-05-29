@@ -9,10 +9,24 @@ interface Props {
   lastCheckInTime?: google_timestamp.protobuf.Timestamp | null;
 }
 
+// A proxy is considered "fresh" (green) if its last heartbeat is no more
+// than freshThresholdMs ago; otherwise it's grey. The server-side
+// staleness threshold for removing a proxy from the registry entirely is
+// much longer (10 minutes), so a grey card means "still around but the
+// most recent heartbeat is stale-ish."
+const freshThresholdMs = 60 * 1000;
+
+function isFresh(t?: google_timestamp.protobuf.Timestamp | null): boolean {
+  if (!t) return false;
+  const ms = +(t.seconds || 0) * 1000 + +(t.nanos || 0) / 1_000_000;
+  return Date.now() - ms < freshThresholdMs;
+}
+
 export default class CacheProxyCardComponent extends React.Component<Props> {
   render() {
+    const fresh = isFresh(this.props.lastCheckInTime);
     return (
-      <div className="card card-neutral">
+      <div className={`card ${fresh ? "card-success" : "card-neutral"}`}>
         <Cloud className="icon" />
         <div className="content">
           <div className="details">
