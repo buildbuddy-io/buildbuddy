@@ -141,12 +141,19 @@ func (r *BuildStatusReporter) flushPayloadsIfMetadataLoaded(ctx context.Context)
 		return
 	}
 
+	// If there is no authenticated user (e.g. a self-hosted deployment with no
+	// auth configured), we can still report commit statuses when a hard-coded
+	// github.access_token is configured. Only bail out when status reporting is
+	// not unconditionally enabled, so the webhook/workflow path keeps its group
+	// attribution while the access_token path keeps working. See #12302.
 	userInfo, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
+	var groupID string
+	if err == nil {
+		groupID = userInfo.GetGroupID()
+	} else if !github.AlwaysEnableStatusReporting() {
 		log.CtxWarningf(ctx, "Failed to get authenticated user: %s", err)
 		return
 	}
-	groupID := userInfo.GetGroupID()
 
 	// Don't report statuses if we don't yet have the metadata, it's explicitly
 	// disabled in build metadata, or it's not enabled for this repo.
