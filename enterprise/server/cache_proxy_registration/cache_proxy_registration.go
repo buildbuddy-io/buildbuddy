@@ -38,9 +38,10 @@ import (
 )
 
 var (
-	apiKey    = flag.String("cache_proxy.api_key", "", "API Key used to authorize the cache proxy with the BuildBuddy app server.", flag.Secret)
-	appTarget = flag.String("cache_proxy.app_target", "", "Optional BuildBuddy app gRPC target the cache proxy registers itself with for the deployment view (e.g. grpcs://app.buildbuddy.io). Requires --cache_proxy.api_key. If unset, no registration is attempted.")
-	labels    = flag.Map[string, string]("cache_proxy.labels", map[string]string{}, "Optional key-value labels identifying this cache proxy, similar to Kubernetes labels (e.g. 'region=us-east1,environment=prod'). Reported at registration and surfaced on the cache proxy admin page.")
+	apiKey            = flag.String("cache_proxy.api_key", "", "API Key used to authorize the cache proxy with the BuildBuddy app server.", flag.Secret)
+	appTarget         = flag.String("cache_proxy.app_target", "", "Optional BuildBuddy app gRPC target the cache proxy registers itself with for the deployment view (e.g. grpcs://app.buildbuddy.io). Requires --cache_proxy.api_key. If unset, no registration is attempted.")
+	metadataDirectory = flag.String("cache_proxy.metadata_directory", "", "Directory where the cache proxy persists its stable host ID. If unset, it will attempt to persist the ID under the OS user config dir; if persistence fails, a new ID will be generated on each restart.")
+	labels            = flag.Map[string, string]("cache_proxy.labels", map[string]string{}, "Optional key-value labels identifying this cache proxy, similar to Kubernetes labels (e.g. 'region=us-east1,environment=prod'). Reported at registration and surfaced on the cache proxy admin page.")
 )
 
 var (
