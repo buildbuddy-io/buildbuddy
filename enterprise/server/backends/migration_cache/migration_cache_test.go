@@ -13,25 +13,40 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/metacache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	mdserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/metadata"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockgcs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/uuid"
+	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 
+	mdspb "github.com/buildbuddy-io/buildbuddy/proto/metadata_service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
@@ -45,6 +60,104 @@ const (
 var (
 	emptyUserMap = testauth.TestUsers()
 )
+
+type metadataCluster struct {
+	nodes []*mdserver.Server
+	conn  *grpc.ClientConn
+}
+
+func localAddr(t testing.TB) string {
+	return fmt.Sprintf("127.0.0.1:%d", testport.FindFree(t))
+}
+
+func newMetadataConfig(t testing.TB, fs filestore.Store) *config.ServerConfig {
+	id, err := uuid.NewRandom()
+	require.NoError(t, err)
+	httpPort := testport.FindFree(t)
+	grpcPort := testport.FindFree(t)
+	return &config.ServerConfig{
+		NHID:              id.String(),
+		RootDir:           testfs.MakeTempDir(t),
+		RaftAddr:          fmt.Sprintf("127.0.0.1:%d", httpPort),
+		GRPCAddr:          fmt.Sprintf("127.0.0.1:%d", grpcPort),
+		GRPCListeningAddr: fmt.Sprintf("127.0.0.1:%d", grpcPort),
+		LogDBConfigType:   config.SmallMemLogDBConfigType,
+		FileStorer:        fs,
+		Partitions: []disk.Partition{
+			{
+				ID:           constants.DefaultPartitionID,
+				MaxSizeBytes: 256_000_000,
+				NumRanges:    2,
+			},
+			{
+				ID:           "anon",
+				MaxSizeBytes: 32_000_000,
+				NumRanges:    1,
+			},
+		},
+	}
+}
+
+func waitForHealthy(t testing.TB, nodes ...*mdserver.Server) {
+	require.Eventually(t, func() bool {
+		for _, node := range nodes {
+			if err := node.Check(context.Background()); err != nil {
+				return false
+			}
+		}
+		return true
+	}, 30*time.Second, 100*time.Millisecond)
+}
+
+func startMetadataCluster(t testing.TB, fs filestore.Store) *metadataCluster {
+	t.Helper()
+	const nodeCount = 3
+	envs := make([]*testenv.TestEnv, nodeCount)
+	configs := make([]*config.ServerConfig, nodeCount)
+	joinList := make([]string, 0, nodeCount)
+	for i := 0; i < nodeCount; i++ {
+		envs[i] = testenv.GetTestEnv(t)
+		configs[i] = newMetadataConfig(t, fs)
+		joinList = append(joinList, localAddr(t))
+	}
+
+	nodes := make([]*mdserver.Server, nodeCount)
+	eg := errgroup.Group{}
+	for i := 0; i < nodeCount; i++ {
+		i := i
+		gs, err := gossip.NewWithArgs(configs[i].NHID, joinList[i], joinList)
+		require.NoError(t, err)
+		configs[i].GossipManager = gs
+		eg.Go(func() error {
+			node, err := mdserver.New(envs[i], configs[i])
+			if err != nil {
+				return err
+			}
+			nodes[i] = node
+			return nil
+		})
+	}
+	require.NoError(t, eg.Wait())
+	waitForHealthy(t, nodes...)
+
+	mdGRPCServer, runMDServer, lis := testenv.RegisterLocalGRPCServer(t, envs[0])
+	mdspb.RegisterMetadataServiceServer(mdGRPCServer, nodes[0])
+	go runMDServer()
+	conn, err := testenv.LocalGRPCConn(envs[0].GetServerContext(), lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	t.Cleanup(func() {
+		eg := errgroup.Group{}
+		for _, node := range nodes {
+			node := node
+			eg.Go(func() error {
+				return node.Stop(context.Background())
+			})
+		}
+		require.NoError(t, eg.Wait())
+	})
+	return &metadataCluster{nodes: nodes, conn: conn}
+}
 
 func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
@@ -144,6 +257,90 @@ func waitForValue(ctx context.Context, destCache interfaces.Cache, r *rspb.Resou
 		time.Sleep(delay)
 	}
 	return fmt.Errorf("Timed out waiting for %v to be copied to dest cache", r)
+}
+
+func TestMigrationCacheWithMetacacheDestination(t *testing.T) {
+	flags.Set(t, "app.log_level", "error")
+	flags.Set(t, "gossip.log_level", "error")
+	require.NoError(t, log.Configure())
+
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	clock := clockwork.NewRealClock()
+	mockGCS := mockgcs.New(clock)
+	require.NoError(t, mockGCS.SetBucketCustomTimeTTL(ctx, 30))
+	fs := filestore.New(filestore.WithGCSBlobstore(mockGCS, "migration-metacache-test"), filestore.WithClock(clock))
+	mdCluster := startMetadataCluster(t, fs)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{
+		RootDirectory: testfs.MakeTempDir(t),
+		Partitions: []disk.Partition{{
+			ID:           disk_cache.DefaultPartitionID,
+			MaxSizeBytes: 256_000_000,
+		}},
+	}, 256_000_000)
+	require.NoError(t, err)
+
+	destCache, err := metacache.New(te, metacache.Options{
+		Name:                        "migration_metacache_dest",
+		Clock:                       clock,
+		MetadataClient:              mdspb.NewMetadataServiceClient(mdCluster.conn),
+		FileStorer:                  fs,
+		GCSTTLDays:                  30,
+		MaxInlineFileSizeBytes:      65_537,
+		MinBytesAutoZstdCompression: 100,
+		PartitionMappings: []disk.PartitionMapping{
+			{GroupID: interfaces.AuthAnonymousUser, Prefix: "anon/", PartitionID: "anon"},
+		},
+	})
+	require.NoError(t, err)
+
+	migrationConfig := &cache_config.MigrationConfig{
+		CopyChanBufferSize:             100,
+		CopyChanFullWarningIntervalMin: 1,
+		MaxCopiesPerSec:                100,
+		NumCopyWorkers:                 2,
+		DoubleReadPercentage:           1.0,
+	}
+	mc := migration_cache.NewMigrationCache(te, migrationConfig, srcCache, destCache)
+	require.NoError(t, mc.Start())
+	t.Cleanup(func() { require.NoError(t, mc.Stop()) })
+
+	instanceName := "migration-metacache-integration"
+	srcOnlyBlob := []byte("blob present only in source before migration")
+	srcOnlyDigest, err := digest.Compute(bytes.NewReader(srcOnlyBlob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	srcOnlyRN := digest.NewCASResourceName(srcOnlyDigest, instanceName, repb.DigestFunction_SHA256).ToProto()
+	require.NoError(t, srcCache.Set(ctx, srcOnlyRN, srcOnlyBlob))
+
+	got, err := mc.Get(ctx, srcOnlyRN)
+	require.NoError(t, err)
+	require.Equal(t, srcOnlyBlob, got)
+	require.NoError(t, waitForValue(ctx, destCache, srcOnlyRN, srcOnlyBlob))
+
+	largeBlob := bytes.Repeat([]byte("large write through migration cache "), 3000)
+	largeDigest, err := digest.Compute(bytes.NewReader(largeBlob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	largeRN := digest.NewCASResourceName(largeDigest, instanceName, repb.DigestFunction_SHA256).ToProto()
+	require.NoError(t, mc.Set(ctx, largeRN, largeBlob))
+	require.NoError(t, waitForValue(ctx, srcCache, largeRN, largeBlob))
+	require.NoError(t, waitForValue(ctx, destCache, largeRN, largeBlob))
+
+	actionBlob := []byte("encoded action result bytes")
+	actionDigest, err := digest.Compute(bytes.NewReader([]byte("action key")), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	actionRN := digest.NewACResourceName(actionDigest, instanceName, repb.DigestFunction_SHA256).ToProto()
+	require.NoError(t, mc.Set(ctx, actionRN, actionBlob))
+	require.NoError(t, waitForValue(ctx, srcCache, actionRN, actionBlob))
+	require.NoError(t, waitForValue(ctx, destCache, actionRN, actionBlob))
+
+	setMigrationState(t, migration_cache.DestPrimary)
+	got, err = mc.Get(ctx, largeRN)
+	require.NoError(t, err)
+	require.Equal(t, largeBlob, got)
+	got, err = mc.Get(ctx, actionRN)
+	require.NoError(t, err)
+	require.Equal(t, actionBlob, got)
 }
 
 // errorCache lets us mock errors to test error handling
