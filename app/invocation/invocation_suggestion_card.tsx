@@ -636,6 +636,32 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       ),
     };
   },
+  // Suggest SplitBlob / SpliceBlob remote-cache chunking.
+  ({ model }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
+    if (!isRemoteCacheEnabled(model)) return null;
+    if (model.optionsMap.has("experimental_remote_cache_chunking")) return null;
+
+    const version = model.getBazelVersion();
+    if (!supportsCurrentRemoteCacheRecovery(version)) return null;
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          Consider adding <BazelFlag>--experimental_remote_cache_chunking</BazelFlag> to let Bazel use SplitBlob and
+          SpliceBlob for large remote-cache uploads and downloads.
+        </>
+      ),
+      reason: (
+        <>
+          Shown because this build uses remote caching or execution and this Bazel release supports remote cache
+          chunking, but <span className="inline-code">--experimental_remote_cache_chunking</span> is not explicitly set.
+        </>
+      ),
+    };
+  },
   // Suggest --experimental_remote_build_event_upload=minimal
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
