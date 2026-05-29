@@ -67,7 +67,25 @@ func TestGetLogMetricBuckets(t *testing.T) {
 		wantHadNegative bool
 	}{
 		{
-			name:        "few decades subdivide into 1-2-4-6-8-10 anchored at floor power of min",
+			name:        "one decade subdivides into single integers",
+			low:         12,
+			high:        12,
+			wantBuckets: []int64{10, 20, 30, 40, 50, 60, 70, 80, 90, 100},
+		},
+		{
+			name:        "two decades subdivide into single integers anchored at floor power of min",
+			low:         5,
+			high:        50,
+			wantBuckets: []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100},
+		},
+		{
+			name:        "two decades with zero min prepend [0,1) and subdivide into single integers",
+			low:         0,
+			high:        50,
+			wantBuckets: []int64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100},
+		},
+		{
+			name:        "three to four decades subdivide into 1-2-4-6-8-10 anchored at floor power of min",
 			low:         5,
 			high:        5000,
 			wantBuckets: []int64{1, 2, 4, 6, 8, 10, 20, 40, 60, 80, 100, 200, 400, 600, 800, 1000, 2000, 4000, 6000, 8000, 10000},
@@ -90,12 +108,6 @@ func TestGetLogMetricBuckets(t *testing.T) {
 			low:         0,
 			high:        0,
 			wantBuckets: []int64{0, 1},
-		},
-		{
-			name:        "min and max in same decade subdivide",
-			low:         12,
-			high:        12,
-			wantBuckets: []int64{10, 20, 40, 60, 80, 100},
 		},
 		{
 			name:            "all negative values",

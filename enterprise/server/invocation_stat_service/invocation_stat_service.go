@@ -697,9 +697,18 @@ const maxNumMetricBuckets = 20
 
 // maxLogBucketsToSubdivide is the largest number of powers-of-10 log buckets
 // that we'll subdivide into 1-2-4-6-8-10 steps. Subdividing multiplies the
-// bucket count by 5, so capping at 4 keeps us at or under maxNumMetricBuckets
+// decade count by 5, so capping at 4 keeps us at or under maxNumMetricBuckets
 // (4*5 = 20).
 const maxLogBucketsToSubdivide = 4
+
+// maxDecadesToSubdivideFinely is the largest number of decade buckets that
+// we'll subdivide into single-integer steps (1,2,3,...,9,10). This multiplies
+// the decade count by 9, so capping at 2 keeps us at or under
+// maxNumMetricBuckets even with the extra [0, 1) catch-all bucket (2*9+1 = 19).
+const maxDecadesToSubdivideFinely = 2
+
+var fineLogStepMultipliers = []int64{1, 2, 3, 4, 5, 6, 7, 8, 9}
+var coarseLogStepMultipliers = []int64{1, 2, 4, 6, 8}
 
 // getMetricMinMax returns the smallest and largest values of the given metric
 // matching the where clause. found is false when there are no matching rows.
@@ -779,20 +788,29 @@ func getLogMetricBuckets(low int64, high int64) (buckets []int64, hadNegative bo
 		buckets = append(buckets, power)
 	}
 
+	// The number of true decade buckets, ignoring the [0, 1) catch-all bucket.
+	decadeCount := len(buckets) - 1
+	if len(buckets) > 0 && buckets[0] == 0 {
+		decadeCount--
+	}
+
 	// When the powers-of-10 scheme yields only a handful of buckets, subdivide
-	// each decade into 1-2-4-6-8-10 steps for finer resolution while still
-	// staying at or under maxNumMetricBuckets.
-	if len(buckets)-1 <= maxLogBucketsToSubdivide {
-		buckets = subdivideLogBuckets(buckets)
+	// each decade for finer resolution while still staying at or under
+	// maxNumMetricBuckets: down to single integers (1,2,...,9,10) for one or two
+	// decades, or 1-2-4-6-8-10 for up to four.
+	if decadeCount <= maxDecadesToSubdivideFinely {
+		buckets = subdivideLogBuckets(buckets, fineLogStepMultipliers)
+	} else if len(buckets)-1 <= maxLogBucketsToSubdivide {
+		buckets = subdivideLogBuckets(buckets, coarseLogStepMultipliers)
 	}
 	return buckets, hadNegative
 }
 
-// subdivideLogBuckets replaces each powers-of-10 decade boundary pair
-// [10^k, 10^(k+1)) with the 1-2-4-6-8 boundaries 10^k, 2*10^k, 4*10^k, 6*10^k,
-// 8*10^k. The [0, 1) catch-all bucket (a leading 0 boundary) is left intact.
-func subdivideLogBuckets(buckets []int64) []int64 {
-	subdivided := make([]int64, 0, 5*len(buckets))
+// subdivideLogBuckets replaces each powers-of-10 decade boundary 10^k with the
+// boundaries m*10^k for each m in stepMultipliers (which must start at 1). The
+// [0, 1) catch-all bucket (a leading 0 boundary) is left intact.
+func subdivideLogBuckets(buckets []int64, stepMultipliers []int64) []int64 {
+	subdivided := make([]int64, 0, len(stepMultipliers)*len(buckets))
 	for idx := 0; idx < len(buckets)-1; idx++ {
 		lo := buckets[idx]
 		if lo == 0 {
@@ -800,7 +818,9 @@ func subdivideLogBuckets(buckets []int64) []int64 {
 			subdivided = append(subdivided, 0)
 			continue
 		}
-		subdivided = append(subdivided, lo, 2*lo, 4*lo, 6*lo, 8*lo)
+		for _, m := range stepMultipliers {
+			subdivided = append(subdivided, m*lo)
+		}
 	}
 	// Append the final (exclusive) upper boundary.
 	subdivided = append(subdivided, buckets[len(buckets)-1])
