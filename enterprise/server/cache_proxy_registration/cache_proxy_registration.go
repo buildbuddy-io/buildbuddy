@@ -217,10 +217,10 @@ func sendHeartbeat(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClie
 
 // getProxyHostID returns an ID that identifies the host this cache proxy
 // process is running on. If --cache_proxy.metadata_directory is set and
-// writable, the ID is persisted there and survives process restarts
-// (mirroring the executor's getExecutorHostID). Otherwise the failsafe
-// is a per-process UUID, which is unique but resets on every restart and
-// so the proxy will appear as a new host in the deployment view after
+// writable, the ID is persisted there and survives process restarts.
+// If it's unset, we attempt to persist the ID under the OS user config dir
+// (via hostid.GetHostID("")). If the ID can't be persisted, we fall back to
+// a process-wide random UUID, so the proxy may appear as a new host after
 // each restart.
 func getProxyHostID() string {
 	dir := *metadataDirectory

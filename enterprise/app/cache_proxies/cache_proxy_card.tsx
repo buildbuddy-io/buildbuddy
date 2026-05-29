@@ -56,12 +56,6 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
                 <div>{this.props.node.arch}</div>
               </div>
             )}
-            {this.props.node.version && (
-              <div className="cache-proxy-section">
-                <div className="cache-proxy-section-title">Version:</div>
-                <div>{this.props.node.version}</div>
-              </div>
-            )}
             {this.props.node.labels && Object.keys(this.props.node.labels).length > 0 && (
               <div className="cache-proxy-section">
                 <div className="cache-proxy-section-title">Labels:</div>
@@ -80,6 +74,12 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
               <div className="cache-proxy-section">
                 <div className="cache-proxy-section-title">Uptime:</div>
                 <div>{format.durationSince(this.props.node.startTime)}</div>
+              </div>
+            )}
+            {this.props.node.version && (
+              <div className="cache-proxy-section">
+                <div className="cache-proxy-section-title">Version:</div>
+                <div>{this.props.node.version}</div>
               </div>
             )}
             {this.props.lastCheckInTime && (
