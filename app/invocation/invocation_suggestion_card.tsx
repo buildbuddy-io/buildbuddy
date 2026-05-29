@@ -103,6 +103,14 @@ function getCompactExecutionLogFlag(version: BazelVersion | null) {
   return null;
 }
 
+function supportsCurrentRemoteCacheRecovery(version: BazelVersion | null) {
+  return (
+    bazelVersionAtLeast(version, 10) ||
+    (version?.major === 9 && version.minor >= 1) ||
+    (version?.major === 8 && version.minor >= 7)
+  );
+}
+
 export const getTimingDataSuggestion: SuggestionMatcher = ({ model }) => {
   if (!capabilities.config.expandedSuggestionsEnabled) return null;
 
@@ -559,6 +567,32 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
         <>
           Shown because this build uses remote caching or execution, but these supported diagnostic log flags are not
           explicitly set.
+        </>
+      ),
+    };
+  },
+  // Suggest action rewinding for remote-cache lost inputs.
+  ({ model }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
+    if (!isRemoteCacheEnabled(model)) return null;
+    if (model.booleanCommandLineOption("rewind_lost_inputs")) return null;
+
+    const version = model.getBazelVersion();
+    if (!supportsCurrentRemoteCacheRecovery(version)) return null;
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          Consider adding <BazelFlag>--rewind_lost_inputs</BazelFlag> so Bazel can retry an action when a remote input
+          is lost during the build.
+        </>
+      ),
+      reason: (
+        <>
+          Shown because this build uses remote caching or execution and this Bazel release supports remote lost-input
+          rewinding, but <span className="inline-code">--rewind_lost_inputs</span> is not enabled.
         </>
       ),
     };
