@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -35,7 +37,7 @@ func newTestingProposal(t testing.TB, rangeID uint64) *testutil.TestingProposer 
 
 func increment(t testing.TB, ctx context.Context, rangeID uint64, p *testutil.TestingProposer, session *client.Session, expectedValue int64) {
 	req, err := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
-		Key:   []byte(fmt.Sprintf("range%d", rangeID)),
+		Key:   keys.MakeKey(constants.SystemPrefix, []byte(fmt.Sprintf("range%d", rangeID))),
 		Delta: 1,
 	}).ToProto()
 	require.NoError(t, err)

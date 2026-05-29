@@ -9,9 +9,24 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/prototext"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	gstatus "google.golang.org/grpc/status"
 )
+
+// requireNonSplittableKey returns an error when the key sits on a
+// splittable range (key[0] >= constants.UnsplittableMaxByte). Used
+// by request kinds that are not safe across split-time retries
+// (see proto/raft.proto comments on each such request).
+func requireNonSplittableKey(reqType proto.Message, key []byte) error {
+	if len(key) == 0 {
+		return nil
+	}
+	if key[0] >= constants.UnsplittableMaxByte {
+		return status.FailedPreconditionErrorf("%T not allowed on splittable key %q", reqType, key)
+	}
+	return nil
+}
 
 type BatchBuilder struct {
 	cmd *rfpb.BatchCmdRequest
@@ -42,6 +57,9 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		bb.cmd = &rfpb.BatchCmdRequest{}
 	}
 
+	// When adding a new request type below, decide whether it is safe
+	// on splittable keys. If not, call requireNonSplittableKey on its
+	// key like the IncrementRequest / CASRequest cases below.
 	req := &rfpb.RequestUnion{}
 	switch value := m.(type) {
 	case *rfpb.DirectReadRequest:
@@ -57,6 +75,10 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 			DirectDelete: value,
 		}
 	case *rfpb.IncrementRequest:
+		if err := requireNonSplittableKey(value, value.GetKey()); err != nil {
+			bb.setErr(err)
+			return bb
+		}
 		req.Value = &rfpb.RequestUnion_Increment{
 			Increment: value,
 		}
@@ -65,6 +87,10 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 			Scan: value,
 		}
 	case *rfpb.CASRequest:
+		if err := requireNonSplittableKey(value, value.GetKv().GetKey()); err != nil {
+			bb.setErr(err)
+			return bb
+		}
 		req.Value = &rfpb.RequestUnion_Cas{
 			Cas: value,
 		}

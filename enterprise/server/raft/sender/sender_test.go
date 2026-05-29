@@ -7,7 +7,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -170,7 +172,7 @@ func TestSyncProposeIsIdempotentOnReplicaRetry(t *testing.T) {
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 
-	key := []byte("PTdefault/dup-apply")
+	key := keys.MakeKey(constants.SystemPrefix, []byte("dup-apply"))
 	var faultInjected atomic.Bool
 	interceptor := func(
 		ctx context.Context,
@@ -221,7 +223,7 @@ func TestSyncProposeWithRangeDescriptorIsIdempotentOnReplicaRetry(t *testing.T) 
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 
-	key := []byte("PTdefault/dup-apply-rd")
+	key := keys.MakeKey(constants.SystemPrefix, []byte("dup-apply-rd"))
 	var faultInjected atomic.Bool
 	interceptor := func(
 		ctx context.Context,
@@ -260,7 +262,11 @@ func TestSyncProposeWithRangeDescriptorIsIdempotentOnReplicaRetry(t *testing.T) 
 		Delta: 1,
 	}).ToProto()
 	require.NoError(t, err)
-	rd := s1.GetRange(2)
+	// Route to range 1 (meta range, ["\x02", "\x04")) since the key is
+	// a system-prefix key. CAS/Increment are only permitted on
+	// non-splittable keys, so the natural test target is the meta
+	// range that owns them.
+	rd := s1.GetRange(1)
 
 	rsp, err := s1.Sender().SyncProposeWithRangeDescriptor(ctx, rd, batch, header.MakeLinearizableWithRangeValidation)
 	require.NoError(t, err)
@@ -277,7 +283,7 @@ func TestSyncProposeCASIsIdempotentOnReplicaRetry(t *testing.T) {
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 
-	key := []byte("PTdefault/dup-apply-cas")
+	key := keys.MakeKey(constants.SystemPrefix, []byte("dup-apply-cas"))
 	oldValue := []byte("initial")
 	newValue := []byte("updated")
 

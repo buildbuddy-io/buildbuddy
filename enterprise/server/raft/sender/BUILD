@@ -40,7 +40,9 @@ go_test(
     },
     tags = ["block-network"],
     deps = [
+        "//enterprise/server/raft/constants",
         "//enterprise/server/raft/header",
+        "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/testutil",
         "//proto:raft_go_proto",

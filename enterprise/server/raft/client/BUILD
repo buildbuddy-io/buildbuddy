@@ -42,6 +42,8 @@ go_test(
     srcs = ["client_test.go"],
     deps = [
         ":client",
+        "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/keys",
         "//enterprise/server/raft/logger",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/testutil",

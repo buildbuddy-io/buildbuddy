@@ -17,18 +17,23 @@ message KV {
   bytes value = 2;
 }
 
+// State-idempotent (overwrite same value), response-idempotent (empty
+// response). Safe on splittable keys.
 message DirectWriteRequest {
   KV kv = 1;
 }
 
 message DirectWriteResponse {}
 
+// State-idempotent (delete-absent is a no-op), response-idempotent
+// (empty response). Safe on splittable keys.
 message DirectDeleteRequest {
   bytes key = 1;
 }
 
 message DirectDeleteResponse {}
 
+// Read. Response-idempotent. Safe on splittable keys.
 message DirectReadRequest {
   bytes key = 1;
 }
@@ -37,6 +42,10 @@ message DirectReadResponse {
   KV kv = 1;
 }
 
+// Not state-idempotent (delta is added on every apply) and not
+// response-idempotent (returns running sum). Not safe on splittable
+// keys: a cross-split retry would double-count. IncrementRequest must
+// only target non-splittable keys (local, meta, or system prefixes).
 message IncrementRequest {
   bytes key = 1;
   uint64 delta = 2;  // how much to increment by.
@@ -68,6 +77,15 @@ message ScanResponse {
 
 // Compare And Set Request
 // not the other CAS...
+//
+// State-idempotent: a second apply sees current != expected and does
+// not write, so the net state matches a single apply. Not response-
+// idempotent: the first apply returns success, the second returns
+// CASErrorMessage. Not safe on splittable keys — the caller of a
+// retry that lands on the new range after a split would observe a
+// false CAS failure even when the first apply succeeded. CASRequest
+// must only target non-splittable keys (local, meta, or system
+// prefixes).
 message CASRequest {
   KV kv = 1;
 
@@ -81,11 +99,15 @@ message CASResponse {
   KV kv = 1;
 }
 
+// Read. Response-idempotent. Safe on splittable keys.
 message FindSplitPointRequest {}
 message FindSplitPointResponse {
   bytes split_key = 1;
 }
 
+// State-idempotent (re-sweep finds nothing left to delete) and
+// response-idempotent (empty response). Operates on replica-local
+// session keys.
 message DeleteSessionsRequest {
   // Delete all client sessions created before created_at_usec;
   int64 created_at_usec = 1;
@@ -690,6 +712,9 @@ message DeleteRequest {
 }
 message DeleteResponse {}
 
+// State-idempotent (atime only moves forward; a second apply with
+// the same value re-writes the same bytes) and response-idempotent
+// (both branches return an empty response). Safe on splittable keys.
 message UpdateAtimeRequest {
   bytes key = 1;
   int64 access_time_usec = 2;
