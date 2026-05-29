@@ -522,13 +522,12 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     if ((newScale === "log") === this.isLogScale()) {
       return;
     }
-    // The bucket boundaries differ between scales, so any existing selection or
-    // zoom is no longer valid.
+    // The bucket boundaries differ between scales, so any existing selection is
+    // no longer valid.
     router.updateParams({
       ...Object.fromEntries(this.props.search.entries()),
       [DD_SCALE_URL_PARAM]: newScale,
       [DD_SELECTED_AREA_URL_PARAM]: "",
-      [DD_ZOOM_URL_PARAM]: "",
     });
   }
 
@@ -895,8 +894,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
               <>
                 {this.isLogScale() && this.state.heatmapData.metricHadNegativeValues && (
                   <Banner type="warning" className="drilldown-page-warning-section">
-                    This metric has negative values, which can't be shown on a logarithmic scale. Negative values are
-                    grouped into the lowest bucket.
+                    This metric has negative values that are not displayed on this logarithmic scale.
                   </Banner>
                 )}
                 <HeatmapComponent
