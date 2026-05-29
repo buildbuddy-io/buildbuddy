@@ -16,6 +16,7 @@ import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
+import { stored_invocation } from "../../proto/stored_invocation_ts_proto";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { workflow } from "../../proto/workflow_ts_proto";
 import alert_service from "../alert/alert_service";
@@ -34,6 +35,7 @@ import Menu, { MenuItem } from "../components/menu/menu";
 import Modal from "../components/modal/modal";
 import Popup from "../components/popup/popup";
 import Spinner from "../components/spinner/spinner";
+import HelpTooltip from "../components/tooltip/help_tooltip";
 import errorService from "../errors/error_service";
 import format, { durationUsec } from "../format/format";
 import UserPreferences from "../preferences/preferences";
@@ -1356,6 +1358,26 @@ export default class InvocationActionCardComponent extends React.Component<Props
                           <div className="action-property-title">Served from cache</div>
                           <div>{this.state.executeResponse.cachedResult ? "Yes" : "No"}</div>
                         </div>
+                        {(this.state.execution?.invocationLinkType ??
+                          stored_invocation.StoredInvocationLink.Type.UNKNOWN_TYPE) !==
+                          stored_invocation.StoredInvocationLink.Type.UNKNOWN_TYPE && (
+                          <div className="action-section">
+                            <div className="action-property-title">Merged</div>
+                            <div className="value-with-help-tooltip">
+                              {this.state.execution?.invocationLinkType ===
+                              stored_invocation.StoredInvocationLink.Type.MERGED
+                                ? "Yes"
+                                : "No"}
+                              <HelpTooltip>
+                                <p>
+                                  If merged, this execution reused an in-flight execution attempt of the same action,
+                                  triggered by an earlier invocation. The details shown on this page are from the
+                                  original execution attempt.
+                                </p>
+                              </HelpTooltip>
+                            </div>
+                          </div>
+                        )}
                       </>
                     )}
                   </div>

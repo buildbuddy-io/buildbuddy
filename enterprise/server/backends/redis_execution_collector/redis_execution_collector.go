@@ -177,7 +177,7 @@ func (c *collector) GetInProgressExecutions(ctx context.Context, invocationID st
 	// For each execution, combine the events into a single StoredExecution
 	// proto.
 	var executions []*repb.StoredExecution
-	for _, cmd := range cmds {
+	for i, cmd := range cmds {
 		serializedResults, err := cmd.Result()
 		if len(serializedResults) == 0 || err == redis.Nil {
 			continue
@@ -189,6 +189,8 @@ func (c *collector) GetInProgressExecutions(ctx context.Context, invocationID st
 		if err != nil {
 			return nil, err
 		}
+		link := links[i]
+		execution.InvocationLinkType = int32(link.GetType())
 		executions = append(executions, execution)
 	}
 	return executions, nil
