@@ -62,6 +62,20 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
                 <div>{this.props.node.version}</div>
               </div>
             )}
+            {this.props.node.labels && Object.keys(this.props.node.labels).length > 0 && (
+              <div className="cache-proxy-section">
+                <div className="cache-proxy-section-title">Labels:</div>
+                <div>
+                  {Object.entries(this.props.node.labels)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([k, v]) => (
+                      <div key={k}>
+                        <b>{k}</b>: {v}
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
             {this.props.node.startTime && (
               <div className="cache-proxy-section">
                 <div className="cache-proxy-section-title">Uptime:</div>
