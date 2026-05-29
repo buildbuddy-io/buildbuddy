@@ -25,9 +25,14 @@ const (
 	RemoteCacheACHits                    SKU = "remote_cache.action_cache_hits.hits"
 	RemoteCacheACCachedExecDurationNanos SKU = "remote_cache.action_cache.cached_execution_duration_nanos"
 
-	RemoteExecutionExecuteWorkerDurationNanos SKU = "remote_execution.execute.worker_duration_nanos"
-	RemoteExecutionExecuteWorkerCPUNanos      SKU = "remote_execution.execute.worker_cpu_nanos"
-	RemoteExecutionExecuteWorkerMemoryGBNanos SKU = "remote_execution.execute.worker_memory_gb_nanos"
+	RemoteExecutionExecuteWorkerDurationNanos   SKU = "remote_execution.execute.worker_duration_nanos"
+	RemoteExecutionExecuteWorkerCPUNanos        SKU = "remote_execution.execute.worker_cpu_nanos"
+	RemoteExecutionExecuteWorkerMemoryGBNanos   SKU = "remote_execution.execute.worker_memory_gb_nanos"
+	RemoteExecutionExecuteComputeNanos          SKU = "remote_execution.execute.compute_nanos"
+	RemoteExecutionExecuteBurstableComputeNanos SKU = "remote_execution.execute.burstable_compute_nanos"
+
+	LocalSnapshotSavedBytes  SKU = "remote_execution.local_snapshot_saved_bytes"
+	RemoteSnapshotSavedBytes SKU = "remote_execution.remote_snapshot_saved_bytes"
 )
 
 // LabelName is a usage counter label, which further qualifies the SKU.
@@ -49,10 +54,12 @@ const (
 	Origin LabelName = "origin"
 	// OS identifies the operating system for execution usage.
 	OS LabelName = "os"
+	// Arch identifies the machine architecture for execution usage.
+	Arch LabelName = "arch"
 	// SelfHosted indicates whether the usage was incurred on a self-hosted
 	// instance of the service.
 	SelfHosted LabelName = "self_hosted"
-	// TODO: executor arch, client region (if known), server region
+	// TODO: client region (if known), server region
 )
 
 // LabelValue is the value of a label.
@@ -84,6 +91,8 @@ const (
 	OSLinux                 LabelValue = "linux"
 	OSMac                   LabelValue = "mac"
 	OSWindows               LabelValue = "windows"
+	ArchAmd64               LabelValue = "amd64"
+	ArchArm64               LabelValue = "arm64"
 	SelfHostedFalse         LabelValue = "false"
 	SelfHostedTrue          LabelValue = "true"
 )

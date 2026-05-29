@@ -753,6 +753,36 @@ func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {
 	if tu.MemoryGBUsec > 0 {
 		counts["memory_gb_usec"] = tu.MemoryGBUsec
 	}
+	if tu.LinuxArmExecutionBurstableComputeDurationUsec > 0 {
+		counts["linux_arm_execution_burstable_compute_duration_usec"] = tu.LinuxArmExecutionBurstableComputeDurationUsec
+	}
+	if tu.LinuxArmExecutionComputeDurationUsec > 0 {
+		counts["linux_arm_execution_compute_duration_usec"] = tu.LinuxArmExecutionComputeDurationUsec
+	}
+	if tu.Linuxx86ExecutionBurstableComputeDurationUsec > 0 {
+		counts["linuxx86_execution_burstable_compute_duration_usec"] = tu.Linuxx86ExecutionBurstableComputeDurationUsec
+	}
+	if tu.Linuxx86ExecutionComputeDurationUsec > 0 {
+		counts["linuxx86_execution_compute_duration_usec"] = tu.Linuxx86ExecutionComputeDurationUsec
+	}
+	if tu.DarwinArmExecutionBurstableComputeDurationUsec > 0 {
+		counts["darwin_arm_execution_burstable_compute_duration_usec"] = tu.DarwinArmExecutionBurstableComputeDurationUsec
+	}
+	if tu.DarwinArmExecutionComputeDurationUsec > 0 {
+		counts["darwin_arm_execution_compute_duration_usec"] = tu.DarwinArmExecutionComputeDurationUsec
+	}
+	if tu.Darwinx86ExecutionBurstableComputeDurationUsec > 0 {
+		counts["darwinx86_execution_burstable_compute_duration_usec"] = tu.Darwinx86ExecutionBurstableComputeDurationUsec
+	}
+	if tu.Darwinx86ExecutionComputeDurationUsec > 0 {
+		counts["darwinx86_execution_compute_duration_usec"] = tu.Darwinx86ExecutionComputeDurationUsec
+	}
+	if tu.LocalSnapshotSavedBytes > 0 {
+		counts["local_snapshot_saved_bytes"] = tu.LocalSnapshotSavedBytes
+	}
+	if tu.RemoteSnapshotSavedBytes > 0 {
+		counts["remote_snapshot_saved_bytes"] = tu.RemoteSnapshotSavedBytes
+	}
 	return counts, nil
 }
 
@@ -768,18 +798,28 @@ func stringMapToCounts(h map[string]string) (*tables.UsageCounts, error) {
 		hInt64[k] = count
 	}
 	return &tables.UsageCounts{
-		Invocations:                          hInt64["invocations"],
-		CASCacheHits:                         hInt64["cas_cache_hits"],
-		ActionCacheHits:                      hInt64["action_cache_hits"],
-		TotalDownloadSizeBytes:               hInt64["total_download_size_bytes"],
-		LinuxExecutionDurationUsec:           hInt64["linux_execution_duration_usec"],
-		MacExecutionDurationUsec:             hInt64["mac_execution_duration_usec"],
-		SelfHostedLinuxExecutionDurationUsec: hInt64["self_hosted_linux_execution_duration_usec"],
-		SelfHostedMacExecutionDurationUsec:   hInt64["self_hosted_mac_execution_duration_usec"],
-		TotalUploadSizeBytes:                 hInt64["total_upload_size_bytes"],
-		TotalCachedActionExecUsec:            hInt64["total_cached_action_exec_usec"],
-		CPUNanos:                             hInt64["cpu_nanos"],
-		MemoryGBUsec:                         hInt64["memory_gb_usec"],
+		Invocations:                                    hInt64["invocations"],
+		CASCacheHits:                                   hInt64["cas_cache_hits"],
+		ActionCacheHits:                                hInt64["action_cache_hits"],
+		TotalDownloadSizeBytes:                         hInt64["total_download_size_bytes"],
+		LinuxExecutionDurationUsec:                     hInt64["linux_execution_duration_usec"],
+		MacExecutionDurationUsec:                       hInt64["mac_execution_duration_usec"],
+		SelfHostedLinuxExecutionDurationUsec:           hInt64["self_hosted_linux_execution_duration_usec"],
+		SelfHostedMacExecutionDurationUsec:             hInt64["self_hosted_mac_execution_duration_usec"],
+		TotalUploadSizeBytes:                           hInt64["total_upload_size_bytes"],
+		TotalCachedActionExecUsec:                      hInt64["total_cached_action_exec_usec"],
+		CPUNanos:                                       hInt64["cpu_nanos"],
+		MemoryGBUsec:                                   hInt64["memory_gb_usec"],
+		LinuxArmExecutionBurstableComputeDurationUsec:  hInt64["linux_arm_execution_burstable_compute_duration_usec"],
+		LinuxArmExecutionComputeDurationUsec:           hInt64["linux_arm_execution_compute_duration_usec"],
+		Linuxx86ExecutionBurstableComputeDurationUsec:  hInt64["linuxx86_execution_burstable_compute_duration_usec"],
+		Linuxx86ExecutionComputeDurationUsec:           hInt64["linuxx86_execution_compute_duration_usec"],
+		DarwinArmExecutionBurstableComputeDurationUsec: hInt64["darwin_arm_execution_burstable_compute_duration_usec"],
+		DarwinArmExecutionComputeDurationUsec:          hInt64["darwin_arm_execution_compute_duration_usec"],
+		Darwinx86ExecutionBurstableComputeDurationUsec: hInt64["darwinx86_execution_burstable_compute_duration_usec"],
+		Darwinx86ExecutionComputeDurationUsec:          hInt64["darwinx86_execution_compute_duration_usec"],
+		LocalSnapshotSavedBytes:                        hInt64["local_snapshot_saved_bytes"],
+		RemoteSnapshotSavedBytes:                       hInt64["remote_snapshot_saved_bytes"],
 	}, nil
 }
 
@@ -909,6 +949,76 @@ func toOLAPLabeledSKUCounts(labels *tables.UsageLabels, counts *tables.UsageCoun
 			Count:  counts.MemoryGBUsec * 1000,
 		})
 	}
+	if counts.LinuxArmExecutionComputeDurationUsec > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteExecutionExecuteComputeNanos,
+			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSLinux, sku.ArchArm64, sku.SelfHostedFalse),
+			Count:  counts.LinuxArmExecutionComputeDurationUsec * 1000,
+		})
+	}
+	if counts.LinuxArmExecutionBurstableComputeDurationUsec > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteExecutionExecuteBurstableComputeNanos,
+			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSLinux, sku.ArchArm64, sku.SelfHostedFalse),
+			Count:  counts.LinuxArmExecutionBurstableComputeDurationUsec * 1000,
+		})
+	}
+	if counts.Linuxx86ExecutionComputeDurationUsec > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteExecutionExecuteComputeNanos,
+			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSLinux, sku.ArchAmd64, sku.SelfHostedFalse),
+			Count:  counts.Linuxx86ExecutionComputeDurationUsec * 1000,
+		})
+	}
+	if counts.Linuxx86ExecutionBurstableComputeDurationUsec > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteExecutionExecuteBurstableComputeNanos,
+			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSLinux, sku.ArchAmd64, sku.SelfHostedFalse),
+			Count:  counts.Linuxx86ExecutionBurstableComputeDurationUsec * 1000,
+		})
+	}
+	if counts.DarwinArmExecutionComputeDurationUsec > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteExecutionExecuteComputeNanos,
+			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSMac, sku.ArchArm64, sku.SelfHostedFalse),
+			Count:  counts.DarwinArmExecutionComputeDurationUsec * 1000,
+		})
+	}
+	if counts.DarwinArmExecutionBurstableComputeDurationUsec > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteExecutionExecuteBurstableComputeNanos,
+			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSMac, sku.ArchArm64, sku.SelfHostedFalse),
+			Count:  counts.DarwinArmExecutionBurstableComputeDurationUsec * 1000,
+		})
+	}
+	if counts.Darwinx86ExecutionComputeDurationUsec > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteExecutionExecuteComputeNanos,
+			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSMac, sku.ArchAmd64, sku.SelfHostedFalse),
+			Count:  counts.Darwinx86ExecutionComputeDurationUsec * 1000,
+		})
+	}
+	if counts.Darwinx86ExecutionBurstableComputeDurationUsec > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteExecutionExecuteBurstableComputeNanos,
+			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSMac, sku.ArchAmd64, sku.SelfHostedFalse),
+			Count:  counts.Darwinx86ExecutionBurstableComputeDurationUsec * 1000,
+		})
+	}
+	if counts.LocalSnapshotSavedBytes > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.LocalSnapshotSavedBytes,
+			Labels: baseLabels,
+			Count:  counts.LocalSnapshotSavedBytes,
+		})
+	}
+	if counts.RemoteSnapshotSavedBytes > 0 {
+		items = append(items, labeledSKUCount{
+			SKU:    sku.RemoteSnapshotSavedBytes,
+			Labels: baseLabels,
+			Count:  counts.RemoteSnapshotSavedBytes,
+		})
+	}
 	return items
 }
 
@@ -920,6 +1030,19 @@ func appendExecutionLabels(m map[sku.LabelName]sku.LabelValue, os, selfHosted sk
 		out[k] = v
 	}
 	out[sku.OS] = os
+	out[sku.SelfHosted] = selfHosted
+	return out
+}
+
+// appendExecutionLabelsWithArch returns a new map which is a clone of the given
+// map with the given OS, arch, and self-hosted labels applied.
+func appendExecutionLabelsWithArch(m map[sku.LabelName]sku.LabelValue, os, arch, selfHosted sku.LabelValue) map[sku.LabelName]sku.LabelValue {
+	out := make(map[sku.LabelName]sku.LabelValue, len(m)+3)
+	for k, v := range m {
+		out[k] = v
+	}
+	out[sku.OS] = os
+	out[sku.Arch] = arch
 	out[sku.SelfHosted] = selfHosted
 	return out
 }
