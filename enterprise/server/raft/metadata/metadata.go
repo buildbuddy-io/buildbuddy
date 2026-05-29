@@ -737,6 +737,9 @@ func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRespo
 
 	// Shard the query by key and query shards in parallel.
 	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
+		// sender runMultiKeyFuncs require that we return an interface{}
+		// and error, but in this case there's no value to return, so
+		// always return nil for the interface, even on success.
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			setOp := k.Meta.(*mdpb.SetRequest_SetOperation)
@@ -796,6 +799,9 @@ func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.De
 	// Delete is safe to send through RunMultiKey: once the key is gone,
 	// duplicate retries still return success.
 	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
+		// sender runMultiKeyFuncs require that we return an interface{}
+		// and error, but in this case there's no value to return, so
+		// always return nil for the interface, even on success.
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			deleteOp := k.Meta.(*mdpb.DeleteRequest_DeleteOperation)

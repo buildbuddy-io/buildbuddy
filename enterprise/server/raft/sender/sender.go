@@ -44,9 +44,9 @@ type Sender struct {
 	apiClient *client.APIClient
 
 	// proposeSession is a single base session shared across all ranges.
-	// Per-range isolation is provided by stamping range_id on each batch's
-	// rfpb.Session in runPropose; the replica's dedup record is keyed by
-	// (id, range_id), so cross-range retries (e.g. after a split) do not
+	// Per-range isolation is provided by stamping range ID on each batch's
+	// rfpb.Session in runPropose; the replica keys its dedup record by
+	// session ID and range ID, so cross-range retries after a split do not
 	// collide. proposeLocker still serializes proposes per range so that
 	// indices arrive in order on each range.
 	proposeSession *client.Session
@@ -445,16 +445,6 @@ func isConflictKeyError(err error) bool {
 	return status.IsUnavailableError(err) && strings.Contains(status.Message(err), constants.ConflictKeyMsg)
 }
 
-// run looks up the replicas that are responsible for the given key and executes
-// fn for each replica until the function succeeds or returns an unretriable
-// error.
-//
-// The range ownership information is retrieved from the range cache, so it can
-// be stale. If the remote peer indicates that the client is using a stale
-// range, this function will look up the range information again bypassing the
-// cache and try the fn again with the new replica information. If the
-// fn succeeds with the new replicas, the range cache will be updated with
-// the new ownership information.
 // runRead is the read-path retry loop: look up the range, walk its
 // replicas via the supplied fn, refresh the range cache and retry on
 // OutOfRange/ConflictKey errors. It does not touch batch.Session — write
@@ -504,19 +494,24 @@ func (s *Sender) setupProposeSessionForRange(rangeID uint64, batchCmd *rfpb.Batc
 		unlockFn = s.proposeLocker.Lock(strconv.FormatUint(rangeID, 10))
 		batchCmd.Session = s.proposeSession.NextRequestSession()
 	}
-	// Stamp range_id once, on the first successful range lookup. We do
-	// not re-stamp on retries: if a retry crosses ranges (e.g. on a
-	// split), the destination's dedup record is keyed by (id, range_id)
-	// and the old range_id will miss. Sender-owned sessions therefore only
-	// provide idempotent replay while a logical request stays within the same
-	// range namespace.
+	// Stamp range ID once, on the first range lookup, and never
+	// re-stamp. The dedup record is keyed by (session ID, range ID)
+	// so each range tracks its own monotonic session index — without
+	// the range ID suffix, a retry rerouted to a different range after
+	// a split would carry an index below ones the new range has
+	// already accepted on this session, breaking the monotonic-index
+	// invariant. When a split happens during a retry, the command can
+	// execute once on the left range and once on the right range,
+	// because session entries are not copied to the new range on
+	// split.
+	//
 	// Sender owns this field on the propose path; pre-attached sessions
 	// (e.g. txn coordinator) leave it at 0 and get stamped here.
 	if batchCmd.Session.GetRangeId() == 0 {
 		batchCmd.Session.RangeId = rangeID
 	}
 	if unlockFn == nil {
-		return nil
+		return func() {}
 	}
 	return func() {
 		unlockFn()
@@ -550,14 +545,9 @@ func (s *Sender) runPropose(ctx context.Context, key []byte, batchCmd *rfpb.Batc
 	retrier := retry.DefaultWithContext(ctx)
 	skipRangeCache := false
 	var lastError error
-	var cleanupFn func()
+	cleanupFn := func() {}
 	sessionPrepared := false
-	defer func() {
-		if cleanupFn == nil {
-			return
-		}
-		cleanupFn()
-	}()
+	defer func() { cleanupFn() }()
 
 	for retrier.Next() {
 		rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key, skipRangeCache)
@@ -767,11 +757,7 @@ func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.Bat
 func (s *Sender) SyncProposeWithRangeDescriptor(ctx context.Context, rd *rfpb.RangeDescriptor, batchCmd *rfpb.BatchCmdRequest, makeHeaderFn header.MakeFunc) (*rfpb.SyncProposeResponse, error) {
 	var syncRsp *rfpb.SyncProposeResponse
 	cleanupFn := s.setupProposeSessionForRange(rd.GetRangeId(), batchCmd)
-	defer func() {
-		if cleanupFn != nil {
-			cleanupFn()
-		}
-	}()
+	defer cleanupFn()
 	runFn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		r, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 			Header: h,

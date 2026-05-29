@@ -253,10 +253,17 @@ func RunNodehostFn(ctx context.Context, maxSingleOpTimeout time.Duration, nhf fu
 	return aggregatedErr.err()
 }
 
-// Session is a retry-stable idempotency token for raft proposals. The
-// replica stores the latest (Id, Index) it applied per range and replays
-// the cached response on a match, so a retry after a post-apply transport
-// failure does not re-apply.
+// Session is a retry-stable idempotency token for raft proposals. A
+// session has a stable session ID and a session index that increases
+// monotonically per session ID — every new BatchCmdRequest under a
+// session bumps the session index.
+//
+// One session ID can be shared across ranges — Sender keeps a single
+// base session and stamps the destination range ID onto each proposal.
+// Each range stores only the highest-index session it has seen for
+// that session ID and range ID, along with the cached response; a retry
+// whose session ID and session index match the stored record replays
+// the cached response instead of re-applying.
 //
 // Held by Sender (gRPC path, pre-attached per range so the destination
 // skips bookkeeping) and by local-direct callers — rangelease, bringup,
