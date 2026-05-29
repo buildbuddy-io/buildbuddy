@@ -98,6 +98,44 @@ func TestBuilderListPanicsOnNonIncreasingAdd(t *testing.T) {
 	assert.Panics(t, func() { pl.Add(2) }, "out-of-order id should panic")
 }
 
+func TestBuilderListFrequencyDecodesRLE(t *testing.T) {
+	pl := posting.NewBuilderList()
+	pl.AddWithFrequency(1, 1)
+	pl.AddWithFrequency(2, 3)
+	pl.AddWithFrequency(3, 3) // same run as id 2
+	pl.AddWithFrequency(4, 1)
+
+	assert.Equal(t, uint32(1), pl.Frequency(1))
+	assert.Equal(t, uint32(3), pl.Frequency(2))
+	assert.Equal(t, uint32(3), pl.Frequency(3))
+	assert.Equal(t, uint32(1), pl.Frequency(4)) // in the not-yet-flushed final run
+	assert.Equal(t, uint32(0), pl.Frequency(99))
+}
+
+func TestBuilderListRemovePreservesFrequencies(t *testing.T) {
+	pl := posting.NewBuilderList()
+	pl.AddWithFrequency(1, 2)
+	pl.AddWithFrequency(2, 1)
+	pl.AddWithFrequency(3, 5)
+	pl.AddWithFrequency(4, 1)
+
+	pl.Remove(2)
+
+	assert.Equal(t, []uint64{1, 3, 4}, pl.ToArray())
+	assert.Equal(t, uint32(2), pl.Frequency(1))
+	assert.Equal(t, uint32(5), pl.Frequency(3))
+	assert.Equal(t, uint32(1), pl.Frequency(4))
+	assert.Equal(t, uint32(0), pl.Frequency(2))
+
+	// Round-trips correctly after the decode-and-rebuild.
+	buf, err := pl.Marshal()
+	require.NoError(t, err)
+	pl2, err := posting.Unmarshal(buf)
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1, 3, 4}, pl2.ToArray())
+	assert.Equal(t, uint32(5), pl2.Frequency(3))
+}
+
 func TestMarshal(t *testing.T) {
 	pl := posting.NewList(1, 2, 3, 4, 5)
 	buf, err := pl.Marshal()
