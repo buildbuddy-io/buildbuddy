@@ -305,6 +305,10 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	actionMetrics.Isolation = r.GetIsolationType()
 	reuseRunner := false
 	var cmdResult *interfaces.CommandResult
+	// publishedResponse is the ExecuteResponse that was sent on the first
+	// COMPLETED Operation; captured here so the follow-up post-completion
+	// stats Operation can publish the same full reply.
+	var publishedResponse *repb.ExecuteResponse
 	defer func() {
 		// Respect the DoNotRecycle bit set by the container implementation,
 		// since specific implementations will have better knowledge about the
@@ -326,8 +330,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		// flag the server would drop this follow-up anyway since the row
 		// was already flushed inline with the first COMPLETED.
 		if publishPostCompletionStatsEnabled(ctx, s.env) {
-			if stats := r.PostCompletionStats(); stats != nil {
-				if err := publishPostCompletionStatsOp(stream, taskID, adInstanceDigest.GetDigest(), stats); err != nil {
+			if stats := r.PostCompletionStats(); stats != nil && publishedResponse != nil {
+				auxMetadata.PostCompletionStats = stats
+				if err := publishPostCompletionStatsOp(stream, taskID, adInstanceDigest.GetDigest(), publishedResponse, auxMetadata); err != nil {
 					log.CtxWarningf(ctx, "Failed to publish post-completion stats: %s", err)
 				}
 			}
@@ -535,6 +540,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		}
 		return finishWithErrFn(status.WrapError(err, "publish execute response"))
 	}
+	publishedResponse = executeResponse
 	if cmdResult.Error == nil {
 		log.CtxDebugf(ctx, "Task finished cleanly.")
 		reuseRunner = true
@@ -556,26 +562,36 @@ func publishPostCompletionStatsEnabled(ctx context.Context, env environment.Env)
 	return fp.Boolean(ctx, "remote_execution.flush_executions_after_cleanup", false)
 }
 
-// publishPostCompletionStatsOp builds a stage=COMPLETED Operation whose only
-// payload is a PostCompletionStats nested inside ExecutionAuxiliaryMetadata
-// in the ExecutedActionMetadata's auxiliary_metadata, and sends it on the
-// publish stream. The execution server recognizes this as a follow-up to
-// the first COMPLETED via its own firstCompletedSeen tracking; the side
-// effects of the first COMPLETED (action-cache write, markTaskComplete,
-// recordResponseMetrics) are skipped server-side.
-func publishPostCompletionStatsOp(stream interfaces.Publisher, taskID string, ad *repb.Digest, stats *espb.PostCompletionStats) error {
-	auxAny, err := anypb.New(&espb.ExecutionAuxiliaryMetadata{
-		PostCompletionStats: stats,
-	})
+// publishPostCompletionStatsOp publishes a follow-up stage=COMPLETED
+// Operation that re-sends the originally published ExecuteResponse with
+// the updated ExecutionAuxiliaryMetadata (which now carries
+// PostCompletionStats). The execution server recognizes this as a
+// follow-up to the first COMPLETED via its own firstCompletedSeen
+// tracking; the side effects of the first COMPLETED (action-cache write,
+// markTaskComplete, recordResponseMetrics) are skipped server-side.
+func publishPostCompletionStatsOp(stream interfaces.Publisher, taskID string, ad *repb.Digest, publishedResponse *repb.ExecuteResponse, auxMetadata *espb.ExecutionAuxiliaryMetadata) error {
+	rsp := proto.Clone(publishedResponse).(*repb.ExecuteResponse)
+	if rsp.Result == nil {
+		rsp.Result = &repb.ActionResult{}
+	}
+	if rsp.Result.ExecutionMetadata == nil {
+		rsp.Result.ExecutionMetadata = &repb.ExecutedActionMetadata{}
+	}
+	auxAny, err := anypb.New(auxMetadata)
 	if err != nil {
 		return status.WrapError(err, "marshal ExecutionAuxiliaryMetadata")
 	}
-	rsp := &repb.ExecuteResponse{
-		Result: &repb.ActionResult{
-			ExecutionMetadata: &repb.ExecutedActionMetadata{
-				AuxiliaryMetadata: []*anypb.Any{auxAny},
-			},
-		},
+	md := rsp.Result.ExecutionMetadata
+	replaced := false
+	for i, a := range md.AuxiliaryMetadata {
+		if a.GetTypeUrl() == auxAny.GetTypeUrl() {
+			md.AuxiliaryMetadata[i] = auxAny
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		md.AuxiliaryMetadata = append(md.AuxiliaryMetadata, auxAny)
 	}
 	op, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, ad), rsp)
 	if err != nil {

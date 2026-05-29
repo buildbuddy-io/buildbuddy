@@ -443,6 +443,8 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 				return
 			}
 
+			first, err := rexec.UnpackOperation(ops[0])
+			require.NoError(t, err)
 			followUp, err := rexec.UnpackOperation(ops[1])
 			require.NoError(t, err)
 			auxMeta := &espb.ExecutionAuxiliaryMetadata{}
@@ -454,6 +456,15 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 				auxMeta.GetPostCompletionStats(),
 				protocmp.Transform(),
 			))
+			// The follow-up should re-publish the same ExecuteResponse as the
+			// first COMPLETED, with PostCompletionStats added to the
+			// ExecutionAuxiliaryMetadata.
+			require.Empty(t, cmp.Diff(
+				first.ExecuteResponse,
+				followUp.ExecuteResponse,
+				protocmp.Transform(),
+				protocmp.IgnoreFields(&espb.ExecutionAuxiliaryMetadata{}, "post_completion_stats"),
+			), "follow-up should carry the same ExecuteResponse as the first COMPLETED (modulo PostCompletionStats)")
 		})
 	}
 }
