@@ -32,6 +32,8 @@ interface MatchParams {
   runnerExecution?: execution_stats.Execution;
 }
 
+type BazelVersion = { major: number; minor: number };
+
 export enum SuggestionLevel {
   INFO,
   WARNING,
@@ -70,6 +72,28 @@ const IOS_EXECUTION_FILTER = {
   ],
   noRemoteExec: ["BundleResources", "ImportedDynamicFrameworkProcessor"],
 };
+
+function bazelVersionAtLeast(version: BazelVersion | null, major: number, minor = 0) {
+  if (!version) return false;
+  if (version.major !== major) return version.major > major;
+  return version.minor >= minor;
+}
+
+function isRemoteCacheEnabled(model: InvocationModel) {
+  return Boolean(model.optionsMap.get("remote_cache") || model.optionsMap.get("remote_executor"));
+}
+
+function hasAnyOption(model: InvocationModel, names: string[]) {
+  return names.some((name) => model.optionsMap.has(name));
+}
+
+function getRemoteGrpcLogFlag(version: BazelVersion | null) {
+  if (bazelVersionAtLeast(version, 6, 2)) return "--remote_grpc_log=bazel-remote-grpc.log";
+  if (version && (version.major > 0 || version.minor >= 13)) {
+    return "--experimental_remote_grpc_log=bazel-remote-grpc.log";
+  }
+  return null;
+}
 
 export const getTimingDataSuggestion: SuggestionMatcher = ({ model }) => {
   if (!capabilities.config.expandedSuggestionsEnabled) return null;
@@ -480,6 +504,31 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
         </>
       ),
       reason: <>Shown because this build has remote execution enabled, but a jobs count is not configured.</>,
+    };
+  },
+  // Suggest remote gRPC logs.
+  ({ model }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
+    if (!isRemoteCacheEnabled(model)) return null;
+    if (hasAnyOption(model, ["remote_grpc_log", "experimental_remote_grpc_log"])) return null;
+
+    const flag = getRemoteGrpcLogFlag(model.getBazelVersion());
+    if (!flag) return null;
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          Consider adding <BazelFlag>{flag}</BazelFlag> to capture remote RPC details for troubleshooting.
+        </>
+      ),
+      reason: (
+        <>
+          Shown because this build uses remote caching or execution, but a supported remote gRPC log flag is not
+          explicitly set.
+        </>
+      ),
     };
   },
   // Suggest --experimental_remote_build_event_upload=minimal
