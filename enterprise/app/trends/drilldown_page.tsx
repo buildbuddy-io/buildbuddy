@@ -899,6 +899,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                 )}
                 <HeatmapComponent
                   heatmapData={this.state.heatmapData || stats.GetStatHeatmapResponse.create({})}
+                  logScale={this.isLogScale()}
                   metricBucketFormatter={(v) => renderMetricValue(this.selectedMetric.metric, v)}
                   metricBucketName={this.selectedMetric.name}
                   valueFormatter={(v) => this.renderBucketValue(v)}

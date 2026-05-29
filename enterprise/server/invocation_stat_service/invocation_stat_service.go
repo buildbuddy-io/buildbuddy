@@ -695,6 +695,12 @@ func getTableForMetric(metric *sfpb.Metric) string {
 // powers-of-10 buckets.
 const maxNumMetricBuckets = 20
 
+// maxLogBucketsToSubdivide is the largest number of powers-of-10 log buckets
+// that we'll subdivide into 1-2-4-6-8-10 steps. Subdividing multiplies the
+// bucket count by 5, so capping at 4 keeps us at or under maxNumMetricBuckets
+// (4*5 = 20).
+const maxLogBucketsToSubdivide = 4
+
 // getMetricMinMax returns the smallest and largest values of the given metric
 // matching the where clause. found is false when there are no matching rows.
 func (i *InvocationStatService) getMetricMinMax(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}) (low int64, high int64, found bool, err error) {
@@ -772,7 +778,33 @@ func getLogMetricBuckets(low int64, high int64) (buckets []int64, hadNegative bo
 		power *= 10
 		buckets = append(buckets, power)
 	}
+
+	// When the powers-of-10 scheme yields only a handful of buckets, subdivide
+	// each decade into 1-2-4-6-8-10 steps for finer resolution while still
+	// staying at or under maxNumMetricBuckets.
+	if len(buckets)-1 <= maxLogBucketsToSubdivide {
+		buckets = subdivideLogBuckets(buckets)
+	}
 	return buckets, hadNegative
+}
+
+// subdivideLogBuckets replaces each powers-of-10 decade boundary pair
+// [10^k, 10^(k+1)) with the 1-2-4-6-8 boundaries 10^k, 2*10^k, 4*10^k, 6*10^k,
+// 8*10^k. The [0, 1) catch-all bucket (a leading 0 boundary) is left intact.
+func subdivideLogBuckets(buckets []int64) []int64 {
+	subdivided := make([]int64, 0, 5*len(buckets))
+	for idx := 0; idx < len(buckets)-1; idx++ {
+		lo := buckets[idx]
+		if lo == 0 {
+			// The [0, 1) catch-all bucket is not subdivided.
+			subdivided = append(subdivided, 0)
+			continue
+		}
+		subdivided = append(subdivided, lo, 2*lo, 4*lo, 6*lo, 8*lo)
+	}
+	// Append the final (exclusive) upper boundary.
+	subdivided = append(subdivided, buckets[len(buckets)-1])
+	return subdivided
 }
 
 func (i *InvocationStatService) getMetricBuckets(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}, logScale bool) (buckets []int64, arrayStr string, hadNegative bool, err error) {

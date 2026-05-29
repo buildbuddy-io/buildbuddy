@@ -67,22 +67,22 @@ func TestGetLogMetricBuckets(t *testing.T) {
 		wantHadNegative bool
 	}{
 		{
-			name:        "anchored at floor power of 10 of min",
+			name:        "few decades subdivide into 1-2-4-6-8-10 anchored at floor power of min",
 			low:         5,
 			high:        5000,
-			wantBuckets: []int64{1, 10, 100, 1000, 10000},
+			wantBuckets: []int64{1, 2, 4, 6, 8, 10, 20, 40, 60, 80, 100, 200, 400, 600, 800, 1000, 2000, 4000, 6000, 8000, 10000},
 		},
 		{
-			name:        "zero min prepends [0,1) bucket",
+			name:        "zero min prepends [0,1) bucket and subdivides decades",
 			low:         0,
 			high:        500,
-			wantBuckets: []int64{0, 1, 10, 100, 1000},
+			wantBuckets: []int64{0, 1, 2, 4, 6, 8, 10, 20, 40, 60, 80, 100, 200, 400, 600, 800, 1000},
 		},
 		{
 			name:            "negative min clamps to zero and flags",
 			low:             -50,
 			high:            900,
-			wantBuckets:     []int64{0, 1, 10, 100, 1000},
+			wantBuckets:     []int64{0, 1, 2, 4, 6, 8, 10, 20, 40, 60, 80, 100, 200, 400, 600, 800, 1000},
 			wantHadNegative: true,
 		},
 		{
@@ -92,10 +92,10 @@ func TestGetLogMetricBuckets(t *testing.T) {
 			wantBuckets: []int64{0, 1},
 		},
 		{
-			name:        "min and max in same decade",
+			name:        "min and max in same decade subdivide",
 			low:         12,
 			high:        12,
-			wantBuckets: []int64{10, 100},
+			wantBuckets: []int64{10, 20, 40, 60, 80, 100},
 		},
 		{
 			name:            "all negative values",
@@ -103,6 +103,18 @@ func TestGetLogMetricBuckets(t *testing.T) {
 			high:            -1,
 			wantBuckets:     []int64{0, 1},
 			wantHadNegative: true,
+		},
+		{
+			name:        "more than four decades stay pure powers of 10",
+			low:         5,
+			high:        50000,
+			wantBuckets: []int64{1, 10, 100, 1000, 10000, 100000},
+		},
+		{
+			name:        "many decades stay pure powers of 10",
+			low:         0,
+			high:        10000000,
+			wantBuckets: []int64{0, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

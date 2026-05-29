@@ -16,6 +16,10 @@ interface HeatmapProps {
   selectionCallback?: (s?: HeatmapSelection) => void;
   zoomCallback?: (s?: HeatmapSelection) => void;
   selectedData?: HeatmapSelection;
+  // When true, metric buckets are rendered with heights proportional to their
+  // log-scale span (log(end) - log(start)) so that each power-of-10 decade
+  // occupies equal vertical space. When false, all buckets get equal heights.
+  logScale?: boolean;
 }
 
 interface ResizableHeatmapProps extends HeatmapProps {
@@ -121,7 +125,12 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
   svgRef: React.RefObject<SVGSVGElement> = React.createRef();
   chartGroupRef: React.RefObject<SVGGElement> = React.createRef();
   xScaleBand: ScaleBand<number> = scaleBand();
-  yScaleBand: ScaleBand<number> = scaleBand();
+  // Per-metric-bucket vertical geometry, indexed by ascending bucket index
+  // (index 0 = lowest values = bottom of the chart). Heights can be uneven on a
+  // log scale, so we can't use a d3 band scale for the y axis. Both arrays are
+  // recomputed on every render.
+  metricRowTops: number[] = [];
+  metricRowHeights: number[] = [];
   mouseMoveListener = (e: MouseEvent) => this.onMouseMove(e);
 
   // These ordered pairs indicate which cell was first clicked on by the user.
@@ -137,6 +146,51 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
     return Math.max(this.props.heatmapData.bucketBracket.length - 1, 1);
   }
 
+  // Computes this.metricRowTops / this.metricRowHeights (in pixels) for the
+  // given chart height. On a log scale each bucket's height is proportional to
+  // log(end) - log(start) so that every decade gets equal vertical space; the
+  // [0, 1) catch-all bucket (start <= 0) is given one decade's worth of height.
+  // Otherwise all buckets are equal height.
+  private computeMetricGeometry(chartHeight: number) {
+    const bracket = this.props.heatmapData.bucketBracket;
+    const numRows = this.numHeatmapRows();
+    const weights: number[] = [];
+    for (let i = 0; i < numRows; i++) {
+      const start = +bracket[i];
+      const end = +bracket[i + 1];
+      if (!this.props.logScale || start <= 0 || end <= 0) {
+        weights.push(1);
+      } else {
+        weights.push(Math.log10(end) - Math.log10(start));
+      }
+    }
+    const totalWeight = weights.reduce((a, b) => a + b, 0) || 1;
+
+    const heights: number[] = weights.map((w) => (w / totalWeight) * chartHeight);
+    const tops: number[] = new Array(numRows);
+    // Bucket 0 (lowest values) sits at the bottom; higher buckets stack upward.
+    let cumulativeFromBottom = 0;
+    for (let i = 0; i < numRows; i++) {
+      tops[i] = chartHeight - cumulativeFromBottom - heights[i];
+      cumulativeFromBottom += heights[i];
+    }
+    this.metricRowTops = tops;
+    this.metricRowHeights = heights;
+  }
+
+  // Returns the metric bucket index containing the given y pixel coordinate
+  // (measured from the top of the chart area), clamped to a valid index.
+  private metricIndexFromYPixel(yPixel: number): number {
+    const numRows = this.metricRowHeights.length;
+    for (let i = 0; i < numRows; i++) {
+      if (yPixel >= this.metricRowTops[i] && yPixel < this.metricRowTops[i] + this.metricRowHeights[i]) {
+        return i;
+      }
+    }
+    // Above the topmost bucket -> highest index; below the bottom -> 0.
+    return yPixel < (this.metricRowTops[numRows - 1] ?? 0) ? numRows - 1 : 0;
+  }
+
   private computeBucket(x: number, y: number): SelectedCellData | undefined {
     if (!this.svgRef.current || !this.chartGroupRef.current) {
       return undefined;
@@ -150,9 +204,8 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
 
     const { top, left } = this.svgRef.current.getBoundingClientRect();
     const mouseX = x - left - CHART_MARGINS.left - this.xScaleBand.step() / 2;
-    const mouseY = y - top - CHART_MARGINS.top - this.yScaleBand.step() / 2;
     const stepX = Math.round(mouseX / this.xScaleBand.step());
-    const stepY = this.yScaleBand.domain().length - Math.round(mouseY / this.yScaleBand.step()) - 1;
+    const stepY = this.metricIndexFromYPixel(y - top - CHART_MARGINS.top);
 
     const timestamp = this.props.heatmapData.timestampBracket[stepX];
     const metric = this.props.heatmapData.bucketBracket[stepY];
@@ -364,22 +417,27 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
     }
 
     const aScreenX = this.xScaleBand(+selectionToDraw[0].timestamp);
-    const aScreenY = this.yScaleBand(+selectionToDraw[0].metric);
     const bScreenX = this.xScaleBand(+selectionToDraw[1].timestamp);
-    const bScreenY = this.yScaleBand(+selectionToDraw[1].metric);
 
-    if (aScreenX === undefined || aScreenY === undefined || bScreenX === undefined || bScreenY === undefined) {
+    if (aScreenX === undefined || bScreenX === undefined) {
       return undefined;
     }
 
-    const top = Math.min(aScreenY, bScreenY) + CHART_MARGINS.top;
-    const height = Math.max(aScreenY, bScreenY) + CHART_MARGINS.top + this.yScaleBand.step() - top;
-    const left = Math.min(aScreenX, bScreenX) + CHART_MARGINS.left;
-    const width = Math.max(aScreenX, bScreenX) + CHART_MARGINS.left + this.xScaleBand.step() - left;
     const aTimestampIndex = selectionToDraw[0].timestampBucketIndex;
     const aMetricIndex = selectionToDraw[0].metricBucketIndex;
     const bTimestampIndex = selectionToDraw[1].timestampBucketIndex;
     const bMetricIndex = selectionToDraw[1].metricBucketIndex;
+
+    // Higher metric indices are higher on the chart (smaller y), so the top of
+    // the selection is the top of the highest-indexed bucket and the bottom is
+    // the bottom of the lowest-indexed bucket.
+    const yStartIndex = Math.min(aMetricIndex, bMetricIndex);
+    const yEndIndex = Math.max(aMetricIndex, bMetricIndex);
+    const top = this.metricRowTops[yEndIndex] + CHART_MARGINS.top;
+    const bottom = this.metricRowTops[yStartIndex] + this.metricRowHeights[yStartIndex] + CHART_MARGINS.top;
+    const height = bottom - top;
+    const left = Math.min(aScreenX, bScreenX) + CHART_MARGINS.left;
+    const width = Math.max(aScreenX, bScreenX) + CHART_MARGINS.left + this.xScaleBand.step() - left;
 
     return {
       x: left,
@@ -388,8 +446,8 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
       height,
       selectionXStart: Math.min(aTimestampIndex, bTimestampIndex),
       selectionXEnd: Math.max(aTimestampIndex, bTimestampIndex),
-      selectionYStart: Math.min(aMetricIndex, bMetricIndex),
-      selectionYEnd: Math.max(aMetricIndex, bMetricIndex),
+      selectionYStart: yStartIndex,
+      selectionYEnd: yEndIndex,
     };
   }
 
@@ -466,19 +524,30 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
       return null;
     }
     const numRows = this.numHeatmapRows();
-    const yTickMod = Math.ceil(numRows / Math.min(numRows, height / TICK_LABEL_SPACING_MAGIC_NUMBER));
+    const bracket = this.props.heatmapData.bucketBracket;
+    // Label tick marks no closer than roughly TICK_LABEL_SPACING_MAGIC_NUMBER
+    // pixels apart. Bucket heights can vary on a log scale, so thin by pixel
+    // distance rather than by index.
+    let lastLabelY = Infinity;
 
     return (
       <g
         color="#666"
         transform={`translate(${CHART_MARGINS.left}, ${this.props.height - CHART_MARGINS.bottom - height})`}>
         <line stroke="#666" x1="0" y1="0" x2="0" y2={height}></line>
-        {this.yScaleBand.domain().map((v, i) => {
+        {bracket.slice(0, numRows).map((v, i) => {
+          // Boundary bracket[i] sits at the bottom edge of bucket i.
+          const boundaryY = this.metricRowTops[i] + this.metricRowHeights[i];
+          let label: string | null = null;
+          if (lastLabelY - boundaryY >= TICK_LABEL_SPACING_MAGIC_NUMBER || lastLabelY === Infinity) {
+            label = this.renderYBucketValue(+v);
+            lastLabelY = boundaryY;
+          }
           return (
-            <g transform={`translate(0, ${height - this.yScaleBand.bandwidth() * (numRows - 1 - i)})`}>
-              {(numRows - 1 - i) % yTickMod == 0 && (
+            <g transform={`translate(0, ${boundaryY})`}>
+              {label !== null && (
                 <text fill="#666" x="-8" y="3" fontSize="12" textAnchor="end">
-                  {this.renderYBucketValue(v)}
+                  {label}
                 </text>
               )}
               <line stroke="#666" x1="0" y1="0" x2="-4" y2="0"></line>
@@ -524,13 +593,9 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
     const height = this.props.height - CHART_MARGINS.top - CHART_MARGINS.bottom;
 
     const xDomain = this.props.heatmapData.timestampBracket.slice(0, -1).map((v) => +v);
-    const yDomain = this.props.heatmapData.bucketBracket
-      .slice(0, -1)
-      .map((v) => +v)
-      .reverse();
 
     this.xScaleBand = scaleBand<number>().range([0, width]).domain(xDomain);
-    this.yScaleBand = scaleBand<number>().range([0, height]).domain(yDomain);
+    this.computeMetricGeometry(height);
 
     let min = 0;
     let max = 0;
@@ -566,9 +631,9 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
                         +value <= 0 ? null : (
                           <rect
                             x={this.xScaleBand(+column.timestampUsec) || 0}
-                            y={this.yScaleBand(+this.props.heatmapData.bucketBracket[yIndex]) || 0}
+                            y={this.metricRowTops[yIndex] ?? 0}
                             width={this.xScaleBand.bandwidth() || 0}
-                            height={this.yScaleBand.bandwidth() || 0}
+                            height={this.metricRowHeights[yIndex] ?? 0}
                             fill={this.getCellColor(xIndex, yIndex, +value, interpolator, selection)}></rect>
                         )
                       )}

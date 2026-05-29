@@ -145,18 +145,17 @@ func TestGetStatHeatmap_LogScale(t *testing.T) {
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	te.SetAuthenticator(ta)
 
-	// Insert invocations whose durations span several orders of magnitude, so a
-	// log-scale heatmap produces one powers-of-10 bucket per value.
+	// Insert invocations whose durations span four orders of magnitude, so a
+	// log-scale heatmap subdivides each decade into 1-2-4-6-8-10 steps.
 	windowStart := time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
 	updatedAt := windowStart.Add(time.Hour).UnixMicro()
-	durations := []int64{5, 50, 500, 5000, 50000}
+	durations := []int64{5, 50, 500, 5000}
 	invocations := make([]olaptables.Invocation, 0, len(durations))
 	uuids := []string{
 		"00000000000000000000000000000001",
 		"00000000000000000000000000000002",
 		"00000000000000000000000000000003",
 		"00000000000000000000000000000004",
-		"00000000000000000000000000000005",
 	}
 	for i, d := range durations {
 		invocations = append(invocations, olaptables.Invocation{
@@ -188,10 +187,10 @@ func TestGetStatHeatmap_LogScale(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Bucket boundaries are clean powers of 10 anchored at the floor power of 10
-	// of the minimum (5 -> 1) up to the smallest power of 10 above the max
-	// (50000 -> 100000).
-	require.Equal(t, []int64{1, 10, 100, 1000, 10000, 100000}, rsp.GetBucketBracket())
+	// The range spans 4 powers of 10 (<= 4), so each decade is subdivided into
+	// 1-2-4-6-8-10 steps, anchored at the floor power of 10 of the minimum
+	// (5 -> 1) up to the smallest power of 10 above the max (5000 -> 10000).
+	require.Equal(t, []int64{1, 2, 4, 6, 8, 10, 20, 40, 60, 80, 100, 200, 400, 600, 800, 1000, 2000, 4000, 6000, 8000, 10000}, rsp.GetBucketBracket())
 	require.False(t, rsp.GetMetricHadNegativeValues())
 
 	// Every invocation should be counted exactly once across all buckets.
