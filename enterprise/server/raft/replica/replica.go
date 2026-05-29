@@ -1343,18 +1343,19 @@ func errorEntry(err error) dbsm.Result {
 }
 
 // sessionPebbleKey returns the pebble key for a session's dedup record.
-// When range_id is set (Sender path), it is appended so each range gets
-// its own (id, range_id) namespace and a retry that crosses ranges on a
-// split does not collide with the destination range's entries. When unset
-// (local-direct callers like rangelease/bringup/deleteSessions), the key
-// stays `session-<id>` — same as before this field existed, so existing
-// entries remain readable across the upgrade.
+// When the session has range ID set, the key namespaces the record by
+// session ID and range ID. During a split a retry can land on the right
+// range with range ID still set to the left range — that's fine, since
+// the dedup record for the session ID under the left range ID is a
+// different record than the right range's own entries under the right
+// range ID, so no collision. When unset, the key stays
+// `session-<session ID>`, matching pre-upgrade entries.
 func sessionPebbleKey(s *rfpb.Session) []byte {
 	if s.GetRangeId() == 0 {
 		return keys.MakeKey(constants.SessionPrefix, s.GetId())
 	}
 	return keys.MakeKey(constants.SessionPrefix, s.GetId(),
-		[]byte(fmt.Sprintf("-%d", s.GetRangeId())))
+		[]byte("/"+strconv.Itoa(int(s.GetRangeId()))))
 }
 
 func (sm *Replica) getLastRespFromSession(db ReplicaReader, reqSession *rfpb.Session) ([]byte, error) {
