@@ -861,7 +861,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   render() {
     return (
       <div className="trend-chart">
-        <div className="trend-chart-title">
+        <div className="drilldown-chart-title">
           <span className="drilldown-by-text">Drilldown by</span>
           <div className="drilldown-page-selection-group">
             <Select
@@ -882,7 +882,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
               onChange={this.handleScaleChange.bind(this)}
               value={this.isLogScale() ? "log" : "linear"}>
               <Option value="linear">Linear scale</Option>
-              <Option value="log">Logarithmic scale</Option>
+              <Option value="log">Log scale</Option>
             </Select>
             {this.renderZoomChip()}
           </div>

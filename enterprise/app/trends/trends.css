@@ -50,6 +50,14 @@
   color: var(--color-text-primary);
 }
 
+/* margin is given to heatmap so that y axis can render nicely. */
+.drilldown-chart-title {
+  font-weight: 600;
+  font-size: 20px;
+  margin-bottom: 0;
+  color: var(--color-text-primary);
+}
+
 .trend-chart-hover {
   background-color: var(--color-trends-hovercard-bg);
   color: var(--color-hovercard-text);

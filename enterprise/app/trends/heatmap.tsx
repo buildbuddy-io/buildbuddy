@@ -49,7 +49,7 @@ export type HeatmapSelection = {
 };
 
 const CHART_MARGINS = {
-  top: 1,
+  top: 17,
   right: 1,
   bottom: 39,
   left: 89,
@@ -584,11 +584,10 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
         {bracket.slice(0, lastBoundaryIndex + 1).map((v, i) => {
           const boundaryY = boundaryYAt(i);
           let label: string | null = null;
-          if (this.props.logScale) {
-            if (isPowerOfTen(+v)) {
-              label = this.renderYBucketValue(+v);
-            }
-          } else if (lastLabelY - boundaryY >= TICK_LABEL_SPACING_MAGIC_NUMBER || lastLabelY === Infinity) {
+          if (
+            (!this.props.logScale || isPowerOfTen(+v)) &&
+            (lastLabelY - boundaryY >= TICK_LABEL_SPACING_MAGIC_NUMBER || lastLabelY === Infinity)
+          ) {
             label = this.renderYBucketValue(+v);
             lastLabelY = boundaryY;
           }
@@ -737,7 +736,7 @@ export const HeatmapComponent = (p: HeatmapProps) => {
 
   return (
     <div ref={ref}>
-      <HeatmapComponentInternal width={Math.max(width || 0, 400)} height={275} {...p}></HeatmapComponentInternal>
+      <HeatmapComponentInternal width={Math.max(width || 0, 400)} height={291} {...p}></HeatmapComponentInternal>
     </div>
   );
 };
