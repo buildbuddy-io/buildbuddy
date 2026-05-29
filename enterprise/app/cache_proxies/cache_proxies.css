@@ -1,0 +1,41 @@
+/* CACHE PROXIES PAGE */
+
+.cache-proxies-page .title {
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.cache-proxies-page .cache-proxy-section {
+  display: flex;
+}
+
+.cache-proxies-page .cache-proxy-section div {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.cache-proxy-section div.cache-proxy-section-title {
+  width: 200px;
+  flex-grow: 0;
+  flex-shrink: 0;
+  text-align: left;
+  margin-right: 16px;
+  font-weight: 700;
+}
+
+.cache-proxies-page .cache-proxy-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.cache-proxies-page .cache-proxy-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cache-proxies-page .empty-state {
+  margin-top: 32px;
+}
