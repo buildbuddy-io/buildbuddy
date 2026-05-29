@@ -130,7 +130,8 @@ export class AuthService {
     }
     // If we haven't tried to auto-relogin already, try it.
     localStorage.setItem(AUTO_LOGIN_ATTEMPTED_STORAGE_KEY, "true");
-    window.location.href = `/login/?${new URLSearchParams({
+    const loginPath = capabilities.config.configuredIssuers.length ? "/login/" : "/";
+    window.location.href = `${loginPath}?${new URLSearchParams({
       redirect_url: window.location.href,
     })}`;
   }
@@ -292,7 +293,7 @@ export class AuthService {
     let url = `/login/?${new URLSearchParams({
       redirect_url: search.get("redirect_url") || window.location.href,
       show_picker: capabilities.config.popupAuthEnabled ? "true" : "false",
-      issuer_url: capabilities.auth,
+      issuer_url: capabilities.config.configuredIssuers[0] || "",
     })}`;
     if (capabilities.config.popupAuthEnabled) {
       popup

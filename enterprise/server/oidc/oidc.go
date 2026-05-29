@@ -224,7 +224,19 @@ type OpenIDAuthenticator struct {
 	myURL                *url.URL
 	parseClaims          func(ctx context.Context, token string) (*claims.Claims, error)
 	authenticators       []authenticator
+	publicIssuers        []string
 	enableAnonymousUsage bool
+}
+
+func publicIssuersFromAuthConfigs(authConfigs []OauthProvider) []string {
+	issuers := make([]string, 0, len(authConfigs))
+	for _, authConfig := range authConfigs {
+		if authConfig.Slug != "" {
+			continue
+		}
+		issuers = append(issuers, authConfig.IssuerURL)
+	}
+	return issuers
 }
 
 func createAuthenticatorsFromConfig(ctx context.Context, env environment.Env, authConfigs []OauthProvider, authURL *url.URL) ([]authenticator, error) {
@@ -323,6 +335,10 @@ func AnonymousUsageEnabled() bool {
 	return *enableAnonymousUsage || (len(*oauthProviders) == 0 && !selfauth.Enabled())
 }
 
+func Enabled() bool {
+	return len(*oauthProviders) > 0 || selfauth.Enabled()
+}
+
 func newForTesting(ctx context.Context, env environment.Env, testAuthenticator authenticator) (*OpenIDAuthenticator, error) {
 	oia, err := newOpenIDAuthenticator(ctx, env, nil /*oauthProviders=*/)
 	if err != nil {
@@ -345,14 +361,14 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAu
 			},
 		)
 	}
-
-	if len(authConfigs) == 0 {
-		return nil, status.FailedPreconditionErrorf("No auth providers specified in config!")
-	}
+	publicIssuers := publicIssuersFromAuthConfigs(authConfigs)
 
 	a, err := newOpenIDAuthenticator(ctx, env, authConfigs)
 	if err != nil {
 		alert.UnexpectedEvent("authentication_configuration_failed", "Failed to configure authentication: %s", err)
+	}
+	if a != nil {
+		a.publicIssuers = publicIssuers
 	}
 
 	return a, err
@@ -369,19 +385,7 @@ func (a *OpenIDAuthenticator) AnonymousUsageEnabled(ctx context.Context) bool {
 }
 
 func (a *OpenIDAuthenticator) PublicIssuers() []string {
-	providers := make([]string, len(a.authenticators))
-	i := 0
-	for _, authenticator := range a.authenticators {
-		if authenticator.getSlug() != "" {
-			// Skip "private" issuers and shorten the new slice to account for it
-			providers = providers[:len(providers)-1]
-			continue
-		}
-		providers[i] = authenticator.getIssuer()
-		i++
-	}
-
-	return providers
+	return append([]string(nil), a.publicIssuers...)
 }
 
 func (a *OpenIDAuthenticator) SSOEnabled() bool {
