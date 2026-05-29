@@ -1476,7 +1476,7 @@ type testRunnerPool struct {
 type TestRunnerOverrides struct {
 	RunInterceptor     RunInterceptor
 	RecycleInterceptor RecycleInterceptor
-	// PostCompletionStats is returned from the test runner's
+	// PostCompletionStats, if not nil, is returned from the test runner's
 	// PostCompletionStats() method.
 	PostCompletionStats *espb.PostCompletionStats
 }

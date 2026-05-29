@@ -1164,10 +1164,10 @@ type Runner interface {
 	// string, such as "none" or "podman".
 	GetIsolationType() string
 
-	// PostCompletionStats returns observability data produced during
-	// runner.Pause that should be reported to the execution server
-	// after the COMPLETED Operation has already been streamed back. Nil
-	// for runners that don't expose any such stats.
+	// PostCompletionStats returns observability data produced Run has finished.
+	// These should be reported to the execution server after the COMPLETED
+	// Operation has already been streamed back. Nil for runners that don't
+	// expose any such stats.
 	PostCompletionStats() *espb.PostCompletionStats
 }
 
