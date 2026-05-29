@@ -305,7 +305,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	actionMetrics.Isolation = r.GetIsolationType()
 	reuseRunner := false
 	var cmdResult *interfaces.CommandResult
-	var publishedResponse *repb.ExecuteResponse
+	var publishedCompletedResponse *repb.ExecuteResponse
 	defer func() {
 		// Respect the DoNotRecycle bit set by the container implementation,
 		// since specific implementations will have better knowledge about the
@@ -319,15 +319,17 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		s.runnerPool.TryRecycle(ctx, r, reuseRunner)
 
 		// Recycling can produce observability data that wasn't available at
-		// COMPLETED publish time (e.g. firecracker snapshot save stats from
-		// Container.Pause). Publish a follow-up stage=COMPLETED Operation
-		// with those stats so the execution server can merge them into the
-		// OLAP row before the stream's EOF flush.
-		if stats := r.PostCompletionStats(); stats != nil && publishedResponse != nil {
+		// COMPLETED publish time.
+		if stats := r.PostCompletionStats(); stats != nil && publishedCompletedResponse != nil {
+			// Add post-completion stats to auxMetadata. This requires replacing
+			// the previosly marshalled auxMedata.
 			auxMetadata.PostCompletionStats = stats
-			if err := replaceAuxiliaryMetadata(publishedResponse.GetResult().GetExecutionMetadata(), auxMetadata); err != nil {
+			if err := replaceAuxiliaryMetadata(publishedCompletedResponse.GetResult().GetExecutionMetadata(), auxMetadata); err != nil {
 				log.CtxWarningf(ctx, "Failed to replace ExecutionAuxiliaryMetadata: %s", err)
-			} else if err := opStateChangeFn(repb.ExecutionStage_COMPLETED, publishedResponse); err != nil {
+			} else if err := opStateChangeFn(repb.ExecutionStage_COMPLETED, publishedCompletedResponse); err != nil {
+				// Don't call finishWithErrFn here since the task is already
+				// COMPLETED, and we don't want to change the task's final
+				// status.
 				log.CtxWarningf(ctx, "Failed to publish post-completion stats: %s", err)
 			}
 		}
@@ -534,7 +536,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		}
 		return finishWithErrFn(status.WrapError(err, "publish execute response"))
 	}
-	publishedResponse = executeResponse
+	publishedCompletedResponse = executeResponse
 	if cmdResult.Error == nil {
 		log.CtxDebugf(ctx, "Task finished cleanly.")
 		reuseRunner = true
