@@ -762,38 +762,36 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       ),
     };
   },
-  // Suggest experimental_remote_cache_async
+  // Suggest remote_cache_async when it has been explicitly disabled on Bazel releases where it is the default.
   ({ model }) => {
-    // TODO(bduffany): This flag potentially causes cache poisoning; re-enable
-    // with min Bazel version check once issues are fixed.
-    return null;
-
-    /* No clue why, but strict TS gets broken by dead code, so this is commented out.
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
     if (!model.isBazelInvocation()) return null;
+    if (!isRemoteCacheEnabled(model)) return null;
 
-    if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
-    if (model.optionsMap.get("experimental_remote_cache_async")) return null;
-    const version = getBazelMajorVersion(model);
-    if (version === null || version < 5) return null;
+    const version = model.getBazelVersion();
+    if (!bazelVersionAtLeast(version, 8)) return null;
+
+    const explicitlyDisabled =
+      (model.optionsMap.has("remote_cache_async") && !model.booleanCommandLineOption("remote_cache_async", true)) ||
+      (model.optionsMap.has("experimental_remote_cache_async") &&
+        !model.booleanCommandLineOption("experimental_remote_cache_async", true));
+    if (!explicitlyDisabled) return null;
 
     return {
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Consider enabling <BazelFlag>--experimental_remote_cache_async</BazelFlag> to improve remote cache
-          performance.
+          Consider enabling <BazelFlag>--remote_cache_async</BazelFlag> to let Bazel upload cache results in the
+          background.
         </>
       ),
       reason: (
         <>
-          Shown because this build is cache-enabled but{" "}
-          <span className="inline-code">--experimental_remote_cache_async</span> is neither enabled nor explicitly
-          disabled.
+          Shown because this Bazel release enables remote cache async uploads by default, but this build explicitly
+          disables them.
         </>
       ),
     };
-    */
   },
   // Suggest configuring metadata to enable test grid
   ({ model }) => {
