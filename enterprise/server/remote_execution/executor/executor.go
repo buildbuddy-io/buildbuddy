@@ -305,9 +305,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	actionMetrics.Isolation = r.GetIsolationType()
 	reuseRunner := false
 	var cmdResult *interfaces.CommandResult
-	// publishedResponse is the ExecuteResponse that was sent on the first
-	// COMPLETED Operation; captured here so the follow-up post-completion
-	// stats Operation can publish the same full reply.
 	var publishedResponse *repb.ExecuteResponse
 	defer func() {
 		// Respect the DoNotRecycle bit set by the container implementation,
@@ -562,13 +559,9 @@ func publishPostCompletionStatsEnabled(ctx context.Context, env environment.Env)
 	return fp.Boolean(ctx, "remote_execution.flush_executions_after_cleanup", false)
 }
 
-// publishPostCompletionStatsOp publishes a follow-up stage=COMPLETED
-// Operation that re-sends the originally published ExecuteResponse with
-// the updated ExecutionAuxiliaryMetadata (which now carries
-// PostCompletionStats). The execution server recognizes this as a
-// follow-up to the first COMPLETED via its own firstCompletedSeen
-// tracking; the side effects of the first COMPLETED (action-cache write,
-// markTaskComplete, recordResponseMetrics) are skipped server-side.
+// publishPostCompletionStatsOp re-sends the originally published
+// ExecuteResponse with auxMetadata (now carrying PostCompletionStats)
+// merged into its ExecutionAuxiliaryMetadata entry.
 func publishPostCompletionStatsOp(stream interfaces.Publisher, taskID string, ad *repb.Digest, publishedResponse *repb.ExecuteResponse, auxMetadata *espb.ExecutionAuxiliaryMetadata) error {
 	rsp := proto.Clone(publishedResponse).(*repb.ExecuteResponse)
 	if rsp.Result == nil {

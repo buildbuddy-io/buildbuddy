@@ -456,9 +456,6 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 				auxMeta.GetPostCompletionStats(),
 				protocmp.Transform(),
 			))
-			// The follow-up should re-publish the same ExecuteResponse as the
-			// first COMPLETED, with PostCompletionStats added to the
-			// ExecutionAuxiliaryMetadata.
 			require.Empty(t, cmp.Diff(
 				first.ExecuteResponse,
 				followUp.ExecuteResponse,
