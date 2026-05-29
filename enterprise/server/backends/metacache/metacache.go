@@ -578,6 +578,18 @@ func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) (res []byte, resu
 	return buf.Bytes(), err
 }
 
+func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	data, err := c.Get(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	md, err := c.Metadata(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data, md, nil
+}
+
 func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m map[*repb.Digest][]byte, resultErr error) {
 	start := c.opts.Clock.Now()
 	defer c.recordMetrics("GetMulti", resultErr, start)

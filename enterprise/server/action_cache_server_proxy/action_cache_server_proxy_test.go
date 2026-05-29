@@ -111,6 +111,18 @@ func (c *localOnlyCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*i
 	return &interfaces.CacheMetadata{LastModifyTimeUsec: c.mtimes[key]}, nil
 }
 
+func (c *localOnlyCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	data, err := c.Get(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	md, err := c.Metadata(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data, md, nil
+}
+
 func (c *localOnlyCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
 	c.put(r, data, time.Now().UnixMicro())
 	return nil

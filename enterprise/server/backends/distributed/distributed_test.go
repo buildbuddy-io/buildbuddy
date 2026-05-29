@@ -3015,6 +3015,9 @@ func (pc *partitionedCache) FindMissing(ctx context.Context, resources []*rspb.R
 func (pc *partitionedCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	return pc.partition(ctx).Get(ctx, r)
 }
+func (pc *partitionedCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	return pc.partition(ctx).GetWithMetadata(ctx, r)
+}
 func (pc *partitionedCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	return pc.partition(ctx).GetMulti(ctx, resources)
 }
