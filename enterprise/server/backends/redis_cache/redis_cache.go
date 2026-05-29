@@ -3,7 +3,6 @@ package redis_cache
 import (
 	"bytes"
 	"context"
-	"flag"
 	"io"
 	"path/filepath"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -27,7 +27,9 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
-var maxValueSizeBytes = flag.Int64("cache.redis.max_value_size_bytes", 10000000, "The maximum value size to cache in redis (in bytes).")
+const deprecatedRedisCacheFlagMessage = "The cache.redis backend is deprecated. Use app.default_redis_target or remote_execution.redis_target for Redis-backed shared state and cache.disk.root_directory for cache storage."
+
+var maxValueSizeBytes = flag.Int64("cache.redis.max_value_size_bytes", 10000000, "The maximum value size to cache in redis (in bytes).", flag.Deprecated(deprecatedRedisCacheFlagMessage))
 
 const (
 	ttl = 3 * 24 * time.Hour
