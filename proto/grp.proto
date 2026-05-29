@@ -121,6 +121,9 @@ message Group {
 
     // The group is blocked.
     BLOCKED_GROUP_STATUS = 4;
+
+    // The group is billed based on usage.
+    USAGE_BASED_GROUP_STATUS = 5;
   }
 
   // The status of the group.

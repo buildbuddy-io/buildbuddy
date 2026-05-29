@@ -154,6 +154,61 @@ func (c *Collection) UsageLabels() *tables.UsageLabels {
 	}
 }
 
+type LabeledSKUCount struct {
+	Labels map[sku.LabelName]sku.LabelValue
+	SKU    sku.SKU
+	Count  int64
+	Unit   string
+}
+
+func LabeledSKUCountsFromUsageCounts(baseLabels map[sku.LabelName]sku.LabelValue, counts *tables.UsageCounts) []LabeledSKUCount {
+	if counts == nil {
+		return nil
+	}
+	var items []LabeledSKUCount
+	add := func(usageSKU sku.SKU, count int64, unit string, labels map[sku.LabelName]sku.LabelValue) {
+		if count <= 0 {
+			return
+		}
+		items = append(items, LabeledSKUCount{
+			SKU:    usageSKU,
+			Labels: labels,
+			Count:  count,
+			Unit:   unit,
+		})
+	}
+	addExecution := func(usageSKU sku.SKU, count int64, unit, os, selfHosted string) {
+		if count <= 0 {
+			return
+		}
+		add(usageSKU, count, unit, executionLabels(baseLabels, os, selfHosted))
+	}
+
+	add(sku.BuildEventsBESCount, counts.Invocations, "count", baseLabels)
+	add(sku.RemoteCacheACHits, counts.ActionCacheHits, "count", baseLabels)
+	add(sku.RemoteCacheCASHits, counts.CASCacheHits, "count", baseLabels)
+	add(sku.RemoteCacheCASDownloadedBytes, counts.TotalDownloadSizeBytes, "bytes", baseLabels)
+	add(sku.RemoteCacheCASUploadedBytes, counts.TotalUploadSizeBytes, "bytes", baseLabels)
+	add(sku.RemoteCacheACCachedExecDurationNanos, counts.TotalCachedActionExecUsec*1000, "nanos", baseLabels)
+	addExecution(sku.RemoteExecutionExecuteWorkerDurationNanos, counts.LinuxExecutionDurationUsec*1000, "nanos", sku.OSLinux, sku.SelfHostedFalse)
+	addExecution(sku.RemoteExecutionExecuteWorkerDurationNanos, counts.MacExecutionDurationUsec*1000, "nanos", sku.OSMac, sku.SelfHostedFalse)
+	addExecution(sku.RemoteExecutionExecuteWorkerDurationNanos, counts.SelfHostedLinuxExecutionDurationUsec*1000, "nanos", sku.OSLinux, sku.SelfHostedTrue)
+	addExecution(sku.RemoteExecutionExecuteWorkerDurationNanos, counts.SelfHostedMacExecutionDurationUsec*1000, "nanos", sku.OSMac, sku.SelfHostedTrue)
+	addExecution(sku.RemoteExecutionExecuteWorkerCPUNanos, counts.CPUNanos, "nanos", sku.OSLinux, sku.SelfHostedFalse)
+	addExecution(sku.RemoteExecutionExecuteWorkerMemoryGBNanos, counts.MemoryGBUsec*1000, "gb_nanos", sku.OSLinux, sku.SelfHostedFalse)
+	return items
+}
+
+func executionLabels(labels map[sku.LabelName]sku.LabelValue, os, selfHosted string) map[sku.LabelName]sku.LabelValue {
+	out := make(map[sku.LabelName]sku.LabelValue, len(labels)+2)
+	for key, value := range labels {
+		out[key] = value
+	}
+	out[sku.OS] = os
+	out[sku.SelfHosted] = selfHosted
+	return out
+}
+
 // EncodeCollection encodes the collection to a human readable format.
 func EncodeCollection(c *Collection) string {
 	// Using a handwritten encoding scheme for performance reasons (this
