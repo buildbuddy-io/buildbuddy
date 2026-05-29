@@ -322,8 +322,6 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 	for _, tc := range []struct {
 		name                string
 		postCompletionStats *espb.PostCompletionStats
-		expectFollowUpOp    bool
-		expectFollowUpStats *espb.PostCompletionStats
 	}{
 		{
 			name: "WithStats",
@@ -334,19 +332,10 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 				SnapshotSizeBytes:     12345,
 				PauseDurationUsec:     67890,
 			},
-			expectFollowUpOp: true,
-			expectFollowUpStats: &espb.PostCompletionStats{
-				SnapshotSavedLocally:  true,
-				SnapshotSavedRemotely: true,
-				SnapshotIsDiff:        true,
-				SnapshotSizeBytes:     12345,
-				PauseDurationUsec:     67890,
-			},
 		},
 		{
 			name:                "WithoutStats",
 			postCompletionStats: nil,
-			expectFollowUpOp:    false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -395,7 +384,7 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 			}
 
 			expectedCount := 1
-			if tc.expectFollowUpOp {
+			if tc.postCompletionStats != nil {
 				expectedCount = 2
 			}
 			require.Eventually(t, func() bool {
@@ -406,7 +395,7 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 
 			ops := completedOps()
 			require.Equal(t, expectedCount, len(ops))
-			if !tc.expectFollowUpOp {
+			if tc.postCompletionStats == nil {
 				return
 			}
 
@@ -419,7 +408,7 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, ok, "follow-up COMPLETED should carry ExecutionAuxiliaryMetadata")
 			require.Empty(t, cmp.Diff(
-				tc.expectFollowUpStats,
+				tc.postCompletionStats,
 				auxMeta.GetPostCompletionStats(),
 				protocmp.Transform(),
 			))
