@@ -87,22 +87,15 @@ func TestBuilderList(t *testing.T) {
 	pl := posting.NewBuilderList()
 	pl.Add(1)
 	pl.Add(2)
-	pl.Add(2)
 	pl.Add(3)
-	pl.Add(1)
 
 	assert.Equal(t, []uint64{1, 2, 3}, pl.ToArray())
 }
 
-func TestBuilderListOutOfOrderAdd(t *testing.T) {
-	pl := posting.NewBuilderList()
-	pl.Add(10)
-	pl.Add(12)
-	pl.Add(11)
-	pl.Add(9)
-	pl.Add(10)
-
-	assert.Equal(t, []uint64{9, 10, 11, 12}, pl.ToArray())
+func TestBuilderListPanicsOnNonIncreasingAdd(t *testing.T) {
+	pl := posting.NewBuilderList(1, 2, 3)
+	assert.Panics(t, func() { pl.Add(3) }, "duplicate trailing id should panic")
+	assert.Panics(t, func() { pl.Add(2) }, "out-of-order id should panic")
 }
 
 func TestMarshal(t *testing.T) {
@@ -182,15 +175,17 @@ func TestBuilderListMarshalLongRunWithOutlier(t *testing.T) {
 	assert.Equal(t, uint32(4), pl3.Frequency(16))
 }
 
-func TestBuilderListOrAddsFrequencies(t *testing.T) {
-	pl := posting.NewBuilderList()
-	pl.AddWithFrequency(1, 2)
-	pl.AddWithFrequency(2, 3)
-	other := posting.NewBuilderList()
-	other.AddWithFrequency(2, 4)
-	other.AddWithFrequency(3, 5)
+func TestMergeListOrAddsFrequencies(t *testing.T) {
+	a := posting.NewBuilderList()
+	a.AddWithFrequency(1, 2)
+	a.AddWithFrequency(2, 3)
+	b := posting.NewBuilderList()
+	b.AddWithFrequency(2, 4)
+	b.AddWithFrequency(3, 5)
 
-	pl.Or(other)
+	pl := posting.NewMergeList()
+	pl.Or(a)
+	pl.Or(b)
 
 	assert.Equal(t, []uint64{1, 2, 3}, pl.ToArray())
 	assert.Equal(t, uint32(2), pl.Frequency(1))
@@ -198,35 +193,15 @@ func TestBuilderListOrAddsFrequencies(t *testing.T) {
 	assert.Equal(t, uint32(5), pl.Frequency(3))
 }
 
-func TestBuilderListAndPreservesFrequencies(t *testing.T) {
-	pl := posting.NewBuilderList()
-	pl.AddWithFrequency(1, 2)
-	pl.AddWithFrequency(2, 3)
-	pl.AddWithFrequency(3, 4)
-	other := posting.NewBuilderList()
-	other.AddWithFrequency(2, 99)
-	other.AddWithFrequency(3, 99)
-	other.AddWithFrequency(4, 99)
+func TestMergeListRemovePreservesFrequencies(t *testing.T) {
+	src := posting.NewBuilderList()
+	src.AddWithFrequency(1, 2)
+	src.AddWithFrequency(2, 3)
+	src.AddWithFrequency(3, 4)
+	pl := posting.NewMergeList()
+	pl.Or(src)
 
-	pl.And(other)
-
-	assert.Equal(t, []uint64{2, 3}, pl.ToArray())
-	// And keeps the left-hand side's frequencies.
-	assert.Equal(t, uint32(3), pl.Frequency(2))
-	assert.Equal(t, uint32(4), pl.Frequency(3))
-	assert.Equal(t, uint32(0), pl.Frequency(1))
-	assert.Equal(t, uint32(0), pl.Frequency(4))
-}
-
-func TestBuilderListAndNotPreservesFrequencies(t *testing.T) {
-	pl := posting.NewBuilderList()
-	pl.AddWithFrequency(1, 2)
-	pl.AddWithFrequency(2, 3)
-	pl.AddWithFrequency(3, 4)
-	other := posting.NewBuilderList()
-	other.AddWithFrequency(2, 99)
-
-	pl.AndNot(other)
+	pl.Remove(2)
 
 	assert.Equal(t, []uint64{1, 3}, pl.ToArray())
 	assert.Equal(t, uint32(2), pl.Frequency(1))
@@ -234,12 +209,18 @@ func TestBuilderListAndNotPreservesFrequencies(t *testing.T) {
 	assert.Equal(t, uint32(0), pl.Frequency(2))
 }
 
-func TestBuilderListRemovePreservesFrequencies(t *testing.T) {
-	pl := posting.NewBuilderList()
-	pl.AddWithFrequency(1, 2)
-	pl.AddWithFrequency(2, 3)
-	pl.AddWithFrequency(3, 4)
+// TestMergeListUnmarshalThenRemove exercises the delete-compaction path:
+// unmarshal a counted list, then Remove a doc, preserving survivors' TFs.
+func TestMergeListUnmarshalThenRemove(t *testing.T) {
+	src := posting.NewBuilderList()
+	src.AddWithFrequency(1, 2)
+	src.AddWithFrequency(2, 3)
+	src.AddWithFrequency(3, 4)
+	buf, err := src.Marshal()
+	require.NoError(t, err)
 
+	pl, err := posting.Unmarshal(buf)
+	require.NoError(t, err)
 	pl.Remove(2)
 
 	assert.Equal(t, []uint64{1, 3}, pl.ToArray())
@@ -272,36 +253,26 @@ func TestCountedReadOnlyListFrequencySparseIDs(t *testing.T) {
 	assert.Equal(t, uint32(0), roList.Frequency(1<<40+1))
 }
 
-func TestBuilderListOr(t *testing.T) {
-	pl := posting.NewBuilderList(1, 3)
+func TestMergeListOr(t *testing.T) {
+	pl := posting.NewMergeList()
+	pl.Or(posting.NewBuilderList(1, 3))
 	pl.Or(posting.NewBuilderList(2, 3))
 
 	assert.Equal(t, []uint64{1, 2, 3}, pl.ToArray())
 }
 
-func TestBuilderListAnd(t *testing.T) {
-	pl := posting.NewBuilderList(1, 2, 3, 4)
-	pl.And(posting.NewList(2, 4, 6))
-
-	assert.Equal(t, []uint64{2, 4}, pl.ToArray())
-}
-
-func TestBuilderListAndNot(t *testing.T) {
-	pl := posting.NewBuilderList(1, 2, 3, 4)
-	pl.AndNot(posting.NewList(2, 4, 6))
-
-	assert.Equal(t, []uint64{1, 3}, pl.ToArray())
-}
-
-func TestBuilderListRemove(t *testing.T) {
-	pl := posting.NewBuilderList(1, 2, 3)
+func TestMergeListRemove(t *testing.T) {
+	pl := posting.NewMergeList()
+	pl.Or(posting.NewBuilderList(1, 2, 3))
 	pl.Remove(2)
 	assert.Equal(t, []uint64{1, 3}, pl.ToArray())
 
+	// Collapse down to a single element, then merge back up again — exercises
+	// the first-only representation transition in both directions.
 	pl.Remove(1)
 	assert.Equal(t, []uint64{3}, pl.ToArray())
 
-	pl.Add(5)
+	pl.Or(posting.NewBuilderList(5))
 	assert.Equal(t, []uint64{3, 5}, pl.ToArray())
 }
 
@@ -334,15 +305,6 @@ func TestBuilderListMarshalInto(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, want, buf[:len(want)])
-}
-
-func TestBuilderListSetFromRoaringCollapsesToOne(t *testing.T) {
-	pl := posting.NewBuilderList(1, 2, 3)
-	pl.And(posting.NewList(2, 4))
-	assert.Equal(t, []uint64{2}, pl.ToArray())
-
-	pl.Add(5)
-	assert.Equal(t, []uint64{2, 5}, pl.ToArray())
 }
 
 func TestConcat2(t *testing.T) {

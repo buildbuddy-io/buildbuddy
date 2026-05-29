@@ -376,8 +376,7 @@ func (w *Writer) CompactDeletes() error {
 
 	// Snapshot the deleted IDs once so we can walk them per posting list
 	// without re-decoding. Calling pl.Remove(id) preserves the term frequency
-	// for surviving docs (BuilderList.Remove does not support a TF-preserving
-	// AndNot against arbitrary ReadOnlyLists; it's only this one call site).
+	// for surviving docs.
 	deletedIDs := delPl.ToArray()
 
 	changeCount := 0
@@ -549,7 +548,7 @@ func (w *Writer) flushBatch() error {
 	return nil
 }
 
-func (w *Writer) updatePostingList(key []byte, pl posting.List, field, ngram string, deferOp func(int, int) *pebble.DeferredBatchOp) error {
+func (w *Writer) updatePostingList(key []byte, pl posting.ReadOnlyList, field, ngram string, deferOp func(int, int) *pebble.DeferredBatchOp) error {
 	defer indexprofile.Timer(indexprofile.PhaseUpdatePostingList)()
 
 	valueLength := int(pl.GetSerializedSizeInBytes())
@@ -586,7 +585,7 @@ func (w *Writer) Flush() error {
 	mu := sync.Mutex{}
 	eg := new(errgroup.Group)
 	eg.SetLimit(runtime.GOMAXPROCS(0))
-	writePLs := func(key []byte, pl posting.List, field, ngram string) error {
+	writePLs := func(key []byte, pl posting.ReadOnlyList, field, ngram string) error {
 		mu.Lock()
 		defer mu.Unlock()
 		w.updatePostingList(key, pl, field, ngram, w.batch.MergeDeferred)

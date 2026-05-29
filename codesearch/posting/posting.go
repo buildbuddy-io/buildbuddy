@@ -61,27 +61,6 @@ type roaringWrapper struct {
 	*roaring64.Bitmap
 }
 
-type BuilderList struct {
-	first      uint64
-	firstFreq  uint32
-	ids        []uint64
-	freqs      []uint32
-	last       uint64
-	count      int
-	serialized []byte
-}
-
-// countedReadOnlyList wraps a roaring bitmap and a parallel slice of per-doc
-// frequencies. It does NOT embed *roaringWrapper because the underlying bitmap
-// may be backed by pebble-owned memory (via FromUnsafeBytes), so mutating
-// methods like Or/And/AndNot would corrupt that memory. Only read-only methods
-// are exposed.
-type countedReadOnlyList struct {
-	bm         *roaring64.Bitmap
-	freqs      []uint32
-	serialized []byte
-}
-
 func (w *roaringWrapper) Or(l ReadOnlyList) {
 	w.Bitmap.Or(readOnlyListToRoaring(l))
 }
@@ -99,6 +78,440 @@ func (w *roaringWrapper) Frequency(id uint64) uint32 {
 		return 1
 	}
 	return 0
+}
+
+// termFreqs stores per-position term frequencies for a posting list. It keeps
+// the overwhelmingly common "every TF is 1" case allocation-free
+// (the slice stays nil, `materialized` false) and otherwise stores a plain
+// dense slice — never a map, so the indexing hot loop pays only a slice append
+// with no hashing. The backing slice is retained across clear() so a reused
+// list avoids re-allocating it.
+//
+// Frequencies are indexed by position (parallel to the posting list's doc-ID
+// order), not by doc ID. That keeps the append path branch-light at the cost of
+// shifting entries on the rare out-of-order insert / remove.
+type termFreqs struct {
+	dense        []uint32
+	materialized bool
+}
+
+func (f *termFreqs) at(i int) uint32 {
+	if !f.materialized {
+		return 1
+	}
+	return f.dense[i]
+}
+
+// materialize allocates the dense slice and backfills `count` implicit 1s for
+// the positions that were, until now, all frequency 1.
+func (f *termFreqs) materialize(count int) {
+	if f.materialized {
+		return
+	}
+	f.dense = append(f.dense[:0], make([]uint32, count)...)
+	for i := range f.dense {
+		f.dense[i] = 1
+	}
+	f.materialized = true
+}
+
+// append records the frequency for the next position. count is the number of
+// positions already stored (the index this entry will occupy). This is the
+// indexing hot path: a frequency of 1 on an all-ones list is a no-op.
+func (f *termFreqs) append(count int, freq uint32) {
+	if !f.materialized {
+		if freq == 1 {
+			return
+		}
+		f.materialize(count)
+	}
+	f.dense = append(f.dense, freq)
+}
+
+// removeAt deletes the entry at position i, shifting later entries left.
+func (f *termFreqs) removeAt(i int) {
+	if !f.materialized {
+		return
+	}
+	f.dense = append(f.dense[:i], f.dense[i+1:]...)
+}
+
+// setAll replaces the contents with the given per-position frequencies. It
+// stays unmaterialized (all-ones) when every frequency is 1.
+func (f *termFreqs) setAll(freqs []uint32) {
+	for _, v := range freqs {
+		if v != 1 {
+			f.dense = append(f.dense[:0], freqs...)
+			f.materialized = true
+			return
+		}
+	}
+	f.clear()
+}
+
+func (f *termFreqs) clear() {
+	f.dense = f.dense[:0]
+	f.materialized = false
+}
+
+// any reports whether any position has a frequency other than 1.
+func (f *termFreqs) any() bool {
+	for _, v := range f.dense {
+		if v != 1 {
+			return true
+		}
+	}
+	return false
+}
+
+// countedList is the shared sorted (doc ID, term frequency) representation
+// behind BuilderList and MergeList. It owns all read and serialization logic so
+// the two mutable wrappers can't drift apart. Doc IDs are kept sorted
+// ascending; a single-element list stores its only ID in `first` without
+// allocating `ids`, which is the common case for rare ngrams. `ids` is
+// populated only when count >= 2.
+type countedList struct {
+	first      uint64
+	ids        []uint64
+	freqs      termFreqs
+	last       uint64
+	count      int
+	serialized []byte
+}
+
+func (l *countedList) idAt(i int) uint64 {
+	if l.count == 1 {
+		return l.first
+	}
+	return l.ids[i]
+}
+
+func (l *countedList) frequencyAt(i int) uint32 {
+	return l.freqs.at(i)
+}
+
+// indexOf returns the position of id in the (sorted) list and whether it is
+// present.
+func (l *countedList) indexOf(id uint64) (int, bool) {
+	switch l.count {
+	case 0:
+		return 0, false
+	case 1:
+		if l.first == id {
+			return 0, true
+		}
+		return 0, false
+	default:
+		i := sort.Search(len(l.ids), func(i int) bool {
+			return l.ids[i] >= id
+		})
+		if i < len(l.ids) && l.ids[i] == id {
+			return i, true
+		}
+		return 0, false
+	}
+}
+
+func (l *countedList) GetCardinality() uint64 {
+	return uint64(l.count)
+}
+
+func (l *countedList) ToArray() []uint64 {
+	switch l.count {
+	case 0:
+		return []uint64{}
+	case 1:
+		return []uint64{l.first}
+	default:
+		out := make([]uint64, len(l.ids))
+		copy(out, l.ids)
+		return out
+	}
+}
+
+func (l *countedList) Frequency(id uint64) uint32 {
+	i, ok := l.indexOf(id)
+	if !ok {
+		return 0
+	}
+	return l.freqs.at(i)
+}
+
+func (l *countedList) Iterator() roaring64.IntPeekable64 {
+	return l.toRoaring().Iterator()
+}
+
+func (l *countedList) Clear() {
+	l.first = 0
+	l.ids = l.ids[:0]
+	l.freqs.clear()
+	l.last = 0
+	l.count = 0
+	l.serialized = nil
+}
+
+// setFromSorted resets l to the given ascending doc IDs and parallel
+// frequencies. freqs may be nil, in which case every frequency defaults to 1.
+// The input slices are copied; l does not retain them.
+func (l *countedList) setFromSorted(ids []uint64, freqs []uint32) {
+	l.Clear()
+	if len(ids) == 0 {
+		return
+	}
+	l.first = ids[0]
+	l.last = ids[len(ids)-1]
+	l.count = len(ids)
+	if len(ids) > 1 {
+		l.ids = append(l.ids, ids...)
+	}
+	if freqs != nil {
+		l.freqs.setAll(freqs)
+	}
+}
+
+// Remove deletes id from the list, preserving the frequencies of surviving
+// docs. It lives on the shared core because both building (dropping a stale doc
+// during a same-batch update) and merge-time delete compaction need it.
+func (l *countedList) Remove(id uint64) {
+	switch l.count {
+	case 0:
+		return
+	case 1:
+		if l.first == id {
+			l.Clear()
+		}
+		return
+	}
+	i := sort.Search(len(l.ids), func(i int) bool {
+		return l.ids[i] >= id
+	})
+	if i >= len(l.ids) || l.ids[i] != id {
+		return
+	}
+	l.freqs.removeAt(i)
+	l.ids = append(l.ids[:i], l.ids[i+1:]...)
+	l.count = len(l.ids)
+	l.serialized = nil
+	if l.count == 1 {
+		// Collapse back to the single-element (first-only) form.
+		l.first = l.ids[0]
+		l.last = l.first
+		l.ids = l.ids[:0]
+		return
+	}
+	l.first = l.ids[0]
+	l.last = l.ids[len(l.ids)-1]
+}
+
+func (l *countedList) toRoaring() *roaring64.Bitmap {
+	bm := roaring64.New()
+	switch l.count {
+	case 0:
+	case 1:
+		bm.Add(l.first)
+	default:
+		bm.AddMany(l.ids)
+	}
+	return bm
+}
+
+func (l *countedList) GetSerializedSizeInBytes() uint64 {
+	if err := l.ensureSerialized(); err != nil {
+		return 0
+	}
+	return uint64(len(l.serialized))
+}
+
+func (l *countedList) MarshalInto(buf []byte) error {
+	if err := l.ensureSerialized(); err != nil {
+		return err
+	}
+	if cap(buf) < len(l.serialized) {
+		return fmt.Errorf("buffer too small: got capacity %d, need %d", cap(buf), len(l.serialized))
+	}
+	copy(buf[:len(l.serialized)], l.serialized)
+	return nil
+}
+
+func (l *countedList) Marshal() ([]byte, error) {
+	if err := l.ensureSerialized(); err != nil {
+		return nil, err
+	}
+	out := make([]byte, len(l.serialized))
+	copy(out, l.serialized)
+	return out, nil
+}
+
+func (l *countedList) ensureSerialized() error {
+	if l.serialized != nil {
+		return nil
+	}
+	bm := l.toRoaring()
+	roaringBuf := make([]byte, 0, int(bm.GetSerializedSizeInBytes()))
+	stream := bytes.NewBuffer(roaringBuf)
+	if _, err := bm.WriteTo(stream); err != nil {
+		return err
+	}
+	roaringBuf = stream.Bytes()
+	if !l.freqs.any() {
+		l.serialized = roaringBuf
+		return nil
+	}
+	l.serialized = l.marshalRLECounts(roaringBuf, l.rleCountSize())
+	return nil
+}
+
+func (l *countedList) marshalRLECounts(roaringBuf []byte, countBytes int) []byte {
+	buf := make([]byte, 0, len(countedListMagic)+binary.MaxVarintLen64+len(roaringBuf)+countBytes)
+	buf = append(buf, countedListMagic...)
+	buf = binary.AppendUvarint(buf, uint64(len(roaringBuf)))
+	buf = append(buf, roaringBuf...)
+	for i := 0; i < l.count; {
+		v := l.frequencyAt(i)
+		j := i + 1
+		for j < l.count && l.frequencyAt(j) == v {
+			j++
+		}
+		buf = binary.AppendUvarint(buf, uint64(j-i))
+		buf = binary.AppendUvarint(buf, uint64(v))
+		i = j
+	}
+	return buf
+}
+
+// rleCountSize returns the byte length of the RLE-encoded frequency tail that
+// marshalRLECounts would produce. Used to pre-size the output buffer.
+func (l *countedList) rleCountSize() int {
+	n := 0
+	for i := 0; i < l.count; {
+		v := l.frequencyAt(i)
+		j := i + 1
+		for j < l.count && l.frequencyAt(j) == v {
+			j++
+		}
+		n += uvarintLen64(uint64(j-i)) + uvarintLen64(uint64(v))
+		i = j
+	}
+	return n
+}
+
+// BuilderList is a posting list optimized for the indexing build path. It
+// assumes doc IDs are usually added in increasing order, avoiding roaring
+// container maintenance in the indexing hot loop. It is build-only: it supports
+// Add/AddWithFrequency but not the boolean set operations. Merging and delete
+// compaction use MergeList instead.
+type BuilderList struct {
+	countedList
+}
+
+func (l *BuilderList) Add(id uint64) {
+	l.AddWithFrequency(id, 1)
+}
+
+// AddWithFrequency appends id with the given term frequency. Doc IDs must be
+// added in strictly increasing order — this is the only thing the indexing path
+// does, and it lets the build stay a branch-light append. Adding an out-of-order
+// or duplicate id panics, since either would silently corrupt the sorted ids.
+func (l *BuilderList) AddWithFrequency(id uint64, freq uint32) {
+	if freq == 0 {
+		freq = 1
+	}
+	if l.count > 0 && id <= l.last {
+		panic(fmt.Sprintf("BuilderList ids must be strictly increasing: got %d after %d", id, l.last))
+	}
+	l.serialized = nil
+	l.freqs.append(l.count, freq)
+	switch l.count {
+	case 0:
+		l.first = id
+	case 1:
+		l.ids = append(l.ids, l.first, id)
+	default:
+		l.ids = append(l.ids, id)
+	}
+	l.last = id
+	l.count++
+}
+
+// MergeList is a mutable posting list used by the pebble value merger and by
+// delete compaction. Unlike BuilderList it supports Or (merging another list,
+// summing shared frequencies) and Remove, but not the indexing Add path.
+type MergeList struct {
+	countedList
+}
+
+// Or merges other into l, summing frequencies for shared doc IDs.
+func (l *MergeList) Or(other ReadOnlyList) {
+	rIDs := other.ToArray()
+	if len(rIDs) == 0 {
+		return
+	}
+	rFreqs := frequenciesInOrder(other, rIDs)
+	if l.count == 0 {
+		l.setFromSorted(rIDs, rFreqs)
+		return
+	}
+
+	ids := make([]uint64, 0, l.count+len(rIDs))
+	freqs := make([]uint32, 0, l.count+len(rIDs))
+	i, j := 0, 0
+	for i < l.count && j < len(rIDs) {
+		leftID := l.idAt(i)
+		rightID := rIDs[j]
+		switch {
+		case leftID < rightID:
+			ids = append(ids, leftID)
+			freqs = append(freqs, l.frequencyAt(i))
+			i++
+		case rightID < leftID:
+			ids = append(ids, rightID)
+			freqs = append(freqs, rFreqs[j])
+			j++
+		default:
+			ids = append(ids, leftID)
+			freqs = append(freqs, l.frequencyAt(i)+rFreqs[j])
+			i++
+			j++
+		}
+	}
+	for ; i < l.count; i++ {
+		ids = append(ids, l.idAt(i))
+		freqs = append(freqs, l.frequencyAt(i))
+	}
+	for ; j < len(rIDs); j++ {
+		ids = append(ids, rIDs[j])
+		freqs = append(freqs, rFreqs[j])
+	}
+	l.setFromSorted(ids, freqs)
+}
+
+// frequenciesInOrder returns the per-doc frequencies of l in the same order as
+// ids (which must be l.ToArray()). For a counted read-only list it returns the
+// decoded frequency slice directly; otherwise every present doc has frequency 1.
+func frequenciesInOrder(l ReadOnlyList, ids []uint64) []uint32 {
+	if c, ok := l.(*countedReadOnlyList); ok {
+		return c.freqs
+	}
+	freqs := make([]uint32, len(ids))
+	for i, id := range ids {
+		f := l.Frequency(id)
+		if f == 0 {
+			f = 1
+		}
+		freqs[i] = f
+	}
+	return freqs
+}
+
+// countedReadOnlyList wraps a roaring bitmap and a parallel slice of per-doc
+// frequencies. It does NOT embed *roaringWrapper because the underlying bitmap
+// may be backed by pebble-owned memory (via FromUnsafeBytes), so mutating
+// methods like Or/And/AndNot would corrupt that memory. Only read-only methods
+// are exposed.
+type countedReadOnlyList struct {
+	bm         *roaring64.Bitmap
+	freqs      []uint32
+	serialized []byte
 }
 
 func (w *countedReadOnlyList) GetCardinality() uint64 {
@@ -154,16 +567,20 @@ func NewList(ids ...uint64) List {
 	return &roaringWrapper{bm}
 }
 
-// NewBuilderList returns a posting list optimized for the indexing path.
-// It assumes doc IDs are usually added in increasing order, avoiding roaring
-// container maintenance in the indexing hot loop. Boolean operations preserve
-// frequencies, but appending sorted doc IDs is the intended fast path.
+// NewBuilderList returns a build-only posting list optimized for the indexing
+// path. See BuilderList.
 func NewBuilderList(ids ...uint64) *BuilderList {
 	pl := &BuilderList{}
 	for _, id := range ids {
 		pl.Add(id)
 	}
 	return pl
+}
+
+// NewMergeList returns an empty posting list for the merge / compaction path.
+// See MergeList.
+func NewMergeList() *MergeList {
+	return &MergeList{}
 }
 
 func (w *roaringWrapper) MarshalInto(buf []byte) error {
@@ -178,333 +595,6 @@ func (w *roaringWrapper) Marshal() ([]byte, error) {
 	return stream.Bytes(), err
 }
 
-func (l *BuilderList) Add(id uint64) {
-	l.AddWithFrequency(id, 1)
-}
-
-func (l *BuilderList) AddWithFrequency(id uint64, freq uint32) {
-	if freq == 0 {
-		freq = 1
-	}
-	if l.count > 0 && id == l.last {
-		l.addFrequencyAt(l.count-1, freq)
-		return
-	}
-	if l.count > 0 && id < l.last {
-		freqs := l.toFrequencyMap()
-		freqs[id] += freq
-		l.setFromFrequencyMap(freqs)
-		return
-	}
-	l.serialized = nil
-	switch l.count {
-	case 0:
-		l.first = id
-		l.firstFreq = freq
-	case 1:
-		l.ids = append(l.ids, l.first, id)
-		l.freqs = append(l.freqs, l.firstFreq, freq)
-	default:
-		l.ids = append(l.ids, id)
-		l.freqs = append(l.freqs, freq)
-	}
-	l.last = id
-	l.count++
-}
-
-func (l *BuilderList) addFrequencyAt(idx int, freq uint32) {
-	if freq == 0 {
-		return
-	}
-	l.serialized = nil
-	if l.count == 1 {
-		l.firstFreq += freq
-		return
-	}
-	l.freqs[idx] += freq
-}
-
-func (l *BuilderList) idAt(i int) uint64 {
-	if l.count == 1 {
-		return l.first
-	}
-	return l.ids[i]
-}
-
-func (l *BuilderList) frequencyAt(i int) uint32 {
-	if l.count == 1 {
-		return l.firstFreq
-	}
-	return l.freqs[i]
-}
-
-func (l *BuilderList) setFromSortedSlices(ids []uint64, freqs []uint32) {
-	l.Clear()
-	if len(ids) == 0 {
-		return
-	}
-	l.first = ids[0]
-	l.firstFreq = freqs[0]
-	l.last = ids[len(ids)-1]
-	l.count = len(ids)
-	if len(ids) > 1 {
-		l.ids = ids
-		l.freqs = freqs
-	}
-}
-
-func (l *BuilderList) copyFrom(other *BuilderList) {
-	l.first = other.first
-	l.firstFreq = other.firstFreq
-	l.last = other.last
-	l.count = other.count
-	l.serialized = nil
-	l.ids = l.ids[:0]
-	l.freqs = l.freqs[:0]
-	if other.count > 1 {
-		l.ids = append(l.ids, other.ids...)
-		l.freqs = append(l.freqs, other.freqs...)
-	}
-}
-
-func (l *BuilderList) orBuilder(other *BuilderList) {
-	if other.count == 0 {
-		return
-	}
-	if l.count == 0 {
-		l.copyFrom(other)
-		return
-	}
-
-	ids := make([]uint64, 0, l.count+other.count)
-	freqs := make([]uint32, 0, l.count+other.count)
-	i, j := 0, 0
-	for i < l.count && j < other.count {
-		leftID := l.idAt(i)
-		rightID := other.idAt(j)
-		switch {
-		case leftID < rightID:
-			ids = append(ids, leftID)
-			freqs = append(freqs, l.frequencyAt(i))
-			i++
-		case rightID < leftID:
-			ids = append(ids, rightID)
-			freqs = append(freqs, other.frequencyAt(j))
-			j++
-		default:
-			ids = append(ids, leftID)
-			freqs = append(freqs, l.frequencyAt(i)+other.frequencyAt(j))
-			i++
-			j++
-		}
-	}
-	for ; i < l.count; i++ {
-		ids = append(ids, l.idAt(i))
-		freqs = append(freqs, l.frequencyAt(i))
-	}
-	for ; j < other.count; j++ {
-		ids = append(ids, other.idAt(j))
-		freqs = append(freqs, other.frequencyAt(j))
-	}
-	l.setFromSortedSlices(ids, freqs)
-}
-
-func (l *BuilderList) Remove(id uint64) {
-	freqs := l.toFrequencyMap()
-	delete(freqs, id)
-	l.setFromFrequencyMap(freqs)
-}
-
-func (l *BuilderList) Clear() {
-	l.first = 0
-	l.firstFreq = 0
-	l.ids = l.ids[:0]
-	l.freqs = l.freqs[:0]
-	l.last = 0
-	l.count = 0
-	l.serialized = nil
-}
-
-// Or merges other into l, summing frequencies for shared doc IDs. The hot
-// path — the pebble value merger — always passes another *BuilderList here,
-// so that case is open-coded. Other input types fall through to a generic
-// (slower) path that iterates other via the ReadOnlyList interface.
-func (l *BuilderList) Or(other ReadOnlyList) {
-	if other, ok := other.(*BuilderList); ok {
-		l.orBuilder(other)
-		return
-	}
-	freqs := l.toFrequencyMap()
-	it := other.Iterator()
-	for it.HasNext() {
-		id := it.Next()
-		freqs[id] += other.Frequency(id)
-	}
-	l.setFromFrequencyMap(freqs)
-}
-
-// And intersects l with other, keeping l's frequencies for surviving doc IDs.
-// Not exercised on any production hot path; correctness over speed.
-func (l *BuilderList) And(other ReadOnlyList) {
-	freqs := l.toFrequencyMap()
-	for id := range freqs {
-		if other.Frequency(id) == 0 {
-			delete(freqs, id)
-		}
-	}
-	l.setFromFrequencyMap(freqs)
-}
-
-// AndNot removes any doc IDs in other from l, keeping l's frequencies for
-// surviving doc IDs. Not exercised on any production hot path; CompactDeletes
-// uses a Remove loop instead.
-func (l *BuilderList) AndNot(other ReadOnlyList) {
-	freqs := l.toFrequencyMap()
-	for id := range freqs {
-		if other.Frequency(id) != 0 {
-			delete(freqs, id)
-		}
-	}
-	l.setFromFrequencyMap(freqs)
-}
-
-func (l *BuilderList) GetCardinality() uint64 {
-	return uint64(l.count)
-}
-
-func (l *BuilderList) ToArray() []uint64 {
-	switch l.count {
-	case 0:
-		return []uint64{}
-	case 1:
-		return []uint64{l.first}
-	default:
-		out := make([]uint64, len(l.ids))
-		copy(out, l.ids)
-		return out
-	}
-}
-
-func (l *BuilderList) Frequency(id uint64) uint32 {
-	switch l.count {
-	case 0:
-		return 0
-	case 1:
-		if l.first == id {
-			return l.firstFreq
-		}
-		return 0
-	default:
-		i := sort.Search(len(l.ids), func(i int) bool {
-			return l.ids[i] >= id
-		})
-		if i < len(l.ids) && l.ids[i] == id {
-			return l.freqs[i]
-		}
-		return 0
-	}
-}
-
-func (l *BuilderList) Iterator() roaring64.IntPeekable64 {
-	return l.toRoaring().Iterator()
-}
-
-func (l *BuilderList) GetSerializedSizeInBytes() uint64 {
-	if err := l.ensureSerialized(); err != nil {
-		return 0
-	}
-	return uint64(len(l.serialized))
-}
-
-func (l *BuilderList) MarshalInto(buf []byte) error {
-	if err := l.ensureSerialized(); err != nil {
-		return err
-	}
-	if cap(buf) < len(l.serialized) {
-		return fmt.Errorf("buffer too small: got capacity %d, need %d", cap(buf), len(l.serialized))
-	}
-	copy(buf[:len(l.serialized)], l.serialized)
-	return nil
-}
-
-func (l *BuilderList) Marshal() ([]byte, error) {
-	if err := l.ensureSerialized(); err != nil {
-		return nil, err
-	}
-	out := make([]byte, len(l.serialized))
-	copy(out, l.serialized)
-	return out, nil
-}
-
-func (l *BuilderList) ensureSerialized() error {
-	if l.serialized != nil {
-		return nil
-	}
-	bm := l.toRoaring()
-	roaringBuf := make([]byte, 0, int(bm.GetSerializedSizeInBytes()))
-	stream := bytes.NewBuffer(roaringBuf)
-	if _, err := bm.WriteTo(stream); err != nil {
-		return err
-	}
-	roaringBuf = stream.Bytes()
-	if !l.hasNonOneFrequency() {
-		l.serialized = roaringBuf
-		return nil
-	}
-	l.serialized = l.marshalRLECounts(roaringBuf, l.rleCountSize())
-	return nil
-}
-
-func (l *BuilderList) marshalRLECounts(roaringBuf []byte, countBytes int) []byte {
-	buf := make([]byte, 0, len(countedListMagic)+binary.MaxVarintLen64+len(roaringBuf)+countBytes)
-	buf = append(buf, countedListMagic...)
-	buf = binary.AppendUvarint(buf, uint64(len(roaringBuf)))
-	buf = append(buf, roaringBuf...)
-	for i := 0; i < l.count; {
-		v := l.frequencyAt(i)
-		j := i + 1
-		for j < l.count && l.frequencyAt(j) == v {
-			j++
-		}
-		buf = binary.AppendUvarint(buf, uint64(j-i))
-		buf = binary.AppendUvarint(buf, uint64(v))
-		i = j
-	}
-	return buf
-}
-
-func (l *BuilderList) hasNonOneFrequency() bool {
-	switch l.count {
-	case 0:
-		return false
-	case 1:
-		return l.firstFreq != 1
-	default:
-		for _, freq := range l.freqs {
-			if freq != 1 {
-				return true
-			}
-		}
-		return false
-	}
-}
-
-// rleCountSize returns the byte length of the RLE-encoded frequency tail that
-// marshalRLECounts would produce. Used to pre-size the output buffer.
-func (l *BuilderList) rleCountSize() int {
-	n := 0
-	for i := 0; i < l.count; {
-		v := l.frequencyAt(i)
-		j := i + 1
-		for j < l.count && l.frequencyAt(j) == v {
-			j++
-		}
-		n += uvarintLen64(uint64(j-i)) + uvarintLen64(uint64(v))
-		i = j
-	}
-	return n
-}
-
 // uvarintLen64 returns the number of bytes that binary.PutUvarint would write
 // for v, without actually allocating a buffer. Used to size the frequency
 // payload before allocating, and to estimate on-disk cost for profiling.
@@ -517,74 +607,6 @@ func uvarintLen64(v uint64) int {
 	return n
 }
 
-func (l *BuilderList) toRoaring() *roaring64.Bitmap {
-	bm := roaring64.New()
-	switch l.count {
-	case 0:
-	case 1:
-		bm.Add(l.first)
-	default:
-		bm.AddMany(l.ids)
-	}
-	return bm
-}
-
-func (l *BuilderList) setFromRoaring(bm *roaring64.Bitmap) {
-	l.Clear()
-	ids := bm.ToArray()
-	if len(ids) == 0 {
-		return
-	}
-	l.first = ids[0]
-	l.firstFreq = 1
-	l.last = ids[len(ids)-1]
-	l.count = len(ids)
-	if len(ids) > 1 {
-		l.ids = append(l.ids, ids...)
-		for range ids {
-			l.freqs = append(l.freqs, 1)
-		}
-	}
-}
-
-func (l *BuilderList) toFrequencyMap() map[uint64]uint32 {
-	freqs := make(map[uint64]uint32, l.count)
-	switch l.count {
-	case 0:
-	case 1:
-		freqs[l.first] = l.firstFreq
-	default:
-		for i, id := range l.ids {
-			freqs[id] = l.freqs[i]
-		}
-	}
-	return freqs
-}
-
-func (l *BuilderList) setFromFrequencyMap(freqs map[uint64]uint32) {
-	l.Clear()
-	if len(freqs) == 0 {
-		return
-	}
-	ids := make([]uint64, 0, len(freqs))
-	for id := range freqs {
-		ids = append(ids, id)
-	}
-	sort.Slice(ids, func(i, j int) bool {
-		return ids[i] < ids[j]
-	})
-	l.first = ids[0]
-	l.firstFreq = freqs[ids[0]]
-	l.last = ids[len(ids)-1]
-	l.count = len(ids)
-	if len(ids) > 1 {
-		l.ids = append(l.ids, ids...)
-		for _, id := range ids {
-			l.freqs = append(l.freqs, freqs[id])
-		}
-	}
-}
-
 func readOnlyListToRoaring(l ReadOnlyList) *roaring64.Bitmap {
 	if bm, ok := l.(*roaringWrapper); ok {
 		return bm.Bitmap
@@ -592,42 +614,28 @@ func readOnlyListToRoaring(l ReadOnlyList) *roaring64.Bitmap {
 	if bm, ok := l.(*countedReadOnlyList); ok {
 		return bm.bm
 	}
-	if bm, ok := l.(*BuilderList); ok {
-		return bm.toRoaring()
-	}
 	bm := roaring64.New()
 	bm.AddMany(l.ToArray())
 	return bm
 }
 
-func Unmarshal(buf []byte) (List, error) {
-	pl := &BuilderList{}
+func Unmarshal(buf []byte) (*MergeList, error) {
+	ml := NewMergeList()
 	if isCountedList(buf) {
 		roList, err := unmarshalCountedReadOnly(buf)
 		if err != nil {
 			return nil, err
 		}
-		ids := roList.ToArray()
-		if len(ids) == 0 {
-			return pl, nil
-		}
-		pl.first = ids[0]
-		pl.firstFreq = roList.freqs[0]
-		pl.last = ids[len(ids)-1]
-		pl.count = len(ids)
-		if len(ids) > 1 {
-			pl.ids = append(pl.ids, ids...)
-			pl.freqs = append(pl.freqs, roList.freqs...)
-		}
-		return pl, nil
+		ml.setFromSorted(roList.ToArray(), roList.freqs)
+		return ml, nil
 	}
 
 	roList, err := UnmarshalReadOnly(buf)
 	if err != nil {
 		return nil, err
 	}
-	pl.setFromRoaring(readOnlyListToRoaring(roList))
-	return pl, nil
+	ml.setFromSorted(roList.ToArray(), nil)
+	return ml, nil
 }
 
 // UnmarshalReadOnly unmarshals a posting list from a byte slice without copying
