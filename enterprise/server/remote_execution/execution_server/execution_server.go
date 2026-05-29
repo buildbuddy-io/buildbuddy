@@ -331,7 +331,7 @@ func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID,
 	// execution is complete.
 	redisErr := s.insertInvocationLinkInRedis(ctx, executionID, invocationID, linkType)
 	if redisErr != nil {
-		log.CtxWarningf(ctx, "Failed to add invocation link (invocation_id: %q, link_type: %d) in redis", invocationID, linkType)
+		log.CtxWarningf(ctx, "Failed to add invocation link (invocation_id: %q, link_type: %d) in redis: %v", invocationID, linkType, redisErr)
 	}
 
 	if !s.writeExecutionsToPrimaryDB {
