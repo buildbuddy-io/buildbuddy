@@ -111,6 +111,19 @@ function supportsCurrentRemoteCacheRecovery(version: BazelVersion | null) {
   );
 }
 
+function supportsGuardAgainstConcurrentChanges(version: BazelVersion | null) {
+  return bazelVersionAtLeast(version, 8, 3);
+}
+
+function isGuardAgainstConcurrentChangesDisabled(model: InvocationModel) {
+  const rawValue =
+    model.optionsMap.get("guard_against_concurrent_changes") ??
+    model.optionsMap.get("experimental_guard_against_concurrent_changes");
+  if (rawValue === undefined) return false;
+
+  return ["0", "false", "no", "off"].includes(rawValue.trim().toLowerCase());
+}
+
 export const getTimingDataSuggestion: SuggestionMatcher = ({ model }) => {
   if (!capabilities.config.expandedSuggestionsEnabled) return null;
 
@@ -593,6 +606,32 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
         <>
           Shown because this build uses remote caching or execution and this Bazel release supports remote lost-input
           rewinding, but <span className="inline-code">--rewind_lost_inputs</span> is not enabled.
+        </>
+      ),
+    };
+  },
+  // Suggest guarding against concurrent source changes before uploading to remote cache.
+  ({ model }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
+    if (!isRemoteCacheEnabled(model)) return null;
+
+    const version = model.getBazelVersion();
+    if (!supportsGuardAgainstConcurrentChanges(version)) return null;
+    if (!isGuardAgainstConcurrentChangesDisabled(model)) return null;
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          Consider setting <BazelFlag>--guard_against_concurrent_changes=lite</BazelFlag> so Bazel checks for source
+          file changes before uploading action results to the remote cache.
+        </>
+      ),
+      reason: (
+        <>
+          Shown because this build uses remote caching or execution, but{" "}
+          <span className="inline-code">--guard_against_concurrent_changes</span> is explicitly disabled.
         </>
       ),
     };
