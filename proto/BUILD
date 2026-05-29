@@ -2175,6 +2175,11 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "stored_invocation_ts_proto",
+    proto = ":stored_invocation_proto",
+)
+
+ts_proto_library(
     name = "invocation_ts_proto",
     proto = ":invocation_proto",
     deps = [

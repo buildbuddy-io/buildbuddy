@@ -89,7 +89,7 @@ func SetInvocationLink(ex *repb.StoredExecution, invLink *sipb.StoredInvocationL
 	ex.InvocationLinkType = int32(invLink.GetType())
 }
 
-func TableExecToClientProto(in *tables.Execution) (*espb.Execution, error) {
+func TableExecToClientProto(in *tables.Execution, invocationLinkType int8) (*espb.Execution, error) {
 	r, err := digest.ParseUploadResourceName(in.ExecutionID)
 	if err != nil {
 		return nil, err
@@ -109,8 +109,9 @@ func TableExecToClientProto(in *tables.Execution) (*espb.Execution, error) {
 			Code:    in.StatusCode,
 			Message: in.StatusMessage,
 		},
-		ExitCode: in.ExitCode,
-		Stage:    repb.ExecutionStage_Value(in.Stage),
+		ExitCode:           in.ExitCode,
+		Stage:              repb.ExecutionStage_Value(in.Stage),
+		InvocationLinkType: int32(invocationLinkType),
 		ExecutedActionMetadata: &repb.ExecutedActionMetadata{
 			Worker:                         in.Worker,
 			QueuedTimestamp:                timestamppb.New(time.UnixMicro(in.QueuedTimestampUsec)),
@@ -196,10 +197,11 @@ func OLAPExecToClientProto(in *olaptables.Execution) (*espb.Execution, error) {
 			},
 			DoNotCache: in.DoNotCache,
 		},
-		TargetLabel:       in.TargetLabel,
-		ActionMnemonic:    in.ActionMnemonic,
-		CommandSnippet:    in.CommandSnippet,
-		PrimaryOutputPath: in.OutputPath,
+		TargetLabel:        in.TargetLabel,
+		ActionMnemonic:     in.ActionMnemonic,
+		CommandSnippet:     in.CommandSnippet,
+		PrimaryOutputPath:  in.OutputPath,
+		InvocationLinkType: int32(in.InvocationLinkType),
 	}
 
 	return out, nil
@@ -221,6 +223,7 @@ func ExecutionListingColumns() []string {
 		"status_message",
 		"exit_code",
 		"stage",
+		"invocation_link_type",
 		"worker",
 		"queued_timestamp_usec",
 		"worker_start_timestamp_usec",
