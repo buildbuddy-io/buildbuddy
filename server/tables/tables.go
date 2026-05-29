@@ -811,12 +811,12 @@ type UsageCounts struct {
 	MemoryGBUsec                                   int64 `gorm:"not null;default:0"`
 	LinuxArmExecutionBurstableComputeDurationUsec  int64 `gorm:"not null;default:0"`
 	LinuxArmExecutionComputeDurationUsec           int64 `gorm:"not null;default:0"`
-	Linuxx86ExecutionBurstableComputeDurationUsec  int64 `gorm:"not null;default:0"`
-	Linuxx86ExecutionComputeDurationUsec           int64 `gorm:"not null;default:0"`
+	LinuxX86ExecutionBurstableComputeDurationUsec  int64 `gorm:"not null;default:0"`
+	LinuxX86ExecutionComputeDurationUsec           int64 `gorm:"not null;default:0"`
 	DarwinArmExecutionBurstableComputeDurationUsec int64 `gorm:"not null;default:0"`
 	DarwinArmExecutionComputeDurationUsec          int64 `gorm:"not null;default:0"`
-	Darwinx86ExecutionBurstableComputeDurationUsec int64 `gorm:"not null;default:0"`
-	Darwinx86ExecutionComputeDurationUsec          int64 `gorm:"not null;default:0"`
+	DarwinX86ExecutionBurstableComputeDurationUsec int64 `gorm:"not null;default:0"`
+	DarwinX86ExecutionComputeDurationUsec          int64 `gorm:"not null;default:0"`
 	LocalSnapshotSavedBytes                        int64 `gorm:"not null;default:0"`
 	RemoteSnapshotSavedBytes                       int64 `gorm:"not null;default:0"`
 }
