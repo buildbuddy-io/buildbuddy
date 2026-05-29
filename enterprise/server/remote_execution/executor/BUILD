@@ -48,7 +48,6 @@ go_test(
     srcs = ["executor_test.go"],
     deps = [
         ":executor",
-        "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/test/integration/remote_execution/rbetest",
@@ -69,9 +68,6 @@ go_test(
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",
         "@com_github_jonboulle_clockwork//:clockwork",
-        "@com_github_open_feature_go_sdk//openfeature",
-        "@com_github_open_feature_go_sdk//openfeature/memprovider",
-        "@com_github_open_feature_go_sdk//openfeature/testing",
         "@com_github_stretchr_testify//require",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",

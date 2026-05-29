@@ -322,16 +322,11 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		// COMPLETED publish time (e.g. firecracker snapshot save stats from
 		// Container.Pause). Publish a follow-up stage=COMPLETED Operation
 		// with those stats so the execution server can merge them into the
-		// OLAP row before the stream's EOF flush. Gated on the same
-		// experiment as the server-side flush timing: under the legacy
-		// flag the server would drop this follow-up anyway since the row
-		// was already flushed inline with the first COMPLETED.
-		if publishPostCompletionStatsEnabled(ctx, s.env) {
-			if stats := r.PostCompletionStats(); stats != nil && publishedResponse != nil {
-				auxMetadata.PostCompletionStats = stats
-				if err := publishPostCompletionStatsOp(stream, taskID, adInstanceDigest.GetDigest(), publishedResponse, auxMetadata); err != nil {
-					log.CtxWarningf(ctx, "Failed to publish post-completion stats: %s", err)
-				}
+		// OLAP row before the stream's EOF flush.
+		if stats := r.PostCompletionStats(); stats != nil && publishedResponse != nil {
+			auxMetadata.PostCompletionStats = stats
+			if err := publishPostCompletionStatsOp(stream, taskID, adInstanceDigest.GetDigest(), publishedResponse, auxMetadata); err != nil {
+				log.CtxWarningf(ctx, "Failed to publish post-completion stats: %s", err)
 			}
 		}
 	}()
@@ -543,20 +538,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		reuseRunner = true
 	}
 	return false, nil
-}
-
-// publishPostCompletionStatsEnabled returns true if the executor should send
-// a follow-up stage=COMPLETED Operation carrying PostCompletionStats after
-// runner recycling. Gated on the same experiment that controls server-side
-// flush-after-cleanup timing — under the legacy flag the server would drop
-// the follow-up anyway since the OLAP row was already flushed inline with
-// the first COMPLETED.
-func publishPostCompletionStatsEnabled(ctx context.Context, env environment.Env) bool {
-	fp := env.GetExperimentFlagProvider()
-	if fp == nil {
-		return false
-	}
-	return fp.Boolean(ctx, "remote_execution.flush_executions_after_cleanup", false)
 }
 
 // publishPostCompletionStatsOp re-sends the originally published

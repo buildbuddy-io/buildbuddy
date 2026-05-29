@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
@@ -30,9 +29,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/jonboulle/clockwork"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
-	openfeatureTesting "github.com/open-feature/go-sdk/openfeature/testing"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -321,18 +317,16 @@ func TestExecuteTaskAndStreamResults_CacheHit(t *testing.T) {
 // TestExecuteTaskAndStreamResults_PostCompletionStats verifies that the
 // executor sends a follow-up stage=COMPLETED Operation carrying
 // PostCompletionStats after TryRecycle runs, when the runner exposes such
-// stats and the flush_executions_after_cleanup experiment is enabled.
+// stats.
 func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 	for _, tc := range []struct {
 		name                string
-		experimentEnabled   bool
 		postCompletionStats *espb.PostCompletionStats
 		expectFollowUpOp    bool
 		expectFollowUpStats *espb.PostCompletionStats
 	}{
 		{
-			name:              "ExperimentOnWithStats",
-			experimentEnabled: true,
+			name: "WithStats",
 			postCompletionStats: &espb.PostCompletionStats{
 				SnapshotSavedLocally:  true,
 				SnapshotSavedRemotely: true,
@@ -350,17 +344,7 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 			},
 		},
 		{
-			name:              "ExperimentOffWithStats",
-			experimentEnabled: false,
-			postCompletionStats: &espb.PostCompletionStats{
-				SnapshotSavedLocally: true,
-				SnapshotSizeBytes:    12345,
-			},
-			expectFollowUpOp: false,
-		},
-		{
-			name:                "ExperimentOnWithoutStats",
-			experimentEnabled:   true,
+			name:                "WithoutStats",
 			postCompletionStats: nil,
 			expectFollowUpOp:    false,
 		},
@@ -371,23 +355,6 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 			clock := clockwork.NewFakeClock()
 			env.SetClock(clock)
-
-			// Set up the experiment provider.
-			if tc.experimentEnabled {
-				testProvider := openfeatureTesting.NewTestProvider()
-				require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-				t.Cleanup(testProvider.Cleanup)
-				testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
-					"remote_execution.flush_executions_after_cleanup": {
-						State:          memprovider.Enabled,
-						DefaultVariant: "on",
-						Variants:       map[string]any{"on": true},
-					},
-				})
-				fp, err := experiments.NewFlagProvider("test-name")
-				require.NoError(t, err)
-				env.SetExperimentFlagProvider(fp)
-			}
 
 			_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
 			testcache.Setup(t, env, lis)
