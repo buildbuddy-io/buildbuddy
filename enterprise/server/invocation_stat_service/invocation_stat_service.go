@@ -707,6 +707,12 @@ const maxLogBucketsToSubdivide = 4
 // maxNumMetricBuckets even with the extra [0, 1) catch-all bucket (2*9+1 = 19).
 const maxDecadesToSubdivideFinely = 2
 
+// subDecadeLogBucketCount is the number of evenly-spaced (linear) buckets we
+// emit when a log-scale range spans less than a single decade -- powers of 10
+// can't subdivide such a range any further, so we fall back to linear bucketing
+// (with log-proportional bucket heights handled client-side).
+const subDecadeLogBucketCount = 20
+
 var fineLogStepMultipliers = []int64{1, 2, 3, 4, 5, 6, 7, 8, 9}
 var coarseLogStepMultipliers = []int64{1, 2, 4, 6, 8}
 
@@ -726,6 +732,30 @@ func (i *InvocationStatService) getMetricMinMax(ctx context.Context, table strin
 		return 0, 0, false, err
 	}
 	return valueRange.Low, valueRange.High, true, nil
+}
+
+// evenlySpacedBuckets returns up to numBuckets equal-width integer buckets
+// covering [low, high]. When the range is narrower than numBuckets it returns
+// fewer (width-1) buckets rather than extending past high. Used for the
+// sub-decade log fallback, where over-extending could cross a decade boundary.
+func evenlySpacedBuckets(low int64, high int64, numBuckets int64) []int64 {
+	// Number of distinct integer values in [low, high].
+	width := high + 1 - low
+	step := width / numBuckets
+	if step < 1 {
+		step = 1
+	} else if width%numBuckets != 0 {
+		step++
+	}
+	count := width / step
+	if width%step != 0 {
+		count++
+	}
+	buckets := make([]int64, count+1)
+	for i := range buckets {
+		buckets[i] = low + int64(i)*step
+	}
+	return buckets
 }
 
 // getLinearMetricBuckets evenly divides [low, high] into maxNumMetricBuckets
@@ -766,6 +796,12 @@ func getLogMetricBuckets(low int64, high int64) (buckets []int64, hadNegative bo
 	}
 	if high < 0 {
 		high = 0
+	}
+
+	// A log scale can't resolve a range that spans less than a single decade
+	// (a factor of 10), so fall back to evenly-spaced linear buckets there.
+	if low >= 1 && high/low < 10 {
+		return evenlySpacedBuckets(low, high, subDecadeLogBucketCount), false
 	}
 
 	buckets = make([]int64, 0, maxNumMetricBuckets+1)

@@ -67,10 +67,22 @@ func TestGetLogMetricBuckets(t *testing.T) {
 		wantHadNegative bool
 	}{
 		{
-			name:        "one decade subdivides into single integers",
+			name:        "sub-decade range uses evenly-spaced linear buckets",
+			low:         100,
+			high:        199,
+			wantBuckets: []int64{100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200},
+		},
+		{
+			name:        "sub-decade range crossing a power of 10 stays linear",
+			low:         80,
+			high:        120,
+			wantBuckets: []int64{80, 85, 90, 95, 100, 105, 110, 115, 120, 125},
+		},
+		{
+			name:        "single value yields one linear bucket",
 			low:         12,
 			high:        12,
-			wantBuckets: []int64{10, 20, 30, 40, 50, 60, 70, 80, 90, 100},
+			wantBuckets: []int64{12, 13},
 		},
 		{
 			name:        "two decades subdivide into single integers anchored at floor power of min",

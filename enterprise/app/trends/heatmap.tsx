@@ -144,6 +144,19 @@ function largestPowerOfTenAtMost(n: number): number {
   return p;
 }
 
+// Returns true if v sits on the log grid -- a single significant digit times a
+// power of 10 (1, 2, ..., 9, 10, 20, ..., 700, ...), or the 0 catch-all boundary.
+// Used to tell log-scale buckets apart from sub-decade linear fallback buckets.
+function isLogScaleBoundary(v: number): boolean {
+  if (v <= 0) {
+    return true;
+  }
+  if (!Number.isInteger(v)) {
+    return false;
+  }
+  return v % largestPowerOfTenAtMost(v) === 0;
+}
+
 class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, State> {
   state: State = {};
   svgRef: React.RefObject<SVGSVGElement> = React.createRef();
@@ -168,20 +181,6 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
 
   private numHeatmapRows(): number {
     return Math.max(this.props.heatmapData.bucketBracket.length - 1, 1);
-  }
-
-  // On a log scale, returns true if metric bucket i is already at the finest
-  // granularity the bucketing produces (its width equals the largest power of 10
-  // <= its start value), so zooming into it can't subdivide it any further. The
-  // [0, 1) catch-all bucket is always considered minimal.
-  private isMinimalLogBucket(index: number): boolean {
-    const bracket = this.props.heatmapData.bucketBracket;
-    const start = +bracket[index];
-    const end = +bracket[index + 1];
-    if (start <= 0) {
-      return true;
-    }
-    return end - start <= largestPowerOfTenAtMost(start);
   }
 
   // Computes this.metricRowTops / this.metricRowHeights (in pixels) for the
@@ -563,16 +562,19 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
     }
     const numRows = this.numHeatmapRows();
     const bracket = this.props.heatmapData.bucketBracket;
-    // In linear mode, label tick marks no closer than roughly
-    // TICK_LABEL_SPACING_MAGIC_NUMBER pixels apart (bucket heights can vary on a
-    // log scale, so thin by pixel distance rather than by index). In log mode,
-    // label only decade (power-of-10) boundaries.
+    // Label tick marks no closer than roughly TICK_LABEL_SPACING_MAGIC_NUMBER
+    // pixels apart (bucket heights can vary on a log scale, so thin by pixel
+    // distance rather than by index). On a log scale spanning at least one
+    // decade we additionally restrict labels to powers of 10; sub-decade ranges
+    // fall back to linear-style labeling because the buckets are themselves
+    // linear (server-side fallback).
     let lastLabelY = Infinity;
+    const decadeLabels = this.props.logScale && bracket.every((v) => isLogScaleBoundary(+v));
 
     // Boundary bracket[i] sits at the bottom edge of bucket i; the final
-    // boundary sits at the top edge of the last bucket. In log mode we include
-    // that final boundary so the highest decade gets labeled.
-    const lastBoundaryIndex = this.props.logScale ? numRows : numRows - 1;
+    // boundary sits at the top edge of the last bucket. When using decade
+    // labels we include that final boundary so the highest decade gets labeled.
+    const lastBoundaryIndex = decadeLabels ? numRows : numRows - 1;
     const boundaryYAt = (i: number) =>
       i < numRows ? this.metricRowTops[i] + this.metricRowHeights[i] : this.metricRowTops[numRows - 1];
 
@@ -585,7 +587,7 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
           const boundaryY = boundaryYAt(i);
           let label: string | null = null;
           if (
-            (!this.props.logScale || isPowerOfTen(+v)) &&
+            (!decadeLabels || isPowerOfTen(+v)) &&
             (lastLabelY - boundaryY >= TICK_LABEL_SPACING_MAGIC_NUMBER || lastLabelY === Infinity)
           ) {
             label = this.renderYBucketValue(+v);
@@ -612,22 +614,6 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
     }
     if (!this.props.selectedData || this.props.selectedData.eventsSelected < 2) {
       return null;
-    }
-
-    // On a log scale, a single-column selection whose metric buckets are already
-    // at the finest granularity can't be zoomed in any further, so hide the
-    // button (mirrors the single-item case above).
-    if (this.props.logScale && positioningData.selectionXStart === positioningData.selectionXEnd) {
-      let allMinimal = true;
-      for (let i = positioningData.selectionYStart; i <= positioningData.selectionYEnd; i++) {
-        if (!this.isMinimalLogBucket(i)) {
-          allMinimal = false;
-          break;
-        }
-      }
-      if (allMinimal) {
-        return null;
-      }
     }
 
     const selectionRightEdge = positioningData.x + positioningData.width;
