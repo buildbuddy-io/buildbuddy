@@ -507,9 +507,8 @@ func (r *taskRunner) GetIsolationType() string {
 }
 
 // PostCompletionStats returns observability data produced by the underlying
-// Container during runner recycling, currently firecracker snapshot save
-// stats from Container.Pause. Returns nil for containers that don't expose
-// such stats.
+// Container after Exec or Run have completed. Returns nil for containers that
+// don't expose such stats.
 func (r *taskRunner) PostCompletionStats() *espb.PostCompletionStats {
 	type postCompletionStatsProvider interface {
 		PostCompletionStats() *espb.PostCompletionStats

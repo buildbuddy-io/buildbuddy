@@ -1476,10 +1476,8 @@ type testRunnerPool struct {
 type TestRunnerOverrides struct {
 	RunInterceptor     RunInterceptor
 	RecycleInterceptor RecycleInterceptor
-	// PostCompletionStats, if non-nil, is returned from the test runner's
-	// PostCompletionStats() method. Lets tests simulate stats that a real
-	// firecracker Container.Pause would have produced during recycling
-	// without needing actual firecracker infrastructure.
+	// PostCompletionStats is returned from the test runner's
+	// PostCompletionStats() method.
 	PostCompletionStats *espb.PostCompletionStats
 }
 
