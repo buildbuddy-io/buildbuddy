@@ -325,7 +325,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		// OLAP row before the stream's EOF flush.
 		if stats := r.PostCompletionStats(); stats != nil && publishedResponse != nil {
 			auxMetadata.PostCompletionStats = stats
-			if err := publishPostCompletionStatsOp(stream, taskID, adInstanceDigest.GetDigest(), publishedResponse, auxMetadata); err != nil {
+			if err := replaceAuxiliaryMetadata(publishedResponse.GetResult().GetExecutionMetadata(), auxMetadata); err != nil {
+				log.CtxWarningf(ctx, "Failed to replace ExecutionAuxiliaryMetadata: %s", err)
+			} else if err := opStateChangeFn(repb.ExecutionStage_COMPLETED, publishedResponse); err != nil {
 				log.CtxWarningf(ctx, "Failed to publish post-completion stats: %s", err)
 			}
 		}
@@ -540,44 +542,28 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	return false, nil
 }
 
-// publishPostCompletionStatsOp re-sends the originally published
-// ExecuteResponse with auxMetadata (now carrying PostCompletionStats)
-// merged into its ExecutionAuxiliaryMetadata entry.
-func publishPostCompletionStatsOp(stream interfaces.Publisher, taskID string, ad *repb.Digest, publishedResponse *repb.ExecuteResponse, auxMetadata *espb.ExecutionAuxiliaryMetadata) error {
-	rsp := proto.Clone(publishedResponse).(*repb.ExecuteResponse)
-	if rsp.Result == nil {
-		rsp.Result = &repb.ActionResult{}
-	}
-	if rsp.Result.ExecutionMetadata == nil {
-		rsp.Result.ExecutionMetadata = &repb.ExecutedActionMetadata{}
-	}
-	auxAny, err := anypb.New(auxMetadata)
-	if err != nil {
-		return status.WrapError(err, "marshal ExecutionAuxiliaryMetadata")
-	}
-	md := rsp.Result.ExecutionMetadata
-	replaced := false
-	for i, a := range md.AuxiliaryMetadata {
-		if a.GetTypeUrl() == auxAny.GetTypeUrl() {
-			md.AuxiliaryMetadata[i] = auxAny
-			replaced = true
-			break
-		}
-	}
-	if !replaced {
-		md.AuxiliaryMetadata = append(md.AuxiliaryMetadata, auxAny)
-	}
-	op, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, ad), rsp)
-	if err != nil {
-		return status.WrapError(err, "assemble post-completion Operation")
-	}
-	return stream.Send(op)
-}
-
 func appendAuxiliaryMetadata(md *repb.ExecutedActionMetadata, message proto.Message) error {
 	a, err := anypb.New(message)
 	if err != nil {
 		return status.InternalErrorf("marshal message type %T to Any: %s", message, err)
+	}
+	md.AuxiliaryMetadata = append(md.AuxiliaryMetadata, a)
+	return nil
+}
+
+// replaceAuxiliaryMetadata replaces the first auxiliary metadata entry of
+// the same type as message with a freshly-marshaled Any, or appends one if
+// no entry of that type is present.
+func replaceAuxiliaryMetadata(md *repb.ExecutedActionMetadata, message proto.Message) error {
+	a, err := anypb.New(message)
+	if err != nil {
+		return status.InternalErrorf("marshal message type %T to Any: %s", message, err)
+	}
+	for i, existing := range md.GetAuxiliaryMetadata() {
+		if existing.GetTypeUrl() == a.GetTypeUrl() {
+			md.AuxiliaryMetadata[i] = a
+			return nil
+		}
 	}
 	md.AuxiliaryMetadata = append(md.AuxiliaryMetadata, a)
 	return nil
