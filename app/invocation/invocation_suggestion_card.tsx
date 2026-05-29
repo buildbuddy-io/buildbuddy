@@ -95,6 +95,14 @@ function getRemoteGrpcLogFlag(version: BazelVersion | null) {
   return null;
 }
 
+function getCompactExecutionLogFlag(version: BazelVersion | null) {
+  if (bazelVersionAtLeast(version, 7, 4)) return "--execution_log_compact_file=execution_log.binpb.zst";
+  if (bazelVersionAtLeast(version, 7, 1)) {
+    return "--experimental_execution_log_compact_file=execution_log.binpb.zst";
+  }
+  return null;
+}
+
 export const getTimingDataSuggestion: SuggestionMatcher = ({ model }) => {
   if (!capabilities.config.expandedSuggestionsEnabled) return null;
 
@@ -506,26 +514,50 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       reason: <>Shown because this build has remote execution enabled, but a jobs count is not configured.</>,
     };
   },
-  // Suggest remote gRPC logs.
+  // Suggest remote troubleshooting logs.
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
     if (!model.isBazelInvocation()) return null;
     if (!isRemoteCacheEnabled(model)) return null;
-    if (hasAnyOption(model, ["remote_grpc_log", "experimental_remote_grpc_log"])) return null;
 
-    const flag = getRemoteGrpcLogFlag(model.getBazelVersion());
-    if (!flag) return null;
+    const version = model.getBazelVersion();
+    const compactExecutionLogFlag =
+      !hasAnyOption(model, [
+        "execution_log_compact_file",
+        "experimental_execution_log_compact_file",
+        "execution_log_binary_file",
+        "execution_log_json_file",
+      ]) &&
+      !model.hasExecutionLog() &&
+      getCompactExecutionLogFlag(version);
+    const flags = [
+      !hasAnyOption(model, ["remote_grpc_log", "experimental_remote_grpc_log"]) && getRemoteGrpcLogFlag(version),
+      compactExecutionLogFlag,
+    ].filter(Boolean) as string[];
+    if (!flags.length) return null;
 
     return {
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Consider adding <BazelFlag>{flag}</BazelFlag> to capture remote RPC details for troubleshooting.
+          Consider adding{" "}
+          <InlineProseList
+            items={flags.map((flag) => (
+              <BazelFlag key={flag}>{flag}</BazelFlag>
+            ))}
+          />{" "}
+          to capture remote RPCs and compact execution details for troubleshooting.{" "}
+          {compactExecutionLogFlag && (
+            <>
+              Add <span className="inline-code">execution_log.binpb.zst</span> to{" "}
+              <span className="inline-code">.gitignore</span> as well.
+            </>
+          )}
         </>
       ),
       reason: (
         <>
-          Shown because this build uses remote caching or execution, but a supported remote gRPC log flag is not
+          Shown because this build uses remote caching or execution, but these supported diagnostic log flags are not
           explicitly set.
         </>
       ),
