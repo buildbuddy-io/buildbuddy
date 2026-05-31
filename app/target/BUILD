@@ -165,6 +165,7 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:color",
         "//app/util:lcov",
+        "//app/util:url",
         "//proto:build_event_stream_ts_proto",
     ],
 )

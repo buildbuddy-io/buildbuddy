@@ -15,8 +15,8 @@ ts_library(
         "//app/alert:alert_service",
         "//app/components/button",
         "//app/invocation:invocation_breakdown_card",
+        "//app/trace:compact_trace",
         "//app/trace:timing_profile_drop_target",
-        "//app/trace:trace_events",
         "//app/trace:trace_viewer",
     ],
 )

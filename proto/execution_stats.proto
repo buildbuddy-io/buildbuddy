@@ -75,7 +75,7 @@ message ExecutionSummary {
       executed_action_metadata = 8;
 }
 
-// Next Tag: 12
+// Next Tag: 20
 message Execution {
   reserved 4, 10;
   // The digest of the [Action][build.bazel.remote.execution.v2.Action] to
@@ -142,6 +142,9 @@ message Execution {
   // The executor hostname that ran the execution. This is only populated if the
   // user has permission to view the executor metadata.
   string executor_hostname = 16;
+
+  // Type from stored_invocation.StoredInvocationLink.
+  int32 invocation_link_type = 19;
 }
 
 // Auxiliary metadata with BuildBuddy-specific information.

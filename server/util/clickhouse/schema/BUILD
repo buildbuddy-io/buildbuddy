@@ -11,6 +11,7 @@ go_library(
         "//server/usage/sku",
         "//server/util/log",
         "//server/util/status",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/column/orderedmap",
         "@io_gorm_gorm//:gorm",
     ],
 )

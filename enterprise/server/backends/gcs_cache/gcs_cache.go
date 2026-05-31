@@ -181,6 +181,18 @@ func (g *GCSCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error
 	return b, err
 }
 
+func (g *GCSCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	data, err := g.Get(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	md, err := g.Metadata(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data, md, nil
+}
+
 func (g *GCSCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
 	foundMap := make(map[*repb.Digest][]byte, len(resources))

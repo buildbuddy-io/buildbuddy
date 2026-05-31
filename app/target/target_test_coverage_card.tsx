@@ -7,6 +7,7 @@ import format from "../format/format";
 import rpcService from "../service/rpc_service";
 import { percentageColor } from "../util/color";
 import { parseLcov } from "../util/lcov";
+import { tryParseURL } from "../util/url";
 
 interface Props {
   invocationId: string;
@@ -87,7 +88,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
     }
 
     let repoPath = "";
-    if (this.props.repo?.includes("github.com")) {
+    if (tryParseURL(this.props.repo)?.hostname.toLowerCase() === "github.com") {
       repoPath = `/code/${format.formatGitUrl(this.props.repo)}/`;
     }
 

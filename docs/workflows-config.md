@@ -180,6 +180,77 @@ steps:
   - run: "bazel test ... --test_env=REGISTRY_TOKEN"
 ```
 
+## Scheduling workflows with cron expressions
+
+BuildBuddy supports running Workflows on a recurring schedule using
+standard cron expressions. This is useful for nightly builds, periodic
+integration tests, or any job that should run independently of code pushes
+or pull requests.
+
+To schedule an action, add a `schedule` trigger with one or more cron
+expressions under `triggers`:
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: "Nightly tests"
+    triggers:
+      schedule:
+        crons:
+          - "0 2 * * *" # 2:00 AM UTC every day
+    steps:
+      - run: "bazel test //..."
+```
+
+You can specify multiple cron expressions to run an action at different
+intervals:
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: "Frequent integration tests"
+    triggers:
+      schedule:
+        crons:
+          - "0 * * * *" # top of every hour
+          - "30 * * * *" # middle of every hour
+    steps:
+      - run: "bazel test //integration/..."
+```
+
+Scheduled runs always execute against the latest commit on your repo's
+default branch.
+
+:::note
+
+The minimum supported interval between cron triggers is 15 minutes.
+
+:::
+
+### Cron expression format
+
+BuildBuddy uses standard 5-field cron syntax:
+
+```
+┌─────────── minute (0–59)
+│ ┌───────── hour (0–23)
+│ │ ┌─────── day of month (1–31)
+│ │ │ ┌───── month (1–12)
+│ │ │ │ ┌─── day of week (0–6, Sunday = 0)
+│ │ │ │ │
+* * * * *
+```
+
+Common examples:
+
+| Expression     | Meaning                               |
+| -------------- | ------------------------------------- |
+| `0 * * * *`    | Every hour, on the hour               |
+| `0 2 * * *`    | Daily at 2:00 AM UTC                  |
+| `30 6 * * 1-5` | 6:30 AM UTC, Monday–Friday            |
+| `0 0 1 * *`    | Midnight UTC on the 1st of each month |
+| `0 */6 * * *`  | Every 6 hours                         |
+
+All times are interpreted as UTC.
+
 ## Merge queue support
 
 BuildBuddy workflows are compatible with GitHub's [merge queues](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue).
@@ -448,6 +519,9 @@ Defines whether an action should run when a branch is pushed to the repo.
   This is required if you want to use BuildBuddy to report the status of
   this action on pull requests, and optionally prevent pull requests from
   being merged if the action fails.
+- **`schedule`** ([`ScheduleTrigger`](#scheduletrigger)):
+  Configuration for running the action on a recurring schedule. The
+  action runs against the latest commit on the repo's default branch.
 
 ### `PushTrigger`
 
@@ -491,6 +565,18 @@ pushed.
   breaking the main branch, you may wish to use [merge
   queues](#merge-queue-support). This is not supported if the build trigger
   is a tag.
+
+### `ScheduleTrigger`
+
+Defines a recurring schedule for an action using cron expressions.
+
+**Fields:**
+
+- **`crons`** (`string` list): One or more 5-field cron expressions
+  that define when the action should run. All times are UTC. The minimum
+  supported interval between triggers is 15 minutes. See
+  [Scheduling workflows with cron expressions](#scheduling-workflows-with-cron-expressions)
+  for format details and examples.
 
 ### `ResourceRequests`
 

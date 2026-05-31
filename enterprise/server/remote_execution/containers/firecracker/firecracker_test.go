@@ -156,7 +156,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "ad1ee8b3e46bd30aad04812636a56672497225182305ea2860efc5a93cd0bb62"
+		expectedHash    = "a1158972c33dd534667f6b108b3fa8b60c697c0a3291f33d9334e9f0796d53a8"
 		expectedVersion = "19"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -4018,81 +4018,78 @@ func TestFirecrackerStressIO(t *testing.T) {
 
 func Benchmark_FullSnapshotPause(b *testing.B) {
 	for _, memorySizeMb := range []int64{1000, 2000, 4000, 8000} {
-		for _, cowExportEnabled := range []bool{true, false} {
-			b.Run(fmt.Sprintf("memory_size_%d_mb_cow_export_%t", memorySizeMb, cowExportEnabled), func(b *testing.B) {
-				flags.Set(b, "executor.firecracker_export_snapshot_to_cow", cowExportEnabled)
-				ctx := context.Background()
-				env := getTestEnv(ctx, b, envOpts{})
-				rootDir := testfs.MakeTempDir(b)
-				cfg := getExecutorConfig(b)
+		b.Run(fmt.Sprintf("memory_size_%d_mb", memorySizeMb), func(b *testing.B) {
+			ctx := context.Background()
+			env := getTestEnv(ctx, b, envOpts{})
+			rootDir := testfs.MakeTempDir(b)
+			cfg := getExecutorConfig(b)
 
-				var containersToCleanup []*firecracker.FirecrackerContainer
-				b.Cleanup(func() {
-					for _, vm := range containersToCleanup {
-						err := vm.Remove(ctx)
-						assert.NoError(b, err)
-					}
-				})
-
-				opts := firecracker.ContainerOpts{
-					ContainerImage: ubuntuImage,
-					VMConfiguration: &fcpb.VMConfiguration{
-						NumCpus:            2,
-						MemSizeMb:          memorySizeMb,
-						NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_OFF,
-						ScratchDiskSizeMb:  500,
-						GuestKernelVersion: cfg.GuestKernelVersion,
-						FirecrackerVersion: cfg.FirecrackerVersion,
-						GuestApiVersion:    cfg.GuestAPIVersion,
-					},
-					ExecutorConfig: cfg,
+			var containersToCleanup []*firecracker.FirecrackerContainer
+			b.Cleanup(func() {
+				for _, vm := range containersToCleanup {
+					err := vm.Remove(ctx)
+					assert.NoError(b, err)
 				}
+			})
 
-				// Don't try to write the full memory size of the VM, or it will OOM.
-				mbToWrite := int(.8 * float64(memorySizeMb))
-				cmd := &repb.Command{
-					// Mount a RAM-based filesystem to /tmp/randomdata to simulate memory usage.
-					Arguments: []string{"sh", "-c", `
+			opts := firecracker.ContainerOpts{
+				ContainerImage: ubuntuImage,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:            2,
+					MemSizeMb:          memorySizeMb,
+					NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_OFF,
+					ScratchDiskSizeMb:  500,
+					GuestKernelVersion: cfg.GuestKernelVersion,
+					FirecrackerVersion: cfg.FirecrackerVersion,
+					GuestApiVersion:    cfg.GuestAPIVersion,
+				},
+				ExecutorConfig: cfg,
+			}
+
+			// Don't try to write the full memory size of the VM, or it will OOM.
+			mbToWrite := int(.8 * float64(memorySizeMb))
+			cmd := &repb.Command{
+				// Mount a RAM-based filesystem to /tmp/randomdata to simulate memory usage.
+				Arguments: []string{"sh", "-c", `
 mkdir /tmp/randomdata && mount -t tmpfs -o size=` + strconv.Itoa(mbToWrite) + `M tmpfs /tmp/randomdata
 dd if=/dev/urandom of=/tmp/randomdata/data bs=1M count=` + strconv.Itoa(mbToWrite) + `
 free -h
 		`},
+			}
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				task := &repb.ExecutionTask{
+					Command: &repb.Command{
+						Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+							{Name: "recycle-runner", Value: "true"},
+							// This is testing full snapshot generation, so ensure there's no snapshot sharing between runs.
+							{Name: "salt", Value: fmt.Sprintf("%d_%d", memorySizeMb, i)},
+						}},
+						Arguments: []string{"./buildbuddy_ci_runner"},
+					},
 				}
 
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
-					b.StopTimer()
-					task := &repb.ExecutionTask{
-						Command: &repb.Command{
-							Platform: &repb.Platform{Properties: []*repb.Platform_Property{
-								{Name: "recycle-runner", Value: "true"},
-								// This is testing full snapshot generation, so ensure there's no snapshot sharing between runs.
-								{Name: "salt", Value: fmt.Sprintf("%d_%v_%d", memorySizeMb, cowExportEnabled, i)},
-							}},
-							Arguments: []string{"./buildbuddy_ci_runner"},
-						},
-					}
+				workDir := testfs.MakeDirAll(b, rootDir, fmt.Sprintf("work%d", i))
+				opts.ActionWorkingDirectory = workDir
+				c, err := firecracker.NewContainer(ctx, env, task, opts)
+				require.NoError(b, err)
+				containersToCleanup = append(containersToCleanup, c)
 
-					workDir := testfs.MakeDirAll(b, rootDir, fmt.Sprintf("work%d", i))
-					opts.ActionWorkingDirectory = workDir
-					c, err := firecracker.NewContainer(ctx, env, task, opts)
-					require.NoError(b, err)
-					containersToCleanup = append(containersToCleanup, c)
+				err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher)
+				require.NoError(b, err)
+				err = c.Create(ctx, opts.ActionWorkingDirectory)
+				require.NoError(b, err)
+				res := c.Exec(ctx, cmd, nil /*=stdio*/)
+				require.NoError(b, res.Error)
 
-					err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher)
-					require.NoError(b, err)
-					err = c.Create(ctx, opts.ActionWorkingDirectory)
-					require.NoError(b, err)
-					res := c.Exec(ctx, cmd, nil /*=stdio*/)
-					require.NoError(b, res.Error)
-
-					b.StartTimer()
-					err = c.Pause(ctx)
-					b.StopTimer()
-					require.NoError(b, err)
-				}
-			})
-		}
+				b.StartTimer()
+				err = c.Pause(ctx)
+				b.StopTimer()
+				require.NoError(b, err)
+			}
+		})
 	}
 }
 
@@ -4101,95 +4098,92 @@ func Benchmark_DiffSnapshotPause(b *testing.B) {
 	flags.Set(b, "executor.enable_remote_snapshot_sharing", false)
 
 	for _, memorySizeMb := range []int64{1000, 2000, 4000, 8000} {
-		for _, cowExportEnabled := range []bool{true, false} {
-			b.Run(fmt.Sprintf("memory_size_%d_mb_cow_export_%t", memorySizeMb, cowExportEnabled), func(b *testing.B) {
-				flags.Set(b, "executor.firecracker_export_snapshot_to_cow", cowExportEnabled)
-				ctx := context.Background()
-				env := getTestEnv(ctx, b, envOpts{})
-				cfg := getExecutorConfig(b)
-				rootDir := testfs.MakeTempDir(b)
-				workDir := testfs.MakeDirAll(b, rootDir, "work")
+		b.Run(fmt.Sprintf("memory_size_%d_mb", memorySizeMb), func(b *testing.B) {
+			ctx := context.Background()
+			env := getTestEnv(ctx, b, envOpts{})
+			cfg := getExecutorConfig(b)
+			rootDir := testfs.MakeTempDir(b)
+			workDir := testfs.MakeDirAll(b, rootDir, "work")
 
-				opts := firecracker.ContainerOpts{
-					ActionWorkingDirectory: workDir,
-					ContainerImage:         ubuntuImage,
-					VMConfiguration: &fcpb.VMConfiguration{
-						NumCpus:            2,
-						MemSizeMb:          memorySizeMb,
-						NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_OFF,
-						ScratchDiskSizeMb:  500,
-						GuestKernelVersion: cfg.GuestKernelVersion,
-						FirecrackerVersion: cfg.FirecrackerVersion,
-						GuestApiVersion:    cfg.GuestAPIVersion,
-					},
-					ExecutorConfig: cfg,
-				}
-				task := &repb.ExecutionTask{
-					Command: &repb.Command{
-						Platform: &repb.Platform{Properties: []*repb.Platform_Property{
-							{Name: "recycle-runner", Value: "true"},
-							{Name: platform.MinTimeBetweenSnapshotWritesPropertyName, Value: "0s"},
-							{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.AlwaysSaveSnapshot},
-						}},
-						Arguments: []string{"./buildbuddy_ci_runner"},
-					},
-				}
+			opts := firecracker.ContainerOpts{
+				ActionWorkingDirectory: workDir,
+				ContainerImage:         ubuntuImage,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:            2,
+					MemSizeMb:          memorySizeMb,
+					NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_OFF,
+					ScratchDiskSizeMb:  500,
+					GuestKernelVersion: cfg.GuestKernelVersion,
+					FirecrackerVersion: cfg.FirecrackerVersion,
+					GuestApiVersion:    cfg.GuestAPIVersion,
+				},
+				ExecutorConfig: cfg,
+			}
+			task := &repb.ExecutionTask{
+				Command: &repb.Command{
+					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+						{Name: "recycle-runner", Value: "true"},
+						{Name: platform.MinTimeBetweenSnapshotWritesPropertyName, Value: "0s"},
+						{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.AlwaysSaveSnapshot},
+					}},
+					Arguments: []string{"./buildbuddy_ci_runner"},
+				},
+			}
 
-				// Don't try to write the full memory size of the VM, or it will OOM.
-				mbToWrite := int(.8 * float64(memorySizeMb))
-				initialCmd := &repb.Command{
-					// Mount a RAM-based filesystem to /tmp/randomdata. Later we'll write to it to simulate memory usage.
-					Arguments: []string{"sh", "-c", `
+			// Don't try to write the full memory size of the VM, or it will OOM.
+			mbToWrite := int(.8 * float64(memorySizeMb))
+			initialCmd := &repb.Command{
+				// Mount a RAM-based filesystem to /tmp/randomdata. Later we'll write to it to simulate memory usage.
+				Arguments: []string{"sh", "-c", `
 mkdir /tmp/randomdata && mount -t tmpfs -o size=` + strconv.Itoa(mbToWrite) + `M tmpfs /tmp/randomdata
 		`},
-				}
+			}
 
-				c, err := firecracker.NewContainer(ctx, env, task, opts)
-				if err != nil {
+			c, err := firecracker.NewContainer(ctx, env, task, opts)
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			if err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher); err != nil {
+				b.Fatalf("unable to pull image: %s", err)
+			}
+
+			if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+				b.Fatalf("unable to Create container: %s", err)
+			}
+			b.Cleanup(func() {
+				if err := c.Remove(ctx); err != nil {
 					b.Fatal(err)
 				}
+			})
 
-				if err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher); err != nil {
-					b.Fatalf("unable to pull image: %s", err)
-				}
+			// Generate one full snapshot outside of the loop. Within the loop, it will always create a diff snapshot.
+			res := c.Exec(ctx, initialCmd, nil /*=stdio*/)
+			require.NoError(b, res.Error)
+			err = c.Pause(ctx)
+			require.NoError(b, err)
 
-				if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
-					b.Fatalf("unable to Create container: %s", err)
-				}
-				b.Cleanup(func() {
-					if err := c.Remove(ctx); err != nil {
-						b.Fatal(err)
-					}
-				})
-
-				// Generate one full snapshot outside of the loop. Within the loop, it will always create a diff snapshot.
-				res := c.Exec(ctx, initialCmd, nil /*=stdio*/)
-				require.NoError(b, res.Error)
-				err = c.Pause(ctx)
-				require.NoError(b, err)
-
-				cmdOnResumedRunner := &repb.Command{
-					// Write to the RAM-based filesystem to simulate memory usage.
-					Arguments: []string{"sh", "-c", `
+			cmdOnResumedRunner := &repb.Command{
+				// Write to the RAM-based filesystem to simulate memory usage.
+				Arguments: []string{"sh", "-c", `
 dd if=/dev/urandom of=/tmp/randomdata/data bs=1M count=` + strconv.Itoa(mbToWrite) + `
 free -h
 		`},
-				}
+			}
 
-				b.ResetTimer()
+			b.ResetTimer()
+			b.StopTimer()
+			for i := 0; i < b.N; i++ {
+				err = c.Unpause(ctx)
+				require.NoError(b, err)
+				res = c.Exec(ctx, cmdOnResumedRunner, nil /*=stdio*/)
+				require.NoError(b, res.Error)
+				b.StartTimer()
+				err = c.Pause(ctx)
 				b.StopTimer()
-				for i := 0; i < b.N; i++ {
-					err = c.Unpause(ctx)
-					require.NoError(b, err)
-					res = c.Exec(ctx, cmdOnResumedRunner, nil /*=stdio*/)
-					require.NoError(b, res.Error)
-					b.StartTimer()
-					err = c.Pause(ctx)
-					b.StopTimer()
-					require.NoError(b, err)
-				}
-			})
-		}
+				require.NoError(b, err)
+			}
+		})
 	}
 }
 

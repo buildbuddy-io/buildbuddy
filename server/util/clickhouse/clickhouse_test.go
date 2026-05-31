@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
@@ -16,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 )
 
 // TestExecutionIDRoundTripThroughClickHouseSchema verifies that an execution
@@ -55,6 +55,52 @@ func TestExecutionIDRoundTripThroughClickHouseSchema(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Equal(t, executionID, reconstructExecutionID(t, execution))
+		})
+	}
+}
+
+func TestExecutionFromProto(t *testing.T) {
+	executionID := digest.NewCASResourceName(
+		&repb.Digest{
+			Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
+			SizeBytes: 1234,
+		},
+		"test-instance-name",
+		repb.DigestFunction_SHA256,
+	).NewUploadString()
+
+	for _, testCase := range []struct {
+		name string
+		in   *repb.StoredExecution
+		want *schema.Execution
+	}{
+		{
+			name: "MinimalExecution",
+			in: &repb.StoredExecution{
+				ExecutionId: executionID,
+			},
+			want: &schema.Execution{},
+		},
+		{
+			name: "RecycleRunner",
+			in: &repb.StoredExecution{
+				ExecutionId:   executionID,
+				RecycleRunner: true,
+			},
+			want: &schema.Execution{
+				RecycleRunner: true,
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			// Convert the stored execution as the ClickHouse flush path does.
+			execution, err := clickhouse.ExecutionFromProto(testCase.in, nil)
+			require.NoError(t, err)
+
+			// The row should preserve direct proto fields while also parsing
+			// the execution ID resource fields.
+			require.Equal(t, testCase.want.RecycleRunner, execution.RecycleRunner)
+			require.Equal(t, testCase.in.GetExecutionId(), reconstructExecutionID(t, execution))
 		})
 	}
 }

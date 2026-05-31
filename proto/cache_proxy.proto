@@ -75,7 +75,9 @@ message RegisteredCacheProxy {
   google.protobuf.Timestamp last_ping_time = 4;
 }
 
-service CacheProxyAPI {
+// CacheProxyRegistry runs on the main BuildBuddy app and tracks the set of
+// live cache proxies for each group, so the deployment view can list them.
+service CacheProxyRegistry {
   // RegisterAndStreamHeartbeat is opened by the cache proxy on startup. The
   // proxy sends an initial RegisterCacheProxyRequest with its identifying
   // info, then re-sends the same message periodically as a heartbeat. The

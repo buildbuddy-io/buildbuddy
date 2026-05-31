@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -30,6 +31,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -488,6 +490,57 @@ func TestExecuteTaskAndStreamResults_MissingInput(t *testing.T) {
 			inputFetchStart := actionResult.GetExecutionMetadata().GetInputFetchStartTimestamp().AsTime()
 			inputFetchCompleted := actionResult.GetExecutionMetadata().GetInputFetchCompletedTimestamp().AsTime()
 			require.GreaterOrEqual(t, inputFetchCompleted, inputFetchStart)
+		})
+	}
+}
+
+func TestExecuteTaskAndStreamResults_Timeout(t *testing.T) {
+	tests := []struct {
+		name            string
+		actionTimeout   *durationpb.Duration
+		platformTimeout *durationpb.Duration
+		expectedTimeout time.Duration
+	}{
+		{name: "set action timeout", actionTimeout: durationpb.New(10 * time.Minute), platformTimeout: nil, expectedTimeout: 10 * time.Minute},
+		{name: "set timeout platform property", actionTimeout: nil, platformTimeout: durationpb.New(1 * time.Hour), expectedTimeout: 1 * time.Hour},
+		// The timeout on the action should take precedence over the platform property.
+		// Timeout logic for remote runners (ci_runner_util.go) assumes this holds true.
+		{name: "set both action and platform property timeout", actionTimeout: durationpb.New(10 * time.Minute), platformTimeout: durationpb.New(1 * time.Hour), expectedTimeout: 10 * time.Minute},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			exec, _, execClient, mockServer, _ := getExecutor(t, nil)
+			task := getTask()
+
+			task.ExecutionTask.Action.Timeout = tc.actionTimeout
+			var props []*repb.Platform_Property
+			if tc.platformTimeout != nil {
+				props = append(props, &repb.Platform_Property{
+					Name:  platform.DefaultTimeoutPropertyName,
+					Value: tc.platformTimeout.AsDuration().String(),
+				})
+			}
+			task.ExecutionTask.Action.Platform = &repb.Platform{Properties: props}
+
+			publisher, err := operation.Publish(ctx, execClient, task.ExecutionTask.ExecutionId)
+			require.NoError(t, err)
+
+			retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
+			require.NoError(t, err)
+			require.False(t, retry)
+
+			<-mockServer.finished
+			completedOp := mockServer.operations[len(mockServer.operations)-1]
+			require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
+
+			rsp, err := rexec.UnpackOperation(completedOp)
+			require.NoError(t, err)
+			auxMeta := &espb.ExecutionAuxiliaryMetadata{}
+			ok, err := rexec.FindFirstAuxiliaryMetadata(rsp.ExecuteResponse.GetResult().GetExecutionMetadata(), auxMeta)
+			require.NoError(t, err)
+			require.True(t, ok)
+			require.Equal(t, tc.expectedTimeout, auxMeta.GetTimeout().AsDuration())
 		})
 	}
 }

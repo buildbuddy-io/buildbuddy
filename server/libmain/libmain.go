@@ -58,6 +58,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
@@ -103,6 +104,7 @@ var (
 		"/usage/",
 		"/workflows/",
 		"/executors/",
+		"/cache-proxies/",
 		"/code/",
 		"/search/",
 		"/audit-logs/",
@@ -302,6 +304,9 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	}
 	if scheduler := env.GetSchedulerService(); scheduler != nil {
 		scpb.RegisterSchedulerServer(grpcServer, scheduler)
+	}
+	if cacheProxyRegistry := env.GetCacheProxyRegistryService(); cacheProxyRegistry != nil {
+		cppb.RegisterCacheProxyRegistryServer(grpcServer, cacheProxyRegistry)
 	}
 	if cacheServer := env.GetCacheServer(); cacheServer != nil {
 		cspb.RegisterCacheServer(grpcServer, cacheServer)

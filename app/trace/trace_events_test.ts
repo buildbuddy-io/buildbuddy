@@ -77,6 +77,11 @@ describe("parseProfile", () => {
     expect(numBytesRead).toBe(COMPLETE_PROFILE.length);
   });
 
+  it("should parse a complete profile blob", async () => {
+    const profile = await readProfile(new Blob([COMPLETE_PROFILE]));
+    expect(profile.traceEvents.length).toBe(7);
+  });
+
   it("should parse an incomplete profile", async () => {
     const stream = readableStreamFromString(INCOMPLETE_PROFILE);
     let numBytesRead = 0;
@@ -85,6 +90,19 @@ describe("parseProfile", () => {
     });
     expect(profile.traceEvents.length).toBe(7);
     expect(numBytesRead).toBe(INCOMPLETE_PROFILE.length);
+  });
+
+  it("should report final progress as done", async () => {
+    const stream = readableStreamFromString(COMPLETE_PROFILE);
+    const progress: { numBytesRead: number; done?: boolean }[] = [];
+    const profile = await readProfile(stream, (numBytesRead, done) => {
+      progress.push({ numBytesRead, done });
+    });
+
+    expect(profile.traceEvents.length).toBe(7);
+    expect(progress.length).toBeGreaterThan(0);
+    expect(progress.slice(0, progress.length - 1).some(({ done }) => done)).toBe(false);
+    expect(progress[progress.length - 1]).toEqual({ numBytesRead: COMPLETE_PROFILE.length, done: true });
   });
 });
 

@@ -3,8 +3,8 @@ import React from "react";
 import alertService from "../alert/alert_service";
 import { OutlinedButton } from "../components/button/button";
 import InvocationBreakdownCardComponent from "../invocation/invocation_breakdown_card";
+import { Profile } from "../trace/compact_trace";
 import TimingProfileDropTarget from "../trace/timing_profile_drop_target";
-import { Profile } from "../trace/trace_events";
 import TraceViewer from "../trace/trace_viewer";
 
 interface Props {
@@ -36,10 +36,14 @@ export default class TimingProfilePageComponent extends React.Component<Props, S
     const durationByNameMap = new Map<string, number>();
     const durationByCategoryMap = new Map<string, number>();
 
-    for (const event of profile.traceEvents || []) {
-      if (!event.dur) continue;
-      durationByNameMap.set(event.name, (durationByNameMap.get(event.name) || 0) + event.dur);
-      durationByCategoryMap.set(event.cat, (durationByCategoryMap.get(event.cat) || 0) + event.dur);
+    for (const thread of profile.threads) {
+      for (let i = 0; i < thread.length; i++) {
+        const dur = thread.dur[i];
+        const name = thread.getName(i);
+        const cat = thread.getCat(i);
+        durationByNameMap.set(name, (durationByNameMap.get(name) || 0) + dur);
+        durationByCategoryMap.set(cat, (durationByCategoryMap.get(cat) || 0) + dur);
+      }
     }
 
     return { durationByNameMap, durationByCategoryMap };

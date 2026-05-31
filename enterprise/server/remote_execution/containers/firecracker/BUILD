@@ -122,6 +122,9 @@ go_test(
     args = [
         "--executor.enable_local_snapshot_sharing=true",
         "--executor.enable_remote_snapshot_sharing=true",
+        # Uncomment to test the 6.1 kernel.
+        # TODO: turn this on by default once the 6.1 kernel is used everywhere
+        # "--executor.firecracker_enable_linux_6_1=true",
     ],
     exec_properties = {
         "test.Pool": "bare",

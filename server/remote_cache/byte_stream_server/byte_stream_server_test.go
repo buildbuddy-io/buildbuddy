@@ -35,6 +35,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -46,6 +47,34 @@ import (
 const (
 	defaultBazelVersion = "6.0.0"
 )
+
+type testWriteStream struct {
+	bspb.ByteStream_WriteServer
+	ctx  context.Context
+	reqs []*bspb.WriteRequest
+	resp *bspb.WriteResponse
+}
+
+func (s *testWriteStream) Recv() (*bspb.WriteRequest, error) {
+	if len(s.reqs) == 0 {
+		return nil, io.EOF
+	}
+	req := s.reqs[0]
+	s.reqs = s.reqs[1:]
+	return req, nil
+}
+
+func (s *testWriteStream) SendAndClose(resp *bspb.WriteResponse) error {
+	s.resp = resp
+	return nil
+}
+
+func (s *testWriteStream) SetHeader(metadata.MD) error  { return nil }
+func (s *testWriteStream) SendHeader(metadata.MD) error { return nil }
+func (s *testWriteStream) SetTrailer(metadata.MD)       {}
+func (s *testWriteStream) Context() context.Context     { return s.ctx }
+func (s *testWriteStream) SendMsg(any) error            { return nil }
+func (s *testWriteStream) RecvMsg(any) error            { return nil }
 
 func runByteStreamServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
 	byteStreamServer, err := NewByteStreamServer(env)
@@ -330,6 +359,41 @@ func TestRPCMalformedWrite(t *testing.T) {
 	if !status.IsInvalidArgumentError(err) {
 		t.Fatalf("Expected invalid argument error but got %s", err)
 	}
+}
+
+func TestWriteSkipValidationSkipsZstdDecompression(t *testing.T) {
+	flags.Set(t, "cache.zstd_transcoding_enabled", true)
+	ctx := ContextWithSkipWriteValidation(context.Background())
+	te := testenv.GetTestEnv(t)
+	te.SetCache(&testcompression.CompressionCache{Cache: te.GetCache()})
+	server, err := NewByteStreamServer(te)
+	require.NoError(t, err)
+
+	invalidZstd := []byte("not a zstd frame")
+	d := &repb.Digest{
+		Hash:      strings.Repeat("a", 64),
+		SizeBytes: 1234,
+	}
+	rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+	rn.SetCompressor(repb.Compressor_ZSTD)
+
+	stream := &testWriteStream{
+		ctx: ctx,
+		reqs: []*bspb.WriteRequest{{
+			ResourceName: fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.GetHash(), d.GetSizeBytes()),
+			Data:         invalidZstd,
+			FinishWrite:  true,
+		}},
+	}
+	err = server.Write(stream)
+	require.NoError(t, err)
+	require.Equal(t, int64(len(invalidZstd)), stream.resp.GetCommittedSize())
+
+	cacheCtx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	got, err := te.GetCache().Get(cacheCtx, rn.ToProto())
+	require.NoError(t, err)
+	require.Equal(t, invalidZstd, got)
 }
 
 func TestRPCTooLongWrite(t *testing.T) {
@@ -1096,7 +1160,7 @@ func TestNewByteStreamServer_BufferPoolAccommodatesCompressedChunkOverhead(t *te
 	s, err := NewByteStreamServer(te)
 	require.NoError(t, err)
 
-	want := compression.ZstdCompressBound(chunking.MaxChunkSizeBytes())
+	want := compression.ZstdCompressBound(chunking.MaxSupportedChunkSizeBytes())
 	buf := s.bufferPool.Get(want)
 	defer s.bufferPool.Put(buf)
 

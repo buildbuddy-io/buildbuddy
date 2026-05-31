@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
@@ -62,6 +63,7 @@ var (
 	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
 	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", false, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
 	debugExecutorLabelsKey       = flag.String("remote_execution.debug_executor_labels_key", "", "If set, requests using the 'debug-executor-labels' platform property must also set the 'debug-executor-labels-key' platform property to this value, otherwise the requested labels are ignored. If empty, anyone can use 'debug-executor-labels'.", flag.Secret)
+	unclaimedTasksCacheTTL       = flag.Duration("remote_execution.unclaimed_tasks_cache_ttl", 1*time.Second, "If set, cache the unclaimed task list in memory for up to this TTL", flag.Internal)
 )
 
 const (
@@ -836,21 +838,28 @@ func (k *nodePoolKey) redisUnclaimedTasksKey() string {
 }
 
 type nodePool struct {
-	env       environment.Env
-	rdb       redis.UniversalClient
+	rdb   redis.UniversalClient
+	clock clockwork.Clock
+
 	mu        sync.Mutex
 	lastFetch time.Time
 	nodes     []*executionNode
 	key       nodePoolKey
 	// Executors that are currently connected to this instance of the scheduler server.
 	connectedExecutors []*executionNode
+
+	unclaimedTasksSingleFlight singleflight.Group[string, []string]
+
+	unclaimedTasksMu     sync.Mutex
+	unclaimedTasks       []string
+	unclaimedTasksExpiry time.Time
 }
 
 func newNodePool(env environment.Env, key nodePoolKey) *nodePool {
 	np := &nodePool{
-		env: env,
-		key: key,
-		rdb: env.GetRemoteExecutionRedisClient(),
+		key:   key,
+		rdb:   env.GetRemoteExecutionRedisClient(),
+		clock: env.GetClock(),
 	}
 	return np
 }
@@ -1027,9 +1036,10 @@ func (np *nodePool) RemoveUnclaimedTask(ctx context.Context, taskID string) erro
 }
 
 func (np *nodePool) SampleUnclaimedTasks(ctx context.Context, n int) ([]string, error) {
-	// Get all task IDs. Redis >=6.2 has a ZRANDMEMBER command, but we don't want to assume that onprem customers have a
-	// relatively new Redis version.
-	unclaimed, err := np.rdb.ZRange(ctx, np.key.redisUnclaimedTasksKey(), 0, -1).Result()
+	// Get all task IDs using ZRANGE (with short in-memory caching). Redis >=6.2
+	// has a ZRANDMEMBER command, but we don't want to assume that onprem
+	// customers have a relatively new Redis version.
+	unclaimed, err := np.getAllTaskIDs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1039,6 +1049,40 @@ func (np *nodePool) SampleUnclaimedTasks(ctx context.Context, n int) ([]string, 
 		unclaimed[i], unclaimed[j] = unclaimed[j], unclaimed[i]
 	})
 	return unclaimed[:min(n, len(unclaimed))], nil
+}
+
+// Gets all currently unclaimed tasks. If a TTL is configured, the result is
+// cached for a short duration to avoid excessive Redis compute, which can
+// become problematic for very large executor pools issuing a steady stream of
+// AskForMoreWorkRequests.
+func (np *nodePool) getAllTaskIDs(ctx context.Context) ([]string, error) {
+	// The singleflight group should help reduce some concurrent lookups which
+	// are more likely to happen if the list is large.
+	unclaimed, _, err := np.unclaimedTasksSingleFlight.Do(ctx, "" /*=key*/, func(ctx context.Context) ([]string, error) {
+		if !np.unclaimedTasksExpiry.IsZero() && np.clock.Now().Before(np.unclaimedTasksExpiry) {
+			np.unclaimedTasksMu.Lock()
+			defer np.unclaimedTasksMu.Unlock()
+			return np.unclaimedTasks, nil
+		}
+		unclaimed, err := np.rdb.ZRange(ctx, np.key.redisUnclaimedTasksKey(), 0, -1).Result()
+		if err != nil {
+			return nil, err
+		}
+		if *unclaimedTasksCacheTTL <= 0 {
+			return unclaimed, nil
+		}
+
+		np.unclaimedTasksMu.Lock()
+		defer np.unclaimedTasksMu.Unlock()
+		np.unclaimedTasks = unclaimed
+		np.unclaimedTasksExpiry = np.clock.Now().Add(*unclaimedTasksCacheTTL)
+
+		return unclaimed, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return slices.Clone(unclaimed), nil
 }
 
 type persistedTask struct {
@@ -1133,7 +1177,7 @@ func (c *schedulerClientCache) get(hostPort string) (*schedulerClient, error) {
 type Options struct {
 	LocalPortOverride               int32
 	RequireExecutorAuthorization    bool
-	Clock                           clockwork.Clock
+	Clock                           clockwork.Clock // TODO: get this from env
 	ActionMergingLeaseTTLOverride   time.Duration
 	LeaseDuration, LeaseGracePeriod time.Duration
 }
@@ -1215,7 +1259,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		}
 	}
 
-	clock := clockwork.NewRealClock()
+	clock := env.GetClock()
 	if options.Clock != nil {
 		clock = options.Clock
 	}

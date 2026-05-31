@@ -63,13 +63,13 @@ func StartProxy(t *testing.T) *Proxy {
 		Addr:     lis.Addr(),
 		director: nil,
 	}
-	director := func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
+	director := func(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
 		p.mu.Lock()
 		defer p.mu.Unlock()
 		require.NotNil(t, p.director, "Proxy.Director is nil")
 		return p.director(ctx, fullMethodName)
 	}
-	handler := grpc.UnknownServiceHandler(proxy.TransparentHandler(proxy.StreamDirector(director)))
+	handler := grpc.UnknownServiceHandler(proxy.TransparentHandler(director))
 	server := grpc.NewServer(handler)
 	go server.Serve(lis)
 	t.Cleanup(server.Stop)

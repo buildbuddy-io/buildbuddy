@@ -120,7 +120,7 @@ const (
 	// some time for the action setup (e.g. pulling the VM snapshot) as well as
 	// some extra time for the CI runner to finish publishing the "outer"
 	// workflow invocation results after the user-specified timeout is reached.
-	timeoutGracePeriod = 10 * time.Minute
+	TimeoutGracePeriod = 10 * time.Minute
 
 	// How often to scan for due scheduled workflows.
 	scheduleScanInterval = 15 * time.Minute
@@ -1155,9 +1155,13 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		return nil, err
 	}
 
-	timeout := *ci_runner_util.CIRunnerDefaultTimeout
-	if workflowAction.Timeout != nil {
-		timeout = *workflowAction.Timeout
+	var groupStatus grpb.Group_GroupStatus
+	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+		groupStatus = c.GetGroupStatus()
+	}
+	runnerTimeout, err := ci_runner_util.RunnerTimeout(ctx, ws.env.GetExperimentFlagProvider(), workflowAction.Timeout, workflowAction.Name, groupStatus)
+	if err != nil {
+		return nil, err
 	}
 
 	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, ws.env.GetByteStreamClient(), ws.env.GetCache(), instanceName, os, workflowAction.Arch)
@@ -1193,8 +1197,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--trigger_event=" + wd.EventName,
 		"--bazel_command=" + ws.ciRunnerBazelCommand(ctx, wf, workflowAction),
 		"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
-		"--timeout=" + timeout.String(),
+		"--timeout=" + runnerTimeout.Duration.String(),
 		"--serialized_action=" + serializedAction,
+		"--timeout_reason=" + runnerTimeout.Reason,
 	}
 
 	// Recycle workflow runners by default, but not Kythe ones, to avoid
@@ -1287,7 +1292,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		// that we allow the CI runner to finalize the outer workflow invocation
 		// once the timeout has elapsed, but if the CI runner takes too long to
 		// finalize, we can still kill the action.
-		Timeout:  durationpb.New(timeout + timeoutGracePeriod),
+		Timeout:  durationpb.New(runnerTimeout.Duration + TimeoutGracePeriod),
 		Platform: cmd.GetPlatform(),
 	}
 

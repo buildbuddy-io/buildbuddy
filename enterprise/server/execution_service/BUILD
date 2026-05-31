@@ -54,6 +54,7 @@ go_test(
         "//proto:execution_stats_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:stored_invocation_go_proto",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/tables",

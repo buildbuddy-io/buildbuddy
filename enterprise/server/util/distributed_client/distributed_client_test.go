@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"net"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,6 +37,34 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
+
+// spyCache records the resource compressor passed to Reader/GetMulti so tests
+// can assert on what was seen at the server side of the wire.
+type spyCache struct {
+	interfaces.Cache
+	mu                  sync.Mutex
+	readerCompressors   []repb.Compressor_Value
+	getMultiCompressors map[string]repb.Compressor_Value
+}
+
+func (s *spyCache) Reader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	s.mu.Lock()
+	s.readerCompressors = append(s.readerCompressors, rn.GetCompressor())
+	s.mu.Unlock()
+	return s.Cache.Reader(ctx, rn, offset, limit)
+}
+
+func (s *spyCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	s.mu.Lock()
+	if s.getMultiCompressors == nil {
+		s.getMultiCompressors = map[string]repb.Compressor_Value{}
+	}
+	for _, r := range resources {
+		s.getMultiCompressors[r.GetDigest().GetHash()] = r.GetCompressor()
+	}
+	s.mu.Unlock()
+	return s.Cache.GetMulti(ctx, resources)
+}
 
 const (
 	noHandoff = ""
@@ -740,7 +769,6 @@ func TestFindMissing(t *testing.T) {
 		{numExistingDigests: 10000, numMissingDigests: 10},
 	} {
 		remoteInstanceName := fmt.Sprintf("prefix/%d", tc.numExistingDigests)
-		isolation := &dcpb.Isolation{CacheType: rspb.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
 
 		existingDigests := make([]*rspb.ResourceName, 0, tc.numExistingDigests)
 		for i := 0; i < tc.numExistingDigests; i++ {
@@ -775,7 +803,7 @@ func TestFindMissing(t *testing.T) {
 			missingDigests = append(missingDigests, r.GetDigest())
 		}
 
-		remoteMissing, err := c.RemoteFindMissing(ctx, peer, isolation, append(existingDigests, missingResources...))
+		remoteMissing, err := c.RemoteFindMissing(ctx, peer, append(existingDigests, missingResources...))
 		require.NoError(t, err)
 		require.Empty(t, cmp.Diff(missingDigests, remoteMissing, protocmp.Transform()))
 	}
@@ -804,7 +832,6 @@ func TestGetMulti(t *testing.T) {
 
 	for _, numDigests := range testSizes {
 		remoteInstanceName := fmt.Sprintf("prefix/%d", numDigests)
-		isolation := &dcpb.Isolation{CacheType: rspb.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
 
 		digests := make([]*rspb.ResourceName, 0, numDigests)
 		for i := 0; i < numDigests; i++ {
@@ -832,7 +859,7 @@ func TestGetMulti(t *testing.T) {
 		}
 
 		// Ensure key exists.
-		gotMap, err := c.RemoteGetMulti(ctx, peer, isolation, digests)
+		gotMap, err := c.RemoteGetMulti(ctx, peer, digests)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -940,7 +967,6 @@ func TestMetadata(t *testing.T) {
 	}
 	waitUntilServerIsAlive(peer)
 
-	isolation := &dcpb.Isolation{CacheType: rspb.CacheType_CAS}
 	// Write to the cache
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
 	err = te.GetCache().Set(ctx, r, buf)
@@ -950,11 +976,6 @@ func TestMetadata(t *testing.T) {
 
 	// Verify cacheproxy returns same metadata as underlying cache
 	cacheproxyMetadata, err := c.Metadata(ctx, &dcpb.MetadataRequest{
-		Isolation: isolation,
-		Key: &dcpb.Key{
-			Key:       r.GetDigest().GetHash(),
-			SizeBytes: r.GetDigest().GetSizeBytes(),
-		},
 		Resource: r,
 	})
 	if err != nil {
@@ -969,6 +990,80 @@ func TestMetadata(t *testing.T) {
 	require.Equal(t, cacheMetadata.DigestSizeBytes, cacheproxyMetadata.DigestSizeBytes)
 	require.Equal(t, cacheMetadata.LastAccessTimeUsec, cacheproxyMetadata.LastAccessUsec)
 	require.Equal(t, cacheMetadata.LastModifyTimeUsec, cacheproxyMetadata.LastModifyUsec)
+}
+
+func TestGetWithMetadata(t *testing.T) {
+	ctx := context.Background()
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := distributed_client.New(te, te.GetCache(), peer)
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, te.GetCache().Set(ctx, r, buf))
+
+	// Server handler: data + every metadata field matches the underlying cache.
+	rsp, err := c.GetWithMetadata(ctx, &dcpb.GetWithMetadataRequest{Resource: r})
+	require.NoError(t, err)
+	require.Equal(t, buf, rsp.GetData())
+
+	cacheMD, err := te.GetCache().Metadata(ctx, r)
+	require.NoError(t, err)
+	require.Equal(t, cacheMD.StoredSizeBytes, rsp.GetMetadata().GetStoredSizeBytes())
+	require.Equal(t, cacheMD.DigestSizeBytes, rsp.GetMetadata().GetDigestSizeBytes())
+	require.Equal(t, cacheMD.LastAccessTimeUsec, rsp.GetMetadata().GetLastAccessUsec())
+	require.Equal(t, cacheMD.LastModifyTimeUsec, rsp.GetMetadata().GetLastModifyUsec())
+}
+
+func TestRemoteGetWithMetadata(t *testing.T) {
+	ctx := context.Background()
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := distributed_client.New(te, te.GetCache(), peer)
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, te.GetCache().Set(ctx, r, buf))
+
+	// Client-side: data and metadata round-trip through the RPC.
+	data, md, err := c.RemoteGetWithMetadata(ctx, peer, r)
+	require.NoError(t, err)
+	require.Equal(t, buf, data)
+
+	cacheMD, err := te.GetCache().Metadata(ctx, r)
+	require.NoError(t, err)
+	require.Equal(t, cacheMD.StoredSizeBytes, md.StoredSizeBytes)
+	require.Equal(t, cacheMD.DigestSizeBytes, md.DigestSizeBytes)
+	require.Equal(t, cacheMD.LastAccessTimeUsec, md.LastAccessTimeUsec)
+	require.Equal(t, cacheMD.LastModifyTimeUsec, md.LastModifyTimeUsec)
+}
+
+func TestRemoteGetWithMetadata_NotFound(t *testing.T) {
+	ctx := context.Background()
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := distributed_client.New(te, te.GetCache(), peer)
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+
+	// Resource was never written; expect NotFound.
+	r, _ := testdigest.RandomCASResourceBuf(t, 100)
+	_, _, err = c.RemoteGetWithMetadata(ctx, peer, r)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
 }
 
 func copyChunked(t testing.TB, w interfaces.CommittedWriteCloser, data []byte, chunkSize int64) {
@@ -1155,5 +1250,90 @@ func BenchmarkRead(b *testing.B) {
 				runtime.KeepAlive(out)
 			}
 		})
+	}
+}
+
+func setupCompressedReadProxy(t *testing.T, enabled bool) (*testenv.TestEnv, *distributed_client.Proxy, *spyCache, string, context.Context) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+	spy := &spyCache{Cache: &testcompression.CompressionCache{Cache: te.GetCache()}}
+	te.SetCache(spy)
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := distributed_client.New(te, te.GetCache(), peer)
+	c.SetEnableCompressedReads(enabled)
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+	return te, c, spy, peer, ctx
+}
+
+func TestRemoteReader_PullsCompressedFromPeer(t *testing.T) {
+	cases := []struct {
+		name             string
+		sizeBytes        int64
+		enabled          bool
+		offset, limit    int64
+		wantSeenAtServer repb.Compressor_Value
+	}{
+		{"large_flag_on_rewrites", 200, true, 0, 0, repb.Compressor_ZSTD},
+		{"small_flag_on_skips", 50, true, 0, 0, repb.Compressor_IDENTITY},
+		{"large_flag_off_skips", 200, false, 0, 0, repb.Compressor_IDENTITY},
+		{"large_offset_skips", 200, true, 10, 0, repb.Compressor_IDENTITY},
+		{"large_limit_skips", 200, true, 0, 50, repb.Compressor_IDENTITY},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			te, c, spy, peer, ctx := setupCompressedReadProxy(t, tc.enabled)
+			rn, buf := testdigest.RandomCASResourceBuf(t, tc.sizeBytes)
+			require.NoError(t, te.GetCache().Set(ctx, rn, buf))
+
+			r, err := c.RemoteReader(ctx, peer, rn, tc.offset, tc.limit)
+			require.NoError(t, err)
+			got, err := io.ReadAll(r)
+			require.NoError(t, err)
+			require.NoError(t, r.Close())
+
+			expected := buf[tc.offset:]
+			if tc.limit != 0 && int64(len(expected)) > tc.limit {
+				expected = expected[:tc.limit]
+			}
+			require.Equal(t, expected, got)
+			require.Equal(t, []repb.Compressor_Value{tc.wantSeenAtServer}, spy.readerCompressors)
+		})
+	}
+}
+
+func TestRemoteGetMulti_PullsCompressedFromPeer(t *testing.T) {
+	te, c, spy, peer, ctx := setupCompressedReadProxy(t, true /*=enableCompressedReads*/)
+
+	smallRN, smallBuf := testdigest.RandomCASResourceBuf(t, 50)
+	largeRN, largeBuf := testdigest.RandomCASResourceBuf(t, 200)
+	require.NoError(t, te.GetCache().Set(ctx, smallRN, smallBuf))
+	require.NoError(t, te.GetCache().Set(ctx, largeRN, largeBuf))
+
+	got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{smallRN, largeRN})
+	require.NoError(t, err)
+	require.Equal(t, smallBuf, got[smallRN.GetDigest()])
+	require.Equal(t, largeBuf, got[largeRN.GetDigest()])
+
+	require.Equal(t, repb.Compressor_IDENTITY, spy.getMultiCompressors[smallRN.GetDigest().GetHash()])
+	require.Equal(t, repb.Compressor_ZSTD, spy.getMultiCompressors[largeRN.GetDigest().GetHash()])
+}
+
+func TestRemoteGetMulti_MultipleCompressedBlobs(t *testing.T) {
+	te, c, _, peer, ctx := setupCompressedReadProxy(t, true /*=enableCompressedReads*/)
+
+	const n = 4
+	rns := make([]*rspb.ResourceName, n)
+	bufs := make([][]byte, n)
+	for i := 0; i < n; i++ {
+		rns[i], bufs[i] = testdigest.RandomCASResourceBuf(t, 200+int64(i)*50)
+		require.NoError(t, te.GetCache().Set(ctx, rns[i], bufs[i]))
+	}
+
+	got, err := c.RemoteGetMulti(ctx, peer, rns)
+	require.NoError(t, err)
+	for i, rn := range rns {
+		require.Equalf(t, bufs[i], got[rn.GetDigest()], "blob %d mismatch", i)
 	}
 }

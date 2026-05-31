@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/column/orderedmap"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -520,7 +521,7 @@ func (ut *tracker) flushOLAPBuffer(ctx context.Context, redisCleanupCtx context.
 				olapRows = append(olapRows, &olaptables.RawUsage{
 					GroupID:     collection.GroupID,
 					SKU:         sku.SKU(key),
-					Labels:      collection.Labels,
+					Labels:      orderedmap.FromMap(collection.Labels),
 					PeriodStart: p.Start(),
 					BufferID:    ut.bufferID,
 					Count:       count,

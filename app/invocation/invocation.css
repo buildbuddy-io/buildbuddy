@@ -762,6 +762,12 @@
   color: var(--color-red-700);
 }
 
+.action-section .value-with-help-tooltip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .action-section .server-log-title {
   align-self: center;
 }

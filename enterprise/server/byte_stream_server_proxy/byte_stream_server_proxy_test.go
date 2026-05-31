@@ -315,7 +315,7 @@ func TestChunkUploaderGroupsFindMissingAndDedupesWithinBlob(t *testing.T) {
 	require.NoError(t, err)
 	s := &ByteStreamServerProxy{
 		remoteCAS: repb.NewContentAddressableStorageClient(conn),
-		bufPool:   bytebufferpool.VariableSize(int(chunking.MaxChunkSizeBytes())),
+		bufPool:   bytebufferpool.VariableSize(int(compression.ZstdCompressBound(chunking.MaxSupportedChunkSizeBytes()))),
 		efp:       fp,
 	}
 	uploader, err := newChunkUploader(context.Background(), s, "instance", repb.DigestFunction_BLAKE3)
@@ -786,6 +786,60 @@ func TestWrite(t *testing.T) {
 	}
 }
 
+func TestWriteRemoteValidationFailureDoesNotPoisonLocalCache(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache_proxy.skip_write_validation": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+	proxyEnv.SetExperimentFlagProvider(fp)
+	remote, _, _, _ := runRemoteServices(ctx, remoteEnv, t)
+	proxy := runBSProxy(ctx, remote, proxyEnv, t)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+
+	rnProto, correctBlob := testdigest.RandomCASResourceBuf(t, 32*1024)
+	corruptBlob := bytes.Clone(correctBlob)
+	corruptBlob[0] = ^corruptBlob[0]
+	rn, err := digest.CASResourceNameFromProto(rnProto)
+	require.NoError(t, err)
+
+	_, _, err = cachetools.UploadFromReader(ctx, proxy, rn, bytes.NewReader(corruptBlob))
+	require.True(t, status.IsInvalidArgumentError(err), "err = %v", err)
+
+	found, err := proxyEnv.GetCache().Contains(ctx, rn.ToProto())
+	require.NoError(t, err)
+	require.False(t, found)
+
+	_, _, err = cachetools.UploadFromReader(ctx, proxy, rn, bytes.NewReader(correctBlob))
+	require.NoError(t, err)
+
+	var readBuf bytes.Buffer
+	require.NoError(t, byte_stream.ReadBlob(ctx, proxy, rn, &readBuf, 0))
+	require.Equal(t, correctBlob, readBuf.Bytes())
+}
+
+func TestSkipWriteValidationFlag(t *testing.T) {
+	flags.Set(t, "cache_proxy.skip_write_validation", true)
+	require.True(t, (&ByteStreamServerProxy{}).skipWriteValidation(context.Background()))
+
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(proxy_util.SkipRemoteKey, "true"))
+	require.False(t, (&ByteStreamServerProxy{}).skipWriteValidation(ctx))
+}
+
 func TestSkipRemote(t *testing.T) {
 	ctx := testContext()
 	ctx = metadata.AppendToOutgoingContext(ctx, proxy_util.SkipRemoteKey, "true")
@@ -817,6 +871,46 @@ func TestSkipRemote(t *testing.T) {
 	require.Equal(t, data, buf.Bytes())
 	require.NoError(t, waitContains(ctx, proxyEnv, rn))
 	requestCounter.Store(0)
+}
+
+func TestSkipRemoteDoesNotSkipWriteValidation(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache_proxy.skip_write_validation": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true": true,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := testContext()
+	ctx = metadata.AppendToOutgoingContext(ctx, proxy_util.SkipRemoteKey, "true")
+
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+	proxyEnv.SetExperimentFlagProvider(fp)
+	bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, t)
+	proxy := runBSProxy(ctx, bs, proxyEnv, t)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+
+	rn, data := testdigest.NewRandomResourceAndBuf(t, 32*1024, rspb.CacheType_CAS, "")
+	data[0] = ^data[0]
+	casRN, err := digest.CASResourceNameFromProto(rn)
+	require.NoError(t, err)
+
+	_, _, err = cachetools.UploadFromReader(ctx, proxy, casRN, bytes.NewBuffer(data))
+	require.True(t, status.IsInvalidArgumentError(err), "err = %v", err)
+
+	found, err := proxyEnv.GetCache().Contains(ctx, rn)
+	require.NoError(t, err)
+	require.False(t, found)
+	require.Equal(t, int32(0), requestCounter.Load())
 }
 
 func TestSkipRemoteEncryptedRemoteOnly(t *testing.T) {
@@ -1301,6 +1395,43 @@ func TestReadChunked(t *testing.T) {
 	require.Equal(t, float64(0), readBytesRemoteAfter-readBytesRemoteBefore, "second read: no bytes fetched from remote")
 	require.Equal(t, float64(0), testutil.ToFloat64(metrics.ByteStreamProxiedReadBytes.With(proxiedReadMissLabels))-proxiedReadMissBytesBefore)
 	require.Equal(t, float64(len(originalData)), testutil.ToFloat64(metrics.ByteStreamProxiedReadBytes.With(proxiedReadHitLabels))-proxiedReadHitBytesBefore)
+}
+
+func TestReadChecksPreconditions(t *testing.T) {
+	s := &ByteStreamServerProxy{}
+	for _, tc := range []struct {
+		name    string
+		req     *bspb.ReadRequest
+		wantErr func(error) bool
+	}{
+		{
+			name:    "missing_resource_name",
+			req:     &bspb.ReadRequest{},
+			wantErr: status.IsInvalidArgumentError,
+		},
+		{
+			name: "negative_read_offset",
+			req: &bspb.ReadRequest{
+				ResourceName: "invalid-resource-name",
+				ReadOffset:   -1,
+			},
+			wantErr: status.IsOutOfRangeError,
+		},
+		{
+			name: "negative_read_limit",
+			req: &bspb.ReadRequest{
+				ResourceName: "invalid-resource-name",
+				ReadLimit:    -1,
+			},
+			wantErr: status.IsOutOfRangeError,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := s.read(context.Background(), tc.req, &meteredReadServerStream{})
+			require.Error(t, err)
+			require.True(t, tc.wantErr(err), "unexpected error: %s", err)
+		})
+	}
 }
 
 func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {

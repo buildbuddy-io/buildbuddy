@@ -125,17 +125,17 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 
 	// The chunked-manifest fallback lookup is skipped when the caller signals
 	// that these digests are individual content-defined chunks, not whole blobs.
-	// This is a safety guard against misaligned MaxChunkSizeBytes during rolling
-	// deploys: without the header, a chunk sized above the server's current
-	// MaxChunkSizeBytes would slip past the size guard below and trigger a
-	// spurious (and expensive) AC manifest lookup.
-	if len(missing) > 0 && !cdc.IsChunked(ctx) && chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
+	// Otherwise, use the same fallback threshold as read paths so blobs chunked
+	// with an older, smaller chunk size still count as present after increasing
+	// the current chunk size.
+	if efp := s.env.GetExperimentFlagProvider(); len(missing) > 0 && !cdc.IsChunked(ctx) && chunking.Enabled(ctx, efp) {
 		checker := chunking.NewMissingChunkChecker(s.cache)
+		chunkedReadFallbackSizeBytes := chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
 
 		// https://go.dev/wiki/SliceTricks#filtering-without-allocating
 		stillMissing := missing[:0]
 		for _, d := range missing {
-			if d.GetSizeBytes() <= chunking.MaxChunkSizeBytes() {
+			if d.GetSizeBytes() <= chunkedReadFallbackSizeBytes {
 				stillMissing = append(stillMissing, d)
 				continue
 			}
@@ -342,11 +342,18 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		return nil, err
 	}
 
-	if qm := s.env.GetQuotaManager(); qm != nil {
-		totalDownloadSize := int64(0)
-		for _, readDigest := range req.GetDigests() {
-			totalDownloadSize += readDigest.GetSizeBytes()
+	totalDownloadSize := int64(0)
+	for _, readDigest := range req.GetDigests() {
+		size := readDigest.GetSizeBytes()
+		if size < 0 {
+			return nil, status.InvalidArgumentError("Invalid (negative) digest size")
 		}
+		if totalDownloadSize > rpcutil.GRPCMaxSizeBytes-size {
+			return nil, status.InvalidArgumentErrorf("BatchReadBlobs request exceeds server limit of %d bytes", rpcutil.GRPCMaxSizeBytes)
+		}
+		totalDownloadSize += size
+	}
+	if qm := s.env.GetQuotaManager(); qm != nil {
 		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), totalDownloadSize); err != nil {
 			return nil, err
 		}
@@ -360,7 +367,12 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	cacheRequest := make([]*rspb.ResourceName, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
 	clientAcceptsZstd := remote_cache_config.ZstdTranscodingEnabled() && clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD)
-	chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
+	efp := s.env.GetExperimentFlagProvider()
+	chunkingEnabled := chunking.Enabled(ctx, efp)
+	chunkedReadFallbackSizeBytes := int64(0)
+	if chunkingEnabled {
+		chunkedReadFallbackSizeBytes = chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
+	}
 	readZstd := clientAcceptsZstd && s.cache.SupportsCompressor(repb.Compressor_ZSTD)
 
 	requestedResources := make([]*digest.ResourceName, 0, len(req.GetDigests()))
@@ -400,7 +412,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		// It's unexpected, but BatchReadBlobs may be used for blobs that are
 		// large enough to be chunked. If the blob was not found and it's large
 		// enough to be chunked, try to reassemble it from CDC chunks.
-		if (!ok || os.IsNotExist(err)) && rn.GetDigest().GetSizeBytes() > chunking.MinChunkedReadFallbackSizeBytes() && chunkingEnabled {
+		if (!ok || os.IsNotExist(err)) && chunkingEnabled && rn.GetDigest().GetSizeBytes() > chunkedReadFallbackSizeBytes {
 			if assembled, assembleErr := s.readChunkedBlob(ctx, rn.GetDigest(), req.GetInstanceName(), req.GetDigestFunction(), readZstd); assembleErr == nil {
 				data = assembled
 				ok = true
@@ -1219,6 +1231,9 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 }
 
 func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, readZstd bool) ([]byte, error) {
+	if blobDigest.GetSizeBytes() > rpcutil.GRPCMaxSizeBytes {
+		return nil, status.NotFoundErrorf("blob %s not found", blobDigest.GetHash())
+	}
 	manifest, err := chunking.LoadManifest(ctx, s.cache, blobDigest, instanceName, digestFunction)
 	if err != nil {
 		return nil, err

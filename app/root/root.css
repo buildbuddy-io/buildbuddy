@@ -1930,10 +1930,6 @@ code .comment {
   background: var(--color-bg-inverted);
 }
 
-.loading.loading-dark-terminal {
-  background: var(--color-bg-inverted);
-}
-
 .loading.loading-dark:before,
 .loading.loading-dark-terminal:before {
   background-image: url("/image/loader-white.svg");

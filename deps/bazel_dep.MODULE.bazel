@@ -18,7 +18,7 @@ single_version_override(
     patches = [
         "//buildpatches/bazel_dep:bzlmod_googleapis.patch",
     ],
-    version = "0.0.0-20260223-edfe7983",
+    version = "0.0.0-20260422-20ac242a",
 )
 
 # Note that this is 'rules_nodejs-core'
@@ -91,6 +91,12 @@ bazel_dep(name = "redis", version = "5.0.4")
 bazel_dep(name = "rules_cc", version = "0.2.17")
 bazel_dep(name = "rules_oci", version = "2.3.0")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
+# Patch rules_pkg to handle tarring up only data dependencies. This patch can be
+# removed when https://github.com/bazelbuild/rules_pkg/pull/1044 is released.
+single_version_override(
+    module_name = "rules_pkg",
+    patches = ["//buildpatches/bazel_dep:rules_pkg.patch"],
+)
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_python", version = "1.9.0")
 bazel_dep(name = "rules_python_gazelle_plugin", version = "1.9.0")

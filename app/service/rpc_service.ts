@@ -92,7 +92,7 @@ class RpcService {
       }
     }
 
-    (window as any)._rpcService = this;
+    (globalThis as any)._rpcService = this;
   }
 
   debuggingEnabled(): boolean {

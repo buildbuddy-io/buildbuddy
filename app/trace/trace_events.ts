@@ -5,6 +5,8 @@
  * https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview#heading=h.yr4qxyxotyw
  */
 
+import { nextAnimationFrame } from "../util/async";
+
 /** Represents the profile data for an invocation. */
 export interface Profile {
   traceEvents: TraceEvent[];
@@ -49,7 +51,7 @@ export type TimeSeries = {
   unit?: string;
 };
 
-type SeriesMetadata = {
+export type SeriesMetadata = {
   argKey: string;
   displayName?: string;
   unit?: string;
@@ -71,7 +73,7 @@ type SeriesMetadata = {
 //   ...,
 //   "args": {"cpu": 0.84}
 // }
-const TIME_SERIES_METADATA = new Map<string, SeriesMetadata[]>([
+export const TIME_SERIES_METADATA = new Map<string, SeriesMetadata[]>([
   // Event names/arg keys from Bazel profiles.
   // These are defined by bazel / not controlled by us.
   [
@@ -112,35 +114,55 @@ const TIME_SERIES_METADATA = new Map<string, SeriesMetadata[]>([
   ["Memory usage (ninja)", [{ argKey: "memory", unit: "MB" }]],
 ]);
 
-const TIME_SERIES_EVENT_ORDER = new Map(Array.from(TIME_SERIES_METADATA).map(([name], index) => [name, index]));
+export const TIME_SERIES_EVENT_ORDER = new Map(Array.from(TIME_SERIES_METADATA).map(([name], index) => [name, index]));
 const GZIP_MAGIC_BYTE_0 = 0x1f;
 const GZIP_MAGIC_BYTE_1 = 0x8b;
+
+export type ProfileInput = Blob | ReadableStream<Uint8Array>;
+export type ProfileProgressCallback = (numBytesLoaded: number, done?: boolean) => void;
+export type TraceEventBatchCallback = (events: TraceEvent[]) => void;
 
 async function isGzipCompressed(blob: Blob): Promise<boolean> {
   const header = new Uint8Array(await blob.slice(0, 2).arrayBuffer());
   return header[0] === GZIP_MAGIC_BYTE_0 && header[1] === GZIP_MAGIC_BYTE_1;
 }
 
-export async function readProfileFile(file: Blob, progress?: (numBytesLoaded: number) => void): Promise<Profile> {
-  let stream = file.stream() as ReadableStream<Uint8Array>;
-  if (await isGzipCompressed(file)) {
-    if (typeof DecompressionStream === "undefined") {
-      throw new Error("This browser can't read gzipped timing profiles from local files.");
-    }
-    stream = stream.pipeThrough(new DecompressionStream("gzip"));
-  }
-  return readProfile(stream, progress);
+export async function readProfile(input: ProfileInput, progress?: ProfileProgressCallback): Promise<Profile> {
+  const profile: Profile = { traceEvents: [] };
+  await readProfileEvents(
+    input,
+    (events) => {
+      for (const event of events) {
+        profile.traceEvents.push(event);
+      }
+    },
+    progress
+  );
+  return profile;
 }
 
-export async function readProfile(
-  body: ReadableStream<Uint8Array>,
-  progress?: (numBytesLoaded: number) => void
-): Promise<Profile> {
+export async function readProfileEvents(
+  input: ProfileInput,
+  consumeEventBatch: TraceEventBatchCallback,
+  progress?: ProfileProgressCallback
+): Promise<void> {
+  let body: ReadableStream<Uint8Array>;
+  if (input instanceof Blob) {
+    body = input.stream() as ReadableStream<Uint8Array>;
+    if (await isGzipCompressed(input)) {
+      if (typeof DecompressionStream === "undefined") {
+        throw new Error("This browser can't read gzipped timing profiles from local files.");
+      }
+      body = body.pipeThrough(new DecompressionStream("gzip"));
+    }
+  } else {
+    body = input;
+  }
   const reader = body.getReader();
   const decoder = new TextDecoder("utf-8");
   let n = 0;
   let buffer = "";
-  let profile: Profile | null = null;
+  let foundTraceEvents = false;
 
   while (true) {
     const { value, done } = await reader.read();
@@ -154,39 +176,42 @@ export async function readProfile(
     // Keep accumulating into the buffer until we see the "traceEvents" array.
     // Each entry in this array is newline-delimited (a special property of
     // Google's trace event JSON format).
-    if (!profile) {
+    if (!foundTraceEvents) {
       const beginMarker = '"traceEvents":[\n';
       const index = buffer.indexOf(beginMarker);
       if (index < 0) continue;
 
-      const before = buffer.substring(0, index + beginMarker.length);
-      const after = buffer.substring(before.length);
-
-      const outerJSON = before + "]}";
-      profile = JSON.parse(outerJSON) as Profile;
-      buffer = after;
+      buffer = buffer.substring(index + beginMarker.length);
+      foundTraceEvents = true;
     }
-    if (profile) {
-      buffer = consumeEvents(buffer, profile);
-    }
+    buffer = consumeEvents(buffer, consumeEventBatch);
   }
+  if (progress) {
+    progress(n, true);
+    // Allow drawing the final progress frame. Some heavy CPU work happens while
+    // finalizing the profile, so this helps the UI not appear "stuck" while
+    // this happens.
+    await nextAnimationFrame();
+  }
+
+  buffer += decoder.decode();
+  if (!foundTraceEvents) {
+    throw new Error("failed to parse timing profile JSON");
+  }
+
   // Consume last event, which isn't guaranteed to end with ",\n"
   if (buffer) {
     const { chars, suffix } = trailingNonWhitespaceChars(buffer, 2);
     if (chars === "]}") {
       buffer = buffer.substring(0, buffer.length - suffix.length);
     }
-    if (buffer) {
-      const event = JSON.parse(buffer);
-      profile?.traceEvents.push(event);
-      buffer = "";
+    if (buffer.trim()) {
+      const eventJSON = buffer.trim();
+      consumeEventBatch([
+        JSON.parse(eventJSON.endsWith(",") ? eventJSON.substring(0, eventJSON.length - 1) : eventJSON),
+      ]);
     }
   }
-
-  if (!profile) {
-    throw new Error("failed to parse timing profile JSON");
-  }
-  return profile;
 }
 
 /**
@@ -206,12 +231,16 @@ function trailingNonWhitespaceChars(text: string, count: number) {
   return { chars: out, suffix: text.substring(i + 1) };
 }
 
-function consumeEvents(buffer: string, profile: Profile): string {
+function consumeEvents(buffer: string, consumeEventBatch: TraceEventBatchCallback): string {
   // Each event entry looks like "   { ... },\n"
   const parts = buffer.split(",\n");
   const completeEvents = parts.slice(0, parts.length - 1);
+  const events: TraceEvent[] = [];
   for (const rawEvent of completeEvents) {
-    profile!.traceEvents.push(JSON.parse(rawEvent));
+    events.push(JSON.parse(rawEvent));
+  }
+  if (events.length) {
+    consumeEventBatch(events);
   }
   // If there's a partial event at the end, that partial event becomes the new
   // buffer value.
@@ -252,7 +281,8 @@ function timeSeriesEventComparator(a: TraceEvent, b: TraceEvent) {
   return tsDiff;
 }
 
-function isNumericTimeSeriesValue(value: unknown): value is number {
+/** Returns whether a trace event arg value can be plotted as a time series value. */
+export function isNumericTimeSeriesValue(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
@@ -298,11 +328,17 @@ function normalizeThreadNames(events: TraceEvent[]) {
   for (const event of events as ThreadEvent[]) {
     if (event.name === "thread_name") {
       // Job threads ("skyframe evaluators") will sometimes have inconsistent dashes.
-      if (event.args.name.startsWith("skyframe")) {
-        event.args.name = event.args.name.replace(/^skyframe[ \-]evaluator[ \-]/, "skyframe evaluator ");
-      }
+      event.args.name = normalizeThreadName(event.args.name);
     }
   }
+}
+
+/** Normalizes known variants of trace thread names for display and grouping. */
+export function normalizeThreadName(name: string) {
+  if (name.startsWith("skyframe")) {
+    return name.replace(/^skyframe[ \-]evaluator[ \-]/, "skyframe evaluator ");
+  }
+  return name;
 }
 
 export function buildTimeSeries(events: TraceEvent[]): TimeSeries[] {

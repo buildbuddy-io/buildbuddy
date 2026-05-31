@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -47,7 +48,10 @@ const (
 	defaultChunkTransferConcurrency = 32
 )
 
-var disableCDC = flag.Bool("cache_proxy.disable_cdc", false, "If true, disable proxy-side CDC behavior, including chunked reads and intercepting/chunking large writes.")
+var (
+	disableCDC          = flag.Bool("cache_proxy.disable_cdc", false, "If true, disable proxy-side CDC behavior, including chunked reads and intercepting/chunking large writes.")
+	skipWriteValidation = flag.Bool("cache_proxy.skip_write_validation", false, "If true, skip local cache write validation and rely on remote validation for cache proxy dual writes.")
+)
 
 func groupIDForMetrics(ctx context.Context) string {
 	c, err := claims.ClaimsFromContext(ctx)
@@ -114,7 +118,7 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		efp:                env.GetExperimentFlagProvider(),
 		localCache:         env.GetCache(),
 		remoteCAS:          env.GetContentAddressableStorageClient(),
-		bufPool:            bytebufferpool.VariableSize(int(compression.ZstdCompressBound(chunking.MaxChunkSizeBytes()))),
+		bufPool:            bytebufferpool.VariableSize(int(compression.ZstdCompressBound(chunking.MaxSupportedChunkSizeBytes()))),
 	}, nil
 }
 
@@ -171,6 +175,12 @@ type readMetrics struct {
 }
 
 func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream) (readMetrics, error) {
+	if err := byte_stream_server.CheckReadPreconditions(req); err != nil {
+		return readMetrics{
+			cacheStatus: metrics.HitStatusLabel,
+			compressor:  "unknown",
+		}, err
+	}
 	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
 	if err != nil {
 		return readMetrics{
@@ -924,7 +934,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	} else if proxy_util.SkipRemote(ctx) {
 		err = s.writeLocalOnly(stream)
 	} else {
-		err = s.dualWrite(ctx, stream)
+		err = s.dualWrite(ctx, stream, s.skipWriteValidation(ctx))
 	}
 	bsm := byteStreamMetrics{
 		requestType: requestTypeLabel,
@@ -955,13 +965,22 @@ func (s *ByteStreamServerProxy) writeLocalOnly(stream bspb.ByteStream_WriteServe
 	return s.local.Write(stream)
 }
 
+func (s *ByteStreamServerProxy) skipWriteValidation(ctx context.Context) bool {
+	return !proxy_util.SkipRemote(ctx) && (*skipWriteValidation || s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.skip_write_validation", false))
+}
+
 type forwardingWriteStream struct {
 	bspb.ByteStream_WriteServer
+	ctx             context.Context
 	remote          bspb.ByteStream_WriteClient
 	recvErr         error
 	remoteSendErr   error
+	remoteResp      *bspb.WriteResponse
+	remoteCloseErr  error
+	remoteClosed    bool
 	finishWriteSent bool
 	localFinished   bool
+	skipValidation  bool
 }
 
 func (s *forwardingWriteStream) Recv() (*bspb.WriteRequest, error) {
@@ -981,8 +1000,25 @@ func (s *forwardingWriteStream) Recv() (*bspb.WriteRequest, error) {
 	}
 	if req.GetFinishWrite() {
 		s.finishWriteSent = true
+		if s.skipValidation {
+			// Wait for the remote to validate and commit before returning the
+			// final request to the local server; the local server commits after
+			// processing this request.
+			if err := s.closeRemote(); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return req, nil
+}
+
+func (s *forwardingWriteStream) closeRemote() error {
+	if s.remoteClosed {
+		return s.remoteCloseErr
+	}
+	s.remoteResp, s.remoteCloseErr = s.remote.CloseAndRecv()
+	s.remoteClosed = true
+	return s.remoteCloseErr
 }
 
 func (s *forwardingWriteStream) SendAndClose(resp *bspb.WriteResponse) error {
@@ -991,12 +1027,25 @@ func (s *forwardingWriteStream) SendAndClose(resp *bspb.WriteResponse) error {
 	return nil
 }
 
-func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteStream_WriteServer) error {
+func (s *forwardingWriteStream) Context() context.Context {
+	return s.ctx
+}
+
+func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteStream_WriteServer, skipValidation bool) error {
 	remoteStream, err := s.remote.Write(ctx)
 	if err != nil {
 		return err
 	}
-	forwarding := &forwardingWriteStream{ByteStream_WriteServer: stream, remote: remoteStream}
+	localCtx := stream.Context()
+	if skipValidation {
+		localCtx = byte_stream_server.ContextWithSkipWriteValidation(localCtx)
+	}
+	forwarding := &forwardingWriteStream{
+		ByteStream_WriteServer: stream,
+		ctx:                    localCtx,
+		remote:                 remoteStream,
+		skipValidation:         skipValidation,
+	}
 	localErr := s.local.Write(forwarding)
 
 	// In gRPC streaming, io.EOF from Recv() is the normal end-of-stream signal.
@@ -1005,12 +1054,15 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 	if forwarding.recvErr != nil && forwarding.recvErr != io.EOF {
 		return forwarding.recvErr
 	}
-	if localErr != nil {
+	if localErr != nil && forwarding.remoteCloseErr == nil {
 		log.CtxInfof(ctx, "error writing to local bytestream server for write: %s", localErr)
 	}
 	if forwarding.remoteSendErr != nil && forwarding.remoteSendErr != io.EOF {
 		// Remote failed, so fail the whole request
 		return forwarding.remoteSendErr
+	}
+	if forwarding.remoteCloseErr != nil {
+		return forwarding.remoteCloseErr
 	}
 	if !forwarding.finishWriteSent && forwarding.remoteSendErr == nil {
 		// If the remote write is still open, flush any remaining requests to
@@ -1019,11 +1071,10 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 			return err
 		}
 	}
-	resp, err := remoteStream.CloseAndRecv()
-	if err != nil {
+	if err := forwarding.closeRemote(); err != nil {
 		return err
 	}
-	return stream.SendAndClose(resp)
+	return stream.SendAndClose(forwarding.remoteResp)
 }
 
 func flushToRemote(stream bspb.ByteStream_WriteServer, remoteStream bspb.ByteStream_WriteClient) error {
