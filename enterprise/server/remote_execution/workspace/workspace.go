@@ -15,6 +15,7 @@ import (
 
 	_ "embed"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/overlayfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
@@ -57,6 +58,11 @@ var (
 	vfsVerboseFUSEOps      = flag.Bool("executor.vfs.verbose_fuse", false, "Enables low-level verbose logs in the go-fuse library.")
 	vfsLogFUSELatencyStats = flag.Bool("executor.vfs.log_fuse_latency_stats", false, "Enables logging of per-operation latency stats when VFS is unmounted. Implicitly enabled by --executor.vfs.verbose.")
 	vfsLogFUSEPerFileStats = flag.Bool("executor.vfs.log_fuse_per_file_stats", false, "Enables tracking and logging of per-file per-operation stats. Logged when VFS is unmounted.")
+)
+
+const (
+	predictedInputFetchParallelism = 16
+	maxPredictedInputFetches       = 10000
 )
 
 func setDeleteLimit() {
@@ -345,6 +351,11 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	if err != nil {
 		return status.WrapErrorf(err, "could not start tree fetcher")
 	}
+	if ws.vfs != nil {
+		if err := ws.prefetchPredictedInputs(ctx); err != nil {
+			return err
+		}
+	}
 
 	// Inform VFS about the layout of the input tree and give it access to the
 	// running tree fetcher.
@@ -378,6 +389,39 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	}
 
 	return nil
+}
+
+func (ws *Workspace) prefetchPredictedInputs(ctx context.Context) error {
+	bitmapData := ws.task.GetPredictedInputFetchIndicesBitmap()
+	if len(bitmapData) == 0 {
+		return nil
+	}
+	bitmap := roaring.New()
+	if err := bitmap.UnmarshalBinary(bitmapData); err != nil {
+		log.CtxWarningf(ctx, "Failed to unmarshal predicted VFS input bitmap: %s", err)
+		return nil
+	}
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(predictedInputFetchParallelism)
+	iter := bitmap.Iterator()
+	for i := 0; iter.HasNext() && i < maxPredictedInputFetches; i++ {
+		inputIndex := iter.Next()
+		eg.Go(func() error {
+			found, err := ws.treeFetcher.FetchByBitsetIndex(egCtx, inputIndex)
+			if err != nil {
+				if egCtx.Err() != nil {
+					return egCtx.Err()
+				}
+				log.CtxWarningf(ctx, "Failed to prefetch predicted VFS input index %d: %s", inputIndex, err)
+				return nil
+			}
+			if !found {
+				log.CtxDebugf(ctx, "Skipping predicted VFS input index %d because it is not present in the input tree", inputIndex)
+			}
+			return nil
+		})
+	}
+	return eg.Wait()
 }
 
 func (ws *Workspace) AddRemoteRunnerBinaries(ctx context.Context) error {

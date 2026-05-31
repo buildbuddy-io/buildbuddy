@@ -2659,7 +2659,7 @@ message OriginMetadata {
   string invocation_id = 1;
 }
 
-// Next tag: 9
+// Next tag: 13
 message ExecutionTask {
   ExecuteRequest execute_request = 1;
   Action action = 4;
@@ -2672,6 +2672,11 @@ message ExecutionTask {
   RequestMetadata request_metadata = 9;
   repeated string experiments = 10;
   FastCdc2020Params fast_cdc_2020_params = 11;
+
+  // Serialized roaring bitmap of leaf-file indices that prior executions of the
+  // same logical action shape accessed through VFS. Executors may fetch these
+  // eagerly before falling back to lazy VFS fetches for other inputs.
+  bytes predicted_input_fetch_indices_bitmap = 12;
 }
 
 // ScheduledTask encapsulates a task based on a client's ExecuteRequest as well
