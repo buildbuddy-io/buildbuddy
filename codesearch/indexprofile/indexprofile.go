@@ -2,12 +2,16 @@ package indexprofile
 
 import (
 	"container/heap"
+	"fmt"
+	"math/bits"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
@@ -58,6 +62,11 @@ const (
 	CounterHiddenPathsSkipped     Counter = "hidden_paths_skipped"
 	CounterValidationSkippedFiles Counter = "validation_skipped_files"
 	CounterAddFileErrors          Counter = "add_file_errors"
+	CounterTFNgramOccurrences     Counter = "tf_ngram_occurrences"
+	CounterTFUniquePostings       Counter = "tf_unique_postings"
+	CounterTFDuplicateOccurrences Counter = "tf_duplicate_occurrences"
+	CounterTFPostingsWithFreqGT1  Counter = "tf_postings_with_freq_gt_1"
+	CounterTFRLEBytes             Counter = "tf_rle_bytes_estimate"
 )
 
 type phaseStats struct {
@@ -91,6 +100,70 @@ type postingListTopEntry struct {
 	valueBytes  int64
 }
 
+type TermFrequencyStats = types.TermFrequencyStats
+
+// TermFrequencyStatsFromFrequencies summarizes a per-posting frequency slice
+// in iteration order. freqs is expected to be in the order the posting list's
+// roaring iterator yields doc IDs — the same order used when serializing, so
+// that the RLE byte estimate matches what BuilderList.Marshal would write.
+func TermFrequencyStatsFromFrequencies(freqs []uint32) TermFrequencyStats {
+	stats := TermFrequencyStats{}
+	// Per-posting aggregates.
+	for _, freq := range freqs {
+		tf := uint64(freq)
+		stats.Occurrences += int64(tf)
+		stats.UniquePostings++
+		addTermFrequencyBucket(&stats, tf)
+		if freq > 1 {
+			stats.DuplicatePostings++
+			stats.DuplicateOccurrences += int64(tf - 1)
+		}
+	}
+	// RLE byte estimate: walk runs of identical values.
+	for i := 0; i < len(freqs); {
+		v := freqs[i]
+		j := i + 1
+		for j < len(freqs) && freqs[j] == v {
+			j++
+		}
+		stats.RLEBytesEstimate += int64(uvarintLen64(uint64(j-i)) + uvarintLen64(uint64(v)))
+		i = j
+	}
+	return stats
+}
+
+func addTermFrequencyBucket(stats *TermFrequencyStats, tf uint64) {
+	bucket := bits.Len(uint(tf - 1))
+	if bucket >= types.NumTFLog2Buckets {
+		bucket = types.NumTFLog2Buckets - 1
+	}
+	stats.CountsByLog2Bucket[bucket]++
+}
+
+// tfLog2BucketLabel returns a "1", "2", "3-4", "5-8", … style label for the
+// given bucket index.
+func tfLog2BucketLabel(i int) string {
+	switch i {
+	case 0:
+		return "1"
+	case 1:
+		return "2"
+	}
+	return fmt.Sprintf("%d-%d", 1<<(i-1)+1, 1<<i)
+}
+
+// uvarintLen64 returns the number of bytes that binary.PutUvarint would write
+// for v, without actually allocating a buffer. Used here only to estimate the
+// on-disk byte cost of the term-frequency tail for profiling.
+func uvarintLen64(v uint64) int {
+	n := 1
+	for v >= 0x80 {
+		v >>= 7
+		n++
+	}
+	return n
+}
+
 type topPostingListHeap struct {
 	entries []postingListTopEntry
 	less    func(a, b postingListTopEntry) bool
@@ -121,6 +194,7 @@ type Profiler struct {
 	postingListsByCardinality map[postingListBucketKey]postingListAggregate
 	postingListsByNgramLength map[postingListLengthKey]postingListAggregate
 	topContentByValueBytes    topPostingListHeap
+	termFrequencyByField      map[string]TermFrequencyStats
 }
 
 var current atomic.Pointer[Profiler]
@@ -132,6 +206,7 @@ func Start() *Profiler {
 		counters:                  make(map[Counter]int64),
 		postingListsByCardinality: make(map[postingListBucketKey]postingListAggregate),
 		postingListsByNgramLength: make(map[postingListLengthKey]postingListAggregate),
+		termFrequencyByField:      make(map[string]TermFrequencyStats),
 		topContentByValueBytes: topPostingListHeap{
 			less: lessByValueBytes,
 		},
@@ -169,6 +244,12 @@ func Add(counter Counter, value int64) {
 func RecordPostingList(field, ngram string, cardinality uint64, keyBytes, valueBytes int64) {
 	if p := Current(); p != nil {
 		p.RecordPostingList(field, ngram, cardinality, keyBytes, valueBytes)
+	}
+}
+
+func RecordTermFrequencyStats(field string, stats TermFrequencyStats) {
+	if p := Current(); p != nil {
+		p.RecordTermFrequencyStats(field, stats)
 	}
 }
 
@@ -267,6 +348,28 @@ func (p *Profiler) RecordPostingList(field, ngram string, cardinality uint64, ke
 	}
 }
 
+func (p *Profiler) RecordTermFrequencyStats(field string, stats TermFrequencyStats) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	current := p.termFrequencyByField[field]
+	current.Occurrences += stats.Occurrences
+	current.UniquePostings += stats.UniquePostings
+	current.DuplicateOccurrences += stats.DuplicateOccurrences
+	current.DuplicatePostings += stats.DuplicatePostings
+	current.RLEBytesEstimate += stats.RLEBytesEstimate
+	for i := range stats.CountsByLog2Bucket {
+		current.CountsByLog2Bucket[i] += stats.CountsByLog2Bucket[i]
+	}
+	p.termFrequencyByField[field] = current
+
+	p.counters[CounterTFNgramOccurrences] += stats.Occurrences
+	p.counters[CounterTFUniquePostings] += stats.UniquePostings
+	p.counters[CounterTFDuplicateOccurrences] += stats.DuplicateOccurrences
+	p.counters[CounterTFPostingsWithFreqGT1] += stats.DuplicatePostings
+	p.counters[CounterTFRLEBytes] += stats.RLEBytesEstimate
+}
+
 func addPostingListAggregate[K comparable](m map[K]postingListAggregate, key K, value postingListAggregate) {
 	agg := m[key]
 	agg.lists += value.lists
@@ -305,6 +408,10 @@ func (p *Profiler) PrettyPrint() {
 		key   postingListLengthKey
 		stats postingListAggregate
 	}
+	type termFrequencyRow struct {
+		field string
+		stats TermFrequencyStats
+	}
 
 	p.mu.Lock()
 	phases := make([]phaseRow, 0, len(p.phases))
@@ -322,6 +429,10 @@ func (p *Profiler) PrettyPrint() {
 	lengthRows := make([]lengthRow, 0, len(p.postingListsByNgramLength))
 	for key, stats := range p.postingListsByNgramLength {
 		lengthRows = append(lengthRows, lengthRow{key: key, stats: stats})
+	}
+	termFrequencyRows := make([]termFrequencyRow, 0, len(p.termFrequencyByField))
+	for field, stats := range p.termFrequencyByField {
+		termFrequencyRows = append(termFrequencyRows, termFrequencyRow{field: field, stats: stats})
 	}
 	topByValueBytes := append([]postingListTopEntry(nil), p.topContentByValueBytes.entries...)
 	p.mu.Unlock()
@@ -346,6 +457,9 @@ func (p *Profiler) PrettyPrint() {
 			return lengthRows[i].key.field < lengthRows[j].key.field
 		}
 		return lengthRows[i].key.length < lengthRows[j].key.length
+	})
+	sort.Slice(termFrequencyRows, func(i, j int) bool {
+		return termFrequencyRows[i].field < termFrequencyRows[j].field
 	})
 	sortPostingListTop(topByValueBytes, lessByValueBytes)
 
@@ -376,6 +490,27 @@ func (p *Profiler) PrettyPrint() {
 		for _, row := range lengthRows {
 			log.Printf("  field=%-12q length=%-3d lists=%-10d postings=%-12d key_bytes=%-12d value_bytes=%d",
 				row.key.field, row.key.length, row.stats.lists, row.stats.postings, row.stats.keyBytes, row.stats.valueBytes)
+		}
+	}
+	if len(termFrequencyRows) > 0 {
+		log.Printf("Index profile term frequency storage estimate:")
+		for _, row := range termFrequencyRows {
+			s := row.stats
+			duplicatePercent := float64(0)
+			if s.UniquePostings > 0 {
+				duplicatePercent = 100 * float64(s.DuplicatePostings) / float64(s.UniquePostings)
+			}
+			log.Printf("  field=%-12q occurrences=%-12d unique_postings=%-12d duplicate_occurrences=%-12d postings_with_tf_gt_1=%-12d (%.2f%%) rle_bytes_estimate=%d",
+				row.field, s.Occurrences, s.UniquePostings, s.DuplicateOccurrences, s.DuplicatePostings, duplicatePercent, s.RLEBytesEstimate)
+			var sb strings.Builder
+			sb.WriteString("    tf_buckets:")
+			for i, count := range s.CountsByLog2Bucket {
+				if count == 0 {
+					continue
+				}
+				fmt.Fprintf(&sb, " %s=%d", tfLog2BucketLabel(i), count)
+			}
+			log.Print(sb.String())
 		}
 	}
 	printTopPostingLists("Index profile top content posting lists by value bytes:", topByValueBytes)

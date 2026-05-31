@@ -5,5 +5,8 @@ go_library(
     srcs = ["indexprofile.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/indexprofile",
     visibility = ["//visibility:public"],
-    deps = ["//server/util/log"],
+    deps = [
+        "//codesearch/types",
+        "//server/util/log",
+    ],
 )
