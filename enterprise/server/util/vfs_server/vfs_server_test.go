@@ -2,11 +2,13 @@ package vfs_server_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"runtime"
 	"syscall"
 	"testing"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
@@ -174,7 +176,25 @@ func readFromVFS(t *testing.T, server *vfs_server.Server, name string) string {
 func prepare(t *testing.T, env environment.Env, server *vfs_server.Server, tree *repb.Tree) {
 	tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{})
 	require.NoError(t, err)
-	_, err = server.Prepare(t.Context(), &container.FileSystemLayout{Inputs: tree}, tf)
+	_, err = server.Prepare(t.Context(), &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs:         tree,
+	}, tf)
+	require.NoError(t, err)
+}
+
+func prepareStarted(t *testing.T, ctx context.Context, env environment.Env, server *vfs_server.Server, tree *repb.Tree) {
+	tf, err := dirtools.NewTreeFetcher(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{
+		LazyFetch:                true,
+		RecordInputFetchMetadata: true,
+	})
+	require.NoError(t, err)
+	_, err = tf.Start()
+	require.NoError(t, err)
+	_, err = server.Prepare(ctx, &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs:         tree,
+	}, tf)
 	require.NoError(t, err)
 }
 
@@ -257,6 +277,75 @@ func TestGetLayout(t *testing.T) {
 	}
 	require.Empty(t, cmp.Diff(expectedRsp, rsp, protocmp.Transform(),
 		protocmp.IgnoreFields(&vfspb.Node{}, "id"), protocmp.IgnoreFields(&vfspb.Attrs{}, "atime_nanos", "mtime_nanos")))
+}
+
+func TestComputeInputFetchMetadataIgnoresStaleNodes(t *testing.T) {
+	ctx, env, server, _ := newServerWithEnv(t)
+
+	digestA := setFile(t, env, ctx, "", "aaa")
+	digestB := setFile(t, env, ctx, "", "bbb")
+	treeWithA := &repb.Tree{Root: &repb.Directory{
+		Files: []*repb.FileNode{
+			{Name: "a.txt", Digest: digestA},
+			{Name: "b.txt", Digest: digestB},
+		},
+	}}
+	prepareStarted(t, ctx, env, server, treeWithA)
+	require.Equal(t, "aaa", readFromVFS(t, server, "a.txt"))
+
+	metadata := server.ComputeInputFetchMetadata()
+	require.NotNil(t, metadata)
+	bitmap := roaring.New()
+	require.NoError(t, bitmap.UnmarshalBinary(metadata.GetAccessedFileIndicesBitmap()))
+	require.Equal(t, []uint32{0}, bitmap.ToArray())
+
+	treeWithoutA := &repb.Tree{Root: &repb.Directory{
+		Files: []*repb.FileNode{{Name: "b.txt", Digest: digestB}},
+	}}
+	prepareStarted(t, ctx, env, server, treeWithoutA)
+
+	metadata = server.ComputeInputFetchMetadata()
+	require.NotNil(t, metadata)
+	bitmap = roaring.New()
+	require.NoError(t, bitmap.UnmarshalBinary(metadata.GetAccessedFileIndicesBitmap()))
+	require.Empty(t, bitmap.ToArray())
+
+	require.Equal(t, "bbb", readFromVFS(t, server, "b.txt"))
+	metadata = server.ComputeInputFetchMetadata()
+	require.NotNil(t, metadata)
+	bitmap = roaring.New()
+	require.NoError(t, bitmap.UnmarshalBinary(metadata.GetAccessedFileIndicesBitmap()))
+	require.Equal(t, []uint32{0}, bitmap.ToArray())
+}
+
+func TestComputeInputFetchMetadataRecordsLargeAccessBitmap(t *testing.T) {
+	ctx, env, server, _ := newServerWithEnv(t)
+
+	const accessedFiles = 10001
+	d := setFile(t, env, ctx, "", "aaa")
+	files := make([]*repb.FileNode, 0, accessedFiles)
+	for i := 0; i < accessedFiles; i++ {
+		files = append(files, &repb.FileNode{
+			Name:   fmt.Sprintf("file-%05d", i),
+			Digest: d,
+		})
+	}
+	prepareStarted(t, ctx, env, server, &repb.Tree{Root: &repb.Directory{Files: files}})
+
+	for _, file := range files {
+		rsp, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: file.GetName()})
+		require.NoError(t, err)
+		openRsp, err := server.Open(ctx, &vfspb.OpenRequest{Id: rsp.GetId(), Flags: uint32(os.O_RDONLY)})
+		require.NoError(t, err)
+		_, err = server.Release(ctx, &vfspb.ReleaseRequest{HandleId: openRsp.GetHandleId()})
+		require.NoError(t, err)
+	}
+
+	metadata := server.ComputeInputFetchMetadata()
+	require.NotNil(t, metadata)
+	bitmap := roaring.New()
+	require.NoError(t, bitmap.UnmarshalBinary(metadata.GetAccessedFileIndicesBitmap()))
+	require.EqualValues(t, accessedFiles, bitmap.GetCardinality())
 }
 
 func TestLookupNonExistentFile(t *testing.T) {

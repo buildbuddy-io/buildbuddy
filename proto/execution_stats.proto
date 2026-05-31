@@ -214,6 +214,12 @@ message InputFetchMetadata {
   // recursively, in the order the child directories are listed in each
   // Directory message.
   bytes downloaded_file_indices_bitmap = 1;
+
+  // Serialized roaring bitmap. Set bits correspond to leaf file indices, using
+  // the same deterministic order as downloaded_file_indices_bitmap, for input
+  // files that were accessed through a VFS workspace.
+  bytes accessed_file_indices_bitmap = 2;
+
 }
 
 message ExecutionLookup {

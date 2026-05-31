@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfscommon"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
@@ -36,6 +37,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
@@ -227,6 +229,8 @@ type fsNode struct {
 
 	mu          sync.Mutex
 	accessed    bool
+	inputIndex  uint32
+	hasInputIdx bool
 	attrs       *vfspb.Attrs
 	name        string
 	parent      *fsNode
@@ -328,7 +332,7 @@ func newDirNode(parent *fsNode, name string) *fsNode {
 	}
 }
 
-func newCASFileNode(parent *fsNode, refn *repb.FileNode) *fsNode {
+func newCASFileNode(parent *fsNode, refn *repb.FileNode, inputIndex uint32) *fsNode {
 	perms := 0644
 	if refn.IsExecutable {
 		perms |= 0111
@@ -347,6 +351,9 @@ func newCASFileNode(parent *fsNode, refn *repb.FileNode) *fsNode {
 		},
 		fileNode: refn,
 		parent:   parent,
+
+		inputIndex:  inputIndex,
+		hasInputIdx: true,
 	}
 }
 
@@ -436,10 +443,6 @@ func (p *Server) addNode(node *fsNode) uint64 {
 	node.id = id
 	p.mu.Lock()
 	p.nodes[id] = node
-	if node.fileNode != nil {
-		p.casFileCount++
-		p.casFileSizeBytes += node.fileNode.GetDigest().GetSizeBytes()
-	}
 	p.mu.Unlock()
 	return id
 }
@@ -450,12 +453,29 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 		return nil, err
 	}
 	numDirs := 0
-	numFiles := 0
+	var numFiles int64
 	numSymlinks := 0
+	var casFileSizeBytes int64
+	nextInputIndex := uint32(0)
 
 	newDirInodes := make(map[uint64]struct{})
 	modifiedInodesSet := make(map[uint64]struct{})
 	var invalidatedEntries []vfscommon.InodeEntryInvalidation
+
+	var resetInputFetchState func(node *fsNode)
+	resetInputFetchState = func(node *fsNode) {
+		node.mu.Lock()
+		if node.fileNode != nil {
+			node.accessed = false
+			node.inputIndex = 0
+			node.hasInputIdx = false
+		}
+		children := node.children
+		node.mu.Unlock()
+		for _, child := range children {
+			resetInputFetchState(child)
+		}
+	}
 
 	removeExistingChild := func(parentNode *fsNode, existingChild *fsNode, childName string) error {
 		parentNode.mu.Lock()
@@ -489,6 +509,37 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 		if parentNode.children == nil && (len(dir.GetDirectories()) > 0 || len(dir.GetFiles()) > 0 || len(dir.GetSymlinks()) > 0) {
 			parentNode.children = make(map[string]*fsNode)
 		}
+		// This order is load-bearing. Input fetch metadata uses a deterministic
+		// files-first traversal order; VFS access metadata must use the same index
+		// assignment so the bitmaps can be interpreted against the input tree.
+		for _, childFileNode := range dir.GetFiles() {
+			inputIndex := nextInputIndex
+			nextInputIndex++
+			numFiles++
+			casFileSizeBytes += childFileNode.GetDigest().GetSizeBytes()
+			parentNode.mu.Lock()
+			existingNode := parentNode.children[childFileNode.GetName()]
+			parentNode.mu.Unlock()
+			if existingNode != nil && (!existingNode.IsFile() || !digest.Equal(existingNode.fileNode.GetDigest(), childFileNode.GetDigest()) || existingNode.fileNode.IsExecutable != childFileNode.IsExecutable) {
+				if err := removeExistingChild(parentNode, existingNode, childFileNode.GetName()); err != nil {
+					return err
+				}
+				existingNode = nil
+			}
+			if existingNode == nil {
+				fileNode := newCASFileNode(parentNode, childFileNode, inputIndex)
+				if _, err := addChild(parentNode, fileNode, childFileNode.GetName()); err != nil {
+					return err
+				}
+			} else {
+				existingNode.mu.Lock()
+				existingNode.fileNode = childFileNode
+				existingNode.accessed = false
+				existingNode.inputIndex = inputIndex
+				existingNode.hasInputIdx = true
+				existingNode.mu.Unlock()
+			}
+		}
 		for _, childDirNode := range dir.GetDirectories() {
 			childDir, ok := dirMap[digest.NewKey(childDirNode.Digest)]
 			if !ok {
@@ -521,24 +572,6 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 				return err
 			}
 		}
-		for _, childFileNode := range dir.GetFiles() {
-			parentNode.mu.Lock()
-			existingNode := parentNode.children[childFileNode.GetName()]
-			parentNode.mu.Unlock()
-			if existingNode != nil && (!existingNode.IsFile() || !digest.Equal(existingNode.fileNode.GetDigest(), childFileNode.GetDigest()) || existingNode.fileNode.IsExecutable != childFileNode.IsExecutable) {
-				if err := removeExistingChild(parentNode, existingNode, childFileNode.GetName()); err != nil {
-					return err
-				}
-				existingNode = nil
-			}
-			if existingNode == nil {
-				fileNode := newCASFileNode(parentNode, childFileNode)
-				if _, err := addChild(parentNode, fileNode, childFileNode.GetName()); err != nil {
-					return err
-				}
-			}
-			numFiles++
-		}
 		for _, childSymlink := range dir.GetSymlinks() {
 			parentNode.mu.Lock()
 			existingNode := parentNode.children[childSymlink.GetName()]
@@ -560,10 +593,18 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 		return nil
 	}
 
+	p.mu.Lock()
+	resetInputFetchState(p.root)
+	p.mu.Unlock()
+
 	err = walkDir(inputTree.Root, p.root)
 	if err != nil {
 		return nil, err
 	}
+	p.mu.Lock()
+	p.casFileCount = numFiles
+	p.casFileSizeBytes = casFileSizeBytes
+	p.mu.Unlock()
 
 	log.CtxDebugf(ctx, "VFS contains %d directories, %d files and %d symlinks", numDirs, numFiles, numSymlinks)
 
@@ -606,6 +647,35 @@ func (p *Server) ComputeStats() *repb.VfsStats {
 	p.mu.Unlock()
 
 	return stats
+}
+
+func (p *Server) ComputeInputFetchMetadata() *espb.InputFetchMetadata {
+	bitmap := roaring.New()
+
+	p.mu.Lock()
+	var walkNode func(node *fsNode)
+	walkNode = func(node *fsNode) {
+		node.mu.Lock()
+		if node.fileNode != nil && node.accessed && node.hasInputIdx {
+			bitmap.Add(node.inputIndex)
+		}
+		children := node.children
+		node.mu.Unlock()
+		for _, child := range children {
+			walkNode(child)
+		}
+	}
+	walkNode(p.root)
+	p.mu.Unlock()
+
+	data, err := bitmap.MarshalBinary()
+	if err != nil {
+		log.Warningf("Failed to marshal VFS accessed input bitmap: %s", err)
+		return nil
+	}
+	return &espb.InputFetchMetadata{
+		AccessedFileIndicesBitmap: data,
+	}
 }
 
 // Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
