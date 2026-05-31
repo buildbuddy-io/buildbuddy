@@ -165,9 +165,9 @@ func (wt *WhitespaceTokenizer) NgramString() string {
 }
 
 // recordToken bumps the frequency for tok and reports whether this is the
-// first occurrence of tok in the current document. wt.tok is only updated on
-// the first occurrence so that Ngram/NgramString — valid only after a nil
-// return from Next — always reflects the unique token Next just yielded.
+// first occurrence of tok seen in the current document. wt.tok is only updated
+// on the first occurrence so that Ngram/NgramString always reflect the unique
+// token Next just yielded.
 func (wt *WhitespaceTokenizer) recordToken(tok string) bool {
 	if _, seen := wt.freqs[tok]; seen {
 		wt.freqs[tok]++
