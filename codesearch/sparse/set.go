@@ -44,6 +44,15 @@ func (s *Set) Has(x uint32) bool {
 	return v < uint32(len(s.dense)) && s.dense[v] == x
 }
 
+// Index reports x's index in Dense if x is in the set.
+func (s *Set) Index(x uint32) (int, bool) {
+	v := s.sparse[x]
+	if v < uint32(len(s.dense)) && s.dense[v] == x {
+		return int(v), true
+	}
+	return 0, false
+}
+
 // Dense returns the values in the set.
 // The values are listed in the order in which they
 // were inserted.

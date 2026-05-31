@@ -76,6 +76,8 @@ type Tokenizer interface {
 	Type() FieldType
 	Ngram() []byte
 	NgramString() string
+	IterateTermFrequencies(func(ngram string, frequency uint32))
+	TermFrequencyStats() TermFrequencyStats
 }
 
 // NumTFLog2Buckets is the size of CountsByLog2Bucket. It covers every

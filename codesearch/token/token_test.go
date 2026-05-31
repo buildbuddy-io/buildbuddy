@@ -97,6 +97,36 @@ func TestWhitespaceTokenizer(t *testing.T) {
 	assert.Equal(t, []string{"this", "is", "a", "string"}, tokens)
 }
 
+func TestWhitespaceTokenizerTermFrequencies(t *testing.T) {
+	tt := NewWhitespaceTokenizer()
+	// Duplicate tokens are deduped at Next() time; frequencies are recorded
+	// in the side-channel exposed by IterateTermFrequencies.
+	assert.Equal(t, []string{"this", "that"}, tokenizeBuf("this this that", tt))
+
+	frequencies := make(map[string]uint32)
+	tt.IterateTermFrequencies(func(ngram string, frequency uint32) {
+		frequencies[ngram] = frequency
+	})
+
+	assert.Equal(t, map[string]uint32{
+		"this": 2,
+		"that": 1,
+	}, frequencies)
+}
+
+func TestTrigramTokenizerTermFrequencies(t *testing.T) {
+	tt := NewTrigramTokenizer()
+	assert.Equal(t, []string{"abc", "bc ", "c a", " ab"}, tokenizeBuf("abc abc", tt))
+
+	frequencies := make(map[string]uint32)
+	tt.IterateTermFrequencies(func(ngram string, frequency uint32) {
+		frequencies[ngram] = frequency
+	})
+
+	assert.Equal(t, uint32(2), frequencies["abc"])
+	assert.Equal(t, uint32(1), frequencies["bc "])
+}
+
 // func TestBuildAllNgramsMatchesTrigrams(t *testing.T) {
 // 	allTokens := tokenizeBuf(sampleBuf, NewSparseNgramTokenizer())
 // 	triTokens := tokenizeBuf(sampleBuf, NewTrigramTokenizer())
@@ -199,6 +229,47 @@ func TestSparseNgramTokenizerTestOrAddASCII(t *testing.T) {
 
 	_, err := compactASCIIKey([]byte("abcdefgh"))
 	assert.ErrorContains(t, err, "max compact length is 7")
+}
+
+func TestSparseNgramTokenizerTermFrequencies(t *testing.T) {
+	input := "abc abc abc"
+	tt := NewSparseNgramTokenizer(WithMaxNgramLength(10))
+	tokens := tokenizeBuf(input, tt)
+	assert.Contains(t, tokens, "abc")
+
+	frequencies := make(map[string]uint32)
+	tt.IterateTermFrequencies(func(ngram string, frequency uint32) {
+		frequencies[ngram] = frequency
+	})
+
+	assert.Equal(t, uint32(3), frequencies["abc"])
+	assert.Equal(t, uint32(2), frequencies["bc "])
+}
+
+func TestSparseNgramTokenizerTermFrequencyStats(t *testing.T) {
+	input := "hello hello"
+	candidateCounts := make(map[string]int)
+	for _, ngram := range allNgrams(input) {
+		candidateCounts[ngram]++
+	}
+
+	tt := NewSparseNgramTokenizer(WithMaxNgramLength(10))
+	assert.ElementsMatch(t, mapKeys(candidateCounts), tokenizeBuf(input, tt))
+
+	stats := tt.TermFrequencyStats()
+	assert.Equal(t, int64(len(allNgrams(input))), stats.Occurrences)
+	assert.Equal(t, int64(len(candidateCounts)), stats.UniquePostings)
+	assert.Greater(t, stats.DuplicateOccurrences, int64(0))
+	assert.Greater(t, stats.DuplicatePostings, int64(0))
+	assert.Greater(t, stats.RLEBytesEstimate, int64(0))
+}
+
+func mapKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 func TestBuildCoveringNgrams(t *testing.T) {
