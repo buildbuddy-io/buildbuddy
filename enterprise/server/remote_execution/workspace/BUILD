@@ -17,6 +17,7 @@ go_library(
         "//enterprise/server/remote_execution/vfs",
         "//enterprise/server/util/ci_runner_util",
         "//enterprise/server/util/vfs_server",
+        "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/cache/dirtools",
         "//server/environment",

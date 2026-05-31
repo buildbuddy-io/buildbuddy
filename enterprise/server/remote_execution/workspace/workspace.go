@@ -37,6 +37,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cli_bundle "github.com/buildbuddy-io/buildbuddy/server/util/bb"
 )
@@ -323,9 +324,12 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	opts := &dirtools.DownloadTreeOpts{CaseInsensitive: ws.Opts.CaseInsensitive}
 	if ws.vfs == nil {
 		opts.RootDir = ws.inputRoot()
+		opts.RecordInputFetchMetadata = *recordInputFetchMetadata && slices.Contains(ws.task.GetExperiments(), "remote_execution.record_input_fetch_metadata")
+	} else {
+		opts.LazyFetch = true
+		opts.RecordInputFetchMetadata = true
 	}
 	opts.ChunkedInputFiles = slices.Contains(ws.task.GetExperiments(), "executor.download_inputs_chunked")
-	opts.RecordInputFetchMetadata = *recordInputFetchMetadata && slices.Contains(ws.task.GetExperiments(), "remote_execution.record_input_fetch_metadata")
 	if ws.Opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
@@ -649,12 +653,26 @@ func (ws *Workspace) TaskFinished() (*dirtools.TransferInfo, error) {
 	if tf == nil {
 		return nil, status.FailedPreconditionError("tree fetcher not set")
 	}
-	// TODO(vadim): cancel unfinished transfers instead of waiting for them
-	txInfo, err := tf.Wait()
+	txInfo, err := tf.Finish()
+	if ws.vfsServer != nil {
+		mergeInputFetchMetadata(txInfo, ws.vfsServer.ComputeInputFetchMetadata())
+	}
 	ws.mu.Lock()
 	ws.treeFetcher = nil
 	ws.mu.Unlock()
 	return txInfo, err
+}
+
+func mergeInputFetchMetadata(txInfo *dirtools.TransferInfo, metadata *espb.InputFetchMetadata) {
+	if txInfo == nil || metadata == nil {
+		return
+	}
+	if txInfo.InputFetchMetadata == nil {
+		txInfo.InputFetchMetadata = &espb.InputFetchMetadata{}
+	}
+	if len(metadata.GetAccessedFileIndicesBitmap()) > 0 {
+		txInfo.InputFetchMetadata.AccessedFileIndicesBitmap = metadata.GetAccessedFileIndicesBitmap()
+	}
 }
 
 // Clean removes files and directories in the workspace which are not preserved
