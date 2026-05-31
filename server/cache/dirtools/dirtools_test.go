@@ -1206,6 +1206,135 @@ func TestDownloadTree_InputFetchMetadataTracksBytestreamDownloads(t *testing.T) 
 	require.Equal(t, []uint32{0}, bitmap.ToArray())
 }
 
+func TestTreeFetcher_LazyFetchOnlyFetchesRequestedInput(t *testing.T) {
+	env, ctx := testEnv(t)
+	instanceName := "foo"
+	digestA := setFile(t, env, ctx, instanceName, "aaa")
+	digestB := setFile(t, env, ctx, instanceName, "bbb")
+	fileA := &repb.FileNode{Name: "a.txt", Digest: digestA}
+	fileB := &repb.FileNode{Name: "b.txt", Digest: digestB}
+	tree := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{fileA, fileB},
+		},
+	}
+
+	tf, err := dirtools.NewTreeFetcher(ctx, env, instanceName, repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{
+		LazyFetch:                true,
+		RecordInputFetchMetadata: true,
+	})
+	require.NoError(t, err)
+	_, err = tf.Start()
+	require.NoError(t, err)
+
+	require.False(t, env.GetFileCache().ContainsFile(ctx, fileA))
+	require.False(t, env.GetFileCache().ContainsFile(ctx, fileB))
+
+	found, err := tf.FetchByPath(ctx, "a.txt")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.True(t, env.GetFileCache().ContainsFile(ctx, fileA))
+	require.False(t, env.GetFileCache().ContainsFile(ctx, fileB))
+
+	found, err = tf.FetchByPath(ctx, "missing.txt")
+	require.NoError(t, err)
+	require.False(t, found)
+
+	info, err := tf.Finish()
+	require.NoError(t, err)
+	require.NotNil(t, info.InputFetchMetadata)
+	bitmap := roaring.New()
+	require.NoError(t, bitmap.UnmarshalBinary(info.InputFetchMetadata.GetDownloadedFileIndicesBitmap()))
+	require.Equal(t, []uint32{0}, bitmap.ToArray())
+}
+
+func TestTreeFetcher_LazyFetchByBitsetIndex(t *testing.T) {
+	env, ctx := testEnv(t)
+	instanceName := "foo"
+	digestA := setFile(t, env, ctx, instanceName, "aaa")
+	digestB := setFile(t, env, ctx, instanceName, "bbb")
+	fileA := &repb.FileNode{Name: "a.txt", Digest: digestA}
+	fileB := &repb.FileNode{Name: "b.txt", Digest: digestB}
+	tree := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{fileA, fileB},
+		},
+	}
+
+	tf, err := dirtools.NewTreeFetcher(ctx, env, instanceName, repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{
+		LazyFetch:                true,
+		RecordInputFetchMetadata: true,
+	})
+	require.NoError(t, err)
+	_, err = tf.Start()
+	require.NoError(t, err)
+
+	found, err := tf.FetchByBitsetIndex(ctx, 1)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.False(t, env.GetFileCache().ContainsFile(ctx, fileA))
+	require.True(t, env.GetFileCache().ContainsFile(ctx, fileB))
+
+	found, err = tf.FetchByBitsetIndex(ctx, 2)
+	require.NoError(t, err)
+	require.False(t, found)
+}
+
+func TestTreeFetcher_LazyFetchRetryDoesNotFailConcurrentWaiter(t *testing.T) {
+	env, ctx := testEnv(t)
+	rn, contents := testdigest.RandomCASResourceBuf(t, 128)
+	fileNode := &repb.FileNode{
+		Name:   "retry.txt",
+		Digest: rn.GetDigest(),
+	}
+	tree := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{fileNode},
+		},
+	}
+
+	tf, err := dirtools.NewTreeFetcher(ctx, env, rn.GetInstanceName(), rn.GetDigestFunction(), tree, &dirtools.DownloadTreeOpts{
+		LazyFetch: true,
+	})
+	require.NoError(t, err)
+	_, err = tf.Start()
+	require.NoError(t, err)
+
+	err = tf.Fetch(ctx, fileNode)
+	require.Error(t, err)
+	require.False(t, env.GetFileCache().ContainsFile(ctx, fileNode))
+
+	require.NoError(t, env.GetCache().Set(ctx, rn, contents))
+	cc := env.GetCache().(*controlledCache)
+	cc.mu.Lock()
+	cc.getMultiCalls = make(chan struct{}, 1)
+	cc.mu.Unlock()
+	unblockRetry := cc.InjectGetMultiPause(digest.NewKey(rn.GetDigest()))
+	var unblockOnce sync.Once
+	defer unblockOnce.Do(unblockRetry)
+
+	retryErr := make(chan error, 1)
+	go func() {
+		retryErr <- tf.Fetch(ctx, fileNode)
+	}()
+	select {
+	case <-cc.getMultiCalls:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for retry fetch to start")
+	}
+
+	waiterErr := make(chan error, 1)
+	go func() {
+		waiterErr <- tf.Fetch(ctx, fileNode)
+	}()
+	time.Sleep(10 * time.Millisecond)
+
+	unblockOnce.Do(unblockRetry)
+	require.NoError(t, <-retryErr)
+	require.NoError(t, <-waiterErr)
+	require.True(t, env.GetFileCache().ContainsFile(ctx, fileNode))
+}
+
 func TestDownloadTree_InputFetchMetadataPreservesUnsetLeafIndices(t *testing.T) {
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)

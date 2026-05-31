@@ -731,9 +731,10 @@ type BatchFileFetcher struct {
 	onlyDownloadToFileCache bool
 	doneErr                 chan error
 
-	mu               sync.Mutex
-	remainingFetches map[fetchKey]struct{}
-	fetchWaiters     map[fetchKey][]chan struct{}
+	mu                sync.Mutex
+	remainingFetches  map[fetchKey]struct{}
+	fetchWaiters      map[fetchKey][]chan error
+	fetchesInProgress map[fetchKey]struct{}
 
 	bitmapMu        sync.Mutex
 	downloadsBitmap *roaring.Bitmap
@@ -770,7 +771,8 @@ func newBatchFileFetcher(ctx context.Context, env environment.Env, instanceName 
 		onlyDownloadToFileCache: opts.RootDir == "",
 		doneErr:                 make(chan error, 1),
 		remainingFetches:        remainingFetches,
-		fetchWaiters:            make(map[fetchKey][]chan struct{}),
+		fetchWaiters:            make(map[fetchKey][]chan error),
+		fetchesInProgress:       make(map[fetchKey]struct{}),
 		downloadsBitmap:         downloadsBitmap,
 	}, nil
 }
@@ -780,7 +782,17 @@ func (ff *BatchFileFetcher) notifyFetchCompleted(fk fetchKey) {
 	defer ff.mu.Unlock()
 	delete(ff.remainingFetches, fk)
 	for _, w := range ff.fetchWaiters[fk] {
-		w <- struct{}{}
+		w <- nil
+	}
+	delete(ff.fetchWaiters, fk)
+}
+
+func (ff *BatchFileFetcher) notifyFetchFailed(fk fetchKey, err error) {
+	ff.mu.Lock()
+	defer ff.mu.Unlock()
+	delete(ff.fetchesInProgress, fk)
+	for _, w := range ff.fetchWaiters[fk] {
+		w <- err
 	}
 	delete(ff.fetchWaiters, fk)
 }
@@ -906,6 +918,36 @@ func (ff *BatchFileFetcher) checkAndMaybeLinkFromFileCache(filePointers []*FileP
 type digestToFetch struct {
 	key fetchKey
 	fps []*FilePointer
+}
+
+func (ff *BatchFileFetcher) fetchOne(ctx context.Context, dk fetchKey, filePointers []*FilePointer, opts *DownloadTreeOpts) error {
+	if len(filePointers) == 0 {
+		return status.FailedPreconditionError("empty file pointer list for key")
+	}
+
+	if err := ff.checkAndMaybeLinkFromFileCache(filePointers, opts); err == nil {
+		ff.notifyFetchCompleted(dk)
+		return nil
+	}
+
+	size := dk.SizeBytes
+	if size <= BatchReadLimitBytes && ff.env.GetContentAddressableStorageClient() != nil {
+		req := &repb.BatchReadBlobsRequest{
+			InstanceName:   ff.instanceName,
+			DigestFunction: ff.digestFunction,
+			Digests:        []*repb.Digest{dk.ToDigest()},
+		}
+		if *enableDownloadCompression {
+			req.AcceptableCompressors = append(req.AcceptableCompressors, repb.Compressor_ZSTD)
+		}
+		return ff.batchDownloadFiles(ctx, req, opts)
+	}
+
+	dedupeKey := downloadDedupeKey{groupID: groupIDStringFromContext(ctx), fetchKey: dk}
+	if ff.onlyDownloadToFileCache {
+		return ff.bytestreamReadToFilecache(ctx, ff.env.GetByteStreamClient(), dedupeKey, filePointers)
+	}
+	return ff.bytestreamReadToFilesystem(ctx, ff.env.GetByteStreamClient(), dedupeKey, filePointers, opts)
 }
 
 func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
@@ -1212,8 +1254,33 @@ func (ff *BatchFileFetcher) Fetch(ctx context.Context, node *repb.FileNode) erro
 		ff.mu.Unlock()
 		return nil
 	}
+	if ff.opts.LazyFetch {
+		if _, ok := ff.fetchesInProgress[key]; ok {
+			done := make(chan error, 1)
+			ff.fetchWaiters[key] = append(ff.fetchWaiters[key], done)
+			ff.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case err := <-done:
+				return err
+			}
+		}
+		ff.fetchesInProgress[key] = struct{}{}
+		filePointers := ff.filesToFetch[key]
+		ff.mu.Unlock()
 
-	done := make(chan struct{}, 1)
+		if err := ff.fetchOne(ctx, key, filePointers, ff.opts); err != nil {
+			ff.notifyFetchFailed(key, err)
+			return err
+		}
+		ff.mu.Lock()
+		delete(ff.fetchesInProgress, key)
+		ff.mu.Unlock()
+		return nil
+	}
+
+	done := make(chan error, 1)
 	ff.fetchWaiters[key] = append(ff.fetchWaiters[key], done)
 	ff.mu.Unlock()
 
@@ -1222,8 +1289,8 @@ func (ff *BatchFileFetcher) Fetch(ctx context.Context, node *repb.FileNode) erro
 		return ctx.Err()
 	case err := <-ff.doneErr:
 		return status.WrapError(err, "fetcher failed")
-	case <-done:
-		return nil
+	case err := <-done:
+		return err
 	}
 }
 
@@ -1276,6 +1343,10 @@ type DownloadTreeOpts struct {
 	// RecordInputFetchMetadata controls whether to record which inputs were
 	// fetched from remote CAS while materializing the tree.
 	RecordInputFetchMetadata bool
+	// LazyFetch controls whether input files are fetched on demand by Fetch
+	// instead of being fetched asynchronously by Start. This is used by VFS
+	// workspaces, where CAS inputs are materialized lazily on open.
+	LazyFetch bool
 }
 
 type inputTreeRequest interface {
@@ -1466,7 +1537,9 @@ type TreeFetcher struct {
 	digestFunction repb.DigestFunction_Value
 	opts           *DownloadTreeOpts
 
-	filesToFetch map[fetchKey][]*FilePointer
+	filesToFetch       map[fetchKey][]*FilePointer
+	filesByPath        map[fspath.Key]*repb.FileNode
+	filesByBitsetIndex []*repb.FileNode
 
 	ff             *BatchFileFetcher
 	txInfo         *TransferInfo
@@ -1539,6 +1612,10 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 	onlyDownloadToFileCache := f.opts.RootDir == ""
 	dirPerms := fs.FileMode(0777)
 	f.filesToFetch = make(map[fetchKey][]*FilePointer, 0)
+	f.filesByPath = make(map[fspath.Key]*repb.FileNode)
+	if f.opts.RecordInputFetchMetadata {
+		f.filesByBitsetIndex = make([]*repb.FileNode, 0)
+	}
 	nextBitsetIndex := uint32(0)
 	var fetchDirFn func(dir *repb.Directory, parentDir string) error
 	fetchDirFn = func(dir *repb.Directory, parentDir string) error {
@@ -1555,9 +1632,11 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 				if f.opts.RecordInputFetchMetadata {
 					bitsetIndex = nextBitsetIndex
 					nextBitsetIndex++
+					f.filesByBitsetIndex = append(f.filesByBitsetIndex, node)
 				}
 
 				pathKey := fspath.NewKey(relPath, f.opts.CaseInsensitive)
+				f.filesByPath[pathKey] = node
 				skippedNode, ok := f.opts.Skip[pathKey]
 				if ok {
 					trackExistsFn(relPath, node)
@@ -1617,25 +1696,18 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 	}
 	f.ff = ff
 
-	go func() {
-		// Download any files into the directory structure.
-		f.done <- f.ff.FetchFiles(f.opts)
-		close(f.done)
-	}()
+	if !f.opts.LazyFetch {
+		go func() {
+			// Download any files into the directory structure.
+			f.done <- f.ff.FetchFiles(f.opts)
+			close(f.done)
+		}()
+	}
 
 	return &InputsState{NeedFetching: needFetching, Exist: exist}, nil
 }
 
-// Wait blocks until all transfers are complete.
-// TODO(vadim): add method to cancel pending fetches
-func (f *TreeFetcher) Wait() (*TransferInfo, error) {
-	var err error
-	select {
-	case err = <-f.done:
-	case <-f.ctx.Done():
-		err = f.ctx.Err()
-	}
-
+func (f *TreeFetcher) finish(err error) (*TransferInfo, error) {
 	// Update the stats even if an error is returned.
 	stats := f.ff.GetStats()
 	f.txInfo.BytesTransferred = stats.GetFileDownloadSizeBytes()
@@ -1655,9 +1727,55 @@ func (f *TreeFetcher) Wait() (*TransferInfo, error) {
 	return f.txInfo, err
 }
 
+// Wait blocks until all asynchronous transfers are complete.
+func (f *TreeFetcher) Wait() (*TransferInfo, error) {
+	if f.opts.LazyFetch {
+		return f.finish(nil)
+	}
+	var err error
+	select {
+	case err = <-f.done:
+	case <-f.ctx.Done():
+		err = f.ctx.Err()
+	}
+	return f.finish(err)
+}
+
+// Finish returns transfer stats for the fetcher. For lazy fetchers, this does
+// not wait for inputs that were never requested.
+func (f *TreeFetcher) Finish() (*TransferInfo, error) {
+	if f.opts.LazyFetch {
+		return f.finish(nil)
+	}
+	return f.Wait()
+}
+
 // Fetch blocks until the specified node has been fetched.
 func (f *TreeFetcher) Fetch(ctx context.Context, node *repb.FileNode) error {
 	return f.ff.Fetch(ctx, node)
+}
+
+// FetchByPath fetches the input at relPath if it exists in the input tree. The
+// returned bool indicates whether the path was found.
+func (f *TreeFetcher) FetchByPath(ctx context.Context, relPath string) (bool, error) {
+	relPath = filepath.Clean(filepath.FromSlash(relPath))
+	if relPath == "." || filepath.IsAbs(relPath) || relPath == ".." || strings.HasPrefix(relPath, ".."+string(os.PathSeparator)) {
+		return false, nil
+	}
+	node, ok := f.filesByPath[fspath.NewKey(relPath, f.opts.CaseInsensitive)]
+	if !ok {
+		return false, nil
+	}
+	return true, f.Fetch(ctx, node)
+}
+
+// FetchByBitsetIndex fetches the input at the given deterministic leaf-file
+// index if it exists in the input tree.
+func (f *TreeFetcher) FetchByBitsetIndex(ctx context.Context, index uint32) (bool, error) {
+	if uint64(index) >= uint64(len(f.filesByBitsetIndex)) {
+		return false, nil
+	}
+	return true, f.Fetch(ctx, f.filesByBitsetIndex[index])
 }
 
 func nodesEqual(a *repb.FileNode, b *repb.FileNode) bool {
