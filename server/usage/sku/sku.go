@@ -91,7 +91,7 @@ const (
 	OSLinux                 LabelValue = "linux"
 	OSMac                   LabelValue = "mac"
 	OSWindows               LabelValue = "windows"
-	ArchAmd64               LabelValue = "amd64"
+	ArchX86_64              LabelValue = "x86_64"
 	ArchArm64               LabelValue = "arm64"
 	SelfHostedFalse         LabelValue = "false"
 	SelfHostedTrue          LabelValue = "true"

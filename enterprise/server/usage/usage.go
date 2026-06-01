@@ -753,29 +753,29 @@ func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {
 	if tu.MemoryGBUsec > 0 {
 		counts["memory_gb_usec"] = tu.MemoryGBUsec
 	}
-	if tu.LinuxArmExecutionBurstableComputeDurationUsec > 0 {
-		counts["linux_arm_execution_burstable_compute_duration_usec"] = tu.LinuxArmExecutionBurstableComputeDurationUsec
+	if tu.LinuxArm64ExecutionBurstableComputeDurationUsec > 0 {
+		counts["linux_arm64_execution_burstable_compute_duration_usec"] = tu.LinuxArm64ExecutionBurstableComputeDurationUsec
 	}
-	if tu.LinuxArmExecutionComputeDurationUsec > 0 {
-		counts["linux_arm_execution_compute_duration_usec"] = tu.LinuxArmExecutionComputeDurationUsec
+	if tu.LinuxArm64ExecutionComputeDurationUsec > 0 {
+		counts["linux_arm64_execution_compute_duration_usec"] = tu.LinuxArm64ExecutionComputeDurationUsec
 	}
-	if tu.LinuxX86ExecutionBurstableComputeDurationUsec > 0 {
-		counts["linux_x86_execution_burstable_compute_duration_usec"] = tu.LinuxX86ExecutionBurstableComputeDurationUsec
+	if tu.LinuxX86_64ExecutionBurstableComputeDurationUsec > 0 {
+		counts["linux_x86_64_execution_burstable_compute_duration_usec"] = tu.LinuxX86_64ExecutionBurstableComputeDurationUsec
 	}
-	if tu.LinuxX86ExecutionComputeDurationUsec > 0 {
-		counts["linux_x86_execution_compute_duration_usec"] = tu.LinuxX86ExecutionComputeDurationUsec
+	if tu.LinuxX86_64ExecutionComputeDurationUsec > 0 {
+		counts["linux_x86_64_execution_compute_duration_usec"] = tu.LinuxX86_64ExecutionComputeDurationUsec
 	}
-	if tu.DarwinArmExecutionBurstableComputeDurationUsec > 0 {
-		counts["darwin_arm_execution_burstable_compute_duration_usec"] = tu.DarwinArmExecutionBurstableComputeDurationUsec
+	if tu.DarwinArm64ExecutionBurstableComputeDurationUsec > 0 {
+		counts["darwin_arm64_execution_burstable_compute_duration_usec"] = tu.DarwinArm64ExecutionBurstableComputeDurationUsec
 	}
-	if tu.DarwinArmExecutionComputeDurationUsec > 0 {
-		counts["darwin_arm_execution_compute_duration_usec"] = tu.DarwinArmExecutionComputeDurationUsec
+	if tu.DarwinArm64ExecutionComputeDurationUsec > 0 {
+		counts["darwin_arm64_execution_compute_duration_usec"] = tu.DarwinArm64ExecutionComputeDurationUsec
 	}
-	if tu.DarwinX86ExecutionBurstableComputeDurationUsec > 0 {
-		counts["darwin_x86_execution_burstable_compute_duration_usec"] = tu.DarwinX86ExecutionBurstableComputeDurationUsec
+	if tu.DarwinX86_64ExecutionBurstableComputeDurationUsec > 0 {
+		counts["darwin_x86_64_execution_burstable_compute_duration_usec"] = tu.DarwinX86_64ExecutionBurstableComputeDurationUsec
 	}
-	if tu.DarwinX86ExecutionComputeDurationUsec > 0 {
-		counts["darwin_x86_execution_compute_duration_usec"] = tu.DarwinX86ExecutionComputeDurationUsec
+	if tu.DarwinX86_64ExecutionComputeDurationUsec > 0 {
+		counts["darwin_x86_64_execution_compute_duration_usec"] = tu.DarwinX86_64ExecutionComputeDurationUsec
 	}
 	if tu.LocalSnapshotSavedBytes > 0 {
 		counts["local_snapshot_saved_bytes"] = tu.LocalSnapshotSavedBytes
@@ -798,28 +798,28 @@ func stringMapToCounts(h map[string]string) (*tables.UsageCounts, error) {
 		hInt64[k] = count
 	}
 	return &tables.UsageCounts{
-		Invocations:                                    hInt64["invocations"],
-		CASCacheHits:                                   hInt64["cas_cache_hits"],
-		ActionCacheHits:                                hInt64["action_cache_hits"],
-		TotalDownloadSizeBytes:                         hInt64["total_download_size_bytes"],
-		LinuxExecutionDurationUsec:                     hInt64["linux_execution_duration_usec"],
-		MacExecutionDurationUsec:                       hInt64["mac_execution_duration_usec"],
-		SelfHostedLinuxExecutionDurationUsec:           hInt64["self_hosted_linux_execution_duration_usec"],
-		SelfHostedMacExecutionDurationUsec:             hInt64["self_hosted_mac_execution_duration_usec"],
-		TotalUploadSizeBytes:                           hInt64["total_upload_size_bytes"],
-		TotalCachedActionExecUsec:                      hInt64["total_cached_action_exec_usec"],
-		CPUNanos:                                       hInt64["cpu_nanos"],
-		MemoryGBUsec:                                   hInt64["memory_gb_usec"],
-		LinuxArmExecutionBurstableComputeDurationUsec:  hInt64["linux_arm_execution_burstable_compute_duration_usec"],
-		LinuxArmExecutionComputeDurationUsec:           hInt64["linux_arm_execution_compute_duration_usec"],
-		LinuxX86ExecutionBurstableComputeDurationUsec:  hInt64["linux_x86_execution_burstable_compute_duration_usec"],
-		LinuxX86ExecutionComputeDurationUsec:           hInt64["linux_x86_execution_compute_duration_usec"],
-		DarwinArmExecutionBurstableComputeDurationUsec: hInt64["darwin_arm_execution_burstable_compute_duration_usec"],
-		DarwinArmExecutionComputeDurationUsec:          hInt64["darwin_arm_execution_compute_duration_usec"],
-		DarwinX86ExecutionBurstableComputeDurationUsec: hInt64["darwin_x86_execution_burstable_compute_duration_usec"],
-		DarwinX86ExecutionComputeDurationUsec:          hInt64["darwin_x86_execution_compute_duration_usec"],
-		LocalSnapshotSavedBytes:                        hInt64["local_snapshot_saved_bytes"],
-		RemoteSnapshotSavedBytes:                       hInt64["remote_snapshot_saved_bytes"],
+		Invocations:                          hInt64["invocations"],
+		CASCacheHits:                         hInt64["cas_cache_hits"],
+		ActionCacheHits:                      hInt64["action_cache_hits"],
+		TotalDownloadSizeBytes:               hInt64["total_download_size_bytes"],
+		LinuxExecutionDurationUsec:           hInt64["linux_execution_duration_usec"],
+		MacExecutionDurationUsec:             hInt64["mac_execution_duration_usec"],
+		SelfHostedLinuxExecutionDurationUsec: hInt64["self_hosted_linux_execution_duration_usec"],
+		SelfHostedMacExecutionDurationUsec:   hInt64["self_hosted_mac_execution_duration_usec"],
+		TotalUploadSizeBytes:                 hInt64["total_upload_size_bytes"],
+		TotalCachedActionExecUsec:            hInt64["total_cached_action_exec_usec"],
+		CPUNanos:                             hInt64["cpu_nanos"],
+		MemoryGBUsec:                         hInt64["memory_gb_usec"],
+		LinuxArm64ExecutionBurstableComputeDurationUsec:   hInt64["linux_arm64_execution_burstable_compute_duration_usec"],
+		LinuxArm64ExecutionComputeDurationUsec:            hInt64["linux_arm64_execution_compute_duration_usec"],
+		LinuxX86_64ExecutionBurstableComputeDurationUsec:  hInt64["linux_x86_64_execution_burstable_compute_duration_usec"],
+		LinuxX86_64ExecutionComputeDurationUsec:           hInt64["linux_x86_64_execution_compute_duration_usec"],
+		DarwinArm64ExecutionBurstableComputeDurationUsec:  hInt64["darwin_arm64_execution_burstable_compute_duration_usec"],
+		DarwinArm64ExecutionComputeDurationUsec:           hInt64["darwin_arm64_execution_compute_duration_usec"],
+		DarwinX86_64ExecutionBurstableComputeDurationUsec: hInt64["darwin_x86_64_execution_burstable_compute_duration_usec"],
+		DarwinX86_64ExecutionComputeDurationUsec:          hInt64["darwin_x86_64_execution_compute_duration_usec"],
+		LocalSnapshotSavedBytes:                           hInt64["local_snapshot_saved_bytes"],
+		RemoteSnapshotSavedBytes:                          hInt64["remote_snapshot_saved_bytes"],
 	}, nil
 }
 
@@ -949,60 +949,60 @@ func toOLAPLabeledSKUCounts(labels *tables.UsageLabels, counts *tables.UsageCoun
 			Count:  counts.MemoryGBUsec * 1000,
 		})
 	}
-	if counts.LinuxArmExecutionComputeDurationUsec > 0 {
+	if counts.LinuxArm64ExecutionComputeDurationUsec > 0 {
 		items = append(items, labeledSKUCount{
 			SKU:    sku.RemoteExecutionExecuteComputeNanos,
 			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSLinux, sku.ArchArm64, sku.SelfHostedFalse),
-			Count:  counts.LinuxArmExecutionComputeDurationUsec * 1000,
+			Count:  counts.LinuxArm64ExecutionComputeDurationUsec * 1000,
 		})
 	}
-	if counts.LinuxArmExecutionBurstableComputeDurationUsec > 0 {
+	if counts.LinuxArm64ExecutionBurstableComputeDurationUsec > 0 {
 		items = append(items, labeledSKUCount{
 			SKU:    sku.RemoteExecutionExecuteBurstableComputeNanos,
 			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSLinux, sku.ArchArm64, sku.SelfHostedFalse),
-			Count:  counts.LinuxArmExecutionBurstableComputeDurationUsec * 1000,
+			Count:  counts.LinuxArm64ExecutionBurstableComputeDurationUsec * 1000,
 		})
 	}
-	if counts.LinuxX86ExecutionComputeDurationUsec > 0 {
+	if counts.LinuxX86_64ExecutionComputeDurationUsec > 0 {
 		items = append(items, labeledSKUCount{
 			SKU:    sku.RemoteExecutionExecuteComputeNanos,
-			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSLinux, sku.ArchAmd64, sku.SelfHostedFalse),
-			Count:  counts.LinuxX86ExecutionComputeDurationUsec * 1000,
+			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSLinux, sku.ArchX86_64, sku.SelfHostedFalse),
+			Count:  counts.LinuxX86_64ExecutionComputeDurationUsec * 1000,
 		})
 	}
-	if counts.LinuxX86ExecutionBurstableComputeDurationUsec > 0 {
+	if counts.LinuxX86_64ExecutionBurstableComputeDurationUsec > 0 {
 		items = append(items, labeledSKUCount{
 			SKU:    sku.RemoteExecutionExecuteBurstableComputeNanos,
-			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSLinux, sku.ArchAmd64, sku.SelfHostedFalse),
-			Count:  counts.LinuxX86ExecutionBurstableComputeDurationUsec * 1000,
+			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSLinux, sku.ArchX86_64, sku.SelfHostedFalse),
+			Count:  counts.LinuxX86_64ExecutionBurstableComputeDurationUsec * 1000,
 		})
 	}
-	if counts.DarwinArmExecutionComputeDurationUsec > 0 {
+	if counts.DarwinArm64ExecutionComputeDurationUsec > 0 {
 		items = append(items, labeledSKUCount{
 			SKU:    sku.RemoteExecutionExecuteComputeNanos,
 			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSMac, sku.ArchArm64, sku.SelfHostedFalse),
-			Count:  counts.DarwinArmExecutionComputeDurationUsec * 1000,
+			Count:  counts.DarwinArm64ExecutionComputeDurationUsec * 1000,
 		})
 	}
-	if counts.DarwinArmExecutionBurstableComputeDurationUsec > 0 {
+	if counts.DarwinArm64ExecutionBurstableComputeDurationUsec > 0 {
 		items = append(items, labeledSKUCount{
 			SKU:    sku.RemoteExecutionExecuteBurstableComputeNanos,
 			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSMac, sku.ArchArm64, sku.SelfHostedFalse),
-			Count:  counts.DarwinArmExecutionBurstableComputeDurationUsec * 1000,
+			Count:  counts.DarwinArm64ExecutionBurstableComputeDurationUsec * 1000,
 		})
 	}
-	if counts.DarwinX86ExecutionComputeDurationUsec > 0 {
+	if counts.DarwinX86_64ExecutionComputeDurationUsec > 0 {
 		items = append(items, labeledSKUCount{
 			SKU:    sku.RemoteExecutionExecuteComputeNanos,
-			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSMac, sku.ArchAmd64, sku.SelfHostedFalse),
-			Count:  counts.DarwinX86ExecutionComputeDurationUsec * 1000,
+			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSMac, sku.ArchX86_64, sku.SelfHostedFalse),
+			Count:  counts.DarwinX86_64ExecutionComputeDurationUsec * 1000,
 		})
 	}
-	if counts.DarwinX86ExecutionBurstableComputeDurationUsec > 0 {
+	if counts.DarwinX86_64ExecutionBurstableComputeDurationUsec > 0 {
 		items = append(items, labeledSKUCount{
 			SKU:    sku.RemoteExecutionExecuteBurstableComputeNanos,
-			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSMac, sku.ArchAmd64, sku.SelfHostedFalse),
-			Count:  counts.DarwinX86ExecutionBurstableComputeDurationUsec * 1000,
+			Labels: appendExecutionLabelsWithArch(baseLabels, sku.OSMac, sku.ArchX86_64, sku.SelfHostedFalse),
+			Count:  counts.DarwinX86_64ExecutionBurstableComputeDurationUsec * 1000,
 		})
 	}
 	if counts.LocalSnapshotSavedBytes > 0 {
