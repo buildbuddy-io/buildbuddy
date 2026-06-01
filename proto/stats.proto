@@ -256,8 +256,7 @@ message GetStatHeatmapResponse {
   repeated HeatmapColumn column = 4;
   // Set when a log-scale heatmap was requested for a metric that contains
   // negative values. Those values can't be represented on a log scale, so the
-  // bucket range is clamped to zero and the negative values are grouped into
-  // the lowest bucket.
+  // bucket range is clamped to zero and the negative values are dropped.
   bool metric_had_negative_values = 5;
 }
 

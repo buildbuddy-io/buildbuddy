@@ -726,36 +726,11 @@ func (i *InvocationStatService) getMetricMinMax(ctx context.Context, table strin
 	return valueRange.Low, valueRange.High, true, nil
 }
 
-// evenlySpacedBuckets returns up to numBuckets equal-width integer buckets
-// covering [low, high]. When the range is narrower than numBuckets it returns
-// fewer (width-1) buckets rather than extending past high. Used for the
-// sub-decade log fallback, where over-extending could cross a decade boundary.
-func evenlySpacedBuckets(low int64, high int64, numBuckets int64) []int64 {
-	// Number of distinct integer values in [low, high].
-	width := high + 1 - low
-	step := width / numBuckets
-	if step < 1 {
-		step = 1
-	} else if width%numBuckets != 0 {
-		step++
-	}
-	count := width / step
-	if width%step != 0 {
-		count++
-	}
-	buckets := make([]int64, count+1)
-	for i := range buckets {
-		buckets[i] = low + int64(i)*step
-	}
-	return buckets
-}
-
 // getLinearMetricBuckets evenly divides [low, high] into maxNumMetricBuckets
 // buckets and returns the maxNumMetricBuckets+1 bucket boundaries. Each bucket
 // is [start, end).
 func getLinearMetricBuckets(low int64, high int64) []int64 {
-	// A fun hack: make "high" value 1 higher so that we can put an exclusive
-	// limit on the upper bound of requested ranges. Each bucket is [min, max).
+	// Number of distinct integer values in [low, high].
 	width := high + 1 - low
 	var step int64
 	if width <= maxNumMetricBuckets {
@@ -791,11 +766,9 @@ func trimBuckets(buckets []int64, low int64, high int64) []int64 {
 // getLogMetricBuckets returns powers-of-10 bucket boundaries spanning
 // [low, high]. The lowest bucket is anchored at the largest power of 10 <= low,
 // and the final boundary is the smallest power of 10 strictly greater than high
-// (so high falls inside a [start, end) bucket). A true log scale can't
-// represent values < 1, so when low is below 1 a [0, 1) catch-all bucket is
-// prepended; when low is negative the bottom is clamped to 0 and hadNegative is
-// set so the caller can warn that negative values were grouped into that
-// bucket.
+// (so high falls inside a [start, end) bucket). Our metrics are all integers,
+// and log scales can't represent values under zero, so all values in [0, 1] are
+// placed into a single bucket and values below zero are dropped.
 func getLogMetricBuckets(low int64, high int64) ([]int64, bool) {
 	hadNegativeMetricValues := low < 0
 	if low < 0 {
@@ -807,7 +780,7 @@ func getLogMetricBuckets(low int64, high int64) ([]int64, bool) {
 
 	decadesSpanned := math.Log10(float64(high / max(low, 1)))
 	if decadesSpanned < 1 {
-		return evenlySpacedBuckets(low, high, maxNumMetricBuckets), hadNegativeMetricValues
+		return getLinearMetricBuckets(low, high), hadNegativeMetricValues
 	}
 
 	buckets := make([]int64, 0, maxNumMetricBuckets+1)
