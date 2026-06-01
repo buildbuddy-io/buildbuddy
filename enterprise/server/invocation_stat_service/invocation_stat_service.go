@@ -695,14 +695,14 @@ func getTableForMetric(metric *sfpb.Metric) string {
 // powers-of-10 buckets.
 const maxNumMetricBuckets = 20
 
-// The largest number of decade buckets that we'll subdivide into steps of
-// (1,2,4,6,8,10). Subdividing multiplies the bucket count by 5, so capping at
-// 4 keeps us at or under maxNumMetricBuckets.
+// If the data spans fewer than maxDecadesToSubdivideCoarsely decades, we will
+// subdivide the data into the buckets [1, 2), [2, 4), [4, 6), [6, 8), [8, 10)
+// for each decade.
 const maxDecadesToSubdivideCoarsely = 4
 
-// The largest number of decade buckets that we'll subdivide into steps of
-// (1,2,3,... 10). Subdividing multiplies the bucket count by 9, so capping at
-// 2 keeps us at or under maxNumMetricBuckets.
+// If the data spans fewer than maxDecadesToSubdivideFinely decades, we will
+// subdivide the data into the buckets [1, 2), [2, 3), [3, 4), etc.
+// for each decade.
 const maxDecadesToSubdivideFinely = 2
 
 var fineLogStepMultipliers = []int64{1, 2, 3, 4, 5, 6, 7, 8, 9}
