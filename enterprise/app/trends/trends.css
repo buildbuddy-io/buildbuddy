@@ -134,7 +134,7 @@
 
 .drilldown-page-warning-section {
   display: inline-block;
-  margin: 0 0 16px;
+  margin: 16px 0 0;
 }
 
 .drilldown-page-dd-chart {
