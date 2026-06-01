@@ -16,6 +16,60 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestFileWriter_UsesOTmpfile checks that on Linux, the writer does not
+// materialize a named temp file in the tmp directory while writing — only the
+// final committed path appears, and only after Commit. This validates that
+// FileWriterWithTmpDir is using O_TMPFILE + linkat instead of an
+// open/write/rename cycle through a named temp file.
+func TestFileWriter_UsesOTmpfile(t *testing.T) {
+	dir := testfs.MakeTempDir(t)
+	finalPath := filepath.Join(dir, "out.bin")
+
+	w, err := disk.FileWriter(context.Background(), finalPath)
+	require.NoError(t, err)
+
+	_, err = w.Write([]byte("hello world"))
+	require.NoError(t, err)
+
+	// Before Commit, the directory should be empty: O_TMPFILE has no name.
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Empty(t, entries, "expected no temp file in tmp dir while writing with O_TMPFILE")
+
+	require.NoError(t, w.Commit())
+	require.NoError(t, w.Close())
+
+	// After Commit, only the final file should exist.
+	entries, err = os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "out.bin", entries[0].Name())
+
+	got, err := os.ReadFile(finalPath)
+	require.NoError(t, err)
+	require.Equal(t, "hello world", string(got))
+}
+
+// TestFileWriter_OverwritesExisting verifies that committing the writer
+// overwrites a pre-existing file at the destination, matching the previous
+// rename-based behavior.
+func TestFileWriter_OverwritesExisting(t *testing.T) {
+	dir := testfs.MakeTempDir(t)
+	finalPath := filepath.Join(dir, "out.bin")
+	require.NoError(t, os.WriteFile(finalPath, []byte("old"), 0644))
+
+	w, err := disk.FileWriter(context.Background(), finalPath)
+	require.NoError(t, err)
+	_, err = w.Write([]byte("new"))
+	require.NoError(t, err)
+	require.NoError(t, w.Commit())
+	require.NoError(t, w.Close())
+
+	got, err := os.ReadFile(finalPath)
+	require.NoError(t, err)
+	require.Equal(t, "new", string(got))
+}
+
 func TestMain(m *testing.M) {
 	testmount.RunWithLimitedMountPermissions(m)
 }

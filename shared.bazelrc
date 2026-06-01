@@ -9,7 +9,6 @@ startup --digest_function=BLAKE3
 # in non-hermeticity.
 startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 
-
 ################
 # COMMON FLAGS #
 ################
@@ -213,6 +212,7 @@ common:dev --bes_backend=grpcs://buildbuddy.buildbuddy.dev
 # Common flags to be used with remote cache
 common:cache-shared --remote_cache_compression
 common:cache-shared --experimental_remote_cache_compression_threshold=100
+common:cache-shared --experimental_remote_cache_chunking
 common:cache-shared --remote_timeout=10m
 
 common:cache-dev --config=cache-shared
@@ -241,6 +241,7 @@ common:download-minimal --nobuild_runfile_links
 common:remote-shared --config=cache-shared
 common:remote-shared --jobs=100
 common:remote-shared --verbose_failures
+common:remote-shared --rewind_lost_inputs
 
 # Flags shared for prod RBE and cache
 common:remote-prod-shared --config=remote-shared
@@ -353,6 +354,7 @@ common:ci-shared --config=download-minimal
 common:ci-shared --build_metadata=ROLE=CI
 common:ci-shared --flaky_test_attempts=2
 common:ci-shared --repository_cache=~/repo-cache/
+common:ci-shared --announce_rc
 common:ci-shared --color=yes
 
 # Configuration used for untrusted GitHub actions-based CI

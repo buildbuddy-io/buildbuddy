@@ -795,7 +795,9 @@ func newMmap(t *testing.T) (*copy_on_write.Mmap, string) {
 	s, err := f.Stat()
 	require.NoError(t, err)
 
-	mmap, err := copy_on_write.NewMmapFd(ctx, env, root, false /*=dirty*/, int(f.Fd()), int(s.Size()), offset, snaputil.ChunkSourceLocalFile, "", false)
+	sharedLRU, err := copy_on_write.GetSharedMmapLRU(root)
+	require.NoError(t, err)
+	mmap, err := copy_on_write.NewMmapFd(ctx, env, root, false /*=dirty*/, int(f.Fd()), int(s.Size()), offset, snaputil.ChunkSourceLocalFile, "", false, sharedLRU)
 	require.NoError(t, err)
 	return mmap, path
 }

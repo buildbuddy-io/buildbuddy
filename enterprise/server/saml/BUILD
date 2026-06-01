@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -20,5 +20,22 @@ go_library(
         "@com_github_crewjam_saml//:saml",
         "@com_github_crewjam_saml//samlsp",
         "@com_github_golang_jwt_jwt_v4//:jwt",
+    ],
+)
+
+go_test(
+    name = "saml_test",
+    srcs = ["saml_test.go"],
+    deps = [
+        "//enterprise/server/testutil/buildbuddy_enterprise",
+        "//proto:group_go_proto",
+        "//proto:user_go_proto",
+        "//server/testutil/app",
+        "//server/testutil/testport",
+        "@com_github_beevik_etree//:etree",
+        "@com_github_crewjam_saml//:saml",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//encoding/protojson",
     ],
 )

@@ -86,7 +86,7 @@ class Router {
       // A user may have access to an invocation w/o having access to group.
       !path.startsWith(Path.invocationPath) &&
       !path.startsWith(Path.profilePath) &&
-      !path.startsWith(Path.joinOrgPath) &&
+      !(capabilities.config.groupMembershipRequestsEnabled && path.startsWith(Path.joinOrgPath)) &&
       !path.startsWith(Path.orgAccessDeniedPath)
     ) {
       const params = new URLSearchParams({
@@ -245,6 +245,10 @@ class Router {
 
   navigateToExecutors() {
     this.navigateTo(Path.executorsPath);
+  }
+
+  navigateToCacheProxies() {
+    this.navigateTo(Path.cacheProxiesPath);
   }
 
   navigateToTap() {
@@ -429,8 +433,20 @@ class Router {
     return capabilities.executors && Boolean(user?.canCall("getExecutionNodes"));
   }
 
+  canAccessCacheProxiesPage(user?: User) {
+    return Boolean(user?.canCall("getCacheProxies"));
+  }
+
   canAccessUsagePage(user?: User) {
     return capabilities.usage && Boolean(user?.canCall("getUsage"));
+  }
+
+  canAccessUsageAlertingPage(user?: User) {
+    return (
+      this.canAccessUsagePage(user) &&
+      capabilities.config.usageAlertsEnabled &&
+      Boolean(user?.canCall("getUsageAlertingRules"))
+    );
   }
 
   canAccessWorkflowsPage() {
@@ -540,14 +556,20 @@ class Router {
     if (path === Path.orgAccessDeniedPath) {
       return new URL(Path.home, window.location.href);
     }
-    if (path === Path.executorsPath && !this.canAccessExecutorsPage(user)) {
+    if (path.startsWith(Path.executorsPath) && !this.canAccessExecutorsPage(user)) {
+      return new URL(Path.home, window.location.href);
+    }
+    if (path.startsWith(Path.cacheProxiesPath) && !this.canAccessCacheProxiesPage(user)) {
       return new URL(Path.home, window.location.href);
     }
     if (path === Path.workflowsPath && !this.canAccessWorkflowsPage()) {
       return new URL(Path.home, window.location.href);
     }
-    if (path === Path.usagePath && !this.canAccessUsagePage(user)) {
+    if (path.startsWith(Path.usagePath) && !this.canAccessUsagePage(user)) {
       return new URL(Path.home, window.location.href);
+    }
+    if (path.startsWith(Path.usageAlertingPath) && !this.canAccessUsageAlertingPage(user)) {
+      return new URL(Path.usagePath, window.location.href);
     }
 
     if (path === Path.settingsOrgDetailsPath && !this.canAccessOrgDetailsPage(user)) {
@@ -626,8 +648,10 @@ export class Path {
   static orgAccessDeniedPath = "/org/access-denied";
   static trendsPath = "/trends/";
   static usagePath = "/usage/";
+  static usageAlertingPath = "/usage/alerting";
   static auditLogsPath = "/audit-logs/";
   static executorsPath = "/executors/";
+  static cacheProxiesPath = "/cache-proxies/";
   static tapPath = "/tests/";
   static workflowsPath = "/workflows/";
   static codePath = "/code/";
@@ -664,6 +688,7 @@ function getUnavailableMessage(matchedPath: string) {
     case Path.trendsPath:
     case Path.targetsPath:
     case Path.executorsPath:
+    case Path.cacheProxiesPath:
     case Path.tapPath:
     case Path.userHistoryPath:
     case Path.hostHistoryPath:

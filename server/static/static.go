@@ -47,6 +47,7 @@ var (
 	expandedSuggestionsEnabled             = flag.Bool("app.expanded_suggestions_enabled", false, "If set, enable more build suggestions in the UI.")
 	enableWorkflows                        = flag.Bool("remote_execution.enable_workflows", false, "Whether to enable BuildBuddy workflows.")
 	enableExecutorKeyCreation              = flag.Bool("remote_execution.enable_executor_key_creation", false, "If enabled, UI will allow executor keys to be created.")
+	enableCacheProxyKeyCreation            = flag.Bool("cache_proxy.enable_cache_proxy_key_creation", false, "If enabled, UI will allow cache proxy keys to be created.")
 	testOutputManifestsEnabled             = flag.Bool("app.test_output_manifests_enabled", true, "If set, the target page will render the contents of test output zips.")
 	patternFilterEnabled                   = flag.Bool("app.pattern_filter_enabled", true, "If set, allow filtering by pattern in the client.")
 	executionSearchEnabled                 = flag.Bool("app.execution_search_enabled", true, "If set, fetch lists of executions from the OLAP DB in the trends UI.")
@@ -54,6 +55,7 @@ var (
 	customerManagedEncryptionKeysEnabled   = flag.Bool("app.customer_managed_encryption_keys_enabled", false, "If set, show customer-managed encryption configuration UI.")
 	tagsUIEnabled                          = flag.Bool("app.tags_ui_enabled", false, "If set, expose tags data and let users filter by tag.")
 	timeseriesChartsInTimingProfileEnabled = flag.Bool("app.timeseries_charts_in_timing_profile_enabled", true, "If set, charts with sampled time series data (such as CPU and memory usage) will be shown")
+	timingProfileMaxSizeBytes              = flag.Int64("app.timing_profile_max_size_bytes", 350_000_000, "Maximum compressed timing profile size that the UI will load.")
 	auditLogsUIEnabled                     = flag.Bool("app.audit_logs_ui_enabled", false, "If set, the audit logs UI will be accessible from the sidebar.")
 	newTrendsUIEnabled                     = flag.Bool("app.new_trends_ui_enabled", false, "DEPRECATED: If set, show a new trends UI with a bit more organization.")
 	trendsRangeSelectionEnabled            = flag.Bool("app.trends_range_selection", true, "If set, let users drag to select time ranges in the trends UI.")
@@ -185,6 +187,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		TestDashboardEnabled:                   target_tracker.TargetTrackingEnabled(),
 		UserOwnedExecutorsEnabled:              remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
 		ExecutorKeyCreationEnabled:             remote_execution_config.RemoteExecutionEnabled() && *enableExecutorKeyCreation,
+		CacheProxyKeyCreationEnabled:           *enableCacheProxyKeyCreation,
 		WorkflowsEnabled:                       remote_execution_config.RemoteExecutionEnabled() && *enableWorkflows,
 		CodeEditorEnabled:                      *features.CodeEditorEnabled || *features.CodeEditorV2Enabled,
 		RemoteExecutionEnabled:                 remote_execution_config.RemoteExecutionEnabled(),
@@ -209,6 +212,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		CustomerManagedEncryptionKeysEnabled:   *customerManagedEncryptionKeysEnabled,
 		TagsUiEnabled:                          *tagsUIEnabled,
 		TimeseriesChartsInTimingProfileEnabled: *timeseriesChartsInTimingProfileEnabled,
+		TimingProfileMaxSizeBytes:              *timingProfileMaxSizeBytes,
 		AuditLogsUiEnabled:                     *auditLogsUIEnabled,
 		TrendsRangeSelectionEnabled:            *trendsRangeSelectionEnabled && env.GetOLAPDBHandle() != nil,
 		SubdomainsEnabled:                      subdomain.Enabled(),
@@ -223,6 +227,8 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		OrgAdminApiKeyCreationEnabled:          *orgAdminApiKeyCreationEnabled,
 		ReaderWriterRolesEnabled:               *readerWriterRolesEnabled,
 		ApiKeyValueReadbackEnabled:             &apiKeyValueReadbackEnabled,
+		GroupMembershipRequestsEnabled:         new(env.GetUserDB() != nil && env.GetUserDB().GetGroupMembershipRequestsEnabled()),
+		UsageAlertsEnabled:                     env.GetUsageService() != nil && env.GetUsageService().GetAlertsEnabled(),
 		InvocationLogStreamingEnabled:          *invocationLogStreamingEnabled,
 		TargetFlakesUiEnabled:                  *targetFlakesUIEnabled && env.GetOLAPDBHandle() != nil,
 		CodeEditorV2Enabled:                    *features.CodeEditorV2Enabled,

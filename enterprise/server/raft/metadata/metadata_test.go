@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -224,7 +223,6 @@ func randomFileMetadata(t testing.TB, sizeBytes int64, groupID string) *sgpb.Fil
 		StoredSizeBytes:    bytesWritten,
 		LastAccessUsec:     now,
 		LastModifyUsec:     now,
-		FileType:           sgpb.FileMetadata_COMPLETE_FILE_TYPE,
 	}
 	return md
 }
@@ -469,22 +467,40 @@ func TestFindMissingMetadata(t *testing.T) {
 }
 
 func TestLRU(t *testing.T) {
-	// TODO: https://github.com/buildbuddy-io/buildbuddy-internal/issues/6876
-	quarantine.SkipQuarantinedTest(t)
-
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.atime_update_threshold", 10*time.Second)
 	flags.Set(t, "cache.raft.atime_write_batch_size", 1)
-	flags.Set(t, "cache.raft.min_eviction_age", 0)
-	flags.Set(t, "cache.raft.samples_per_batch", 50)
+	// The test creates records at fake-clock T0, then Find()s subsets at T1,
+	// T2, T3, leaving records 18-24 with atime T0. Final fake-clock time is
+	// T4 = T0+20min. Setting min_eviction_age=18min restricts the eviction
+	// sampler to only records 18-24 (age 20min); the Find()'d records (age
+	// 5/10/15min) are skipped entirely. This eliminates two flake sources:
+	// (1) the LRU evictor's real-time 1s ticker firing during the test's
+	// setup phase and evicting random records before atime updates apply,
+	// and (2) stale-atime samples making recently-Find()'d records appear
+	// old enough to evict.
+	flags.Set(t, "cache.raft.min_eviction_age", 18*time.Minute)
+	// Force the sampler to refresh its pebble iterator on
+	// every read so that samples have up-to-date atimes.
+	flags.Set(t, "cache.raft.samples_per_batch", 0)
+	// Make the sample channel unbuffered so it can't hold stale samples
+	// produced before atime updates from the test's Find() calls were
+	// applied to pebble. Without this, the eviction consumer reads stale
+	// samples whose Timestamp doesn't match the current pebble atime, and
+	// every Delete is rejected with "Atime mismatch".
+	flags.Set(t, "cache.raft.sample_buffer_size", 0)
 	flags.Set(t, "cache.raft.sample_pool_size", 10)
 	flags.Set(t, "cache.raft.eviction_batch_size", 1)
 	flags.Set(t, "cache.raft.local_size_update_period", 100*time.Millisecond)
 	flags.Set(t, "cache.raft.partition_usage_delta_bytes_threshold", 100)
 
-	digestSize := int64(1000)
+	// Use 10KB digests so the total data is large enough (~130KB for 31
+	// items) that pebble's EstimateDiskUsage is accurate. With 1KB
+	// digests the total was only ~20KB, and EstimateDiskUsage could
+	// underestimate enough to skip eviction entirely.
+	digestSize := int64(10000)
 	numDigests := 25
-	maxSizeBytes := int64(math.Ceil(14022 * (1 / usagetracker.EvictionCutoffThreshold))) // account for .9 evictor cutoff
+	maxSizeBytes := int64(math.Ceil(105000 * (1 / usagetracker.EvictionCutoffThreshold))) // account for .9 evictor cutoff
 
 	configs := getTestConfigs(t, 1)
 
@@ -557,9 +573,9 @@ func TestLRU(t *testing.T) {
 		resourceKeys = append(resourceKeys, md.GetFileRecord())
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	err = rc1.TestingWaitForGC(ctx)
+	gcCtx, gcCancel := context.WithTimeout(ctx, 60*time.Second)
+	defer gcCancel()
+	err = rc1.TestingWaitForGC(gcCtx)
 	require.NoError(t, err)
 	waitForShutdown(t, caches...)
 
@@ -583,17 +599,29 @@ func TestLRU(t *testing.T) {
 	keptCount := 0
 	keptAgeTotal := time.Duration(0)
 
+	// Use a fresh context for the post-restart Find loop. The GC context
+	// above can be near expiry by now.
+	findCtx, findCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer findCancel()
+	// Wait for the freshly-restarted cache to acquire range leases before
+	// running the Find loop. Without this, the first few Find()s can fail
+	// with "Range lease invalid", which the loop below would silently
+	// count as "kept" (causing evictedCount=0 false-negative failures).
+	require.Eventually(t, func() bool {
+		_, err := rc1.Find(findCtx, &mdpb.FindRequest{
+			FileRecords: []*sgpb.FileRecord{resourceKeys[0]},
+		})
+		return err == nil
+	}, 10*time.Second, 100*time.Millisecond, "cache did not become ready after restart")
+
 	now := clock.Now()
 	for r, usedAt := range lastUsed {
-		findRsp, err := rc1.Find(ctx, &mdpb.FindRequest{
+		findRsp, err := rc1.Find(findCtx, &mdpb.FindRequest{
 			FileRecords: []*sgpb.FileRecord{r},
 		})
-		evicted := false
-		if err == nil && len(findRsp.GetFindResponses()) == 1 {
-			if !findRsp.GetFindResponses()[0].GetPresent() {
-				evicted = true
-			}
-		}
+		require.NoError(t, err)
+		require.Equal(t, 1, len(findRsp.GetFindResponses()))
+		evicted := !findRsp.GetFindResponses()[0].GetPresent()
 
 		age := now.Sub(usedAt)
 		if evicted {

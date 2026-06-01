@@ -3,10 +3,12 @@ package remotebazel
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
@@ -232,6 +234,7 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 
 		localBranchExistsRemotely bool
 		localCommitExistsRemotely bool
+		unpushedLocalCommit       bool
 
 		expectedBranch  string
 		expectedCommit  string
@@ -263,6 +266,13 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 			expectedCommit:            originalMasterHeadCommit,
 			expectedPatches:           []string{"local_file.txt"},
 		},
+		{
+			name:                "On master with an unpushed commit",
+			unpushedLocalCommit: true,
+			expectedBranch:      "master",
+			expectedCommit:      originalMasterHeadCommit,
+			expectedPatches:     []string{"local_only_commited_file.txt"},
+		},
 	}
 
 	for i, tc := range testCases {
@@ -272,7 +282,9 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 		require.NoError(t, err, tc.name)
 		resetRepoRootPathForTest(t)
 
-		if tc.localBranchExistsRemotely {
+		if tc.unpushedLocalCommit {
+			testgit.CommitFiles(t, localRepoPath, map[string]string{"local_only_commited_file.txt": "exit 0"})
+		} else if tc.localBranchExistsRemotely {
 			testshell.Run(t, localRepoPath, "git checkout remote_b")
 		} else {
 			testshell.Run(t, localRepoPath, "git checkout -B local_only")
@@ -291,9 +303,9 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 
 		require.Equal(t, tc.expectedBranch, config.Ref, tc.name)
 		require.Equal(t, tc.expectedCommit, config.CommitSHA, tc.name)
-		require.Equal(t, len(tc.expectedPatches), len(config.Patches))
+		require.Equal(t, len(tc.expectedPatches), len(config.Patches), tc.name)
 		if len(tc.expectedPatches) > 0 {
-			require.Contains(t, string(config.Patches[0]), tc.expectedPatches[0])
+			require.Contains(t, string(config.Patches[0]), tc.expectedPatches[0], tc.name)
 		}
 
 		// Reset remote repo for future test cases
@@ -393,8 +405,135 @@ func TestGeneratingPatches(t *testing.T) {
 	}
 }
 
+func TestWorkingDirectory(t *testing.T) {
+	rootDir := t.TempDir()
+	repoRoot := filepath.Join(rootDir, "repo")
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "subdir", "nested"), 0755))
+
+	testCases := []struct {
+		name              string
+		workspaceFilePath string
+		expectedDir       string
+		expectedError     string
+	}{
+		{
+			name:              "Repo root workspace",
+			workspaceFilePath: filepath.Join(repoRoot, "MODULE.bazel"),
+			expectedDir:       "",
+		},
+		{
+			name:              "Nested workspace",
+			workspaceFilePath: filepath.Join(repoRoot, "subdir", "MODULE.bazel"),
+			expectedDir:       "subdir",
+		},
+		{
+			name:              "Deeply nested workspace",
+			workspaceFilePath: filepath.Join(repoRoot, "subdir", "nested", "MODULE.bazel"),
+			expectedDir:       filepath.Join("subdir", "nested"),
+		},
+		{
+			name:              "Workspace outside repo root",
+			workspaceFilePath: filepath.Join(rootDir, "outside", "MODULE.bazel"),
+			expectedError:     "outside repo root",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, err := workingDirectory(repoRoot, tc.workspaceFilePath)
+			if tc.expectedError != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.expectedError)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedDir, dir)
+		})
+	}
+}
+
 func resetRepoRootPathForTest(t *testing.T) {
 	storage.RepoRootPath = sync.OnceValues(func() (string, error) {
 		return os.Getwd()
 	})
+}
+
+func TestParseArgs(t *testing.T) {
+	t.Setenv("BUILDBUDDY_API_KEY", "test-api-key")
+
+	bazelArgs, execArgs, err := parseArgs([]string{
+		"--output_base", "/tmp/output_base",
+		"test",
+		"-c", "opt",
+		"--config=remote_only",
+		"--bes_backend=grpc://user-bes",
+		"--remote_cache=grpc://user-cache",
+		"--remote_header=x-custom=1",
+		"//foo",
+		"--",
+		"--exec_arg",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		// Startup flags should be preserved.
+		"--output_base=/tmp/output_base",
+		"test",
+		// Bazel flags should be canonicalized.
+		"--compilation_mode=opt",
+		// Config flags should not be expanded and passed through to the remote runner as is.
+		"--config=remote_only",
+		// Remote headers should be preserved.
+		"--remote_header=x-custom=1",
+		// API key should be set.
+		"--remote_header=x-buildbuddy-api-key=test-api-key",
+		"//foo",
+		// Remote flags should be removed and replaced by the CLI.
+		"--config=buildbuddy_bes_backend",
+		"--config=buildbuddy_bes_results_url",
+		"--config=buildbuddy_remote_cache",
+	}, bazelArgs)
+	// Exec args should be preserved.
+	require.Equal(t, []string{"--exec_arg"}, execArgs)
+}
+
+func TestGetRemoteRunnerTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		envValue   string
+		flagArgs   []string
+		wantRunner string
+	}{
+		{
+			name:       "neither flag nor env set",
+			wantRunner: login.DefaultApiTarget,
+		},
+		{
+			name:       "env set, no flag",
+			envValue:   "grpcs://env-runner.dev",
+			wantRunner: "grpcs://env-runner.dev",
+		},
+		{
+			name:       "flag takes precedence over env",
+			envValue:   "grpcs://env-runner.dev",
+			flagArgs:   []string{"--remote_runner=grpc://flag-runner.dev", "build", "//..."},
+			wantRunner: "grpc://flag-runner.dev",
+		},
+		{
+			name:       "flag set, no env",
+			flagArgs:   []string{"--remote_runner=grpcs://flag-runner.dev", "build", "//..."},
+			wantRunner: "grpcs://flag-runner.dev",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("BUILDBUDDY_REMOTE_RUNNER", tc.envValue)
+
+			// Reset the remoteRunner flag to its default before each subtest so
+			// prior parses don't leak.
+			_ = RemoteFlagset.Set("remote_runner", login.DefaultApiTarget)
+
+			actual := getRemoteRunnerTarget(tc.flagArgs)
+			require.Equal(t, tc.wantRunner, actual)
+		})
+	}
 }

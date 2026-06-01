@@ -1,14 +1,21 @@
 package githubapp
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-github/v59/github"
 	"github.com/stretchr/testify/require"
@@ -154,7 +161,7 @@ func TestGetRepositoryInstallationToken_RepoNotImported(t *testing.T) {
 	require.Empty(t, tok)
 	require.Equal(t, 0, client.createTokenCalls)
 }
-func TestGetInstallationTokenForStatusReportingOnly(t *testing.T) {
+func TestGetInstallationTokenForInternalUseOnly(t *testing.T) {
 	te, ctx := setupEnv(t)
 	insertInstallation(t, te, ctx)
 	app := newTestApp(te, &fakeAppClient{
@@ -162,7 +169,7 @@ func TestGetInstallationTokenForStatusReportingOnly(t *testing.T) {
 		wantInstallationID: testInstallationID,
 	})
 
-	tok, err := app.GetInstallationTokenForStatusReportingOnly(ctx, testOwner)
+	tok, err := app.GetInstallationTokenForInternalUseOnly(ctx, testOwner)
 	require.NoError(t, err)
 	require.Equal(t, fakeToken, tok.GetToken())
 
@@ -175,4 +182,179 @@ func TestGetInstallationTokenForStatusReportingOnly(t *testing.T) {
 		WHERE group_id = ?
 	`, testGroupID).Take(gitRepository)
 	require.Error(t, err)
+}
+
+func TestValidateWebhookPayload(t *testing.T) {
+	payload := []byte(`{"action":"created"}`)
+
+	for _, test := range []struct {
+		name                   string
+		webhookSecret          string
+		webhookSecretAlternate string
+		requestIsSigned        bool
+		requestSigningSecret   string
+		wantErr                bool
+	}{
+		{
+			name:                   "primary_only/request_signature_primary/succeeds",
+			webhookSecret:          "primary-secret",
+			webhookSecretAlternate: "",
+			requestIsSigned:        true,
+			requestSigningSecret:   "primary-secret",
+			wantErr:                false,
+		},
+		{
+			name:                   "primary_only/request_signature_alt/fails",
+			webhookSecret:          "primary-secret",
+			webhookSecretAlternate: "",
+			requestIsSigned:        true,
+			requestSigningSecret:   "alt-secret",
+			wantErr:                true,
+		},
+		{
+			name:                   "primary_only/request_signature_invalid/fails",
+			webhookSecret:          "primary-secret",
+			webhookSecretAlternate: "",
+			requestIsSigned:        true,
+			requestSigningSecret:   "invalid-secret",
+			wantErr:                true,
+		},
+		{
+			name:                   "primary_only/request_signature_empty/fails",
+			webhookSecret:          "primary-secret",
+			webhookSecretAlternate: "",
+			requestIsSigned:        true,
+			requestSigningSecret:   "",
+			wantErr:                true,
+		},
+		{
+			name:                   "primary_only/request_signature_missing/fails",
+			webhookSecret:          "primary-secret",
+			webhookSecretAlternate: "",
+			requestIsSigned:        false,
+			requestSigningSecret:   "",
+			wantErr:                true,
+		},
+		{
+			name:                   "primary_and_alt/request_signature_primary/succeeds",
+			webhookSecret:          "primary-secret",
+			webhookSecretAlternate: "alt-secret",
+			requestIsSigned:        true,
+			requestSigningSecret:   "primary-secret",
+			wantErr:                false,
+		},
+		{
+			name:                   "primary_and_alt/request_signature_alt/succeeds",
+			webhookSecret:          "primary-secret",
+			webhookSecretAlternate: "alt-secret",
+			requestIsSigned:        true,
+			requestSigningSecret:   "alt-secret",
+			wantErr:                false,
+		},
+		{
+			name:                   "primary_and_alt/request_signature_invalid/fails",
+			webhookSecret:          "primary-secret",
+			webhookSecretAlternate: "alt-secret",
+			requestIsSigned:        true,
+			requestSigningSecret:   "invalid-secret",
+			wantErr:                true,
+		},
+		{
+			name:                   "primary_and_alt/request_signature_empty/fails",
+			webhookSecret:          "primary-secret",
+			webhookSecretAlternate: "alt-secret",
+			requestIsSigned:        true,
+			requestSigningSecret:   "",
+			wantErr:                true,
+		},
+		{
+			name:                   "primary_and_alt/request_signature_missing/fails",
+			webhookSecret:          "primary-secret",
+			webhookSecretAlternate: "alt-secret",
+			requestIsSigned:        false,
+			requestSigningSecret:   "",
+			wantErr:                true,
+		},
+		{
+			name:                   "alt_only/request_signature_primary/fails",
+			webhookSecret:          "",
+			webhookSecretAlternate: "alt-secret",
+			requestIsSigned:        true,
+			requestSigningSecret:   "primary-secret",
+			wantErr:                true,
+		},
+		{
+			name:                   "alt_only/request_signature_alt/succeeds",
+			webhookSecret:          "",
+			webhookSecretAlternate: "alt-secret",
+			requestIsSigned:        true,
+			requestSigningSecret:   "alt-secret",
+			wantErr:                false,
+		},
+		{
+			name:                   "alt_only/request_signature_invalid/fails",
+			webhookSecret:          "",
+			webhookSecretAlternate: "alt-secret",
+			requestIsSigned:        true,
+			requestSigningSecret:   "invalid-secret",
+			wantErr:                true,
+		},
+		{
+			name:                   "alt_only/request_signature_empty/fails",
+			webhookSecret:          "",
+			webhookSecretAlternate: "alt-secret",
+			requestIsSigned:        true,
+			requestSigningSecret:   "",
+			wantErr:                true,
+		},
+		{
+			name:                   "alt_only/request_signature_missing/fails",
+			webhookSecret:          "",
+			webhookSecretAlternate: "alt-secret",
+			requestIsSigned:        false,
+			requestSigningSecret:   "",
+			wantErr:                true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			app := &GitHubApp{
+				webhookSecret:          test.webhookSecret,
+				webhookSecretAlternate: test.webhookSecretAlternate,
+			}
+
+			req, err := http.NewRequest("POST", "http://localhost/webhooks/github/app", bytes.NewReader(payload))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", "application/json")
+			if test.requestIsSigned {
+				hash := hmac.New(sha256.New, []byte(test.requestSigningSecret))
+				hash.Write(payload)
+				signature := "sha256=" + hex.EncodeToString(hash.Sum(nil))
+				req.Header.Set(github.SHA256SignatureHeader, signature)
+			}
+
+			got, err := app.validateWebhookPayload(req)
+			if test.wantErr {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, payload, got)
+		})
+	}
+}
+
+func TestHandleWebhookRequest_RejectsPayloadOverLimit(t *testing.T) {
+	app := &GitHubApp{
+		webhookSecret: "primary-secret",
+	}
+
+	body := io.LimitReader(ioutil.NewByteRepeater('x'), githubWebhookMaxPayloadSize+1)
+	req, err := http.NewRequest("POST", "http://localhost/webhooks/github/app", body)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	app.handleWebhookRequest(w, req)
+	require.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
 }

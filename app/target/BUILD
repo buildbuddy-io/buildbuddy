@@ -11,6 +11,7 @@ ts_library(
         "//:node_modules/react",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
+        "//app/components/breadcrumbs",
         "//app/components/button:link_button",
         "//app/components/link",
         "//app/format",
@@ -164,6 +165,7 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:color",
         "//app/util:lcov",
+        "//app/util:url",
         "//proto:build_event_stream_ts_proto",
     ],
 )
@@ -189,6 +191,7 @@ ts_library(
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/capabilities",
+        "//app/components/breadcrumbs",
         "//app/components/button",
         "//app/components/button:link_button",
         "//app/components/link",

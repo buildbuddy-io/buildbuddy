@@ -143,7 +143,6 @@ func randomFileMetadata(sizeBytes int64) *sgpb.FileMetadata {
 		StoredSizeBytes:    bytesWritten,
 		LastAccessUsec:     now,
 		LastModifyUsec:     now,
-		FileType:           sgpb.FileMetadata_COMPLETE_FILE_TYPE,
 	}
 	return md
 }

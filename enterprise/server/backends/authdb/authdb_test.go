@@ -150,9 +150,19 @@ func TestImpersonationKeys(t *testing.T) {
 	rsp, err := env.GetBuildBuddyServer().CreateImpersonationApiKey(serverAdminCtx, req)
 	require.NoError(t, err)
 
-	// Verify the new API key is usable.
-	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())
+	// Verify the new API key is usable and marked as impersonating.
+	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())
 	require.NoError(t, err)
+	require.True(t, akg.IsImpersonating(), "impersonation key should have IsImpersonating() == true")
+
+	// Verify a regular (non-impersonation) API key is not marked as impersonating.
+	adminGroupID := admin.Groups[0].Group.GroupID
+	regularKeys, err := adb.GetAPIKeys(serverAdminCtx, adminGroupID)
+	require.NoError(t, err)
+	require.NotEmpty(t, regularKeys)
+	regularAKG, err := adb.GetAPIKeyGroupFromAPIKey(ctx, regularKeys[0].Value)
+	require.NoError(t, err)
+	require.False(t, regularAKG.IsImpersonating(), "regular key should have IsImpersonating() == false")
 
 	fakeClock.Advance(2 * time.Hour)
 

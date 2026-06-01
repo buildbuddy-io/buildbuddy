@@ -138,6 +138,7 @@ type RunOpts struct {
 	RunOutputLocally bool
 	// If RunOutputLocally=true, execution arguments for running the target locally.
 	ExecArgs          []string
+	WorkingDirectory  string
 	WorkspaceFilePath string
 }
 
@@ -436,9 +437,12 @@ func getBaseBranchAndCommit(remoteName string, defaultBranch string) (branch str
 	if branch == "" || commit == "" {
 		branch = defaultBranch
 
-		defaultBranchCommitHash, err := getHeadCommitForLocalBranch(defaultBranch)
+		defaultBranchCommitHash, err := getHeadCommitForLocalBranch(branch + "@{upstream}")
 		if err != nil {
-			return "", "", fmt.Errorf("get head commit for local branch %q: %w", defaultBranch, err)
+			defaultBranchCommitHash, err = getHeadCommitForLocalBranch(branch)
+			if err != nil {
+				return "", "", fmt.Errorf("get head commit for local branch %q: %w", branch, err)
+			}
 		}
 		commit = defaultBranchCommitHash
 	}
@@ -845,6 +849,38 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 	return mainLocalArtifacts, nil
 }
 
+func getWorkingDirectory(workspaceFilePath string) (string, error) {
+	repoRootPath, err := storage.RepoRootPath()
+	if err != nil {
+		return "", status.WrapError(err, "locate git repo root")
+	}
+	return workingDirectory(repoRootPath, workspaceFilePath)
+}
+
+func workingDirectory(repoRootPath, workspaceFilePath string) (string, error) {
+	repoRootPath, err := filepath.Abs(repoRootPath)
+	if err != nil {
+		return "", status.WrapError(err, "compute repo root absolute path")
+	}
+	workspaceFilePath, err = filepath.Abs(workspaceFilePath)
+	if err != nil {
+		return "", status.WrapError(err, "compute bazel workspace absolute path")
+	}
+	workspaceDirPath := filepath.Dir(workspaceFilePath)
+	relPath, err := filepath.Rel(repoRootPath, workspaceDirPath)
+	if err != nil {
+		return "", status.WrapError(err, "compute bazel workspace path relative to repo root")
+	}
+	relPath = filepath.Clean(relPath)
+	if relPath == "." {
+		return "", nil
+	}
+	if strings.Contains(relPath, "..") {
+		return "", status.InvalidArgumentErrorf("bazel workspace %q is outside repo root %q", workspaceDirPath, repoRootPath)
+	}
+	return relPath, nil
+}
+
 func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
 	env := real_environment.NewBatchEnv()
 
@@ -931,7 +967,8 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	req := &rnpb.RunRequest{
-		Name: opts.Name,
+		Name:             opts.Name,
+		WorkingDirectory: opts.WorkingDirectory,
 		GitRepo: &gitpb.GitRepo{
 			RepoUrl:                 repoConfig.URL,
 			UseSystemGitCredentials: *useSystemGitCredentials,
@@ -1143,6 +1180,9 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 			InitialBackoff: 500 * time.Millisecond,
 			MaxBackoff:     5 * time.Second,
 			Multiplier:     2,
+			// Failed attempts are expected here since we're polling for
+			// existence.
+			DontLogFailedAttempts: true,
 		}, func(ctx context.Context) (*espb.GetExecutionResponse, error) {
 			execution, err := bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
 				InvocationId: iid,
@@ -1187,7 +1227,30 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 	return inRsp, execRsp, nil
 }
 
+func normalizeGRPCTarget(target string) string {
+	if strings.HasPrefix(target, "grpc://") || strings.HasPrefix(target, "grpcs://") {
+		return target
+	}
+	return "grpcs://" + target
+}
+
+// getRemoteRunnerTarget returns the remote runner target to use.
+// If --remote_runner was passed on the command line, that value is used.
+// Otherwise, BUILDBUDDY_REMOTE_RUNNER is checked. If neither is set, the
+// default target is used.
+func getRemoteRunnerTarget(commandLineArgs []string) string {
+	if runner := arg.Get(commandLineArgs, "remote_runner"); runner != "" {
+		return runner
+	}
+	if env := os.Getenv("BUILDBUDDY_REMOTE_RUNNER"); env != "" {
+		return env
+	}
+	return *remoteRunner
+}
+
 func HandleRemoteBazel(commandLineArgs []string) (int, error) {
+	runner := normalizeGRPCTarget(getRemoteRunnerTarget(commandLineArgs))
+
 	commandLineArgs, err := parseRemoteCliFlags(commandLineArgs)
 	if err != nil {
 		return 1, status.WrapError(err, "parse cli flags")
@@ -1211,10 +1274,9 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	if err != nil {
 		return 1, status.WrapError(err, "finding workspace")
 	}
-
-	runner := *remoteRunner
-	if !strings.HasPrefix(runner, "grpc") {
-		runner = "grpcs://" + runner
+	workingDirectory, err := getWorkingDirectory(wsFilePath)
+	if err != nil {
+		return 1, status.WrapError(err, "determine working directory")
 	}
 
 	cmd := ""
@@ -1286,6 +1348,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		Command:           cmd,
 		RunOutputLocally:  runOutputLocally,
 		ExecArgs:          localExecArgs,
+		WorkingDirectory:  workingDirectory,
 		FetchOutputs:      fetchOutputs,
 		WorkspaceFilePath: wsFilePath,
 	}, repoConfig)
@@ -1295,17 +1358,30 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	return exitCode, err
 }
 
-func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string, err error) {
-	bazelArgs, execArgs = arg.SplitExecutableArgs(commandLineArgs)
+func parseArgs(commandLineArgs []string) ([]string, []string, error) {
+	bazelArgs, execArgs := arg.SplitExecutableArgs(commandLineArgs)
 
-	bazelArgs, err = login.ConfigureAPIKey(bazelArgs)
-	if err != nil {
-		return nil, nil, fmt.Errorf("configure api key: %w", err)
-	}
+	var err error
 	bazelArgs, err = parser.CanonicalizeArgs(bazelArgs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("canonicalize bazel args: %w", err)
 	}
+
+	// Because Remote Bazel just forwards the command to a remote runner, it
+	// doesn't need to use the traditional CLI parser, which attempts
+	// to expand --config and --bazelrc flags for an internal view of resolved flags.
+	// (Attempting to use the parser would actually fail, because we add --config flags that
+	// are only defined on the remote runners.)
+	// Manually construct a BazelArgs struct because the login code expects it.
+	// TODO: Find a less hacky way to handle this.
+	bazelArgsStruct, err := arg.NewBazelArgsNoResolve(bazelArgs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse bazel args: %w", err)
+	}
+	if err := login.ConfigureAPIKey(bazelArgsStruct); err != nil {
+		return nil, nil, fmt.Errorf("configure api key: %w", err)
+	}
+	bazelArgs = bazelArgsStruct.Resolved()
 
 	// Ensure all bazel remote runs use the remote cache.
 	// The goal is to keep remote workloads close to our servers, so use the same

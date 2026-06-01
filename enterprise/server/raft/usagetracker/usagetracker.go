@@ -888,6 +888,8 @@ func (ut *Tracker) TestingWaitForGC(ctx context.Context) error {
 				break
 			}
 			db.Flush()
+			start, end := keys.Range([]byte(pu.partitionKeyPrefix() + "/"))
+			db.Compact(start, end, false /*parallelize*/)
 			db.Close()
 			totalSizeBytes := pu.LocalSizeBytes()
 			pu.lru.UpdateSizeBytes(totalSizeBytes)

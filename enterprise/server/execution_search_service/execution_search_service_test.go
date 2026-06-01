@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/stretchr/testify/assert"
@@ -50,7 +51,6 @@ func TestSearchExecutions(t *testing.T) {
 
 	executions := []*olaptables.Execution{
 		{
-			ExecutionID:                        exid1,
 			GroupID:                            "GR1",
 			InvocationUUID:                     strings.ReplaceAll(iid1, "-", ""),
 			User:                               "ci-runner",
@@ -92,7 +92,6 @@ func TestSearchExecutions(t *testing.T) {
 			UpdatedAtUsec:                      testTimestampUsec,
 		},
 		{
-			ExecutionID:                     exid2,
 			GroupID:                         "GR1",
 			InvocationUUID:                  strings.ReplaceAll(iid2, "-", ""),
 			User:                            "developer",
@@ -121,7 +120,6 @@ func TestSearchExecutions(t *testing.T) {
 			UpdatedAtUsec:                   testTimestampUsec + 1000,
 		},
 		{
-			ExecutionID:      exid3,
 			GroupID:          "GR2",
 			InvocationUUID:   strings.ReplaceAll(uuid.New(), "-", ""),
 			User:             "other-user",
@@ -136,7 +134,9 @@ func TestSearchExecutions(t *testing.T) {
 			UpdatedAtUsec:    testTimestampUsec + 2000,
 		},
 	}
-	for _, execution := range executions {
+	executionIDs := []string{exid1, exid2, exid3}
+	for i, execution := range executions {
+		require.NoError(t, clickhouse.FillExecutionResourceFieldsFromExecutionID(execution, executionIDs[i]))
 		err := env.GetOLAPDBHandle().GORM(ctx, "test_create_execution").Create(execution).Error
 		require.NoError(t, err)
 	}
@@ -150,13 +150,13 @@ func TestSearchExecutions(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, rsp.Execution, 2, "should return 2 executions for GR1")
 
-	executionIDs := make([]string, len(rsp.Execution))
+	gotExecutionIDs := make([]string, len(rsp.Execution))
 	for i, ex := range rsp.Execution {
-		executionIDs[i] = ex.Execution.ExecutionId
+		gotExecutionIDs[i] = ex.Execution.ExecutionId
 	}
-	assert.Contains(t, executionIDs, exid1)
-	assert.Contains(t, executionIDs, exid2)
-	assert.NotContains(t, executionIDs, exid3, "should not contain execution from GR2")
+	assert.Contains(t, gotExecutionIDs, exid1)
+	assert.Contains(t, gotExecutionIDs, exid2)
+	assert.NotContains(t, gotExecutionIDs, exid3, "should not contain execution from GR2")
 
 	for _, ex := range rsp.Execution {
 		assert.NotEmpty(t, ex.InvocationMetadata.Id)
@@ -221,7 +221,6 @@ func TestSearchExecutions_SkipsEmptyInvocationUUID(t *testing.T) {
 
 	executions := []*olaptables.Execution{
 		{
-			ExecutionID:      exid1,
 			GroupID:          "GR1",
 			InvocationUUID:   strings.ReplaceAll(iid1, "-", ""),
 			User:             "ci-runner",
@@ -237,7 +236,6 @@ func TestSearchExecutions_SkipsEmptyInvocationUUID(t *testing.T) {
 			UpdatedAtUsec:    testTimestampUsec,
 		},
 		{
-			ExecutionID:      exid2,
 			GroupID:          "GR1",
 			InvocationUUID:   "",
 			User:             "unknown",
@@ -252,7 +250,9 @@ func TestSearchExecutions_SkipsEmptyInvocationUUID(t *testing.T) {
 			UpdatedAtUsec:    testTimestampUsec + 1000,
 		},
 	}
-	for _, execution := range executions {
+	executionIDs := []string{exid1, exid2}
+	for i, execution := range executions {
+		require.NoError(t, clickhouse.FillExecutionResourceFieldsFromExecutionID(execution, executionIDs[i]))
 		err := env.GetOLAPDBHandle().GORM(ctx, "test_create_execution").Create(execution).Error
 		require.NoError(t, err)
 	}
@@ -285,8 +285,8 @@ func TestSearchExecutions_Pagination(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		hash := fmt.Sprintf("a948904f2f0f479b8f8564cbf12dac6b5c8c3c1f7e8b4d6a3c2e1f0a9b8c7d%02x", i)
 		actionDigest := &repb.Digest{Hash: hash, SizeBytes: int64(100 + i*10)}
+		executionID := makeExecutionID(actionDigest)
 		executions[i] = &olaptables.Execution{
-			ExecutionID:      makeExecutionID(actionDigest),
 			GroupID:          "GR1",
 			InvocationUUID:   strings.ReplaceAll(uuid.New(), "-", ""),
 			User:             "ci-runner",
@@ -302,6 +302,7 @@ func TestSearchExecutions_Pagination(t *testing.T) {
 			CreatedAtUsec:    testTimestampUsec + int64(i*1000),
 			UpdatedAtUsec:    testTimestampUsec + int64(i*1000),
 		}
+		require.NoError(t, clickhouse.FillExecutionResourceFieldsFromExecutionID(executions[i], executionID))
 	}
 	for _, execution := range executions {
 		err := env.GetOLAPDBHandle().GORM(ctx, "test_create_execution").Create(execution).Error
@@ -348,12 +349,12 @@ func TestSearchExecutions_PaginationWithEmptyInvocationUUIDs(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		hash := fmt.Sprintf("b948904f2f0f479b8f8564cbf12dac6b5c8c3c1f7e8b4d6a3c2e1f0a9b8c7d%02x", i)
 		actionDigest := &repb.Digest{Hash: hash, SizeBytes: int64(100 + i*10)}
+		executionID := makeExecutionID(actionDigest)
 		invocationUUID := strings.ReplaceAll(uuid.New(), "-", "")
 		if i%4 == 0 {
 			invocationUUID = ""
 		}
 		executions[i] = &olaptables.Execution{
-			ExecutionID:      makeExecutionID(actionDigest),
 			GroupID:          "GR1",
 			InvocationUUID:   invocationUUID,
 			User:             "ci-runner",
@@ -369,6 +370,7 @@ func TestSearchExecutions_PaginationWithEmptyInvocationUUIDs(t *testing.T) {
 			CreatedAtUsec:    testTimestampUsec + int64(i*1000),
 			UpdatedAtUsec:    testTimestampUsec + int64(i*1000),
 		}
+		require.NoError(t, clickhouse.FillExecutionResourceFieldsFromExecutionID(executions[i], executionID))
 	}
 	for _, execution := range executions {
 		err := env.GetOLAPDBHandle().GORM(ctx, "test_create_execution").Create(execution).Error

@@ -20,6 +20,7 @@ import (
 
 var (
 	flags = flag.NewFlagSet("search", flag.ContinueOnError)
+	Flags = flags
 
 	target     = flags.String("target", login.DefaultApiTarget, "Cache gRPC target")
 	numResults = flags.Int("results", 10, "Print this many results")

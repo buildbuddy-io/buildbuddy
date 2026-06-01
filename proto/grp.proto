@@ -374,6 +374,32 @@ message SetGroupStatusResponse {
   context.ResponseContext response_context = 1;
 }
 
+// SSOConfig describes the SSO configuration for a group.
+message SSOConfig {
+  // The SAML IdP metadata URL. Empty if SSO is not configured.
+  string saml_idp_metadata_url = 1;
+}
+
+message GetSSOConfigRequest {
+  context.RequestContext request_context = 1;
+}
+
+message GetSSOConfigResponse {
+  context.ResponseContext response_context = 1;
+
+  SSOConfig config = 2;
+}
+
+message SetSSOConfigRequest {
+  context.RequestContext request_context = 1;
+
+  SSOConfig config = 2;
+}
+
+message SetSSOConfigResponse {
+  context.ResponseContext response_context = 1;
+}
+
 enum GroupMembershipStatus {
   UNKNOWN_MEMBERSHIP_STATUS = 0;
   // The user is a member of the group.

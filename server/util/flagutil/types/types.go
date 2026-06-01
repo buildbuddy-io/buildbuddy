@@ -186,7 +186,7 @@ func (f *JSONSliceFlag[T]) Expand(mapping func(string) (string, error)) error {
 	return f.Set(string(exp))
 }
 
-func (f *JSONSliceFlag[T]) AppendSlice(slice any) error {
+func (f *JSONSliceFlag[T]) Accumulate(slice any) error {
 	v := (reflect.Value)(*f)
 	if _, ok := slice.(T); !ok {
 		return status.FailedPreconditionErrorf("Cannot append value %v of type %T to flag of type %s.", slice, slice, v.Type().Elem())
@@ -272,6 +272,112 @@ func (f *JSONStructFlag[T]) Struct() T {
 	return *(reflect.Value)(*f).Interface().(*T)
 }
 
+type JSONMapFlag[T any] reflect.Value
+
+func NewJSONMapFlag[T any](value *T) *JSONMapFlag[T] {
+	v := (JSONMapFlag[T])(reflect.ValueOf(value))
+	return &v
+}
+
+func JSONMap[T any](flagset *flag.FlagSet, name string, defaultValue T, usage string) *T {
+	value := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
+	JSONMapVar(flagset, value, name, defaultValue, usage)
+	return value
+}
+
+func JSONMapVar[T any](flagset *flag.FlagSet, value *T, name string, defaultValue T, usage string) {
+	src := reflect.ValueOf(defaultValue)
+	if src.Kind() != reflect.Map {
+		log.Fatalf("JSONMapVar called for flag %s with non-map value %v of type %T.", name, defaultValue, defaultValue)
+	}
+	v := reflect.ValueOf(value)
+	// Copy the default into a fresh map so the flag's storage isn't aliased
+	// with the caller's default — subsequent Set/Merge calls must not
+	// mutate the caller's map.
+	m := reflect.MakeMapWithSize(reflect.TypeOf((*T)(nil)).Elem(), src.Len())
+	if !src.IsNil() {
+		iter := src.MapRange()
+		for iter.Next() {
+			m.SetMapIndex(iter.Key(), iter.Value())
+		}
+	}
+	v.Elem().Set(m)
+	flagset.Var((*JSONMapFlag[T])(&v), name, usage)
+}
+
+func (f *JSONMapFlag[T]) String() string {
+	if !(*reflect.Value)(f).IsValid() || (*reflect.Value)(f).IsNil() {
+		return "{}"
+	}
+	b, err := json.Marshal((*reflect.Value)(f).Interface())
+	if err != nil {
+		alert.UnexpectedEvent("config_cannot_marshal_map", "err: %s", err)
+		return "{}"
+	}
+	return string(b)
+}
+
+// Set merges the decoded JSON map into the existing map value (later-wins on
+// key conflicts), mirroring the append semantics of JSONSliceFlag.Set.
+func (f *JSONMapFlag[T]) Set(values string) error {
+	v := (reflect.Value)(*f).Elem()
+	dst := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
+	if err := json.Unmarshal([]byte(values), dst); err != nil {
+		return err
+	}
+	if v.IsNil() {
+		v.Set(reflect.MakeMap(v.Type()))
+	}
+	src := reflect.ValueOf(*dst)
+	iter := src.MapRange()
+	for iter.Next() {
+		v.SetMapIndex(iter.Key(), iter.Value())
+	}
+	return nil
+}
+
+// Accumulate merges the entries of the passed map into the flag's map value
+// (later-wins on key conflicts), satisfying the Accumulable interface.
+func (f *JSONMapFlag[T]) Accumulate(m any) error {
+	v := (reflect.Value)(*f)
+	if _, ok := m.(T); !ok {
+		return status.FailedPreconditionErrorf("Cannot append value %v of type %T to flag of type %s.", m, m, v.Type().Elem())
+	}
+	if v.Elem().IsNil() {
+		v.Elem().Set(reflect.MakeMap(v.Elem().Type()))
+	}
+	src := reflect.ValueOf(m)
+	iter := src.MapRange()
+	for iter.Next() {
+		v.Elem().SetMapIndex(iter.Key(), iter.Value())
+	}
+	return nil
+}
+
+func (f *JSONMapFlag[T]) Expand(mapping func(string) (string, error)) error {
+	var ov any
+	if err := json.Unmarshal([]byte(f.String()), &ov); err != nil {
+		return err
+	}
+	nv, err := expandValue(ov, mapping)
+	if err != nil {
+		return err
+	}
+	exp, err := json.Marshal(nv)
+	if err != nil {
+		return err
+	}
+	return f.Set(string(exp))
+}
+
+func (f *JSONMapFlag[T]) AliasedType() reflect.Type {
+	return reflect.TypeOf((*T)(nil))
+}
+
+func (f *JSONMapFlag[T]) Map() T {
+	return *(reflect.Value)(*f).Interface().(*T)
+}
+
 type StringSliceFlag []string
 
 func NewStringSliceFlag(slice *[]string) *StringSliceFlag {
@@ -319,7 +425,7 @@ func (f *StringSliceFlag) Expand(mapping func(string) (string, error)) error {
 	return nil
 }
 
-func (f *StringSliceFlag) AppendSlice(slice any) error {
+func (f *StringSliceFlag) Accumulate(slice any) error {
 	s, ok := slice.([]string)
 	if !ok {
 		return status.FailedPreconditionErrorf("Cannot append value %v of type %T to flag of type []string.", slice, slice)

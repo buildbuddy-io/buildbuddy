@@ -246,6 +246,7 @@ type options struct {
 	getPebbleOptsFn     func(mc *pebble.MetricsCollector) *pebble.Options
 	getRegistryFn       func() registry.NodeRegistry
 	zone                string
+	grpcServerConfig    grpc_server.GRPCServerConfig
 }
 
 type Option func(*options)
@@ -279,6 +280,12 @@ func WithRegistryGetter(getter func() registry.NodeRegistry) Option {
 func WithZone(zone string) Option {
 	return func(o *options) {
 		o.zone = zone
+	}
+}
+
+func WithGRPCServerConfig(config grpc_server.GRPCServerConfig) Option {
+	return func(o *options) {
+		o.grpcServerConfig = config
 	}
 }
 
@@ -409,7 +416,7 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 	}
 	s.usages = usages
 
-	grpcOptions := grpc_server.CommonGRPCServerOptions(s.env)
+	grpcOptions := grpc_server.CommonGRPCServerOptionsWithConfig(s.env, o.grpcServerConfig)
 	s.grpcServer = grpc.NewServer(grpcOptions...)
 	reflection.Register(s.grpcServer)
 	grpc_server.Metrics().InitializeMetrics(s.grpcServer)

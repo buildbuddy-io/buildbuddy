@@ -15,18 +15,6 @@
   gap: 16px;
 }
 
-.compare-invocations .bb-explain-button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.compare-invocations .bb-explain-button .icon {
-  width: 16px;
-  height: 16px;
-  stroke: #fff;
-}
-
 @media (max-width: 1024px) {
   .compare-invocations .header {
     flex-direction: column;

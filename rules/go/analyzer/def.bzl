@@ -10,7 +10,7 @@ ANALYZERS = [
     # "omitzero",
     # "rangeint",
     # "reflecttypefor",
-    # "slicescontains",
+    "slicescontains",
     # "slicessort",
     # "stditerators",
     "stringscut",

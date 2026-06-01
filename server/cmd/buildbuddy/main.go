@@ -15,6 +15,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 
 	app_bundle "github.com/buildbuddy-io/buildbuddy/app"
+
+	_ "google.golang.org/grpc/xds" // registers xds:// resolver.
 )
 
 var (

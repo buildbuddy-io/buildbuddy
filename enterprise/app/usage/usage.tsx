@@ -1,15 +1,24 @@
+import Long from "long";
 import moment from "moment";
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
 import Select, { Option } from "../../../app/components/select/select";
 import errorService from "../../../app/errors/error_service";
 import { bytes, count, formatWithCommas } from "../../../app/format/format";
-import router, { TrendsChartId } from "../../../app/router/router";
+import router, { Path, TrendsChartId } from "../../../app/router/router";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { usage } from "../../../proto/usage_ts_proto";
 import TrendsChartComponent, { ChartColor } from "../trends/trends_chart";
+import UsageAlertsComponent from "./usage_alerts";
 
 export interface UsageProps {
+  user?: User;
+  path: string;
+}
+
+type UsageTab = "report" | "alerting";
+
+interface UsageReportProps {
   user?: User;
 }
 
@@ -27,7 +36,85 @@ function shouldShowDetailedView(periodStart: string): boolean {
   return new Date(periodStart) >= new Date(FIRST_DETAILED_MONTH);
 }
 
-export default class UsageComponent extends React.Component<UsageProps, State> {
+/** UsageComponent renders the Usage page shell and active tab. */
+export default class UsageComponent extends React.Component<UsageProps> {
+  componentDidMount() {
+    document.title = "Usage | BuildBuddy";
+  }
+
+  private usageAlertsEnabled() {
+    return router.canAccessUsageAlertingPage(this.props.user);
+  }
+
+  private activeTab(): UsageTab {
+    if (this.usageAlertsEnabled() && this.isAlertingPath()) {
+      return "alerting";
+    }
+    return "report";
+  }
+
+  private isAlertingPath() {
+    return this.props.path.replace(/\/$/, "") === Path.usageAlertingPath;
+  }
+
+  private onClickTab(selectedTab: UsageTab) {
+    if (selectedTab === "alerting" && !this.usageAlertsEnabled()) {
+      return;
+    }
+    router.navigateTo(selectedTab === "alerting" ? Path.usageAlertingPath : Path.usagePath);
+  }
+
+  private renderTabs() {
+    if (!this.usageAlertsEnabled()) {
+      return null;
+    }
+    const activeTab = this.activeTab();
+    return (
+      <div className="tabs usage-tabs">
+        <button
+          type="button"
+          className={`tab ${activeTab === "report" ? "selected" : ""}`}
+          onClick={this.onClickTab.bind(this, "report")}>
+          Report
+        </button>
+        <button
+          type="button"
+          className={`tab ${activeTab === "alerting" ? "selected" : ""}`}
+          onClick={this.onClickTab.bind(this, "alerting")}>
+          Alerts
+        </button>
+      </div>
+    );
+  }
+
+  private renderHeader() {
+    return (
+      <>
+        <div className="usage-header">
+          <div className="usage-title">Usage</div>
+        </div>
+        {this.renderTabs()}
+      </>
+    );
+  }
+
+  render() {
+    const activeTab = this.activeTab();
+
+    return (
+      <div className="usage-page">
+        <div className="container usage-page-container">
+          {this.renderHeader()}
+          {activeTab === "report" && <UsageReport user={this.props.user} />}
+          {activeTab === "alerting" && <UsageAlertsComponent />}
+        </div>
+      </div>
+    );
+  }
+}
+
+/** UsageReport renders the usage report tab contents. */
+class UsageReport extends React.Component<UsageReportProps, State> {
   // TODO: remove getDefaultTimePeriodString() after the server
   // is updated to unconditionally send the current period
   state: State = { selectedPeriod: getDefaultTimePeriodString() };
@@ -445,165 +532,154 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
   }
 
   render() {
+    if (!this.state.response) return null;
+
     const orgName = this.props.user?.selectedGroup.name;
     // Selected period may not be found because of a pending or failed RPC.
-    const selection = this.state.response?.usage;
+    const selection = this.state.response.usage;
     const detailed = shouldShowDetailedView(this.state.selectedPeriod);
-
     return (
-      <div className="usage-page">
-        <div className="container usage-page-container">
-          <div className="usage-header">
-            <div className="usage-title">Usage</div>
-          </div>
-          {this.state.response && (
-            <>
-              <div className="card usage-card">
-                <div className="content">
-                  <div className="usage-period-header">
-                    <div>
-                      {orgName && <div className="org-name">{orgName}</div>}
-                      <div className="selected-period-label">
-                        BuildBuddy usage for <span className="usage-period">{this.state.selectedPeriod} (UTC)</span>
-                      </div>
-                    </div>
-                    <Select title="Usage period" onChange={this.onChangePeriod.bind(this)}>
-                      {this.state.response.availableUsagePeriods.map((period, i) => (
-                        <Option key={period} value={period}>
-                          {period}
-                          {i === 0 ? " (Current period)" : ""}
-                        </Option>
-                      ))}
-                    </Select>
-                  </div>
-                  {this.state.loading && <div className="loading" />}
-                  {!this.state.loading && !selection && <span>Failed to load usage data.</span>}
-                  {!this.state.loading && selection && (
-                    <div className="usage-period-table">
-                      <div className="usage-resource-name">Invocations</div>
-                      <div className="usage-value">{formatWithCommas(selection.invocations)}</div>
-                      <div className="usage-resource-name">Action cache hits</div>
-                      <div className="usage-value">{formatWithCommas(selection.actionCacheHits)}</div>
-                      <div className="usage-resource-name">Cached build minutes</div>
-                      <div className="usage-value">{formatMinutes(Number(selection.totalCachedActionExecUsec))}</div>
-                      <div className="usage-resource-name">Content addressable storage cache hits</div>
-                      <div className="usage-value">{formatWithCommas(selection.casCacheHits)}</div>
-                      <div className="usage-resource-name">Total bytes downloaded from cache</div>
-                      <div className="usage-value" title={formatWithCommas(selection.totalDownloadSizeBytes)}>
-                        {formatBytes(selection.totalDownloadSizeBytes, selection.totalDownloadSizeBytes)}
-                      </div>
-                      {detailed && (
-                        <>
-                          <div className="usage-resource-subcategory">External downloads</div>
-                          <div
-                            className="usage-value-subcategory"
-                            title={formatWithCommas(selection.totalExternalDownloadSizeBytes)}>
-                            {formatBytes(selection.totalExternalDownloadSizeBytes, selection.totalDownloadSizeBytes)}
-                          </div>
-                          <div className="usage-resource-subcategory">Internal downloads</div>
-                          <div
-                            className="usage-value-subcategory"
-                            title={formatWithCommas(selection.totalInternalDownloadSizeBytes)}>
-                            {formatBytes(selection.totalInternalDownloadSizeBytes, selection.totalDownloadSizeBytes)}
-                          </div>
-                          {Boolean(selection.totalWorkflowDownloadSizeBytes) && (
-                            <>
-                              <div className="usage-resource-subcategory">Workflow downloads</div>
-                              <div
-                                className="usage-value-subcategory"
-                                title={formatWithCommas(selection.totalWorkflowDownloadSizeBytes)}>
-                                {formatBytes(
-                                  selection.totalWorkflowDownloadSizeBytes,
-                                  selection.totalDownloadSizeBytes
-                                )}
-                              </div>
-                            </>
-                          )}
-                        </>
-                      )}
-                      <div className="usage-resource-name">Total bytes uploaded to cache</div>
-                      <div className="usage-value" title={formatWithCommas(selection.totalUploadSizeBytes)}>
-                        {formatBytes(selection.totalUploadSizeBytes, selection.totalUploadSizeBytes)}
-                      </div>
-                      {detailed && (
-                        <>
-                          <div className="usage-resource-subcategory">External uploads</div>
-                          <div
-                            className="usage-value-subcategory"
-                            title={formatWithCommas(selection.totalExternalUploadSizeBytes)}>
-                            {formatBytes(selection.totalExternalUploadSizeBytes, selection.totalUploadSizeBytes)}
-                          </div>
-                          <div className="usage-resource-subcategory">Internal uploads</div>
-                          <div
-                            className="usage-value-subcategory"
-                            title={formatWithCommas(selection.totalInternalUploadSizeBytes)}>
-                            {formatBytes(selection.totalInternalUploadSizeBytes, selection.totalUploadSizeBytes)}
-                          </div>
-                          {Boolean(selection.totalWorkflowUploadSizeBytes) && (
-                            <>
-                              <div className="usage-resource-subcategory">Workflow uploads</div>
-                              <div
-                                className="usage-value-subcategory"
-                                title={formatWithCommas(selection.totalWorkflowUploadSizeBytes)}>
-                                {formatBytes(selection.totalWorkflowUploadSizeBytes, selection.totalUploadSizeBytes)}
-                              </div>
-                            </>
-                          )}
-                        </>
-                      )}
-                      <div className="usage-resource-name">Linux remote execution duration</div>
-                      <div className="usage-value">{formatMinutes(Number(selection.linuxExecutionDurationUsec))}</div>
-                      {detailed && (
-                        <>
-                          {Boolean(selection.cloudRbeLinuxExecutionDurationUsec) && (
-                            <>
-                              <div className="usage-resource-subcategory">Cloud RBE</div>
-                              <div className="usage-value-subcategory">
-                                {formatMinutes(Number(selection.cloudRbeLinuxExecutionDurationUsec))}
-                              </div>
-                            </>
-                          )}
-                          {Boolean(selection.cloudWorkflowLinuxExecutionDurationUsec) && (
-                            <>
-                              <div className="usage-resource-subcategory">Workflows</div>
-                              <div className="usage-value-subcategory">
-                                {formatMinutes(Number(selection.cloudWorkflowLinuxExecutionDurationUsec))}
-                              </div>
-                            </>
-                          )}
-                        </>
-                      )}
-                      <div className="usage-resource-name">Linux cpu duration</div>
-                      <div className="usage-value">{formatMinutes(+selection.cloudCpuNanos / 1000)}</div>
-                      {detailed && (
-                        <>
-                          {Boolean(selection.cloudRbeCpuNanos) && (
-                            <>
-                              <div className="usage-resource-subcategory">Cloud RBE</div>
-                              <div className="usage-value-subcategory">
-                                {formatMinutes(+selection.cloudRbeCpuNanos / 1000)}
-                              </div>
-                            </>
-                          )}
-                          {Boolean(selection.cloudWorkflowCpuNanos) && (
-                            <>
-                              <div className="usage-resource-subcategory">Workflows</div>
-                              <div className="usage-value-subcategory">
-                                {formatMinutes(+selection.cloudWorkflowCpuNanos / 1000)}
-                              </div>
-                            </>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
+      <>
+        <div className="card usage-card">
+          <div className="content">
+            <div className="usage-period-header">
+              <div>
+                {orgName && <div className="org-name">{orgName}</div>}
+                <div className="selected-period-label">
+                  BuildBuddy usage for <span className="usage-period">{this.state.selectedPeriod} (UTC)</span>
                 </div>
               </div>
-              {this.renderCharts(detailed)}
-            </>
-          )}
+              <Select title="Usage period" onChange={this.onChangePeriod.bind(this)}>
+                {this.state.response.availableUsagePeriods.map((period, i) => (
+                  <Option key={period} value={period}>
+                    {period}
+                    {i === 0 ? " (Current period)" : ""}
+                  </Option>
+                ))}
+              </Select>
+            </div>
+            {this.state.loading && <div className="loading" />}
+            {!this.state.loading && !selection && <span>Failed to load usage data.</span>}
+            {!this.state.loading && selection && (
+              <div className="usage-period-table">
+                <div className="usage-resource-name">Invocations</div>
+                <div className="usage-value">{formatWithCommas(selection.invocations)}</div>
+                <div className="usage-resource-name">Action cache hits</div>
+                <div className="usage-value">{formatWithCommas(selection.actionCacheHits)}</div>
+                <div className="usage-resource-name">Cached build minutes</div>
+                <div className="usage-value">{formatMinutes(Number(selection.totalCachedActionExecUsec))}</div>
+                <div className="usage-resource-name">Content addressable storage cache hits</div>
+                <div className="usage-value">{formatWithCommas(selection.casCacheHits)}</div>
+                <div className="usage-resource-name">Total bytes downloaded from cache</div>
+                <div className="usage-value" title={formatWithCommas(selection.totalDownloadSizeBytes)}>
+                  {formatBytes(selection.totalDownloadSizeBytes, selection.totalDownloadSizeBytes)}
+                </div>
+                {detailed && (
+                  <>
+                    <div className="usage-resource-subcategory">External downloads</div>
+                    <div
+                      className="usage-value-subcategory"
+                      title={formatWithCommas(selection.totalExternalDownloadSizeBytes)}>
+                      {formatBytes(selection.totalExternalDownloadSizeBytes, selection.totalDownloadSizeBytes)}
+                    </div>
+                    <div className="usage-resource-subcategory">Internal downloads</div>
+                    <div
+                      className="usage-value-subcategory"
+                      title={formatWithCommas(selection.totalInternalDownloadSizeBytes)}>
+                      {formatBytes(selection.totalInternalDownloadSizeBytes, selection.totalDownloadSizeBytes)}
+                    </div>
+                    {Boolean(selection.totalWorkflowDownloadSizeBytes) && (
+                      <>
+                        <div className="usage-resource-subcategory">Workflow downloads</div>
+                        <div
+                          className="usage-value-subcategory"
+                          title={formatWithCommas(selection.totalWorkflowDownloadSizeBytes)}>
+                          {formatBytes(selection.totalWorkflowDownloadSizeBytes, selection.totalDownloadSizeBytes)}
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+                <div className="usage-resource-name">Total bytes uploaded to cache</div>
+                <div className="usage-value" title={formatWithCommas(selection.totalUploadSizeBytes)}>
+                  {formatBytes(selection.totalUploadSizeBytes, selection.totalUploadSizeBytes)}
+                </div>
+                {detailed && (
+                  <>
+                    <div className="usage-resource-subcategory">External uploads</div>
+                    <div
+                      className="usage-value-subcategory"
+                      title={formatWithCommas(selection.totalExternalUploadSizeBytes)}>
+                      {formatBytes(selection.totalExternalUploadSizeBytes, selection.totalUploadSizeBytes)}
+                    </div>
+                    <div className="usage-resource-subcategory">Internal uploads</div>
+                    <div
+                      className="usage-value-subcategory"
+                      title={formatWithCommas(selection.totalInternalUploadSizeBytes)}>
+                      {formatBytes(selection.totalInternalUploadSizeBytes, selection.totalUploadSizeBytes)}
+                    </div>
+                    {Boolean(selection.totalWorkflowUploadSizeBytes) && (
+                      <>
+                        <div className="usage-resource-subcategory">Workflow uploads</div>
+                        <div
+                          className="usage-value-subcategory"
+                          title={formatWithCommas(selection.totalWorkflowUploadSizeBytes)}>
+                          {formatBytes(selection.totalWorkflowUploadSizeBytes, selection.totalUploadSizeBytes)}
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+                <div className="usage-resource-name">Linux remote execution duration</div>
+                <div className="usage-value">{formatMinutes(Number(selection.linuxExecutionDurationUsec))}</div>
+                {detailed && (
+                  <>
+                    {Boolean(selection.cloudRbeLinuxExecutionDurationUsec) && (
+                      <>
+                        <div className="usage-resource-subcategory">Cloud RBE</div>
+                        <div className="usage-value-subcategory">
+                          {formatMinutes(Number(selection.cloudRbeLinuxExecutionDurationUsec))}
+                        </div>
+                      </>
+                    )}
+                    {Boolean(selection.cloudWorkflowLinuxExecutionDurationUsec) && (
+                      <>
+                        <div className="usage-resource-subcategory">Workflows</div>
+                        <div className="usage-value-subcategory">
+                          {formatMinutes(Number(selection.cloudWorkflowLinuxExecutionDurationUsec))}
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+                <div className="usage-resource-name">Linux cpu duration</div>
+                <div className="usage-value">{formatMinutes(+selection.cloudCpuNanos / 1000)}</div>
+                {detailed && (
+                  <>
+                    {Boolean(selection.cloudRbeCpuNanos) && (
+                      <>
+                        <div className="usage-resource-subcategory">Cloud RBE</div>
+                        <div className="usage-value-subcategory">
+                          {formatMinutes(+selection.cloudRbeCpuNanos / 1000)}
+                        </div>
+                      </>
+                    )}
+                    {Boolean(selection.cloudWorkflowCpuNanos) && (
+                      <>
+                        <div className="usage-resource-subcategory">Workflows</div>
+                        <div className="usage-value-subcategory">
+                          {formatMinutes(+selection.cloudWorkflowCpuNanos / 1000)}
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+        {this.renderCharts(detailed)}
+      </>
     );
   }
 }

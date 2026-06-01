@@ -15,6 +15,7 @@ ts_library(
         "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/components/banner",
+        "//app/components/breadcrumbs",
         "//app/components/button:link_button",
         "//app/components/link",
         "//app/components/select",

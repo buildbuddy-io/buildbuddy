@@ -44,6 +44,7 @@ var (
 		buildBuddyServicePrefix + "GetTarget",
 		buildBuddyServicePrefix + "GetTargetHistory",
 		buildBuddyServicePrefix + "GetExecution",
+		buildBuddyServicePrefix + "GetExecutionDownloads",
 		buildBuddyServicePrefix + "WaitExecution",
 		buildBuddyServicePrefix + "GetZipManifest",
 		// Users do not need any particular role within their current group to be
@@ -194,8 +195,13 @@ var (
 		buildBuddyServicePrefix + "InvalidateAllSnapshotsForRepo",
 		// RBE deployment view
 		buildBuddyServicePrefix + "GetExecutionNodes",
+		// Cache proxy deployment view
+		buildBuddyServicePrefix + "GetCacheProxies",
 		// BuildBuddy usage data
 		buildBuddyServicePrefix + "GetUsage",
+		buildBuddyServicePrefix + "GetUsageAlertingRules",
+		buildBuddyServicePrefix + "CreateUsageAlertingRule",
+		buildBuddyServicePrefix + "DeleteUsageAlertingRule",
 		// Encryption.
 		buildBuddyServicePrefix + "GetEncryptionConfig",
 		buildBuddyServicePrefix + "SetEncryptionConfig",
@@ -230,6 +236,8 @@ var (
 
 		// Org management
 		buildBuddyServicePrefix + "SetGroupStatus",
+		buildBuddyServicePrefix + "GetSSOConfig",
+		buildBuddyServicePrefix + "SetSSOConfig",
 	}
 )
 

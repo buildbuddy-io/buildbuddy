@@ -62,7 +62,7 @@ func Register(env *real_environment.RealEnv) error {
 	if err != nil {
 		return err
 	}
-	conn, err := grpc_client.DialSimple(*target)
+	conn, err := grpc_client.DialSimpleWithoutPooling(*target)
 	if err != nil {
 		return err
 	}

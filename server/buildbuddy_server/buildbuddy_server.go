@@ -3,6 +3,7 @@ package buildbuddy_server
 import (
 	"context"
 	"encoding/base64"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -56,6 +57,7 @@ import (
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
@@ -698,6 +700,111 @@ func (s *BuildBuddyServer) SetGroupStatus(ctx context.Context, req *grpb.SetGrou
 	}
 
 	return &grpb.SetGroupStatusResponse{}, nil
+}
+
+func (s *BuildBuddyServer) GetSSOConfig(ctx context.Context, req *grpb.GetSSOConfigRequest) (*grpb.GetSSOConfigResponse, error) {
+	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		return nil, err
+	}
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	groupID := req.GetRequestContext().GetGroupId()
+	if groupID == "" {
+		return nil, status.InvalidArgumentError("Missing organization identifier")
+	}
+	group, err := userDB.GetGroupByID(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	return &grpb.GetSSOConfigResponse{
+		Config: &grpb.SSOConfig{
+			SamlIdpMetadataUrl: group.SamlIdpMetadataUrl,
+		},
+	}, nil
+}
+
+func (s *BuildBuddyServer) SetSSOConfig(ctx context.Context, req *grpb.SetSSOConfigRequest) (*grpb.SetSSOConfigResponse, error) {
+	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		return nil, err
+	}
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	groupID := req.GetRequestContext().GetGroupId()
+	if groupID == "" {
+		return nil, status.InvalidArgumentError("Missing organization identifier")
+	}
+	metadataURL := strings.TrimSpace(req.GetConfig().GetSamlIdpMetadataUrl())
+	if metadataURL != "" {
+		if err := validateSamlIdpMetadataURL(ctx, metadataURL); err != nil {
+			return nil, err
+		}
+	}
+	if err := userDB.UpdateGroupSamlIdpMetadataUrl(ctx, groupID, metadataURL); err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.LogForGroup(ctx, groupID, alpb.Action_UPDATE_SSO_CONFIG, req)
+	}
+	return &grpb.SetSSOConfigResponse{}, nil
+}
+
+// validateSamlIdpMetadataURL verifies that the given URL points to a valid
+// SAML 2.0 IdP metadata document. It performs a syntactic check on the URL
+// and then fetches the document and confirms the XML root element is
+// EntityDescriptor or EntitiesDescriptor in the SAML metadata namespace.
+func validateSamlIdpMetadataURL(ctx context.Context, rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return status.InvalidArgumentErrorf("invalid metadata URL: %s", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return status.InvalidArgumentError("metadata URL must use http or https")
+	}
+	if u.Host == "" {
+		return status.InvalidArgumentError("metadata URL must include a host")
+	}
+	fetchCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	httpReq, err := http.NewRequestWithContext(fetchCtx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return status.InvalidArgumentErrorf("invalid metadata URL: %s", err)
+	}
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		return status.InvalidArgumentErrorf("failed to fetch metadata URL: %s", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return status.InvalidArgumentErrorf("metadata URL returned HTTP %d", resp.StatusCode)
+	}
+	// Limit how much we read to avoid pulling down an unbounded response.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8*1024*1024))
+	if err != nil {
+		return status.InvalidArgumentErrorf("failed to read metadata response: %s", err)
+	}
+	const samlMetadataNS = "urn:oasis:names:tc:SAML:2.0:metadata"
+	decoder := xml.NewDecoder(strings.NewReader(string(body)))
+	for {
+		tok, err := decoder.Token()
+		if err != nil {
+			return status.InvalidArgumentErrorf("response is not valid SAML metadata: %s", err)
+		}
+		se, ok := tok.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		if se.Name.Space != samlMetadataNS {
+			return status.InvalidArgumentErrorf("response root element is not in the SAML metadata namespace (got %q)", se.Name.Space)
+		}
+		if se.Name.Local != "EntityDescriptor" && se.Name.Local != "EntitiesDescriptor" {
+			return status.InvalidArgumentErrorf("response root element must be EntityDescriptor or EntitiesDescriptor (got %q)", se.Name.Local)
+		}
+		return nil
+	}
 }
 
 func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupRequest) (*grpb.JoinGroupResponse, error) {
@@ -1502,6 +1609,15 @@ func (s *BuildBuddyServer) GetTree(req *capb.GetTreeRequest, stream bbspb.BuildB
 	}, &getTreeStreamAdapter{BuildBuddyService_GetTreeServer: stream})
 }
 
+// GetExecutionDownloads proxies paginated execution-download lookups to the
+// configured execution service.
+func (s *BuildBuddyServer) GetExecutionDownloads(ctx context.Context, req *capb.GetExecutionDownloadsRequest) (*capb.GetExecutionDownloadsResponse, error) {
+	if es := s.env.GetExecutionService(); es != nil {
+		return es.GetExecutionDownloads(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (s *BuildBuddyServer) GetTreeDirectorySizes(ctx context.Context, req *capb.GetTreeDirectorySizesRequest) (*capb.GetTreeDirectorySizesResponse, error) {
 	return directory_size.GetTreeDirectorySizes(ctx, s.env, req)
 }
@@ -1512,6 +1628,14 @@ func (s *BuildBuddyServer) GetExecutionNodes(ctx context.Context, req *scpb.GetE
 		return res, err
 	}
 	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetCacheProxies(ctx context.Context, req *cppb.GetCacheProxiesRequest) (*cppb.GetCacheProxiesResponse, error) {
+	cps := s.env.GetCacheProxyRegistryService()
+	if cps == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return cps.GetCacheProxies(ctx, req)
 }
 
 func (s *BuildBuddyServer) SearchExecution(ctx context.Context, req *espb.SearchExecutionRequest) (*espb.SearchExecutionResponse, error) {
@@ -2108,6 +2232,51 @@ func (s *BuildBuddyServer) GetUsage(ctx context.Context, req *usagepb.GetUsageRe
 		return us.GetUsage(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetUsageAlertingRules(ctx context.Context, req *usagepb.GetUsageAlertingRulesRequest) (*usagepb.GetUsageAlertingRulesResponse, error) {
+	if us := s.env.GetUsageService(); us != nil {
+		return us.GetUsageAlertingRules(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) CreateUsageAlertingRule(ctx context.Context, req *usagepb.CreateUsageAlertingRuleRequest) (*usagepb.CreateUsageAlertingRuleResponse, error) {
+	us := s.env.GetUsageService()
+	if us == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := us.CreateUsageAlertingRule(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.LogForGroup(ctx, u.GetGroupID(), alpb.Action_CREATE, req)
+	}
+	return rsp, nil
+}
+
+func (s *BuildBuddyServer) DeleteUsageAlertingRule(ctx context.Context, req *usagepb.DeleteUsageAlertingRuleRequest) (*usagepb.DeleteUsageAlertingRuleResponse, error) {
+	us := s.env.GetUsageService()
+	if us == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := us.DeleteUsageAlertingRule(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if al := s.env.GetAuditLogger(); al != nil {
+		al.LogForGroup(ctx, u.GetGroupID(), alpb.Action_DELETE, req)
+	}
+	return rsp, nil
 }
 
 func (s *BuildBuddyServer) GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error) {

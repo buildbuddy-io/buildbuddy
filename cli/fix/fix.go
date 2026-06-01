@@ -1,3 +1,25 @@
+// Package fix implements the `bb fix` command, which tidies up a Bazel
+// workspace so it builds. It extends gazelle and buildifier with extra
+// fix-ups, and will synthesize a minimal Bazel workspace (an empty
+// MODULE.bazel) when run in a repo that doesn't have one yet, so the same
+// command can bootstrap a new project or maintain an existing one.
+//
+// Concretely, it walks the repo to:
+//   - run buildifier on BUILD, WORKSPACE, MODULE.bazel, and .bzl files
+//     (translating non-Bazel build files first when possible);
+//   - detect languages in use (e.g. Go, TypeScript) from source and dep files
+//     such as go.mod or package.json;
+//   - add the corresponding rules to MODULE.bazel/WORKSPACE via `bb add`; and
+//   - import third-party deps: under WORKSPACE, by running
+//     `gazelle update-repos` into a deps.bzl macro; under bzlmod, via
+//     language-specific module extension wiring (e.g. go_deps.from_file).
+//
+// Finally it runs Gazelle to generate/update BUILD files, preferring a
+// repo-defined //:gazelle target (required for bzlmod) and falling back to the
+// built-in Gazelle otherwise.
+//
+// The --diff flag previews buildifier and Gazelle changes without writing
+// them; other fixes (dep additions, update-repos) are skipped in diff mode.
 package fix
 
 import (
@@ -24,6 +46,7 @@ import (
 
 var (
 	flags = flag.NewFlagSet("fix", flag.ContinueOnError)
+	Flags = flags
 	diff  = flags.Bool("diff", false, "Don't apply fixes, just print a diff showing the changes that would be applied.")
 )
 
@@ -241,8 +264,7 @@ func runUpdateRepos(path string, moduleOrWorkspaceFile string) {
 	defer func() {
 		os.Args = originalArgs
 	}()
-	funcName := fmt.Sprintf("install_%s_dependencies", nonAlphanumericRegex.ReplaceAllString(path, "_"))
-	os.Args = []string{"gazelle", "update-repos", "-prune", "--from_file=" + path, "--to_macro=deps.bzl%" + funcName}
+	os.Args = []string{"gazelle", "update-repos", "-prune", "--from_file=" + path, fmt.Sprintf("--to_macro=deps.bzl%%install_%s_dependencies", nonAlphanumericRegex.ReplaceAllString(path, "_"))}
 	log.Debugf("Calling gazelle with args: %+v", os.Args)
 	gazelle.Run()
 }

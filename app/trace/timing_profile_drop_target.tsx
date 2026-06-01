@@ -1,5 +1,5 @@
 import React from "react";
-import { Profile, readProfileFile } from "./trace_events";
+import { Profile, readProfile } from "./compact_trace";
 
 interface Props {
   children: (state: State) => React.ReactNode;
@@ -30,7 +30,7 @@ export default class TimingProfileDropTarget extends React.Component<Props, Stat
     this.setState({ dragActive: false, loadingMessage: `Loading ${file.name}...` });
 
     try {
-      const profile = await readProfileFile(file);
+      const profile = await readProfile(file);
       this.props.onProfileLoaded(profile, file.name);
       this.setState({ loadingMessage: "" });
     } catch (e) {

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/indexprofile"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -73,12 +74,21 @@ func makeLastIndexedDoc(repoURL *git.RepoURL, commitSHA string) types.Document {
 // mimetype, or contains invalid UTF-8 data.
 // This function does not flush the index writer, so the caller is responsible for doing that.
 func AddFileToIndex(w types.IndexWriter, repoURL *git.RepoURL, commitSHA, filename string, fileContent []byte) error {
+	defer indexprofile.Timer(indexprofile.PhaseAddFileToIndex)()
+
+	stopValidate := indexprofile.Timer(indexprofile.PhaseValidateFile)
 	err := validateFile(fileContent)
+	stopValidate()
 	if err != nil {
+		indexprofile.Add(indexprofile.CounterFilesSkipped, 1)
+		indexprofile.Add(indexprofile.CounterValidationSkippedFiles, 1)
 		return err
 	}
 
+	stopLang := indexprofile.Timer(indexprofile.PhaseDetectLanguage)
 	lang := strings.ToLower(enry.GetLanguage(filepath.Base(filename), detectionBuffer(fileContent)))
+	stopLang()
+
 	fields := map[string][]byte{
 		schema.IDField:       makeFileId(repoURL, filename),
 		schema.FilenameField: []byte(filename),
@@ -89,11 +99,19 @@ func AddFileToIndex(w types.IndexWriter, repoURL *git.RepoURL, commitSHA, filena
 		schema.SHAField:      []byte(commitSHA),
 	}
 
+	stopDoc := indexprofile.Timer(indexprofile.PhaseMakeDocument)
 	doc := schema.GitHubFileSchema().MustMakeDocument(fields)
+	stopDoc()
 
-	if err := w.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
+	stopUpdate := indexprofile.Timer(indexprofile.PhaseUpdateDocument)
+	err = w.UpdateDocument(doc.Field(schema.IDField), doc)
+	stopUpdate()
+	if err != nil {
+		indexprofile.Add(indexprofile.CounterFilesSkipped, 1)
+		indexprofile.Add(indexprofile.CounterAddFileErrors, 1)
 		return status.InternalErrorf("Failed to update file %s: %v", filename, err)
 	}
+	indexprofile.Add(indexprofile.CounterFilesIndexed, 1)
 	return nil
 }
 

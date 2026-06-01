@@ -1,3 +1,15 @@
+// Package sidecar is the entrypoint for the bb CLI's sidecar binary: the
+// long-lived helper process that bazel talks to in place of the configured
+// BES and remote cache backends. It wires up the gRPC services and listens on
+// a unix socket; the CLI side that starts and manages this process lives in
+// cli/sidecar.
+//
+// Related packages:
+//   - cli/sidecar — CLI-side lifecycle management (start, reuse, argv rewrite)
+//     for the sidecar process built from this package.
+//   - cli/sidecar_proxy — the gRPC services (ByteStream/CAS/AC/Capabilities)
+//     this binary exposes to bazel.
+//
 // TODO: Move this out of `cmd` since it is no longer a cmd.
 package sidecar
 
@@ -12,10 +24,10 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/config"
 	"github.com/buildbuddy-io/buildbuddy/cli/devnull"
+	"github.com/buildbuddy-io/buildbuddy/cli/sidecar_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
-	"github.com/buildbuddy-io/buildbuddy/server/cache_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
@@ -164,7 +176,7 @@ func registerCacheProxy(ctx context.Context, env *real_environment.RealEnv, grpc
 	if err != nil {
 		log.Fatalf("Error dialing remote cache: %s", err.Error())
 	}
-	cacheProxy, err := cache_proxy.NewCacheProxy(ctx, env, conn)
+	cacheProxy, err := sidecar_proxy.NewCacheProxy(ctx, env, conn)
 	if err != nil {
 		log.Fatalf("Error initializing cache proxy: %s", err.Error())
 	}

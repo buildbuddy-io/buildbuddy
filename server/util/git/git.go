@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
@@ -15,6 +16,10 @@ const (
 	// DefaultUser is the default user set in a repo URL when the username is not
 	// known.
 	DefaultUser = "buildbuddy"
+)
+
+var (
+	githubHost = flag.String("github.host", "github.com", "github host. Currently only github.com is supported.", flag.Internal)
 )
 
 var (
@@ -90,7 +95,7 @@ func ParseGitHubRepoURL(repoURL string) (*RepoURL, error) {
 	if u.Scheme == "file" {
 		return &RepoURL{Repo: repoURL, Scheme: u.Scheme}, nil
 	}
-	if u.Host != "github.com" {
+	if u.Host != *githubHost {
 		return nil, status.InvalidArgumentError("unexpected non-GitHub URL")
 	}
 	pathParts := strings.Split(strings.TrimPrefix(u.Path, "/"), "/")

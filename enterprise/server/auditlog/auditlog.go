@@ -296,7 +296,7 @@ func (l *Logger) fillIDDescriptors(ctx context.Context, e *alpb.Entry_Request) e
 	}
 
 	for uid := range userIDs {
-		userData, err := l.env.GetUserDB().GetUserByID(ctx, uid)
+		userData, err := l.env.GetUserDB().GetUserByID(ctx, uid, &interfaces.GetUserOpts{})
 		if err != nil {
 			return err
 		}

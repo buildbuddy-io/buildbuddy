@@ -514,6 +514,70 @@ func TestRemoteSnapshotFetching_RemoteEviction(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestCacheSnapshot_RemoteSaveEnsuresAllChunksAreCached(t *testing.T) {
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+
+	env := setupEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
+	require.NoError(t, err)
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+	workDir := testfs.MakeTempDir(t)
+
+	workDirA := testfs.MakeDirAll(t, workDir, "VM-A")
+	const chunkSize = 1
+	const fileSize = chunkSize * 10
+
+	// Cache a snapshot locally and remotely.
+	originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
+	cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, "", true, snaputil.ConvertToCOWConcurrency)
+	require.NoError(t, err)
+	_, err = cowA.WriteAt([]byte("0123456789"), 0)
+	require.NoError(t, err)
+	task := &repb.ExecutionTask{}
+	keys, err := loader.SnapshotKeySet(ctx, task, "config-hash", "")
+	require.NoError(t, err)
+	optsA := makeFakeSnapshot(t, workDirA, true, map[string]*copy_on_write.COWStore{
+		"scratchfs": cowA,
+	}, "")
+	err = loader.CacheSnapshot(ctx, keys.GetBranchKey(), optsA)
+	require.NoError(t, err)
+
+	// Read the snapshot but don't touch any of the chunks.
+	// They should all be "unmapped".
+	snap, err := loader.GetSnapshot(ctx, keys, &snaploader.GetSnapshotOptions{
+		SupportsRemoteChunks:   true,
+		SupportsRemoteManifest: true,
+		ReadPolicy:             platform.AlwaysReadNewestSnapshot,
+	})
+	require.NoError(t, err)
+	workDirB := testfs.MakeDirAll(t, workDir, "VM-B")
+	unpacked, err := loader.UnpackSnapshot(ctx, snap, workDirB)
+	require.NoError(t, err)
+
+	// Simulate a chunk being evicted from the remote cache.
+	chunkedFiles := snap.GetChunkedFiles()
+	require.NotEmpty(t, chunkedFiles)
+	require.NotEmpty(t, chunkedFiles[0].GetChunks())
+	missingChunk := chunkedFiles[0].GetChunks()[0].GetDigest()
+	rn := digest.NewResourceName(missingChunk, "", rspb.CacheType_CAS, repb.DigestFunction_BLAKE3).ToProto()
+	err = env.GetCache().Delete(ctx, rn)
+	require.NoError(t, err)
+
+	// Re-save the snapshot remotely.
+	// This should ensure all chunks are cached remotely, including the chunk that was "evicted"
+	// remotely but still exists locally.
+	optsB := makeFakeSnapshot(t, workDirB, true, map[string]*copy_on_write.COWStore{
+		"scratchfs": unpacked.ChunkedFiles["scratchfs"],
+	}, "")
+	err = loader.CacheSnapshot(ctx, keys.GetBranchKey(), optsB)
+	require.NoError(t, err)
+
+	// The remote snapshot should still be healthy.
+	_, _, err = loader.FetchRemoteManifest(ctx, keys.GetBranchKey())
+	require.NoError(t, err)
+}
+
 func TestGetSnapshot_CacheIsolation(t *testing.T) {
 	for _, enableRemote := range []bool{true, false} {
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)

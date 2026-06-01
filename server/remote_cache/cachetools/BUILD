@@ -2,7 +2,11 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "cachetools",
-    srcs = ["cachetools.go"],
+    srcs = [
+        "cachetools.go",
+        "cachetools_linux.go",
+        "cachetools_other.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools",
     visibility = ["//visibility:public"],
     deps = [
@@ -14,11 +18,15 @@ go_library(
         "//server/metrics",
         "//server/remote_cache/chunking",
         "//server/remote_cache/digest",
+        "//server/util/bazel_request",
         "//server/util/bytebufferpool",
+        "//server/util/cdc",
+        "//server/util/claims",
         "//server/util/compression",
         "//server/util/ioutil",
         "//server/util/lib/set",
         "//server/util/log",
+        "//server/util/lru",
         "//server/util/proto",
         "//server/util/retry",
         "//server/util/rpcutil",
@@ -28,7 +36,12 @@ go_library(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_x_sync//errgroup",
-    ],
+    ] + select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "@org_golang_x_sys//unix",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 go_test(

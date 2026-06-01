@@ -28,6 +28,9 @@ tramp
 # Bazel directories
 /bazel-*
 
+# bb directory
+/bb-out
+
 # Generated protos
 **/proto/**/*.pb.go
 **/proto/**/*_ts_proto.d.ts

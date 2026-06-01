@@ -15,7 +15,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Bazel Go module cache
+        uses: ./.github/actions/setup-bazel-go-mod-cache
 
       # podman_test installs its own version of podman under / in order to test
       # the same version that we use in the executor while not having to
@@ -27,16 +30,9 @@ jobs:
           # Hack to work around https://github.com/containers/podman/issues/9164
           find /dev/shm -name 'libpod*' | xargs -r sudo rm -rf
 
-      - name: Restore caches
-        id: cache-restore
-        uses: ./.github/actions/cache-restore
-
       - name: Run tests
-        env:
-          GO_REPOSITORY_USE_HOST_CACHE: 1
-          GOMODCACHE: /home/runner/go-mod-cache
         run: |
-          echo > user.bazelrc "
+          cat >> user.bazelrc <<'EOF'
           common --config=cache
           common --repository_cache=~/repo-cache
           common --bes_backend=remote.buildbuddy.io
@@ -48,7 +44,7 @@ jobs:
           common --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true
           common --color=yes
           common --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
-          "
+          EOF
 
           bazel test --test_tag_filters=-performance,-docker \
             -- \
@@ -65,11 +61,3 @@ jobs:
 
           # Make sure the executor binary builds.
           bazel build //enterprise/server/cmd/executor
-
-      - name: Save caches
-        uses: ./.github/actions/cache-save
-        if: always()
-        with:
-          repo-cache-dir: ${{ steps.cache-restore.outputs.repo-cache-dir }}
-          go-mod-cache-dir: ${{ steps.cache-restore.outputs.go-mod-cache-dir }}
-          yarn-cache-dir: ${{ steps.cache-restore.outputs.yarn-cache-dir }}

@@ -531,8 +531,10 @@ func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 	if len(parts[0]) > 1 {
 		lastPart := parts[len(parts)-1]
 		if bytes.ContainsRune(lastPart[:1], 'v') {
-			if s, err := strconv.ParseUint(string(lastPart[1:]), 10, 32); err == nil {
-				version = PebbleKeyVersion(s)
+			if s, err := strconv.ParseInt(string(lastPart[1:]), 10, strconv.IntSize); err == nil {
+				if s >= 0 {
+					version = PebbleKeyVersion(s)
+				}
 			}
 		}
 	}
@@ -796,7 +798,10 @@ func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord
 	fileName := filepath.Join(fileDir, file)
 	tmpDir := fileDir
 	if fs.tmpDir != "" {
-		tmpDir = fs.tmpDir
+		tmpDir = filepath.Join(fs.tmpDir, fileRecord.GetDigest().GetHash()[:2])
+		if err := disk.EnsureDirectoryExists(tmpDir); err != nil {
+			return nil, err
+		}
 	}
 	wc, err := disk.FileWriterWithTmpDir(ctx, tmpDir, fileName)
 	if err != nil {

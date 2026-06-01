@@ -180,6 +180,260 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 	}
 }
 
+func TestFileCacheSharedDirectoryAcrossGroups(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+	group1Ctx := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR12345"}, nil)
+	group2Ctx := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR67890"}, nil)
+
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+	sharedDirectoryCtx1 := fc.WithSharedDirectory(group1Ctx, "ext4_images")
+	sharedDirectoryCtx2 := fc.WithSharedDirectory(group2Ctx, "ext4_images")
+	otherSharedDirectoryCtx := fc.WithSharedDirectory(group2Ctx, "other_images")
+
+	normalPath := writeFileContent(t, baseDir, "normal/file", "normal-content", false)
+	sharedPath := writeFileContent(t, baseDir, "shared/file", "shared-content", false)
+	node := nodeFromString("same-logical-key", false)
+
+	// Seed both a group-local entry and a shared ext4_images entry with the
+	// same logical filecache key.
+	require.NoError(t, fc.AddFile(group1Ctx, node, normalPath))
+	require.NoError(t, fc.AddFile(sharedDirectoryCtx1, node, sharedPath))
+
+	// The shared ext4_images entry does not make the same digest visible via
+	// another group's namespace.
+	require.True(t, fc.ContainsFile(group1Ctx, node))
+	require.False(t, fc.ContainsFile(group2Ctx, node))
+
+	normalLinkPath := filepath.Join(baseDir, "normal-link")
+	require.True(t, fc.FastLinkFile(group1Ctx, node, normalLinkPath))
+	assertFileContents(t, normalLinkPath, "normal-content")
+
+	group2MissPath := filepath.Join(baseDir, "group2-miss-link")
+	require.False(t, fc.FastLinkFile(group2Ctx, node, group2MissPath))
+	assert.NoFileExists(t, group2MissPath)
+
+	// Any group should be able to access the entry when looking it up via
+	// ext4_images.
+	require.True(t, fc.ContainsFile(sharedDirectoryCtx1, node))
+	require.True(t, fc.ContainsFile(sharedDirectoryCtx2, node))
+
+	sharedLinkPath1 := filepath.Join(baseDir, "shared-link-1")
+	require.True(t, fc.FastLinkFile(sharedDirectoryCtx1, node, sharedLinkPath1))
+	assertFileContents(t, sharedLinkPath1, "shared-content")
+
+	sharedLinkPath2 := filepath.Join(baseDir, "shared-link-2")
+	require.True(t, fc.FastLinkFile(sharedDirectoryCtx2, node, sharedLinkPath2))
+	assertFileContents(t, sharedLinkPath2, "shared-content")
+
+	// Other shared directories should not see ext4_images entries.
+	require.False(t, fc.ContainsFile(otherSharedDirectoryCtx, node))
+
+	// Open should respect the same namespace boundaries as linking.
+	_, err = fc.Open(group2Ctx, node)
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected non-shared group access to miss")
+
+	f, err := fc.Open(sharedDirectoryCtx2, node)
+	require.NoError(t, err)
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	require.NoError(t, err)
+	require.Equal(t, "shared-content", string(data))
+}
+
+func TestFileCacheSharedDirectoryAcrossGroupsAfterRestart(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+	group1Ctx := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR12345"}, nil)
+	group2Ctx := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR67890"}, nil)
+	node := nodeFromString("shared-only-key", false)
+	sharedPath := writeFileContent(t, baseDir, "shared/file", "shared-content", false)
+
+	// Seed the cache with a shared entry before recreating the filecache.
+	{
+		fc, err := filecache.NewFileCache(fcDir, 100000, false)
+		require.NoError(t, err)
+		fc.WaitForDirectoryScanToComplete()
+		sharedDirectoryCtx := fc.WithSharedDirectory(group1Ctx, "ext4_images")
+		require.NoError(t, fc.AddFile(sharedDirectoryCtx, node, sharedPath))
+		require.NoError(t, fc.Close())
+	}
+	// Reopen the filecache and verify the shared entry is visible across groups.
+	{
+		fc, err := filecache.NewFileCache(fcDir, 100000, false)
+		require.NoError(t, err)
+		t.Cleanup(func() { fc.Close() })
+		fc.WaitForDirectoryScanToComplete()
+		sharedDirectoryCtx := fc.WithSharedDirectory(group2Ctx, "ext4_images")
+
+		require.False(t, fc.ContainsFile(group2Ctx, node))
+		require.True(t, fc.ContainsFile(sharedDirectoryCtx, node))
+
+		missPath := filepath.Join(baseDir, "group2-link")
+		require.False(t, fc.FastLinkFile(group2Ctx, node, missPath))
+		assert.NoFileExists(t, missPath)
+
+		sharedLinkPath := filepath.Join(baseDir, "shared-link")
+		require.True(t, fc.FastLinkFile(sharedDirectoryCtx, node, sharedLinkPath))
+		assertFileContents(t, sharedLinkPath, "shared-content")
+
+		f, err := fc.Open(sharedDirectoryCtx, node)
+		require.NoError(t, err)
+		defer f.Close()
+		data, err := io.ReadAll(f)
+		require.NoError(t, err)
+		require.Equal(t, "shared-content", string(data))
+	}
+}
+
+func TestFileCacheInvalidSharedDirectoryNamesAreIgnored(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+	group1Ctx := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR12345"}, nil)
+
+	tests := []struct {
+		name                    string
+		sharedDirName           string
+		startupDir              string
+		unexpectedSharedDirName string
+	}{
+		{
+			name:          "empty",
+			sharedDirName: "",
+			startupDir:    "_SHARED_",
+		},
+		{
+			name:          "dot",
+			sharedDirName: ".",
+			startupDir:    "_SHARED_.",
+		},
+		{
+			name:          "dotdot",
+			sharedDirName: "..",
+			startupDir:    "_SHARED_..",
+		},
+		{
+			name:          "anon",
+			sharedDirName: "ANON",
+			startupDir:    "_SHARED_ANON",
+		},
+		{
+			name:          "group_prefix",
+			sharedDirName: "GR_invalid",
+			startupDir:    "_SHARED_GR_invalid",
+		},
+		{
+			name:          "shared_prefix",
+			sharedDirName: "_SHARED_ext4_images",
+			startupDir:    "_SHARED__SHARED_ext4_images",
+		},
+		{
+			name:                    "forward_slash",
+			sharedDirName:           "ext4/images",
+			startupDir:              filepath.Join("_SHARED_ext4", "images"),
+			unexpectedSharedDirName: "ext4",
+		},
+		{
+			name:          "backslash",
+			sharedDirName: `ext4\images`,
+			startupDir:    "_SHARED_ext4\\images",
+		},
+	}
+
+	// Seed malformed shared-directory layouts on disk before startup scanning.
+	for _, test := range tests {
+		node := nodeFromString("invalid-shared-"+test.name, false)
+		writeFileContent(
+			t,
+			fcDir,
+			filepath.Join(test.startupDir, node.GetDigest().GetHash()),
+			"startup-"+test.name,
+			false,
+		)
+	}
+
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			node := nodeFromString("invalid-shared-"+test.name, false)
+			invalidSharedDirectoryCtx := fc.WithSharedDirectory(group1Ctx, test.sharedDirName)
+
+			// Startup scanning should ignore the malformed on-disk entries
+			// completely, regardless of whether lookups use the group's default
+			// namespace or the invalid shared-directory context.
+			require.False(t, fc.ContainsFile(group1Ctx, node))
+			require.False(t, fc.ContainsFile(invalidSharedDirectoryCtx, node))
+
+			group1LinkPath := filepath.Join(baseDir, test.name, "group1-startup-link")
+			require.False(t, fc.FastLinkFile(group1Ctx, node, group1LinkPath))
+			assert.NoFileExists(t, group1LinkPath)
+
+			invalidLinkPath := filepath.Join(baseDir, test.name, "invalid-startup-link")
+			require.False(t, fc.FastLinkFile(invalidSharedDirectoryCtx, node, invalidLinkPath))
+			assert.NoFileExists(t, invalidLinkPath)
+
+			_, err := fc.Open(group1Ctx, node)
+			require.Error(t, err)
+			require.True(t, status.IsNotFoundError(err), "expected group lookup to miss for invalid startup directory")
+
+			_, err = fc.Open(invalidSharedDirectoryCtx, node)
+			require.Error(t, err)
+			require.True(t, status.IsNotFoundError(err), "expected invalid shared-directory lookup to miss after startup scan")
+
+			if test.unexpectedSharedDirName != "" {
+				// Malformed nested paths should not be reinterpreted as some other
+				// valid shared namespace during startup scanning.
+				unexpectedSharedDirectoryCtx := fc.WithSharedDirectory(group1Ctx, test.unexpectedSharedDirName)
+				require.False(t, fc.ContainsFile(unexpectedSharedDirectoryCtx, node))
+
+				unexpectedLinkPath := filepath.Join(baseDir, test.name, "unexpected-shared-link")
+				require.False(t, fc.FastLinkFile(unexpectedSharedDirectoryCtx, node, unexpectedLinkPath))
+				assert.NoFileExists(t, unexpectedLinkPath)
+
+				_, err := fc.Open(unexpectedSharedDirectoryCtx, node)
+				require.Error(t, err)
+				require.True(t, status.IsNotFoundError(err), "expected malformed startup directory to not hydrate another shared namespace")
+			}
+
+			// Supplying an invalid shared-directory name should fall back to the
+			// caller's normal group namespace on writes and subsequent reads.
+			// (This also logs an error, but we don't test for that.)
+			path := writeFileContent(t, baseDir, filepath.Join(test.name, "invalid", "file"), "invalid-"+test.name, false)
+			require.NoError(t, fc.AddFile(invalidSharedDirectoryCtx, node, path))
+
+			require.True(t, fc.ContainsFile(group1Ctx, node))
+			require.True(t, fc.ContainsFile(invalidSharedDirectoryCtx, node))
+
+			group1LinkPath = filepath.Join(baseDir, test.name, "group1-link")
+			require.True(t, fc.FastLinkFile(group1Ctx, node, group1LinkPath))
+			assertFileContents(t, group1LinkPath, "invalid-"+test.name)
+
+			invalidLinkPath = filepath.Join(baseDir, test.name, "invalid-link")
+			require.True(t, fc.FastLinkFile(invalidSharedDirectoryCtx, node, invalidLinkPath))
+			assertFileContents(t, invalidLinkPath, "invalid-"+test.name)
+
+			// Open should follow the same fallback-to-group behavior.
+			f, err := fc.Open(invalidSharedDirectoryCtx, node)
+			require.NoError(t, err)
+			defer f.Close()
+			data, err := io.ReadAll(f)
+			require.NoError(t, err)
+			require.Equal(t, "invalid-"+test.name, string(data))
+		})
+	}
+}
+
 func TestFileCacheOverwrite(t *testing.T) {
 	ctx := context.TODO()
 	for _, test := range []struct {
@@ -338,16 +592,20 @@ func TestScanWithConcurrentAdd(t *testing.T) {
 		var nodeContents [n]string
 		for i := 0; i < n; i++ {
 			name := fmt.Sprint(i)
-			nodes[i] = nodeFromString(name, false)
-			writeFileContent(t, filecacheRoot, "ANON/"+nodes[i].GetDigest().GetHash(), name, false)
+			executable := i%2 == 0
+			nodes[i] = nodeFromString(name, executable)
+			cachePath := "ANON/" + nodes[i].GetDigest().GetHash()
+			if executable {
+				cachePath += ".executable"
+			}
+			writeFileContent(t, filecacheRoot, cachePath, name, executable)
 			nodeContents[i] = name
 		}
 
 		i := rand.Intn(n)
 		nodeToAddConcurrently := nodes[i]
 		nodeToAddConcurrentlyPath := filepath.Join(testfs.MakeTempDir(t), "action.output")
-		err := os.WriteFile(nodeToAddConcurrentlyPath, []byte(nodeContents[i]), 0644)
-		require.NoError(t, err)
+		writeFileContent(t, filepath.Dir(nodeToAddConcurrentlyPath), filepath.Base(nodeToAddConcurrentlyPath), nodeContents[i], nodeToAddConcurrently.GetIsExecutable())
 
 		fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
 		require.NoError(t, err)
@@ -397,6 +655,48 @@ func TestFileAccessBeforeInitialScanCompleteFallsBackToFilesystem(t *testing.T) 
 	data, err := io.ReadAll(f)
 	require.NoError(t, err)
 	require.Equal(t, "content", string(data))
+}
+
+func TestFileAccessBeforeInitialScanCompleteRejectsInvalidDigestPath(t *testing.T) {
+	ctx := context.Background()
+	filecache.DisableInitialDirectoryScanForTest()
+	t.Cleanup(filecache.EnableInitialDirectoryScanForTest)
+
+	baseDir := testfs.MakeTempDir(t)
+	filecacheRoot := filepath.Join(baseDir, "filecache")
+	outDir := filepath.Join(baseDir, "out")
+	outsideFilePath := filepath.Join(baseDir, "outside-file.txt")
+	outsideFileContents := "outside file should not become an input"
+
+	err := os.MkdirAll(filepath.Join(filecacheRoot, "ANON"), 0755)
+	require.NoError(t, err)
+	err = os.MkdirAll(outDir, 0755)
+	require.NoError(t, err)
+	err = os.WriteFile(outsideFilePath, []byte(outsideFileContents), 0644)
+	require.NoError(t, err)
+
+	node := &repb.FileNode{
+		Digest: &repb.Digest{
+			Hash:      "../../" + filepath.Base(outsideFilePath),
+			SizeBytes: int64(len(outsideFileContents)),
+		},
+	}
+	fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+
+	require.False(t, fc.ContainsFile(ctx, node), "invalid digest should not hit startup disk fallback")
+
+	outPath := filepath.Join(outDir, "linked")
+	ok := fc.FastLinkFile(ctx, node, outPath)
+	require.False(t, ok, "invalid digest should not be linked before initial scan completes")
+	assert.NoFileExists(t, outPath)
+
+	f, err := fc.Open(ctx, node)
+	if f != nil {
+		defer f.Close()
+	}
+	require.Error(t, err, "invalid digest should not be opened before initial scan completes")
 }
 
 func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
@@ -564,6 +864,113 @@ func TestFileCacheUncleanShutdown(t *testing.T) {
 	assert.False(t, linked, "cache should have been wiped after unclean shutdown")
 }
 
+func TestFileCacheAddFileAfterClose(t *testing.T) {
+	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+
+	path := writeFileContent(t, baseDir, "file", "content", false)
+	node := nodeFromString("file", false)
+
+	// Once shutdown starts, cache population should become best-effort instead
+	// of surfacing "filecache is closed" to callers.
+	require.NoError(t, fc.Close())
+	require.NoError(t, fc.AddFile(ctx, node, path))
+}
+
+func TestFileCacheFastLinkFileAfterClose(t *testing.T) {
+	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+
+	path := writeFileContent(t, baseDir, "file", "content", false)
+	node := nodeFromString("file", false)
+	require.NoError(t, fc.AddFile(ctx, node, path))
+
+	// Already-cached files should still be usable after shutdown begins.
+	require.NoError(t, fc.Close())
+
+	linkedPath := filepath.Join(baseDir, "linked-after-close")
+	require.True(t, fc.FastLinkFile(ctx, node, linkedPath))
+	assertFileContents(t, linkedPath, "content")
+}
+
+func TestFileCacheWriterCommitAfterClose(t *testing.T) {
+	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+
+	content := "content"
+	fullPath := writeFileContent(t, baseDir, "file", content, false)
+	d, err := digest.ComputeForFile(fullPath, repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	node := &repb.FileNode{Digest: d}
+
+	w, err := fc.Writer(ctx, node, repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	_, err = w.Write([]byte(content))
+	require.NoError(t, err)
+
+	// A writer opened before shutdown should be able to commit without forcing
+	// the caller to retry just because the filecache is closing.
+	require.NoError(t, fc.Close())
+	require.NoError(t, w.Commit())
+	require.NoError(t, w.Close())
+}
+
+func TestFileCacheTrackExternalDirectoryAfterClose(t *testing.T) {
+	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+
+	extDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, extDir, map[string]string{
+		"file.txt": "contents",
+	})
+
+	// External dirs should still be accepted and tracked after shutdown begins,
+	// since callers are responsible for validating their contents after an
+	// unclean shutdown.
+	require.NoError(t, fc.Close())
+
+	unlock, err := fc.TrackExternalDirectory(ctx, extDir, 1000)
+	require.NoError(t, err)
+	require.NotNil(t, unlock)
+
+	// Lookup-only should find the entry that was tracked after Close.
+	unlockLookupOnly, sizeBytes, err := fc.LookupExternalDirectory(ctx, extDir)
+	require.NoError(t, err)
+	require.NotNil(t, unlockLookupOnly)
+	require.Equal(t, int64(1000), sizeBytes)
+	unlockLookupOnly()
+	unlock()
+
+	// Missing dirs should still report NotFound; after-close tracking only skips
+	// internal filecache integrity checks.
+	unlock, err = fc.TrackExternalDirectory(ctx, filepath.Join(extDir, "missing"), 1000)
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got: %v", err)
+	require.Nil(t, unlock)
+}
+
 func TestFileCacheWriter(t *testing.T) {
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
@@ -658,6 +1065,37 @@ func TestFileCacheWriter(t *testing.T) {
 	require.NoError(t, err)
 	requireOwnerReadableWritable(t, fi)
 	requireOwnerExecutable(t, fi)
+}
+
+func TestFileCacheTempPathRejectsDigestWithTwoDots(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	node := &repb.FileNode{Digest: &repb.Digest{Hash: "../foo", SizeBytes: 7}}
+
+	// Read stages its linked cache entry through a temp file, so a digest with a
+	// dot should be rejected before checking the cache.
+	_, err = fc.Read(ctx, node)
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got: %v", err)
+
+	// Write stages bytes through a temp file, so the bytes should not be
+	// accepted when the digest name is not safe for temp file creation.
+	n, err := fc.Write(ctx, node, []byte("content"))
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got: %v", err)
+	require.Zero(t, n)
+
+	// Writer also creates a temp file before commit, so it should reject the
+	// digest before returning a writable handle.
+	w, err := fc.Writer(ctx, node, repb.DigestFunction_BLAKE3)
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got: %v", err)
+	require.Nil(t, w)
 }
 
 func requireOwnerReadableWritable(t *testing.T, fi os.FileInfo) {
@@ -907,13 +1345,44 @@ func TestFileCacheWriteCleansUpTempFile(t *testing.T) {
 	rn, buf := testdigest.RandomCASResourceBuf(t, 1024)
 	node := &repb.FileNode{Digest: rn.GetDigest()}
 
-	_, err = fc.Write(ctx, node, buf)
+	// Write the bytes through the convenience API and expect it to report the
+	// full accepted byte count.
+	n, err := fc.Write(ctx, node, buf)
 	require.NoError(t, err)
+	require.Equal(t, len(buf), n)
 
+	// The temporary staging file should be removed after the file is added to
+	// the cache.
 	pattern := filepath.Join(fc.TempDir(), rn.GetDigest().GetHash()+".*.tmp")
 	matches, err := filepath.Glob(pattern)
 	require.NoError(t, err)
 	require.Empty(t, matches, "expected temp file(s) to be deleted: %v", matches)
+}
+
+func TestFileCacheWriteAfterClose(t *testing.T) {
+	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	outputDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 1024)
+	node := &repb.FileNode{Digest: rn.GetDigest()}
+
+	// Once the cache is closing, Write should silently accept the bytes so
+	// callers do not fail just because cache population is best-effort.
+	require.NoError(t, fc.Close())
+	n, err := fc.Write(ctx, node, buf)
+	require.NoError(t, err)
+	require.Equal(t, len(buf), n)
+
+	// The accepted bytes are intentionally dropped rather than added to the
+	// cache after shutdown starts.
+	linkedPath := filepath.Join(outputDir, "linked-after-close")
+	require.False(t, fc.FastLinkFile(ctx, node, linkedPath))
+	require.NoFileExists(t, linkedPath)
 }
 
 func TestTrackExternalDirectory_Basic(t *testing.T) {

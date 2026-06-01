@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"go.opentelemetry.io/contrib/detectors/aws/ec2/v2"
 	"go.opentelemetry.io/contrib/detectors/gcp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -38,11 +40,12 @@ import (
 
 var (
 	// TODO: use this project ID or deprecate it. It is currently unreferenced.
-	traceProjectID            = flag.String("app.trace_project_id", "", "Optional GCP project ID to export traces to. If not specified, determined from default credentials or metadata server if running on GCP.")
 	traceJaegerCollector      = flag.String("app.trace_jaeger_collector", "", "Address of the Jaeger collector HTTP endpoint where traces will be sent, e.g. http://jaeger.svc.cluster.local:14268")
 	traceOTLPCollector        = flag.String("app.trace_otlp_grpc_collector", "", "Address of the OTLP gRPC collector endpoint where traces will be sent, e.g. otel-collector.svc.cluster.local:4317")
 	traceOTLPHTTPCollector    = flag.String("app.trace_otlp_http_collector", "", "Address of the OTLP HTTP collector endpoint where traces will be sent, e.g. http://otel-collector.svc.cluster.local:4318")
-	traceServiceName          = flag.String("app.trace_service_name", "", "Name of the service to associate with traces.")
+	traceServiceName          = flag.String("app.trace_service_name", "", "Name of the service to associate with traces (maps to the standard 'service.name' attribute, like the OTEL_SERVICE_NAME environment variable, but allows for env substitution).")
+	traceResourceDetectors    = flag.Slice("app.trace_resource_detectors", []string{}, "Trace resource detectors to run. Supported values: gcp (GCE), gke, ec2, eks. If empty, defaults to [gcp, gke].")
+	traceResourceAttributes   = flag.Slice("app.trace_resource_attributes", []ResourceAttribute{}, "Resource attributes to add to all traces (similar to the OTEL_RESOURCE_ATTRIBUTES environment variable, but more structured, and allows for env substitution). Where possible, follow the resource semantic conventions: https://opentelemetry.io/docs/specs/semconv/resource/")
 	traceFraction             = flag.Float64("app.trace_fraction", 0, "Fraction of requests to sample for tracing.")
 	traceFractionOverrides    = flag.Slice("app.trace_fraction_overrides", []string{}, "Tracing fraction override based on name in format name=fraction.")
 	ignoreForcedTracingHeader = flag.Bool("app.ignore_forced_tracing_header", false, "If set, we will not honor the forced tracing header.")
@@ -59,6 +62,11 @@ const (
 	traceParentHeader             = "traceparent"
 	forceTraceHeaderValue         = "force"
 )
+
+type ResourceAttribute struct {
+	Key   string `json:"key" yaml:"key"`
+	Value string `json:"value" yaml:"value"`
+}
 
 // fractionSampler allows specifying a default sampling fraction as well as overrides based on the span name.
 // Based on TraceIDRatioBased sampler from the OpenTelemetry library.
@@ -137,6 +145,33 @@ func (e *noopExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnl
 
 func (e *noopExporter) Shutdown(ctx context.Context) error {
 	return nil
+}
+
+func configuredTraceResourceDetectors(names []string) ([]resource.Detector, error) {
+	names = slices.Clone(names)
+	for i := range names {
+		names[i] = strings.TrimSpace(strings.ToLower(names[i]))
+	}
+	slices.Sort(names)
+	names = slices.Compact(names)
+	if len(names) == 0 {
+		names = []string{"gcp", "gke"}
+	}
+
+	detectors := make([]resource.Detector, 0, len(names))
+	for _, name := range names {
+		switch name {
+		case "gcp":
+			detectors = append(detectors, &gcp.GCE{})
+		case "gke":
+			detectors = append(detectors, &gcp.GKE{})
+		case "ec2":
+			detectors = append(detectors, ec2.NewResourceDetector())
+		default:
+			return nil, status.InvalidArgumentErrorf("unknown trace resource detector %q (supported values: gcp, gke, ec2)", name)
+		}
+	}
+	return detectors, nil
 }
 
 func Configure(env environment.Env) error {
@@ -220,8 +255,15 @@ func setupTracingWithExporter(env environment.Env, traceExporter sdktrace.SpanEx
 		fractionOverrides[name] = fraction
 	}
 	sampler := newFractionSampler(*traceFraction, fractionOverrides, *ignoreForcedTracingHeader)
+	resourceDetectors, err := configuredTraceResourceDetectors(*traceResourceDetectors)
+	if err != nil {
+		return err
+	}
 
 	var resourceAttrs []attribute.KeyValue
+	for _, attr := range *traceResourceAttributes {
+		resourceAttrs = append(resourceAttrs, attribute.String(attr.Key, attr.Value))
+	}
 	if *traceServiceName != "" {
 		resourceAttrs = append(resourceAttrs, semconv.ServiceNameKey.String(*traceServiceName))
 	}
@@ -234,7 +276,7 @@ func setupTracingWithExporter(env environment.Env, traceExporter sdktrace.SpanEx
 	ctx, cancel := context.WithTimeout(env.GetServerContext(), resourceDetectionTimeout)
 	defer cancel()
 	res, err := resource.New(ctx,
-		resource.WithDetectors(&gcp.GKE{}, &gcp.GCE{}),
+		resource.WithDetectors(resourceDetectors...),
 		resource.WithAttributes(resourceAttrs...))
 	if err != nil {
 		log.Warningf("Could not automatically detect resource information for tracing: %s", err)
@@ -254,7 +296,7 @@ func setupTracingWithExporter(env environment.Env, traceExporter sdktrace.SpanEx
 	// octrace.DefaultTracer = opencensus.NewTracer(tracer)
 	propagator := propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{})
 	otel.SetTextMapPropagator(propagator)
-	log.Infof("Tracing enabled with sampler: %s", sampler.Description())
+	log.Infof("Tracing enabled with sampler: %s, resource detectors: %s", sampler.Description(), strings.Join(*traceResourceDetectors, ", "))
 	tracer = otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName)
 	return nil
 }

@@ -1336,12 +1336,12 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 		return nil, err
 	}
 
-	// Merged actions appear in clickhouse as multiple rows with the same
-	// execution_id, but a different invocation_uuid.  This inner query dedupes
-	// by execution_id and takes the highest value (though all rows should have
-	// the same value).
+	// Merged actions appear in ClickHouse as multiple rows with the same
+	// execution_uuid, but a different invocation_uuid. This inner query
+	// dedupes by execution_uuid and takes the highest value (though all rows
+	// should have the same value).
 	innerQ := query_builder.NewQuery(fmt.Sprintf(`
-		SELECT target_label, execution_id, MAX(%s) as v
+		SELECT target_label, MAX(%s) as v
 		FROM "Executions"`, metric))
 
 	// Add where clauses from the trend query, including execution dimension filters
@@ -1351,7 +1351,7 @@ func (i *InvocationStatService) GetTargetTrends(ctx context.Context, req *stpb.G
 
 	innerQ.AddWhereClause("cached_result = FALSE")
 	innerQ.AddWhereClause("target_label != ''")
-	innerQ.SetGroupBy("target_label, execution_id")
+	innerQ.SetGroupBy("target_label, execution_uuid")
 
 	innerQStr, innerQArgs := innerQ.Build()
 

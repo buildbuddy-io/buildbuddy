@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_proxy_registration"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
@@ -50,8 +51,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/xds"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/grpc"
+
+	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver" // registers kube:// resolver.
+	_ "google.golang.org/grpc/xds"                                   // registers xds:// resolver.
 
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
@@ -92,6 +97,10 @@ func main() {
 	if err := log.Configure(); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1)
+	}
+
+	if err := xds.Bootstrap(context.Background(), nil /*=client*/); err != nil {
+		log.Fatalf("Error bootstrapping xDS config: %s", err)
 	}
 
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
@@ -144,6 +153,12 @@ func main() {
 	if err := startGRPCServers(env); err != nil {
 		log.Fatalf("%v", err)
 	}
+
+	// Optionally announce ourselves to the BuildBuddy app's cache proxy
+	// registry so we show up on the /cache-proxies admin page. This is a
+	// no-op unless --cache_proxy.app_target and --cache_proxy.api_key are
+	// both set, and never affects the cache-serving path.
+	cache_proxy_registration.Register(env)
 
 	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 	env.GetMux().Handle("/healthz", env.GetHealthChecker().LivenessHandler())
@@ -218,7 +233,7 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 	if err != nil {
 		return status.WrapError(err, "failed to create traffic stats handler")
 	}
-	// Add the API-Key, JWT, client-identity, etc... propagating interceptor.
+	// Add metadata-propagating interceptors for configured request headers.
 	grpcServerConfig := grpc_server.GRPCServerConfig{
 		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
 			interceptors.PropagateMetadataUnaryInterceptor(proxy_util.HeadersToPropagate...),

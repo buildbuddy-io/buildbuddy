@@ -122,7 +122,22 @@ func (t *Tracker) Get(key label) int64 {
 
 func (t *Tracker) PrettyPrint() {
 	indexMB := (float64(t.Get(INDEX_BYTES_READ)) / 1e6)
-	log.Printf("Retrieved %d posting lists in %s [%2.2f MB]", t.Get(POSTING_LIST_COUNT), time.Duration(t.Get(POSTING_LIST_QUERY_DURATION)), indexMB)
+	postingListDocIDs := t.Get(POSTING_LIST_DOCIDS_COUNT)
+	if postingListDocIDs > 0 {
+		log.Printf(
+			"Retrieved %d posting lists with %d doc IDs in %s [%2.2f MB]",
+			t.Get(POSTING_LIST_COUNT),
+			postingListDocIDs,
+			time.Duration(t.Get(POSTING_LIST_QUERY_DURATION)),
+			indexMB,
+		)
+	} else {
+		log.Printf("Retrieved %d posting lists in %s [%2.2f MB]", t.Get(POSTING_LIST_COUNT), time.Duration(t.Get(POSTING_LIST_QUERY_DURATION)), indexMB)
+	}
+	if t.Get(DOC_KEYS_SCANNED) > 0 {
+		docMB := float64(t.Get(DOC_BYTES_READ)) / 1e6
+		log.Printf("Read %d stored-field keys [%2.2f MB]", t.Get(DOC_KEYS_SCANNED), docMB)
+	}
 	if t.Get(REMOVE_DELETED_DOCS_COUNT) > 0 {
 		log.Printf("Filtered %d deleted docs in %s", t.Get(REMOVE_DELETED_DOCS_COUNT), time.Duration(t.Get(REMOVE_DELETED_DOCS_DURATION)))
 	}

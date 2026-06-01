@@ -188,6 +188,7 @@ type apiKeyGroup struct {
 	UseGroupOwnedExecutors bool
 	CacheEncryptionEnabled bool
 	EnforceIPRules         bool
+	Impersonation          bool
 	Status                 int32
 }
 
@@ -227,6 +228,10 @@ func (g *apiKeyGroup) GetEnforceIPRules() bool {
 	return g.EnforceIPRules
 }
 
+func (g *apiKeyGroup) IsImpersonating() bool {
+	return g.Impersonation
+}
+
 func (g *apiKeyGroup) GetGroupStatus() grpb.Group_GroupStatus {
 	return grpb.Group_GroupStatus(g.Status)
 }
@@ -261,6 +266,7 @@ func (r *apiKeyGroupRow) toAPIKeyGroup() *apiKeyGroup {
 		UseGroupOwnedExecutors: r.UseGroupOwnedExecutors,
 		CacheEncryptionEnabled: r.CacheEncryptionEnabled,
 		EnforceIPRules:         r.EnforceIPRules,
+		Impersonation:          r.Impersonation,
 		Status:                 r.GroupStatus,
 	}
 }
@@ -954,7 +960,7 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label st
 }
 
 func (d *AuthDB) isGroupMember(ctx context.Context, groupID, userID string) (bool, error) {
-	u, err := d.env.GetUserDB().GetUserByIDWithoutAuthCheck(ctx, userID)
+	u, err := d.env.GetUserDB().GetUserByIDWithoutAuthCheck(ctx, userID, &interfaces.GetUserOpts{})
 	if err != nil {
 		return false, err
 	}

@@ -22,12 +22,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -174,6 +178,8 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 		name                string
 		runOverride         rbetest.RunInterceptor
 		expectFinishCleanly bool
+
+		expectInputFetchMetadata *espb.InputFetchMetadata
 	}{
 		{
 			name:                "Success",
@@ -183,6 +189,18 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 			name:                "Run failure",
 			runOverride:         rbetest.AlwaysReturn(commandutil.ErrorResult(errors.New("run failed"))),
 			expectFinishCleanly: false,
+		},
+		{
+			name: "Auxiliary metadata",
+			runOverride: rbetest.AlwaysReturn(&interfaces.CommandResult{
+				InputFetchMetadata: &espb.InputFetchMetadata{
+					DownloadedFileIndicesBitmap: []byte{1, 2, 3},
+				},
+			}),
+			expectInputFetchMetadata: &espb.InputFetchMetadata{
+				DownloadedFileIndicesBitmap: []byte{1, 2, 3},
+			},
+			expectFinishCleanly: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -219,69 +237,24 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 
 			completedOp := mockServer.operations[len(mockServer.operations)-1]
 			require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
+
+			unpackedCompletedOp, err := rexec.UnpackOperation(completedOp)
+			require.NoError(t, err)
+			rsp := unpackedCompletedOp.ExecuteResponse
+
+			if tc.expectInputFetchMetadata != nil {
+				auxMeta := &espb.ExecutionAuxiliaryMetadata{}
+				ok, err := rexec.FindFirstAuxiliaryMetadata(rsp.GetResult().GetExecutionMetadata(), auxMeta)
+				require.True(t, ok)
+				require.NoError(t, err)
+				require.Empty(t, cmp.Diff(
+					tc.expectInputFetchMetadata,
+					auxMeta.GetInputFetchDetailedStats(),
+					protocmp.Transform(),
+				))
+			}
 		})
 	}
-}
-
-func TestExecuteTaskAndStreamResults_InputFetchMetadata(t *testing.T) {
-	flags.Set(t, "executor.record_input_download_metadata", true)
-
-	ctx := context.Background()
-	expected := &espb.InputFetchMetadata{
-		DownloadedFileIndicesBitmap: []byte{1, 2, 3},
-	}
-	runOverride := rbetest.AlwaysReturn(&interfaces.CommandResult{
-		InputFetchMetadata: expected,
-	})
-	exec, _, execClient, mockServer, _ := getExecutor(t, runOverride)
-	task := getTask()
-
-	publisher, err := operation.Publish(ctx, execClient, task.ExecutionTask.ExecutionId)
-	require.NoError(t, err)
-
-	retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
-	require.NoError(t, err)
-	require.False(t, retry)
-
-	<-mockServer.finished
-
-	completedOp := mockServer.operations[len(mockServer.operations)-1]
-	completedRsp := operation.ExtractExecuteResponse(completedOp)
-	auxMeta := &espb.ExecutionAuxiliaryMetadata{}
-	ok, err := rexec.FindFirstAuxiliaryMetadata(completedRsp.GetResult().GetExecutionMetadata(), auxMeta)
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Equal(t, expected.GetDownloadedFileIndicesBitmap(), auxMeta.GetInputFetchDetailedStats().GetDownloadedFileIndicesBitmap())
-}
-
-func TestExecuteTaskAndStreamResults_InputFetchMetadataDisabled(t *testing.T) {
-	flags.Set(t, "executor.record_input_download_metadata", false)
-
-	ctx := context.Background()
-	runOverride := rbetest.AlwaysReturn(&interfaces.CommandResult{
-		InputFetchMetadata: &espb.InputFetchMetadata{
-			DownloadedFileIndicesBitmap: []byte{9, 9, 9},
-		},
-	})
-	exec, _, execClient, mockServer, _ := getExecutor(t, runOverride)
-	task := getTask()
-
-	publisher, err := operation.Publish(ctx, execClient, task.ExecutionTask.ExecutionId)
-	require.NoError(t, err)
-
-	retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
-	require.NoError(t, err)
-	require.False(t, retry)
-
-	<-mockServer.finished
-
-	completedOp := mockServer.operations[len(mockServer.operations)-1]
-	completedRsp := operation.ExtractExecuteResponse(completedOp)
-	auxMeta := &espb.ExecutionAuxiliaryMetadata{}
-	ok, err := rexec.FindFirstAuxiliaryMetadata(completedRsp.GetResult().GetExecutionMetadata(), auxMeta)
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Nil(t, auxMeta.GetInputFetchDetailedStats())
 }
 
 func TestExecuteTaskAndStreamResults_CacheHit(t *testing.T) {
@@ -517,6 +490,57 @@ func TestExecuteTaskAndStreamResults_MissingInput(t *testing.T) {
 			inputFetchStart := actionResult.GetExecutionMetadata().GetInputFetchStartTimestamp().AsTime()
 			inputFetchCompleted := actionResult.GetExecutionMetadata().GetInputFetchCompletedTimestamp().AsTime()
 			require.GreaterOrEqual(t, inputFetchCompleted, inputFetchStart)
+		})
+	}
+}
+
+func TestExecuteTaskAndStreamResults_Timeout(t *testing.T) {
+	tests := []struct {
+		name            string
+		actionTimeout   *durationpb.Duration
+		platformTimeout *durationpb.Duration
+		expectedTimeout time.Duration
+	}{
+		{name: "set action timeout", actionTimeout: durationpb.New(10 * time.Minute), platformTimeout: nil, expectedTimeout: 10 * time.Minute},
+		{name: "set timeout platform property", actionTimeout: nil, platformTimeout: durationpb.New(1 * time.Hour), expectedTimeout: 1 * time.Hour},
+		// The timeout on the action should take precedence over the platform property.
+		// Timeout logic for remote runners (ci_runner_util.go) assumes this holds true.
+		{name: "set both action and platform property timeout", actionTimeout: durationpb.New(10 * time.Minute), platformTimeout: durationpb.New(1 * time.Hour), expectedTimeout: 10 * time.Minute},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			exec, _, execClient, mockServer, _ := getExecutor(t, nil)
+			task := getTask()
+
+			task.ExecutionTask.Action.Timeout = tc.actionTimeout
+			var props []*repb.Platform_Property
+			if tc.platformTimeout != nil {
+				props = append(props, &repb.Platform_Property{
+					Name:  platform.DefaultTimeoutPropertyName,
+					Value: tc.platformTimeout.AsDuration().String(),
+				})
+			}
+			task.ExecutionTask.Action.Platform = &repb.Platform{Properties: props}
+
+			publisher, err := operation.Publish(ctx, execClient, task.ExecutionTask.ExecutionId)
+			require.NoError(t, err)
+
+			retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
+			require.NoError(t, err)
+			require.False(t, retry)
+
+			<-mockServer.finished
+			completedOp := mockServer.operations[len(mockServer.operations)-1]
+			require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
+
+			rsp, err := rexec.UnpackOperation(completedOp)
+			require.NoError(t, err)
+			auxMeta := &espb.ExecutionAuxiliaryMetadata{}
+			ok, err := rexec.FindFirstAuxiliaryMetadata(rsp.ExecuteResponse.GetResult().GetExecutionMetadata(), auxMeta)
+			require.NoError(t, err)
+			require.True(t, ok)
+			require.Equal(t, tc.expectedTimeout, auxMeta.GetTimeout().AsDuration())
 		})
 	}
 }

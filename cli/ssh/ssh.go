@@ -35,6 +35,7 @@ import (
 
 var (
 	flags = flag.NewFlagSet("ssh", flag.ContinueOnError)
+	Flags = flags
 
 	gatewayTarget = flags.String("gateway", "grpcs://gateway.buildbuddy.io", "Gateway gRPC target")
 	network       = flags.String("network", "", "Network name (default is blank)")

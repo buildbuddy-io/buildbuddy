@@ -3,9 +3,11 @@ package distributed
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -38,7 +40,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 
-	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gstatus "google.golang.org/grpc/status"
@@ -97,17 +98,8 @@ type lookasideCacheEntry struct {
 }
 
 func (o *hintedHandoffOrder) String() string {
-	hash := o.r.GetDigest().GetHash()
-	isolation := &dcpb.Isolation{
-		CacheType:          o.r.GetCacheType(),
-		RemoteInstanceName: o.r.GetInstanceName(),
-	}
-	return fmt.Sprintf("{digest:%q isolation:{%s}}", hash, isolation)
-}
-
-type peerInfo struct {
-	lastContact time.Time
-	zone        string
+	return fmt.Sprintf("{digest:%q cache_type:%s remote_instance_name:%q}",
+		o.r.GetDigest().GetHash(), o.r.GetCacheType(), o.r.GetInstanceName())
 }
 
 // TODO(go/b/6456): use memory cache instead of LRU for lookaside cache
@@ -115,9 +107,8 @@ type Cache struct {
 	authenticator        interfaces.Authenticator
 	local                interfaces.Cache
 	log                  log.Logger
-	lookasideMu          *sync.Mutex
 	lookaside            lru.LRU[lookasideCacheEntry]
-	peerMetadata         map[string]*peerInfo
+	peerZones            map[string]string
 	hintedHandoffsMu     *sync.RWMutex
 	hintedHandoffsByPeer map[string]chan *hintedHandoffOrder
 	distributedProxy     *distributed_client.Proxy
@@ -125,7 +116,7 @@ type Cache struct {
 	extraConsistentHash  *consistent_hash.ConsistentHash
 	heartbeatChannel     *heartbeat.Channel
 	kubeDiscoveryChannel *kubediscovery.PeerWatcher
-	heartbeatMu          *sync.Mutex
+	heartbeatMu          *sync.RWMutex
 	shutdownMu           *sync.RWMutex
 	shutDownChan         chan struct{}
 	finishedShutdown     bool
@@ -188,18 +179,6 @@ func parseConsistentHash(c string) (consistent_hash.HashFunction, error) {
 	}
 }
 
-// Converts an LRU eviction reason into a metrics.LookasideCacheEvictionReason.
-func convertEvictionReason(r lru.EvictionReason) string {
-	switch r {
-	case lru.SizeEviction:
-		return "size"
-	case lru.ManualEviction:
-		return "age"
-	default:
-		return string(r)
-	}
-}
-
 // NewDistributedCache creates a new cache by wrapping the provided cache "c",
 // in a HTTP API and announcing its presence over redis to other distributed
 // cache nodes. Together, these distributed caches each maintain a consistent
@@ -219,6 +198,9 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 	if opts.KubePeerWatcher != nil && len(opts.Nodes) > 0 {
 		return nil, status.InvalidArgumentErrorf("cannot set both Nodes and KubePeerWatcher")
 	}
+	if opts.ClusterSize > 0 && opts.ReplicationFactor > opts.ClusterSize {
+		return nil, status.InvalidArgumentErrorf("replication factor (%d) cannot be greater than cluster size (%d)", opts.ReplicationFactor, opts.ClusterSize)
+	}
 	hashFn, err := parseConsistentHash(*consistentHashFunction)
 	if err != nil {
 		return nil, err
@@ -236,18 +218,17 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 	dc := &Cache{
 		authenticator:       env.GetAuthenticator(),
 		local:               c,
-		lookasideMu:         &sync.Mutex{},
 		log:                 log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", opts.ListenAddr)),
 		opts:                opts,
 		distributedProxy:    distributed_client.New(env, c, opts.ListenAddr),
 		consistentHash:      chash,
 		extraConsistentHash: extraCHash,
 
-		heartbeatMu:      &sync.Mutex{},
+		heartbeatMu:      &sync.RWMutex{},
 		shutdownMu:       &sync.RWMutex{},
 		shutDownChan:     nil,
 		finishedShutdown: true,
-		peerMetadata:     make(map[string]*peerInfo, 0),
+		peerZones:        make(map[string]string),
 
 		hintedHandoffsMu:     &sync.RWMutex{},
 		hintedHandoffsByPeer: make(map[string]chan *hintedHandoffOrder, 0),
@@ -258,14 +239,14 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 			MaxSize: opts.LookasideCacheSizeBytes,
 			OnEvict: func(key string, v lookasideCacheEntry, reason lru.EvictionReason) {
 				age := time.Since(time.UnixMilli(v.createdAtMillis))
-				metrics.LookasideCacheEvictionAgeMsec.WithLabelValues(
-					convertEvictionReason(reason),
-				).Observe(float64(age.Milliseconds()))
+				metrics.LookasideCacheEvictionAgeMsec.WithLabelValues(string(reason)).Observe(float64(age.Milliseconds()))
 			},
 			SizeFn: func(v lookasideCacheEntry) int64 {
 				// []byte size + 8 bytes for the int64 timestamp.
 				return int64(len(v.data) + 8)
 			},
+			ThreadSafe: true,
+			TTL:        *lookasideCacheTTL,
 		})
 		if err != nil {
 			return nil, err
@@ -284,6 +265,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 	}
 	dc.distributedProxy.SetHeartbeatCallbackFunc(dc.recvHeartbeatCallback)
 	dc.distributedProxy.SetHintedHandoffCallbackFunc(dc.recvHintedHandoffCallback)
+	dc.distributedProxy.SetEnableCompressedReads(opts.EnableLocalCompressionLookup)
 	if len(opts.Nodes) > 0 {
 		// Nodes are hardcoded. Set them once and be done with it.
 		chash.Set(opts.Nodes...)
@@ -353,9 +335,9 @@ func (c *Cache) Check(ctx context.Context) error {
 	// Next check that we're participating in the network:
 	// basically, that enough configured peers have *ever* contacted us.
 	// TODO(tylerw): Should we have some recency threshold here?
-	c.heartbeatMu.Lock()
-	nodesInNetwork := len(c.peerMetadata)
-	c.heartbeatMu.Unlock()
+	c.heartbeatMu.RLock()
+	nodesInNetwork := len(c.peerZones)
+	c.heartbeatMu.RUnlock()
 
 	if nodesInNetwork < c.opts.ClusterSize {
 		return status.UnavailableErrorf("%d nodes in network but cluster size is %d.", nodesInNetwork, c.opts.ClusterSize)
@@ -406,6 +388,10 @@ func (t *teeReadCloser) Close() error {
 
 func isTreeCacheResource(r *rspb.ResourceName) bool {
 	return r.GetCacheType() == rspb.CacheType_AC && strings.HasPrefix(r.GetInstanceName(), digest.TreeCacheRemoteInstanceName)
+}
+
+func isLocalReadthroughCacheableResource(r *rspb.ResourceName) bool {
+	return r.GetCacheType() == rspb.CacheType_CAS || isTreeCacheResource(r)
 }
 
 // lookasideKey returns the resource's key in the lookaside cache and true,
@@ -472,11 +458,9 @@ func (c *Cache) setLookasideEntry(lookasideKey string, data []byte) {
 		data:            data,
 	}
 
-	c.lookasideMu.Lock()
 	if !c.lookaside.Contains(lookasideKey) {
 		c.lookaside.Add(lookasideKey, entry)
 	}
-	c.lookasideMu.Unlock()
 	c.log.Debugf("Set %q in lookaside cache", lookasideKey)
 }
 
@@ -513,18 +497,7 @@ func (c *Cache) getLookasideEntry(ctx context.Context, r *rspb.ResourceName) ([]
 		return nil, false
 	}
 
-	c.lookasideMu.Lock()
-	found := false
-	entry, ok := c.lookaside.Get(k)
-	if ok {
-		if *lookasideCacheTTL > 0 && time.Since(time.UnixMilli(entry.createdAtMillis)) > *lookasideCacheTTL {
-			// Remove the item from the LRU if it's expired.
-			c.lookaside.Remove(k)
-		} else {
-			found = true
-		}
-	}
-	c.lookasideMu.Unlock()
+	entry, found := c.lookaside.Get(k)
 
 	lookasideCacheLookupCount[found].Inc()
 	lookasideCacheLookupBytes[found].Add(float64(r.GetDigest().GetSizeBytes()))
@@ -583,15 +556,11 @@ func combineCommittedWriteClosers(a, b interfaces.CommittedWriteCloser) interfac
 }
 
 func (c *Cache) recvHeartbeatCallback(ctx context.Context, peer string) {
-	pi := &peerInfo{
-		lastContact: time.Now(),
-	}
 	if zoneVals := metadata.ValueFromIncomingContext(ctx, resources.ZoneHeader); len(zoneVals) == 1 {
-		pi.zone = zoneVals[0]
+		c.heartbeatMu.Lock()
+		c.peerZones[peer] = zoneVals[0]
+		c.heartbeatMu.Unlock()
 	}
-	c.heartbeatMu.Lock()
-	c.peerMetadata[peer] = pi
-	c.heartbeatMu.Unlock()
 }
 
 func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer string, r *rspb.ResourceName) {
@@ -700,24 +669,56 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	return c.distributedProxy.Shutdown(ctx)
 }
 
-func (c *Cache) peerZone(peer string) (string, bool) {
-	c.heartbeatMu.Lock()
-	pi, ok := c.peerMetadata[peer]
-	c.heartbeatMu.Unlock()
-	if ok && pi.zone != "" {
-		return pi.zone, true
-	}
-	return "", false
+func (c *Cache) peerZone(peer string) string {
+	c.heartbeatMu.RLock()
+	zone := c.peerZones[peer]
+	c.heartbeatMu.RUnlock()
+	return zone
 }
 
-// peers returns the ordered slice of replicationFactor peers responsible for
-// this key. They should be tried in order.
-func (c *Cache) writePeers(d *repb.Digest) *peerset.PeerSet {
+// writePeers returns the ordered slice of replicationFactor peers responsible
+// for writing this key. They should be tried in order.
+func (c *Cache) writePeers(r *rspb.ResourceName) (*peerset.PeerSet, error) {
+	d := r.GetDigest()
 	allPeers := c.consistentHash.GetAllReplicas(d.GetHash())
 	if len(c.opts.NewNodes) > 0 && !*newNodesReadOnly {
 		allPeers = c.extraConsistentHash.GetAllReplicas(d.GetHash())
 	}
-	return peerset.New(allPeers[:c.opts.ReplicationFactor], allPeers[c.opts.ReplicationFactor:])
+	if len(allPeers) < c.opts.ReplicationFactor {
+		return nil, status.UnavailableErrorf("Not enough peers (%d) available to satisfy replication factor (%d).", len(allPeers), c.opts.ReplicationFactor)
+	}
+	if c.localReadthroughEnabled() && isLocalReadthroughCacheableResource(r) {
+		return ensureSameZonePrimary(allPeers, c.opts.ReplicationFactor, c.opts.ListenAddr, c.zone, c.peerZone), nil
+	}
+	return peerset.New(allPeers[:c.opts.ReplicationFactor], allPeers[c.opts.ReplicationFactor:]), nil
+}
+
+// ensureSameZonePrimary promotes self into the primary peer set if none of the
+// existing primaries are in self's zone (and self isn't already a primary).
+// This is used under read-through caching so that every write places at least
+// one copy in the local zone. The relative order of every other peer is
+// preserved. Callers must not reuse the input slice after this call.
+func ensureSameZonePrimary(
+	peers []string, primaryCount int,
+	self string, myZone string,
+	zoneOf func(string) string,
+) *peerset.PeerSet {
+	if myZone == "" || slices.ContainsFunc(peers[:primaryCount], func(peer string) bool {
+		return peer == self || myZone == zoneOf(peer)
+	}) {
+		return peerset.New(peers[:primaryCount], peers[primaryCount:])
+	}
+	selfIdx := slices.Index(peers[primaryCount:], self)
+	if selfIdx == -1 {
+		peers = append(peers, self)
+		selfIdx = len(peers) - 1
+	} else {
+		selfIdx += primaryCount
+	}
+	// Move self into the primary section, shifting others to the right.
+	copy(peers[primaryCount+1:selfIdx+1], peers[primaryCount:selfIdx])
+	peers[primaryCount] = self
+	return peerset.New(peers[:primaryCount+1], peers[primaryCount+1:])
 }
 
 func dedupe(in []string) []string {
@@ -733,17 +734,17 @@ func dedupe(in []string) []string {
 	return out
 }
 
-// readPeers returns a slice of peers responsible for this key. If this peer is
-// a member of the set, it is returned first. Other
-// peers are returned in random order.
-func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
+// readPeers returns a PeerSet for reading, where the order is self, same zone
+// peers, other peers. For read-through-cacheable resources, if local read-through
+// is enabled, it ensures that at least one primary peer is in the local zone.
+func (c *Cache) readPeers(r *rspb.ResourceName) *peerset.PeerSet {
+	d := r.GetDigest()
 	peers := c.consistentHash.GetAllReplicas(d.GetHash())
 	var primaryPeers, secondaryPeers []string
 	// To prevent a panic if replication is misconfigured to be higher than peer count.
-	if len(peers) >= c.opts.ReplicationFactor {
-		primaryPeers = peers[:c.opts.ReplicationFactor]
-		secondaryPeers = peers[c.opts.ReplicationFactor:]
-	}
+	primaryCount := min(len(peers), c.opts.ReplicationFactor)
+	primaryPeers = peers[:primaryCount]
+	secondaryPeers = peers[primaryCount:]
 
 	if len(c.opts.NewNodes) > 0 {
 		extendedPeerList := c.extraConsistentHash.GetAllReplicas(d.GetHash())
@@ -765,10 +766,15 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 		}
 	}
 
+	var blockBackfills []string
+	if c.localReadthroughEnabled() && isLocalReadthroughCacheableResource(r) {
+		primaryPeers, secondaryPeers, blockBackfills = readThroughPeers(primaryPeers, secondaryPeers, c.opts.ListenAddr, c.zone, c.peerZone)
+	}
+
 	sortVal := func(peer string) int {
 		if peer == c.opts.ListenAddr {
 			return 0
-		} else if zone, ok := c.peerZone(peer); ok && zone == c.zone {
+		} else if z := c.peerZone(peer); z != "" && z == c.zone {
 			return 1
 		} else {
 			return 2
@@ -777,7 +783,42 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 	sort.Slice(primaryPeers, func(i, j int) bool {
 		return sortVal(primaryPeers[i]) < sortVal(primaryPeers[j])
 	})
-	return peerset.New(primaryPeers, secondaryPeers)
+	ps := peerset.New(primaryPeers, secondaryPeers)
+	ps.BlockBackfills = blockBackfills
+	return ps
+}
+
+// readThroughPeers reshapes the (primary, secondary) split for reads
+// under read-through caching. When neither self nor any same-zone peer appears
+// in primary, it appends same-zone secondaries onto primary so the read can
+// find an in-zone peer (which may hold a read-through cached copy) before any
+// cross-zone peer. The caller is expected to apply the locality sort to the
+// returned primary.
+//
+// The returned blockBackfills list names the promoted peers. They're not
+// canonical replicas for the key, so a successful read further down the
+// preferred list must not trigger an unwanted cross-zone write to each one.
+func readThroughPeers(
+	primaryPeers, secondaryPeers []string,
+	self string, myZone string,
+	zoneOf func(string) string,
+) (primary, secondary, blockBackfills []string) {
+	if myZone == "" || slices.ContainsFunc(primaryPeers, func(peer string) bool {
+		return peer == self || myZone == zoneOf(peer)
+	}) {
+		return primaryPeers, secondaryPeers, nil
+	}
+	var promoted []string
+	newSecondary := make([]string, 0, len(secondaryPeers))
+	for _, p := range secondaryPeers {
+		if myZone == zoneOf(p) {
+			primaryPeers = append(primaryPeers, p)
+			promoted = append(promoted, p)
+		} else {
+			newSecondary = append(newSecondary, p)
+		}
+	}
+	return primaryPeers, newSecondary, promoted
 }
 
 func (c *Cache) remoteContains(ctx context.Context, peer string, r *rspb.ResourceName) (bool, error) {
@@ -794,7 +835,14 @@ func (c *Cache) remoteMetadata(ctx context.Context, peer string, r *rspb.Resourc
 	return c.distributedProxy.RemoteMetadata(ctx, peer, r)
 }
 
-func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, rns []*rspb.ResourceName) ([]*repb.Digest, error) {
+func (c *Cache) remoteGetWithMetadata(ctx context.Context, peer string, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
+		return c.local.GetWithMetadata(ctx, r)
+	}
+	return c.distributedProxy.RemoteGetWithMetadata(ctx, peer, r)
+}
+
+func (c *Cache) remoteFindMissing(ctx context.Context, peer string, rns []*rspb.ResourceName) ([]*repb.Digest, error) {
 	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
 		return c.local.FindMissing(ctx, rns)
 	}
@@ -810,10 +858,10 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *d
 	if len(stillMissing) == 0 {
 		return nil, nil
 	}
-	return c.distributedProxy.RemoteFindMissing(ctx, peer, isolation, stillMissing)
+	return c.distributedProxy.RemoteFindMissing(ctx, peer, stillMissing)
 }
 
-func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, rns []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+func (c *Cache) remoteGetMulti(ctx context.Context, peer string, rns []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
 		return c.local.GetMulti(ctx, rns)
 	}
@@ -831,7 +879,7 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 		return results, nil
 	}
 
-	remoteResults, err := c.distributedProxy.RemoteGetMulti(ctx, peer, isolation, stillMissing)
+	remoteResults, err := c.distributedProxy.RemoteGetMulti(ctx, peer, stillMissing)
 	if err != nil {
 		return nil, err
 	}
@@ -878,16 +926,14 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 
 	var readCloser io.ReadCloser
 
-	// Check if the blob is in the local read-through cache, if that feature
-	// is enabled. If not, configure localWriter so the blob can be written
-	// to the local cache as it is read.
-	if c.localReadthroughEnabled() {
+	// Check if an immutable blob is in the local read-through cache, if that
+	// feature is enabled. If not, configure localWriter so the blob can be
+	// written to the local cache as it is read.
+	if c.localReadthroughEnabled() && isLocalReadthroughCacheableResource(r) {
 		if rc, err := c.local.Reader(ctx, r, offset, limit); err == nil {
 			c.log.CtxDebugf(ctx, "Reader(%q) found locally", distributed_client.ResourceIsolationString(r))
 			readCloser = rc
-		} else if cacheable && (r.GetCacheType() == rspb.CacheType_CAS || isTreeCacheResource(r)) {
-			// AC entries can be updated, so we don't want to hold on to an old
-			// version.
+		} else if cacheable {
 			if local, err := c.local.Writer(ctx, r); err == nil {
 				localWriter = local
 			}
@@ -1081,7 +1127,7 @@ func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error
 	if _, found := c.getLookasideEntry(ctx, r); found {
 		return true, nil
 	}
-	ps := c.readPeers(r.GetDigest())
+	ps := c.readPeers(r)
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(r, ps)); err != nil {
 			c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
@@ -1108,7 +1154,7 @@ func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error
 
 func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	d := r.GetDigest()
-	ps := c.readPeers(d)
+	ps := c.readPeers(r)
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		md, err := c.remoteMetadata(ctx, peer, r)
@@ -1130,9 +1176,32 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to query metadata %q.", d.GetHash())
 }
 
+func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	d := r.GetDigest()
+	ps := c.readPeers(r)
+
+	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
+		data, md, err := c.remoteGetWithMetadata(ctx, peer, r)
+		if err == nil {
+			c.log.CtxDebugf(ctx, "GetWithMetadata(%q) found on peer %q", d, peer)
+			return data, md, nil
+		}
+		if status.IsNotFoundError(err) {
+			c.log.CtxDebugf(ctx, "GetWithMetadata(%q) not found on peer %s", distributed_client.ResourceIsolationString(r), peer)
+			continue
+		}
+		c.log.CtxDebugf(ctx, "GetWithMetadata(%q) lookup failed on peer %s: (err: %v)", distributed_client.ResourceIsolationString(r), peer, err)
+
+		// Got an error -- mark this peer as failed and try the next one.
+		ps.MarkPeerAsFailed(peer)
+	}
+
+	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to GetWithMetadata %q. Peerset: %+v", d.GetHash(), ps)
+	return nil, nil, status.NotFoundErrorf("Exhausted all peers attempting to GetWithMetadata %q.", d.GetHash())
+}
+
 func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
-	isolation := getIsolation(resources)
-	if isolation == nil {
+	if len(resources) == 0 {
 		return nil, nil
 	}
 
@@ -1144,7 +1213,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		hash := r.GetDigest().GetHash()
 		hashResources[hash] = append(hashResources[hash], r)
 		if _, ok := peerMap[hash]; !ok {
-			peerMap[hash] = c.readPeers(r.GetDigest())
+			peerMap[hash] = c.readPeers(r)
 		}
 	}
 
@@ -1191,7 +1260,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 			peer := peer
 			resources := resources
 			eg.Go(func() error {
-				peerRsp, err := c.remoteFindMissing(gCtx, peer, isolation, resources)
+				peerRsp, err := c.remoteFindMissing(gCtx, peer, resources)
 				peerMissingHashes := make(map[string]struct{})
 				for _, d := range peerRsp {
 					peerMissingHashes[d.GetHash()] = struct{}{}
@@ -1263,17 +1332,6 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	return missing, nil
 }
 
-// Returns the isolation from the first resource name, assuming that all resources have the same isolation
-func getIsolation(resources []*rspb.ResourceName) *dcpb.Isolation {
-	if len(resources) == 0 {
-		return nil
-	}
-	return &dcpb.Isolation{
-		CacheType:          resources[0].GetCacheType(),
-		RemoteInstanceName: resources[0].GetInstanceName(),
-	}
-}
-
 // The first reader with a non-empty value will be returned. If all potential
 // peers for the digest are exhausted, then return a NotFoundError.
 //
@@ -1281,7 +1339,7 @@ func getIsolation(resources []*rspb.ResourceName) *dcpb.Isolation {
 //
 // Values found on a non-primary replica will be backfilled to the primary.
 func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64, metricsLabel string) (io.ReadCloser, error) {
-	ps := c.readPeers(rn.GetDigest())
+	ps := c.readPeers(rn)
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(rn, ps)); err != nil {
 			c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
@@ -1337,8 +1395,7 @@ func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) 
 }
 
 func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
-	isolation := getIsolation(resources)
-	if isolation == nil {
+	if len(resources) == 0 {
 		return nil, nil
 	}
 
@@ -1350,7 +1407,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 		hash := r.GetDigest().GetHash()
 		hashResources[hash] = append(hashResources[hash], r)
 		if _, ok := peerMap[hash]; !ok {
-			peerMap[hash] = c.readPeers(r.GetDigest())
+			peerMap[hash] = c.readPeers(r)
 		}
 	}
 
@@ -1384,7 +1441,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 			peer := peer
 			resources := resources
 			eg.Go(func() error {
-				peerRsp, err := c.remoteGetMulti(gCtx, peer, isolation, resources)
+				peerRsp, err := c.remoteGetMulti(gCtx, peer, resources)
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
@@ -1495,6 +1552,13 @@ func (mc *multiWriteCloser) Commit() error {
 func (mc *multiWriteCloser) Close() error {
 	for peer, wc := range mc.peerClosers {
 		if err := wc.Close(); err != nil {
+			// Cancellation on the close path is benign: it happens when a
+			// writer is Closed without a successful Commit (e.g. the caller
+			// aborted mid-write), which cancels the underlying gRPC stream.
+			if status.IsCanceledError(err) || errors.Is(err, context.Canceled) {
+				mc.log.CtxDebugf(mc.ctx, "Closed peer %q writer with canceled context: %s", peer, err)
+				continue
+			}
 			mc.log.CtxErrorf(mc.ctx, "Error closing peer %q writer: %s", peer, err)
 		}
 	}
@@ -1513,7 +1577,10 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 		return nil, err
 	}
 
-	ps := c.writePeers(r.GetDigest())
+	ps, err := c.writePeers(r)
+	if err != nil {
+		return nil, err
+	}
 	mwc := &multiWriteCloser{
 		ctx:         ctx,
 		log:         c.log,
@@ -1582,7 +1649,7 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte)
 }
 
 func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
-	ps := c.readPeers(r.GetDigest())
+	ps := c.readPeers(r)
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		err := c.remoteDelete(ctx, peer, r)
 		if err != nil {
@@ -1595,8 +1662,6 @@ func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	if c.lookasideCacheEnabled() {
 		key, ok := c.lookasideKey(ctx, r)
 		if ok {
-			c.lookasideMu.Lock()
-			defer c.lookasideMu.Unlock()
 			c.lookaside.Remove(key)
 		}
 	}

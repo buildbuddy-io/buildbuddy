@@ -5,6 +5,7 @@ import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
 import alert_service from "../alert/alert_service";
 import { User } from "../auth/auth_service";
+import Breadcrumbs from "../components/breadcrumbs/breadcrumbs";
 import { OutlinedLinkButton } from "../components/button/link_button";
 import Link from "../components/link/link";
 import format from "../format/format";
@@ -190,7 +191,7 @@ export default class TargetComponent extends React.Component<Props> {
       <div className="target-page">
         <div className="shelf">
           <div className="container">
-            <div className="breadcrumbs">
+            <Breadcrumbs>
               {this.props.user && (
                 <Link className="clickable" href={Path.home}>
                   {this.props.user?.selectedGroupName()}
@@ -205,7 +206,7 @@ export default class TargetComponent extends React.Component<Props> {
                 Invocation {this.props.invocationId}
               </Link>
               <span>Target {this.props.targetLabel}</span>
-            </div>
+            </Breadcrumbs>
             <div className="titles">
               <div className="title">
                 {this.props.targetLabel}{" "}

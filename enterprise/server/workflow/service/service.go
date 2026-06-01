@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -21,7 +22,6 @@ import (
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -54,11 +55,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/robfig/cron/v3"
 	"golang.org/x/oauth2"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -81,7 +85,10 @@ var (
 	workflowsMaxRetries           = flag.Int("remote_execution.workflows_max_execute_retries", 4, "Number of times to retry a workflow action if it fails to start.")
 	enableKytheIndexing           = flag.Bool("remote_execution.enable_kythe_indexing", false, "If set, and codesearch is enabled, automatically run a kythe indexing action.")
 	enableCodesearchIndexing      = flag.Bool("remote_execution.enable_codesearch_indexing", false, "If set, and codesearch is enabled, automatically run an incremental indexing action.")
-	workflowURLMatcher            = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
+
+	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
+
+	errBlocked = status.PermissionDeniedError("there was an issue with your request - please contact support at https://buildbuddy.io/contact")
 
 	// ApprovalRequired is an error indicating that a workflow action could not be
 	// run at a commit because it is untrusted. An approving review at the
@@ -113,7 +120,41 @@ const (
 	// some time for the action setup (e.g. pulling the VM snapshot) as well as
 	// some extra time for the CI runner to finish publishing the "outer"
 	// workflow invocation results after the user-specified timeout is reached.
-	timeoutGracePeriod = 10 * time.Minute
+	TimeoutGracePeriod = 10 * time.Minute
+
+	// How often to scan for due scheduled workflows.
+	scheduleScanInterval = 15 * time.Minute
+
+	// Only one server should try to schedule a given workflow at a time. It has this much
+	// time to dispatch the workflow before another server can acquire the lease and schedule the run.
+	// Given that dispatching a workflow is expected to be quick, this should be more than enough time,
+	// unless the original server goes down (e.g. if it was restarted in a rollout).
+	scheduledWorkflowLeaseDuration = 5 * time.Minute
+
+	// If a scheduled workflow fails, it will be retried up to this many times.
+	// If all retries fail, the current schedule is skipped until the next time the cron fires.
+	ScheduledWorkflowMaxRetries = 5
+
+	// Max number of times a scheduled workflow can exhaust all its retries.
+	// Afterwards, the scheduled workflow will be paused and requires manual re-enabling.
+	ScheduledWorkflowMaxConsecutiveFailures = 20
+
+	// Minimum interval between cron triggers for scheduled workflows.
+	scheduledWorkflowMinInterval = 15 * time.Minute
+
+	suppressWorkflowExecutionExperimentName = "remote_execution.suppress_workflow_execution"
+)
+
+var (
+	// cronParser parses 5-field cron expressions (no seconds field):
+	// "minute hour day-of-month month day-of-week"
+	// Examples:
+	//   "0 * * * *"       - every hour
+	//   "30 6 * * 1-5"    - 6:30 AM on weekdays
+	//   "0 0 1 * *"       - midnight on the 1st of each month
+	cronParser = cron.NewParser(
+		cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow,
+	)
 )
 
 // getWebhookID returns a string that can be used to uniquely identify a webhook.
@@ -173,6 +214,7 @@ func NewWorkflowService(env environment.Env) *workflowService {
 		bbUrl: build_buddy_url.WithPath(""),
 	}
 	ws.startBackgroundWorkers()
+	ws.startScheduleScanner()
 	return ws
 }
 
@@ -442,9 +484,20 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		return nil, err
 	}
 
-	actions, err := ws.getActions(ctx, wf, wd, req.GetActionNames())
+	gitProvider, err := ws.providerForRepo(wd.PushedRepoURL)
 	if err != nil {
 		return nil, err
+	}
+	var actions []*config.Action
+	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
+	if err != nil {
+		return nil, status.WrapError(err, "fetch workflow config")
+	} else if cfg != nil {
+		actions = cfg.Actions
+		actions, err = ws.filterActions(ctx, wf, wd, actions, req.GetActionNames())
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	wg := sync.WaitGroup{}
@@ -509,32 +562,17 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}, nil
 }
 
-// getActions fetches the workflow config (buildbuddy.yaml) and returns the list of
-// actions matching the webhook event
-func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionFilter []string) ([]*config.Action, error) {
-	// Fetch the workflow config
-	gitProvider, err := ws.providerForRepo(wd.PushedRepoURL)
-	if err != nil {
-		return nil, err
-	}
-	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
-	if err != nil {
-		return nil, status.WrapError(err, "fetch workflow config")
-	} else if cfg == nil {
-		// If there is no error and no config, the user does not have one configured.
-		// Do nothing in this case.
-		return nil, nil
-	}
-
-	var actions []*config.Action
-	for _, a := range cfg.Actions {
+// filterActions returns the list of actions matching the webhook event
+func (ws *workflowService) filterActions(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actions []*config.Action, actionFilter []string) ([]*config.Action, error) {
+	filteredActions := make([]*config.Action, 0, len(actions))
+	for _, a := range actions {
 		matchesActionName := len(actionFilter) == 0 || config.MatchesAnyActionName(a, actionFilter)
 		matchesTrigger := config.MatchesAnyTrigger(a, wd.EventName, wd.TargetBranch, wd.PushedTag)
 		if matchesActionName && matchesTrigger {
-			actions = append(actions, a)
+			filteredActions = append(filteredActions, a)
 		}
 	}
-	if len(actions) == 0 {
+	if len(filteredActions) == 0 {
 		if len(actionFilter) == 0 {
 			return nil, status.NotFoundError("no workflow actions found")
 		} else {
@@ -542,7 +580,26 @@ func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, 
 		}
 	}
 
-	return actions, nil
+	efp := ws.env.GetExperimentFlagProvider()
+	if efp == nil {
+		return filteredActions, nil
+	}
+	filteredActions = slices.DeleteFunc(filteredActions, func(a *config.Action) bool {
+		suppressWorkflowExecution := efp.Boolean(ctx, suppressWorkflowExecutionExperimentName, false,
+			experiments.WithContext("group_id", wf.GroupID),
+			experiments.WithContext("workflow_action_name", a.Name),
+			experiments.WithContext("workflow_event_name", wd.EventName),
+			experiments.WithContext("pushed_repo_url", wd.PushedRepoURL),
+			experiments.WithContext("target_repo_url", wd.TargetRepoURL),
+		)
+		if suppressWorkflowExecution {
+			log.CtxInfof(ctx, "Suppressing workflow execution via experiment (WFID: %q, Repo: %q, Event: %s, Action: %q)", wf.WorkflowID, wf.RepoURL, wd.EventName, a.Name)
+			return true
+		}
+		return false
+	})
+
+	return filteredActions, nil
 }
 
 func (ws *workflowService) getWorkflowByID(ctx context.Context, workflowID string) (*tables.Workflow, error) {
@@ -659,11 +716,27 @@ func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, groupID st
 		}
 		return nil, status.InternalErrorf("failed to look up repo %q: %s", repoURL, err)
 	}
-	accessToken, err := githubapp.GetRepositoryInstallationToken(ctx, ws.env, groupID, repoURL.String())
+	accessToken, err := ws.getGitHubAccessToken(ctx, groupID, repoURL.String())
 	if err != nil {
 		return nil, status.WrapError(err, "get repository installation token")
 	}
 	return ws.gitRepositoryWorkflow(gitRepository, accessToken), nil
+}
+
+func (ws *workflowService) getGitHubAccessToken(ctx context.Context, groupID string, repoURL string) (string, error) {
+	gh := ws.env.GetGitHubAppService()
+	if gh == nil {
+		return "", status.UnimplementedError("No GitHub app configured")
+	}
+	app, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
+	if err != nil {
+		return "", err
+	}
+	token, err := app.GetRepositoryInstallationToken(ctx, groupID, repoURL)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context, executionID, invocationID string) error {
@@ -1082,9 +1155,13 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		return nil, err
 	}
 
-	timeout := *ci_runner_util.CIRunnerDefaultTimeout
-	if workflowAction.Timeout != nil {
-		timeout = *workflowAction.Timeout
+	var groupStatus grpb.Group_GroupStatus
+	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+		groupStatus = c.GetGroupStatus()
+	}
+	runnerTimeout, err := ci_runner_util.RunnerTimeout(ctx, ws.env.GetExperimentFlagProvider(), workflowAction.Timeout, workflowAction.Name, groupStatus)
+	if err != nil {
+		return nil, err
 	}
 
 	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, ws.env.GetByteStreamClient(), ws.env.GetCache(), instanceName, os, workflowAction.Arch)
@@ -1120,8 +1197,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--trigger_event=" + wd.EventName,
 		"--bazel_command=" + ws.ciRunnerBazelCommand(ctx, wf, workflowAction),
 		"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
-		"--timeout=" + timeout.String(),
+		"--timeout=" + runnerTimeout.Duration.String(),
 		"--serialized_action=" + serializedAction,
+		"--timeout_reason=" + runnerTimeout.Reason,
 	}
 
 	// Recycle workflow runners by default, but not Kythe ones, to avoid
@@ -1214,7 +1292,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		// that we allow the CI runner to finalize the outer workflow invocation
 		// once the timeout has elapsed, but if the CI runner takes too long to
 		// finalize, we can still kill the action.
-		Timeout:  durationpb.New(timeout + timeoutGracePeriod),
+		Timeout:  durationpb.New(runnerTimeout.Duration + TimeoutGracePeriod),
 		Platform: cmd.GetPlatform(),
 	}
 
@@ -1342,6 +1420,10 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider 
 		if err != nil {
 			return nil, err
 		}
+
+		if err := ws.validateCronTriggers(c); err != nil {
+			return nil, err
+		}
 	} else {
 		if status.IsNotFoundError(err) {
 			if workflow.GitRepository != nil && !workflow.GitRepository.UseDefaultWorkflowConfig {
@@ -1434,13 +1516,29 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 		return err
 	}
 
-	actions, err := ws.getActions(ctx, wf, wd, nil /*actionFilter*/)
-	if err != nil {
-		if strings.Contains(err.Error(), "fetch workflow config") {
-			if err := ws.createWorkflowConfigErrorStatus(ctx, wf, wd); err != nil {
-				log.CtxWarningf(ctx, "Failed to create workflow config error status: %s", err)
-			}
+	cfg, fetchErr := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
+	if fetchErr != nil {
+		if err := ws.createWorkflowConfigErrorStatus(ctx, wf, wd, fetchErr); err != nil {
+			log.CtxWarningf(ctx, "Failed to create workflow config error status: %s", err)
 		}
+		return status.WrapError(fetchErr, "fetch workflow config")
+	}
+
+	if shouldUpdateScheduledWorkflows(wd, wf.GitRepository) {
+		err := ws.updateScheduledWorkflows(ctx, wf.GitRepository, cfg, wd.TargetRepoDefaultBranch)
+		if err != nil {
+			return err
+		}
+	}
+
+	// If there is no config, the user does not have one configured.
+	// Do nothing in this case.
+	if cfg == nil {
+		return nil
+	}
+
+	actions, err := ws.filterActions(ctx, wf, wd, cfg.Actions, nil /*actionFilter*/)
+	if err != nil {
 		return err
 	}
 
@@ -1470,8 +1568,112 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 	return nil
 }
 
+func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Context, action *config.Action, wf *tables.Workflow, wd *interfaces.WebhookData, newInvocationID string) error {
+	if wd.PushedBranch == "" || ws.env.GetInvocationSearchService() == nil || ws.env.GetRemoteExecutionService() == nil {
+		return nil
+	}
+
+	// Don't cancel workflows on the default branch.
+	if wd.PushedBranch == wd.TargetRepoDefaultBranch || wd.TargetRepoDefaultBranch == "" {
+		return nil
+	}
+
+	// TODO: It seems unlikely that there'd be many in-progress workflows on the same branch,
+	// but for correctness we could use page_token to make sure we don't miss any.
+	// By default, this query returns up to 15 invocations.
+	searchResp, err := ws.env.GetInvocationSearchService().QueryInvocations(ctx, &inpb.SearchInvocationRequest{
+		Query: &inpb.InvocationQuery{
+			GroupId:    wf.GroupID,
+			RepoUrl:    wf.RepoURL,
+			BranchName: wd.PushedBranch,
+			Pattern:    action.Name,
+			Role:       []string{"CI_RUNNER"},
+			Status:     []inspb.OverallStatus{inspb.OverallStatus_IN_PROGRESS},
+		},
+	})
+	if err != nil {
+		return status.WrapError(err, "search in-progress workflows")
+	}
+
+	cancelled := 0
+	for _, inv := range searchResp.GetInvocation() {
+		// Don't cancel the workflow that was just started.
+		if inv.GetInvocationId() == newInvocationID {
+			continue
+		}
+		if err := ws.env.GetRemoteExecutionService().Cancel(ctx, inv.GetInvocationId()); err != nil {
+			emitCancellationMetric(wf.GroupID, action, "duplicate_cancel_error")
+			log.CtxWarningf(ctx, "Failed to cancel in-progress workflow %s on branch %q: %s", inv.GetInvocationId(), wd.PushedBranch, err)
+			continue
+		}
+		emitCancellationMetric(wf.GroupID, action, "duplicate_cancel")
+		cancelled++
+	}
+
+	if cancelled > 0 {
+		log.CtxInfof(ctx, "Cancelled %d in-progress workflow invocation(s) for repo %q branch %q", cancelled, wf.RepoURL, wd.PushedBranch)
+	}
+	return nil
+}
+
+func emitCancellationMetric(groupID string, action *config.Action, stage string) {
+	os := strings.ToLower(action.OS)
+	switch os {
+	case "":
+		os = platform.LinuxOperatingSystemName
+	case platform.LinuxOperatingSystemName, platform.DarwinOperatingSystemName, platform.WindowsOperatingSystemName:
+	default:
+		os = "unknown"
+	}
+
+	arch := strings.ToLower(action.Arch)
+	switch arch {
+	case "":
+		arch = platform.AMD64ArchitectureName
+	case platform.AMD64ArchitectureName, platform.ARM64ArchitectureName:
+	default:
+		arch = "unknown"
+	}
+
+	selfHosted := "false"
+	if action.SelfHosted {
+		selfHosted = "true"
+	}
+
+	metrics.RemoteRunnerRequests.With(prometheus.Labels{
+		metrics.GroupID:    groupID,
+		metrics.OpLabel:    metrics.WorkflowLabel,
+		metrics.Stage:      stage,
+		metrics.OS:         os,
+		metrics.Arch:       arch,
+		metrics.SelfHosted: selfHosted,
+	}).Inc()
+}
+
+func (ws *workflowService) checkWorkflowGroupAllowed(ctx context.Context) error {
+	// All workflow dispatch paths call executeWorkflowAction before submitting
+	// work to RBE, so this blocks manual, webhook, and scheduled starts.
+	c, err := claims.ClaimsFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	if c.GetGroupStatus() == grpb.Group_BLOCKED_GROUP_STATUS {
+		return errBlocked
+	}
+	return nil
+}
+
 // Starts a CI runner execution to execute a single workflow action, and returns the execution ID.
 func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, action *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, shouldRetry bool) (string, error) {
+	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
+	if err := ws.checkWorkflowGroupAllowed(ctx); err != nil {
+		errorMessage := fmt.Sprintf("Failed to start workflow action %q: %s", action.Name, status.Message(err))
+		if statusErr := ws.createRunnerStartErrorStatus(ctx, wf, wd, action.Name, invocationID, errorMessage); statusErr != nil {
+			log.CtxWarningf(ctx, "Failed to publish runner start error status: %s", statusErr)
+		}
+		return "", err
+	}
+
 	opts := retry.DefaultOptions()
 	opts.MaxRetries = *workflowsMaxRetries
 	r := retry.New(ctx, opts)
@@ -1498,13 +1700,26 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 			continue // retry
 		}
 
+		cancelDuplicates := false
+		if efp := ws.env.GetExperimentFlagProvider(); efp != nil {
+			cancelDuplicates = efp.Boolean(ctx, "cancel_duplicate_workflows_default", false)
+		}
+		if action.AllowConcurrentRuns != nil {
+			cancelDuplicates = !*action.AllowConcurrentRuns
+		}
+		if cancelDuplicates {
+			if err := ws.cancelInProgressWorkflowsOnSameBranch(ctx, action, wf, wd, invocationID); err != nil {
+				log.CtxWarningf(ctx, "Failed to cancel in-progress workflow invocations on branch %q: %s", wd.PushedBranch, err)
+			}
+		}
+
 		return executionID, nil
 	}
 
 	// Publish a status so the user can see why the workflow didn't execute. For
 	// now, encode a small error message in the URL, and link the user to an
 	// page displaying the error directly.
-	errorMessage := fmt.Sprintf("Failed to start workflow action %q: %s", action.Name, lastErr)
+	errorMessage := fmt.Sprintf("Failed to start workflow action %q: %s", action.Name, status.Message(lastErr))
 	if err := ws.createRunnerStartErrorStatus(ctx, wf, wd, action.Name, invocationID, errorMessage); err != nil {
 		log.CtxWarningf(ctx, "Failed to publish runner start error status: %s", err)
 	}
@@ -1513,7 +1728,6 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 }
 
 func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, workflowAction *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, retry bool) (string, error) {
-	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, ws.env.GetAuthenticator())
 	if err != nil {
 		return "", err
@@ -1581,7 +1795,7 @@ func (ws *workflowService) createApprovalRequiredStatus(ctx context.Context, wf 
 		return err
 	}
 	ghc := github.NewGithubClient(ws.env, wf.AccessToken)
-	return ghc.CreateStatus(ctx, ownerRepo, wd.SHA, status)
+	return ghc.CreateStatus(ctx, wf.GroupID, ownerRepo, wd.SHA, status)
 }
 
 func (ws *workflowService) createQueuedStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionName, invocationID string) error {
@@ -1596,7 +1810,7 @@ func (ws *workflowService) createQueuedStatus(ctx context.Context, wf *tables.Wo
 	if err != nil {
 		return err
 	}
-	return provider.CreateStatus(ctx, wf.AccessToken, statusReportingURL, wd.SHA, status)
+	return provider.CreateStatus(ctx, wf.AccessToken, wf.GroupID, statusReportingURL, wd.SHA, status)
 }
 
 func (ws *workflowService) createRunnerStartErrorStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionName, invocationID, errorMessage string) error {
@@ -1611,7 +1825,7 @@ func (ws *workflowService) createRunnerStartErrorStatus(ctx context.Context, wf 
 	if err != nil {
 		return err
 	}
-	return provider.CreateStatus(ctx, wf.AccessToken, statusReportingURL, wd.SHA, status)
+	return provider.CreateStatus(ctx, wf.AccessToken, wf.GroupID, statusReportingURL, wd.SHA, status)
 }
 
 // getStatusReportingURL returns the URL the workflow should report statuses to
@@ -1630,20 +1844,24 @@ func isFork(wd *interfaces.WebhookData) bool {
 	return wd.TargetRepoURL != "" && wd.PushedRepoURL != wd.TargetRepoURL
 }
 
-func (ws *workflowService) createWorkflowConfigErrorStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData) error {
+func (ws *workflowService) createWorkflowConfigErrorStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, cfgErr error) error {
+	msg := "Invalid buildbuddy.yaml: " + cfgErr.Error()
+	if len(msg) > 140 {
+		msg = msg[:137] + "..."
+	}
 	// For now just point to docs. Eventually it'd be nice to link to BB code
 	// and highlight the YAML syntax error.
 	status := github.NewGithubStatusPayload(
 		"BuildBuddy Workflows",
 		"https://buildbuddy.io/docs/workflows-config",
-		"Invalid buildbuddy.yaml",
+		msg,
 		github.ErrorState)
 	statusReportingURL := getStatusReportingURL(wd)
 	provider, err := ws.providerForRepo(statusReportingURL)
 	if err != nil {
 		return err
 	}
-	return provider.CreateStatus(ctx, wf.AccessToken, statusReportingURL, wd.SHA, status)
+	return provider.CreateStatus(ctx, wf.AccessToken, wf.GroupID, statusReportingURL, wd.SHA, status)
 }
 
 func isGitHubURL(s string) bool {
@@ -1729,4 +1947,449 @@ func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariab
 	}
 	return platform.WithRemoteHeaderOverride(
 		ctx, platform.EnvOverridesPropertyName, strings.Join(assignments, ","))
+}
+
+func (ws *workflowService) startScheduleScanner() {
+	if efp := ws.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ws.env.GetServerContext(), "remote_execution.enable_scheduled_workflows", false) {
+		return
+	}
+
+	ctx, cancel := context.WithCancel(ws.env.GetServerContext())
+	ticker := time.NewTicker(scheduleScanInterval)
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-ticker.C:
+				if err := ws.RunScheduledWorkflows(ctx); err != nil {
+					log.CtxErrorf(ctx, "Failed to run scheduled workflows: %s", err)
+				}
+			case <-ctx.Done():
+				ticker.Stop()
+				return
+			}
+		}
+	}()
+
+	ws.env.GetHealthChecker().RegisterShutdownFunction(func(shutdownCtx context.Context) error {
+		cancel()
+		select {
+		case <-done:
+		case <-shutdownCtx.Done():
+			return shutdownCtx.Err()
+		}
+		return nil
+	})
+}
+
+func (ws *workflowService) RunScheduledWorkflows(ctx context.Context) error {
+	if efp := ws.env.GetExperimentFlagProvider(); efp == nil || !efp.Boolean(ctx, "remote_execution.enable_scheduled_workflows", false) {
+		return nil
+	}
+
+	if ws.env.GetDBHandle() == nil || ws.env.GetGitHubAppService() == nil {
+		return status.InternalError("database or GitHub app service not available")
+	}
+
+	for {
+		scheduled, err := ws.claimScheduledWorkflow(ctx)
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to claim scheduled workflow: %s", err)
+			continue
+		}
+		// If there are no eligible scheduled workflows, stop polling until the next time the scheduler runs.
+		if scheduled == nil {
+			break
+		}
+		if dispatchErr := ws.dispatchScheduledWorkflow(ctx, scheduled); dispatchErr != nil {
+			if err := ws.handleScheduledWorkflowFailure(ctx, scheduled, dispatchErr); err != nil {
+				log.CtxWarningf(ctx, "Failed to handle scheduled workflow failure %s: %s", scheduled.ScheduleID, err)
+			}
+			continue
+		}
+	}
+	return nil
+}
+
+func (ws *workflowService) claimScheduledWorkflow(ctx context.Context) (*tables.ScheduledRun, error) {
+	dbh := ws.env.GetDBHandle()
+	scheduled := &tables.ScheduledRun{}
+	err := dbh.Transaction(ctx, func(tx interfaces.DB) error {
+		now := ws.env.GetClock().Now().UTC()
+		nowUsec := now.UnixMicro()
+		err := tx.NewQuery(ctx, "workflow_service_lock_scheduled_run").Raw(`
+			SELECT *
+			FROM "ScheduledRuns"
+			WHERE next_run_usec <= ?
+			  AND (lease_expires_usec = 0 OR lease_expires_usec <= ?)
+			  AND consecutive_schedule_failure_count < ?
+			ORDER BY next_run_usec ASC
+			LIMIT 1 `+dbh.SelectForUpdateModifier(), nowUsec, nowUsec, ScheduledWorkflowMaxConsecutiveFailures).Take(scheduled)
+		if err != nil {
+			if db.IsRecordNotFound(err) {
+				scheduled = nil
+				return nil
+			}
+			return err
+		}
+		leaseExpiresUsec := now.Add(scheduledWorkflowLeaseDuration).UnixMicro()
+		result := tx.NewQuery(ctx, "workflow_service_claim_schedule_run").Raw(`
+			UPDATE "ScheduledRuns"
+			SET lease_expires_usec = ?
+			WHERE schedule_id = ?
+			  AND next_run_usec <= ?
+			  AND (lease_expires_usec = 0 OR lease_expires_usec <= ?)`,
+			leaseExpiresUsec, scheduled.ScheduleID, nowUsec, nowUsec).Exec()
+		if result.Error != nil {
+			return result.Error
+		}
+		// Another server claimed the scheduled workflow before we could.
+		if result.RowsAffected == 0 {
+			scheduled = nil
+			return nil
+		}
+		scheduled.LeaseExpiresUsec = leaseExpiresUsec
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return scheduled, nil
+}
+
+// handleScheduledWorkflowFailure applies exponential backoff retry logic when a dispatch fails.
+func (ws *workflowService) handleScheduledWorkflowFailure(ctx context.Context, scheduled *tables.ScheduledRun, dispatchErr error) error {
+	currentAttempt := scheduled.FailedAttemptCount
+	if currentAttempt+1 < ScheduledWorkflowMaxRetries {
+		// Multiply the backoff by 2 for each retry, starting at 30 seconds.
+		backoff := 30 * time.Second << uint(currentAttempt)
+		nextRunUsec := ws.env.GetClock().Now().UTC().Add(backoff).UnixMicro()
+		log.CtxWarningf(ctx, "Scheduled workflow %s failed attempt %v: %s", scheduled.ScheduleID, currentAttempt, dispatchErr)
+		return ws.unclaimScheduledWorkflow(ctx, scheduled.ScheduleID, scheduled.LeaseExpiresUsec, nextRunUsec, currentAttempt)
+	}
+
+	// Exhausted all retries for this window - alert and advance to next cron time.
+	msg := fmt.Sprintf("Scheduled workflow %s failed all attempts. Skipping until next scheduled time", scheduled.ScheduleID)
+	log.CtxErrorf(ctx, "%s: %s", msg, dispatchErr)
+	alert.CtxUnexpectedEvent(ctx, "scheduled workflow dispatch failure", msg)
+
+	newConsecutiveFailures := scheduled.ConsecutiveScheduleFailureCount + 1
+	if newConsecutiveFailures >= ScheduledWorkflowMaxConsecutiveFailures {
+		msg := fmt.Sprintf("Scheduled workflow %s has failed %d consecutive scheduled windows. Pausing until manually re-enabled.", scheduled.ScheduleID, newConsecutiveFailures)
+		log.CtxError(ctx, msg)
+		alert.CtxUnexpectedEvent(ctx, "scheduled workflow paused due to consecutive failures", msg)
+	}
+
+	nextRunUsec, err := ws.calculateNextRunTimeUsec(scheduled.CronExpr)
+	if err != nil {
+		return err
+	}
+	// Reset the failed attempt count to 0 so that the next time the cron expression fires,
+	// the workflow is retried.
+	return ws.advanceWorkflowSchedule(ctx, scheduled.ScheduleID, scheduled.LeaseExpiresUsec, nextRunUsec, 0 /*failedAttemptCount*/, newConsecutiveFailures)
+}
+
+// unclaimScheduledWorkflow unclaims the scheduled workflow lease after a dispatch failure, so that another server can retry it.
+//
+// We filter on expected lease expire time to avoid race conditions if the lease has been acquired by another server.
+func (ws *workflowService) unclaimScheduledWorkflow(ctx context.Context, scheduleID string, expectedLeaseExpiresUsec int64, nextRunUsec int64, currentAttempt int64) error {
+	newAttempt := currentAttempt + 1
+	result := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_set_scheduled_workflow_retry").Raw(`
+		UPDATE "ScheduledRuns"
+		SET next_run_usec = ?,
+		    lease_expires_usec = 0,
+		    failed_attempt_count = ?
+		WHERE schedule_id = ?
+		  AND lease_expires_usec = ?
+	`, nextRunUsec, newAttempt, scheduleID, expectedLeaseExpiresUsec).Exec()
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("failed to unclaim scheduled workflow %s", scheduleID)
+	}
+	return nil
+}
+
+func (ws *workflowService) getWorkflowForScheduledDispatch(ctx context.Context, groupID, repoURL string) (*tables.Workflow, interfaces.GitHubApp, error) {
+	gitRepository := &tables.GitRepository{}
+	err := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_get_for_scheduled_dispatch").Raw(`
+		SELECT * FROM "GitRepositories"
+		WHERE group_id = ?
+		AND repo_url = ?
+	`, groupID, repoURL).Take(gitRepository)
+	if err != nil {
+		return nil, nil, status.WrapErrorf(err, "fetch repo %q", repoURL)
+	}
+	parsedURL, err := gitutil.ParseGitHubRepoURL(repoURL)
+	if err != nil {
+		return nil, nil, status.WrapErrorf(err, "invalid repo URL %q", repoURL)
+	}
+	app, err := ws.env.GetGitHubAppService().GetGitHubAppForOwner(ctx, parsedURL.Owner)
+	if err != nil {
+		return nil, nil, status.WrapErrorf(err, "get GitHub app for owner %q", parsedURL.Owner)
+	}
+	// The cron scheduler does not use an authenticated context, so we use this method.
+	accessToken, err := app.GetInstallationTokenForInternalUseOnly(ctx, parsedURL.Owner)
+	if err != nil {
+		return nil, nil, status.WrapErrorf(err, "get installation token for owner %q", parsedURL.Owner)
+	}
+	return ws.gitRepositoryWorkflow(gitRepository, accessToken.GetToken()).Workflow, app, nil
+}
+
+func (ws *workflowService) dispatchScheduledWorkflow(ctx context.Context, scheduled *tables.ScheduledRun) error {
+	wf, app, err := ws.getWorkflowForScheduledDispatch(ctx, scheduled.GroupID, scheduled.RepoURL)
+	if err != nil {
+		return err
+	}
+	defaultBranch, err := app.GetDefaultBranch(ctx, scheduled.RepoURL, wf.AccessToken)
+	if err != nil {
+		return err
+	}
+	wd := &interfaces.WebhookData{
+		EventName:               webhook_data.EventName.ScheduledDispatch,
+		PushedRepoURL:           scheduled.RepoURL,
+		PushedBranch:            defaultBranch,
+		TargetRepoURL:           scheduled.RepoURL,
+		TargetBranch:            defaultBranch,
+		TargetRepoDefaultBranch: defaultBranch,
+	}
+	apiKey, err := ws.apiKeyForWorkflow(ctx, wf)
+	if err != nil {
+		return err
+	}
+	gitProvider, err := ws.providerForRepo(scheduled.RepoURL)
+	if err != nil {
+		return err
+	}
+	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
+	if err != nil {
+		return status.WrapError(err, "fetch workflow config")
+	} else if cfg == nil {
+		log.CtxInfof(ctx, "Workflow config not found for scheduled run %s; deleting", scheduled.ScheduleID)
+		if err := ws.deleteScheduledRun(ctx, scheduled.ScheduleID, scheduled.LeaseExpiresUsec); err != nil {
+			msg := fmt.Sprintf("Failed to delete scheduled run %s: %s", scheduled.ScheduleID, err)
+			log.CtxError(ctx, msg)
+			return fmt.Errorf("%s", msg)
+		}
+		return nil
+	}
+
+	actions, err := ws.filterActions(ctx, wf, wd, cfg.Actions, []string{scheduled.ActionName})
+	if err != nil {
+		return err
+	}
+	if len(actions) == 0 {
+		log.CtxInfof(ctx, "Skipping suppressed scheduled workflow action %q for scheduled run %s", scheduled.ActionName, scheduled.ScheduleID)
+		return ws.advanceScheduledWorkflow(ctx, scheduled)
+	}
+
+	if len(actions) != 1 {
+		return fmt.Errorf("expected one action named %s, found %d", scheduled.ActionName, len(actions))
+	}
+	action := actions[0]
+
+	if !isScheduleStillValid(action, scheduled) {
+		log.CtxInfof(ctx, "Schedule %q for action %q no longer valid for scheduled run %s; deleting", scheduled.CronExpr, scheduled.ActionName, scheduled.ScheduleID)
+		if err := ws.deleteScheduledRun(ctx, scheduled.ScheduleID, scheduled.LeaseExpiresUsec); err != nil {
+			msg := fmt.Sprintf("Failed to delete scheduled run %s: %s", scheduled.ScheduleID, err)
+			log.CtxError(ctx, msg)
+			return fmt.Errorf("%s", msg)
+		}
+		return nil
+	}
+
+	invocationUUID, err := guuid.NewRandom()
+	if err != nil {
+		return err
+	}
+	if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, true /*isTrusted*/, action, invocationUUID.String(), nil /*extraCIRunnerArgs*/, nil /*env*/, true /*shouldRetry*/); err != nil {
+		return status.WrapErrorf(err, "failed to start scheduled workflow action %q", scheduled.ActionName)
+	}
+	return ws.advanceScheduledWorkflow(ctx, scheduled)
+}
+
+func (ws *workflowService) advanceScheduledWorkflow(ctx context.Context, scheduled *tables.ScheduledRun) error {
+	nextRunUsec, err := ws.calculateNextRunTimeUsec(scheduled.CronExpr)
+	if err != nil {
+		alert.CtxUnexpectedEvent(ctx, "Failed to calculate next run time for scheduled workflow %s: %s", scheduled.ScheduleID, err)
+		return err
+	}
+	if err := ws.advanceWorkflowSchedule(ctx, scheduled.ScheduleID, scheduled.LeaseExpiresUsec, nextRunUsec, 0 /*failedAttemptCount*/, 0 /*consecutiveScheduleFailureCount*/); err != nil {
+		alert.CtxUnexpectedEvent(ctx, "Failed to advance scheduled workflow %s to %d: %s", scheduled.ScheduleID, nextRunUsec, err)
+		return err
+	}
+	return nil
+}
+
+// Validate that the schedule configured in the fetched workflow config matches what we have in the database.
+func isScheduleStillValid(fetchedAction *config.Action, storedSchedule *tables.ScheduledRun) bool {
+	if fetchedAction.Triggers == nil || fetchedAction.Triggers.Schedule == nil {
+		return false
+	}
+	return slices.Contains(fetchedAction.Triggers.Schedule.Crons, storedSchedule.CronExpr)
+}
+
+// validateCronTriggers checks that all cron expressions in the config are valid.
+func (ws *workflowService) validateCronTriggers(cfg *config.BuildBuddyConfig) error {
+	now := ws.env.GetClock().Now().UTC()
+	for _, action := range cfg.Actions {
+		if action == nil || action.Triggers == nil || action.Triggers.Schedule == nil {
+			continue
+		}
+		for _, cronExpr := range action.Triggers.Schedule.Crons {
+			sched, err := cronParser.Parse(cronExpr)
+			if err != nil {
+				return status.InvalidArgumentErrorf("action %q: invalid cron expression %q: %s", action.Name, cronExpr, err)
+			}
+
+			// Check that the cron expression does not fire more frequently than once every 15 minutes.
+			t1 := sched.Next(now)
+			t2 := sched.Next(t1)
+			if t2.Sub(t1) < scheduledWorkflowMinInterval {
+				return status.InvalidArgumentErrorf("cron %q for %q fires more than once every %s", cronExpr, action.Name, scheduledWorkflowMinInterval)
+			}
+		}
+	}
+	return nil
+}
+
+// calculateNextRunTimeUsec uses the given cron expression to return the next
+// scheduled time, using the current time as the minimum.
+func (ws *workflowService) calculateNextRunTimeUsec(cronExpr string) (int64, error) {
+	sched, err := cronParser.Parse(cronExpr)
+	if err != nil {
+		return 0, err
+	}
+	now := ws.env.GetClock().Now().UTC()
+	return sched.Next(now).UnixMicro(), nil
+}
+
+// advanceWorkflowSchedule advances the scheduled workflow to the next run time, resetting the failed attempt count and consecutive schedule failure count.
+//
+// We filter on expected lease expire time to avoid race conditions if the lease has been acquired by another server.
+func (ws *workflowService) advanceWorkflowSchedule(ctx context.Context, scheduleID string, expectedLeaseExpiresUsec int64, nextRunUsec int64, failedAttemptCount int64, consecutiveScheduleFailureCount int64) error {
+	result := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_advance_schedule").Raw(`
+		UPDATE "ScheduledRuns"
+		SET next_run_usec = ?,
+		    lease_expires_usec = 0,
+		    failed_attempt_count = ?,
+		    consecutive_schedule_failure_count = ?
+		WHERE schedule_id = ?
+		  AND lease_expires_usec = ?
+	`, nextRunUsec, failedAttemptCount, consecutiveScheduleFailureCount, scheduleID, expectedLeaseExpiresUsec).Exec()
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("failed to advance scheduled workflow %s", scheduleID)
+	}
+	return nil
+}
+
+// deleteScheduledRun deletes a scheduled run that is no longer valid (e.g. config file deleted or
+// cron expression removed). We filter on lease_expires_usec to avoid race conditions.
+func (ws *workflowService) deleteScheduledRun(ctx context.Context, scheduleID string, leaseExpiresUsec int64) error {
+	result := ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_delete_scheduled_run").Raw(`
+		DELETE FROM "ScheduledRuns"
+		WHERE schedule_id = ?
+		  AND lease_expires_usec = ?
+	`, scheduleID, leaseExpiresUsec).Exec()
+	return result.Error
+}
+
+// updateScheduledWorkflows checks for changes regarding scheduled workflows in the workflow config,
+// and updates the db accordingly.
+func (ws *workflowService) updateScheduledWorkflows(ctx context.Context, repo *tables.GitRepository, cfg *config.BuildBuddyConfig, defaultBranch string) error {
+	desiredSchedules := make(map[string]*tables.ScheduledRun)
+	if cfg != nil {
+		for _, action := range cfg.Actions {
+			if action == nil || action.Triggers == nil || action.Triggers.Schedule == nil {
+				continue
+			}
+
+			for _, cronExpr := range action.Triggers.Schedule.Crons {
+				scheduleID := workflowScheduleID(repo.GroupID, repo.RepoURL, action.Name, cronExpr)
+				nextRunUsec, err := ws.calculateNextRunTimeUsec(cronExpr)
+				if err != nil {
+					return err
+				}
+				desiredSchedules[scheduleID] = &tables.ScheduledRun{
+					ScheduleID:  scheduleID,
+					GroupID:     repo.GroupID,
+					RepoURL:     repo.RepoURL,
+					ActionName:  action.Name,
+					CronExpr:    cronExpr,
+					NextRunUsec: nextRunUsec,
+				}
+			}
+		}
+	}
+
+	dbh := ws.env.GetDBHandle()
+	return dbh.Transaction(ctx, func(tx interfaces.DB) error {
+		// Lock the repo to prevent concurrent updates to the scheduled workflows.
+		if err := tx.NewQuery(ctx, "workflow_service_lock_repository_schedules").Raw(`
+			SELECT *
+			FROM "GitRepositories"
+			WHERE group_id = ? AND repo_url = ?
+			`+dbh.SelectForUpdateModifier(), repo.GroupID, repo.RepoURL).Take(&tables.GitRepository{}); err != nil {
+			return err
+		}
+
+		existing, err := db.ScanAll(tx.NewQuery(ctx, "workflow_service_get_repository_schedules").Raw(`
+			SELECT *
+			FROM "ScheduledRuns"
+			WHERE group_id = ? AND repo_url = ?
+		`, repo.GroupID, repo.RepoURL), &tables.ScheduledRun{})
+		if err != nil {
+			return err
+		}
+		staleScheduleIDs := make(map[string]struct{}, len(existing))
+		for _, schedule := range existing {
+			staleScheduleIDs[schedule.ScheduleID] = struct{}{}
+		}
+
+		for scheduleID, schedule := range desiredSchedules {
+			if _, alreadyInDB := staleScheduleIDs[scheduleID]; alreadyInDB {
+				delete(staleScheduleIDs, scheduleID)
+				continue
+			}
+			if err := tx.NewQuery(ctx, "workflow_service_create_scheduled_run").Create(schedule); err != nil {
+				return err
+			}
+		}
+
+		if len(staleScheduleIDs) > 0 {
+			ids := make([]string, 0, len(staleScheduleIDs))
+			for scheduleID := range staleScheduleIDs {
+				ids = append(ids, scheduleID)
+			}
+			if err := tx.NewQuery(ctx, "workflow_service_delete_stale_scheduled_runs").Raw(`
+				DELETE FROM "ScheduledRuns"
+				WHERE schedule_id IN ?
+			`, ids).Exec().Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func workflowScheduleID(groupID, repoURL, actionName, cronExpr string) string {
+	return fmt.Sprintf("WFS:%s:%s:%s:%s", groupID, repoURL, actionName, cronExpr)
+}
+
+// On pushes to the default branch, we should check whether the workflow config for scheduled workflows has changed,
+// so we can update the db accordingly.
+func shouldUpdateScheduledWorkflows(wd *interfaces.WebhookData, repo *tables.GitRepository) bool {
+	if repo == nil ||
+		wd.TargetRepoDefaultBranch == "" ||
+		wd.EventName != webhook_data.EventName.Push ||
+		wd.PushedBranch != wd.TargetRepoDefaultBranch {
+		return false
+	}
+	return slices.Contains(wd.ChangedFiles, config.FilePath)
 }

@@ -4,7 +4,7 @@ title: API Configuration
 sidebar_label: API
 ---
 
-The API is only configurable in the [Enterprise version](enterprise.md) of BuildBuddy. For more information, view the [API Documentation](enterprise-api.md).
+The API is only configurable in the [Enterprise version](enterprise.md) of BuildBuddy. For more information, view the [API Documentation](enterprise-api.md). For AI agent usage, see [MCP Server docs](enterprise-mcp.md).
 
 ## Section
 
@@ -16,6 +16,8 @@ The API is only configurable in the [Enterprise version](enterprise.md) of Build
 
 - `enable_api:` Whether or not to enable the BuildBuddy API.
 
+- `enable_mcp:` Whether or not to expose the MCP server at `/mcp`. Requires `enable_api: true`.
+
 - `api_key:` The default API key to use for on-prem enterprise deploys with a single organization/group.
 
 ## Example section
@@ -23,4 +25,5 @@ The API is only configurable in the [Enterprise version](enterprise.md) of Build
 ```yaml title="config.yaml"
 api:
   enable_api: true
+  enable_mcp: true
 ```

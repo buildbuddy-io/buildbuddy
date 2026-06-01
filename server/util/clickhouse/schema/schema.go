@@ -2,12 +2,15 @@ package schema
 
 import (
 	"bufio"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/column/orderedmap"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
@@ -43,6 +46,19 @@ type Table interface {
 	AdditionalFields() []string
 }
 
+// View represents a ClickHouse "normal view", which is essentially just a saved
+// query.
+//
+// To define a new view, declare a new struct implementing this interface, and
+// add it to [getAllViews].
+//
+// For more on views, see:
+// https://clickhouse.com/docs/sql-reference/statements/create/view
+type View interface {
+	ViewName() string
+	ViewQuery() string
+}
+
 func getAllTables() []Table {
 	tbls := []Table{
 		&Invocation{},
@@ -52,6 +68,12 @@ func getAllTables() []Table {
 		&RawUsage{},
 	}
 	return tbls
+}
+
+func getAllViews() []View {
+	return []View{
+		&Usage{},
+	}
 }
 
 func getTableClusterOption() string {
@@ -138,129 +160,143 @@ func (i *Invocation) TableName() string {
 func (i *Invocation) TableOptions(clickhouseVersion string) string {
 	// Note: the sorting key need to be able to uniquely identify the invocation.
 	// ReplacingMergeTree will remove entries with the same sorting key in the background.
-	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid)", getEngine())
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid)", getEngine()) +
+		" PARTITION BY toYYYYMM(toDateTime(intDiv(updated_at_usec, 1000000), 'UTC'))"
 }
 
 type Execution struct {
 	// Sort keys
-	GroupID        string
-	UpdatedAtUsec  int64
-	InvocationUUID string
-	ExecutionID    string
+	GroupID        string `gorm:"codec:ZSTD(1)"`
+	UpdatedAtUsec  int64  `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	InvocationUUID string `gorm:"codec:ZSTD(1)"`
+
+	// Resource-name components split out of execution_id.
+	// ActionDigest holds raw hash bytes (incompressible) — default codec.
+	InstanceName     string `gorm:"codec:ZSTD(1)"`
+	ExecutionUUID    string `gorm:"type:UUID"`
+	Compressor       string `gorm:"type:LowCardinality(String)"`
+	DigestFunction   string `gorm:"type:LowCardinality(String)"`
+	ActionDigestHash string
+	ActionDigestSize uint32 `gorm:"codec:T64,ZSTD(1)"`
 
 	// Type from tables.InvocationExecution
-	InvocationLinkType int8
-	CreatedAtUsec      int64
-	UserID             string
-	Worker             string
-	ExecutorHostname   string
-	ClientIP           string
+	InvocationLinkType int8   `gorm:"codec:T64,ZSTD(1)"`
+	CreatedAtUsec      int64  `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	UserID             string `gorm:"codec:ZSTD(1)"`
+	Worker             string `gorm:"codec:ZSTD(1)"`
+	ExecutorHostname   string `gorm:"codec:ZSTD(1)"`
+	ClientIP           string `gorm:"codec:ZSTD(1)"`
 
 	// Executor metadata
 	SelfHosted bool
 	Region     string `gorm:"type:LowCardinality(String)"`
+	OS         string `gorm:"type:LowCardinality(String)"`
+	Arch       string `gorm:"type:LowCardinality(String)"`
 
-	Stage int64
+	Stage int64 `gorm:"codec:T64,ZSTD(1)"`
 
 	// RequestMetadata
-	TargetLabel    string
-	ActionMnemonic string
+	TargetLabel    string `gorm:"codec:ZSTD(1)"`
+	ActionMnemonic string `gorm:"codec:ZSTD(1)"`
 
 	// IOStats
-	FileDownloadCount        int64
-	FileDownloadSizeBytes    int64
-	FileDownloadDurationUsec int64
-	FileUploadCount          int64
-	FileUploadSizeBytes      int64
-	FileUploadDurationUsec   int64
+	FileDownloadCount        int64 `gorm:"codec:T64,ZSTD(1)"`
+	FileDownloadSizeBytes    int64 `gorm:"codec:T64,ZSTD(1)"`
+	FileDownloadDurationUsec int64 `gorm:"codec:T64,ZSTD(1)"`
+	FileUploadCount          int64 `gorm:"codec:T64,ZSTD(1)"`
+	FileUploadSizeBytes      int64 `gorm:"codec:T64,ZSTD(1)"`
+	FileUploadDurationUsec   int64 `gorm:"codec:T64,ZSTD(1)"`
 
 	// UsageStats
-	PeakMemoryBytes        int64
-	CPUNanos               int64
-	DiskBytesRead          int64
-	DiskBytesWritten       int64
-	DiskReadOperations     int64
-	DiskWriteOperations    int64
-	NetworkBytesSent       int64
-	NetworkBytesReceived   int64
-	NetworkPacketsSent     int64
-	NetworkPacketsReceived int64
+	PeakMemoryBytes        int64 `gorm:"codec:T64,ZSTD(1)"`
+	CPUNanos               int64 `gorm:"codec:T64,ZSTD(1)"`
+	DiskBytesRead          int64 `gorm:"codec:T64,ZSTD(1)"`
+	DiskBytesWritten       int64 `gorm:"codec:T64,ZSTD(1)"`
+	DiskReadOperations     int64 `gorm:"codec:T64,ZSTD(1)"`
+	DiskWriteOperations    int64 `gorm:"codec:T64,ZSTD(1)"`
+	NetworkBytesSent       int64 `gorm:"codec:T64,ZSTD(1)"`
+	NetworkBytesReceived   int64 `gorm:"codec:T64,ZSTD(1)"`
+	NetworkPacketsSent     int64 `gorm:"codec:T64,ZSTD(1)"`
+	NetworkPacketsReceived int64 `gorm:"codec:T64,ZSTD(1)"`
 
 	// UsageStats - Linux PSI stats
-	CPUPressureSomeStallUsec    int64
-	CPUPressureFullStallUsec    int64
-	MemoryPressureSomeStallUsec int64
-	MemoryPressureFullStallUsec int64
-	IOPressureSomeStallUsec     int64
-	IOPressureFullStallUsec     int64
+	CPUPressureSomeStallUsec    int64 `gorm:"codec:T64,ZSTD(1)"`
+	CPUPressureFullStallUsec    int64 `gorm:"codec:T64,ZSTD(1)"`
+	MemoryPressureSomeStallUsec int64 `gorm:"codec:T64,ZSTD(1)"`
+	MemoryPressureFullStallUsec int64 `gorm:"codec:T64,ZSTD(1)"`
+	IOPressureSomeStallUsec     int64 `gorm:"codec:T64,ZSTD(1)"`
+	IOPressureFullStallUsec     int64 `gorm:"codec:T64,ZSTD(1)"`
 
 	// Task sizing
-	EstimatedMemoryBytes          int64
-	EstimatedMilliCPU             int64
-	EstimatedFreeDiskBytes        int64
-	RequestedComputeUnits         float64
-	RequestedMemoryBytes          int64
-	RequestedMilliCPU             int64
-	RequestedFreeDiskBytes        int64
-	PreviousMeasuredMemoryBytes   int64
-	PreviousMeasuredMilliCPU      int64
-	PreviousMeasuredFreeDiskBytes int64
-	PredictedMemoryBytes          int64
-	PredictedMilliCPU             int64
-	PredictedFreeDiskBytes        int64
+	EstimatedMemoryBytes          int64   `gorm:"codec:T64,ZSTD(1)"`
+	EstimatedMilliCPU             int64   `gorm:"codec:T64,ZSTD(1)"`
+	EstimatedFreeDiskBytes        int64   `gorm:"codec:T64,ZSTD(1)"`
+	RequestedComputeUnits         float64 `gorm:"codec:ZSTD(1)"`
+	RequestedMemoryBytes          int64   `gorm:"codec:T64,ZSTD(1)"`
+	RequestedMilliCPU             int64   `gorm:"codec:T64,ZSTD(1)"`
+	RequestedFreeDiskBytes        int64   `gorm:"codec:T64,ZSTD(1)"`
+	PreviousMeasuredMemoryBytes   int64   `gorm:"codec:T64,ZSTD(1)"`
+	PreviousMeasuredMilliCPU      int64   `gorm:"codec:T64,ZSTD(1)"`
+	PreviousMeasuredFreeDiskBytes int64   `gorm:"codec:T64,ZSTD(1)"`
+	PredictedMemoryBytes          int64   `gorm:"codec:T64,ZSTD(1)"`
+	PredictedMilliCPU             int64   `gorm:"codec:T64,ZSTD(1)"`
+	PredictedFreeDiskBytes        int64   `gorm:"codec:T64,ZSTD(1)"`
 
 	// ExecutedActionMetadata (in addition to Worker above)
-	QueuedTimestampUsec                int64
-	WorkerStartTimestampUsec           int64
-	WorkerCompletedTimestampUsec       int64
-	InputFetchStartTimestampUsec       int64
-	InputFetchCompletedTimestampUsec   int64
-	ExecutionStartTimestampUsec        int64
-	ExecutionCompletedTimestampUsec    int64
-	OutputUploadStartTimestampUsec     int64
-	OutputUploadCompletedTimestampUsec int64
+	QueuedTimestampUsec                int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	WorkerStartTimestampUsec           int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	WorkerCompletedTimestampUsec       int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	InputFetchStartTimestampUsec       int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	InputFetchCompletedTimestampUsec   int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	ExecutionStartTimestampUsec        int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	ExecutionCompletedTimestampUsec    int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	OutputUploadStartTimestampUsec     int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	OutputUploadCompletedTimestampUsec int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
 
-	StatusCode int32
-	ExitCode   int32
+	StatusCode int32 `gorm:"codec:T64,ZSTD(1)"`
+	ExitCode   int32 `gorm:"codec:T64,ZSTD(1)"`
 
 	CachedResult    bool
 	DoNotCache      bool
 	SkipCacheLookup bool
 
-	ExecutionPriority      int32
-	RequestedIsolationType string
+	ExecutionPriority int32 `gorm:"codec:T64,ZSTD(1)"`
+
+	// Platform properties
+	RequestedIsolationType string `gorm:"type:LowCardinality(String)"`
 	EffectiveIsolationType string `gorm:"type:LowCardinality(String)"` // This values comes from the executor
-	RequestedPool          string
-	EffectivePool          string
+	RequestedPool          string `gorm:"codec:ZSTD(1)"`
+	EffectivePool          string `gorm:"codec:ZSTD(1)"`
+	RecycleRunner          bool
 
 	// Runner metadata
-	RunnerID            string
-	RunnerTaskNumber    int64
-	PlatformHash        string
-	PersistentWorkerKey string
+	RunnerID            string `gorm:"codec:ZSTD(1)"`
+	RunnerTaskNumber    int64  `gorm:"codec:T64,ZSTD(1)"`
+	PlatformHash        string `gorm:"codec:ZSTD(1)"`
+	PersistentWorkerKey string `gorm:"codec:ZSTD(1)"`
 
-	RequestedTimeoutUsec int64
-	EffectiveTimeoutUsec int64
+	RequestedTimeoutUsec int64 `gorm:"codec:T64,ZSTD(1)"`
+	EffectiveTimeoutUsec int64 `gorm:"codec:T64,ZSTD(1)"`
 
 	Experiments []string `gorm:"type:Array(LowCardinality(String))"`
 
 	// Long string fields
-	OutputPath     string
-	StatusMessage  string
-	CommandSnippet string
+	OutputPath     string `gorm:"codec:ZSTD(1)"`
+	StatusMessage  string `gorm:"codec:ZSTD(1)"`
+	CommandSnippet string `gorm:"codec:ZSTD(1)"`
 
 	// Fields from Invocations
-	User             string
-	Host             string
-	Pattern          string
-	Role             string
-	BranchName       string
-	CommitSHA        string
-	RepoURL          string
-	Command          string
-	InvocationStatus int64
+	User             string `gorm:"codec:ZSTD(1)"`
+	Host             string `gorm:"codec:ZSTD(1)"`
+	Pattern          string `gorm:"codec:ZSTD(1)"`
+	Role             string `gorm:"type:LowCardinality(String)"`
+	BranchName       string `gorm:"codec:ZSTD(1)"`
+	CommitSHA        string `gorm:"codec:ZSTD(1)"`
+	RepoURL          string `gorm:"codec:ZSTD(1)"`
+	Command          string `gorm:"codec:ZSTD(1)"`
+	InvocationStatus int64  `gorm:"codec:T64,ZSTD(1)"`
 	Success          bool
-	Tags             []string `gorm:"type:Array(String);"`
+	Tags             []string `gorm:"type:Array(String);codec:ZSTD(1)"`
 }
 
 func (e *Execution) TableName() string {
@@ -268,11 +304,13 @@ func (e *Execution) TableName() string {
 }
 
 func (e *Execution) TableOptions(clickhouseVersion string) string {
-	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid,execution_id)", getEngine())
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid, execution_uuid)", getEngine()) +
+		" PARTITION BY toYYYYMM(toDateTime(intDiv(updated_at_usec, 1000000), 'UTC'))"
 }
 
 func (e *Execution) ExcludedFields() []string {
 	return []string{
+		"ExecutionID",
 		"InvocationID",
 		"Perms",
 		"SerializedOperation",
@@ -283,6 +321,12 @@ func (e *Execution) ExcludedFields() []string {
 func (e *Execution) AdditionalFields() []string {
 	return []string{
 		"InvocationUUID",
+		"InstanceName",
+		"ExecutionUUID",
+		"Compressor",
+		"DigestFunction",
+		"ActionDigestHash",
+		"ActionDigestSize",
 		"User",
 		"Host",
 		"Pattern",
@@ -324,6 +368,7 @@ func (e *Execution) AdditionalFields() []string {
 		"PredictedMilliCPU",
 		"PredictedFreeDiskBytes",
 		"SkipCacheLookup",
+		"RecycleRunner",
 		"ExecutionPriority",
 		"RequestedIsolationType",
 		"EffectiveIsolationType",
@@ -337,6 +382,8 @@ func (e *Execution) AdditionalFields() []string {
 		"EffectiveTimeoutUsec",
 		"Region",
 		"SelfHosted",
+		"OS",
+		"Arch",
 		"ExecutorHostname",
 		"Experiments",
 		"ClientIP",
@@ -448,8 +495,10 @@ type RawUsage struct {
 	// This should only be used in cases where there may be a large number of
 	// possible dimensions (too many to be represented as a SKU) but the
 	// frequency of usage for each combination of dimensions is expected to be
-	// relatively low.
-	Labels map[sku.LabelName]sku.LabelValue `gorm:"type:Map(LowCardinality(String), LowCardinality(String))"`
+	// relatively low. Since RawUsage.labels is part of the ReplacingMergeTree
+	// ORDER BY key, callers must write labels with a deterministic key order so
+	// FINAL deduplication works reliably.
+	Labels *orderedmap.Map[sku.LabelName, sku.LabelValue] `gorm:"type:Map(LowCardinality(String), LowCardinality(String))"`
 
 	// PeriodStart is the start of the period during which the usage occurred.
 	// Currently, usage is collected in 1-minute intervals.
@@ -497,6 +546,92 @@ type Usage struct {
 	SKU         sku.SKU
 	Labels      map[sku.LabelName]sku.LabelValue `gorm:"type:Map(LowCardinality(String), LowCardinality(String))"`
 	Count       int64
+}
+
+func (u *Usage) ViewName() string {
+	return "Usage"
+}
+
+func (u *Usage) ViewQuery() string {
+	return "SELECT group_id, period_start, sku, labels, SUM(count) AS count " +
+		"FROM RawUsage FINAL GROUP BY group_id, period_start, sku, labels"
+}
+
+func execCreateView(gdb *gorm.DB, view View, replace, ifNotExists bool) error {
+	q := "CREATE"
+	if replace {
+		q += " OR REPLACE"
+	}
+	q += " VIEW"
+	if ifNotExists {
+		q += " IF NOT EXISTS"
+	}
+	q += fmt.Sprintf(" %q", view.ViewName())
+	if clusterOption := getTableClusterOption(); clusterOption != "" {
+		q += " " + clusterOption
+	}
+	q += " AS " + view.ViewQuery()
+	return gdb.Exec(q).Error
+}
+
+func ensureView(gdb *gorm.DB, view View) error {
+	expectedQuery := view.ViewQuery()
+	existingView, err := lookupExistingView(gdb, view.ViewName())
+	if err != nil {
+		return err
+	}
+	if existingView == nil {
+		// Another app may create the view after this app observes it as
+		// missing, so use IF NOT EXISTS to make concurrent startup harmless.
+		return execCreateView(gdb, view, false /*=replace*/, true /*=ifNotExists*/)
+	}
+	if sameViewQuery(existingView.SelectQuery, expectedQuery, existingView.Database) {
+		return nil
+	}
+	return execCreateView(gdb, view, true /*=replace*/, false /*=ifNotExists*/)
+}
+
+type viewMetadata struct {
+	// Database is the DB where the view is defined.
+	Database string `gorm:"column:current_database"`
+
+	// SelectQuery is the saved SELECT query for the view. We compare it against
+	// ViewQuery to decide whether startup migrations need to replace the view.
+	SelectQuery string `gorm:"column:as_select"`
+
+	// Engine is the table engine - should always be "View" for views.
+	Engine string `gorm:"column:engine"`
+}
+
+func lookupExistingView(gdb *gorm.DB, viewName string) (*viewMetadata, error) {
+	row := &viewMetadata{}
+	err := gdb.Raw(`
+		SELECT currentDatabase() AS current_database, engine, as_select
+		FROM system.tables
+		WHERE database = currentDatabase() AND name = ?
+	`, viewName).Row().Scan(&row.Database, &row.Engine, &row.SelectQuery)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if row.Engine != "View" {
+		return nil, status.FailedPreconditionErrorf("%q exists but has ClickHouse engine %q, not View", viewName, row.Engine)
+	}
+	return row, nil
+}
+
+func sameViewQuery(a, b, currentDatabase string) bool {
+	return normalizeViewQuery(a, currentDatabase) == normalizeViewQuery(b, currentDatabase)
+}
+
+func normalizeViewQuery(query, currentDatabase string) string {
+	query = strings.ReplaceAll(query, "`", "")
+	if currentDatabase != "" {
+		query = strings.ReplaceAll(query, currentDatabase+".", "")
+	}
+	return strings.ToLower(strings.Join(strings.Fields(query), " "))
 }
 
 // hasProjection checks whether a projection exist in the clickhouse
@@ -588,6 +723,11 @@ func RunMigrations(gdb *gorm.DB) error {
 		gdb = gdb.Set("gorm:table_options", t.TableOptions(versionStr))
 		if err := gdb.AutoMigrate(t); err != nil {
 			return err
+		}
+	}
+	for _, v := range getAllViews() {
+		if err := ensureView(gdb, v); err != nil {
+			return status.WrapErrorf(err, "ensure view %q", v.ViewName())
 		}
 	}
 	// Add Projection/

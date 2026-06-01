@@ -34,7 +34,6 @@ go_test(
     srcs = ["remoteauth_test.go"],
     embed = [":remoteauth"],
     deps = [
-        "//enterprise/server/experiments",
         "//proto:auth_go_proto",
         "//server/interfaces",
         "//server/testutil/testenv",
@@ -46,8 +45,6 @@ go_test(
         "//server/util/subdomain",
         "//server/util/testing/flags",
         "@com_github_golang_jwt_jwt_v4//:jwt",
-        "@com_github_open_feature_go_sdk//openfeature",
-        "@com_github_open_feature_go_sdk//pkg/openfeature/memprovider",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
     ],

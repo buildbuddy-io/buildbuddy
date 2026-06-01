@@ -28,38 +28,32 @@ jobs:
     runs-on: ubuntu-22.04-16cpu
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
         with:
           ref: ${{ inputs.release_branch }}
           # We need to fetch git tags to obtain the latest version tag to report
           # the version of the running binary.
           fetch-depth: 0
 
-      - name: Restore caches
-        id: cache-restore
-        uses: ./.github/actions/cache-restore
-
       - name: Build and Upload Artifacts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GO_REPOSITORY_USE_HOST_CACHE: 1
-          GOMODCACHE: /home/runner/go-mod-cache
         run: |
           bazelisk build \
             --config=release \
             --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
             //server/cmd/buildbuddy:buildbuddy \
             //enterprise/server/cmd/server:buildbuddy \
-            //enterprise/server/cmd/executor:executor
+            //enterprise/server/cmd/executor:executor \
+            //enterprise/server/cmd/executor:executor_linux_amd64_static
           cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-linux-amd64
           cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-linux-amd64
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-amd64
-          gh release upload ${{ inputs.version_tag }} buildbuddy-linux-amd64 buildbuddy-enterprise-linux-amd64 executor-enterprise-linux-amd64 --clobber
-
-      - name: Save caches
-        uses: ./.github/actions/cache-save
-        if: always()
-        with:
-          repo-cache-dir: ${{ steps.cache-restore.outputs.repo-cache-dir }}
-          go-mod-cache-dir: ${{ steps.cache-restore.outputs.go-mod-cache-dir }}
-          yarn-cache-dir: ${{ steps.cache-restore.outputs.yarn-cache-dir }}
+          cp bazel-out/linux_x86_64_musl-opt/bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-amd64-static
+          gh release upload \
+            ${{ inputs.version_tag }} \
+            buildbuddy-linux-amd64 \
+            buildbuddy-enterprise-linux-amd64 \
+            executor-enterprise-linux-amd64 \
+            executor-enterprise-linux-amd64-static \
+            --clobber

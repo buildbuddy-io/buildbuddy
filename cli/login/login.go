@@ -13,13 +13,12 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
-	"sync"
+	"time"
 
 	_ "embed"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -38,6 +37,7 @@ const (
 
 var (
 	flags = flag.NewFlagSet("login", flag.ContinueOnError)
+	Flags = flags
 
 	group            = flags.String("org", "", "If set, log in with this org identifier (slug), like 'my-org'")
 	check            = flags.Bool("check", false, "Just check whether logged in. Exits with code 0 if logged in, code 1 if not logged in, or 2 if there is an error.")
@@ -246,8 +246,8 @@ type Result[T any] struct {
 // Login server which redirects to the BB UI and consumes the token when we
 // are redirected back from BuildBuddy.
 type server struct {
-	wg       sync.WaitGroup
 	lis      net.Listener
+	srv      *http.Server
 	repoRoot string
 	loginURL string
 	resultCh chan Result[string]
@@ -268,7 +268,8 @@ func startServer(loginURL, repoRoot string) (*server, error) {
 		resultCh: make(chan Result[string], 1),
 		errCh:    make(chan error, 1),
 	}
-	go http.Serve(lis, s)
+	s.srv = &http.Server{Handler: s}
+	go s.srv.Serve(lis)
 	return s, nil
 }
 
@@ -281,9 +282,6 @@ func (s *server) BuildBuddyAuthURL() string {
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.wg.Add(1)
-	defer s.wg.Done()
-
 	if token := r.URL.Query().Get("token"); token != "" {
 		s.resultCh <- Result[string]{Val: token, Err: nil}
 		// Wait for SetErr() to be called, which indicates whether we handled
@@ -310,8 +308,20 @@ func (s *server) SetErr(err error) {
 }
 
 func (s *server) Close() error {
-	s.wg.Wait()
-	return s.lis.Close()
+	// Gracefully shut down so that any in-flight redirect response has a
+	// chance to be fully written to the underlying TCP connection before
+	// the process exits. Without this, the browser can miss the final
+	// redirect back to the "CLI login complete" page, since the process
+	// would exit immediately after the handler returns but before the
+	// response bytes are flushed.
+	//
+	// Once the handler returns, the connection becomes idle and Shutdown
+	// closes it immediately, so this should complete in milliseconds on
+	// localhost. The timeout is just a safety net so that a stuck client
+	// connection can't hang the CLI on exit.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return s.srv.Shutdown(ctx)
 }
 
 func openInBrowser(url string) error {
@@ -322,30 +332,35 @@ func openInBrowser(url string) error {
 	return exec.Command(cmd, url).Run()
 }
 
-func ConfigureAPIKey(args []string) ([]string, error) {
-	if cmd, _ := parser.GetBazelCommandAndIndex(args); !isSupportedCommand(cmd) {
-		return args, nil
+func ConfigureAPIKey(args *arg.BazelArgs) error {
+	if cmd := args.GetCommand(); !isSupportedCommand(cmd) {
+		return nil
 	}
 
 	// TODO(siggisim): find a more graceful way of finding headers if we change the way we parse flags.
-	if arg.Has(args, apiKeyHeader) {
-		return args, nil
+	if args.Get(apiKeyHeader) != "" {
+		return nil
 	}
 
-	apiKey, err := storage.ReadRepoConfig(apiKeyRepoSetting)
+	// TODO: consider always starting an interactive login, or maybe only when
+	// using an org-specific subdomain.
+	apiKey, err := getAPIKey(false /*=interactive*/)
 	if err != nil {
 		// If we're not in a git repo, we'll fail to read the repo-specific
 		// config.
 		// Making this fatal would be inconvenient for new workspaces,
 		// so just log a debug message and move on.
 		log.Debugf("Failed to read API key from .git/config: %s", err)
-		return args, nil
+		return nil
 	}
 	if apiKey == "" {
-		return args, nil
+		return nil
 	}
 
-	return arg.Append(args, "--"+apiKeyHeader+"="+strings.TrimSpace(apiKey)), nil
+	if err := args.Append("--" + apiKeyHeader + "=" + strings.TrimSpace(apiKey)); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Commands that support the `--remote_header` bazel flag
@@ -390,10 +405,14 @@ func isSupportedCommand(command string) bool {
 // GetAPIKey attempts to read an API key from the
 // BUILDBUDDY_API_KEY environment variable and, if not set, from the buildbuddy
 // config set at the key `buildbuddy.api-key` in .git/config. If neither is set,
-// and we're running in a tty, this will prompt the user to set it.
+// and we're running in a tty, this will start the login flow.
 func GetAPIKey() (string, error) {
+	return getAPIKey(true /*=interactive*/)
+}
+
+func getAPIKey(interactive bool) (string, error) {
 	var err error
-	apiKey := os.Getenv("BUILDBUDDY_API_KEY")
+	apiKey := strings.TrimSpace(os.Getenv("BUILDBUDDY_API_KEY"))
 	if apiKey != "" {
 		return apiKey, nil
 	}
@@ -409,7 +428,7 @@ func GetAPIKey() (string, error) {
 	}
 	// If an API key is not set, and we're running in a terminal, start the
 	// login flow.
-	if terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stdout) && terminal.IsTTY(os.Stderr) {
+	if interactive && terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stdout) && terminal.IsTTY(os.Stderr) {
 		if _, err = HandleLogin([]string{}); err != nil {
 			return "", status.WrapError(err, "handle login")
 		}

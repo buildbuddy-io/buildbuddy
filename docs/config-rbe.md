@@ -240,7 +240,6 @@ In addition to the config.yaml, there are also environment variables that execut
 
 - `SYS_MEMORY_BYTES`: The amount of memory (in bytes) that this executor is allowed to consume. Defaults to free system memory.
 - `SYS_CPU`: The amount of CPU that this executor is allowed to consume. Can be a core count such as `1.5` or a milli-CPU count such as `1500m`. Defaults to system CPU.
-- `MY_NODENAME`: The name of the machine/node that the executor is running on. Defaults to empty string.
 - `MY_HOSTNAME`: The hostname by which the app can communicate to this executor. Defaults to machine hostname.
 - `MY_PORT`: The port over which the app can communicate with this executor. Defaults to the executor's gRPC port.
 - `MY_POOL`: The executor pool that this executor should be placed in. Defaults to empty string.
@@ -261,8 +260,4 @@ env:
     valueFrom:
       fieldRef:
         fieldPath: status.podIP
-  - name: MY_NODENAME
-    valueFrom:
-      fieldRef:
-        fieldPath: spec.nodeName
 ```

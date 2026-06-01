@@ -35,6 +35,7 @@ Currently supported log types:
 
 var (
 	flags          = flag.NewFlagSet("print", flag.ContinueOnError)
+	Flags          = flags
 	grpcLog        = flags.String("grpc_log", "", "gRPC log path.")
 	compactExecLog = flags.String("compact_execution_log", "", "compact execution log path.")
 	sort           = flags.Bool("sort", false, "apply sorting to log output, only applicable with --compact_execution_log")

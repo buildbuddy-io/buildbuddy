@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cache_proxy_registry_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_search_service"
@@ -86,6 +87,8 @@ import (
 	remote_execution_redis_client "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/redis_client"
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
+
+	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver" // registers kube:// resolver.
 )
 
 var serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
@@ -185,14 +188,17 @@ func main() {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
 
+	// Configure the experiment service early, in case experiment values are needed when
+	// initializing other services.
+	if err := experiments.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+
 	// Setup the prod fanciness in our environment
 	convertToProdOrDie(rootContext, realEnv)
 
 	libmain.StartMonitoringHandler(realEnv)
 
-	if err := experiments.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
 	// Register KMS and crypter before caches because distributed.Register()
 	// starts a gRPC listener that can receive peer requests immediately,
 	// and those requests need the crypter to be available.
@@ -281,6 +287,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := scheduler_server.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := cache_proxy_registry_server.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

@@ -41,6 +41,10 @@ const (
 	// snapshot data to that partition.
 	SnapshotPartitionPrefix = "bb-snapshot"
 
+	// Similar to SnapshotPartitionPrefix, when this prefix starts an instance name,
+	// that snapshot data will be stored in a different partition.
+	DevboxPartitionPrefix = "bb-devbox"
+
 	// MemoryFileName is the fixed file name of the memory snapshot file.
 	// We rely on this name to locate the memory file in snapshots. Do not
 	// change!
@@ -54,7 +58,8 @@ const (
 	// This is used to prevent writing snapshots too frequently.
 	DefaultSnapshotWriteInterval = 1 * time.Hour
 
-	ConvertToCOWConcurrency = 8
+	ConvertToCOWConcurrency       = 8
+	WriteSnapshotChunkConcurrency = 8
 )
 
 // ChunkSource represents how a snapshot chunk was initialized

@@ -2,6 +2,7 @@ package grpc_client_test
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sync/atomic"
 	"testing"
@@ -14,8 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	pspb "github.com/buildbuddy-io/buildbuddy/proto/ping_service"
-
-	"fmt"
 )
 
 type TestService struct {

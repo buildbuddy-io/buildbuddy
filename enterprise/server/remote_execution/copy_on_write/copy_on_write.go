@@ -151,18 +151,43 @@ type COWStore struct {
 	// evicting the least recently added chunk.
 	eagerFetchStack *boundedstack.BoundedStack[int64]
 	eagerFetchEg    *errgroup.Group
+	quitOnce        sync.Once
 	quitChan        chan struct{}
 
 	// usageLock protects chunkOperationToUsageSummary
 	usageLock                    sync.Mutex
 	chunkOperationToUsageSummary map[string]usageSummary
+
+	// LRU used to limit the number of chunks that can be mmapped at once.
+	mmapLRU *MmapLRU
+}
+
+type COWOptions struct {
+	ChunkSizeBytes     int64
+	TotalSizeBytes     int64
+	DataDir            string
+	RemoteInstanceName string
+	RemoteEnabled      bool
+
+	// By default, mmapped chunks are managed by the executor-wide shared LRU.
+	//
+	// If MaxMmappedChunks is set, this store will create its own LRU sized to hold
+	// a max of that many chunks. This is useful for sequential access patterns where we
+	// don't want recently touched chunks to stay mmapped longer than necessary.
+	// This is useful when we're writing a snapshot file, for example, but should
+	// never be set for a COWStore that is being used by a guest and will have
+	// non-sequential access patterns.
+	//
+	// When this is set, we disable eager fetching. If chunks are expected to be accessed sequentially,
+	// pre-fetching farther ahead could cause unnecessary churn in the LRU.
+	MaxMmappedChunks int64
 }
 
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
 // open initially, and will be closed when calling Close on the returned
 // COWStore.
-func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks []*Mmap, chunkSizeBytes, totalSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool) (*COWStore, error) {
-	stat, err := os.Stat(dataDir)
+func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks []*Mmap, opts COWOptions) (*COWStore, error) {
+	stat, err := os.Stat(opts.DataDir)
 	if err != nil {
 		return nil, err
 	}
@@ -170,41 +195,64 @@ func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks [
 	for _, c := range chunks {
 		chunkMap[c.Offset] = c
 	}
-	eagerFetchStack, err := boundedstack.New[int64](eagerFetchBufferCapacity)
-	if err != nil {
-		return nil, err
+
+	var lru *MmapLRU
+	var eagerFetchStack *boundedstack.BoundedStack[int64]
+	if opts.MaxMmappedChunks > 0 {
+		// If reads/writes are expected to be sequential, we should only need a max of 2 chunks mmapped when accessing at chunk boundaries.
+		// Set the limit to 4 chunks to add a bit of buffer.
+		lru, err = NewMmapLRU(opts.ChunkSizeBytes * opts.MaxMmappedChunks)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		lru, err = GetSharedMmapLRU(opts.DataDir)
+		if err != nil {
+			return nil, err
+		}
+		eagerFetchStack, err = boundedstack.New[int64](eagerFetchBufferCapacity)
+		if err != nil {
+			return nil, err
+		}
 	}
+
 	s := &COWStore{
 		name:               name,
 		ctx:                ctx,
 		env:                env,
-		remoteInstanceName: remoteInstanceName,
-		remoteEnabled:      remoteEnabled,
+		remoteInstanceName: opts.RemoteInstanceName,
+		remoteEnabled:      opts.RemoteEnabled,
 		chunkLock:          lockmap.New(),
 		chunks:             chunkMap,
 		dirty:              make(map[int64]bool, 0),
 		partiallyMapped:    make(map[int64]bool, 0),
-		dataDir:            dataDir,
+		dataDir:            opts.DataDir,
 		copyBufPool: sync.Pool{
 			New: func() any {
-				b := make([]byte, chunkSizeBytes)
+				b := make([]byte, opts.ChunkSizeBytes)
 				return &b
 			},
 		},
-		zeroBuf:                      make([]byte, chunkSizeBytes),
-		chunkSizeBytes:               chunkSizeBytes,
-		totalSizeBytes:               totalSizeBytes,
+		zeroBuf:                      make([]byte, opts.ChunkSizeBytes),
+		chunkSizeBytes:               opts.ChunkSizeBytes,
+		totalSizeBytes:               opts.TotalSizeBytes,
 		ioBlockSize:                  int64(stat.Sys().(*syscall.Stat_t).Blksize),
 		eagerFetchStack:              eagerFetchStack,
 		eagerFetchEg:                 &errgroup.Group{},
 		quitChan:                     make(chan struct{}),
 		chunkOperationToUsageSummary: make(map[string]usageSummary, 0),
+		mmapLRU:                      lru,
 	}
 
-	s.eagerFetchEg.Go(func() error {
-		s.eagerFetchChunksInBackground()
-		return nil
-	})
+	// Stores that manage their own LRU (opts.MaxMmappedChunks > 0) are expected to be accessed
+	// sequentially. If chunks are accessed once in order,
+	// pre-fetching farther ahead could cause unnecessary churn in the LRU, so we disable eager fetching.
+	if opts.MaxMmappedChunks == 0 {
+		s.eagerFetchEg.Go(func() error {
+			s.eagerFetchChunksInBackground()
+			return nil
+		})
+	}
 
 	return s, nil
 }
@@ -474,7 +522,7 @@ func (c *COWStore) Sync() error {
 
 func (s *COWStore) Close() error {
 	// Close background goroutine eagerly fetching chunks
-	close(s.quitChan)
+	s.quitOnce.Do(func() { close(s.quitChan) })
 	s.eagerFetchEg.Wait()
 
 	var lastErr error
@@ -486,6 +534,10 @@ func (s *COWStore) Close() error {
 	}
 
 	_ = s.chunkLock.Close()
+
+	if s.mmapLRU != nil && !s.mmapLRU.isShared {
+		s.mmapLRU.Close()
+	}
 
 	return lastErr
 }
@@ -547,6 +599,39 @@ func (s *COWStore) DataDir() string {
 
 func (s *COWStore) ChunkSizeBytes() int64 {
 	return s.chunkSizeBytes
+}
+
+// LimitMmappedChunks limits how many chunks can be mmapped at once.
+// This is useful when exporting a snapshot sequentially, when we don't want
+// recently touched chunks to stay mmapped longer than necessary. Existing
+// chunks are unmapped so future accesses enter the new LRU.
+func (s *COWStore) LimitMmappedChunks(maxMmappedChunks int64) error {
+	if maxMmappedChunks <= 0 {
+		return status.InvalidArgumentErrorf("max mmapped chunks must be positive")
+	}
+	lru, err := NewMmapLRU(s.chunkSizeBytes * maxMmappedChunks)
+	if err != nil {
+		return err
+	}
+
+	// Stop eager fetching chunks. With a limited LRU, it could cause unnecessary LRU churn.
+	// Note that eager fetching chunks acquires the storeLock, so we must stop this
+	// before acquiring the lock below.
+	s.quitOnce.Do(func() { close(s.quitChan) })
+	s.eagerFetchEg.Wait()
+
+	s.storeLock.Lock()
+	defer s.storeLock.Unlock()
+
+	for _, chunk := range s.chunks {
+		if err := chunk.Unmap(); err != nil {
+			log.CtxWarningf(s.ctx, "failed to unmap chunk at offset %d: %s", chunk.Offset, err)
+		}
+		chunk.lru = lru
+	}
+	s.mmapLRU = lru
+	s.eagerFetchStack = nil
+	return nil
 }
 
 // Resize resizes the COWStore to the given size, effectively right-padding the
@@ -652,6 +737,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 
 	s.storeLock.RLock()
 	ogChunk = s.chunks[offset]
+	mmapLRU := s.mmapLRU
 	s.storeLock.RUnlock()
 	chunkSource := snaputil.ChunkSourceHole
 	if ogChunk != nil {
@@ -660,7 +746,7 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 		}
 		chunkSource = ogChunk.source
 	}
-	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), true /*=dirty*/, fd, int(size), offset, chunkSource, s.remoteInstanceName, s.remoteEnabled)
+	newChunk, err = NewMmapFd(s.ctx, s.env, s.DataDir(), true /*=dirty*/, fd, int(size), offset, chunkSource, s.remoteInstanceName, s.remoteEnabled, mmapLRU)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -674,6 +760,9 @@ func (s *COWStore) initDirtyChunk(offset int64, size int64) (ogChunk *Mmap, newC
 }
 
 func (s *COWStore) eagerFetchNextChunks(offset int64) {
+	if s.eagerFetchStack == nil {
+		return
+	}
 	currentOffset := offset + s.chunkSizeBytes
 	for i := 0; i < numChunksToEagerFetch; i++ {
 		s.eagerFetchStack.Push(currentOffset)
@@ -803,6 +892,11 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 		return nil, err
 	}
 
+	sharedLRU, err := GetSharedMmapLRU(dataDir)
+	if err != nil {
+		return nil, err
+	}
+
 	createChunk := func(f *os.File, chunkStartOffset int64) (*Mmap, error) {
 		fd := int(f.Fd())
 		// Check if there's any data in the chunk, to avoid writing a file if
@@ -874,7 +968,7 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 				return nil, err
 			}
 		}
-		return NewMmapLocalFile(ctx, env, dataDir, false /*=dirty*/, int(chunkFileSize), chunkStartOffset, remoteInstanceName, remoteEnabled)
+		return NewMmapLocalFile(ctx, env, dataDir, false /*=dirty*/, int(chunkFileSize), chunkStartOffset, remoteInstanceName, remoteEnabled, sharedLRU)
 	}
 
 	eg, egCtx := errgroup.WithContext(ctx)
@@ -921,7 +1015,13 @@ chunkLoop:
 	}
 
 	name := filepath.Base(filePath)
-	return NewCOWStore(ctx, env, name, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName, remoteEnabled)
+	return NewCOWStore(ctx, env, name, chunks, COWOptions{
+		ChunkSizeBytes:     chunkSizeBytes,
+		TotalSizeBytes:     totalSizeBytes,
+		DataDir:            dataDir,
+		RemoteInstanceName: remoteInstanceName,
+		RemoteEnabled:      remoteEnabled,
+	})
 }
 
 func getFileSize(filePath string) (totalSizeBytes int64, err error) {
@@ -937,9 +1037,9 @@ func getFileSize(filePath string) (totalSizeBytes int64, err error) {
 	return stat.Size(), nil
 }
 
-// getMmapLRU returns the shared LRU instance to be used for the mmap,
+// GetSharedMmapLRU returns the shared LRU instance to be used for the mmap,
 // if applicable.
-func getMmapLRU(dataDir string) (*MmapLRU, error) {
+func GetSharedMmapLRU(dataDir string) (*MmapLRU, error) {
 	// We constrain UFFD memory usage by only allowing one chunk to be mapped
 	// at once, so don't use the shared LRU for UFFD.
 	if filepath.Base(dataDir) != snaputil.MemoryFileName {
@@ -988,16 +1088,12 @@ type Mmap struct {
 
 // NewLazyMmap returns an mmap that is set up only when the file is read or
 // written to.
-func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offset int64, digest *repb.Digest, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
+func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offset int64, digest *repb.Digest, remoteInstanceName string, remoteEnabled bool, lru *MmapLRU) (*Mmap, error) {
 	if dataDir == "" {
 		return nil, status.FailedPreconditionError("missing dataDir")
 	}
 	if digest == nil {
 		return nil, status.FailedPreconditionError("missing digest")
-	}
-	lru, err := getMmapLRU(dataDir)
-	if err != nil {
-		return nil, err
 	}
 	return &Mmap{
 		ctx:                ctx,
@@ -1016,15 +1112,11 @@ func NewLazyMmap(ctx context.Context, env environment.Env, dataDir string, offse
 }
 
 // NewMmapFd returns an eagerly mmapped instance from the given fd.
-func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, dirty bool, fd, size int, offset int64, source snaputil.ChunkSource, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
+func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, dirty bool, fd, size int, offset int64, source snaputil.ChunkSource, remoteInstanceName string, remoteEnabled bool, lru *MmapLRU) (*Mmap, error) {
 	if source == snaputil.ChunkSourceUnmapped {
 		return nil, status.InvalidArgumentError("ChunkSourceUnmapped is not a valid source when initializing a chunk from a fd")
 	}
 	data, err := mmapDataFromFd(fd, size, filepath.Base(dataDir))
-	if err != nil {
-		return nil, err
-	}
-	lru, err := getMmapLRU(dataDir)
 	if err != nil {
 		return nil, err
 	}
@@ -1051,11 +1143,7 @@ func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, dirty b
 
 // NewMmapLocalFile returns an unmapped instance from the given directory and
 // offset.
-func NewMmapLocalFile(ctx context.Context, env environment.Env, dataDir string, dirty bool, size int, offset int64, remoteInstanceName string, remoteEnabled bool) (*Mmap, error) {
-	lru, err := getMmapLRU(dataDir)
-	if err != nil {
-		return nil, err
-	}
+func NewMmapLocalFile(ctx context.Context, env environment.Env, dataDir string, dirty bool, size int, offset int64, remoteInstanceName string, remoteEnabled bool, lru *MmapLRU) (*Mmap, error) {
 	return &Mmap{
 		ctx:                ctx,
 		env:                env,
@@ -1303,15 +1391,14 @@ type MmapLRU struct {
 
 	mu  sync.Mutex
 	lru lru.LRU[*Mmap]
+
+	// Whether this is the shared LRU instance for all mmapped chunks on an executor.
+	isShared bool
 }
 
-func NewMmapLRU() (*MmapLRU, error) {
-	// Sanity check that the LRU size is not too small.
-	// Just using 64MB here for now as a reasonable threshold.
-	maxSize := resources.GetAllocatedMmapRAMBytes()
-	const threshold = 64 * 1024 * 1024
-	if maxSize < threshold {
-		return nil, status.InvalidArgumentErrorf("configured mmapped bytes limit is too small (%d bytes)", maxSize)
+func NewMmapLRU(maxSize int64) (*MmapLRU, error) {
+	if maxSize <= 0 {
+		return nil, status.InvalidArgumentErrorf("max size must be positive")
 	}
 	ml := &MmapLRU{evictions: make(chan *Mmap, 1024)}
 	l, err := lru.New(&lru.Config[*Mmap]{
@@ -1352,16 +1439,34 @@ func NewMmapLRU() (*MmapLRU, error) {
 	return ml, nil
 }
 
+// NewSharedMmapLRU creates a new shared LRU instance for mmapped chunks.
+// This is shared for all mapped chunks on an executor.
+func NewSharedMmapLRU() (*MmapLRU, error) {
+	// Sanity check that the LRU size is not too small.
+	// Just using 64MB here for now as a reasonable threshold.
+	maxSize := resources.GetAllocatedMmapRAMBytes()
+	const threshold = 64 * 1024 * 1024
+	if maxSize < threshold {
+		return nil, status.InvalidArgumentErrorf("configured mmapped bytes limit is too small (%d bytes)", maxSize)
+	}
+	lru, err := NewMmapLRU(maxSize)
+	if err != nil {
+		return nil, err
+	}
+	lru.isShared = true
+	return lru, nil
+}
+
 // getSharedLRU returns the shared LRU instance to be used for mmapped disk
 // chunks.
-var getSharedLRU = sync.OnceValues(NewMmapLRU)
+var getSharedLRU = sync.OnceValues(NewSharedMmapLRU)
 
 func ResetSharedLRUForTest() {
 	ml, err := getSharedLRU()
 	if err == nil {
 		ml.Close()
 	}
-	getSharedLRU = sync.OnceValues(NewMmapLRU)
+	getSharedLRU = sync.OnceValues(NewSharedMmapLRU)
 }
 
 func (ml *MmapLRU) key(m *Mmap) string {

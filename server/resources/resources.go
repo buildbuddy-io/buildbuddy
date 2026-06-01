@@ -30,7 +30,7 @@ var (
 const (
 	cpuEnvVarName       = "SYS_CPU"
 	memoryEnvVarName    = "SYS_MEMORY_BYTES"
-	nodeEnvVarName      = "MY_NODENAME"
+	nodeNameEnvVarName  = "MY_NODE_NAME"
 	hostnameEnvVarName  = "MY_HOSTNAME"
 	namespaceEnvVarName = "MY_NAMESPACE"
 	podNameEnvVarName   = "MY_POD_NAME"
@@ -213,8 +213,8 @@ func GetAllocatedCustomResources() ([]*scpb.CustomResource, error) {
 	return out, nil
 }
 
-func GetNodeName() string {
-	return os.Getenv(nodeEnvVarName)
+func GetK8sNodeName() string {
+	return os.Getenv(nodeNameEnvVarName)
 }
 
 func GetPoolName() string {

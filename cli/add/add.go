@@ -20,6 +20,7 @@ import (
 
 var (
 	flags = flag.NewFlagSet("add", flag.ContinueOnError)
+	Flags = flags
 	usage = `
 usage: bb ` + flags.Name() + ` rules_go
 

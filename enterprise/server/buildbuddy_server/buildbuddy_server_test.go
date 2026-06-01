@@ -4,6 +4,8 @@ package buildbuddy_server_test
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
@@ -228,4 +230,150 @@ func TestSetGroupStatus(t *testing.T) {
 	updatedGroup, err = te.GetUserDB().GetGroupByID(ctx, group.GroupID)
 	require.NoError(t, err)
 	assert.Equal(t, grpb.Group_BLOCKED_GROUP_STATUS, updatedGroup.Status)
+}
+
+const validSamlMetadata = `<?xml version="1.0"?>
+<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://idp.example.com/saml">
+  <md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/>
+  </md:IDPSSODescriptor>
+</md:EntityDescriptor>`
+
+func setUpSSOConfigTest(t *testing.T) (context.Context, *buildbuddy_server.BuildBuddyServer, environment.Env, *tables.Group) {
+	te := enterprise_testenv.New(t)
+	enterprise_testauth.Configure(t, te)
+
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+
+	ctx := context.Background()
+	err := te.GetUserDB().InsertUser(ctx, &tables.User{UserID: "US1", SubID: "US1SubID"})
+	require.NoError(t, err)
+	userCtx := authUserCtx(ctx, te, t, "US1")
+	group := getGroup(t, userCtx, te).Group
+
+	flags.Set(t, "auth.admin_group_id", group.GroupID)
+	adminRole, err := role.ToProto(role.Admin)
+	require.NoError(t, err)
+	err = te.GetUserDB().UpdateGroupUsers(userCtx, group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+		{UserId: &uidpb.UserId{Id: "US1"}, Role: adminRole},
+	})
+	require.NoError(t, err)
+	userCtx = authUserCtx(ctx, te, t, "US1")
+
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+	return userCtx, server, te, &group
+}
+
+func TestGetSSOConfig(t *testing.T) {
+	userCtx, server, te, group := setUpSSOConfigTest(t)
+
+	// Initially unset.
+	rsp, err := server.GetSSOConfig(userCtx, &grpb.GetSSOConfigRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "", rsp.GetConfig().GetSamlIdpMetadataUrl())
+
+	// Persist a value directly and read it back.
+	require.NoError(t, te.GetUserDB().UpdateGroupSamlIdpMetadataUrl(userCtx, group.GroupID, "https://idp.example.com/meta"))
+
+	rsp, err = server.GetSSOConfig(userCtx, &grpb.GetSSOConfigRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "https://idp.example.com/meta", rsp.GetConfig().GetSamlIdpMetadataUrl())
+}
+
+func TestSetSSOConfig_ValidMetadata(t *testing.T) {
+	userCtx, server, te, group := setUpSSOConfigTest(t)
+
+	idp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/samlmetadata+xml")
+		_, _ = w.Write([]byte(validSamlMetadata))
+	}))
+	defer idp.Close()
+
+	_, err := server.SetSSOConfig(userCtx, &grpb.SetSSOConfigRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+		Config:         &grpb.SSOConfig{SamlIdpMetadataUrl: idp.URL},
+	})
+	require.NoError(t, err)
+
+	updated, err := te.GetUserDB().GetGroupByID(context.Background(), group.GroupID)
+	require.NoError(t, err)
+	assert.Equal(t, idp.URL, updated.SamlIdpMetadataUrl)
+}
+
+func TestSetSSOConfig_ClearsURL(t *testing.T) {
+	userCtx, server, te, group := setUpSSOConfigTest(t)
+
+	// Seed a value so we can verify it gets cleared.
+	require.NoError(t, te.GetUserDB().UpdateGroupSamlIdpMetadataUrl(userCtx, group.GroupID, "https://idp.example.com/meta"))
+
+	_, err := server.SetSSOConfig(userCtx, &grpb.SetSSOConfigRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+		Config:         &grpb.SSOConfig{SamlIdpMetadataUrl: ""},
+	})
+	require.NoError(t, err)
+
+	updated, err := te.GetUserDB().GetGroupByID(context.Background(), group.GroupID)
+	require.NoError(t, err)
+	assert.Equal(t, "", updated.SamlIdpMetadataUrl)
+}
+
+func TestSetSSOConfig_RejectsInvalidMetadata(t *testing.T) {
+	userCtx, server, _, group := setUpSSOConfigTest(t)
+
+	notSaml := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html><body>hello</body></html>`))
+	}))
+	defer notSaml.Close()
+
+	_, err := server.SetSSOConfig(userCtx, &grpb.SetSSOConfigRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+		Config:         &grpb.SSOConfig{SamlIdpMetadataUrl: notSaml.URL},
+	})
+	require.Error(t, err)
+}
+
+func TestSetSSOConfig_RejectsNonHTTPScheme(t *testing.T) {
+	userCtx, server, _, group := setUpSSOConfigTest(t)
+
+	_, err := server.SetSSOConfig(userCtx, &grpb.SetSSOConfigRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+		Config:         &grpb.SSOConfig{SamlIdpMetadataUrl: "file:///etc/passwd"},
+	})
+	require.Error(t, err)
+}
+
+func TestSetSSOConfig_RequiresServerAdmin(t *testing.T) {
+	// Create a group that is NOT a server admin and verify the RPC is rejected.
+	te := enterprise_testenv.New(t)
+	enterprise_testauth.Configure(t, te)
+
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	// Point admin_group_id at a different group ID so US1's group isn't admin.
+	flags.Set(t, "auth.admin_group_id", "GR-NOT-MY-GROUP")
+
+	ctx := context.Background()
+	require.NoError(t, te.GetUserDB().InsertUser(ctx, &tables.User{UserID: "US1", SubID: "US1SubID"}))
+	userCtx := authUserCtx(ctx, te, t, "US1")
+	group := getGroup(t, userCtx, te).Group
+
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	_, err = server.SetSSOConfig(userCtx, &grpb.SetSSOConfigRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+		Config:         &grpb.SSOConfig{SamlIdpMetadataUrl: "https://idp.example.com/meta"},
+	})
+	require.Error(t, err)
+
+	_, err = server.GetSSOConfig(userCtx, &grpb.GetSSOConfigRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+	})
+	require.Error(t, err)
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
+	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
@@ -439,4 +440,75 @@ func fetchAndCheckBlob(t *testing.T, te *testenv.TestEnv, layerBuf []byte, repo 
 	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
 	require.NoError(t, err)
 	require.Empty(t, cmp.Diff(layerBuf, out.Bytes()))
+}
+
+func mustRepo(t *testing.T, name string) gcrname.Repository {
+	t.Helper()
+	repo, err := gcrname.NewRepository(name)
+	require.NoError(t, err)
+	return repo
+}
+
+func mustHash(t *testing.T, s string) gcr.Hash {
+	t.Helper()
+	h, err := gcr.NewHash(s)
+	require.NoError(t, err)
+	return h
+}
+
+const (
+	testDigest1 = "sha256:0000000000000000000000000000000000000000000000000000000000000001"
+	testDigest2 = "sha256:0000000000000000000000000000000000000000000000000000000000000002"
+)
+
+func TestNewBlobFetchKey_NilCreds(t *testing.T) {
+	key := ocicache.NewBlobFetchKey(
+		mustRepo(t, "registry.example.com/repo"),
+		mustHash(t, testDigest1),
+		nil,
+	)
+	// Smoke test: key should be usable as a map key.
+	m := map[ocicache.BlobFetchKey]bool{key: true}
+	require.True(t, m[key])
+}
+
+func TestNewBlobFetchKey_DifferentCredsDifferentKeys(t *testing.T) {
+	repo := mustRepo(t, "registry.example.com/repo")
+	hash := mustHash(t, testDigest1)
+	key1 := ocicache.NewBlobFetchKey(repo, hash, nil)
+	key2 := ocicache.NewBlobFetchKey(repo, hash, &rgpb.Credentials{Username: "user", Password: "pass"})
+	require.NotEqual(t, key1, key2, "different credentials must produce different keys")
+}
+
+func TestNewBlobFetchKey_SameInputsSameKeys(t *testing.T) {
+	repo := mustRepo(t, "registry.example.com/repo")
+	hash := mustHash(t, testDigest1)
+	creds := &rgpb.Credentials{Username: "user", Password: "pass"}
+	key1 := ocicache.NewBlobFetchKey(repo, hash, creds)
+	key2 := ocicache.NewBlobFetchKey(repo, hash, creds)
+	require.Equal(t, key1, key2)
+}
+
+func TestNewBlobFetchKey_NilCredsMatchesEmptyCreds(t *testing.T) {
+	repo := mustRepo(t, "registry.example.com/repo")
+	hash := mustHash(t, testDigest1)
+	nilKey := ocicache.NewBlobFetchKey(repo, hash, nil)
+	emptyKey := ocicache.NewBlobFetchKey(repo, hash, &rgpb.Credentials{})
+	require.Equal(t, nilKey, emptyKey, "nil creds should produce the same key as empty creds")
+}
+
+func TestNewBlobFetchKey_DifferentReposDifferentKeys(t *testing.T) {
+	hash := mustHash(t, testDigest1)
+	creds := &rgpb.Credentials{Username: "user", Password: "pass"}
+	key1 := ocicache.NewBlobFetchKey(mustRepo(t, "registry.example.com/repo1"), hash, creds)
+	key2 := ocicache.NewBlobFetchKey(mustRepo(t, "registry.example.com/repo2"), hash, creds)
+	require.NotEqual(t, key1, key2, "different repos must produce different keys")
+}
+
+func TestNewBlobFetchKey_DifferentDigestsDifferentKeys(t *testing.T) {
+	repo := mustRepo(t, "registry.example.com/repo")
+	creds := &rgpb.Credentials{Username: "user", Password: "pass"}
+	key1 := ocicache.NewBlobFetchKey(repo, mustHash(t, testDigest1), creds)
+	key2 := ocicache.NewBlobFetchKey(repo, mustHash(t, testDigest2), creds)
+	require.NotEqual(t, key1, key2, "different digests must produce different keys")
 }

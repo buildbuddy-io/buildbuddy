@@ -16,7 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -31,27 +32,39 @@ import (
 )
 
 var (
-	chunkedManifestSalt  = flag.String("cache.chunking.ac_key_salt", "", "If set, salt the AC key with this value.")
-	avgChunkSizeBytes    = flag.Int64("cache.avg_chunk_size_bytes", 512*1024, "This is the average size of a chunk. Only blobs larger (non-inclusive) than 4x this value will be chunked. The maximum chunk size will be 4x this value, and the minimum will be 1/4 this value (default 512KB).")
-	checkLegacyManifests = flag.Bool("cache.chunking.check_legacy_manifests", true, "If true, fall back to loading manifests with the legacy AC key scheme when the current scheme returns not found. Disable once metrics confirm no legacy manifests are being loaded, and re-enable when a new manifest scheme is introduced.")
+	chunkedManifestSalt             = flag.String("cache.chunking.ac_key_salt", "", "If set, salt the AC key with this value.")
+	avgChunkSizeBytes               = flag.Int64("cache.avg_chunk_size_bytes", 512*1024, "This is the average size of a chunk. Only blobs larger (non-inclusive) than 4x this value will be chunked. The maximum chunk size will be 4x this value, and the minimum will be 1/4 this value (default 512KB).")
+	minChunkedReadFallbackSizeBytes = flag.Int64("cache.min_chunked_read_fallback_size_bytes", 2*1024*1024, "Only blobs larger (non-inclusive) than this value will use the server-side chunked read fallback after a normal blob lookup misses.")
 )
 
 const (
-	// When adding a new manifest scheme, update legacyManifestPrefix to
-	// point to the current prefix, then add the new one as the active prefix.
-	legacyManifestPrefix         = "_bb_chunked_manifest_v2_/"
 	chunkedManifestPrefix        = "_bb_chunked_manifest_v3_/"
 	chunkOutputFilePrefix        = "chunk_"
 	sharedValidationMarkerDomain = "cas-validation-marker-v1"
+
+	// Default max blob size eligible for chunked writes. Values <= 0 mean no maximum.
+	defaultMaxChunkedWriteSizeBytes = -1
 )
 
-func AvgChunkSizeBytes() int64 {
+func AvgChunkSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
+	if efp == nil {
+		return *avgChunkSizeBytes
+	}
+	if v := efp.Int64(ctx, "cache.avg_chunk_size_override", 0); v > 0 {
+		if v < 1024 || v > 1024*1024 || v&(v-1) != 0 {
+			alert.CtxUnexpectedEvent(ctx, "invalid_cache_avg_chunk_size_override", "Ignoring invalid cache.avg_chunk_size_override %d", v)
+			return *avgChunkSizeBytes
+		}
+		return v
+	}
 	return *avgChunkSizeBytes
 }
 
 // FastCDCParams returns the FastCDC2020 parameters if chunking is configured.
-func FastCDCParams() *repb.FastCdc2020Params {
-	v := *avgChunkSizeBytes
+// The avg chunk size may vary by group. This is safe because manifests are AC
+// entries, and AC entries are namespaced by group in the cache key.
+func FastCDCParams(ctx context.Context, efp interfaces.ExperimentFlagProvider) *repb.FastCdc2020Params {
+	v := AvgChunkSizeBytes(ctx, efp)
 	if v <= 0 {
 		return nil
 	}
@@ -61,8 +74,52 @@ func FastCDCParams() *repb.FastCdc2020Params {
 	}
 }
 
-func MaxChunkSizeBytes() int64 {
-	return *avgChunkSizeBytes * 4
+func FastCDCWriteParams(ctx context.Context, efp interfaces.ExperimentFlagProvider) *repb.FastCdc2020Params {
+	params := FastCDCParams(ctx, efp)
+	if params != nil {
+		params.BuildbuddyMaxChunkedWriteSizeBytes = MaxWriteSizeBytes(ctx, efp)
+	}
+	return params
+}
+
+func MaxChunkSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
+	return AvgChunkSizeBytes(ctx, efp) * 4
+}
+
+// MaxSupportedChunkSizeBytes is the process-wide chunk size buffer consumers
+// must support. This supports temporarily doubling cache.avg_chunk_size_override
+// from the default 512KiB to 1MiB; do not set the override higher without
+// increasing this and auditing buffer consumers.
+func MaxSupportedChunkSizeBytes() int64 {
+	return 4 * 1024 * 1024
+}
+
+// MinChunkedReadFallbackSizeBytes can be configured independently from the
+// write threshold so server-side miss fallback paths can still read older
+// chunked blobs that were written with a smaller chunk size, but is clamped to
+// at most MaxChunkSizeBytes().
+func MinChunkedReadFallbackSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
+	return min(*minChunkedReadFallbackSizeBytes, MaxChunkSizeBytes(ctx, efp))
+}
+
+func MaxWriteSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
+	if efp == nil {
+		return defaultMaxChunkedWriteSizeBytes
+	}
+	return efp.Int64(ctx, "cache.chunking_max_write_size_bytes", defaultMaxChunkedWriteSizeBytes)
+}
+
+func ShouldUploadChunked(ctx context.Context, efp interfaces.ExperimentFlagProvider, d *repb.Digest) bool {
+	return ShouldUploadChunkedWithMax(d, AvgChunkSizeBytes(ctx, efp), MaxWriteSizeBytes(ctx, efp))
+}
+
+// ShouldUploadChunkedWithMax returns whether a blob is eligible for chunked upload.
+func ShouldUploadChunkedWithMax(d *repb.Digest, avgChunkSizeBytes, maxWriteSizeBytes int64) bool {
+	if avgChunkSizeBytes <= 0 {
+		return false
+	}
+	size := d.GetSizeBytes()
+	return size > avgChunkSizeBytes*4 && (maxWriteSizeBytes <= 0 || size <= maxWriteSizeBytes)
 }
 
 func ValidateConfig() error {
@@ -70,30 +127,29 @@ func ValidateConfig() error {
 	if v < 1024 || v > 1024*1024 {
 		return fmt.Errorf("cache.avg_chunk_size_bytes must be between 1024 and 1048576, got %d", v)
 	}
+	if *minChunkedReadFallbackSizeBytes < 0 {
+		return fmt.Errorf("cache.min_chunked_read_fallback_size_bytes must be >= 0, got %d", *minChunkedReadFallbackSizeBytes)
+	}
 	return nil
 }
 
 func Enabled(ctx context.Context, efp interfaces.ExperimentFlagProvider) bool {
-	if cdc.EnabledViaHeader(ctx) {
-		return true
-	}
-	return efp != nil &&
-		efp.Boolean(ctx, "cache.chunking_enabled", false)
+	return efp == nil || efp.Boolean(ctx, "cache.chunking_enabled", true)
 }
 
 func ShouldReadChunked(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes, offset, limit int64) bool {
 	// Check digest first since it's faster than reading efp flag
 	// and very likely to be false.
-	return digestSizeBytes > MaxChunkSizeBytes() &&
+	return digestSizeBytes > MinChunkedReadFallbackSizeBytes(ctx, efp) &&
 		limit == 0 &&
 		Enabled(ctx, efp)
 }
 
 func ShouldReadChunkedOnProxy(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes, offset, limit int64) bool {
-	return digestSizeBytes > MaxChunkSizeBytes() &&
+	return digestSizeBytes > MaxChunkSizeBytes(ctx, efp) &&
 		limit == 0 &&
-		(cdc.EnabledViaHeader(ctx) ||
-			(efp != nil && efp.Boolean(ctx, "cache_proxy.attempt_chunked_reads", false)))
+		(efp == nil ||
+			(Enabled(ctx, efp) && efp.Boolean(ctx, "cache_proxy.attempt_chunked_reads", true)))
 }
 
 type WriteFunc func([]byte) error
@@ -280,6 +336,20 @@ func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
 		return err
 	}
 
+	return cm.store(ctx, cache)
+}
+
+// StoreWithoutVerification saves the chunked manifest to the cache without
+// checking that all chunks exist or that their combined hash matches the blob
+// digest.
+func (cm *Manifest) StoreWithoutVerification(ctx context.Context, cache interfaces.Cache) error {
+	if len(cm.ChunkDigests) == 0 {
+		return status.InvalidArgumentError("chunked manifest must have at least one chunk")
+	}
+	return cm.store(ctx, cache)
+}
+
+func (cm *Manifest) store(ctx context.Context, cache interfaces.Cache) error {
 	ar := &repb.ActionResult{
 		OutputFiles: make([]*repb.OutputFile, 0, len(cm.ChunkDigests)),
 	}
@@ -310,30 +380,16 @@ func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
 }
 
 // LoadManifest retrieves a chunked manifest from the cache. It does NOT validate existence of the chunks.
-// It tries the current key first, then falls back to the legacy key.
 func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*Manifest, error) {
 	rn, err := acResourceName(blobDigest, instanceName, digestFunction)
 	if err != nil {
 		return nil, err
 	}
 	manifest, err := loadManifestFrom(ctx, cache, blobDigest, instanceName, digestFunction, rn)
-	if err == nil {
-		metrics.ChunkedManifestLoadCount.WithLabelValues(chunkedManifestPrefix).Inc()
-		return manifest, nil
-	}
-	if !status.IsNotFoundError(err) || !*checkLegacyManifests {
-		return nil, err
-	}
-
-	legacyRN, err := legacyACResourceName(blobDigest, instanceName, digestFunction)
 	if err != nil {
 		return nil, err
 	}
-	manifest, err = loadManifestFrom(ctx, cache, blobDigest, instanceName, digestFunction, legacyRN)
-	if err != nil {
-		return nil, err
-	}
-	metrics.ChunkedManifestLoadCount.WithLabelValues(legacyManifestPrefix).Inc()
+	metrics.ChunkedManifestLoadCount.WithLabelValues(chunkedManifestPrefix).Inc()
 	return manifest, nil
 }
 
@@ -422,16 +478,28 @@ func (cm *Manifest) verifyChunks(ctx context.Context, cache interfaces.Cache) er
 	var totalSize int64
 	// This should be high enough to send at least 1 request per cache shard,
 	// but low enough to avoid buffering too much data in memory. The
-	// distributed cache splits the request per shard, but the local caches
-	// will usually proccess their batches sequentially.
+	// distributed cache sends requests to shards in parallel.
 	const batchSize = 20
+	readCompressed := cache.SupportsCompressor(repb.Compressor_ZSTD)
+	var decompressedData []byte
+	if readCompressed {
+		var maxChunkSize int64
+		for _, chunkDigest := range cm.ChunkDigests {
+			chunkSize := chunkDigest.GetSizeBytes()
+			if chunkSize < 0 || chunkSize > MaxSupportedChunkSizeBytes() {
+				return status.InvalidArgumentErrorf("invalid manifest: chunk %v has invalid size %d for blob %v", chunkDigest.GetHash(), chunkSize, cm.BlobDigest.GetHash())
+			}
+			maxChunkSize = max(maxChunkSize, chunkSize)
+		}
+		decompressedData = make([]byte, 0, int(maxChunkSize))
+	}
 	resources := make([]*rspb.ResourceName, 0, batchSize)
 	for chunkDigestsPart := range slices.Chunk(cm.ChunkDigests, batchSize) {
 		for _, chunkDigest := range chunkDigestsPart {
-			// TODO(vanja): Maybe read these compressed and decompress while
-			// hashing, to save network bandwidth, instead of decompressing on
-			// the server.
 			chunkRN := digest.NewCASResourceName(chunkDigest, cm.InstanceName, cm.DigestFunction)
+			if readCompressed {
+				chunkRN.SetCompressor(repb.Compressor_ZSTD)
+			}
 			if err := chunkRN.Validate(); err != nil {
 				return status.InvalidArgumentErrorf("invalid chunk resource name %v for blob %s: %s", chunkRN, cm.BlobDigest.GetHash(), err)
 			}
@@ -445,6 +513,17 @@ func (cm *Manifest) verifyChunks(ctx context.Context, cache interfaces.Cache) er
 			chunkData, ok := chunks[r.GetDigest()]
 			if !ok {
 				return status.InvalidArgumentErrorf("invalid manifest: chunk %v not found in the CAS for blob %v", r.GetDigest().GetHash(), cm.BlobDigest.GetHash())
+			}
+			if readCompressed {
+				chunkSize := r.GetDigest().GetSizeBytes()
+				decompressedData, err = compression.DecompressZstd(decompressedData, chunkData)
+				if err != nil {
+					return status.WrapErrorf(err, "decompress chunk %s for blob %s", r.GetDigest().GetHash(), cm.BlobDigest.GetHash())
+				}
+				if int64(len(decompressedData)) != chunkSize {
+					return status.InvalidArgumentErrorf("invalid manifest: chunk %v decompressed to %d bytes, expected %d bytes for blob %v", r.GetDigest().GetHash(), len(decompressedData), chunkSize, cm.BlobDigest.GetHash())
+				}
+				chunkData = decompressedData
 			}
 			_, err := hasher.Write(chunkData)
 			if err != nil {
@@ -511,18 +590,10 @@ func sharedValidationResourceName(cm *Manifest) (*rspb.ResourceName, []byte, err
 }
 
 func acResourceName(blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*rspb.ResourceName, error) {
-	return acResourceNameVersioned(chunkedManifestPrefix, blobToManifestSize(blobDigest.GetSizeBytes()), blobDigest, instanceName, digestFunction)
-}
-
-func legacyACResourceName(blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*rspb.ResourceName, error) {
-	return acResourceNameVersioned(legacyManifestPrefix, blobDigest.GetSizeBytes(), blobDigest, instanceName, digestFunction)
-}
-
-func acResourceNameVersioned(prefix string, sizeBytes int64, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*rspb.ResourceName, error) {
-	acInstanceName := prefix + instanceName
+	acInstanceName := chunkedManifestPrefix + instanceName
 	acDigest := &repb.Digest{
 		Hash:      blobDigest.GetHash(),
-		SizeBytes: sizeBytes,
+		SizeBytes: blobToManifestSize(blobDigest.GetSizeBytes()),
 	}
 
 	// Optionally salt the AC key with a salt value. This is used to prevent someone uploading
@@ -534,7 +605,7 @@ func acResourceNameVersioned(prefix string, sizeBytes int64, blobDigest *repb.Di
 		if err != nil {
 			return nil, err
 		}
-		saltedDigest.SizeBytes = sizeBytes
+		saltedDigest.SizeBytes = acDigest.SizeBytes
 		acDigest = saltedDigest
 	}
 

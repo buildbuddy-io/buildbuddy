@@ -11,7 +11,6 @@ import (
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
@@ -36,6 +35,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
 
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -50,7 +50,7 @@ const (
 	nonRootUser = "buildbuddy"
 	rootUser    = "root"
 
-	timeoutGracePeriod = 10 * time.Second
+	TimeoutGracePeriod = 10 * time.Second
 )
 
 type runnerService struct {
@@ -79,6 +79,36 @@ func (r *runnerService) checkPreconditions(req *rnpb.RunRequest) error {
 		}
 	}
 	return nil
+}
+
+func normalizeWorkingDirectory(path string) (string, error) {
+	path = filepath.Clean(path)
+	if filepath.IsAbs(path) {
+		return "", status.InvalidArgumentErrorf("working_directory must be repo-relative: %q", path)
+	}
+	if path == "." {
+		return "", nil
+	}
+	if strings.Contains(path, "..") {
+		return "", status.InvalidArgumentErrorf("working_directory must not have relative components: %q", path)
+	}
+	return path, nil
+}
+
+func actionFromRunRequest(req *rnpb.RunRequest) (*config.Action, error) {
+	name := "remote run"
+	if req.GetName() != "" {
+		name = req.GetName()
+	}
+	workingDirectory, err := normalizeWorkingDirectory(req.GetWorkingDirectory())
+	if err != nil {
+		return nil, err
+	}
+	return &config.Action{
+		Name:              name,
+		Steps:             req.GetSteps(),
+		BazelWorkspaceDir: workingDirectory,
+	}, nil
 }
 
 // createAction creates and uploads an action that will trigger the CI runner
@@ -142,13 +172,9 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		req.Steps = []*rnpb.Step{{Run: "bazel " + req.GetBazelCommand()}}
 	}
 
-	name := "remote run"
-	if req.GetName() != "" {
-		name = req.GetName()
-	}
-	runAction := &config.Action{
-		Name:  name,
-		Steps: req.GetSteps(),
+	runAction, err := actionFromRunRequest(req)
+	if err != nil {
+		return nil, err
 	}
 	actionBytes, err := yaml.Marshal(runAction)
 	if err != nil {
@@ -156,13 +182,22 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 	serializedAction := base64.StdEncoding.EncodeToString(actionBytes)
 
-	timeout := *ci_runner_util.CIRunnerDefaultTimeout
+	var requestedTimeout *time.Duration
 	if req.GetTimeout() != "" {
-		d, err := time.ParseDuration(req.GetTimeout())
+		timeoutDuration, err := time.ParseDuration(req.GetTimeout())
 		if err != nil {
-			return nil, status.WrapError(err, "parse timeout from request")
+			return nil, status.InvalidArgumentErrorf("invalid timeout %s: %s", req.GetTimeout(), err)
 		}
-		timeout = d
+		requestedTimeout = &timeoutDuration
+	}
+
+	var groupStatus grpb.Group_GroupStatus
+	if u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
+		groupStatus = u.GetGroupStatus()
+	}
+	runnerTimeout, err := ci_runner_util.RunnerTimeout(ctx, r.env.GetExperimentFlagProvider(), requestedTimeout, "remote_bazel", groupStatus)
+	if err != nil {
+		return nil, err
 	}
 
 	args := []string{
@@ -174,7 +209,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--digest_function=" + repb.DigestFunction_BLAKE3.String(),
 		"--invocation_id=" + invocationID,
 		"--serialized_action=" + serializedAction,
-		"--timeout=" + timeout.String(),
+		"--timeout=" + runnerTimeout.Duration.String(),
+		"--timeout_reason=" + runnerTimeout.Reason,
 		"--remote_instance_name=" + in,
 	}
 	if repoURL != "" {
@@ -306,7 +342,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	// that we allow the CI runner to finalize the outer workflow invocation
 	// once the timeout has elapsed, but if the CI runner takes too long to
 	// finalize, we can still kill the action.
-	actionTimeout := timeout + timeoutGracePeriod
+	actionTimeout := runnerTimeout.Duration + TimeoutGracePeriod
 	action := &repb.Action{
 		CommandDigest:   cmdDigest,
 		InputRootDigest: inputRootDigest,
@@ -358,7 +394,7 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 			return nil, status.WrapError(err, "normalize git repo url")
 		}
 
-		gitToken, err := githubapp.GetRepositoryInstallationToken(ctx, r.env, u.GetGroupID(), repoURL.String())
+		gitToken, err := r.getGitHubAccessToken(ctx, u.GetGroupID(), repoURL.String())
 		if err != nil {
 			log.Warningf("Could not fetch git auth token for %s for hosted runner"+
 				" (Note: The token is not needed for public repos): %s", repoURL, err)
@@ -374,6 +410,22 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 		"REPO_TOKEN=" + accessToken,
 	}
 	return envOverrides, nil
+}
+
+func (r *runnerService) getGitHubAccessToken(ctx context.Context, groupID string, repoURL string) (string, error) {
+	gh := r.env.GetGitHubAppService()
+	if gh == nil {
+		return "", status.UnimplementedError("No GitHub app configured")
+	}
+	app, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
+	if err != nil {
+		return "", err
+	}
+	token, err := app.GetRepositoryInstallationToken(ctx, groupID, repoURL)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 // Run creates and dispatches an execution that will call the CI-runner and run

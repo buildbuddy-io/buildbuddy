@@ -22,6 +22,7 @@ go_library(
         "//server/ssl",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
+        "//server/util/kuberesolver",
         "//server/util/log",
         "//server/util/monitoring",
         "//server/util/statusz",

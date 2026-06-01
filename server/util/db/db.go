@@ -907,7 +907,7 @@ func (h *DBHandle) SelectForUpdateModifier() string {
 	if h.driver == sqliteDriver {
 		return ""
 	}
-	return "FOR UPDATE"
+	return " FOR UPDATE"
 }
 
 func (h *DBHandle) DialectName() string {

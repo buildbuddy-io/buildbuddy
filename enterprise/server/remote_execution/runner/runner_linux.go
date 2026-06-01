@@ -5,6 +5,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
@@ -82,13 +83,13 @@ func (r *taskRunner) prepareVFS(ctx context.Context, layout *container.FileSyste
 // bad snapshots to the cache.
 func (r *taskRunner) hasMaxResourceUtilization(ctx context.Context, usageStats *repb.UsageStats) bool {
 	if fc, ok := r.Container.Delegate.(container.VM); ok {
-		maxedOutStr := ""
+		var maxedOutStr strings.Builder
 		maxMemory := false
 		maxDisk := false
 
 		for _, fsUsage := range usageStats.GetPeakFileSystemUsage() {
 			if float64(fsUsage.UsedBytes)/float64(fsUsage.TotalBytes) >= maxRecyclableResourceUtilization {
-				maxedOutStr += fmt.Sprintf(" %d/%d B disk used for %s", fsUsage.UsedBytes, fsUsage.TotalBytes, fsUsage.GetSource())
+				maxedOutStr.WriteString(fmt.Sprintf(" %d/%d B disk used for %s", fsUsage.UsedBytes, fsUsage.TotalBytes, fsUsage.GetSource()))
 				maxDisk = true
 			}
 		}
@@ -96,18 +97,18 @@ func (r *taskRunner) hasMaxResourceUtilization(ctx context.Context, usageStats *
 		usedMemoryBytes := usageStats.GetMemoryBytes()
 		totalMemoryBytes := fc.VMConfig().GetMemSizeMb() * 1e6
 		if usedMemoryBytes >= int64(float64(totalMemoryBytes)*maxRecyclableResourceUtilization) {
-			maxedOutStr += fmt.Sprintf("%d/%d B memory used", usedMemoryBytes, totalMemoryBytes)
+			maxedOutStr.WriteString(fmt.Sprintf("%d/%d B memory used", usedMemoryBytes, totalMemoryBytes))
 			maxMemory = true
 		}
 
-		if maxedOutStr != "" {
+		if maxedOutStr.String() != "" {
 			var groupID string
 			u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
 			if err == nil {
 				groupID = u.GetGroupID()
 			}
 
-			errStr := fmt.Sprintf("%v runner (group_id=%s) exceeded 90%% of memory or disk usage, not recycling: %s", r.GetIsolationType(), groupID, maxedOutStr)
+			errStr := fmt.Sprintf("%v runner (group_id=%s) exceeded 90%% of memory or disk usage, not recycling: %s", r.GetIsolationType(), groupID, maxedOutStr.String())
 			debugStr := fc.SnapshotDebugString(ctx)
 			var recycledLabel string
 			if debugStr == "" {

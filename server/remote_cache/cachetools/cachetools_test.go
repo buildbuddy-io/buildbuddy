@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -392,6 +394,7 @@ type fakeCasClient struct {
 	response   *repb.GetTreeResponse
 
 	findMissingBlobsFn func(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error)
+	splitBlobFn        func(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error)
 }
 
 // BatchReadBlobs implements remote_execution.ContentAddressableStorageClient.
@@ -429,6 +432,9 @@ func (f *fakeCasClient) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequ
 }
 
 func (f *fakeCasClient) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest, opts ...grpc.CallOption) (*repb.SplitBlobResponse, error) {
+	if f.splitBlobFn != nil {
+		return f.splitBlobFn(ctx, req)
+	}
 	panic("unimplemented")
 }
 
@@ -487,6 +493,8 @@ type fakeFilecache struct {
 	writeCount int
 }
 
+var _ interfaces.FileCache = (*fakeFilecache)(nil)
+
 func toFileNode(r *rspb.ResourceName) *repb.FileNode {
 	return &repb.FileNode{
 		Digest:       r.GetDigest(),
@@ -515,6 +523,10 @@ func (fc *fakeFilecache) ContainsFile(ctx context.Context, node *repb.FileNode) 
 	defer fc.mu.Unlock()
 	_, ok := fc.files[key(node)]
 	return ok
+}
+
+func (fc *fakeFilecache) WithSharedDirectory(ctx context.Context, sharedDirectory string) context.Context {
+	panic("unimplemented")
 }
 
 func (fc *fakeFilecache) Open(ctx context.Context, f *repb.FileNode) (*os.File, error) {
@@ -639,6 +651,190 @@ func (b *bsReadStreamer) SendMsg(m any) error {
 // Trailer implements bytestream.ByteStream_ReadClient.
 func (b *bsReadStreamer) Trailer() metadata.MD {
 	panic("unimplemented")
+}
+
+func TestGetBlobChunked_FallsBackWithoutManifest(t *testing.T) {
+	ctx := context.Background()
+	out, err := os.CreateTemp(t.TempDir(), "chunked-download-*")
+	require.NoError(t, err)
+	defer out.Close()
+
+	_, err = out.WriteString("keep me")
+	require.NoError(t, err)
+
+	blobDigest, err := digest.Compute(bytes.NewReader([]byte("blob")), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	rn := digest.NewCASResourceName(blobDigest, testInstance, repb.DigestFunction_BLAKE3)
+
+	err = cachetools.GetBlobChunked(ctx, nil, &fakeCasClient{
+		splitBlobFn: func(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+			return nil, gstatus.Error(codes.Unimplemented, "no manifest")
+		},
+	}, rn, &repb.FileNode{Digest: blobDigest}, out, nil)
+	require.Equal(t, codes.Unimplemented, gstatus.Code(err))
+
+	got, err := os.ReadFile(out.Name())
+	require.NoError(t, err)
+	require.Equal(t, []byte("keep me"), got)
+}
+
+func TestGetBlobChunked_ReusesWholeFileChunks_ZstdBLAKE3(t *testing.T) {
+	ctx := context.Background()
+	chunk1 := bytes.Repeat([]byte("a"), 1024)
+	chunk2 := bytes.Repeat([]byte("b"), 1536)
+	blob := append(append([]byte{}, chunk1...), chunk2...)
+	compute := func(data []byte) *repb.Digest {
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+		require.NoError(t, err)
+		return d
+	}
+	chunkDigests := []*repb.Digest{compute(chunk1), compute(chunk2)}
+	blobDigest := compute(blob)
+	rn := digest.NewCASResourceName(blobDigest, testInstance, repb.DigestFunction_BLAKE3)
+	rn.SetCompressor(repb.Compressor_ZSTD)
+	cas := &fakeCasClient{
+		splitBlobFn: func(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+			require.Equal(t, blobDigest.GetHash(), req.GetBlobDigest().GetHash())
+			require.Equal(t, blobDigest.GetSizeBytes(), req.GetBlobDigest().GetSizeBytes())
+			require.Equal(t, repb.DigestFunction_BLAKE3, req.GetDigestFunction())
+			return &repb.SplitBlobResponse{ChunkDigests: chunkDigests}, nil
+		},
+	}
+	bsData := make(map[string][]byte, len(chunkDigests))
+	for i, chunkDigest := range chunkDigests {
+		chunkRN := digest.NewCASResourceName(chunkDigest, testInstance, repb.DigestFunction_BLAKE3)
+		chunkRN.SetCompressor(repb.Compressor_ZSTD)
+		chunkData := chunk1
+		if i == 1 {
+			chunkData = chunk2
+		}
+		bsData[chunkRN.DownloadString()] = compression.CompressZstd(nil, chunkData)
+	}
+	bs := &fakeBytestreamClient{
+		mu:   &sync.Mutex{},
+		data: bsData,
+	}
+	source, err := os.CreateTemp(t.TempDir(), "source-*")
+	require.NoError(t, err)
+	sourcePath := source.Name()
+	sourceNode := &repb.FileNode{Digest: blobDigest}
+	openLocal := func(ctx context.Context, node *repb.FileNode) (*os.File, error) {
+		if key(node) != key(sourceNode) {
+			return nil, os.ErrNotExist
+		}
+		return os.Open(sourcePath)
+	}
+
+	err = cachetools.GetBlobChunked(ctx, bs, cas, rn, sourceNode, source, openLocal)
+	require.NoError(t, err)
+	require.NoError(t, source.Close())
+	got, err := os.ReadFile(sourcePath)
+	require.NoError(t, err)
+	require.Equal(t, blob, got)
+	require.Equal(t, len(chunkDigests), bs.readCount)
+
+	target, err := os.CreateTemp(t.TempDir(), "target-*")
+	require.NoError(t, err)
+	targetNode := &repb.FileNode{Digest: blobDigest}
+	err = cachetools.GetBlobChunked(ctx, nil, cas, rn, targetNode, target, openLocal)
+	require.NoError(t, err)
+	require.NoError(t, target.Close())
+	got, err = os.ReadFile(target.Name())
+	require.NoError(t, err)
+	require.Equal(t, blob, got)
+}
+
+func TestGetBlobChunked_ManyChunksPartialLocal(t *testing.T) {
+	ctx := context.Background()
+
+	const (
+		numChunks     = 100
+		chunkSize     = 1 << 20 // 1 MiB; total blob ~100 MiB
+		localEveryNth = 10      // ~10% of chunks available locally
+	)
+
+	rng := rand.New(rand.NewSource(1))
+	chunks := make([][]byte, numChunks)
+	chunkDigests := make([]*repb.Digest, numChunks)
+	for i := range chunks {
+		chunks[i] = make([]byte, chunkSize)
+		_, err := rng.Read(chunks[i])
+		require.NoError(t, err)
+		d, err := digest.Compute(bytes.NewReader(chunks[i]), repb.DigestFunction_BLAKE3)
+		require.NoError(t, err)
+		chunkDigests[i] = d
+	}
+
+	blob := bytes.Join(chunks, nil)
+	blobDigest, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	// Build a partial local file from every Nth chunk.
+	var localChunks [][]byte
+	var localChunkDigests []*repb.Digest
+	for i := 0; i < numChunks; i += localEveryNth {
+		localChunks = append(localChunks, chunks[i])
+		localChunkDigests = append(localChunkDigests, chunkDigests[i])
+	}
+	localBlob := bytes.Join(localChunks, nil)
+	localDigest, err := digest.Compute(bytes.NewReader(localBlob), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	localPath := filepath.Join(t.TempDir(), "local")
+	require.NoError(t, os.WriteFile(localPath, localBlob, 0644))
+	localNode := &repb.FileNode{Digest: localDigest}
+
+	cas := &fakeCasClient{
+		splitBlobFn: func(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+			switch req.GetBlobDigest().GetHash() {
+			case blobDigest.GetHash():
+				return &repb.SplitBlobResponse{ChunkDigests: chunkDigests}, nil
+			case localDigest.GetHash():
+				return &repb.SplitBlobResponse{ChunkDigests: localChunkDigests}, nil
+			}
+			return nil, gstatus.Error(codes.NotFound, "no manifest")
+		},
+	}
+
+	// Chunks are 1 MiB, so cachetools.GetBlob will upgrade reads to ZSTD.
+	bsData := make(map[string][]byte, numChunks)
+	for i, cd := range chunkDigests {
+		rn := digest.NewCASResourceName(cd, testInstance, repb.DigestFunction_BLAKE3)
+		rn.SetCompressor(repb.Compressor_ZSTD)
+		bsData[rn.DownloadString()] = compression.CompressZstd(nil, chunks[i])
+	}
+	bs := &fakeBytestreamClient{mu: &sync.Mutex{}, data: bsData}
+
+	openLocal := func(ctx context.Context, node *repb.FileNode) (*os.File, error) {
+		if key(node) != key(localNode) {
+			return nil, os.ErrNotExist
+		}
+		return os.Open(localPath)
+	}
+
+	// Prime the chunk location cache by downloading the partial local file.
+	localOut, err := os.CreateTemp(t.TempDir(), "local-out-*")
+	require.NoError(t, err)
+	localRN := digest.NewCASResourceName(localDigest, testInstance, repb.DigestFunction_BLAKE3)
+	require.NoError(t, cachetools.GetBlobChunked(ctx, bs, cas, localRN, localNode, localOut, openLocal))
+	require.NoError(t, localOut.Close())
+
+	priorBSReads := bs.readCount
+
+	// Download the full blob, reusing cached local chunks where available.
+	target, err := os.CreateTemp(t.TempDir(), "target-*")
+	require.NoError(t, err)
+	targetNode := &repb.FileNode{Digest: blobDigest}
+	blobRN := digest.NewCASResourceName(blobDigest, testInstance, repb.DigestFunction_BLAKE3)
+	require.NoError(t, cachetools.GetBlobChunked(ctx, bs, cas, blobRN, targetNode, target, openLocal))
+	require.NoError(t, target.Close())
+
+	got, err := os.ReadFile(target.Name())
+	require.NoError(t, err)
+	require.Equal(t, blob, got, "output must match full blob byte-for-byte")
+
+	wantBSReads := numChunks - len(localChunkDigests)
+	require.Equal(t, wantBSReads, bs.readCount-priorBSReads, "local chunks must not hit the bytestream")
 }
 
 func TestUploadReaderAndGetBlob(t *testing.T) {
@@ -841,7 +1037,7 @@ func TestConcurrentMutationDuringUpload(t *testing.T) {
 			// simulating a concurrent mutation.
 			b[0] = 'x'
 			ctx := context.Background()
-			ul := cachetools.NewBatchCASUploader(ctx, te, "", df, 0 /*=avgChunkSizeBytes*/)
+			ul := cachetools.NewBatchCASUploader(ctx, te, "", df, nil /*=chunkingParams*/)
 			_ = ul.Upload(d, cachetools.NewBytesReadSeekCloser(b))
 			err = ul.Wait()
 			require.Error(t, err)
@@ -863,7 +1059,7 @@ func TestBatchCASUploader_DedupesUploads(t *testing.T) {
 	ctx := context.Background()
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
-	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), df, 0 /*=avgChunkSizeBytes*/)
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), df, nil /*=chunkingParams*/)
 
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
@@ -1276,10 +1472,10 @@ func TestBatchCASUploader_ChunkedUpload(t *testing.T) {
 	go runServer()
 
 	ctx := context.Background()
-	blobSize := int64(3 * 1024 * 1024)
+	blobSize := int64(5 * 1024 * 1024)
 	rn, buf := testdigest.RandomCASResourceBuf(t, blobSize)
 
-	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), chunking.AvgChunkSizeBytes())
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), chunking.FastCDCParams(ctx, nil))
 	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
 	require.NoError(t, ul.Wait())
 
@@ -1288,4 +1484,49 @@ func TestBatchCASUploader_ChunkedUpload(t *testing.T) {
 	err = cachetools.GetBlob(ctx, te.GetByteStreamClient(), casRN, out)
 	require.NoError(t, err)
 	require.Equal(t, buf, out.Bytes())
+}
+
+func TestBatchCASUploader_SkipsChunkedUploadAboveMaxSize(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	ctx := context.Background()
+	blobSize := int64(5 * 1024 * 1024)
+	rn, buf := testdigest.RandomCASResourceBuf(t, blobSize)
+
+	chunkingParams := chunking.FastCDCParams(ctx, nil)
+	chunkingParams.BuildbuddyMaxChunkedWriteSizeBytes = 2 * 1024 * 1024
+	ul := cachetools.NewBatchCASUploader(ctx, te, rn.GetInstanceName(), rn.GetDigestFunction(), chunkingParams)
+	require.NoError(t, ul.Upload(rn.GetDigest(), cachetools.NewBytesReadSeekCloser(buf)))
+	require.NoError(t, ul.Wait())
+
+	casRN := digest.NewCASResourceName(rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
+	out := &bytes.Buffer{}
+	err = cachetools.GetBlob(ctx, te.GetByteStreamClient(), casRN, out)
+	require.NoError(t, err)
+	require.Equal(t, buf, out.Bytes())
+
+	_, err = te.GetContentAddressableStorageClient().SplitBlob(ctx, &repb.SplitBlobRequest{
+		InstanceName:   rn.GetInstanceName(),
+		BlobDigest:     rn.GetDigest(),
+		DigestFunction: rn.GetDigestFunction(),
+	})
+	require.True(t, status.IsNotFoundError(err))
 }

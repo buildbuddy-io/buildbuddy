@@ -5,25 +5,16 @@ import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
 
 package distributed_cache;
 
-message Isolation {
-  resource.CacheType cache_type = 1;
-  string remote_instance_name = 2;
-}
-
 message Key {
   string key = 1;
   int64 size_bytes = 2;
 }
 
 message ReadRequest {
-  reserved 1;
+  reserved 1, 2, 4;
   int64 offset = 3;
   int64 limit = 5;
   resource.ResourceName resource = 6;
-
-  // Deprecated fields - use resource field instead
-  Isolation isolation = 4;
-  Key key = 2;
 }
 
 message ReadResponse {
@@ -33,7 +24,7 @@ message ReadResponse {
 
 // Next Tag: 9
 message WriteRequest {
-  reserved 1;
+  reserved 1, 2, 6;
   bool finish_write = 3;
 
   // If check_already_exists, the server should return an ALREADY_EXISTS error
@@ -45,10 +36,6 @@ message WriteRequest {
   // A node that this data should eventually be handed off to.
   // Clients should attempt to replicate this data when possible.
   string handoff_peer = 5;
-
-  // Deprecated fields - use resource field instead
-  Isolation isolation = 6;
-  Key key = 2;
 }
 
 message WriteResponse {
@@ -56,21 +43,15 @@ message WriteResponse {
 }
 
 message DeleteRequest {
+  reserved 1, 2;
   resource.ResourceName resource = 3;
-
-  // Deprecated fields - use resource field instead
-  Isolation isolation = 1;
-  Key key = 2;
 }
 
 message DeleteResponse {}
 
 message FindMissingRequest {
+  reserved 1, 2;
   repeated resource.ResourceName resources = 3;
-
-  // Deprecated fields - use resource field instead
-  Isolation isolation = 1;
-  repeated Key key = 2;
 }
 
 message FindMissingResponse {
@@ -78,11 +59,8 @@ message FindMissingResponse {
 }
 
 message MetadataRequest {
+  reserved 1, 2;
   resource.ResourceName resource = 3;
-
-  // Deprecated fields - use resource field instead
-  Isolation isolation = 1;
-  Key key = 2;
 }
 
 message MetadataResponse {
@@ -92,18 +70,23 @@ message MetadataResponse {
   int64 digest_size_bytes = 4;
 }
 
+message GetWithMetadataRequest {
+  resource.ResourceName resource = 1;
+}
+
+message GetWithMetadataResponse {
+  bytes data = 1;
+  MetadataResponse metadata = 2;
+}
+
 message KV {
   Key key = 1;
   bytes value = 2;
 }
 
 message GetMultiRequest {
-  reserved 1;
+  reserved 1, 2, 3;
   repeated resource.ResourceName resources = 4;
-
-  // Deprecated fields - use resource field instead
-  Isolation isolation = 3;
-  repeated Key key = 2;
 }
 
 message GetMultiResponse {
@@ -123,5 +106,6 @@ service DistributedCache {
   rpc Delete(DeleteRequest) returns (DeleteResponse);
   rpc FindMissing(FindMissingRequest) returns (FindMissingResponse);
   rpc GetMulti(GetMultiRequest) returns (GetMultiResponse);
+  rpc GetWithMetadata(GetWithMetadataRequest) returns (GetWithMetadataResponse);
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
 }

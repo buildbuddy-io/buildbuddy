@@ -1,6 +1,7 @@
 package peerset_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
@@ -10,15 +11,6 @@ import (
 type wantPeerHandoff struct {
 	peer    string
 	handoff string
-}
-
-func contains(needle string, haystack []string) bool {
-	for _, h := range haystack {
-		if h == needle {
-			return true
-		}
-	}
-	return false
 }
 
 func TestGetNextPeer(t *testing.T) {
@@ -89,51 +81,11 @@ func TestGetNextPeer(t *testing.T) {
 	for _, test := range tests {
 		for _, want := range test.expected {
 			peer, handoff := test.p.GetNextPeerAndHandoff()
-			if contains(peer, test.peersToFail) {
+			if slices.Contains(test.peersToFail, peer) {
 				test.p.MarkPeerAsFailed(peer)
 			}
 			assert.Equal(t, want.peer, peer)
 			assert.Equal(t, want.handoff, handoff)
-		}
-	}
-}
-
-func TestNewRead(t *testing.T) {
-	localhost := "a"
-
-	tests := []struct {
-		preferred []string
-		fallback  []string
-	}{
-		{
-			[]string{localhost},
-			[]string{"b", "c"},
-		},
-		{
-			[]string{"b", "c", localhost},
-			[]string{},
-		},
-		{
-			[]string{"b", localhost, "c"},
-			[]string{"d", "e", "f", "g"},
-		},
-	}
-
-	for _, test := range tests {
-		p := peerset.NewRead("a", test.preferred, test.fallback)
-		i := 0
-		for peer, handoff := p.GetNextPeerAndHandoff(); peer != ""; peer, handoff = p.GetNextPeerAndHandoff() {
-			// Test that hinted handoffs only refer to preferred nodes.
-			if handoff != "" {
-				assert.Contains(t, test.preferred, handoff)
-			}
-			// Test that if localhost was a peer, it was returned first.
-			if i == 0 && contains(localhost, test.preferred) {
-				assert.Equal(t, localhost, peer)
-			}
-			// Test that the peer came from preferred or fallback.
-			assert.Contains(t, append(test.preferred, test.fallback...), peer)
-			i += 1
 		}
 	}
 }
@@ -175,11 +127,70 @@ func TestGetBackfillTargets(t *testing.T) {
 		for i := 0; i < len(test.expectedPeers); i++ {
 			peer := test.p.GetNextPeer()
 			assert.Equal(t, test.expectedPeers[i], peer)
-			if contains(peer, test.peersToFail) {
+			if slices.Contains(test.peersToFail, peer) {
 				test.p.MarkPeerAsFailed(peer)
 			}
 		}
 		_, backfillHosts := test.p.GetBackfillTargets()
 		assert.Equal(t, test.expectedBackfillHosts, backfillHosts)
+	}
+}
+
+func TestGetBackfillTargetsWithBlockBackfills(t *testing.T) {
+	// PreferredPeers contains a mix of peers that should be readable
+	// (a, b, c, d) but b and d are blocked from backfill (e.g. non-canonical
+	// same-zone peers that may hold a read-through cached copy).
+	for _, tc := range []struct {
+		name           string
+		preferred      []string
+		fallback       []string
+		blockBackfills []string
+		consume        int // number of peers to consume via GetNextPeer before computing backfill
+		wantSource     string
+		wantTargets    []string
+	}{
+		{
+			name:           "hit on canonical primary skips blocked targets",
+			preferred:      []string{"a", "b", "c", "d"},
+			blockBackfills: []string{"b", "d"},
+			consume:        3, // hit on "c"
+			wantSource:     "c",
+			wantTargets:    []string{"a"},
+		},
+		{
+			name:           "hit on blocked peer still skips blocked earlier peers",
+			preferred:      []string{"a", "b", "c", "d"},
+			blockBackfills: []string{"b", "d"},
+			consume:        2, // hit on "b" (blocked)
+			wantSource:     "b",
+			wantTargets:    []string{"a"},
+		},
+		{
+			name:           "nil block list = current behavior (no filter)",
+			preferred:      []string{"a", "b", "c", "d"},
+			blockBackfills: nil,
+			consume:        3,
+			wantSource:     "c",
+			wantTargets:    []string{"a", "b"},
+		},
+		{
+			name:           "block list covering all preferred peers leaves no targets",
+			preferred:      []string{"a", "b", "c", "d"},
+			blockBackfills: []string{"a", "b"},
+			consume:        3,
+			wantSource:     "c",
+			wantTargets:    []string{},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := peerset.New(tc.preferred, tc.fallback)
+			p.BlockBackfills = tc.blockBackfills
+			for i := 0; i < tc.consume; i++ {
+				p.GetNextPeer()
+			}
+			source, targets := p.GetBackfillTargets()
+			assert.Equal(t, tc.wantSource, source)
+			assert.Equal(t, tc.wantTargets, targets)
+		})
 	}
 }

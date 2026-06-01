@@ -42,7 +42,7 @@ import InvocationOverviewComponent from "./invocation_overview";
 import QueryGraphCardComponent from "./invocation_query_graph_card";
 import RawLogsCardComponent from "./invocation_raw_logs_card";
 import SpawnCardComponent from "./invocation_spawn_card";
-import SuggestionCardComponent, { getSuggestions } from "./invocation_suggestion_card";
+import SuggestionCardComponent, { getSuggestions, hasSuggestionAboveInfo } from "./invocation_suggestion_card";
 import InvocationTabsComponent, { getActiveTab } from "./invocation_tabs";
 import TargetsComponent from "./invocation_targets";
 import TimingCardComponent from "./invocation_timing_card";
@@ -601,6 +601,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
       runnerExecution: this.state.runnerExecution,
       user: this.props.user,
     });
+    const showSuggestionsAboveBuildLogs = activeTab === "all" && hasSuggestionAboveInfo(suggestions);
 
     return (
       <div className="invocation">
@@ -671,6 +672,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <QueryGraphCardComponent buildLogs={this.getBuildLogs(this.state.model)} />
           )}
 
+          {showSuggestionsAboveBuildLogs && (
+            <SuggestionCardComponent suggestions={suggestions} overview user={this.props.user} />
+          )}
+
           {(activeTab === "all" || activeTab === "log") && (
             <BuildLogsCardComponent
               title={!isRemoteRunnerInvocation ? "Build logs" : "Runner logs"}
@@ -695,13 +700,14 @@ export default class InvocationComponent extends React.Component<Props, State> {
               />
             )}
 
-          {(activeTab === "all" || activeTab === "log" || activeTab === "suggestions") && (
-            <SuggestionCardComponent
-              suggestions={suggestions}
-              overview={activeTab !== "suggestions"}
-              user={this.props.user}
-            />
-          )}
+          {!showSuggestionsAboveBuildLogs &&
+            (activeTab === "all" || activeTab === "log" || activeTab === "suggestions") && (
+              <SuggestionCardComponent
+                suggestions={suggestions}
+                overview={activeTab !== "suggestions"}
+                user={this.props.user}
+              />
+            )}
 
           {!isRemoteRunnerInvocation && (activeTab === "all" || activeTab === "targets") && (
             <TargetsComponent

@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
@@ -22,12 +23,13 @@ import (
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
-	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -258,8 +260,8 @@ type GitHubStatusService interface {
 }
 
 type GitHubStatusClient interface {
-	CreateStatus(ctx context.Context, ownerRepo, commitSHA string, payload *github.RepoStatus) error
-	IsStatusReportingEnabled(ctx context.Context, repoURL string) (bool, error)
+	CreateStatus(ctx context.Context, groupID, ownerRepo, commitSHA string, payload *github.RepoStatus) error
+	IsStatusReportingEnabled(ctx context.Context, groupID, repoURL string) (bool, error)
 }
 
 // A Blobstore must allow for reading, writing, and deleting blobs.
@@ -295,6 +297,7 @@ type Cache interface {
 	Metadata(ctx context.Context, r *rspb.ResourceName) (*CacheMetadata, error)
 	FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error)
 	Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error)
+	GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *CacheMetadata, error)
 	GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error)
 	Set(ctx context.Context, r *rspb.ResourceName, data []byte) error
 	SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error
@@ -464,6 +467,7 @@ type APIKeyGroup interface {
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
 	GetEnforceIPRules() bool
+	IsImpersonating() bool
 	GetGroupStatus() grpb.Group_GroupStatus
 }
 
@@ -544,6 +548,13 @@ type GetGroupUsersOpts struct {
 	SubIDPrefix string
 }
 
+// GetUserOpts customizes user lookups.
+type GetUserOpts struct {
+	// DirectMembershipsOnly excludes group memberships derived from user
+	// lists, so the returned user's Groups reflect only direct memberships.
+	DirectMembershipsOnly bool
+}
+
 type UserDB interface {
 	// User API
 	InsertUser(ctx context.Context, u *tables.User) error
@@ -552,9 +563,9 @@ type UserDB interface {
 	// valid authenticator is present in the environment and will return
 	// a UserToken given the provided context.
 	GetUser(ctx context.Context) (*tables.User, error)
-	GetUserByID(ctx context.Context, id string) (*tables.User, error)
-	GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error)
-	GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string) (*tables.User, error)
+	GetUserByID(ctx context.Context, id string, opts *GetUserOpts) (*tables.User, error)
+	GetUserByIDWithoutAuthCheck(ctx context.Context, id string, opts *GetUserOpts) (*tables.User, error)
+	GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string, opts *GetUserOpts) (*tables.User, error)
 	UpdateUser(ctx context.Context, u *tables.User) error
 	// DeleteUser deletes a user and associated data.
 	DeleteUser(ctx context.Context, id string) error
@@ -576,8 +587,14 @@ type UserDB interface {
 	CreateGroup(ctx context.Context, g *tables.Group) (string, error)
 	UpdateGroup(ctx context.Context, g *tables.Group) (string, error)
 	UpdateGroupStatus(ctx context.Context, groupID string, status grpb.Group_GroupStatus) error
+	// UpdateGroupSamlIdpMetadataUrl updates the group's SAML IdP metadata URL.
+	// An empty URL disables SSO for the group. Restricted to server admins.
+	UpdateGroupSamlIdpMetadataUrl(ctx context.Context, groupID string, url string) error
 	GetGroupByID(ctx context.Context, groupID string) (*tables.Group, error)
 	GetGroupByURLIdentifier(ctx context.Context, urlIdentifier string) (*tables.Group, error)
+	// GetGroupMembershipRequestsEnabled returns whether membership requests via
+	// the /join flow are enabled.
+	GetGroupMembershipRequestsEnabled() bool
 
 	// RequestToJoinGroup performs an attempt for the authenticated user to join
 	// the given group. If the user email matches the group's owned domain, the
@@ -630,6 +647,10 @@ type InvocationSearchService interface {
 
 type UsageService interface {
 	GetUsage(ctx context.Context, req *usagepb.GetUsageRequest) (*usagepb.GetUsageResponse, error)
+	GetUsageAlertingRules(ctx context.Context, req *usagepb.GetUsageAlertingRulesRequest) (*usagepb.GetUsageAlertingRulesResponse, error)
+	CreateUsageAlertingRule(ctx context.Context, req *usagepb.CreateUsageAlertingRuleRequest) (*usagepb.CreateUsageAlertingRuleResponse, error)
+	DeleteUsageAlertingRule(ctx context.Context, req *usagepb.DeleteUsageAlertingRuleRequest) (*usagepb.DeleteUsageAlertingRuleResponse, error)
+	GetAlertsEnabled() bool
 }
 
 type UsageTracker interface {
@@ -672,6 +693,8 @@ type WorkflowService interface {
 	// InvalidateAllSnapshotsForRepo invalidates all snapshots for a repo. Any future workflow
 	// runs will be executed on a clean runner.
 	InvalidateAllSnapshotsForRepo(ctx context.Context, repoURL string) error
+
+	RunScheduledWorkflows(ctx context.Context) error
 }
 
 type WorkspaceService interface {
@@ -708,11 +731,14 @@ type GitHubApp interface {
 
 	CreateRepo(context.Context, *rppb.CreateRepoRequest) (*rppb.CreateRepoResponse, error)
 
-	// GetInstallationTokenForStatusReportingOnly returns an installation token
+	// GetInstallationTokenForInternalUseOnly returns an installation token
 	// for the installation associated with the given installation owner (GitHub
 	// username or org name). It does not authorize the authenticated group ID,
-	// so should be used for status reporting only.
-	GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (*github.InstallationToken, error)
+	// so should be used for internal use only.
+	GetInstallationTokenForInternalUseOnly(ctx context.Context, owner string) (*github.InstallationToken, error)
+
+	// GetDefaultBranch returns the default branch for the given repo URL.
+	GetDefaultBranch(ctx context.Context, repoURL string, accessToken string) (string, error)
 
 	// GetRepositoryInstallationToken returns an installation token for the given repo.
 	// The repo must've been imported to BuildBuddy (i.e. a GitRepository row was created).
@@ -826,7 +852,7 @@ type GitProvider interface {
 
 	// CreateStatus publishes a status payload to the given repo at the given
 	// commit SHA.
-	CreateStatus(ctx context.Context, accessToken, repoURL, commitSHA string, payload any) error
+	CreateStatus(ctx context.Context, accessToken, groupID, repoURL, commitSHA string, payload any) error
 
 	// TODO(bduffany): ListRepos
 }
@@ -886,6 +912,10 @@ type WebhookData struct {
 	// request, if applicable.
 	// Ex: "acmedev123"
 	PullRequestApprover string
+
+	// ChangedFiles is the list of files changed by branch push events. Only
+	// populated for branch push events.
+	ChangedFiles []string
 }
 
 type SplashPrinter interface {
@@ -907,6 +937,16 @@ type FileCache interface {
 	DeleteFile(ctx context.Context, f *repb.FileNode) bool
 	AddFile(ctx context.Context, f *repb.FileNode, existingFilePath string) error
 	ContainsFile(ctx context.Context, node *repb.FileNode) bool
+
+	// WithSharedDirectory returns a context that stores filecache entries under
+	// a shared executor-local directory instead of the current group or ANON
+	// directory.
+	//
+	// NOTE: Authorization for the objects in these shared directories must be
+	// handled by the caller. The caller must also ensure that the objects in
+	// these shared directories are not modified.
+	WithSharedDirectory(ctx context.Context, sharedDirectory string) context.Context
+
 	// Open returns a file handle to a file in the cache, if one exists.
 	Open(ctx context.Context, f *repb.FileNode) (*os.File, error)
 	WaitForDirectoryScanToComplete()
@@ -938,6 +978,11 @@ type FileCache interface {
 	// as the filecache. The directory is not unique per call. Callers should
 	// generate globally unique file names under this directory.
 	TempDir() string
+}
+
+type CacheProxyRegistryService interface {
+	RegisterAndStreamHeartbeat(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatServer) error
+	GetCacheProxies(ctx context.Context, req *cppb.GetCacheProxiesRequest) (*cppb.GetCacheProxiesResponse, error)
 }
 
 type SchedulerService interface {
@@ -972,6 +1017,7 @@ type PoolInfo struct {
 
 type ExecutionService interface {
 	GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error)
+	GetExecutionDownloads(ctx context.Context, req *capb.GetExecutionDownloadsRequest) (*capb.GetExecutionDownloadsResponse, error)
 	WaitExecution(req *espb.WaitExecutionRequest, stream bbspb.BuildBuddyService_WaitExecutionServer) error
 	WriteExecutionProfile(ctx context.Context, w io.Writer, executionID string) error
 }

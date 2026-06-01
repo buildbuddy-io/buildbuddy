@@ -37,6 +37,7 @@ func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 		TargetRepoURL:           "https://github.com/test/hello_bb_ci.git",
 		TargetRepoDefaultBranch: "main",
 		TargetBranch:            "main",
+		ChangedFiles:            []string{"BUILD"},
 	}, data)
 }
 

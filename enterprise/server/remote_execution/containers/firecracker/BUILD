@@ -122,6 +122,9 @@ go_test(
     args = [
         "--executor.enable_local_snapshot_sharing=true",
         "--executor.enable_remote_snapshot_sharing=true",
+        # Uncomment to test the 6.1 kernel.
+        # TODO: turn this on by default once the 6.1 kernel is used everywhere
+        # "--executor.firecracker_enable_linux_6_1=true",
     ],
     exec_properties = {
         "test.Pool": "bare",
@@ -131,11 +134,11 @@ go_test(
         # because of OCI image conversion. Size the task manually to avoid OOM.
         # TODO: include test ext4 images as deps to avoid conversion.
         "test.EstimatedComputeUnits": "10",
+        "test.no-sandbox": "",  # Firecracker is not compatible with Bazel's sandbox environment
     },
     shard_count = 30,
     tags = [
         "bare",  # Firecracker tests must be run with bare execution so they aren't nested within another container
-        "no-sandbox",  # Firecracker is not compatible with Bazel's sandbox environment
     ],
     target_compatible_with = [
         "@platforms//os:linux",
@@ -152,7 +155,9 @@ go_test(
         "//enterprise/server/remote_execution/snaploader",
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/remote_execution/workspace",
+        "//enterprise/server/tasksize",
         "//enterprise/server/testutil/testcontainer",
+        "//enterprise/server/testutil/testregistry",
         "//enterprise/server/util/cpuset",
         "//enterprise/server/util/ext4",
         "//enterprise/server/util/oci",

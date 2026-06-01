@@ -169,6 +169,19 @@ func (wt *WebTester) Find(cssSelector string) *Element {
 	return &Element{wt.t, el}
 }
 
+// FindWithTimeout is like Find but polls for the element with the given
+// timeout. Use this in cases where the page may still be transitioning and
+// the default --webdriver_implicit_wait_timeout may not be long enough.
+func (wt *WebTester) FindWithTimeout(cssSelector string, timeout time.Duration) *Element {
+	var els []*Element
+	require.Eventually(wt.t, func() bool {
+		els = wt.FindAll(cssSelector)
+		return len(els) > 0
+	}, timeout, 50*time.Millisecond)
+	require.Len(wt.t, els, 1, "selector %q matched more than one element", cssSelector)
+	return els[0]
+}
+
 // FindAll returns all elements matching the given CSS selector.
 //
 // FindAll does not wait for elements matching the selector to be created, since

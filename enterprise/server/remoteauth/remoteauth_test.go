@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
@@ -18,8 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/pkg/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
@@ -29,8 +26,9 @@ import (
 type fakeAuthService struct {
 	lastAuthRequest *authpb.AuthenticateRequest
 
-	nextJwt map[string]string
-	nextErr map[string]error
+	nextHS256Jwt map[string]string
+	nextES256Jwt map[string]string
+	nextErr      map[string]error
 
 	authenticateCalls int
 
@@ -45,7 +43,8 @@ func (a *fakeAuthService) Reset() *fakeAuthService {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.lastAuthRequest = nil
-	a.nextJwt = map[string]string{}
+	a.nextHS256Jwt = map[string]string{}
+	a.nextES256Jwt = map[string]string{}
 	a.nextErr = map[string]error{}
 	a.authenticateCalls = 0
 	a.publicKeys = nil
@@ -54,17 +53,28 @@ func (a *fakeAuthService) Reset() *fakeAuthService {
 	return a
 }
 
-func (a *fakeAuthService) setNextJwt(t *testing.T, sub, jwt string) {
+func (a *fakeAuthService) setNextJwt(t *testing.T, sub, tokenString string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	require.NoError(t, a.nextErr[sub])
-	a.nextJwt[sub] = jwt
+	parser := jwt.Parser{}
+	parsed, _, err := parser.ParseUnverified(tokenString, jwt.MapClaims{})
+	require.NoError(t, err)
+	switch parsed.Method.Alg() {
+	case jwt.SigningMethodES256.Alg():
+		a.nextES256Jwt[sub] = tokenString
+	case jwt.SigningMethodHS256.Alg():
+		a.nextHS256Jwt[sub] = tokenString
+	default:
+		t.Fatalf("setNextJwt: unsupported signing method %q", parsed.Method.Alg())
+	}
 }
 
 func (a *fakeAuthService) setNextErr(t *testing.T, sub string, err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	require.Equal(t, "", a.nextJwt[sub])
+	require.Equal(t, "", a.nextHS256Jwt[sub])
+	require.Equal(t, "", a.nextES256Jwt[sub])
 	a.nextErr[sub] = err
 }
 
@@ -79,13 +89,20 @@ func (a *fakeAuthService) Authenticate(ctx context.Context, req *authpb.Authenti
 	defer a.mu.Unlock()
 	a.authenticateCalls++
 	a.lastAuthRequest = req
-	if a.nextErr[req.GetSubdomain()] != nil {
-		err := a.nextErr[req.GetSubdomain()]
-		a.nextErr[req.GetSubdomain()] = nil
+	sub := req.GetSubdomain()
+	if a.nextErr[sub] != nil {
+		err := a.nextErr[sub]
+		a.nextErr[sub] = nil
 		return nil, err
 	}
-	jwt := a.nextJwt[req.GetSubdomain()]
-	a.nextJwt[req.GetSubdomain()] = ""
+	var jwt string
+	if req.GetJwtSigningMethod() == authpb.JWTSigningMethod_ES256 {
+		jwt = a.nextES256Jwt[sub]
+		a.nextES256Jwt[sub] = ""
+	} else {
+		jwt = a.nextHS256Jwt[sub]
+		a.nextHS256Jwt[sub] = ""
+	}
 	return &authpb.AuthenticateResponse{Jwt: &jwt}, nil
 }
 
@@ -131,8 +148,9 @@ func (a *fakeAuthService) getPublicKeysCalls() int {
 
 func setup(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
 	fakeAuthService := fakeAuthService{
-		nextErr: map[string]error{},
-		nextJwt: map[string]string{},
+		nextErr:      map[string]error{},
+		nextHS256Jwt: map[string]string{},
+		nextES256Jwt: map[string]string{},
 	}
 	fakeAuthService.setPublicKeys(claims.GetES256PublicKeys())
 	te := testenv.GetTestEnv(t)
@@ -145,6 +163,13 @@ func setup(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
 	require.NoError(t, err)
 	t.Cleanup(authenticator.Stop)
 	return authenticator, &fakeAuthService
+}
+
+func setupES256(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
+	keyPair := testkeys.GenerateES256KeyPair(t)
+	flags.Set(t, "auth.jwt_es256_private_key", keyPair.PrivateKeyPEM)
+	require.NoError(t, claims.Init())
+	return setup(t)
 }
 
 func contextWithApiKey(t *testing.T, key string) context.Context {
@@ -177,22 +202,22 @@ func validES256Jwt(t *testing.T, uid string) string {
 }
 
 func TestAuthenticatedGRPCContext(t *testing.T) {
-	authenticator, fakeAuth := setup(t)
+	authenticator, fakeAuth := setupES256(t)
 
-	fooJwt := validJwt(t, "foo")
-	barJwt := validJwt(t, "bar")
-	bazJwt := validJwt(t, "baz")
+	fooJwt := validES256Jwt(t, "foo")
+	barJwt := validES256Jwt(t, "bar")
+	bazJwt := validES256Jwt(t, "baz")
 	require.NotEqual(t, fooJwt, barJwt)
 	require.NotEqual(t, fooJwt, bazJwt)
 	require.NotEqual(t, barJwt, bazJwt)
 
 	// Fail if there are no auth headers.
-	fakeAuth.setNextJwt(t, "", validJwt(t, "nothing"))
+	fakeAuth.setNextJwt(t, "", validES256Jwt(t, "nothing"))
 	ctx := authenticator.AuthenticatedGRPCContext(t.Context())
 	require.Equal(t, nil, ctx.Value(authutil.ContextTokenStringKey))
 
 	// Don't cache responses for missing auth headers.
-	fakeAuth.Reset().setNextJwt(t, "", validJwt(t, "nothing"))
+	fakeAuth.Reset().setNextJwt(t, "", validES256Jwt(t, "nothing"))
 	ctx = authenticator.AuthenticatedGRPCContext(t.Context())
 	require.Equal(t, nil, ctx.Value(authutil.ContextTokenStringKey))
 
@@ -229,7 +254,7 @@ func TestAuthenticatedGRPCContext(t *testing.T) {
 	require.Equal(t, bazJwt, ctx.Value(authutil.ContextTokenStringKey))
 
 	// Invalid JWTs should return an error
-	fakeAuth.Reset().setNextJwt(t, "", "invalid")
+	fakeAuth.Reset()
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithJwt(t, "baz"))
 	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
 	err, _ = authutil.AuthErrorFromContext(ctx)
@@ -238,10 +263,10 @@ func TestAuthenticatedGRPCContext(t *testing.T) {
 
 func TestJwtExpiry(t *testing.T) {
 	flags.Set(t, "auth.jwt_duration", 50*time.Second)
-	authenticator, fakeAuth := setup(t)
+	authenticator, fakeAuth := setupES256(t)
 
-	fooJwt := validJwt(t, "foo")
-	barJwt := validJwt(t, "bar")
+	fooJwt := validES256Jwt(t, "foo")
+	barJwt := validES256Jwt(t, "bar")
 	require.NotEqual(t, fooJwt, barJwt)
 
 	// The JWT minted by the backend should be considered to expire too soon
@@ -252,11 +277,11 @@ func TestJwtExpiry(t *testing.T) {
 }
 
 func TestSubdomains(t *testing.T) {
-	authenticator, fakeAuth := setup(t)
+	authenticator, fakeAuth := setupES256(t)
 
-	fooJwt := validJwt(t, "foo")
-	barJwt := validJwt(t, "bar")
-	bazJwt := validJwt(t, "baz")
+	fooJwt := validES256Jwt(t, "foo")
+	barJwt := validES256Jwt(t, "bar")
+	bazJwt := validES256Jwt(t, "baz")
 	require.NotEqual(t, fooJwt, barJwt)
 	require.NotEqual(t, fooJwt, bazJwt)
 	require.NotEqual(t, barJwt, bazJwt)
@@ -278,50 +303,6 @@ func TestSubdomains(t *testing.T) {
 	ctx = subdomain.Context(contextWithApiKey(t, "bar"), "foosub")
 	ctx = authenticator.AuthenticatedGRPCContext(ctx)
 	require.Equal(t, bazJwt, ctx.Value(authutil.ContextTokenStringKey))
-}
-
-func setupExperimentProvider(t *testing.T, flagValue bool) interfaces.ExperimentFlagProvider {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"auth.remote.use_es256_jwts": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "default",
-			Variants: map[string]any{
-				"default": flagValue,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-	return fp
-}
-
-func TestUseES256SignedJWTs(t *testing.T) {
-	ctx := t.Context()
-
-	// Test with nil experiment provider and flag disabled (default)
-	flags.Set(t, "auth.remote.use_es256_jwts", false)
-	require.False(t, useES256SignedJWTs(ctx, nil))
-
-	// Test with nil experiment provider and flag enabled
-	flags.Set(t, "auth.remote.use_es256_jwts", true)
-	require.True(t, useES256SignedJWTs(ctx, nil))
-
-	// Test with experiment provider returning false and flag disabled
-	flags.Set(t, "auth.remote.use_es256_jwts", false)
-	provider := setupExperimentProvider(t, false)
-	require.False(t, useES256SignedJWTs(ctx, provider))
-
-	// Test with experiment provider returning true and flag disabled
-	flags.Set(t, "auth.remote.use_es256_jwts", false)
-	provider = setupExperimentProvider(t, true)
-	require.True(t, useES256SignedJWTs(ctx, provider))
-
-	// Test with experiment provider returning false and flag enabled (flag takes precedence)
-	flags.Set(t, "auth.remote.use_es256_jwts", true)
-	provider = setupExperimentProvider(t, false)
-	require.True(t, useES256SignedJWTs(ctx, provider))
 }
 
 func TestAuthenticateRequestsES256WhenEnabled(t *testing.T) {
@@ -357,6 +338,20 @@ func TestAuthenticateDoesNotRequestES256WhenDisabled(t *testing.T) {
 	authenticator.AuthenticatedGRPCContext(ctx)
 
 	// Verify the request did not include ES256 signing method
+	req := fakeAuth.getLastAuthRequest()
+	require.NotNil(t, req)
+	require.Equal(t, authpb.JWTSigningMethod_UNKNOWN, req.GetJwtSigningMethod())
+}
+
+func TestAuthenticatedGRPCContext_HS256(t *testing.T) {
+	flags.Set(t, "auth.remote.use_es256_jwts", false)
+	authenticator, fakeAuth := setup(t)
+
+	fooJwt := validJwt(t, "foo")
+	fakeAuth.setNextJwt(t, "", fooJwt)
+	ctx := authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
+	require.Equal(t, fooJwt, ctx.Value(authutil.ContextTokenStringKey))
+
 	req := fakeAuth.getLastAuthRequest()
 	require.NotNil(t, req)
 	require.Equal(t, authpb.JWTSigningMethod_UNKNOWN, req.GetJwtSigningMethod())

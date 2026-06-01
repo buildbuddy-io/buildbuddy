@@ -4,6 +4,7 @@ import "proto/api_key.proto";
 import "proto/auditlog.proto";
 import "proto/bazel_config.proto";
 import "proto/cache.proto";
+import "proto/cache_proxy.proto";
 import "proto/search.proto";
 import "proto/eventlog.proto";
 import "proto/execution_stats.proto";
@@ -87,6 +88,8 @@ service BuildBuddyService {
   rpc UpdateGroup(grp.UpdateGroupRequest) returns (grp.UpdateGroupResponse);
   rpc SetGroupStatus(grp.SetGroupStatusRequest)
       returns (grp.SetGroupStatusResponse);
+  rpc GetSSOConfig(grp.GetSSOConfigRequest) returns (grp.GetSSOConfigResponse);
+  rpc SetSSOConfig(grp.SetSSOConfigRequest) returns (grp.SetSSOConfigResponse);
 
   // User Lists API
   rpc GetUserLists(user_list.GetUserListsRequest)
@@ -143,8 +146,14 @@ service BuildBuddyService {
   rpc GetCacheMetadata(cache.GetCacheMetadataRequest)
       returns (cache.GetCacheMetadataResponse);
   rpc GetTree(cache.GetTreeRequest) returns (stream cache.GetTreeResponse);
+  rpc GetExecutionDownloads(cache.GetExecutionDownloadsRequest)
+      returns (cache.GetExecutionDownloadsResponse);
   rpc GetTreeDirectorySizes(cache.GetTreeDirectorySizesRequest)
       returns (cache.GetTreeDirectorySizesResponse);
+
+  // Cache Proxy API
+  rpc GetCacheProxies(cache_proxy.GetCacheProxiesRequest)
+      returns (cache_proxy.GetCacheProxiesResponse);
 
   // Targets API
   rpc GetTarget(target.GetTargetRequest) returns (target.GetTargetResponse);
@@ -231,6 +240,12 @@ service BuildBuddyService {
 
   // Usage API
   rpc GetUsage(usage.GetUsageRequest) returns (usage.GetUsageResponse);
+  rpc GetUsageAlertingRules(usage.GetUsageAlertingRulesRequest)
+      returns (usage.GetUsageAlertingRulesResponse);
+  rpc CreateUsageAlertingRule(usage.CreateUsageAlertingRuleRequest)
+      returns (usage.CreateUsageAlertingRuleResponse);
+  rpc DeleteUsageAlertingRule(usage.DeleteUsageAlertingRuleRequest)
+      returns (usage.DeleteUsageAlertingRuleResponse);
 
   // Quota API
   rpc GetNamespace(quota.GetNamespaceRequest)

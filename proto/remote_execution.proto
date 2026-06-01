@@ -2518,6 +2518,10 @@ message FastCdc2020Params {
   // All clients sharing a cache SHOULD use the same seed to maximize
   // chunk reuse.
   uint32 seed = 2;
+
+  // BuildBuddy-only: maximum blob size eligible for chunked writes.
+  // If unset or <= 0, no maximum is applied.
+  int64 buildbuddy_max_chunked_write_size_bytes = 1000;
 }
 
 // Parameters for the RepMaxCDC content-defined chunking algorithm.
@@ -3024,6 +3028,7 @@ message StoredExecution {
   bool cached_result = 38;
   bool do_not_cache = 39;
   bool skip_cache_lookup = 50;
+  bool recycle_runner = 80;
 
   int32 execution_priority = 51;
   string requested_isolation_type = 52;
@@ -3050,4 +3055,12 @@ message StoredExecution {
 
   // The IP address of the client that initiated the execution request.
   string client_ip = 79;
+
+  // OS that the execution targeted (e.g. "linux", "darwin"). Sourced from
+  // the OSFamily platform property.
+  string os = 81;
+
+  // CPU architecture that the execution targeted (e.g. "amd64", "arm64").
+  // Sourced from the Arch platform property.
+  string arch = 82;
 }

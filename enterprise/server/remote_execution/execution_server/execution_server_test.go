@@ -40,22 +40,24 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
-	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
+	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 	gstatus "google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/anypb"
-	"google.golang.org/protobuf/types/known/durationpb"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -69,6 +71,7 @@ type schedulerServerMock struct {
 
 	canceledCount int
 	scheduleReqs  []*scpb.ScheduleTaskRequest
+	scheduleErr   error
 }
 
 func (s *schedulerServerMock) GetPoolInfo(_ context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType platform.PoolType) (*interfaces.PoolInfo, error) {
@@ -93,6 +96,9 @@ func (s *schedulerServerMock) GetSharedExecutorPoolGroupID() string {
 
 func (s *schedulerServerMock) ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error) {
 	s.scheduleReqs = append(s.scheduleReqs, req)
+	if s.scheduleErr != nil {
+		return nil, s.scheduleErr
+	}
 	return &scpb.ScheduleTaskResponse{}, nil
 }
 
@@ -101,8 +107,9 @@ func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bo
 	return true, nil
 }
 
-func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
+func setupEnvWithClock(t *testing.T, clock clockwork.Clock) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
 	env := testenv.GetTestEnv(t)
+	env.SetClock(clock)
 
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
@@ -133,6 +140,10 @@ func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Hand
 	conn, err := testenv.LocalGRPCConn(env.GetServerContext(), lis)
 	require.NoError(t, err)
 	return env, conn, r
+}
+
+func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
+	return setupEnvWithClock(t, clockwork.NewRealClock())
 }
 
 func createExecution(ctx context.Context, t *testing.T, db interfaces.DB, execution *tables.Execution) {
@@ -198,6 +209,72 @@ func TestDispatch(t *testing.T) {
 	assert.Equal(t, iid, task.GetRequestMetadata().GetToolInvocationId(), "invocation ID should be passed along")
 }
 
+func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
+	env, _, _ := setupEnv(t)
+
+	tmp := testfs.MakeTempDir(t)
+	offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "cache.chunking_enabled": {
+      "state": "ENABLED",
+      "variants": {
+        "on": true
+      },
+      "defaultVariant": "on"
+    },
+    "executor.upload_outputs_chunked": {
+      "state": "ENABLED",
+      "variants": {
+        "on": true
+      },
+      "defaultVariant": "on"
+    },
+    "cache.chunking_max_write_size_bytes": {
+      "state": "ENABLED",
+      "variants": {
+        "limited": 123456789
+      },
+      "defaultVariant": "limited"
+    }
+  }
+}
+`)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	require.NoError(t, err)
+	openfeature.SetProviderAndWait(provider)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	ctx := context.Background()
+	s := env.GetRemoteExecutionService()
+
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: iid,
+	})
+	ctx, err = env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	action := &repb.Action{}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString())
+	require.NoError(t, err)
+
+	sched := env.GetSchedulerService().(*schedulerServerMock)
+	require.Equal(t, 1, len(sched.scheduleReqs))
+	task := &repb.ExecutionTask{}
+	err = proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task)
+	require.NoError(t, err)
+	require.Contains(t, task.GetExperiments(), "executor.upload_outputs_chunked")
+	require.Equal(t, int64(123456789), task.GetFastCdc_2020Params().GetBuildbuddyMaxChunkedWriteSizeBytes())
+}
+
 func TestDispatch_RecordsClientIP(t *testing.T) {
 	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
 	env, _, _ := setupEnv(t)
@@ -244,6 +321,7 @@ func TestDispatch_WorkingDirectoryValidation(t *testing.T) {
 		{name: "nested_path_traversal", wd: "a/../../escape", wantErr: true},
 		{name: "absolute_path", wd: "/etc/passwd", wantErr: true},
 		{name: "dot_dot_only", wd: "..", wantErr: true},
+		{name: "dot_only", wd: ".", wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env, _, _ := setupEnv(t)
@@ -696,6 +774,13 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			},
 		},
 		{
+			// Restarting Redis wipes the per-execution invocation links
+			// before the COMPLETED operation arrives, exercising the same
+			// "empty invocation links" path that normal-flow executions
+			// without an invocation context hit (teed requests, etc.).
+			// The OLAP flush is skipped (no invocation to associate the
+			// row with) but usage is still recorded from the merged
+			// StoredExecution that updateExecution wrote post-restart.
 			name:                   "RedisRestart",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			redisRestart:           true,
@@ -705,10 +790,23 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			useDefaultPool:         true,
 		},
+		{
+			name:                   "RecycleRunner",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			recycleRunner:          true,
+		},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			testExecuteAndPublishOperation(t, test)
-		})
+		for _, flushAfterCleanup := range []bool{false, true} {
+			test := test
+			test.flushAfterCleanup = flushAfterCleanup
+			name := test.name
+			if flushAfterCleanup {
+				name += "/FlushAfterCleanup"
+			}
+			t.Run(name, func(t *testing.T) {
+				testExecuteAndPublishOperation(t, test)
+			})
+		}
 	}
 }
 
@@ -724,6 +822,8 @@ type publishTest struct {
 	publishMoreMetadata      bool
 	redisRestart             bool
 	useDefaultPool           bool
+	recycleRunner            bool
+	flushAfterCleanup        bool
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
@@ -734,6 +834,9 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		flags.Set(t, k, v)
 	}
 	env, conn, r := setupEnv(t)
+	if test.flushAfterCleanup {
+		configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
+	}
 	client := repb.NewExecutionClient(conn)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	env.SetAuthenticator(ta)
@@ -763,6 +866,9 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	}
 	if !test.useDefaultPool {
 		platformProperties = append(platformProperties, &repb.Platform_Property{Name: "pool", Value: "test-pool"})
+	}
+	if test.recycleRunner {
+		platformProperties = append(platformProperties, &repb.Platform_Property{Name: "recycle-runner", Value: "true"})
 	}
 	arn := uploadAction(clientCtx, t, env, instanceName, digestFunction, &repb.Action{
 		Timeout:    &durationpb.Duration{Seconds: 10},
@@ -940,7 +1046,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	require.NoError(t, err)
 	assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
 
-	// Should also have recorded usage.
+	// Should also have recorded usage, unless redis restart wiped it.
 	ut := env.GetUsageTracker().(*testusage.Tracker)
 	var foundExecutorUsage *testusage.Total
 	for _, u := range ut.Totals() {
@@ -986,8 +1092,11 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		ActionMnemonic:               "TestRunner",
 		SelfHosted:                   test.expectedSelfHosted,
 		Region:                       "test-region",
+		Os:                           "linux",
+		Arch:                         "amd64",
 		CommandSnippet:               "test",
 		OutputPath:                   "bazel-out/k8-fastbuild/bin/some/test",
+		RecycleRunner:                test.recycleRunner,
 		QueuedTimestampUsec:          queuedTime.UnixMicro(),
 		WorkerStartTimestampUsec:     workerStartTime.UnixMicro(),
 		WorkerCompletedTimestampUsec: workerEndTime.UnixMicro(),
@@ -1022,7 +1131,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.IoPressureSomeStallUsec = 1030
 		expectedExecution.IoPressureFullStallUsec = 2030
 	}
-	diff := cmp.Diff(
+	require.Empty(t, cmp.Diff(
 		expectedExecution,
 		collectedExecutions[0],
 		protocmp.Transform(),
@@ -1030,8 +1139,394 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			&repb.StoredExecution{},
 			"created_at_usec",
 			"updated_at_usec",
-		))
-	assert.Emptyf(t, diff, "Recorded execution didn't match the expected one: %s", expectedExecution)
+		)))
+}
+
+// TestPublishOperation_RetriedStream simulates the executor's
+// PublishOperation stream being interrupted mid-flight and the retryingClient
+// re-opening a new stream to re-publish the same COMPLETED operation. The
+// server should flush the OLAP row and record usage exactly once across the
+// retry chain.
+//
+// Only run with the flush_executions_after_cleanup experiment enabled: that's
+// where the exactly-once guarantee comes from. The recv loop only calls
+// flushAndRecordUsage on io.EOF, and the retryingClient only opens a new
+// stream after a non-EOF error — so at most one stream in the chain ever
+// triggers the flush. Under the legacy COMPLETED-flush path the flush runs
+// inline with the COMPLETED handler regardless of how the stream ends, so
+// retries are inherently subject to over-counting; that's pre-existing
+// behavior and not what this test pins down.
+func TestPublishOperation_RetriedStream(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+	env, conn, _ := setupEnv(t)
+	configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
+	client := repb.NewExecutionClient(conn)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
+
+	const instanceName = "test-instance"
+	const invocationID = "93383cc1-5d6c-4ad1-a321-8ee87c2f6816"
+
+	clientCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: invocationID,
+		TargetId:         "//some:test",
+		ActionMnemonic:   "TestRunner",
+	})
+	require.NoError(t, err)
+
+	arn := uploadAction(clientCtx, t, env, instanceName, repb.DigestFunction_SHA256, &repb.Action{
+		Timeout: &durationpb.Duration{Seconds: 10},
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "pool", Value: "test-pool"},
+				{Name: "workload-isolation-type", Value: "oci"},
+				{Name: "EstimatedComputeUnits", Value: "2.5"},
+			},
+		},
+	})
+
+	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+	require.NoError(t, executionClient.CloseSend())
+	op, err := executionClient.Recv()
+	require.NoError(t, err)
+	taskID := op.GetName()
+
+	executorCtx := metadata.AppendToOutgoingContext(clientCtx, usageutil.ClientHeaderName, "executor")
+	executorCtx = metadata.AppendToOutgoingContext(executorCtx, "x-buildbuddy-executor-region", "test-region")
+
+	queuedTime := time.Unix(100, 0)
+	workerStartTime := queuedTime.Add(1 * time.Second)
+	workerEndTime := workerStartTime.Add(5 * time.Second)
+	durationUsec := (5 * time.Second).Microseconds()
+	aux := &espb.ExecutionAuxiliaryMetadata{
+		PlatformOverrides: &repb.Platform{},
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			ExecutorGroupId: sharedPoolGroupID,
+			Pool:            "test-pool",
+		},
+	}
+	auxAny, err := anypb.New(aux)
+	require.NoError(t, err)
+	completedOp, err := operation.Assemble(
+		taskID,
+		operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()),
+		&repb.ExecuteResponse{
+			Result: &repb.ActionResult{
+				ExecutionMetadata: &repb.ExecutedActionMetadata{
+					QueuedTimestamp:          tspb.New(queuedTime),
+					WorkerStartTimestamp:     tspb.New(workerStartTime),
+					WorkerCompletedTimestamp: tspb.New(workerEndTime),
+					AuxiliaryMetadata:        []*anypb.Any{auxAny},
+				},
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	// Stream 1: send COMPLETED and then break the stream by cancelling its
+	// context before the client cleanly closes it. The server's recv loop
+	// sees context.Canceled (or grpc Canceled), not io.EOF, so
+	// flushAndRecordUsage does not run on this stream. Poll Redis to
+	// confirm the server processed the COMPLETED (updateExecution wrote)
+	// before cancelling so the test isn't racy.
+	stream1Ctx, cancelStream1 := context.WithCancel(executorCtx)
+	stream1, err := client.PublishOperation(stream1Ctx)
+	require.NoError(t, err)
+	require.NoError(t, stream1.Send(completedOp))
+	require.Eventually(t, func() bool {
+		execProto, err := env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
+		return err == nil && execProto != nil
+	}, 5*time.Second, 10*time.Millisecond, "stream 1's COMPLETED should be processed by updateExecution")
+	cancelStream1()
+	// CloseAndRecv on a cancelled stream returns an error — we expect that.
+	_, _ = stream1.CloseAndRecv()
+
+	// Stream 2 (the retry): re-publish the same COMPLETED and cleanly
+	// close. This is the only stream whose recv loop returns EOF and so
+	// the only one that triggers flushAndRecordUsage.
+	stream2, err := client.PublishOperation(executorCtx)
+	require.NoError(t, err)
+	require.NoError(t, stream2.Send(completedOp))
+	_, err = stream2.CloseAndRecv()
+	require.NoError(t, err, "retry stream closed cleanly")
+
+	// Drain the /Execute stream so the test doesn't leak goroutines.
+	for {
+		_, err := executionClient.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+	}
+
+	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
+	require.NoError(t, err)
+	assert.Equal(t, 1, len(collectedExecutions), "execution should be flushed to OLAP exactly once across retried streams")
+
+	ut := env.GetUsageTracker().(*testusage.Tracker)
+	var foundExecutorUsage *testusage.Total
+	for _, u := range ut.Totals() {
+		if u.Labels.Client == "executor" {
+			foundExecutorUsage = &u
+			break
+		}
+	}
+	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
+	assert.Equal(t, durationUsec, foundExecutorUsage.Counts.LinuxExecutionDurationUsec, "usage should be recorded exactly once")
+}
+
+// TestPublishOperation_FlushWithEmptyLinks pins down the contract:
+// flushAndRecordUsage still records usage when the merged StoredExecution
+// exists in Redis but the per-execution invocation links list is empty.
+//
+// Empty invocation links is a normal state, not a corner case. It happens
+// for any execution that isn't associated with a bazel invocation (teed
+// requests, executions invoked outside an invocation context, etc.), as
+// well as edge cases like Redis losing the link state between Dispatch
+// and the COMPLETED operation. The OLAP row can't be written without an
+// invocation to associate it with, but the per-group usage counter is
+// still accurate.
+//
+// This test reaches the "empty links" state by restarting Redis after
+// Dispatch but before the executor publishes COMPLETED — that's just a
+// convenient mechanism; the contract applies regardless of how the links
+// list ends up empty.
+func TestPublishOperation_FlushWithEmptyLinks(t *testing.T) {
+	for _, flushOnEOF := range []bool{false, true} {
+		name := "FlushOnComplete"
+		if flushOnEOF {
+			name = "FlushAfterCleanup"
+		}
+		t.Run(name, func(t *testing.T) {
+			testPublishOperationFlushWithEmptyLinks(t, flushOnEOF)
+		})
+	}
+}
+
+func testPublishOperationFlushWithEmptyLinks(t *testing.T, flushOnEOF bool) {
+	ctx := context.Background()
+	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+	env, conn, r := setupEnv(t)
+	if flushOnEOF {
+		configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
+	}
+	client := repb.NewExecutionClient(conn)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
+
+	const instanceName = "test-instance"
+	const invocationID = "93383cc1-5d6c-4ad1-a321-8ee87c2f6816"
+
+	clientCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: invocationID,
+		TargetId:         "//some:test",
+		ActionMnemonic:   "TestRunner",
+	})
+	require.NoError(t, err)
+
+	arn := uploadAction(clientCtx, t, env, instanceName, repb.DigestFunction_SHA256, &repb.Action{
+		Timeout: &durationpb.Duration{Seconds: 10},
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "pool", Value: "test-pool"},
+				{Name: "workload-isolation-type", Value: "oci"},
+			},
+		},
+	})
+	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+	require.NoError(t, executionClient.CloseSend())
+	op, err := executionClient.Recv()
+	require.NoError(t, err)
+	taskID := op.GetName()
+
+	// Wipe Redis after the invocation links were written by Dispatch but
+	// before the executor publishes COMPLETED. The per-execution links
+	// list is now gone, but updateExecution on the server will repopulate
+	// the in-progress execution list from the COMPLETED operation.
+	r.Restart()
+
+	executorCtx := metadata.AppendToOutgoingContext(clientCtx, usageutil.ClientHeaderName, "executor")
+	executorCtx = metadata.AppendToOutgoingContext(executorCtx, "x-buildbuddy-executor-region", "test-region")
+	queuedTime := time.Unix(100, 0)
+	workerStartTime := queuedTime.Add(1 * time.Second)
+	workerEndTime := workerStartTime.Add(5 * time.Second)
+	durationUsec := workerEndTime.Sub(workerStartTime).Microseconds()
+	aux := &espb.ExecutionAuxiliaryMetadata{
+		PlatformOverrides: &repb.Platform{},
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			ExecutorGroupId: sharedPoolGroupID,
+			Pool:            "test-pool",
+		},
+	}
+	auxAny, err := anypb.New(aux)
+	require.NoError(t, err)
+	completedOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+		Result: &repb.ActionResult{
+			ExecutionMetadata: &repb.ExecutedActionMetadata{
+				QueuedTimestamp:          tspb.New(queuedTime),
+				WorkerStartTimestamp:     tspb.New(workerStartTime),
+				WorkerCompletedTimestamp: tspb.New(workerEndTime),
+				AuxiliaryMetadata:        []*anypb.Any{auxAny},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	stream, err := client.PublishOperation(executorCtx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(completedOp))
+	_, err = stream.CloseAndRecv()
+	require.NoError(t, err)
+
+	for {
+		_, err := executionClient.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+	}
+
+	// Per-invocation execution list should be empty: no invocation link
+	// means the OLAP flush has nothing to append the execution to.
+	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
+	require.NoError(t, err)
+	assert.Equal(t, 0, len(collectedExecutions), "no OLAP row expected when invocation links are missing")
+
+	// Usage should still be recorded — the merged StoredExecution exists
+	// in Redis, which is all flushAndRecordUsage needs to compute usage.
+	ut := env.GetUsageTracker().(*testusage.Tracker)
+	var foundExecutorUsage *testusage.Total
+	for _, u := range ut.Totals() {
+		if u.Labels.Client == "executor" {
+			foundExecutorUsage = &u
+			break
+		}
+	}
+	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
+	assert.Equal(t, durationUsec, foundExecutorUsage.Counts.LinuxExecutionDurationUsec)
+}
+
+// TestPublishOperation_PeriodicFlushDoesNotClobberCompletedRow exercises the
+// race where the periodic flush goroutine fires more than 5 seconds after
+// PublishOperation's main loop has already written the authoritative
+// COMPLETED row. With the bug, the goroutine wakes up, sees `lastWrite`
+// is stale, and pushes a partial update (auxMeta/properties/action/cmd
+// all nil) back into Redis — resurrecting an in-progress entry that
+// flushExecutionToOLAP had already cleaned up.
+func TestPublishOperation_PeriodicFlushDoesNotClobberCompletedRow(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+
+	fakeClock := clockwork.NewFakeClock()
+	env, conn, _ := setupEnvWithClock(t, fakeClock)
+	client := repb.NewExecutionClient(conn)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
+
+	const instanceName = "test-instance"
+	const invocationID = "93383cc1-5d6c-4ad1-a321-8ee87c2f6816"
+	const digestFunction = repb.DigestFunction_SHA256
+
+	clientCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: invocationID,
+		TargetId:         "//some:test",
+		ActionMnemonic:   "TestRunner",
+	})
+	require.NoError(t, err)
+	arn := uploadAction(clientCtx, t, env, instanceName, digestFunction, &repb.Action{
+		Timeout: &durationpb.Duration{Seconds: 10},
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "pool", Value: "test-pool"},
+		}},
+	})
+	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+	require.NoError(t, executionClient.CloseSend())
+	initialOp, err := executionClient.Recv()
+	require.NoError(t, err)
+	taskID := initialOp.GetName()
+
+	executorCtx := metadata.AppendToOutgoingContext(clientCtx, usageutil.ClientHeaderName, "executor")
+	executorCtx = metadata.AppendToOutgoingContext(executorCtx, "x-buildbuddy-executor-region", "test-region")
+	stream, err := client.PublishOperation(executorCtx)
+	require.NoError(t, err)
+
+	aux := &espb.ExecutionAuxiliaryMetadata{
+		ExecutorHostname: "exec-host-1",
+		IsolationType:    "firecracker",
+		Timeout:          &durationpb.Duration{Seconds: 11},
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			ExecutorGroupId: sharedPoolGroupID,
+			Pool:            "test-pool",
+		},
+	}
+	auxAny, err := anypb.New(aux)
+	require.NoError(t, err)
+	completedResponse := &repb.ExecuteResponse{
+		Result: &repb.ActionResult{
+			ExecutionMetadata: &repb.ExecutedActionMetadata{
+				AuxiliaryMetadata: []*anypb.Any{auxAny},
+			},
+		},
+		Status: gstatus.Convert(nil).Proto(),
+	}
+	completedOp, err := operation.Assemble(
+		taskID,
+		operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()),
+		completedResponse,
+	)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(completedOp))
+
+	// Wait for the main loop's COMPLETED write + flushExecutionToOLAP to
+	// land. The flush appends the merged execution to the per-invocation
+	// list and deletes the in-progress updates list.
+	require.Eventually(t, func() bool {
+		execs, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
+		return err == nil && len(execs) == 1
+	}, 5*time.Second, 10*time.Millisecond, "main loop's COMPLETED write never landed in the per-invocation list")
+
+	// Sanity check: in-progress data was cleaned up by flushExecutionToOLAP.
+	_, err = env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
+	require.Truef(t, status.IsNotFoundError(err), "expected in-progress data to be cleaned up after flush, got err=%v", err)
+
+	// Advance past the 5s flush threshold to let the periodic goroutine wake up
+	fakeClock.Advance(6 * time.Second)
+
+	// Give the periodic goroutine real wall-clock time to fire. With the
+	// fix in place it skips the write; with the bug it resurrects the
+	// in-progress entry.
+	require.Never(t, func() bool {
+		_, err := env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
+		return err == nil
+	}, 500*time.Millisecond, 25*time.Millisecond, "periodic flush resurrected the in-progress entry after the authoritative COMPLETED write")
+
+	// Close the stream cleanly so PublishOperation returns.
+	_, _ = stream.CloseAndRecv()
 }
 
 func TestMarkFailed(t *testing.T) {
@@ -1131,6 +1626,39 @@ func TestDispatchFailure_MarksExecutionFailed(t *testing.T) {
 	require.Contains(t, executeResponse.GetStatus().GetMessage(), "Secrets requested but secret service not available")
 }
 
+func TestDispatch_RedisAvailabilityMonitoring_CleansUpChannelOnScheduleFailure(t *testing.T) {
+	flags.Set(t, "remote_execution.enable_redis_availability_monitoring", true)
+	env, _, redisHandle := setupEnv(t)
+	scheduler := env.GetSchedulerService().(*schedulerServerMock)
+	scheduler.scheduleErr = status.UnavailableError("scheduler unavailable")
+
+	ctx := context.Background()
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: iid,
+	})
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	action := &repb.Action{}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+	ad := arn.GetDigest()
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	taskID := arn.NewUploadString()
+
+	s := env.GetRemoteExecutionService()
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, taskID)
+	require.Error(t, err, "Dispatch should propagate the scheduler error")
+	require.True(t, status.IsUnavailableError(err), "expected UNAVAILABLE error, got %s", err)
+
+	// The monitored channel should be deleted on error.
+	require.Equal(t, 0, redisHandle.KeyCount("monitoredPubSub/*"),
+		"monitored pubsub channel should be deleted after scheduling failure")
+}
+
 func TestInvocationLink_EmptyInvocationID(t *testing.T) {
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
 	env, conn, _ := setupEnv(t)
@@ -1190,6 +1718,22 @@ func withIncomingMetadata(t *testing.T, ctx context.Context, rmd *repb.RequestMe
 	b, err := proto.Marshal(rmd)
 	require.NoError(t, err)
 	return metadata.NewIncomingContext(ctx, metadata.Pairs(bazel_request.RequestMetadataKey, string(b)))
+}
+
+func configureExperiments(t *testing.T, env *testenv.TestEnv, flags map[string]bool) {
+	inMemoryFlags := make(map[string]memprovider.InMemoryFlag, len(flags))
+	for name, enabled := range flags {
+		inMemoryFlags[name] = memprovider.InMemoryFlag{
+			State:          memprovider.Enabled,
+			DefaultVariant: "default",
+			Variants:       map[string]any{"default": enabled},
+		}
+	}
+	testProvider := memprovider.NewInMemoryProvider(inMemoryFlags)
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
 }
 
 func makeAuxAny(t *testing.T, props []*repb.Platform_Property) *anypb.Any {

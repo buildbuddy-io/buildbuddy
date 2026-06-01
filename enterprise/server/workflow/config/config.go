@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -61,6 +62,9 @@ type Action struct {
 	// Whether the BuildBuddy CLI (`bb`) should be used as the bazel command for this action.
 	// If set, this overrides the repo-level setting.
 	BazelUseCLI *bool `yaml:"bazel_use_cli"`
+	// By default, if you have multiple workflow runs on the same branch, we'll cancel the old ones.
+	// If AllowConcurrentRuns is set to true, we'll allow multiple runs to continue in parallel.
+	AllowConcurrentRuns *bool `yaml:"allow_concurrent_runs"`
 
 	// DEPRECATED: Used `Steps` instead
 	DeprecatedBazelCommands []string `yaml:"bazel_commands"`
@@ -90,6 +94,7 @@ func (a *Action) GetGitFetchFilters() []string {
 type Triggers struct {
 	Push        *PushTrigger        `yaml:"push"`
 	PullRequest *PullRequestTrigger `yaml:"pull_request"`
+	Schedule    *ScheduleTrigger    `yaml:"schedule"`
 }
 
 func (t *Triggers) GetPullRequestTrigger() *PullRequestTrigger {
@@ -120,9 +125,12 @@ func (t *PullRequestTrigger) GetMergeWithBase() bool {
 	return t.MergeWithBase == nil || *t.MergeWithBase
 }
 
-// TODO(Maggie): Default this to false, after testing the merge commit SHA is stable.
 func (t *PullRequestTrigger) GetForceManualMerge() bool {
 	return t.GetMergeWithBase() && (t.ForceManualMergeWithBase == nil || *t.ForceManualMergeWithBase)
+}
+
+type ScheduleTrigger struct {
+	Crons []string `yaml:"crons"`
 }
 
 type ResourceRequests struct {
@@ -432,8 +440,8 @@ func GetDefault(targetRepoDefaultBranch string) *BuildBuddyConfig {
 // MatchesAnyTrigger returns whether the action is triggered by the event
 // published to the given branch or tag.
 func MatchesAnyTrigger(action *Action, event, branch, tag string) bool {
-	// If user has manually requested action dispatch, always run it
-	if event == webhook_data.EventName.ManualDispatch {
+	// If action was manually or automatically (via schedule) dispatched, always run it
+	if event == webhook_data.EventName.ManualDispatch || event == webhook_data.EventName.ScheduledDispatch {
 		return true
 	}
 
@@ -457,12 +465,7 @@ func MatchesAnyTrigger(action *Action, event, branch, tag string) bool {
 // MatchesAnyActionName returns whether the given action matches any of the
 // given action names.
 func MatchesAnyActionName(action *Action, names []string) bool {
-	for _, name := range names {
-		if action.Name == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(names, action.Name)
 }
 
 // Returns whether the given pattern matches the given text.

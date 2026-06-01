@@ -36,6 +36,10 @@ func (s *CacheServer) GetMetadata(ctx context.Context, req *capb.GetCacheMetadat
 		return nil, err
 	}
 
+	if req.GetResourceName() == nil {
+		return nil, status.FailedPreconditionError("Missing resource name")
+	}
+
 	metadata, err := s.env.GetCache().Metadata(ctx, req.GetResourceName())
 	if err != nil {
 		return nil, err

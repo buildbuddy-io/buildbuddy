@@ -11,9 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 	"github.com/buildbuddy-io/buildbuddy/cli/stream_run_logs/option_definitions"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -52,33 +51,31 @@ type Opts struct {
 	InvocationID string
 	ApiKey       string
 	OnFailure    FailureMode
+
+	// If set, use this BB client instead of initializing a new one. This is intended for testing.
+	BBClient bbspb.BuildBuddyServiceClient
 }
 
 // If streaming run logs is requested with --stream_run_logs, parse required args.
-func Configure(args []string, besBackend string) ([]string, *Opts, error) {
-	parsedArgs, err := parser.ParseArgs(args)
+func Configure(args *arg.BazelArgs, besBackend string) (*arg.BazelArgs, *Opts, error) {
+	enabled, onFailure, err := parseFlags(args)
 	if err != nil {
-		return args, nil, status.WrapErrorf(err, "failed to parse args")
-	}
-
-	enabled, onFailure, err := parseFlags(parsedArgs)
-	if err != nil {
-		return parsedArgs.Format(), nil, err
+		return args, nil, err
 	} else if !enabled {
-		return parsedArgs.Format(), nil, nil
+		return args, nil, nil
 	}
 
 	// If output is being written to a pipe or file, it likely doesn't need to be streamed to the server and displayed in the UI.
 	// TODO: Handle the case where one of either stderr or stdout is connected to a terminal and the other is not.
 	if !terminal.IsTTY(os.Stdout) || !terminal.IsTTY(os.Stderr) {
-		return parsedArgs.Format(), nil, handleErr("streaming run logs is only supported when both stdout and stderr are connected to a terminal", onFailure)
+		return args, nil, handleErr("streaming run logs is only supported when both stdout and stderr are connected to a terminal", onFailure)
 	}
 
-	apiKey := parser.GetRemoteHeaderVal(parsedArgs, "x-buildbuddy-api-key")
+	apiKey := args.GetRemoteHeaderVal("x-buildbuddy-api-key")
 	if apiKey == "" {
 		log.Warnf("To stream run logs, authenticate your request with `bb login` or add an API key to your run with " +
 			"`--remote_header=x-buildbuddy-api-key=XXX`")
-		return parsedArgs.Format(), nil, handleErr("unauthenticated request", onFailure)
+		return args, nil, handleErr("unauthenticated request", onFailure)
 	}
 
 	if besBackend == "" {
@@ -87,23 +84,19 @@ func Configure(args []string, besBackend string) ([]string, *Opts, error) {
 
 	// In order to stream run logs to the same invocation URL as the build, we must pre-generate the
 	// invocation ID to pass it to `Execute`.
-	iid, _ := parser.GetBazelCommandOptionVal(parsedArgs, "invocation_id")
+	iid := args.Get("invocation_id")
 	if iid == "" {
 		invocationUUID, err := guuid.NewRandom()
 		if err != nil {
-			return parsedArgs.Format(), nil, handleErr(fmt.Sprintf("failed to generate invocation ID: %s", err), onFailure)
+			return args, nil, handleErr(fmt.Sprintf("failed to generate invocation ID: %s", err), onFailure)
 		}
 		iid = invocationUUID.String()
-		opt, err := parser.MakeCommandOption("invocation_id", &iid)
-		if err != nil {
-			return parsedArgs.Format(), nil, handleErr(fmt.Sprintf("failed to make invocation ID option: %s", err), onFailure)
+		if err := args.Append("--invocation_id=" + iid); err != nil {
+			return args, nil, handleErr(fmt.Sprintf("failed to append invocation ID: %s", err), onFailure)
 		}
-		parsedArgs.Append(opt)
 	}
 
-	updatedArgs := parsedArgs.Format()
-
-	return updatedArgs, &Opts{
+	return args, &Opts{
 		BesBackend:   besBackend,
 		InvocationID: iid,
 		ApiKey:       apiKey,
@@ -111,14 +104,14 @@ func Configure(args []string, besBackend string) ([]string, *Opts, error) {
 	}, nil
 }
 
-func parseFlags(parsedArgs *parsed.OrderedArgs) (enabled bool, onFailure FailureMode, err error) {
-	enabled, err = parser.IsCLICommandOptionSet(parsedArgs, option_definitions.StreamRunLogs.Name())
+func parseFlags(args *arg.BazelArgs) (enabled bool, onFailure FailureMode, err error) {
+	enabled, err = args.StripBBBoolFlag(option_definitions.StreamRunLogs.Name())
 	if err != nil {
 		return false, "", err
 	}
 
 	onFailure = FailureModeFail
-	onFailureVal, err := parser.GetCLICommandOptionVal(parsedArgs, option_definitions.OnStreamRunLogsFailure.Name())
+	onFailureVal, err := args.StripBBFlag(option_definitions.OnStreamRunLogsFailure.Name())
 	if err != nil {
 		return false, "", err
 	} else if !isValidFailureMode(onFailureVal) {
@@ -152,12 +145,17 @@ func Execute(runScriptPath string, opts Opts) (int, error) {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigChan)
 
-	conn, err := grpc_client.DialSimple(opts.BesBackend)
-	if err != nil {
-		return handleStreamingFailure(runScriptPath, sigChan, opts.OnFailure, fmt.Sprintf("failed to dial %s for streaming `run` executable logs: %s", opts.BesBackend, err))
+	var bbClient bbspb.BuildBuddyServiceClient
+	if opts.BBClient == nil {
+		conn, err := grpc_client.DialSimple(opts.BesBackend)
+		if err != nil {
+			return handleStreamingFailure(runScriptPath, sigChan, opts.OnFailure, fmt.Sprintf("failed to dial %s for streaming `run` executable logs: %s", opts.BesBackend, err))
+		}
+		defer conn.Close()
+		bbClient = bbspb.NewBuildBuddyServiceClient(conn)
+	} else {
+		bbClient = opts.BBClient
 	}
-	defer conn.Close()
-	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 
 	if _, err := bbClient.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
 		InvocationId: opts.InvocationID,
@@ -297,7 +295,7 @@ func runScriptWithStreaming(ctx context.Context, bbClient bbspb.BuildBuddyServic
 
 	// Send a final log message with timestamp and exit code.
 	exitMsg := fmt.Sprintf("\n%s (command exited with code %d)\n", time.Now().UTC().Format("2006-01-02 15:04:05.000 MST"), exitCode)
-	if err := uploadLogs(ctx, bbClient, opts.InvocationID, stream, []byte(exitMsg)); err != nil {
+	if err := uploadLogs(opts.InvocationID, stream, []byte(exitMsg)); err != nil {
 		log.Warnf("Failed to upload exit code log: %s", err)
 	}
 
@@ -317,7 +315,7 @@ func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, i
 		// When a PTY is closed, it returns EIO.
 		if err == io.EOF || errors.Is(err, syscall.EIO) {
 			if len(writeBuf) > 0 {
-				_ = uploadLogs(ctx, bbClient, invocationID, writeStream, writeBuf)
+				_ = uploadLogs(invocationID, writeStream, writeBuf)
 			}
 			return nil
 		}
@@ -340,7 +338,7 @@ func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, i
 
 		// Flush writes to the server once we've accumulated enough data.
 		if len(writeBuf) > 0 && (len(writeBuf)+n > UploadBufferSize || forceFlush) {
-			if err := uploadLogs(ctx, bbClient, invocationID, writeStream, writeBuf); err != nil {
+			if err := uploadLogs(invocationID, writeStream, writeBuf); err != nil {
 				uploadRunLogs = false
 				continue
 			}
@@ -361,7 +359,8 @@ func streamOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, i
 	}
 }
 
-func uploadLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string, stream bbspb.BuildBuddyService_WriteEventLogClient, data []byte) error {
+// TODO(#7049): If FailureModeFail, upload failures should kill the running executable.
+func uploadLogs(invocationID string, stream bbspb.BuildBuddyService_WriteEventLogClient, data []byte) error {
 	// TODO(Maggie): Add retries and a server-side mechanism to ensure idempotency.
 	if err := stream.Send(&elpb.WriteEventLogRequest{
 		Type: elpb.LogType_RUN_LOG,
@@ -371,12 +370,6 @@ func uploadLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 		Data: data,
 	}); err != nil {
 		log.Warnf("Failed to stream run logs: %s", err)
-		if _, err := bbClient.UpdateRunStatus(ctx, &elpb.UpdateRunStatusRequest{
-			InvocationId: invocationID,
-			Status:       inspb.OverallStatus_DISCONNECTED,
-		}); err != nil {
-			log.Warnf("Failed to update run status: %s", err)
-		}
 		return err
 	}
 	return nil

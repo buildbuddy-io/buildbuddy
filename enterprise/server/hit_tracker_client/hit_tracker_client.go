@@ -44,7 +44,7 @@ func Register(env *real_environment.RealEnv) error {
 		return nil
 	}
 
-	conn, err := grpc_client.DialInternal(env, *remoteHitTrackerTarget)
+	conn, err := grpc_client.DialInternalWithPoolSize(env, *remoteHitTrackerTarget, *remoteHitTrackerWorkers)
 	if err != nil {
 		return err
 	}

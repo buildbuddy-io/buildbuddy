@@ -1,4 +1,5 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
+load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
@@ -17,6 +18,7 @@ go_library(
         "//enterprise/server/backends/distributed",
         "//enterprise/server/backends/pebble_cache",
         "//enterprise/server/byte_stream_server_proxy",
+        "//enterprise/server/cache_proxy_registration",
         "//enterprise/server/capabilities_server_proxy",
         "//enterprise/server/clientidentity",
         "//enterprise/server/content_addressable_storage_server_proxy",
@@ -50,17 +52,20 @@ go_library(
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
+        "//server/util/kuberesolver",
         "//server/util/log",
         "//server/util/monitoring",
         "//server/util/scratchspace",
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/usageutil",
+        "//server/util/xds",
         "//server/version",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//channelz/service",
         "@org_golang_google_grpc//stats",
+        "@org_golang_google_grpc//xds",
     ],
 )
 
@@ -71,9 +76,41 @@ go_binary(
 
 container_image(
     name = "base_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
     base = "@buildbuddy_go_image_base//image",
     tags = ["manual"],
     visibility = ["//visibility:public"],
+)
+
+# Build a docker image similar to the go_binary above, but use the "go_image"
+# rule from @io_bazel_rules_docker instead, which creates a docker image.
+#
+# This target can be run locally with enterprise/tools/run_proxy_image.sh
+go_image(
+    name = "cache_proxy_go_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
+    base = ":base_image",
+    binary = ":cache_proxy",
+    tags = ["manual"],
+)
+
+container_image(
+    name = "cache_proxy_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
+    base = ":cache_proxy_go_image",
+    entrypoint = [
+        "/app/enterprise/server/cmd/cache_proxy/cache_proxy",
+    ],
+    tags = ["manual"],
 )
 
 pkg_tar(

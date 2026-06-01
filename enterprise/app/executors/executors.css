@@ -11,6 +11,7 @@
 
 .executors-page .executor-section div {
   flex-grow: 1;
+  min-width: 0;
 }
 
 .executors-page .executor-custom-resource div {
@@ -29,6 +30,23 @@
 .executor-custom-resource {
   display: flex;
   flex-direction: column;
+}
+
+.executor-warmup-images {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.executor-warmup-image {
+  display: flex;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+
+.executor-warmup-image-isolation {
+  flex-shrink: 0;
+  font-weight: 600;
 }
 
 .executor-custom-resource-wrapper {

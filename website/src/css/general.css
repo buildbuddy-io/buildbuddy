@@ -172,6 +172,10 @@ article svg[aria-hidden="true"] {
   margin-bottom: 32px;
 }
 
+.flag {
+  white-space: nowrap;
+}
+
 @media (min-width: 997px) {
   .table-of-contents:before {
     content: "Contents";

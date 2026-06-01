@@ -25,7 +25,7 @@ const (
 	// txnLivenessThreshold defines the maximum allowable time duration since
 	// the transaction was created. If a transaction exceeds this threshold, it
 	// is considered expired and subject to cleanup processes.
-	txnLivessnessThreshold = 10 * time.Second
+	txnLivenessThreshold = 10 * time.Second
 	// How often do we scan transaction records and clean them up.
 	txnCleanupPeriod = 15 * time.Second
 )
@@ -312,7 +312,7 @@ func (tc *Coordinator) FetchTxnRecords(ctx context.Context, includeLive bool) ([
 			continue
 		}
 		createdAt := time.UnixMicro(txnRecord.GetCreatedAtUsec())
-		if !includeLive && tc.clock.Since(createdAt) < txnLivessnessThreshold {
+		if !includeLive && tc.clock.Since(createdAt) < txnLivenessThreshold {
 			// This txn record is created very recently; skip processing
 			continue
 		}

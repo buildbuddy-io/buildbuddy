@@ -5,7 +5,6 @@ import {
   Check,
   ChevronRight,
   DownloadIcon,
-  HelpCircle,
   ShieldClose,
   SortAsc,
   SortDesc,
@@ -27,6 +26,7 @@ import { TextLink } from "../components/link/link";
 import Popup from "../components/popup/popup";
 import Select, { Option } from "../components/select/select";
 import Spinner from "../components/spinner/spinner";
+import HelpTooltip from "../components/tooltip/help_tooltip";
 import { pinBottomMiddleToMouse, Tooltip } from "../components/tooltip/tooltip";
 import error_service from "../errors/error_service";
 import * as format from "../format/format";
@@ -724,62 +724,39 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
 
   private durationTooltip() {
     return (
-      <Tooltip
-        renderContent={() => (
-          <div className="cache-requests-card-hovercard">
-            <div>
-              <p>
-                <b>Duration</b>
-              </p>
-              <p>
-                The time difference between when the server started processing the request and finished sending all
-                requested bytes.
-              </p>
-              <p>This time is measured by the server, and may not include load balancer or client processing time.</p>
-            </div>
-          </div>
-        )}>
-        <HelpCircle className="icon" />
-      </Tooltip>
+      <HelpTooltip>
+        <p>
+          <b>Duration</b>
+        </p>
+        <p>
+          The time difference between when the server started processing the request and finished sending all requested
+          bytes.
+        </p>
+        <p>This time is measured by the server, and may not include load balancer or client processing time.</p>
+      </HelpTooltip>
     );
   }
 
   private savingsTooltip() {
     return (
-      <Tooltip
-        renderContent={() => (
-          <div className="cache-requests-card-hovercard">
-            <div>
-              <p>
-                <b>Savings</b>
-              </p>
-              <p>Action Cache (AC) items only. The amount of wall time that was saved by using this cached action.</p>
-              <p>
-                Determined by looking at how long the action took to build when it was originally written to the cache.
-              </p>
-            </div>
-          </div>
-        )}>
-        <HelpCircle className="icon" />
-      </Tooltip>
+      <HelpTooltip>
+        <p>
+          <b>Savings</b>
+        </p>
+        <p>Action Cache (AC) items only. The amount of wall time that was saved by using this cached action.</p>
+        <p>Determined by looking at how long the action took to build when it was originally written to the cache.</p>
+      </HelpTooltip>
     );
   }
 
   private waterfallTooltip() {
     return (
-      <Tooltip
-        renderContent={() => (
-          <div className="cache-requests-card-hovercard">
-            <div>
-              <p>
-                <b>Waterfall</b>
-              </p>
-              <p>When this cache request took place in the overall timeline of the build.</p>
-            </div>
-          </div>
-        )}>
-        <HelpCircle className="icon" />
-      </Tooltip>
+      <HelpTooltip>
+        <p>
+          <b>Waterfall</b>
+        </p>
+        <p>When this cache request took place in the overall timeline of the build.</p>
+      </HelpTooltip>
     );
   }
 
@@ -956,19 +933,12 @@ fi
             {this.isOriginColumnVisible() && (
               <div className="origin-column">
                 <span>Origin</span>
-                <Tooltip
-                  renderContent={() => (
-                    <div className="cache-requests-card-hovercard">
-                      <div>
-                        <p>
-                          <b>Origin</b>
-                        </p>
-                        <p>The invocation that originally wrote the Action Cache entry.</p>
-                      </div>
-                    </div>
-                  )}>
-                  <HelpCircle className="icon" />
-                </Tooltip>
+                <HelpTooltip>
+                  <p>
+                    <b>Origin</b>
+                  </p>
+                  <p>The invocation that originally wrote the Action Cache entry.</p>
+                </HelpTooltip>
               </div>
             )}
             <div className="digest-column">Digest (hash/size)</div>
@@ -1014,22 +984,12 @@ fi
                   {capabilities.config.bazelButtonsEnabled &&
                     group.results[0]?.targetId &&
                     group.results[0]?.targetId.startsWith("//") && (
-                      <>
-                        <Tooltip
-                          className="row"
-                          pin={pinBottomMiddleToMouse}
-                          renderContent={() => (
-                            <div className="cache-result-hovercard">
-                              <div>Why did this target build?</div>
-                            </div>
-                          )}>
-                          <HelpCircle
-                            onClick={this.executeRemoteBazelQuery.bind(this, group.results[0]?.targetId!)}
-                            className="download-button icon"
-                            role="button"
-                          />
-                        </Tooltip>
-                      </>
+                      <HelpTooltip
+                        aria-label="Run bazel query"
+                        onClick={this.executeRemoteBazelQuery.bind(this, group.results[0]?.targetId!)}
+                        pin={pinBottomMiddleToMouse}>
+                        <p>Why did this target build?</p>
+                      </HelpTooltip>
                     )}
                 </div>
               </div>

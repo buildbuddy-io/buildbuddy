@@ -42,6 +42,7 @@ import UserPreferences from "../../../app/preferences/preferences";
 import rpc_service from "../../../app/service/rpc_service";
 import { copyToClipboard } from "../../../app/util/clipboard";
 import { api_key } from "../../../proto/api_key_ts_proto";
+import CacheProxiesComponent from "../cache_proxies/cache_proxies";
 import CliLoginComponent from "../cli_login/cli_login";
 import CodeSearchComponent from "../codesearch/codesearch";
 import ExecutorsComponent from "../executors/executors";
@@ -70,6 +71,7 @@ capabilities.register("BuildBuddy Enterprise", true, [
   Path.trendsPath,
   Path.targetsPath,
   Path.executorsPath,
+  Path.cacheProxiesPath,
   Path.tapPath,
   Path.codePath,
   Path.codesearchPath,
@@ -230,13 +232,17 @@ export default class EnterpriseRootComponent extends React.Component {
     let cliLogin = this.state.user && this.state.path.startsWith("/cli-login");
     let org = this.state.user && this.state.path.startsWith("/org/");
     let orgCreate = this.state.user && this.state.path === Path.createOrgPath;
-    let orgJoinAuthenticated = this.state.path.startsWith(Path.joinOrgPath) && this.state.user;
+    let orgJoinAuthenticated =
+      capabilities.config.groupMembershipRequestsEnabled &&
+      this.state.path.startsWith(Path.joinOrgPath) &&
+      this.state.user;
     let orgAccessDenied = this.state.user && this.state.path === Path.orgAccessDeniedPath;
     let trends = this.state.user && this.state.path.startsWith("/trends");
     let targets = this.state.user && this.state.path.startsWith("/targets");
     let usage = this.state.user && this.state.path.startsWith("/usage/");
     let auditLogs = this.state.user && this.state.path.startsWith("/audit-logs/");
     let executors = this.state.user && this.state.path.startsWith("/executors");
+    let cacheProxies = this.state.user && this.state.path.startsWith("/cache-proxies");
     let tests = this.state.user && this.state.path.startsWith("/tests");
     let workflows = this.state.user && this.state.path.startsWith("/workflows");
     let code = this.state.user && this.state.path.startsWith("/code");
@@ -256,6 +262,7 @@ export default class EnterpriseRootComponent extends React.Component {
       !targets &&
       !usage &&
       !executors &&
+      !cacheProxies &&
       !tests &&
       !invocationId &&
       !compareInvocationIds &&
@@ -422,9 +429,12 @@ export default class EnterpriseRootComponent extends React.Component {
                     </Suspense>
                   )}
                   {targets && this.state.user && <TargetsComponent user={this.state.user} search={this.state.search} />}
-                  {usage && this.state.user && <UsageComponent user={this.state.user} />}
+                  {usage && this.state.user && <UsageComponent path={this.state.path} user={this.state.user} />}
                   {auditLogs && this.state.user && <AuditLogsComponent user={this.state.user} />}
                   {executors && this.state.user && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
+                  {cacheProxies && this.state.user && (
+                    <CacheProxiesComponent path={this.state.path} user={this.state.user} />
+                  )}
                   {home && <HistoryComponent user={this.state.user} tab={this.state.tab} search={this.state.search} />}
                   {workflows && this.state.user && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                   {repo && <RepoComponent path={this.state.path} search={this.state.search} user={this.state.user} />}

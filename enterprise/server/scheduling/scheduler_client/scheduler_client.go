@@ -27,12 +27,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
 
 var (
 	pool                         = flag.String("executor.pool", "", "Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified.")
+	labels                       = flag.Map[string, string]("executor.labels", map[string]string{}, "Optional labels identifying this executor, similar to Kubernetes labels (e.g. 'canary=true,experiment-ramfs=control,region=us-east1'). Reported to the scheduler at registration and used for server-side debug routing via the 'debug-executor-labels' platform property.")
 	proactiveCancellationEnabled = flag.Bool("executor.proactive_cancellation_enabled", false, "Whether the executor supports proactive task cancellation.", flag.Internal)
 )
 
@@ -53,6 +55,15 @@ type Options struct {
 	HostnameOverride string
 	// TESTING ONLY: overrides the API key sent by the client
 	APIKeyOverride string
+
+	// FilecacheMaxSizeBytes is the configured maximum local filecache size.
+	// If set to 0, the local filecache is disabled.
+	FilecacheMaxSizeBytes *int64
+	// WarmupImages are the container images configured to warm up during
+	// executor startup.
+	WarmupImages []*scpb.WarmupImage
+	// StartTime is when the executor process started.
+	StartTime *timestamppb.Timestamp
 }
 
 func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator interfaces.XcodeLocator, options *Options) (*scpb.ExecutionNode, error) {
@@ -76,7 +87,10 @@ func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator int
 	if err != nil {
 		return nil, err
 	}
-
+	trimmedLabels := make(map[string]string, len(*labels))
+	for k, v := range *labels {
+		trimmedLabels[strings.TrimSpace(k)] = strings.TrimSpace(v)
+	}
 	return &scpb.ExecutionNode{
 		Host: hostname,
 		// TODO: stop setting port once the scheduler no longer requires it.
@@ -97,6 +111,10 @@ func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator int
 		XcodeSdks:                 xcodeLocator.SDKs(),
 		// TODO: hard-code this to true once it's battle-tested.
 		SupportsProactiveCancellation: *proactiveCancellationEnabled,
+		WarmupImages:                  options.WarmupImages,
+		FilecacheMaxSizeBytes:         options.FilecacheMaxSizeBytes,
+		StartTime:                     options.StartTime,
+		Labels:                        trimmedLabels,
 	}, nil
 }
 

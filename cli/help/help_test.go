@@ -144,6 +144,27 @@ func TestHelpForBBCommands(t *testing.T) {
 	}
 }
 
+type fakeNonPositionalArg struct{ value string }
+
+func (f *fakeNonPositionalArg) GetValue() string { return f.value }
+func (f *fakeNonPositionalArg) Format() []string { return []string{f.value} }
+
+func TestHelpForBBCommandWithInjectedOptions(t *testing.T) {
+	register.Register()
+
+	args := []arguments.Argument{
+		&arguments.PositionalArgument{Value: "help"},
+		&fakeNonPositionalArg{value: "--module_mirrors=https://example.com"},
+		&fakeNonPositionalArg{value: "--check_direct_dependencies=error"},
+		&arguments.PositionalArgument{Value: "remote"},
+	}
+
+	testHelpWithArgs(t, args, true, "Usage: bb remote", "bb help remote with injected rc options")
+
+	orderedArgs := &parsed.OrderedArgs{Args: args}
+	require.Equal(t, "remote", help.FindTargetCommandFromHelpArgs(orderedArgs))
+}
+
 func TestHelpAliases(t *testing.T) {
 	register.Register()
 

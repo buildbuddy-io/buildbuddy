@@ -381,16 +381,6 @@
   margin-right: 8px;
 }
 
-.request-review-button .icon {
-  margin-right: 8px;
-}
-
-.request-review-button svg {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-
 .request-review-button .spinner {
   --size: 16px;
 }
@@ -443,12 +433,7 @@
   padding: 16px;
   width: 100%;
   justify-content: center;
-  gap: 8px;
   flex-shrink: 1;
-}
-
-.code-request-review-dialog .code-request-review-button svg {
-  margin-right: 8px;
 }
 
 .hidden-viewer {

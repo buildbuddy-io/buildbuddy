@@ -11,10 +11,12 @@ import {
   MoreVertical,
 } from "lucide-react";
 import React, { ReactElement } from "react";
+import { cache } from "../../proto/cache_ts_proto";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
+import { stored_invocation } from "../../proto/stored_invocation_ts_proto";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { workflow } from "../../proto/workflow_ts_proto";
 import alert_service from "../alert/alert_service";
@@ -33,13 +35,14 @@ import Menu, { MenuItem } from "../components/menu/menu";
 import Modal from "../components/modal/modal";
 import Popup from "../components/popup/popup";
 import Spinner from "../components/spinner/spinner";
+import HelpTooltip from "../components/tooltip/help_tooltip";
 import errorService from "../errors/error_service";
 import format, { durationUsec } from "../format/format";
 import UserPreferences from "../preferences/preferences";
 import router from "../router/router";
 import { Cancelable, CancelablePromise, default as rpcService } from "../service/rpc_service";
 import TerminalComponent from "../terminal/terminal";
-import { Profile, readProfile } from "../trace/trace_events";
+import { Profile, readProfile } from "../trace/compact_trace";
 import TraceViewer from "../trace/trace_viewer";
 import { digestToString, parseActionDigest } from "../util/cache";
 import { copyToClipboard } from "../util/clipboard";
@@ -54,6 +57,8 @@ import InvocationModel from "./invocation_model";
 
 type IDigest = build.bazel.remote.execution.v2.IDigest;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
+
+const executionDownloadsPageSize = 100;
 
 interface Props {
   model: InvocationModel;
@@ -88,6 +93,9 @@ interface State {
   lastOperation?: ExecuteOperation;
   profileLoading: boolean;
   profile?: Profile;
+  executionDownloads: cache.ExecutionDownload[];
+  executionDownloadsLoading: boolean;
+  executionDownloadsNextPageToken: string;
 }
 
 interface ServerLog {
@@ -107,19 +115,38 @@ export default class InvocationActionCardComponent extends React.Component<Props
     showInvalidateSnapshotModal: false,
     showSnapshotMenu: false,
     profileLoading: false,
+    executionDownloads: [],
+    executionDownloadsLoading: false,
+    executionDownloadsNextPageToken: "",
   };
+
+  private executionDownloadsContainerRef = React.createRef<HTMLDivElement>();
 
   componentDidMount() {
     this.fetchAction();
     this.fetchExecuteResponseOrActionResult();
+    if (this.getExecutionId()) {
+      this.fetchExecutionDownloads("");
+    }
   }
 
-  componentDidUpdate(prevProps: Readonly<Props>): void {
+  componentDidUpdate(prevProps: Readonly<Props>, prevState: Readonly<State>): void {
     if (prevProps.search.get("actionDigest") !== this.props.search.get("actionDigest")) {
       this.fetchAction();
       this.fetchExecuteResponseOrActionResult();
-    } else if (prevProps.search.get("executeResponseDigest") !== this.props.search.get("executeResponseDigest")) {
+      this.fetchExecutionDownloads("");
+      return;
+    }
+    if (prevProps.search.get("executeResponseDigest") !== this.props.search.get("executeResponseDigest")) {
       this.fetchExecuteResponseOrActionResult();
+      this.fetchExecutionDownloads("");
+      return;
+    }
+
+    const prevExecutionId = prevProps.search.get("executionId") || prevState.execution?.executionId;
+    const executionId = this.getExecutionId();
+    if (prevExecutionId !== executionId) {
+      this.fetchExecutionDownloads("");
     }
   }
 
@@ -419,6 +446,76 @@ export default class InvocationActionCardComponent extends React.Component<Props
       });
   }
 
+  private executionDownloadsRPC?: Cancelable;
+
+  private fetchExecutionDownloads(pageToken = this.state.executionDownloadsNextPageToken) {
+    this.executionDownloadsRPC?.cancel();
+    this.executionDownloadsRPC = undefined;
+
+    const executionId = this.getExecutionId();
+    if (!executionId) {
+      this.setState({
+        executionDownloads: [],
+        executionDownloadsLoading: false,
+        executionDownloadsNextPageToken: "",
+      });
+      return;
+    }
+
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
+    this.setState({ executionDownloadsLoading: true });
+    if (!pageToken) {
+      this.setState({ executionDownloads: [] });
+    }
+    this.executionDownloadsRPC = service
+      .getExecutionDownloads({
+        invocationId: this.props.model.getInvocationId(),
+        executionId,
+        pageSize: executionDownloadsPageSize,
+        pageToken,
+      })
+      .then((response) => {
+        this.setState((prevState) => ({
+          executionDownloads: [...(pageToken ? prevState.executionDownloads : []), ...(response.downloads ?? [])],
+          executionDownloadsNextPageToken: response.nextPageToken || "",
+        }));
+        return response;
+      })
+      .catch((e) => {
+        const error = BuildBuddyError.parse(e);
+        // If we're fetching a subsequent page, surface the error loudly (since
+        // the user is actively trying to fetch); otherwise silently log it.
+        if (pageToken) {
+          errorService.handleError(error);
+        } else {
+          console.error(e);
+        }
+        // Clear the page token so we don't keep trying to fetch pages after we
+        // hit an error.
+        this.setState({ executionDownloadsNextPageToken: "" });
+      })
+      .finally(() => {
+        // Mark the RPC done, and then check whether we need to fetch the next
+        // page (if the user is scrolled to the bottom).
+        this.executionDownloadsRPC = undefined;
+        this.setState({ executionDownloadsLoading: false }, () => this.maybeFetchMoreExecutionDownloads());
+      });
+  }
+
+  private maybeFetchMoreExecutionDownloads() {
+    if (this.executionDownloadsRPC || !this.state.executionDownloadsNextPageToken) {
+      return;
+    }
+    const container = this.executionDownloadsContainerRef.current;
+    if (!container) {
+      return;
+    }
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (container.scrollHeight <= container.clientHeight + 1 || distanceFromBottom <= 1) {
+      this.fetchExecutionDownloads();
+    }
+  }
+
   fetchExecuteResponseByActionDigest(actionDigest: build.bazel.remote.execution.v2.Digest) {
     const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
     this.executeResponseRPC = service
@@ -585,6 +682,89 @@ export default class InvocationActionCardComponent extends React.Component<Props
               filterHidden
               dark={this.props.preferences.darkModeEnabled}
             />
+          ) : null}
+        </div>
+      </>
+    );
+  }
+
+  private renderExecutionDownloads() {
+    const ioStats = this.state.actionResult?.executionMetadata?.ioStats;
+    const fetchSummary = ioStats && (
+      <div className="action-downloads-summary">
+        Downloaded {format.bytes(ioStats.fileDownloadSizeBytes ?? 0)} ({format.count(ioStats.fileDownloadCount ?? 0)}{" "}
+        cache misses, {format.count(ioStats.localCacheHits ?? 0)} cache hits)
+      </div>
+    );
+    if (!fetchSummary && !this.state.executionDownloadsLoading && !this.state.executionDownloads.length) {
+      return null;
+    }
+    return (
+      <>
+        <div className="metadata-title">Inputs fetched</div>
+        <div className="action-downloads">
+          {fetchSummary}
+          {this.state.executionDownloadsLoading && !this.state.executionDownloads.length ? (
+            <div className="action-downloads-loading">
+              <Spinner />
+            </div>
+          ) : this.state.executionDownloads.length ? (
+            <>
+              <div
+                className="action-downloads-table-container"
+                onScroll={() => this.maybeFetchMoreExecutionDownloads()}
+                ref={this.executionDownloadsContainerRef}>
+                <table className="action-downloads-table">
+                  <thead>
+                    <tr>
+                      <th>Size</th>
+                      <th>Path</th>
+                      <th>Digest</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {this.state.executionDownloads.map((download) => (
+                      <tr key={`${download.path}|${download.digest?.hash}`}>
+                        <td className="action-downloads-size" title={`${download.digest?.sizeBytes ?? 0}`}>
+                          {format.bytes(download.digest?.sizeBytes ?? 0)}
+                        </td>
+                        <td className="action-downloads-path">
+                          <div className="action-downloads-path-content">
+                            <span className="action-downloads-path-text">{download.path}</span>
+                            {download.digest?.hash && (
+                              <a
+                                className="action-downloads-download-link"
+                                href={rpcService.getBytestreamUrl(
+                                  this.props.model.getBytestreamURL(download.digest),
+                                  this.props.model.getInvocationId(),
+                                  { filename: download.path }
+                                )}
+                                title="Download">
+                                <Download className="download-button icon" />
+                              </a>
+                            )}
+                          </div>
+                        </td>
+                        <td className="action-downloads-digest">
+                          <DigestComponent
+                            digest={{ hash: download.digest?.hash, sizeBytes: null }}
+                            hashWidth="112px"
+                            expandOnHover={false}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                    {this.state.executionDownloadsLoading && (
+                      <tr className="action-downloads-loading-row">
+                        <td colSpan={3}>
+                          <Spinner />
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
           ) : null}
         </div>
       </>
@@ -1178,6 +1358,26 @@ export default class InvocationActionCardComponent extends React.Component<Props
                           <div className="action-property-title">Served from cache</div>
                           <div>{this.state.executeResponse.cachedResult ? "Yes" : "No"}</div>
                         </div>
+                        {(this.state.execution?.invocationLinkType ??
+                          stored_invocation.StoredInvocationLink.Type.UNKNOWN_TYPE) !==
+                          stored_invocation.StoredInvocationLink.Type.UNKNOWN_TYPE && (
+                          <div className="action-section">
+                            <div className="action-property-title">Merged</div>
+                            <div className="value-with-help-tooltip">
+                              {this.state.execution?.invocationLinkType ===
+                              stored_invocation.StoredInvocationLink.Type.MERGED
+                                ? "Yes"
+                                : "No"}
+                              <HelpTooltip>
+                                <p>
+                                  If merged, this execution reused an in-flight execution attempt of the same action,
+                                  triggered by an earlier invocation. The details shown on this page are from the
+                                  original execution attempt.
+                                </p>
+                              </HelpTooltip>
+                            </div>
+                          </div>
+                        )}
                       </>
                     )}
                   </div>
@@ -1458,6 +1658,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                             )}
                             {this.state.actionResult.executionMetadata.usageStats &&
                               this.renderUsageStats(this.state.actionResult.executionMetadata.usageStats)}
+                            {this.renderExecutionDownloads()}
                             {this.state.actionResult.executionMetadata &&
                               this.renderTiming(this.state.actionResult.executionMetadata)}
                           </div>

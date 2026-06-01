@@ -1,12 +1,17 @@
 package plugin
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/config"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
@@ -15,6 +20,7 @@ import (
 
 func init() {
 	log.Configure("--verbose=1")
+	parser.SetBazelHelpForTesting(test_data.BazelHelpFlagsAsProtoOutput)
 }
 
 func TestGetConfiguredPlugins_CombinesUserAndWorkspaceConfigs(t *testing.T) {
@@ -236,6 +242,209 @@ func TestParsePluginSpec(t *testing.T) {
 	}
 }
 
+func TestPreBazel(t *testing.T) {
+	originalArgs := []string{"test", "//initial"}
+	resolvedOriginalArgs := []string{"--ignore_all_rc_files", "test", "//initial"}
+	canonicalizedArgs := []string{
+		"test",
+		"--compilation_mode=opt",
+		"--bes_backend=grpc://new",
+		"--remote_header=x-buildbuddy-foo=1",
+		"--remote_header=x-buildbuddy-bar=2",
+		"//foo",
+	}
+	resolvedArgs := append([]string{"--ignore_all_rc_files"}, canonicalizedArgs...)
+
+	tests := []struct {
+		name                  string
+		fileToWrite           string
+		expectedForwardedArgs []string
+		expectedResolvedArgs  []string
+	}{
+		{
+			name:                  "writes to the forwarded args file",
+			fileToWrite:           "$FORWARDED_BAZEL_ARGS_FILE",
+			expectedForwardedArgs: canonicalizedArgs,
+			expectedResolvedArgs:  resolvedArgs,
+		},
+		{
+			name:                  "writes to the deprecated args file",
+			fileToWrite:           "$1",
+			expectedForwardedArgs: canonicalizedArgs,
+			// In the deprecated flow, we do not re-resolve the args.
+			expectedResolvedArgs: canonicalizedArgs,
+		},
+		// The resolved args file is read-only, so we expect the args to be unchanged.
+		{
+			name:                  "writes to the resolved args file",
+			fileToWrite:           "$RESOLVED_BAZEL_ARGS_FILE",
+			expectedForwardedArgs: originalArgs,
+			expectedResolvedArgs:  resolvedOriginalArgs,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ws, _ := setup(t)
+			testfs.WriteAllFileContents(t, ws, map[string]string{
+				// Plugin 1 sets a bunch of non-canonicalized flags.
+				"plugins/plugin1/pre_bazel.sh": `cat > "` + test.fileToWrite + `" <<'EOF'
+test
+-c
+opt
+--bes_backend
+grpc://old
+--bes_backend
+grpc://new
+--remote_header
+x-buildbuddy-foo=1
+--remote_header
+x-buildbuddy-bar=2
+//foo
+EOF
+`,
+			})
+
+			plugin1 := testPlugin(t, ws, "./plugins/plugin1")
+			args, err := arg.NewBazelArgs(originalArgs)
+			require.NoError(t, err)
+
+			args, execArgs, err := plugin1.PreBazel(args, []string{"--exec"})
+			require.NoError(t, err)
+
+			// We expect the output args to be canonicalized.
+			require.Equal(t, test.expectedForwardedArgs, args.Forwarded())
+			require.Equal(t, test.expectedResolvedArgs, args.Resolved())
+			// Exec args should be passed through unchanged.
+			require.Equal(t, []string{"--exec"}, execArgs)
+		})
+	}
+}
+
+func TestPreBazel_AddConfig(t *testing.T) {
+	ws, _ := setup(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bazelrc":                    "test:plugin-cfg --test_output=all\n",
+		"plugins/config/pre_bazel.sh": `echo '--config=plugin-cfg' >> "$FORWARDED_BAZEL_ARGS_FILE"`,
+	})
+	p := testPlugin(t, ws, "./plugins/config")
+	args, err := arg.NewBazelArgs([]string{"test", "//initial"})
+	require.NoError(t, err)
+
+	args, execArgs, err := p.PreBazel(args, nil)
+	require.NoError(t, err)
+	require.Empty(t, execArgs)
+
+	require.Equal(t, []string{"test", "--config=plugin-cfg", "//initial"}, args.Forwarded())
+	require.Equal(t, []string{"--ignore_all_rc_files", "test", "--test_output=all", "//initial"}, args.Resolved())
+}
+
+// TestPipelineWriter_HandlesFinalLine guards against a regression in which
+// the plugin output handler dropped the last line of plugin output due to a
+// race between draining the pty and closing the pipe. The plugin here only
+// emits a single line, so any lost-tail-output bug shows up as a missing line
+// in the captured output. See: cli/test/integration/cli TestBazelBuildWithLocalPlugin.
+func TestPipelineWriter_HandlesFinalLine(t *testing.T) {
+	ws, _ := setup(t)
+	pluginDir := testfs.MakeDirAll(t, ws, "plugins/echo")
+	testfs.WriteAllFileContents(t, pluginDir, map[string]string{
+		"handle_bazel_output.sh": "echo 'final line'\n",
+	})
+
+	const trials = 200
+	for i := 0; i < trials; i++ {
+		cfgFile := &config.File{
+			Path:       filepath.Join(ws, "buildbuddy.yaml"),
+			RootConfig: &config.RootConfig{},
+		}
+		plugins := []*Plugin{{
+			config:     &config.PluginConfig{Path: "./plugins/echo"},
+			configFile: cfgFile,
+		}}
+
+		var out bytes.Buffer
+		wc, err := PipelineWriter(&out, plugins)
+		require.NoError(t, err)
+		_, err = wc.Write([]byte("some bazel output\n"))
+		require.NoError(t, err)
+
+		done := make(chan error, 1)
+		go func() { done <- wc.Close() }()
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+		case <-time.After(10 * time.Second):
+			t.Fatalf("trial %d: Close hung", i)
+		}
+		require.Containsf(t, out.String(), "final line",
+			"trial %d: plugin's final output line was dropped; got %q", i, out.String())
+	}
+}
+
+func TestPipelineWriter_ClosesPluginOutputPipes(t *testing.T) {
+	// /dev/fd is a symlink to /proc/self/fd on Linux and a real fdesc
+	// filesystem on macOS; either way it lists the calling process's open
+	// fds, so the leak check works on both.
+	if _, err := os.Stat("/dev/fd"); err != nil {
+		t.Skip("/dev/fd is not available")
+	}
+
+	ws, _ := setup(t)
+	pluginDir := testfs.MakeDirAll(t, ws, "plugins/echo")
+	testfs.WriteAllFileContents(t, pluginDir, map[string]string{
+		"handle_bazel_output.sh": "cat >/dev/null\necho 'final line'\n",
+	})
+	cfgFile := &config.File{
+		Path:       filepath.Join(ws, "buildbuddy.yaml"),
+		RootConfig: &config.RootConfig{},
+	}
+	plugins := []*Plugin{{
+		config:     &config.PluginConfig{Path: "./plugins/echo"},
+		configFile: cfgFile,
+	}}
+
+	before := openFDCount(t)
+	const trials = 20
+	for i := 0; i < trials; i++ {
+		var out bytes.Buffer
+		wc, err := PipelineWriter(&out, plugins)
+		require.NoError(t, err)
+		_, err = wc.Write([]byte("some bazel output\n"))
+		require.NoError(t, err)
+		require.NoError(t, wc.Close())
+		require.Contains(t, out.String(), "final line")
+	}
+	after := openFDCount(t)
+	require.LessOrEqualf(t, after, before+2,
+		"PipelineWriter leaked file descriptors; before=%d after=%d", before, after)
+}
+
+func openFDCount(t *testing.T) int {
+	t.Helper()
+	// Use Readdirnames rather than os.ReadDir: on macOS, /dev/fd is the
+	// fdesc filesystem, and os.ReadDir lstats every entry, which fails
+	// with EBADF for fds that get closed during iteration (including the
+	// directory fd itself).
+	f, err := os.Open("/dev/fd")
+	require.NoError(t, err)
+	defer f.Close()
+	names, err := f.Readdirnames(-1)
+	require.NoError(t, err)
+	return len(names)
+}
+
+func testPlugin(t *testing.T, ws, path string) *Plugin {
+	t.Helper()
+	return &Plugin{
+		config: &config.PluginConfig{Path: path},
+		configFile: &config.File{
+			Path:       filepath.Join(ws, "buildbuddy.yaml"),
+			RootConfig: &config.RootConfig{},
+		},
+		tempDir: t.TempDir(),
+	}
+}
+
 func setup(t *testing.T) (ws, home string) {
 	root := testfs.MakeTempDir(t)
 	ws = testfs.MakeDirAll(t, root, "workspace")
@@ -244,7 +453,7 @@ func setup(t *testing.T) (ws, home string) {
 
 	setTestHomeDir(t, home)
 	setTestWorkDir(t, ws)
-	workspace.SetForTest(ws)
+	workspace.SetForTest(t, ws)
 
 	return ws, home
 }

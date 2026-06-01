@@ -47,7 +47,8 @@ func TestBazelVersion(t *testing.T) {
 func TestBazelRun(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD":   `sh_binary(name = "fail", srcs = ["fail.sh"])`,
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+sh_binary(name = "fail", srcs = ["fail.sh"])`,
 		"fail.sh": `exit 1`,
 	})
 	testfs.MakeExecutable(t, ws, "fail.sh")
@@ -60,7 +61,8 @@ func TestBazelRun(t *testing.T) {
 func TestParseGlobalFlags(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 		"print_args.sh": `echo $@`,
 	})
 	testfs.MakeExecutable(t, ws, "print_args.sh")
@@ -101,135 +103,6 @@ func TestInvokeViaBazelisk(t *testing.T) {
 		require.Contains(t, string(b), "bb unknown")
 		require.Contains(t, string(b), "Build label: 6.0.0")
 	}
-}
-
-func TestLateBazelrcAddedByPreBazelPlugin(t *testing.T) {
-	for _, tc := range []struct {
-		name        string
-		startupArgs []string
-		wantSuccess bool
-	}{
-		{name: "bazelrc added in a pre_bazel plugin is respected", wantSuccess: true},
-
-		// In the following cases, the --bazelrc added by the pre_bazel plugin should be ignored.
-		{name: "--ignore_all_rc_files is respected", startupArgs: []string{"--ignore_all_rc_files"}, wantSuccess: false},
-		{name: "--bazelrc=/dev/null is respected", startupArgs: []string{"--bazelrc=/dev/null"}, wantSuccess: false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ws := newBazelrcWorkspace(t)
-			testfs.WriteAllFileContents(t, ws, map[string]string{
-				"buildbuddy.yaml": `
-plugins:
-- path: testplugin
-`,
-				// This plugin adds the startup flag --bazelrc=required.bazelrc to the Bazel args file.
-				"testplugin/pre_bazel.sh": `#!/usr/bin/env bash
-tmp="$(mktemp)"
-printf '%s\n' "--bazelrc=${BUILD_WORKSPACE_DIRECTORY}/required.bazelrc" > "$tmp"
-cat "$1" >> "$tmp"
-mv "$tmp" "$1"
-`,
-			})
-			testfs.MakeExecutable(t, ws, "testplugin/pre_bazel.sh")
-
-			output, err := runBazelrcTest(t, ws, tc.startupArgs...)
-			if tc.wantSuccess {
-				require.NoErrorf(t, err, "output: %s", output)
-			} else {
-				require.Errorf(t, err, "output: %s", output)
-				require.Contains(t, output, "required bazelrc was not applied")
-			}
-		})
-	}
-}
-
-func TestLateBazelrcAddedByBazeliskWrapper(t *testing.T) {
-	for _, tc := range []struct {
-		name        string
-		startupArgs []string
-		wantSuccess bool
-	}{
-		{name: "bazelrc added by bazelisk wrapper is respected", wantSuccess: true},
-		{name: "--ignore_all_rc_files is respected", startupArgs: []string{"--ignore_all_rc_files"}, wantSuccess: false},
-		{name: "--bazelrc=/dev/null is respected", startupArgs: []string{"--bazelrc=/dev/null"}, wantSuccess: false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ws := newBazelrcWorkspace(t)
-			testfs.WriteAllFileContents(t, ws, map[string]string{
-				// If tools/bazel is present in the workspace root, Bazelisk will run it instead of the regular bazel binary.
-				// This wrapper script adds --bazelrc=required.bazelrc.
-				"tools/bazel": `#!/usr/bin/env bash
-set -euo pipefail
-ws="$(cd "$(dirname "$0")/.." && pwd)"
-exec "$BAZEL_REAL" "--bazelrc=${ws}/required.bazelrc" "$@"
-`,
-			})
-			testfs.MakeExecutable(t, ws, "tools/bazel")
-
-			output, err := runBazelrcTest(t, ws, tc.startupArgs...)
-			if tc.wantSuccess {
-				require.NoErrorf(t, err, "output: %s", output)
-			} else {
-				require.Errorf(t, err, "output: %s", output)
-				require.Contains(t, output, "required bazelrc was not applied")
-			}
-		})
-	}
-
-}
-
-// Creates a workspace that verifies --bazelrc=required.bazelrc is applied.
-func newBazelrcWorkspace(t *testing.T) string {
-	ws := testcli.NewWorkspace(t)
-	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD": `
-sh_test(name = "needs_required_rc", srcs = ["needs_required_rc.sh"])
-`,
-		"needs_required_rc.sh": `#!/usr/bin/env bash
-if [[ "${REQUIRED_RC_VALUE:-}" == "1" ]]; then
-  exit 0
-fi
-echo "required bazelrc was not applied" >&2
-exit 1
-`,
-		"required.bazelrc": `test --test_env=REQUIRED_RC_VALUE=1`,
-	})
-	testfs.MakeExecutable(t, ws, "needs_required_rc.sh")
-	return ws
-}
-
-func runBazelrcTest(t *testing.T, ws string, startupArgs ...string) (string, error) {
-	args := startupArgs
-	args = append(args, "test", "--test_output=errors", ":needs_required_rc")
-	b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, args...))
-	return strings.ReplaceAll(string(b), "\r\n", "\n"), err
-}
-
-func TestWorkspaceBazelrcAppliedOnce(t *testing.T) {
-	ws := testcli.NewWorkspace(t)
-	testfs.WriteAllFileContents(t, ws, map[string]string{
-		".bazelrc": `test --test_arg=workspace-rc`,
-		"BUILD": `
-sh_test(name = "assert_single_workspace_rc_arg", srcs = ["assert_single_workspace_rc_arg.sh"])
-`,
-		"assert_single_workspace_rc_arg.sh": `#!/usr/bin/env bash
-count=0
-for arg in "$@"; do
-  if [[ "$arg" == "workspace-rc" ]]; then
-    count=$((count + 1))
-  fi
-done
-if [[ "$count" -ne 1 ]]; then
-  echo "expected workspace .bazelrc to be applied once" >&2
-  echo "count=$count args=$*" >&2
-  exit 1
-fi
-`,
-	})
-	testfs.MakeExecutable(t, ws, "assert_single_workspace_rc_arg.sh")
-
-	b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, "test", "--test_output=errors", ":assert_single_workspace_rc_arg"))
-	require.NoErrorf(t, err, "output: %s", string(b))
 }
 
 func TestBazelHelp(t *testing.T) {
@@ -313,7 +186,8 @@ func TestBazelRunWithLocalPlugin(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testgit.ConfigureRemoteOrigin(t, ws, "https://secretUser:secretToken@github.com/test-org/test-repo")
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD":   `sh_binary(name = "echo", srcs = ["echo.sh"])`,
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+sh_binary(name = "echo", srcs = ["echo.sh"])`,
 		"echo.sh": "echo $@",
 	})
 	testfs.MakeExecutable(t, ws, "echo.sh")
@@ -396,7 +270,8 @@ func TestBazelBuildWithBuildBuddyServices(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testgit.ConfigureRemoteOrigin(t, ws, "https://secretUser:secretToken@github.com/test-org/test-repo")
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD":  `sh_binary(name = "nop", srcs = ["nop.sh"])`,
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+sh_binary(name = "nop", srcs = ["nop.sh"])`,
 		"nop.sh": "",
 	})
 	testfs.MakeExecutable(t, ws, "nop.sh")
@@ -468,7 +343,8 @@ func TestTerminalOutput(t *testing.T) {
 				sleep 0.1
 			done
 		`,
-		"BUILD": `sh_test(name = "test", srcs = ["test.sh"])`,
+		"BUILD": `load("@rules_shell//shell:sh_test.bzl", "sh_test")
+sh_test(name = "test", srcs = ["test.sh"])`,
 	})
 
 	term := testcli.PTY(t)
@@ -491,6 +367,7 @@ func TestTargetPatternFile(t *testing.T) {
 test:pattern-file --target_pattern_file=targets.txt
 `,
 		"BUILD": `
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 sh_test(name = "pass", srcs = ["pass.sh"])
 sh_test(name = "fail", srcs = ["fail.sh"])
 `,
@@ -516,7 +393,8 @@ sh_test(name = "fail", srcs = ["fail.sh"])
 func TestQueryFile(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD":       `sh_test(name = "nop", srcs = ["nop.sh"])`,
+		"BUILD": `load("@rules_shell//shell:sh_test.bzl", "sh_test")
+sh_test(name = "nop", srcs = ["nop.sh"])`,
 		"nop.sh":      "",
 		"targets.txt": "//:nop",
 	})
@@ -583,4 +461,202 @@ func retryUntilSuccess(t *testing.T, f func() error) {
 	}
 	// testcli.DumpSidecarLog(t)
 	require.FailNowf(t, "timed out waiting for function to succeed", "last error: %s", err)
+}
+
+func TestLateBazelrcAddedByPreBazelPlugin(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		pluginStartupArg string
+		wantSuccess      bool
+	}{
+		{
+			name:             "add bazelrc",
+			pluginStartupArg: "--bazelrc=${BUILD_WORKSPACE_DIRECTORY}/required.bazelrc",
+			wantSuccess:      true,
+		},
+		{name: "add --ignore_all_rc_files", pluginStartupArg: "--ignore_all_rc_files", wantSuccess: false},
+		{name: "add --bazelrc=/dev/null", pluginStartupArg: "--bazelrc=/dev/null", wantSuccess: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ws := newWorkspaceWithRequiredRC(t)
+			testfs.WriteAllFileContents(t, ws, map[string]string{
+				"buildbuddy.yaml": `
+plugins:
+- path: testplugin
+`,
+				// This plugin prepends startup args before the forwarded Bazel args.
+				"testplugin/pre_bazel.sh": `#!/usr/bin/env bash
+tmp="$(mktemp)"
+printf '%s\n' "` + tc.pluginStartupArg + `" > "$tmp"
+cat "$FORWARDED_BAZEL_ARGS_FILE" >> "$tmp"
+mv "$tmp" "$FORWARDED_BAZEL_ARGS_FILE"
+`})
+			testfs.MakeExecutable(t, ws, "testplugin/pre_bazel.sh")
+
+			args := []string{"--bazelrc=" + ws + "/unrelated.bazelrc", "test", "--test_output=all", ":needs_required_rc"}
+			b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, args...))
+			output := strings.ReplaceAll(string(b), "\r\n", "\n")
+
+			if tc.wantSuccess {
+				require.NoErrorf(t, err, "output: %s", output)
+				require.Contains(t, output, "REQUIRED_RC_VALUE=1")
+				require.Contains(t, output, "UNRELATED_RC_VALUE=1")
+			} else {
+				require.Errorf(t, err, "output: %s", output)
+				require.Contains(t, output, "required bazelrc was not applied")
+				require.NotContains(t, output, "REQUIRED_RC_VALUE=1")
+				require.NotContains(t, output, "UNRELATED_RC_VALUE=1")
+			}
+		})
+	}
+}
+
+func TestLateBazelrcAddedByBazeliskWrapper(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		wrapperStartupArg string
+		wantSuccess       bool
+	}{
+		{
+			name:              "add bazelrc",
+			wrapperStartupArg: "--bazelrc=$WORKSPACE/required.bazelrc",
+			wantSuccess:       true,
+		},
+		{name: "add --ignore_all_rc_files", wrapperStartupArg: "--ignore_all_rc_files", wantSuccess: false},
+		{name: "add --bazelrc=/dev/null", wrapperStartupArg: "--bazelrc=/dev/null", wantSuccess: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ws := newWorkspaceWithRequiredRC(t)
+			wrapperStartupArg := strings.ReplaceAll(tc.wrapperStartupArg, "$WORKSPACE", ws)
+			testfs.WriteAllFileContents(t, ws, map[string]string{
+				// If tools/bazel is present in the workspace root, Bazelisk will run it instead of the regular bazel binary.
+				// This wrapper script injects a startup arg before the forwarded Bazel args.
+				"tools/bazel": `#!/usr/bin/env bash
+set -euo pipefail
+exec "$BAZEL_REAL" "` + wrapperStartupArg + `" "$@"
+`,
+			})
+			testfs.MakeExecutable(t, ws, "tools/bazel")
+
+			args := []string{"--bazelrc=" + ws + "/unrelated.bazelrc", "test", "--test_output=all", ":needs_required_rc"}
+			b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, args...))
+			output := strings.ReplaceAll(string(b), "\r\n", "\n")
+
+			if tc.wantSuccess {
+				require.NoErrorf(t, err, "output: %s", output)
+				require.Contains(t, output, "REQUIRED_RC_VALUE=1")
+				require.Contains(t, output, "UNRELATED_RC_VALUE=1")
+			} else {
+				require.Errorf(t, err, "output: %s", output)
+				require.Contains(t, output, "required bazelrc was not applied")
+				require.NotContains(t, output, "REQUIRED_RC_VALUE=1")
+				require.NotContains(t, output, "UNRELATED_RC_VALUE=1")
+			}
+		})
+	}
+}
+
+func TestLateConfigAddedByBazeliskWrapper(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bazelrc": `
+test:rbe --test_env=RBE_CONFIG_VALUE=1
+test:hello --test_env=HELLO_CONFIG_VALUE=1
+`,
+		"BUILD": `load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+sh_test(name = "needs_rbe_config", srcs = ["needs_rbe_config.sh"])
+`,
+		"needs_rbe_config.sh": `#!/usr/bin/env bash
+if [[ "${HELLO_CONFIG_VALUE:-}" != "1" ]]; then
+  echo "hello config was not applied" >&2
+  exit 1
+fi
+if [[ "${RBE_CONFIG_VALUE:-}" != "1" ]]; then
+  echo "rbe config was not applied" >&2
+  exit 1
+fi
+`,
+		// If tools/bazel is present in the workspace root, Bazelisk will run it
+		// instead of the regular bazel binary.
+		// This wrapper injects --config=rbe after the bazel command is specified.
+		"tools/bazel": `#!/usr/bin/env bash
+set -euo pipefail
+args=()
+inserted=0
+for arg in "$@"; do
+	args+=("$arg")
+	if [[ "$inserted" -eq 0 && "$arg" != -* ]]; then
+		if [[ "$arg" == "test" ]]; then
+			args+=("--config=rbe")
+		fi
+		inserted=1
+	fi
+done
+echo "args=${args[*]}" >&2
+exec "$BAZEL_REAL" "${args[@]}"
+`,
+	})
+	testfs.MakeExecutable(t, ws, "needs_rbe_config.sh")
+	testfs.MakeExecutable(t, ws, "tools/bazel")
+
+	args := []string{"test", "--test_output=errors", ":needs_rbe_config", "--config=hello"}
+	b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, args...))
+	output := strings.ReplaceAll(string(b), "\r\n", "\n")
+
+	require.NoErrorf(t, err, "output: %s", output)
+	require.NotContains(t, output, "rbe config was not applied")
+	require.NotContains(t, output, "hello config was not applied")
+}
+
+// Creates a workspace that verifies --bazelrc=required.bazelrc is applied.
+func newWorkspaceWithRequiredRC(t *testing.T) string {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"BUILD": `load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+sh_test(name = "needs_required_rc", srcs = ["needs_required_rc.sh"])
+`,
+		"needs_required_rc.sh": `#!/usr/bin/env bash
+echo "REQUIRED_RC_VALUE=${REQUIRED_RC_VALUE:-}"
+echo "UNRELATED_RC_VALUE=${UNRELATED_RC_VALUE:-}"
+if [[ "${REQUIRED_RC_VALUE:-}" == "1" ]]; then
+  exit 0
+fi
+echo "required bazelrc was not applied" >&2
+exit 1
+`,
+		"required.bazelrc":  `test --test_env=REQUIRED_RC_VALUE=1`,
+		"unrelated.bazelrc": `test --test_env=UNRELATED_RC_VALUE=1`,
+	})
+	testfs.MakeExecutable(t, ws, "needs_required_rc.sh")
+	return ws
+}
+
+func TestWorkspaceBazelrcAppliedOnce(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bazelrc": `test --test_arg=workspace-rc`,
+		"BUILD": `load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+sh_test(name = "assert_single_workspace_rc_arg", srcs = ["assert_single_workspace_rc_arg.sh"])
+`,
+		"assert_single_workspace_rc_arg.sh": `#!/usr/bin/env bash
+count=0
+for arg in "$@"; do
+  if [[ "$arg" == "workspace-rc" ]]; then
+    count=$((count + 1))
+  fi
+done
+if [[ "$count" -ne 1 ]]; then
+  echo "expected workspace .bazelrc to be applied once" >&2
+  echo "count=$count args=$*" >&2
+  exit 1
+fi
+`,
+	})
+	testfs.MakeExecutable(t, ws, "assert_single_workspace_rc_arg.sh")
+
+	b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, "test", "--test_output=errors", ":assert_single_workspace_rc_arg"))
+	require.NoErrorf(t, err, "output: %s", string(b))
 }

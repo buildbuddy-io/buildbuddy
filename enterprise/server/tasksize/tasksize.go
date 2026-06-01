@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -71,7 +72,7 @@ const (
 	// the firecracker runtime. It was computed as the minimum memory needed to
 	// execute a trivial task (i.e. pwd) in Firecracker, multiplied by ~1.5x so
 	// that we have some wiggle room.
-	FirecrackerAdditionalMemEstimateBytes = int64(150 * 1e6) // 150 MB
+	FirecrackerAdditionalMemEstimateBytes = int64(200 * 1e6) // 200 MB
 
 	// DockerInFirecrackerAdditionalMemEstimateBytes is an additional memory
 	// estimate added for docker-in-firecracker actions. It was computed as the
@@ -119,6 +120,10 @@ const (
 
 // Register registers the task sizer with the env.
 func Register(env *real_environment.RealEnv) error {
+	if !config.RemoteExecutionEnabled() {
+		// Task sizer is not needed if RBE is disabled.
+		return nil
+	}
 	sizer, err := NewSizer(env)
 	if err != nil {
 		return err

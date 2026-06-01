@@ -3,6 +3,8 @@ package ocifetcher_server_proxy
 import (
 	"context"
 	"io"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
@@ -15,14 +17,18 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	gproto "google.golang.org/protobuf/proto"
 )
 
 func TestNew_MissingOCIFetcherClient(t *testing.T) {
@@ -184,6 +190,41 @@ func TestHappyPath(t *testing.T) {
 
 			data := collectBlobData(t, stream)
 			require.Equal(t, expectedData, data)
+		})
+	}
+}
+
+func TestFetchBlob_ForwardsRequestUnchanged(t *testing.T) {
+	const ref = "example.com/repo@sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+	blobData := []byte("hello")
+
+	for _, tc := range []struct {
+		name      string
+		size      *int64
+		mediaType *string
+	}{
+		{name: "NoSizeOrMediaType"},
+		{name: "SizeOnly", size: gproto.Int64(12345)},
+		{name: "MediaTypeOnly", mediaType: gproto.String("application/vnd.example.layer.v1.tar+gzip")},
+		{name: "SizeAndMediaType", size: gproto.Int64(12345), mediaType: gproto.String("application/vnd.example.layer.v1.tar+gzip")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			remoteClient := &recordingOCIFetcherClient{}
+			proxyClient := runOCIFetcherProxy(ctx, t, remoteClient)
+			req := &ofpb.FetchBlobRequest{
+				Ref:            ref,
+				Credentials:    &rgpb.Credentials{Username: "testuser", Password: "testpass"},
+				BypassRegistry: false,
+				Size:           tc.size,
+				MediaType:      tc.mediaType,
+			}
+
+			stream, err := proxyClient.FetchBlob(ctx, req)
+			require.NoError(t, err)
+			require.Equal(t, blobData, collectBlobData(t, stream))
+			require.NotNil(t, remoteClient.fetchBlobRequest)
+			require.Empty(t, cmp.Diff(req, remoteClient.fetchBlobRequest, protocmp.Transform()))
 		})
 	}
 }
@@ -558,6 +599,70 @@ func TestInvalidOrMissingCredentials(t *testing.T) {
 	}
 }
 
+// TestFetchBlob_Singleflight verifies that concurrent FetchBlob requests for
+// the same blob are deduplicated: only one upstream FetchBlob RPC is made and
+// all callers receive the correct data.
+func TestFetchBlob_Singleflight(t *testing.T) {
+	ctx := context.Background()
+
+	reg := setupTestRegistry(t, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+	counter := &countingOCIFetcherClient{inner: ociFetcherClient}
+	proxyClient := runOCIFetcherProxy(ctx, t, counter)
+
+	ref := imageName + "@" + digest.String()
+	const numClients = 5
+
+	var wg sync.WaitGroup
+	errs := make([]error, numClients)
+	results := make([][]byte, numClients)
+
+	for i := 0; i < numClients; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+			if err != nil {
+				errs[idx] = err
+				return
+			}
+			var data []byte
+			for {
+				resp, err := stream.Recv()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					errs[idx] = err
+					return
+				}
+				data = append(data, resp.GetData()...)
+			}
+			results[idx] = data
+		}(i)
+	}
+	wg.Wait()
+
+	for i := 0; i < numClients; i++ {
+		require.NoError(t, errs[i], "client %d got error", i)
+		require.Equal(t, expectedData, results[i], "client %d got wrong data", i)
+	}
+
+	require.Equal(t, int32(1), counter.fetchBlobCount.Load(),
+		"expected exactly 1 upstream FetchBlob call due to singleflight deduplication")
+}
+
 // These tests exercise the full chain:
 // Test Client -> Proxy -> OCIFetcher Server -> Test Registry
 // with real cache infrastructure (ByteStream + ActionCache)
@@ -660,6 +765,64 @@ func layerData(t *testing.T, layer v1.Layer) []byte {
 	data, err := io.ReadAll(rc)
 	require.NoError(t, err)
 	return data
+}
+
+// countingOCIFetcherClient wraps an OCIFetcherClient and counts FetchBlob calls.
+type countingOCIFetcherClient struct {
+	inner          ofpb.OCIFetcherClient
+	fetchBlobCount atomic.Int32
+}
+
+func (c *countingOCIFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
+	return c.inner.FetchManifest(ctx, req, opts...)
+}
+
+func (c *countingOCIFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestMetadataResponse, error) {
+	return c.inner.FetchManifestMetadata(ctx, req, opts...)
+}
+
+func (c *countingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (ofpb.OCIFetcher_FetchBlobClient, error) {
+	c.fetchBlobCount.Add(1)
+	return c.inner.FetchBlob(ctx, req, opts...)
+}
+
+func (c *countingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	return c.inner.FetchBlobMetadata(ctx, req, opts...)
+}
+
+type recordingOCIFetcherClient struct {
+	fetchBlobRequest *ofpb.FetchBlobRequest
+}
+
+func (c *recordingOCIFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
+	return nil, status.UnimplementedError("not implemented")
+}
+
+func (c *recordingOCIFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestMetadataResponse, error) {
+	return nil, status.UnimplementedError("not implemented")
+}
+
+func (c *recordingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (ofpb.OCIFetcher_FetchBlobClient, error) {
+	c.fetchBlobRequest = gproto.Clone(req).(*ofpb.FetchBlobRequest)
+	return &fakeFetchBlobClient{data: []byte("hello")}, nil
+}
+
+func (c *recordingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	return &ofpb.FetchBlobMetadataResponse{Size: 5}, nil
+}
+
+type fakeFetchBlobClient struct {
+	grpc.ClientStream
+	data []byte
+	sent bool
+}
+
+func (c *fakeFetchBlobClient) Recv() (*ofpb.FetchBlobResponse, error) {
+	if !c.sent {
+		c.sent = true
+		return &ofpb.FetchBlobResponse{Data: c.data}, nil
+	}
+	return nil, io.EOF
 }
 
 // collectBlobData reads all data from a FetchBlob stream.

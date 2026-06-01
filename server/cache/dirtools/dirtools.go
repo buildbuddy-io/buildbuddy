@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -37,25 +39,17 @@ import (
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
-	enableDownloadCompression   = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
-	recordInputDownloadMetadata = flag.Bool("executor.record_input_download_metadata", false, "If true, record and report metadata describing which action inputs were fetched from remote CAS.")
-	linkParallelism             = flag.Int("cache.client.filecache_link_parallelism", 0, "Number of goroutines to use when linking inputs from filecache. If 0 uses the value of GOMAXPROCS.")
-	inputTreeSetupParallelism   = flag.Int("cache.client.input_tree_setup_parallelism", 1000, "Maximum number of concurrent filesystem operations to perform across all tasks when setting up the input tree structure. -1 means no limit.")
+	enableDownloadCompression = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
+	linkParallelism           = flag.Int("cache.client.filecache_link_parallelism", 0, "Number of goroutines to use when linking inputs from filecache. If 0 uses the value of GOMAXPROCS.")
+	inputTreeSetupParallelism = flag.Int("cache.client.input_tree_setup_parallelism", 1000, "Maximum number of concurrent filesystem operations to perform across all tasks when setting up the input tree structure. -1 means no limit.")
 
 	initInputTreeWrangler     sync.Once
 	inputTreeWranglerInstance *inputTreeWrangler
 )
-
-// InputFetchMetadataEnabled reports whether executors should record and publish
-// input fetch metadata.
-func InputFetchMetadataEnabled() bool {
-	return *recordInputDownloadMetadata
-}
 
 const (
 	// Size of the queue for input tree structure manipulation ops.
@@ -455,22 +449,16 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 	}
 
 	// REAPI < v2.1
-	for _, expectedFile := range cmd.OutputFiles {
-		if symlink.Path == expectedFile {
-			actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
-			break
-		}
+	if slices.Contains(cmd.OutputFiles, symlink.Path) {
+		actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
 	}
-	for _, expectedDir := range cmd.OutputDirectories {
-		if symlink.Path == expectedDir {
-			actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
-			break
-		}
+	if slices.Contains(cmd.OutputDirectories, symlink.Path) {
+		actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
 	}
 	return nil
 }
 
-func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult, addToFileCache bool, avgChunkSizeBytes int64) (*TransferInfo, error) {
+func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult, addToFileCache bool, chunkingParams *repb.FastCdc2020Params) (*TransferInfo, error) {
 	startTime := time.Now()
 	outputDirectoryPaths := make([]string, 0)
 	filesToUpload := make([]*fileToUpload, 0)
@@ -556,7 +544,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 		return nil, err
 	}
 
-	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction, avgChunkSizeBytes)
+	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction, chunkingParams)
 
 	// Upload output files to the remote cache and also add them to the local
 	// cache since they are likely to be used as inputs to subsequent actions.
@@ -766,6 +754,11 @@ func newBatchFileFetcher(ctx context.Context, env environment.Env, instanceName 
 	for k := range filesToFetch {
 		remainingFetches[k] = struct{}{}
 	}
+	var downloadsBitmap *roaring.Bitmap
+	if opts.RecordInputFetchMetadata {
+		downloadsBitmap = roaring.New()
+	}
+
 	return &BatchFileFetcher{
 		ctx:                     ctx,
 		env:                     env,
@@ -778,12 +771,7 @@ func newBatchFileFetcher(ctx context.Context, env environment.Env, instanceName 
 		doneErr:                 make(chan error, 1),
 		remainingFetches:        remainingFetches,
 		fetchWaiters:            make(map[fetchKey][]chan struct{}),
-		downloadsBitmap: func() *roaring.Bitmap {
-			if InputFetchMetadataEnabled() {
-				return roaring.New()
-			}
-			return nil
-		}(),
+		downloadsBitmap:         downloadsBitmap,
 	}, nil
 }
 
@@ -963,9 +951,8 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 		for dk, filePointers := range ff.filesToFetch {
 			filePointers := filePointers
 
-			rn := digest.NewCASResourceName(dk.ToDigest(), ff.instanceName, ff.digestFunction)
 			// Write empty files directly (skip checking cache and downloading).
-			if rn.IsEmpty() && !ff.onlyDownloadToFileCache {
+			if digest.IsEmptyHash(dk.ToDigest(), ff.digestFunction) && !ff.onlyDownloadToFileCache {
 				for _, fp := range filePointers {
 					if err := writeFile(fp, []byte(""), opts); err != nil {
 						return err
@@ -1062,6 +1049,56 @@ func (ff *BatchFileFetcher) GetStats() *repb.IOStats {
 	return ff.stats.CloneVT()
 }
 
+func (ff *BatchFileFetcher) shouldDownloadChunked(fileNode *repb.FileNode) bool {
+	return ff.opts != nil &&
+		ff.opts.ChunkedInputFiles &&
+		ff.env.GetContentAddressableStorageClient() != nil &&
+		fileNode.GetDigest().GetSizeBytes() > chunking.MaxSupportedChunkSizeBytes()
+}
+
+// downloadBlobToFile writes fileNode into path, creating or truncating it.
+// For large blobs it tries the SplitBlob-based parallel chunked path first
+// when enabled, falling back to a plain ByteStream.Read on any error.
+func (ff *BatchFileFetcher) downloadBlobToFile(ctx context.Context, bsClient bspb.ByteStreamClient, fileNode *repb.FileNode, path string, mode os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	if ff.shouldDownloadChunked(fileNode) {
+		cas := ff.env.GetContentAddressableStorageClient()
+		rn := digest.NewCASResourceName(fileNode.GetDigest(), ff.instanceName, ff.digestFunction)
+		if *enableDownloadCompression {
+			rn.SetCompressor(repb.Compressor_ZSTD)
+		}
+		openLocal := func(ctx context.Context, node *repb.FileNode) (*os.File, error) {
+			if fc := ff.env.GetFileCache(); fc != nil {
+				return fc.Open(ctx, node)
+			}
+			return nil, os.ErrNotExist
+		}
+		err = cachetools.GetBlobChunked(ctx, bsClient, cas, rn, fileNode, f, openLocal)
+		if err == nil {
+			if err := f.Close(); err != nil {
+				return err
+			}
+			ff.statsMu.Lock()
+			ff.stats.FileDownloadSizeBytes += fileNode.GetDigest().GetSizeBytes()
+			ff.stats.FileDownloadCount += 1
+			ff.statsMu.Unlock()
+			return nil
+		}
+		if err := f.Truncate(0); err != nil {
+			_ = f.Close()
+			return err
+		}
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			_ = f.Close()
+			return err
+		}
+	}
+	return ff.bytestreamReadToWriter(ctx, bsClient, fileNode, ioutil.NewCustomCommitWriteCloser(f))
+}
+
 func (ff *BatchFileFetcher) bytestreamReadToWriter(ctx context.Context, bsClient bspb.ByteStreamClient, fileNode *repb.FileNode, w interfaces.CommittedWriteCloser) error {
 	resourceName := digest.NewCASResourceName(fileNode.Digest, ff.instanceName, ff.digestFunction)
 	if *enableDownloadCompression {
@@ -1102,13 +1139,7 @@ func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsCl
 		if fp0.FileNode.IsExecutable {
 			mode = 0755
 		}
-		f, err := os.OpenFile(fp0.FullPath, os.O_RDWR|os.O_CREATE, mode)
-		if err != nil {
-			return nil, err
-		}
-		w := ioutil.NewCustomCommitWriteCloser(f)
-
-		if err := ff.bytestreamReadToWriter(ctx, bsClient, fp0.FileNode, w); err != nil {
+		if err := ff.downloadBlobToFile(ctx, bsClient, fp0.FileNode, fp0.FullPath, mode); err != nil {
 			return nil, err
 		}
 
@@ -1240,6 +1271,11 @@ type DownloadTreeOpts struct {
 	// TrackTransfers specifies whether to record the full set of files downloaded
 	// and return them in TransferInfo.Transfers.
 	TrackTransfers bool
+	// ChunkedInputFiles enables SplitBlob-based input downloads for large files.
+	ChunkedInputFiles bool
+	// RecordInputFetchMetadata controls whether to record which inputs were
+	// fetched from remote CAS while materializing the tree.
+	RecordInputFetchMetadata bool
 }
 
 type inputTreeRequest interface {
@@ -1268,14 +1304,20 @@ type symlinkRequest struct {
 }
 
 func (slr *symlinkRequest) Do() error {
-	err := os.Symlink(slr.oldname, slr.newname)
+	oldname := slr.oldname
+	if oldname == "" {
+		// Bazel can encode target_path = "." as an empty REAPI SymlinkNode
+		// target. Linux rejects empty symlink targets.
+		oldname = "."
+	}
+	err := os.Symlink(oldname, slr.newname)
 	if err == nil {
 		return nil
 	}
 	if !os.IsExist(err) {
 		return err
 	}
-	if checkSymlink(slr.oldname, slr.newname) {
+	if checkSymlink(oldname, slr.newname) {
 		return nil
 	}
 	// Attempt to blow away the existing
@@ -1285,7 +1327,7 @@ func (slr *symlinkRequest) Do() error {
 	}
 	// Now that the symlink has been removed
 	// try one more time to link it.
-	if err := os.Symlink(slr.oldname, slr.newname); err != nil {
+	if err := os.Symlink(oldname, slr.newname); err != nil {
 		return err
 	}
 	return nil
@@ -1471,7 +1513,6 @@ func NewTreeFetcher(ctx context.Context, env environment.Env, instanceName strin
 func (f *TreeFetcher) Start() (*InputsState, error) {
 	ctx := f.ctx
 	treeWrangler := getInputTreeWrangler(f.env)
-	recordInputDownloadMetadata := InputFetchMetadataEnabled()
 
 	f.fetchStartTime = time.Now()
 
@@ -1511,7 +1552,7 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 				fullPath := filepath.Join(location, node.Name)
 				relPath := trimPathPrefix(fullPath, f.opts.RootDir)
 				bitsetIndex := uint32(0)
-				if recordInputDownloadMetadata {
+				if f.opts.RecordInputFetchMetadata {
 					bitsetIndex = nextBitsetIndex
 					nextBitsetIndex++
 				}
@@ -1541,8 +1582,7 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 					return err
 				}
 			}
-			rn := digest.NewResourceName(child.GetDigest(), f.instanceName, rspb.CacheType_CAS, f.digestFunction)
-			if rn.IsEmpty() && rn.GetDigest().SizeBytes == 0 {
+			if digest.IsEmptyHash(child.GetDigest(), f.digestFunction) && child.GetDigest().GetSizeBytes() == 0 {
 				continue
 			}
 			childDir, ok := dirMap[digest.NewKey(child.GetDigest())]
@@ -1603,7 +1643,7 @@ func (f *TreeFetcher) Wait() (*TransferInfo, error) {
 	f.txInfo.LinkCount = stats.GetLocalCacheHits()
 	f.txInfo.LinkDuration = stats.GetLocalCacheLinkDuration().AsDuration()
 	f.txInfo.TransferDuration = time.Since(f.fetchStartTime)
-	if InputFetchMetadataEnabled() {
+	if f.opts.RecordInputFetchMetadata {
 		bitmap, bitmapErr := f.ff.downloadedFileIndicesBitmap()
 		if bitmapErr != nil && err == nil {
 			err = status.WrapError(bitmapErr, "marshal input download bitmap")

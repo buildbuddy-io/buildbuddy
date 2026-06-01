@@ -1,11 +1,10 @@
+# List of dashboard JSON files checked into the repo.
+# For generated JSON files, see tools/metrics/grafana/generated/BUILD.
 # This file is automatically updated by grafana.go - DO NOT EDIT
 DASHBOARD_NAMES = [
-    "baremetal-networking",
-    "baremetal-power",
     "buildbuddy",
     "cache-proxy",
     "cache",
-    "cdc",
     "clickhouse",
     "container-metrics",
     "envoy",

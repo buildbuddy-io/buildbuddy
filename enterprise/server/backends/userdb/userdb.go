@@ -42,9 +42,10 @@ const (
 )
 
 var (
-	addUserToDomainGroup = flag.Bool("app.add_user_to_domain_group", false, "Cloud-Only")
-	createGroupPerUser   = flag.Bool("app.create_group_per_user", false, "Cloud-Only")
-	noDefaultUserGroup   = flag.Bool("app.no_default_user_group", false, "Cloud-Only")
+	addUserToDomainGroup           = flag.Bool("app.add_user_to_domain_group", false, "Cloud-Only")
+	createGroupPerUser             = flag.Bool("app.create_group_per_user", false, "Cloud-Only")
+	noDefaultUserGroup             = flag.Bool("app.no_default_user_group", false, "Cloud-Only")
+	groupMembershipRequestsEnabled = flag.Bool("app.group_membership_requests_enabled", true, "If true, users may request membership in organizations via the /join flow.")
 
 	orgName   = flag.String("org.name", "Organization", "The name of your organization, which is displayed on your organization's build history.")
 	orgDomain = flag.String("org.domain", "", "Your organization's email domain. If this is set, only users with email addresses in this domain will be able to register for a BuildBuddy account.")
@@ -111,6 +112,12 @@ func NewUserDB(env environment.Env, h interfaces.DBHandle) (*UserDB, error) {
 		}
 	}
 	return db, nil
+}
+
+// GetGroupMembershipRequestsEnabled returns whether membership requests via
+// the /join flow are enabled.
+func (d *UserDB) GetGroupMembershipRequestsEnabled() bool {
+	return *groupMembershipRequestsEnabled
 }
 
 func (d *UserDB) GetGroupByID(ctx context.Context, groupID string) (*tables.Group, error) {
@@ -180,12 +187,7 @@ func (d *UserDB) authorizeGroupAdminRole(ctx context.Context, groupID string) er
 }
 
 func isInOwnedDomainBlocklist(email string) bool {
-	for _, item := range blockList {
-		if item == email {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(blockList, email)
 }
 
 func (d *UserDB) getDomainOwnerGroup(ctx context.Context, h interfaces.DB, domain string) (*tables.Group, error) {
@@ -226,10 +228,8 @@ func (d *UserDB) validateURLIdentifier(ctx context.Context, groupID string, urlI
 	}
 
 	if subdomain.Enabled() {
-		for _, sd := range subdomain.DefaultSubdomains() {
-			if urlIdentifier == sd {
-				return false, nil
-			}
+		if slices.Contains(subdomain.DefaultSubdomains(), urlIdentifier) {
+			return false, nil
 		}
 	}
 
@@ -281,13 +281,12 @@ func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, erro
 		return "", status.UnauthenticatedErrorf("You don't have permission to create a group")
 	}
 
-	// Groups default to unknown. If being created from a
-	// free tier or blocked group, the status will inherit.
-	if g.Status == grpb.Group_UNKNOWN_GROUP_STATUS {
-		currentStatus := u.GetGroupStatus()
-		if currentStatus == grpb.Group_FREE_TIER_GROUP_STATUS || currentStatus == grpb.Group_BLOCKED_GROUP_STATUS {
-			g.Status = currentStatus
-		}
+	// Group status defaults to free tier, unless the user is already blocked.
+	currentStatus := u.GetGroupStatus()
+	if currentStatus == grpb.Group_BLOCKED_GROUP_STATUS {
+		g.Status = currentStatus
+	} else {
+		g.Status = grpb.Group_FREE_TIER_GROUP_STATUS
 	}
 
 	groupID := ""
@@ -430,6 +429,19 @@ func (d *UserDB) UpdateGroupStatus(ctx context.Context, groupID string, status g
 	).Exec().Error
 }
 
+func (d *UserDB) UpdateGroupSamlIdpMetadataUrl(ctx context.Context, groupID string, url string) error {
+	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		return err
+	}
+
+	return d.h.NewQuery(ctx, "userdb_update_group_saml_idp_metadata_url").Raw(`
+		UPDATE "Groups" SET saml_idp_metadata_url = ?
+		WHERE group_id = ?`,
+		url,
+		groupID,
+	).Exec().Error
+}
+
 func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) error {
 	q, args := query_builder.
 		NewQuery(`UPDATE "Groups" SET github_token = ''`).
@@ -480,7 +492,7 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, g
 		r = role.Admin
 	}
 
-	_, err = d.getUserByUserID(ctx, tx, userID)
+	_, err = d.getUserByUserID(ctx, tx, userID, &interfaces.GetUserOpts{})
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return status.NotFoundErrorf("user %q does not exist", userID)
@@ -522,6 +534,9 @@ func (d *UserDB) addUserListToGroup(ctx context.Context, tx interfaces.DB, userL
 }
 
 func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.GroupMembershipStatus, error) {
+	if !d.GetGroupMembershipRequestsEnabled() {
+		return 0, status.PermissionDeniedError("Organization membership requests are disabled.")
+	}
 	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return 0, err
@@ -535,7 +550,7 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 	}
 	var membershipStatus grpb.GroupMembershipStatus
 	err = d.h.Transaction(ctx, func(tx interfaces.DB) error {
-		tu, err := d.getUserByUserID(ctx, tx, u.GetUserID())
+		tu, err := d.getUserByUserID(ctx, tx, u.GetUserID(), &interfaces.GetUserOpts{})
 		if err != nil {
 			return err
 		}
@@ -971,8 +986,8 @@ func (d *UserDB) InsertUser(ctx context.Context, u *tables.User) error {
 	})
 }
 
-func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, error) {
-	user, err := d.getUserByUserID(ctx, d.h, id)
+func (d *UserDB) GetUserByID(ctx context.Context, id string, opts *interfaces.GetUserOpts) (*tables.User, error) {
+	user, err := d.getUserByUserID(ctx, d.h, id, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -989,15 +1004,15 @@ func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, erro
 	return nil, errUserNotFound
 }
 
-func (d *UserDB) GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error) {
-	return d.getUserByUserID(ctx, d.h, id)
+func (d *UserDB) GetUserByIDWithoutAuthCheck(ctx context.Context, id string, opts *interfaces.GetUserOpts) (*tables.User, error) {
+	return d.getUserByUserID(ctx, d.h, id, opts)
 }
 
-func (d *UserDB) GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string) (*tables.User, error) {
+func (d *UserDB) GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string, opts *interfaces.GetUserOpts) (*tables.User, error) {
 	if subID == "" {
 		return nil, status.FailedPreconditionErrorf("subID not specified")
 	}
-	return d.getUserByID(ctx, d.h, &getUserOpts{subID: subID})
+	return d.getUserByID(ctx, d.h, &getUserOpts{subID: subID, directMembershipsOnly: opts.DirectMembershipsOnly})
 }
 
 // processUserGroupMemberships updates the groupRoles map using the results
@@ -1064,14 +1079,15 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 	if u.GetUserID() == "" {
 		return nil, errUserNotFound
 	}
-	return d.getUserByUserID(ctx, d.h, u.GetUserID())
+	return d.getUserByUserID(ctx, d.h, u.GetUserID(), &interfaces.GetUserOpts{})
 }
 
 // getUserOpts specifies query criteria.
-// Only one field must be set.
+// Exactly one of userID or subID must be set.
 type getUserOpts struct {
-	userID string
-	subID  string
+	userID                string
+	subID                 string
+	directMembershipsOnly bool
 }
 
 func (d *UserDB) getUserByID(ctx context.Context, h interfaces.DB, opts *getUserOpts) (*tables.User, error) {
@@ -1110,7 +1126,7 @@ func (d *UserDB) getUserByID(ctx context.Context, h interfaces.DB, opts *getUser
 	}
 
 	// Query indirect membership via user lists, if enabled.
-	if authutil.UserListsEnabled() {
+	if authutil.UserListsEnabled() && !opts.directMembershipsOnly {
 		qb := query_builder.NewQuery(`
 			SELECT u.*, g.*, ug.*
 			FROM "Users" u
@@ -1150,8 +1166,8 @@ func (d *UserDB) getUserByID(ctx context.Context, h interfaces.DB, opts *getUser
 	return user, nil
 }
 
-func (d *UserDB) getUserByUserID(ctx context.Context, h interfaces.DB, userID string) (*tables.User, error) {
-	return d.getUserByID(ctx, h, &getUserOpts{userID: userID})
+func (d *UserDB) getUserByUserID(ctx context.Context, h interfaces.DB, userID string, opts *interfaces.GetUserOpts) (*tables.User, error) {
+	return d.getUserByID(ctx, h, &getUserOpts{userID: userID, directMembershipsOnly: opts.DirectMembershipsOnly})
 }
 
 func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) {
@@ -1191,7 +1207,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 
 func (d *UserDB) DeleteUser(ctx context.Context, userID string) error {
 	// Permission check.
-	_, err := d.GetUserByID(ctx, userID)
+	_, err := d.GetUserByID(ctx, userID, &interfaces.GetUserOpts{})
 	if err != nil {
 		return err
 	}
@@ -1222,7 +1238,7 @@ func (d *UserDB) DeleteUser(ctx context.Context, userID string) error {
 
 func (d *UserDB) UpdateUser(ctx context.Context, u *tables.User) error {
 	// Permission check.
-	_, err := d.GetUserByID(ctx, u.UserID)
+	_, err := d.GetUserByID(ctx, u.UserID, &interfaces.GetUserOpts{})
 	if err != nil {
 		return err
 	}

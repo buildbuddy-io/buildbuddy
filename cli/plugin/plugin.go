@@ -40,6 +40,10 @@ const (
 	// invoked by BB as a plugin.
 	isPluginEnvVar = "IS_BB_PLUGIN"
 
+	execArgsFileEnvVar           = "EXEC_ARGS_FILE"
+	forwardedBazelArgsFileEnvVar = "FORWARDED_BAZEL_ARGS_FILE"
+	resolvedBazelArgsFileEnvVar  = "RESOLVED_BAZEL_ARGS_FILE"
+
 	installCommandUsage = `
 Usage: bb install [REPO[@VERSION]][:PATH] [--user]
 
@@ -70,9 +74,9 @@ Examples:
 )
 
 var (
-	installCmd     = flag.NewFlagSet("install", flag.ContinueOnError)
-	installPath    = installCmd.String("path", "", "Path under the repo root where the plugin directory is located.")
-	installForUser = installCmd.Bool("user", false, "Whether to install globally for the user.")
+	Flags          = flag.NewFlagSet("install", flag.ContinueOnError)
+	installPath    = Flags.String("path", "", "Path under the repo root where the plugin directory is located.")
+	installForUser = Flags.Bool("user", false, "Whether to install globally for the user.")
 
 	repoPattern = regexp.MustCompile(`` +
 		`^` + // Start marker
@@ -87,19 +91,19 @@ var (
 // HandleInstall handles the "bb install" subcommand, which allows adding
 // plugins to buildbuddy.yaml.
 func HandleInstall(args []string) (exitCode int, err error) {
-	if err := arg.ParseFlagSet(installCmd, args); err != nil {
+	if err := arg.ParseFlagSet(Flags, args); err != nil {
 		if err != flag.ErrHelp {
 			log.Printf("Failed to parse flags: %s", err)
 		}
 		log.Print(installCommandUsage)
 		return 1, nil
 	}
-	if len(installCmd.Args()) == 0 && *installPath == "" {
+	if len(Flags.Args()) == 0 && *installPath == "" {
 		log.Print("Error: either a repo or a --path= is expected.")
 		log.Print(installCommandUsage)
 		return 1, nil
 	}
-	if len(installCmd.Args()) > 1 {
+	if len(Flags.Args()) > 1 {
 		log.Print("Error: unexpected positional arguments")
 		log.Print(installCommandUsage)
 		return 1, nil
@@ -108,8 +112,8 @@ func HandleInstall(args []string) (exitCode int, err error) {
 		Repo: "",
 		Path: *installPath,
 	}
-	if len(installCmd.Args()) == 1 {
-		repo := installCmd.Args()[0]
+	if len(Flags.Args()) == 1 {
+		repo := Flags.Args()[0]
 		cfg, err := parsePluginSpec(repo, *installPath)
 		if err != nil {
 			log.Printf("Failed to parse repo: %s", repo)
@@ -622,15 +626,24 @@ func (p *Plugin) commandEnv() []string {
 // PreBazel executes the plugin's pre-bazel hook if it exists, allowing the
 // plugin to return a set of transformed bazel arguments.
 //
-// Plugins receive as their first argument a path to a file containing the
-// arguments to be passed to bazel. The plugin can read and write that file to
-// modify the args (most commonly, just appending to the file), which will then
-// be fed to the next plugin in the pipeline, or passed to Bazel if this is the
-// last plugin.
+// Plugins can read Bazel args from the FORWARDED_BAZEL_ARGS_FILE environment
+// variable. Plugins can write that file to modify the args (most commonly just
+// appending to the file), which will then be fed to the next plugin in the
+// pipeline, or passed to Bazel if this is the last plugin.
+//
+// Plugins can also read the resolved args (i.e. all --config flags expanded) from the
+// file at RESOLVED_BAZEL_ARGS_FILE, but changes to that file are ignored.
+//
+// DEPRECATED: Plugins receive as their first argument a path to a legacy args
+// file containing the resolved Bazel arguments. Writing changes to this file is
+// still supported for backwards compatibility.
 //
 // See cli/example_plugins/ping-remote/pre_bazel.sh for an example.
-func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
-	// Write args to a file so the plugin can manipulate them.
+func (p *Plugin) PreBazel(bazelArgs *arg.BazelArgs, execArgs []string) (*arg.BazelArgs, []string, error) {
+	initialForwardedArgs := bazelArgs.Forwarded()
+	initialResolvedArgs := bazelArgs.Resolved()
+
+	// Write legacy resolved bazel args to $1 so existing plugins keep working.
 	argsFile, err := os.CreateTemp("", "bazelisk-args-*")
 	if err != nil {
 		return nil, nil, status.InternalErrorf("failed to create args file for pre-bazel hook: %s", err)
@@ -639,7 +652,36 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 		argsFile.Close()
 		os.Remove(argsFile.Name())
 	}()
-	if err := writeArgsFile(argsFile.Name(), args); err != nil {
+	if err := writeArgsFile(argsFile.Name(), initialResolvedArgs); err != nil {
+		return nil, nil, err
+	}
+
+	// Write forwarded bazel args to a separate mutable file. This is the
+	// preferred API for plugins that want their changes passed through to Bazel.
+	forwardedArgsFile, err := os.CreateTemp("", "bazelisk-forwarded-args-*")
+	if err != nil {
+		return nil, nil, status.InternalErrorf("failed to create forwarded args file for pre-bazel hook: %s", err)
+	}
+	defer func() {
+		forwardedArgsFile.Close()
+		os.Remove(forwardedArgsFile.Name())
+	}()
+	if err := writeArgsFile(forwardedArgsFile.Name(), initialForwardedArgs); err != nil {
+		return nil, nil, err
+	}
+
+	// Write resolved bazel args to a separate read-only file. The plugin may
+	// read this to see rc/config-expanded values, but only the forwarded args
+	// file is read back after the plugin runs. Any edits to this file are ignored.
+	resolvedArgsFile, err := os.CreateTemp("", "bazelisk-resolved-args-*")
+	if err != nil {
+		return nil, nil, status.InternalErrorf("failed to create resolved args file for pre-bazel hook: %s", err)
+	}
+	defer func() {
+		resolvedArgsFile.Close()
+		os.Remove(resolvedArgsFile.Name())
+	}()
+	if err := writeArgsFile(resolvedArgsFile.Name(), initialResolvedArgs); err != nil {
 		return nil, nil, err
 	}
 
@@ -667,7 +709,7 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 	}
 	if !exists {
 		log.Debugf("Bazel hook not found at %s", scriptPath)
-		return args, execArgs, nil
+		return bazelArgs, execArgs, nil
 	}
 	log.Debugf("Running pre-bazel hook for %s/%s", p.config.Repo, p.config.Path)
 	// TODO: support "pre_bazel.<any-extension>" as long as the file is
@@ -678,12 +720,24 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	cmd.Env = p.commandEnv()
-	cmd.Env = append(cmd.Env, "EXEC_ARGS_FILE="+execArgsFile.Name())
+	cmd.Env = append(cmd.Env, execArgsFileEnvVar+"="+execArgsFile.Name())
+	cmd.Env = append(cmd.Env, forwardedBazelArgsFileEnvVar+"="+forwardedArgsFile.Name())
+	cmd.Env = append(cmd.Env, resolvedBazelArgsFileEnvVar+"="+resolvedArgsFile.Name())
 	if err := cmd.Run(); err != nil {
 		return nil, nil, status.InternalErrorf("Pre-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
 	}
 
-	newArgs, err := readArgsFile(argsFile.Name())
+	newLegacyArgs, err := readArgsFile(argsFile.Name())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	newForwardedArgs, err := readArgsFile(forwardedArgsFile.Name())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	newResolvedArgs, err := readArgsFile(resolvedArgsFile.Name())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -693,16 +747,41 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 		return nil, nil, err
 	}
 
-	log.Debugf("New bazel args: %s", shlex.Quote(newArgs...))
+	log.Debugf("New forwarded bazel args: %s", shlex.Quote(newForwardedArgs...))
+	log.Debugf("New legacy bazel args: %s", shlex.Quote(newLegacyArgs...))
 	log.Debugf("New executable args: %s", shlex.Quote(newExecArgs...))
 
-	// Canonicalize args after each plugin is run, so that every plugin gets
-	// canonicalized args as input.
-	canonicalizedArgs, err := parser.CanonicalizeArgs(newArgs)
+	forwardedChanged := !slices.Equal(initialForwardedArgs, newForwardedArgs)
+	legacyChanged := !slices.Equal(initialResolvedArgs, newLegacyArgs)
+	resolvedChanged := !slices.Equal(initialResolvedArgs, newResolvedArgs)
+
+	pluginID, err := p.VersionedID()
 	if err != nil {
-		return nil, nil, err
+		pluginID = "<unknown>"
 	}
-	return canonicalizedArgs, newExecArgs, nil
+
+	switch {
+	case forwardedChanged:
+		if legacyChanged {
+			log.Warnf("Plugin %s modified both %s and the legacy resolved Bazel args file passed as $1; using %s and ignoring changes to $1.", pluginID, forwardedBazelArgsFileEnvVar, forwardedBazelArgsFileEnvVar)
+		}
+		if err := bazelArgs.Set(newForwardedArgs); err != nil {
+			return nil, nil, err
+		}
+	case legacyChanged:
+		log.Warnf("Plugin %s modified the legacy resolved Bazel args file passed as $1. This is deprecated; write Bazel arg changes to %s instead, and use %s only for reading rc/config-expanded args.", pluginID, forwardedBazelArgsFileEnvVar, resolvedBazelArgsFileEnvVar)
+		legacyBazelArgs, err := arg.NewBazelArgsNoResolve(newLegacyArgs)
+		if err != nil {
+			return nil, nil, err
+		}
+		bazelArgs = legacyBazelArgs
+	}
+
+	if resolvedChanged {
+		log.Warnf("Plugin %s modified %s, but that file is read-only; ignoring those changes.", pluginID, resolvedBazelArgsFileEnvVar)
+	}
+
+	return bazelArgs, newExecArgs, nil
 }
 
 // PostBazel executes the plugin's post-bazel hook if it exists, allowing it to
@@ -784,30 +863,48 @@ func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, status.InternalErrorf("failed to start plugin bazel output handler: %s", err)
 	}
+	doneCopying := make(chan struct{})
 	go func() {
+		defer close(doneCopying)
 		// Copy pty output to the next pipeline stage.
 		io.Copy(pw, ptmx)
+		// Signal EOF to downstream now that all pty data has been
+		// forwarded. If a downstream reader has exited, it will have
+		// closed its end of the pipe (via PipelineWriter), making
+		// pw.Write() return ErrClosedPipe, so we reach this point
+		// without hanging.
+		pw.Close()
 	}()
 	go func() {
-		// TODO: Properly clean up the tty here. We disable the cleanup since it
-		// seems to cause some plugin output to get dropped in rare cases.
-		// See: https://github.com/creack/pty/issues/127
-		//
-		// The cleanup being disabled is not a problem for the CLI because it
-		// should get cleaned up automatically when the CLI process exits, but
-		// if we want to reuse this code for other things then we should
-		// probably fix this so the tty can get cleaned up sooner.
-
-		// defer tty.Close()
-
 		defer ptmx.Close()
-		defer pw.Close()
 		log.Debugf("Running bazel output handler for %s/%s", p.config.Repo, p.config.Path)
 		if err := cmd.Wait(); err != nil {
 			log.Debugf("Command failed: %s", err)
 		} else {
 			log.Debugf("Command %s completed", cmd.Args)
 		}
+		// Close the pty subsidiary to signal no more writes.
+		// After cmd.Wait(), the child process has exited and released
+		// its reference to tty, so this closes the last open handle.
+		// The copy goroutine reading from ptmx will drain any remaining
+		// buffered data and then receive EIO, causing it to exit
+		// cleanly without data loss. This is safe to do after
+		// cmd.Wait() — the creack/pty#127 concern about dropped output
+		// only applies when closing tty while the child is still
+		// writing.
+		tty.Close()
+		// Wait for the copy goroutine to finish draining remaining
+		// pty data and close pw. We must wait here rather than closing
+		// pw first, because closing pw would race with the copy
+		// goroutine's writes, causing data loss (the copy goroutine
+		// would get ErrClosedPipe and drop buffered pty output).
+		//
+		// This won't deadlock: after tty.Close(), ptmx reads will
+		// return EIO once the buffer is drained, so the copy goroutine
+		// always terminates. If a downstream reader has exited, it
+		// closes its end of the pipe (see PipelineWriter), making
+		// pw.Write() return ErrClosedPipe, also causing termination.
+		<-doneCopying
 		// Flush any remaining data from the preceding stage, to prevent
 		// the output writer for the preceding stage from getting stuck.
 		io.Copy(io.Discard, r)
@@ -836,6 +933,14 @@ func PipelineWriter(w io.Writer, plugins []*Plugin) (io.WriteCloser, error) {
 	go func() {
 		defer close(doneCopying)
 		io.Copy(w, pluginOutput)
+		// Close the plugin output reader so that any upstream plugin's
+		// pw.Write() returns ErrClosedPipe instead of blocking forever.
+		// Without this, if w (e.g. os.Stderr) becomes unwritable, the
+		// upstream copy goroutine would hang on pw.Write() indefinitely
+		// since io.Pipe is synchronous.
+		if closer, ok := pluginOutput.(io.Closer); ok {
+			closer.Close()
+		}
 	}()
 	out := &overrideCloser{
 		WriteCloser: pw,

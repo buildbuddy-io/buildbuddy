@@ -22,10 +22,10 @@ type proxyPair struct {
 
 var (
 	proxyTargets = flag.Slice("app.proxy_targets", []proxyPair{}, "")
+	poolSize     = flag.Int("app.proxy_pool_size", 0, "Number of gRPC connections to create for proxying unknown RPCs.")
 
-	once                   sync.Once
 	mu                     sync.RWMutex
-	backendConnectionPools map[string]*grpc_client.ClientConnPool
+	backendConnectionPools = map[string]*grpc_client.ClientConnPool{}
 )
 
 func lookupProxyTarget(fullMethodName string) (string, error) {
@@ -37,58 +37,66 @@ func lookupProxyTarget(fullMethodName string) (string, error) {
 	return "", status.UnimplementedErrorf("unknown service %s", fullMethodName)
 }
 
-func getConnectionPool(target string) (*grpc_client.ClientConnPool, error) {
-	once.Do(func() {
-		mu.Lock()
-		backendConnectionPools = make(map[string]*grpc_client.ClientConnPool)
-		mu.Unlock()
-	})
+type dialFn = func(string, ...grpc.DialOption) (*grpc_client.ClientConnPool, error)
 
+func dial(target string, opts ...grpc.DialOption) (*grpc_client.ClientConnPool, error) {
+	if *poolSize < 0 {
+		return nil, status.InvalidArgumentErrorf("Invalid pool size: %d", *poolSize)
+	}
+	if *poolSize == 0 {
+		return grpc_client.DialSimple(target, opts...)
+	}
+	return grpc_client.DialSimpleWithPoolSize(target, *poolSize, opts...)
+}
+
+func getConnectionPool(dialer dialFn, target string) (*grpc_client.ClientConnPool, error) {
+	// Fast path: take a non-exclusive lock and check for an existing
+	// connection.
 	mu.RLock()
 	pool, ok := backendConnectionPools[target]
 	mu.RUnlock()
-
-	if !ok {
-		newPool, err := grpc_client.DialSimple(target)
-		if err != nil {
-			return nil, err
-		}
-		mu.Lock()
-		backendConnectionPools[target] = newPool
-		mu.Unlock()
-		pool = newPool
+	if ok {
+		return pool, nil
 	}
-	return pool, nil
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Check the map again since we briefly released the lock.
+	if pool, ok := backendConnectionPools[target]; ok {
+		return pool, nil
+	}
+
+	// Note: dial should be non-blocking, so it's fine to do it with the mutex
+	// held.
+	newPool, err := dialer(target)
+	if err != nil {
+		return nil, err
+	}
+	backendConnectionPools[target] = newPool
+	return newPool, nil
 }
 
-type directorFunc func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error)
-
-func getProxyDirector() directorFunc {
-	if len(*proxyTargets) == 0 {
-		return nil
+func director(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
+	target, err := lookupProxyTarget(fullMethodName)
+	if err != nil {
+		return nil, nil, err
 	}
-	return func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
-		target, err := lookupProxyTarget(fullMethodName)
-		if err != nil {
-			return nil, nil, err
-		}
 
-		pool, err := getConnectionPool(target)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		cc := pool.WaitForConn()
-		if md, ok := metadata.FromIncomingContext(ctx); ok {
-			ctx = metadata.NewOutgoingContext(ctx, md.Copy())
-		}
-		return ctx, cc, nil
+	pool, err := getConnectionPool(dial, target)
+	if err != nil {
+		return nil, nil, err
 	}
+
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		ctx = metadata.NewOutgoingContext(ctx, md.Copy())
+	}
+	return ctx, pool, nil
 }
 
 func GetForwardingServerOption() grpc.ServerOption {
-	if director := getProxyDirector(); director != nil {
-		return grpc.UnknownServiceHandler(proxy.TransparentHandler(proxy.StreamDirector(director)))
+	if len(*proxyTargets) == 0 {
+		return nil
 	}
-	return nil
+	return grpc.UnknownServiceHandler(proxy.TransparentHandler(director))
 }

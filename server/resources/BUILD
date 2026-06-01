@@ -7,6 +7,7 @@ go_library(
     visibility = [
         "//enterprise:__subpackages__",
         "//server/util/kubediscovery:__subpackages__",
+        "//server/util/xds:__subpackages__",
     ],
     deps = [
         "//proto:scheduler_go_proto",

@@ -23,6 +23,7 @@ import (
 
 var (
 	flags = flag.NewFlagSet("index", flag.ContinueOnError)
+	Flags = flags
 
 	target  = flags.String("target", login.DefaultApiTarget, "Codesearch gRPC target")
 	repoURL = flags.String("repo-url", "", "URL of the GitHub repo. Defaults to remote named 'origin' in the current repo.")

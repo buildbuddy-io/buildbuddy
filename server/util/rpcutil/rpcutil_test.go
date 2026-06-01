@@ -70,6 +70,27 @@ func (s *stream[T]) CloseAndRecv() (T, error) {
 	return zero, nil
 }
 
+// orderingStream lets a test control/observe the ordering of calls on a stream.
+type orderingStream[T proto.Message] struct {
+	sendBlock        chan struct{}
+	sendReturned     chan struct{}
+	closeRecvStarted chan struct{}
+	closeRecvReturn  chan struct{}
+}
+
+func (s *orderingStream[T]) Send(T) error {
+	<-s.sendBlock
+	close(s.sendReturned)
+	return nil
+}
+
+func (s *orderingStream[T]) CloseAndRecv() (T, error) {
+	close(s.closeRecvStarted)
+	<-s.closeRecvReturn
+	var zero T
+	return zero, nil
+}
+
 func TestReceiver(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -210,4 +231,91 @@ func TestSender_SendTimeoutDoesNotLeakAfterCancel(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for blocked send to return")
 	}
+}
+
+// After a SendWithTimeoutCause times out, CloseAndRecvWithTimeoutCause must
+// not call stream.CloseAndRecv until the background sender goroutine has
+// returned from its in-flight stream.Send — gRPC client streams don't
+// support concurrent Send and CloseSend/CloseAndRecv on the same stream.
+func TestSender_CloseAndRecvWaitsForInFlightSend(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	stream := &orderingStream[*tspb.Timestamp]{
+		sendBlock:        make(chan struct{}),
+		sendReturned:     make(chan struct{}),
+		closeRecvStarted: make(chan struct{}),
+		closeRecvReturn:  make(chan struct{}),
+	}
+	sender := rpcutil.NewSender(t.Context(), stream)
+
+	// Make a Send that times out, blocking the sender goroutine in stream.Send.
+	err := sender.SendWithTimeoutCause(tspb.Now(), time.Millisecond, fmt.Errorf("send-cause"))
+	require.Error(t, err)
+
+	// Start CloseAndRecv in a goroutine; it should wait for the in-flight
+	// Send to return before calling stream.CloseAndRecv.
+	closeDone := make(chan error, 1)
+	go func() {
+		_, err := sender.CloseAndRecvWithTimeoutCause(hugeTimeout, fmt.Errorf("close-cause"))
+		closeDone <- err
+	}()
+
+	// Ensure stream.CloseAndRecv isn't called yet, Send is still blocked.
+	select {
+	case <-stream.closeRecvStarted:
+		t.Fatal("stream.CloseAndRecv was called before the in-flight Send returned")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	// Unblock Send. The sender goroutine exits, done closes, and
+	// CloseAndRecvWithTimeoutCause now proceeds to call stream.CloseAndRecv.
+	close(stream.sendBlock)
+	select {
+	case <-stream.sendReturned:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for Send to return after unblock")
+	}
+	select {
+	case <-stream.closeRecvStarted:
+	case <-time.After(time.Second):
+		t.Fatal("stream.CloseAndRecv was not called after Send returned")
+	}
+
+	// Let stream.CloseAndRecv return so the test cleans up.
+	close(stream.closeRecvReturn)
+	select {
+	case err := <-closeDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("CloseAndRecvWithTimeoutCause did not return")
+	}
+}
+
+// If the background sender goroutine is still stuck in stream.Send (because
+// nobody has canceled the underlying ctx), CloseAndRecvWithTimeoutCause must
+// still honor its own timeout and return the given cause without blocking
+// forever waiting for the sender goroutine to drain.
+func TestSender_CloseAndRecvHonorsTimeoutWhileSendStuck(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	stream := &blockingSendStream[*tspb.Timestamp]{
+		ctx:          ctx,
+		sendStarted:  make(chan struct{}),
+		sendReturned: make(chan struct{}),
+	}
+	sender := rpcutil.NewSender(ctx, stream)
+
+	err := sender.SendWithTimeoutCause(tspb.Now(), time.Millisecond, fmt.Errorf("send-cause"))
+	require.Error(t, err)
+	<-stream.sendStarted
+
+	closeCause := fmt.Errorf("close-cause")
+	_, err = sender.CloseAndRecvWithTimeoutCause(time.Millisecond, closeCause)
+	require.Equal(t, closeCause, err)
+
+	// Cancel to let the stuck Send unblock so the test doesn't leak the
+	// background goroutine.
+	cancel()
+	<-stream.sendReturned
 }

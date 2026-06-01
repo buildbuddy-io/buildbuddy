@@ -61,6 +61,10 @@ go_library(
             "@org_golang_google_grpc//status",
             "@org_golang_x_sys//unix",
         ],
+        "@io_bazel_rules_go//go/platform:windows_386": [
+            "//enterprise/server/util/vfscommon",
+            "//proto:vfs_go_proto",
+        ],
         "@io_bazel_rules_go//go/platform:windows_amd64": [
             "//enterprise/server/util/vfscommon",
             "//proto:vfs_go_proto",

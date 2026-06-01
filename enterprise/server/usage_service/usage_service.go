@@ -9,18 +9,257 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
-var usageStartDate = flag.String("app.usage_start_date", "", "If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z")
+var (
+	usageStartDate = flag.String("app.usage_start_date", "", "If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z")
+	alertsEnabled  = flag.Bool("app.usage_alerts_enabled", false, "If set, usage alerts will be enabled in the UI.")
+)
+
+const (
+	// MaxUsageAlertingRulesPerGroup is the maximum number of usage alerting
+	// rules a group can create.
+	MaxUsageAlertingRulesPerGroup = 100
+)
+
+// UsageField defines a Usage proto field returned by GetUsage.
+type UsageField struct {
+	// Name is the Usage proto field name. It is also used as the SELECT alias.
+	Name string
+	// PrimaryDBExpression is the SQL aggregation expression for the primary DB.
+	PrimaryDBExpression string
+	// OLAPExpression is the ClickHouse RawUsage aggregation expression.
+	OLAPExpression string
+	// AlertingMetric is the usage alerting enum corresponding to this field.
+	AlertingMetric usagepb.UsageAlertingMetric_Value
+}
+
+// UsageFields defines each Usage metric returned by GetUsage.
+var UsageFields = []UsageField{
+	{
+		Name:                "invocations",
+		PrimaryDBExpression: "SUM(invocations)",
+		OLAPExpression:      rawUsageSum(sku.BuildEventsBESCount),
+		AlertingMetric:      usagepb.UsageAlertingMetric_INVOCATIONS,
+	},
+	{
+		Name:                "action_cache_hits",
+		PrimaryDBExpression: "SUM(action_cache_hits)",
+		OLAPExpression:      rawUsageSum(sku.RemoteCacheACHits),
+		AlertingMetric:      usagepb.UsageAlertingMetric_ACTION_CACHE_HITS,
+	},
+	{
+		Name:                "total_cached_action_exec_usec",
+		PrimaryDBExpression: "SUM(total_cached_action_exec_usec)",
+		OLAPExpression:      rawUsageSumUsec(sku.RemoteCacheACCachedExecDurationNanos),
+		AlertingMetric:      usagepb.UsageAlertingMetric_TOTAL_CACHED_ACTION_EXEC_USEC,
+	},
+	{
+		Name:                "cas_cache_hits",
+		PrimaryDBExpression: "SUM(cas_cache_hits)",
+		OLAPExpression:      rawUsageSum(sku.RemoteCacheCASHits),
+		AlertingMetric:      usagepb.UsageAlertingMetric_CAS_CACHE_HITS,
+	},
+	{
+		Name:                "total_download_size_bytes",
+		PrimaryDBExpression: "SUM(total_download_size_bytes)",
+		OLAPExpression:      rawUsageSum(sku.RemoteCacheCASDownloadedBytes),
+		AlertingMetric:      usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES,
+	},
+	{
+		Name:                "total_external_download_size_bytes",
+		PrimaryDBExpression: "SUM(CASE WHEN origin <> 'internal' THEN total_download_size_bytes ELSE 0 END)",
+		OLAPExpression: rawUsageSum(
+			sku.RemoteCacheCASDownloadedBytes,
+			rawUsageLabelNotEquals(sku.Origin, sku.OriginInternal),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_TOTAL_EXTERNAL_DOWNLOAD_SIZE_BYTES,
+	},
+	{
+		Name:                "total_internal_download_size_bytes",
+		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN total_download_size_bytes ELSE 0 END)",
+		OLAPExpression: rawUsageSum(
+			sku.RemoteCacheCASDownloadedBytes,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelNotIn(sku.Client, sku.ClientExecutorWorkflows, sku.ClientBazel),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_TOTAL_INTERNAL_DOWNLOAD_SIZE_BYTES,
+	},
+	{
+		Name:                "total_workflow_download_size_bytes",
+		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN total_download_size_bytes ELSE 0 END)",
+		OLAPExpression: rawUsageSum(
+			sku.RemoteCacheCASDownloadedBytes,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelIn(sku.Client, sku.ClientExecutorWorkflows, sku.ClientBazel),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_TOTAL_WORKFLOW_DOWNLOAD_SIZE_BYTES,
+	},
+	{
+		Name:                "total_upload_size_bytes",
+		PrimaryDBExpression: "SUM(total_upload_size_bytes)",
+		OLAPExpression:      rawUsageSum(sku.RemoteCacheCASUploadedBytes),
+		AlertingMetric:      usagepb.UsageAlertingMetric_TOTAL_UPLOAD_SIZE_BYTES,
+	},
+	{
+		Name:                "total_external_upload_size_bytes",
+		PrimaryDBExpression: "SUM(CASE WHEN origin <> 'internal' THEN total_upload_size_bytes ELSE 0 END)",
+		OLAPExpression: rawUsageSum(
+			sku.RemoteCacheCASUploadedBytes,
+			rawUsageLabelNotEquals(sku.Origin, sku.OriginInternal),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_TOTAL_EXTERNAL_UPLOAD_SIZE_BYTES,
+	},
+	{
+		Name:                "total_internal_upload_size_bytes",
+		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN total_upload_size_bytes ELSE 0 END)",
+		OLAPExpression: rawUsageSum(
+			sku.RemoteCacheCASUploadedBytes,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelNotIn(sku.Client, sku.ClientExecutorWorkflows, sku.ClientBazel),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_TOTAL_INTERNAL_UPLOAD_SIZE_BYTES,
+	},
+	{
+		Name:                "total_workflow_upload_size_bytes",
+		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN total_upload_size_bytes ELSE 0 END)",
+		OLAPExpression: rawUsageSum(
+			sku.RemoteCacheCASUploadedBytes,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelIn(sku.Client, sku.ClientExecutorWorkflows, sku.ClientBazel),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_TOTAL_WORKFLOW_UPLOAD_SIZE_BYTES,
+	},
+	{
+		Name:                "linux_execution_duration_usec",
+		PrimaryDBExpression: "SUM(linux_execution_duration_usec)",
+		OLAPExpression: rawUsageSumUsec(
+			sku.RemoteExecutionExecuteWorkerDurationNanos,
+			rawUsageLabelEquals(sku.OS, sku.OSLinux),
+			rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedFalse),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_LINUX_EXECUTION_DURATION_USEC,
+	},
+	{
+		Name:                "cloud_rbe_linux_execution_duration_usec",
+		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN linux_execution_duration_usec ELSE 0 END)",
+		OLAPExpression: rawUsageSumUsec(
+			sku.RemoteExecutionExecuteWorkerDurationNanos,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelNotIn(sku.Client, sku.ClientExecutorWorkflows, sku.ClientBazel),
+			rawUsageLabelEquals(sku.OS, sku.OSLinux),
+			rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedFalse),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_CLOUD_RBE_LINUX_EXECUTION_DURATION_USEC,
+	},
+	{
+		Name:                "cloud_workflow_linux_execution_duration_usec",
+		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN linux_execution_duration_usec ELSE 0 END)",
+		OLAPExpression: rawUsageSumUsec(
+			sku.RemoteExecutionExecuteWorkerDurationNanos,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelIn(sku.Client, sku.ClientExecutorWorkflows, sku.ClientBazel),
+			rawUsageLabelEquals(sku.OS, sku.OSLinux),
+			rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedFalse),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_LINUX_EXECUTION_DURATION_USEC,
+	},
+	{
+		Name:                "cloud_cpu_nanos",
+		PrimaryDBExpression: "SUM(CASE WHEN origin = 'internal' THEN cpu_nanos ELSE 0 END)",
+		OLAPExpression: rawUsageSum(
+			sku.RemoteExecutionExecuteWorkerCPUNanos,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelEquals(sku.OS, sku.OSLinux),
+			rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedFalse),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_CLOUD_CPU_NANOS,
+	},
+	{
+		Name:                "cloud_rbe_cpu_nanos",
+		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN cpu_nanos ELSE 0 END)",
+		OLAPExpression: rawUsageSum(
+			sku.RemoteExecutionExecuteWorkerCPUNanos,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelNotIn(sku.Client, sku.ClientExecutorWorkflows, sku.ClientBazel),
+			rawUsageLabelEquals(sku.OS, sku.OSLinux),
+			rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedFalse),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_CLOUD_RBE_CPU_NANOS,
+	},
+	{
+		Name:                "cloud_workflow_cpu_nanos",
+		PrimaryDBExpression: "SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN cpu_nanos ELSE 0 END)",
+		OLAPExpression: rawUsageSum(
+			sku.RemoteExecutionExecuteWorkerCPUNanos,
+			rawUsageLabelEquals(sku.Origin, sku.OriginInternal),
+			rawUsageLabelIn(sku.Client, sku.ClientExecutorWorkflows, sku.ClientBazel),
+			rawUsageLabelEquals(sku.OS, sku.OSLinux),
+			rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedFalse),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_CLOUD_WORKFLOW_CPU_NANOS,
+	},
+}
+
+// UsageFieldForAlertingMetric returns the Usage field mapped to an alerting metric.
+func UsageFieldForAlertingMetric(metric usagepb.UsageAlertingMetric_Value) (*UsageField, bool) {
+	for i := range UsageFields {
+		if UsageFields[i].AlertingMetric == metric {
+			return &UsageFields[i], true
+		}
+	}
+	return nil, false
+}
+
+func rawUsageSum(usageSKU sku.SKU, conditions ...string) string {
+	expression := "SUM(CASE WHEN sku = '" + string(usageSKU) + "'"
+	if len(conditions) > 0 {
+		expression += " AND " + strings.Join(conditions, " AND ")
+	}
+	return expression + " THEN count ELSE 0 END)"
+}
+
+func rawUsageSumUsec(usageSKU sku.SKU, conditions ...string) string {
+	return "intDiv(" + rawUsageSum(usageSKU, conditions...) + ", 1000)"
+}
+
+func rawUsageLabelEquals(name sku.LabelName, value sku.LabelValue) string {
+	return "labels['" + string(name) + "'] = '" + string(value) + "'"
+}
+
+func rawUsageLabelNotEquals(name sku.LabelName, value sku.LabelValue) string {
+	return "labels['" + string(name) + "'] != '" + string(value) + "'"
+}
+
+func rawUsageLabelIn(name sku.LabelName, values ...sku.LabelValue) string {
+	return "labels['" + string(name) + "'] IN (" + quotedRawUsageLabelValues(values...) + ")"
+}
+
+func rawUsageLabelNotIn(name sku.LabelName, values ...sku.LabelValue) string {
+	return "labels['" + string(name) + "'] NOT IN (" + quotedRawUsageLabelValues(values...) + ")"
+}
+
+func quotedRawUsageLabelValues(values ...sku.LabelValue) string {
+	quoted := make([]string, 0, len(values))
+	for _, value := range values {
+		quoted = append(quoted, "'"+string(value)+"'")
+	}
+	return strings.Join(quoted, ", ")
+}
 
 type usageService struct {
 	env   environment.Env
@@ -46,6 +285,11 @@ func New(env environment.Env, clock clockwork.Clock) *usageService {
 		clock: clock,
 		start: configuredUsageStartDate(),
 	}
+}
+
+// GetAlertsEnabled returns whether usage alerting should be exposed to the frontend.
+func (s *usageService) GetAlertsEnabled() bool {
+	return *alertsEnabled
 }
 
 // Just a little function to make testing less miserable.
@@ -128,28 +372,146 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 	return s.GetUsageInternal(ctx, g, req)
 }
 
+func (s *usageService) GetUsageAlertingRules(ctx context.Context, req *usagepb.GetUsageAlertingRulesRequest) (*usagepb.GetUsageAlertingRulesResponse, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	groupID := u.GetGroupID()
+	if groupID == "" {
+		return nil, status.PermissionDeniedError("group ID is required")
+	}
+	if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
+		return nil, err
+	}
+
+	rq := s.env.GetDBHandle().NewQuery(ctx, "usage_service_get_alerting_rules").Raw(`
+		SELECT *
+		FROM "UsageAlertingRules"
+		WHERE group_id = ?
+		ORDER BY created_at_usec ASC, usage_alerting_rule_id ASC
+	`, groupID)
+	rows, err := db.ScanAll(rq, &tables.UsageAlertingRule{})
+	if err != nil {
+		return nil, err
+	}
+
+	rsp := &usagepb.GetUsageAlertingRulesResponse{}
+	for _, row := range rows {
+		rule, err := s.usageAlertingRuleToProto(ctx, row)
+		if err != nil {
+			return nil, err
+		}
+		rsp.UsageAlertingRule = append(rsp.UsageAlertingRule, rule)
+	}
+	return rsp, nil
+}
+
+func (s *usageService) CreateUsageAlertingRule(ctx context.Context, req *usagepb.CreateUsageAlertingRuleRequest) (*usagepb.CreateUsageAlertingRuleResponse, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	groupID := u.GetGroupID()
+	if groupID == "" {
+		return nil, status.PermissionDeniedError("group ID is required")
+	}
+	if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
+		return nil, err
+	}
+
+	config := req.GetConfiguration()
+	if err := validateUsageAlertingRuleConfiguration(config); err != nil {
+		return nil, err
+	}
+	id, err := tables.PrimaryKeyForTable((&tables.UsageAlertingRule{}).TableName())
+	if err != nil {
+		return nil, err
+	}
+	row := &tables.UsageAlertingRule{
+		UsageAlertingRuleID: id,
+		GroupID:             groupID,
+		UserID:              u.GetUserID(),
+		UsageAlertingMetric: config.GetMetric(),
+		AbsoluteThreshold:   config.GetAbsoluteThreshold(),
+		Window:              config.GetWindow(),
+	}
+	err = s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
+		count, err := s.countUsageAlertingRules(ctx, tx, groupID)
+		if err != nil {
+			return err
+		}
+		if count >= MaxUsageAlertingRulesPerGroup {
+			return status.ResourceExhaustedErrorf("usage alerting rule limit exceeded (%d)", MaxUsageAlertingRulesPerGroup)
+		}
+		return tx.NewQuery(ctx, "usage_service_create_alerting_rule").Create(row)
+	})
+	if err != nil {
+		if s.env.GetDBHandle().IsDuplicateKeyError(err) {
+			return nil, status.AlreadyExistsError("usage alerting rule already exists")
+		}
+		return nil, err
+	}
+
+	rule, err := s.usageAlertingRuleToProto(ctx, row)
+	if err != nil {
+		return nil, err
+	}
+	return &usagepb.CreateUsageAlertingRuleResponse{
+		UsageAlertingRule: rule,
+	}, nil
+}
+
+func (s *usageService) DeleteUsageAlertingRule(ctx context.Context, req *usagepb.DeleteUsageAlertingRuleRequest) (*usagepb.DeleteUsageAlertingRuleResponse, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	groupID := u.GetGroupID()
+	if groupID == "" {
+		return nil, status.PermissionDeniedError("group ID is required")
+	}
+	if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
+		return nil, err
+	}
+	ruleID := req.GetUsageAlertingRuleId()
+	if ruleID == "" {
+		return nil, status.InvalidArgumentError("usage alerting rule ID is required")
+	}
+
+	result := s.env.GetDBHandle().NewQuery(ctx, "usage_service_delete_alerting_rule").Raw(`
+		DELETE FROM "UsageAlertingRules"
+		WHERE usage_alerting_rule_id = ? AND group_id = ?
+	`, ruleID, groupID).Exec()
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, status.NotFoundError("usage alerting rule not found")
+	}
+	return &usagepb.DeleteUsageAlertingRuleResponse{}, nil
+}
+
+func (s *usageService) countUsageAlertingRules(ctx context.Context, dbh interfaces.DB, groupID string) (int64, error) {
+	row := &struct{ Count int64 }{}
+	if err := dbh.NewQuery(ctx, "usage_service_count_alerting_rules").Raw(`
+		SELECT COUNT(*) AS count
+		FROM "UsageAlertingRules"
+		WHERE group_id = ?
+	`, groupID).Take(row); err != nil {
+		return 0, err
+	}
+	return row.Count, nil
+}
+
 func (s *usageService) scanUsages(ctx context.Context, groupID string, start, end time.Time) ([]*usagepb.Usage, error) {
 	dbh := s.env.GetDBHandle()
+	selectExpressions := []string{dbh.DateFromUsecTimestamp("period_start_usec", 0) + ` AS period`}
+	for _, field := range UsageFields {
+		selectExpressions = append(selectExpressions, fmt.Sprintf("%s AS %s", field.PrimaryDBExpression, field.Name))
+	}
 	rq := dbh.NewQuery(ctx, "usage_service_scan").Raw(`
-		SELECT `+dbh.DateFromUsecTimestamp("period_start_usec", 0)+` AS period,
-		SUM(invocations) AS invocations,
-		SUM(action_cache_hits) AS action_cache_hits,
-		SUM(cas_cache_hits) AS cas_cache_hits,
-		SUM(total_download_size_bytes) AS total_download_size_bytes,
-		SUM(linux_execution_duration_usec) AS linux_execution_duration_usec,
-		SUM(total_upload_size_bytes) AS total_upload_size_bytes,
-		SUM(total_cached_action_exec_usec) AS total_cached_action_exec_usec,
-		SUM(CASE WHEN origin <> 'internal' THEN total_download_size_bytes ELSE 0 END) AS total_external_download_size_bytes,
-		SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN total_download_size_bytes ELSE 0 END) AS total_internal_download_size_bytes,
-		SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN total_download_size_bytes ELSE 0 END) AS total_workflow_download_size_bytes,
-		SUM(CASE WHEN origin <> 'internal' THEN total_upload_size_bytes ELSE 0 END) AS total_external_upload_size_bytes,
-		SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN total_upload_size_bytes ELSE 0 END) AS total_internal_upload_size_bytes,
-		SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN total_upload_size_bytes ELSE 0 END) AS total_workflow_upload_size_bytes,
-		SUM(CASE WHEN origin = 'internal' THEN cpu_nanos ELSE 0 END) AS cloud_cpu_nanos,
-		SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN cpu_nanos ELSE 0 END) AS cloud_rbe_cpu_nanos,
-		SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN cpu_nanos ELSE 0 END) AS cloud_workflow_cpu_nanos,
-		SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN linux_execution_duration_usec ELSE 0 END) AS cloud_rbe_linux_execution_duration_usec,
-		SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN linux_execution_duration_usec ELSE 0 END) AS cloud_workflow_linux_execution_duration_usec
+		SELECT `+strings.Join(selectExpressions, ",\n\t\t")+`
 		FROM "Usages"
 		WHERE period_start_usec >= ? AND period_start_usec < ?
 		AND group_id = ?
@@ -157,6 +519,76 @@ func (s *usageService) scanUsages(ctx context.Context, groupID string, start, en
 		ORDER BY period ASC
 	`, start.UnixMicro(), end.UnixMicro(), groupID)
 	return db.ScanAll(rq, &usagepb.Usage{})
+}
+
+func validateUsageAlertingRuleConfiguration(config *usagepb.UsageAlertingRuleConfiguration) error {
+	if config == nil {
+		return status.InvalidArgumentError("configuration is required")
+	}
+	if !isValidUsageAlertingMetric(config.GetMetric()) {
+		return status.InvalidArgumentError("usage alerting metric is required")
+	}
+	if config.GetAbsoluteThreshold() <= 0 {
+		return status.InvalidArgumentError("absolute threshold must be positive")
+	}
+	if !isValidUsageAlertingWindow(config.GetWindow()) {
+		return status.InvalidArgumentError("usage alerting window is required")
+	}
+	return nil
+}
+
+func isValidUsageAlertingMetric(metric usagepb.UsageAlertingMetric_Value) bool {
+	_, ok := usagepb.UsageAlertingMetric_Value_name[int32(metric)]
+	return metric != usagepb.UsageAlertingMetric_UNKNOWN && ok
+}
+
+func isValidUsageAlertingWindow(window usagepb.UsageAlertingWindow_Value) bool {
+	_, ok := usagepb.UsageAlertingWindow_Value_name[int32(window)]
+	return window != usagepb.UsageAlertingWindow_UNKNOWN && ok
+}
+
+func (s *usageService) usageAlertingRuleToProto(ctx context.Context, row *tables.UsageAlertingRule) (*usagepb.UsageAlertingRule, error) {
+	return &usagepb.UsageAlertingRule{
+		Metadata: &usagepb.UsageAlertingRuleMetadata{
+			UsageAlertingRuleId: row.UsageAlertingRuleID,
+			CreatedByUser:       s.displayUser(ctx, row.UserID),
+			CreatedTimestamp:    timestampFromUsec(row.CreatedAtUsec),
+		},
+		Configuration: &usagepb.UsageAlertingRuleConfiguration{
+			Metric:            row.UsageAlertingMetric,
+			AbsoluteThreshold: row.AbsoluteThreshold,
+			Window:            row.Window,
+		},
+		Status: &usagepb.UsageAlertingRuleStatus{
+			LastFiredTimestamp: timestampFromUsec(row.LastFiredUsec),
+		},
+	}, nil
+}
+
+func (s *usageService) displayUser(ctx context.Context, userID string) *uidpb.DisplayUser {
+	if userID == "" {
+		return nil
+	}
+	if udb := s.env.GetUserDB(); udb != nil {
+		// We only need user profile fields, so only fetch direct memberships.
+		u, err := udb.GetUserByIDWithoutAuthCheck(ctx, userID, &interfaces.GetUserOpts{DirectMembershipsOnly: true})
+		if err == nil {
+			return u.ToProto()
+		}
+		if !status.IsNotFoundError(err) {
+			log.CtxWarningf(ctx, "Could not load user %q for usage alerting rule: %s", userID, err)
+		}
+	}
+	return &uidpb.DisplayUser{
+		UserId: &uidpb.UserId{Id: userID},
+	}
+}
+
+func timestampFromUsec(usec int64) *timestamppb.Timestamp {
+	if usec == 0 {
+		return nil
+	}
+	return timestamppb.New(time.UnixMicro(usec).UTC())
 }
 
 type usagePeriod struct {

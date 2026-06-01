@@ -19,6 +19,7 @@ import SecretsComponent from "../secrets/secrets";
 import CompleteGitHubAppInstallationDialog from "./github_complete_installation";
 import GitHubLink from "./github_link";
 import GroupStatusComponent from "./group_status";
+import SSOConfigComponent from "./sso_config";
 import UserGitHubLink from "./user_github_link";
 
 export interface SettingsProps {
@@ -277,13 +278,14 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       {this.props.user.isImpersonating && (
                         <div className="settings-internal-section">
                           <GroupStatusComponent user={this.props.user} />
+                          <SSOConfigComponent user={this.props.user} />
                         </div>
                       )}
                     </>
                   )}
                   {activeTabId === TabId.OrgMembers && (
                     <>
-                      <OrgJoinRequests user={this.props.user} />
+                      {capabilities.config.groupMembershipRequestsEnabled && <OrgJoinRequests user={this.props.user} />}
                       <div className="settings-option-title">Members of {this.props.user.selectedGroupName()}</div>
                       <OrgMembersComponent user={this.props.user} />
                     </>

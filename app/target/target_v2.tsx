@@ -19,6 +19,7 @@ import { target } from "../../proto/target_ts_proto";
 import alert_service from "../alert/alert_service";
 import { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
+import Breadcrumbs from "../components/breadcrumbs/breadcrumbs";
 import { OutlinedButton } from "../components/button/button";
 import { OutlinedLinkButton } from "../components/button/link_button";
 import Link from "../components/link/link";
@@ -349,7 +350,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
       <div className="target-page">
         <div className="shelf">
           <div className="container">
-            <div className="breadcrumbs">
+            <Breadcrumbs>
               {this.props.user && (
                 <Link className="clickable" href={Path.home}>
                   {this.props.user?.selectedGroupName()}
@@ -364,7 +365,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
                 Invocation {this.props.invocationId}
               </Link>
               <span>Target {this.props.label}</span>
-            </div>
+            </Breadcrumbs>
             <div className="titles">
               <div className="title">
                 {this.props.label}{" "}

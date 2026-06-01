@@ -280,3 +280,29 @@ as the key type.
       The display name should exactly match one of the values listed above and the value can be anything.
 
       When sending role information downstream, Entra only sends the role display name, ignoring the role value.
+
+## Organization membership requests
+
+By default, BuildBuddy allows users to request access to an organization
+using the organization's invite link or `/join/<org-slug>` route. If the
+requesting user's email domain matches the organization's owned domain,
+BuildBuddy may add them directly to the organization; otherwise it creates
+a pending membership request for an organization admin to review.
+
+Pending membership requests can be viewed and managed by organization
+admins from either **Users** or **Settings > Members**.
+
+Enterprise server admins can disable this self-service join flow and
+require organization membership to be managed via SCIM:
+
+```yaml title="config.yaml"
+app:
+  # Disable org membership requests.
+  group_membership_requests_enabled: false
+```
+
+When disabled:
+
+- The `/join/<org-slug>` route is unavailable.
+- The **Invite link** UI is hidden from **Settings > Org details**.
+- Pending join requests are not shown in the UI.

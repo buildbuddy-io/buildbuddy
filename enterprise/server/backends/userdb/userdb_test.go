@@ -121,7 +121,7 @@ func getGroupRole(t *testing.T, ctx context.Context, env environment.Env, groupI
 }
 
 func getGroupRoleByUserID(t *testing.T, ctx context.Context, env environment.Env, userID string, groupID string) *tables.GroupRole {
-	tu, err := env.GetUserDB().GetUserByIDWithoutAuthCheck(ctx, userID)
+	tu, err := env.GetUserDB().GetUserByIDWithoutAuthCheck(ctx, userID, &interfaces.GetUserOpts{})
 	require.NoError(t, err)
 	for _, gr := range tu.Groups {
 		if gr.Group.GroupID == groupID {
@@ -527,28 +527,28 @@ func TestCreateGroup_StatusInheritance(t *testing.T) {
 		expectedStatus grpb.Group_GroupStatus
 	}{
 		{
-			name:           "UNKNOWN -> UNKNOWN",
+			name:           "UNKNOWN -> FREE_TIER (default)",
 			urlID:          "test-unknown",
 			parentStatus:   grpb.Group_UNKNOWN_GROUP_STATUS,
-			expectedStatus: grpb.Group_UNKNOWN_GROUP_STATUS,
+			expectedStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
 		},
 		{
-			name:           "FREE_TIER -> FREE_TIER (inherit)",
+			name:           "FREE_TIER -> FREE_TIER",
 			urlID:          "test-free",
 			parentStatus:   grpb.Group_FREE_TIER_GROUP_STATUS,
 			expectedStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
 		},
 		{
-			name:           "ENTERPRISE -> UNKNOWN",
+			name:           "ENTERPRISE -> FREE_TIER",
 			urlID:          "test-ent",
 			parentStatus:   grpb.Group_ENTERPRISE_GROUP_STATUS,
-			expectedStatus: grpb.Group_UNKNOWN_GROUP_STATUS,
+			expectedStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
 		},
 		{
-			name:           "ENTERPRISE_TRIAL -> UNKNOWN",
+			name:           "ENTERPRISE_TRIAL -> FREE_TIER",
 			urlID:          "test-trial",
 			parentStatus:   grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
-			expectedStatus: grpb.Group_UNKNOWN_GROUP_STATUS,
+			expectedStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
 		},
 		{
 			name:           "BLOCKED -> BLOCKED (inherit)",
@@ -935,6 +935,68 @@ func TestUpdateGroupUsers_UserLists(t *testing.T) {
 		require.Error(t, err)
 		require.True(t, status.IsPermissionDeniedError(err))
 	}
+}
+
+func TestGetUserByID_DirectMembershipsOnly(t *testing.T) {
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "auth.enable_user_lists", true)
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	us1Group := getGroup(t, ctx1, env).Group
+
+	// US1 is a direct admin of their own group. Also place US1 in a user list
+	// that is assigned to the same group with a different role, so the user
+	// has membership in the group via two paths.
+	ul := &tables.UserList{GroupID: us1Group.GroupID, Name: "list1"}
+	err := udb.CreateUserList(ctx1, ul)
+	require.NoError(t, err)
+	err = addUserToUserList(ctx1, udb, ul.UserListID, "US1")
+	require.NoError(t, err)
+	err = udb.UpdateGroupUsers(ctx1, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		UserListId:       ul.UserListID,
+		Role:             grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	// Without the option, indirect memberships are merged in and the role is
+	// nilled out as ambiguous.
+	u, err := udb.GetUserByIDWithoutAuthCheck(ctx, "US1", &interfaces.GetUserOpts{})
+	require.NoError(t, err)
+	gr := findGroupRole(u, us1Group.GroupID)
+	require.NotNil(t, gr)
+	require.Nil(t, gr.Role, "role should be nil when membership is ambiguous")
+
+	// With DirectMembershipsOnly, the user-list query is skipped and the
+	// direct admin role is preserved.
+	u, err = udb.GetUserByIDWithoutAuthCheck(ctx, "US1", &interfaces.GetUserOpts{DirectMembershipsOnly: true})
+	require.NoError(t, err)
+	gr = findGroupRole(u, us1Group.GroupID)
+	require.NotNil(t, gr)
+	require.NotNil(t, gr.Role)
+	require.Equal(t, uint32(role.Admin), *gr.Role)
+
+	// GetUserBySubIDWithoutAuthCheck supports the same option.
+	u, err = udb.GetUserBySubIDWithoutAuthCheck(ctx, u.SubID, &interfaces.GetUserOpts{DirectMembershipsOnly: true})
+	require.NoError(t, err)
+	gr = findGroupRole(u, us1Group.GroupID)
+	require.NotNil(t, gr)
+	require.NotNil(t, gr.Role)
+	require.Equal(t, uint32(role.Admin), *gr.Role)
+}
+
+func findGroupRole(u *tables.User, groupID string) *tables.GroupRole {
+	for _, g := range u.Groups {
+		if g.GroupID == groupID {
+			return g
+		}
+	}
+	return nil
 }
 
 func TestUpdateGroupUsers_Role(t *testing.T) {
@@ -1874,6 +1936,25 @@ func TestRequestToJoinGroup_DomainNonMember_CreatesRequest(t *testing.T) {
 	require.Nil(t, getGroupRole(t, ctx2, env, "GR1"))
 }
 
+func TestRequestToJoinGroup_Disabled(t *testing.T) {
+	flags.Set(t, "app.group_membership_requests_enabled", false)
+
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	createUser(t, ctx, env, "US1", "org1.io")
+	createUser(t, ctx, env, "US2", "org2.io")
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+
+	require.False(t, udb.GetGroupMembershipRequestsEnabled())
+
+	s, err := udb.RequestToJoinGroup(ctx2, "GR1")
+	require.Truef(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got: %v", err)
+	require.Equal(t, "Organization membership requests are disabled.", status.Message(err))
+	require.Equal(t, grpb.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
+	require.Nil(t, getGroupRole(t, ctx2, env, "GR1"))
+}
+
 func TestRequestToJoinGroup_AlreadyInGroup_GetAlreadyExists(t *testing.T) {
 	ctx := context.Background()
 	env := newTestEnv(t)
@@ -2742,7 +2823,7 @@ func TestGetUserBySubID(t *testing.T) {
 	users := enterprise_testauth.CreateRandomGroups(t, env)
 	randUser := users[rand.Intn(len(users))]
 
-	u, err := udb.GetUserBySubIDWithoutAuthCheck(ctx, randUser.SubID)
+	u, err := udb.GetUserBySubIDWithoutAuthCheck(ctx, randUser.SubID, &interfaces.GetUserOpts{})
 	require.NoError(t, err)
 	require.Equal(t, randUser, u)
 
@@ -2766,17 +2847,17 @@ func TestGetUserBySubID(t *testing.T) {
 
 	sort.Slice(user.Groups, func(i, j int) bool { return user.Groups[i].GroupID < user.Groups[j].GroupID })
 
-	u, err = udb.GetUserBySubIDWithoutAuthCheck(ctx, user.SubID)
+	u, err = udb.GetUserBySubIDWithoutAuthCheck(ctx, user.SubID, &interfaces.GetUserOpts{})
 	require.NoError(t, err)
 	require.Equal(t, user, u)
 
 	// Using empty or invalid values should produce an error
-	u, err = udb.GetUserBySubIDWithoutAuthCheck(ctx, "")
+	u, err = udb.GetUserBySubIDWithoutAuthCheck(ctx, "", &interfaces.GetUserOpts{})
 	require.Nil(t, u)
 	require.Truef(
 		t, status.IsFailedPreconditionError(err),
 		"expected FailedPrecondition error; got: %v", err)
-	u, err = udb.GetUserBySubIDWithoutAuthCheck(ctx, "INVALID")
+	u, err = udb.GetUserBySubIDWithoutAuthCheck(ctx, "INVALID", &interfaces.GetUserOpts{})
 	require.Nil(t, u)
 	require.Truef(
 		t, status.IsNotFoundError(err),
@@ -3204,7 +3285,7 @@ func TestGetUserBySubIDNoGroup(t *testing.T) {
 
 	randUser := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
 
-	u, err := udb.GetUserBySubIDWithoutAuthCheck(ctx, randUser.SubID)
+	u, err := udb.GetUserBySubIDWithoutAuthCheck(ctx, randUser.SubID, &interfaces.GetUserOpts{})
 	require.NoError(t, err)
 	require.Equal(t, randUser, u)
 }

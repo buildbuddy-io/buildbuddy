@@ -54,7 +54,7 @@ var (
 	envVarAnyPattern          = regexp.MustCompile(`(?s)^(--[^=]+=)(.*)$`)
 	envVarAssignmentRegex     = regexp.MustCompile(`^([^=]+)=`)
 
-	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@]+:)[^@]*(@[^"\s<>{}|\\^[\]]+)`)
+	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@\r\n]+:)[^@\r\n]*(@[^"\s<>{}|\\^[\]]+)`)
 	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
 
 	// There are some flags that contain multiple sub-flags which are
@@ -456,11 +456,8 @@ func stripRepoURLCredentialsFromWorkspaceStatus(status *bespb.WorkspaceStatus) {
 		if item.Value == "" {
 			continue
 		}
-		for _, repoURLKey := range knownGitRepoURLKeys {
-			if item.Key == repoURLKey {
-				item.Value = gitutil.StripRepoURLCredentials(item.Value)
-				break
-			}
+		if slices.Contains(knownGitRepoURLKeys, item.Key) {
+			item.Value = gitutil.StripRepoURLCredentials(item.Value)
 		}
 	}
 }
@@ -931,14 +928,9 @@ func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, eve
 // containsSensitiveEnvToken reports whether token appears as a distinct segment
 // of the env var name, using non-alphanumeric characters as delimiters.
 func containsSensitiveEnvToken(name string, token string) bool {
-	for _, segment := range strings.FieldsFunc(strings.ToUpper(name), func(r rune) bool {
+	return slices.Contains(strings.FieldsFunc(strings.ToUpper(name), func(r rune) bool {
 		return (r < 'A' || r > 'Z') && (r < '0' || r > '9')
-	}) {
-		if segment == token {
-			return true
-		}
-	}
-	return false
+	}), token)
 }
 
 // EnvNameLooksSensitive reports whether an environment variable name contains

@@ -17,29 +17,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
 
-      - name: Restore caches
-        id: cache-restore
-        uses: ./.github/actions/cache-restore
+      - name: Setup Bazel Go module cache
+        uses: ./.github/actions/setup-bazel-go-mod-cache
 
       - name: Build Website
-        env:
-          GO_REPOSITORY_USE_HOST_CACHE: 1
-          GOMODCACHE: /home/runner/go-mod-cache
         run: |
           API_KEY="${{ secrets.BUILDBUDDY_ORG_API_KEY }}"
           if [[ "$API_KEY" ]]; then
-            echo >user.bazelrc "common --config=ci --remote_header=x-buildbuddy-api-key=$API_KEY"
+            echo >>user.bazelrc "common --config=ci --remote_header=x-buildbuddy-api-key=$API_KEY"
           else
-            echo >user.bazelrc "common --config=ci-anon"
+            echo >>user.bazelrc "common --config=ci-anon"
           fi
           bazelisk build --repository_cache='~/repo-cache/' //website:website
-
-      - name: Save caches
-        uses: ./.github/actions/cache-save
-        if: always()
-        with:
-          repo-cache-dir: ${{ steps.cache-restore.outputs.repo-cache-dir }}
-          go-mod-cache-dir: ${{ steps.cache-restore.outputs.go-mod-cache-dir }}
-          yarn-cache-dir: ${{ steps.cache-restore.outputs.yarn-cache-dir }}

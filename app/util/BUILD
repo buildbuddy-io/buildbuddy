@@ -81,6 +81,29 @@ ts_library(
 )
 
 ts_library(
+    name = "typed_arrays",
+    srcs = ["typed_arrays.ts"],
+    deps = ["//:node_modules/tslib"],
+)
+
+ts_jasmine_node_test(
+    name = "typed_arrays_test",
+    srcs = ["typed_arrays_test.ts"],
+    deps = [":typed_arrays"],
+)
+
+ts_library(
+    name = "intern",
+    srcs = ["intern.ts"],
+)
+
+ts_jasmine_node_test(
+    name = "intern_test",
+    srcs = ["intern_test.ts"],
+    deps = [":intern"],
+)
+
+ts_library(
     name = "math",
     srcs = ["math.ts"],
 )
@@ -133,6 +156,16 @@ ts_library(
     deps = [
         "//:node_modules/@types/react",
         "//:node_modules/react",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "react_test",
+    srcs = ["react_test.tsx"],
+    deps = [
+        ":react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -241,4 +274,9 @@ ts_jasmine_node_test(
 ts_library(
     name = "file_types",
     srcs = ["file_types.ts"],
+)
+
+ts_library(
+    name = "url",
+    srcs = ["url.ts"],
 )

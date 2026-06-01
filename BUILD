@@ -33,6 +33,11 @@ write_file(
                         "default-signifies-exhaustive": "true",
                     },
                 },
+                "slicescontains": {
+                    "exclude_files": {
+                        ".*/gazelle\\+/cmd/gazelle/.*": "third-party gazelle sources compiled by //cli/fix/langs:gazelle",
+                    },
+                },
             },
         ),
     ],

@@ -13,6 +13,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -199,4 +201,8 @@ func (c *cgroupMemCollector) Collect(ch chan<- prometheus.Metric) {
 		}
 		ch <- m
 	}
+}
+
+func migrateExt4ImagesToFileCache(fc interfaces.FileCache, cacheRoot string) error {
+	return ociconv.MigrateImagesToFileCache(context.Background(), fc, cacheRoot)
 }

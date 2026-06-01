@@ -31,8 +31,11 @@ install_buildbuddy_cli() (
   echo >&2 "Downloading $latest_binary_url"
   curl -fSL "$latest_binary_url" -o "$tempfile"
   chmod 0755 "$tempfile"
-  echo >&2 "Will write the CLI to /usr/local/bin - this may ask for your password."
-  sudo mv "$tempfile" /usr/local/bin/bb
+  install_path="/usr/local/bin/bb"
+  install_dir=$(dirname "$install_path")
+  echo >&2 "Will write the CLI to $install_dir - this may ask for your password."
+  sudo mkdir -p "$install_dir"
+  sudo mv "$tempfile" "$install_path"
 )
 
 install_buildbuddy_cli "$@"

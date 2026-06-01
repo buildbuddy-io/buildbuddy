@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -811,8 +810,6 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 }
 
 func TestServerBypassRegistry(t *testing.T) {
-	// TODO(dan): https://github.com/buildbuddy-io/buildbuddy-internal/issues/6877
-	quarantine.SkipQuarantinedTest(t)
 	const adminGroupID = "GR123"
 
 	adminUser := &claims.Claims{
@@ -1528,7 +1525,7 @@ func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
 			successes++
 			require.Equal(t, expectedData, r.data, "request %d should stream data", i)
 		} else {
-			require.True(t, status.IsNotFoundError(r.err), "request %d should fail with cache miss, got %v", i, r.err)
+			require.True(t, status.IsNotFoundError(r.err) || status.IsFailedPreconditionError(r.err), "request %d should fail with cache miss, got %v", i, r.err)
 		}
 	}
 	require.Equal(t, 1, successes, "only the leader should succeed when caching fails")

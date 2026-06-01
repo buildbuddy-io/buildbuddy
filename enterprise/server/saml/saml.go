@@ -277,7 +277,10 @@ func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 			ctx = context.WithValue(ctx, contextSamlEntityIDKey, sp.ServiceProvider.EntityID)
 			ctx = context.WithValue(ctx, contextSamlSlugKey, a.getSlugFromRequest(r))
 
-			s, _ := a.subjectIDAndSessionFromContext(ctx)
+			s, _, err := a.subjectIDAndSessionFromContext(ctx)
+			if err != nil {
+				return authutil.AuthContextWithError(ctx, err)
+			}
 			c, err := claims.ClaimsFromSubID(ctx, a.env, s)
 			if err != nil {
 				return authutil.AuthContextWithError(ctx, status.PermissionDeniedErrorf("error getting SAML claims: %s", err.Error()))
@@ -297,21 +300,22 @@ func (a *SAMLAuthenticator) FillUser(ctx context.Context, user *tables.User) err
 	if err != nil {
 		return err
 	}
-	if subjectID, session := a.subjectIDAndSessionFromContext(ctx); subjectID != "" && session != nil {
-		attributes := session.GetAttributes()
-		user.UserID = pk
-		user.SubID = subjectID
-		user.FirstName = firstSet(attributes, samlFirstNameAttributes)
-		user.LastName = firstSet(attributes, samlLastNameAttributes)
-		user.Email = firstSet(attributes, samlEmailAttributes)
-		if slug, ok := ctx.Value(contextSamlSlugKey).(string); ok && slug != "" {
-			user.Groups = []*tables.GroupRole{
-				{Group: tables.Group{URLIdentifier: slug}},
-			}
-		}
-		return nil
+	subjectID, session, err := a.subjectIDAndSessionFromContext(ctx)
+	if err != nil {
+		return err
 	}
-	return status.UnauthenticatedError("No SAML User found")
+	attributes := session.GetAttributes()
+	user.UserID = pk
+	user.SubID = subjectID
+	user.FirstName = firstSet(attributes, samlFirstNameAttributes)
+	user.LastName = firstSet(attributes, samlLastNameAttributes)
+	user.Email = firstSet(attributes, samlEmailAttributes)
+	if slug, ok := ctx.Value(contextSamlSlugKey).(string); ok && slug != "" {
+		user.Groups = []*tables.GroupRole{
+			{Group: tables.Group{URLIdentifier: slug}},
+		}
+	}
+	return nil
 }
 
 func (a *SAMLAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error {
@@ -323,16 +327,17 @@ func (a *SAMLAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error
 }
 
 func (a *SAMLAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
-	if s, _ := a.subjectIDAndSessionFromContext(ctx); s != "" {
-		claims, err := claims.ClaimsFromSubID(ctx, a.env, s)
-		if err != nil {
-			return nil, status.UnauthenticatedErrorf(authutil.UserNotFoundMsg)
-		}
-		claims.SAML = true
-		claims.CustomerSSO = true
-		return claims, nil
+	s, _, err := a.subjectIDAndSessionFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return nil, status.UnauthenticatedError("No SAML User found")
+	c, err := claims.ClaimsFromSubID(ctx, a.env, s)
+	if err != nil {
+		return nil, status.UnauthenticatedErrorf(authutil.UserNotFoundMsg)
+	}
+	c.SAML = true
+	c.CustomerSSO = true
+	return c, nil
 }
 
 func (a *SAMLAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error {
@@ -512,15 +517,24 @@ func (a *SAMLAuthenticator) groupForSlug(ctx context.Context, slug string) (*tab
 	return userDB.GetGroupByURLIdentifier(ctx, slug)
 }
 
-func (a *SAMLAuthenticator) subjectIDAndSessionFromContext(ctx context.Context) (string, samlsp.SessionWithAttributes) {
+func (a *SAMLAuthenticator) subjectIDAndSessionFromContext(ctx context.Context) (string, samlsp.SessionWithAttributes, error) {
 	entityID, ok := ctx.Value(contextSamlEntityIDKey).(string)
 	if !ok || entityID == "" {
-		return "", nil
+		return "", nil, status.UnauthenticatedError("No SAML User found")
 	}
-	if sa, ok := ctx.Value(contextSamlSessionKey).(samlsp.SessionWithAttributes); ok {
-		return fmt.Sprintf("%s/%s", entityID, firstSet(sa.GetAttributes(), samlSubjectAttributes)), sa
+	sa, ok := ctx.Value(contextSamlSessionKey).(samlsp.SessionWithAttributes)
+	if !ok {
+		return "", nil, status.UnauthenticatedError("No SAML User found")
 	}
-	return "", nil
+	subject := firstSet(sa.GetAttributes(), samlSubjectAttributes)
+	if subject == "" {
+		return "", sa, status.PermissionDeniedError(
+			"SAML assertion does not contain a subject identifier. " +
+				"Configure your identity provider to include a SAML AttributeStatement " +
+				"with one of: 'email', 'username', 'user_id', or " +
+				"'urn:oasis:names:tc:SAML:attribute:subject-id'.")
+	}
+	return fmt.Sprintf("%s/%s", entityID, subject), sa, nil
 }
 
 func firstSet(attributes samlsp.Attributes, keys []string) string {

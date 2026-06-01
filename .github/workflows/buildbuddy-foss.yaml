@@ -12,14 +12,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Sync repositories 1 to 1
-        uses: ungless/git-sync@master
+        uses: ungless/git-sync@ac74f5df608e6d48d804ad9deb236a63f05e0c80 # master
         with:
           source_repo: "https://${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}@github.com/buildbuddy-io/buildbuddy.git"
           source_branch: "master"
           destination_repo: "https://${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}@github.com/buildbuddy-io/buildbuddy-foss.git"
           destination_branch: "master"
       - name: Checkout buildbuddy-foss
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
         with:
           repository: "buildbuddy-io/buildbuddy-foss"
           ref: master
@@ -29,7 +29,7 @@ jobs:
           sed -i -e '/Iteration, Inc\./,/Permission is hereby granted/c\Copyright (c) 2020-present Iteration, Inc.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy' LICENSE
           echo -e "MIT License\n\n$(cat LICENSE)" > LICENSE
       - name: Commit "Sync and remove all non-FOSS parts"
-        uses: EndBug/add-and-commit@v7
+        uses: EndBug/add-and-commit@8c12ff729a98cfbcd3fe38b49f55eceb98a5ec02 # v7
         with:
           author_name: BuildBuddy Bot
           author_email: hello@buildbuddy.io

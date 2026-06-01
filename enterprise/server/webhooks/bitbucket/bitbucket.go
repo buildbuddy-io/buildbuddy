@@ -131,7 +131,7 @@ func (*bitbucketGitProvider) IsTrusted(ctx context.Context, accessToken, repoURL
 	return false, status.UnimplementedError("Not implemented")
 }
 
-func (*bitbucketGitProvider) CreateStatus(ctx context.Context, accessToken, repoURL, commitSHA string, payload any) error {
+func (*bitbucketGitProvider) CreateStatus(ctx context.Context, accessToken, groupID, repoURL, commitSHA string, payload any) error {
 	return status.UnimplementedError("Not implemented")
 }
 

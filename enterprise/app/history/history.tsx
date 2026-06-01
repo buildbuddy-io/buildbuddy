@@ -13,6 +13,8 @@ import {
 import React from "react";
 import { fromEvent, Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
+import capabilities from "../../../app/capabilities/capabilities";
+import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
 import Button from "../../../app/components/button/button";
 import LinkButton from "../../../app/components/button/link_button";
 import Link from "../../../app/components/link/link";
@@ -24,6 +26,7 @@ import router, { Path } from "../../../app/router/router";
 import { ROLE_PARAM_NAME } from "../../../app/router/router_params";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import shortcuts, { KeyCombo } from "../../../app/shortcuts/shortcuts";
+import { tryParseURL } from "../../../app/util/url";
 import { invocation_status } from "../../../proto/invocation_status_ts_proto";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import FilterComponent from "../filter/filter";
@@ -466,18 +469,16 @@ export default class HistoryComponent extends React.Component<Props, State> {
     // TODO(bduffany): Make sure scope-filtered queries are optimized and remove this limitation.
     const hideSummaryStats = Boolean(scope);
 
+    const repoUrl = tryParseURL(this.state.invocations?.length ? this.state.invocations[0].repoUrl : "");
+
     const commitLink =
-      this.state.invocations?.length &&
-      this.state.invocations[0].repoUrl &&
-      this.state.invocations[0].repoUrl.startsWith("https://github.com")
-        ? `${this.state.invocations[0].repoUrl}/commit/${this.props.commit}`
+      repoUrl && repoUrl.protocol === "https://" && repoUrl.hostname === "github.com"
+        ? `${repoUrl.toString()}/commit/${this.props.commit}`
         : "";
 
     const branchLink =
-      this.state.invocations?.length &&
-      this.state.invocations[0].repoUrl &&
-      this.state.invocations[0].repoUrl.startsWith("https://github.com")
-        ? `${this.state.invocations[0].repoUrl}/tree/${this.props.branch}`
+      repoUrl && repoUrl.protocol === "https://" && repoUrl.hostname === "github.com"
+        ? `${repoUrl.toString()}/tree/${this.props.branch}`
         : "";
 
     return (
@@ -485,7 +486,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
         <div className="shelf">
           <div className="container">
             <div className="top-bar">
-              <div className="breadcrumbs">
+              <Breadcrumbs>
                 {this.props.user && this.props.user?.selectedGroupName() && (
                   <Link className="clickable" href={Path.home}>
                     {this.props.user?.selectedGroupName()}
@@ -520,7 +521,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
                 {!this.props.username && !this.props.hostname && this.props.tab == "" && (
                   <>{this.isFilteredToWorkflows() ? <span>Workflow runs</span> : <span>Builds</span>}</>
                 )}
-              </div>
+              </Breadcrumbs>
               <FilterComponent search={this.props.search} />
             </div>
             <div className="titles">
@@ -661,9 +662,11 @@ export default class HistoryComponent extends React.Component<Props, State> {
             </div>
           )}
         </div>
-        {this.props.tab === "#users" && this.props.user?.canCall("getGroupUsers") && (
-          <OrgJoinRequestsComponent user={this.props.user} includeMargin={true} />
-        )}
+        {this.props.tab === "#users" &&
+          capabilities.config.groupMembershipRequestsEnabled &&
+          this.props.user?.canCall("getGroupUsers") && (
+            <OrgJoinRequestsComponent user={this.props.user} includeMargin={true} />
+          )}
         {Boolean(this.state.invocations?.length || this.state.aggregateStats?.length) && (
           <div className="container nopadding-dense">
             {this.state.invocations?.map((invocation) => (

@@ -26,8 +26,19 @@ export interface SimpleModalDialogProps {
  * The contents are rendered as a form, so that pressing Enter will submit the
  * form. If form submission triggers an async action such as an RPC, then the
  * `loading` prop should be provided to indicate whether the RPC is in progress.
+ *
+ * If the `loading` prop is true, the dialog can't be closed (`onRequestClose`
+ * will not fire) and form submission is disabled (`onSubmit` will not fire).
  */
 export default class SimpleModalDialog extends React.Component<SimpleModalDialogProps> {
+  private onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (this.props.loading || this.props.submitDisabled) {
+      return;
+    }
+    this.props.onSubmit();
+  }
+
   render() {
     return (
       <Modal isOpen={this.props.isOpen} onRequestClose={this.props.loading ? undefined : this.props.onRequestClose}>
@@ -35,7 +46,7 @@ export default class SimpleModalDialog extends React.Component<SimpleModalDialog
           <DialogHeader>
             <DialogTitle>{this.props.title}</DialogTitle>
           </DialogHeader>
-          <form className="dialog-form" onSubmit={this.props.onSubmit}>
+          <form className="dialog-form" onSubmit={this.onSubmit.bind(this)}>
             <DialogBody>{this.props.children}</DialogBody>
             <DialogFooter>
               <DialogFooterButtons>
@@ -45,7 +56,6 @@ export default class SimpleModalDialog extends React.Component<SimpleModalDialog
                 </OutlinedButton>
                 <FilledButton
                   type="submit"
-                  onClick={this.props.onSubmit}
                   className={this.props.destructive ? "destructive" : ""}
                   disabled={this.props.submitDisabled || this.props.loading}>
                   {this.props.submitLabel}

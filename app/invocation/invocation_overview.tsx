@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import React from "react";
 import { User } from "../auth/auth_service";
+import Breadcrumbs from "../components/breadcrumbs/breadcrumbs";
 import { Link } from "../components/link/link";
 import format from "../format/format";
 import { getRepoUrlPathParam, Path } from "../router/router";
@@ -58,7 +59,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
     return (
       <div className="container">
         <div className="breadcrumbs-and-buttons">
-          <div className="breadcrumbs">
+          <Breadcrumbs>
             {this.props.user && ownerGroup && (
               <>
                 <Link href="/">{ownerGroup.name}</Link>
@@ -73,7 +74,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
             <span>
               {this.invocationType()} {this.props.model.getInvocationId()}
             </span>
-          </div>
+          </Breadcrumbs>
           <InvocationButtons model={this.props.model} user={this.props.user} />
         </div>
         <div className="titles">

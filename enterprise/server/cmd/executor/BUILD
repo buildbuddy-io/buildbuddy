@@ -1,6 +1,7 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image", "container_layer")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//rules:platform_transitions.bzl", "linux_x86_64_musl_alias")
 load("//rules:utils.bzl", "runfiles_directory")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
@@ -60,6 +61,7 @@ go_library(
         "//server/util/statusz",
         "//server/util/tracing",
         "//server/util/usageutil",
+        "//server/util/xds",
         "//server/version",
         "//server/xcode",
         "@com_github_google_uuid//:uuid",
@@ -67,10 +69,13 @@ go_library(
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//encoding/gzip",
+        "@org_golang_google_grpc//xds",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ] + select({
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/cgroup",
             "//enterprise/server/remote_execution/vbd",
+            "//enterprise/server/util/ociconv",
             "//server/util/networking",
         ],
         "//conditions:default": [],
@@ -90,6 +95,13 @@ go_binary(
         "//enterprise/config:config_files",
     ],
     embed = [":executor_lib"],
+)
+
+linux_x86_64_musl_alias(
+    name = "executor_linux_amd64_static",
+    actual = ":executor",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
 )
 
 alias(

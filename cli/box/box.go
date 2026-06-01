@@ -66,6 +66,7 @@ is ephemeral.
 
 var (
 	createFlags = flag.NewFlagSet("box create", flag.ContinueOnError)
+	Flags       = createFlags
 
 	imageFlag   = createFlags.String("image", defaultImage, "Container image for the VM")
 	gracePeriod = createFlags.Duration("grace_period", 1*time.Minute, "How long the VM stays alive after all SSH connections close (max 5m)")

@@ -9,16 +9,18 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cli_bundle "github.com/buildbuddy-io/buildbuddy/server/util/bb"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -26,12 +28,50 @@ import (
 
 const ExecutableName = "buildbuddy_ci_runner"
 const CLIBinaryName = "bb"
+const DefaultTimeoutExperimentName = "remote_execution.remote_runner_default_timeout"
+const FreeTierTimeoutReason = "free_tier_limit"
+
+type RunnerTimeoutResult struct {
+	Duration time.Duration
+	Reason   string
+}
 
 var (
 	RecycledCIRunnerMaxWait = flag.Duration("remote_execution.ci_runner_recycling_max_wait", 3*time.Second, "Max duration that a ci_runner task should wait for a warm runner before running on a potentially cold runner.")
 	CIRunnerDefaultTimeout  = flag.Duration("remote_execution.ci_runner_default_timeout", 8*time.Hour, "Default timeout applied to all ci runners.")
 	InitCIRunnerFromCache   = flag.Bool("remote_execution.init_ci_runner_from_cache", true, "Whether the apps should upload ci_runner binaries to the cache so executors can fetch the latest versions without upgrading.")
 )
+
+func RunnerTimeout(ctx context.Context, efp interfaces.ExperimentFlagProvider, requestedTimeout *time.Duration, actionName string, groupStatus grpb.Group_GroupStatus) (*RunnerTimeoutResult, error) {
+	if requestedTimeout != nil && *requestedTimeout <= 0 {
+		return nil, status.InvalidArgumentError("requested timeout is not positive")
+	}
+
+	if efp != nil {
+		timeoutString := efp.String(ctx, DefaultTimeoutExperimentName, "",
+			experiments.WithContext("workflow_action_name", actionName))
+		if timeoutString != "" {
+			timeout, err := time.ParseDuration(timeoutString)
+			if err != nil {
+				log.CtxErrorf(ctx, "Failed to parse %s experiment value %q: %s", DefaultTimeoutExperimentName, timeoutString, err)
+			} else {
+				if requestedTimeout != nil && *requestedTimeout < timeout {
+					return &RunnerTimeoutResult{Duration: *requestedTimeout}, nil
+				}
+
+				reason := ""
+				if groupStatus == grpb.Group_FREE_TIER_GROUP_STATUS {
+					reason = FreeTierTimeoutReason
+				}
+				return &RunnerTimeoutResult{Duration: timeout, Reason: reason}, nil
+			}
+		}
+	}
+	if requestedTimeout != nil {
+		return &RunnerTimeoutResult{Duration: *requestedTimeout}, nil
+	}
+	return &RunnerTimeoutResult{Duration: *CIRunnerDefaultTimeout}, nil
+}
 
 // CanInitFromCache The apps are built for linux/amd64. If the ci_runner will run on linux/amd64
 // as well, the apps can upload the ci_runner binary to the cache for the executors
@@ -129,13 +169,29 @@ func SetTaskRepositoryToken(ctx context.Context, env environment.Env, task *repb
 		return err
 	}
 	authCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, apiKey)
-	token, err := githubapp.GetRepositoryInstallationToken(authCtx, env, groupID, repoURL)
+	token, err := getGitHubAccessToken(authCtx, env, groupID, repoURL)
 	if err != nil {
 		return status.WrapError(err, "failed to refresh remote runner git token")
 	}
 	envOverrides["REPO_TOKEN"] = token
 	applyEnvOverrides(task, envOverrides)
 	return nil
+}
+
+func getGitHubAccessToken(ctx context.Context, env environment.Env, groupID string, repoURL string) (string, error) {
+	gh := env.GetGitHubAppService()
+	if gh == nil {
+		return "", status.UnimplementedError("No GitHub app configured")
+	}
+	app, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
+	if err != nil {
+		return "", err
+	}
+	token, err := app.GetRepositoryInstallationToken(ctx, groupID, repoURL)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 func envOverridesHeader(task *repb.ExecutionTask) map[string]string {

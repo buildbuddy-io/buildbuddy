@@ -8,7 +8,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/codesearch",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/githubapp",
         "//proto:codesearch_service_go_proto",
         "//proto:index_go_proto",
         "//proto:search_go_proto",

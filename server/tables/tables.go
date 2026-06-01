@@ -17,6 +17,7 @@ import (
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -263,7 +264,7 @@ type Group struct {
 	IsParent bool `gorm:"not null;default:0"`
 
 	// The status of the group: free tier, enterprise, etc.
-	Status grpb.Group_GroupStatus `gorm:"not null;default:0"`
+	Status grpb.Group_GroupStatus `gorm:"not null;default:1"`
 }
 
 func (g *Group) TableName() string {
@@ -750,6 +751,47 @@ func (wf *Workflow) TableName() string {
 	return "Workflows"
 }
 
+// A ScheduledRun represents a Workflow that should be run at a specific time according to a cron expression.
+//
+// These are specified in the Workflow config (buildbuddy.yaml), but are stored in the database so that we don't have
+// to keep fetching that file. The database entries are updated when there is a push to the default branch of the repo.
+type ScheduledRun struct {
+	Model
+
+	ScheduleID string `gorm:"primaryKey;"`
+
+	GroupID    string `gorm:"index:scheduled_run_idx"`
+	RepoURL    string `gorm:"index:scheduled_run_idx"`
+	ActionName string `gorm:"index:scheduled_run_idx"`
+	CronExpr   string
+
+	// Based on the cron expression, this is the next time the run should be scheduled.
+	NextRunUsec int64 `gorm:"index:scheduled_run_next_run_idx"`
+
+	// Only one server should try to schedule a run at a time. When it acquires the lease, it should
+	// set this timestamp. If this timestamp is exceeded, the lease is considered expired and
+	// another server can acquire the lease and schedule the run. In this case, it's assumed that the
+	// original lease holder has failed (e.g. if it was restarted in a rollout).
+	//
+	// TODO: This is not guaranteed to be idempotent. If the first server to acquire the lease is slow to dispatch the execution,
+	// a second server could acquire the lease and dispatch the execution, causing a duplicate.
+	// However if the lease duration is long enough, duplicates are unlikely
+	// to happen because the servers only need to dispatch the execution, which should be quick.
+	LeaseExpiresUsec int64
+
+	// Number of consecutive failed dispatch attempts within the current scheduled window.
+	// Reset to 0 when the window is successfully dispatched or the schedule advances.
+	FailedAttemptCount int64 `gorm:"not null;default:0"`
+
+	// Number of consecutive scheduled windows that have exhausted all retries.
+	// If too high, the workflow will be paused and requires manual re-enabling.
+	ConsecutiveScheduleFailureCount int64 `gorm:"not null;default:0"`
+}
+
+func (sr *ScheduledRun) TableName() string {
+	return "ScheduledRuns"
+}
+
 type UsageCounts struct {
 	Invocations            int64
 	CASCacheHits           int64
@@ -832,6 +874,36 @@ type Usage struct {
 
 func (*Usage) TableName() string {
 	return "Usages"
+}
+
+// UsageAlertingRule stores usage alert configuration and evaluator status for a group.
+type UsageAlertingRule struct {
+	Model
+
+	// UsageAlertingRuleID is the primary key for the usage alerting rule.
+	UsageAlertingRuleID string `gorm:"primaryKey"`
+
+	// GroupID is the group that owns this alerting rule.
+	GroupID string `gorm:"not null;index:usage_alerting_rule_group_id_idx;uniqueIndex:usage_alerting_rule_group_config_idx,priority:1"`
+
+	// UserID is the user that created this alerting rule.
+	UserID string `gorm:"not null;default:''"`
+
+	// UsageAlertingMetric is the user-facing usage metric to alert on.
+	UsageAlertingMetric usagepb.UsageAlertingMetric_Value `gorm:"not null;default:0;uniqueIndex:usage_alerting_rule_group_config_idx,priority:2"`
+
+	// AbsoluteThreshold is the usage value above which this alert fires.
+	AbsoluteThreshold int64 `gorm:"not null;default:0;uniqueIndex:usage_alerting_rule_group_config_idx,priority:3"`
+
+	// Window is the usage alerting window enum value.
+	Window usagepb.UsageAlertingWindow_Value `gorm:"not null;default:0;uniqueIndex:usage_alerting_rule_group_config_idx,priority:4"`
+
+	// LastFiredUsec is the last time this rule fired.
+	LastFiredUsec int64 `gorm:"not null;default:0"`
+}
+
+func (*UsageAlertingRule) TableName() string {
+	return "UsageAlertingRules"
 }
 
 // DEPRECATED: QuotaBucket is no longer used by the quota manager, which now loads
@@ -1424,6 +1496,7 @@ func RegisterTables() {
 	registerTable("RE", &GitRepository{})
 	registerTable("SE", &Session{})
 	registerTable("SK", &Secret{})
+	registerTable("SR", &ScheduledRun{})
 	registerTable("TA", &Target{})
 	registerTable("TL", &TelemetryLog{})
 	registerTable("TO", &Token{})
@@ -1434,5 +1507,6 @@ func RegisterTables() {
 	registerTable("UL", &UserList{})
 	registerTable("UU", &UserUserList{})
 	registerTable("UM", &UserListGroup{})
+	registerTable("UR", &UsageAlertingRule{})
 	registerTable("WF", &Workflow{})
 }

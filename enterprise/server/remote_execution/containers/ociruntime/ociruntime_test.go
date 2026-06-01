@@ -29,7 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
@@ -123,6 +123,63 @@ func installFileCacheInEnv(t testing.TB, env *real_environment.RealEnv) {
 	t.Cleanup(func() { fc.Close() })
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
+}
+
+func TestPullImageIfNecessaryReauthenticatesCachedOCIImage(t *testing.T) {
+	setupNetworking(t)
+
+	registryCreds := &testregistry.BasicAuthCreds{
+		Username: "authorized-user",
+		Password: "authorized-password",
+	}
+	reg := testregistry.Run(t, testregistry.Opts{Creds: registryCreds})
+	imageRef, _ := reg.PushNamedImageWithFiles(t, "private-image", map[string][]byte{
+		"/private.txt": []byte("group A private contents"),
+	}, registryCreds)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	env.SetAuthenticator(ta)
+	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
+	installFileCacheInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+
+	groupACtx, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	groupAContainer, err := provider.New(groupACtx, &container.Init{Props: &platform.Properties{
+		ContainerImage: imageRef,
+	}})
+	require.NoError(t, err)
+	err = container.PullImageIfNecessary(groupACtx, env, groupAContainer, oci.Credentials{
+		Username: registryCreds.Username,
+		Password: registryCreds.Password,
+	}, imageRef, false)
+	require.NoError(t, err)
+	require.NoError(t, groupAContainer.Remove(groupACtx))
+
+	groupBCtx, err := ta.WithAuthenticatedUser(ctx, "US2")
+	require.NoError(t, err)
+	groupBContainer, err := provider.New(groupBCtx, &container.Init{Props: &platform.Properties{
+		ContainerImage: imageRef,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, groupBContainer.Remove(groupBCtx))
+	})
+
+	err = container.PullImageIfNecessary(groupBCtx, env, groupBContainer, oci.Credentials{
+		Username: registryCreds.Username,
+		Password: "wrong-password",
+	}, imageRef, false)
+
+	require.True(t, status.IsPermissionDeniedError(err), "cached private OCI image must still be re-authenticated for a different group; got %v", err)
 }
 
 func TestRun(t *testing.T) {
@@ -913,8 +970,6 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 }
 
 func TestCreateFailureHasStderr(t *testing.T) {
-	// TODO: https://github.com/buildbuddy-io/buildbuddy-internal/issues/6878
-	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
 	image := busyboxImage(t)
@@ -940,11 +995,12 @@ func TestCreateFailureHasStderr(t *testing.T) {
 			ContainerImage: image,
 		},
 	})
+	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := c.Remove(ctx)
 		require.NoError(t, err)
 	})
-
+	err = c.PullImage(ctx, oci.Credentials{})
 	require.NoError(t, err)
 	err = c.Create(ctx, wd+"nonexistent")
 	require.ErrorContains(t, err, "nonexistent")
@@ -2093,6 +2149,45 @@ func TestMounts(t *testing.T) {
 	assert.Equal(t, "bar", string(res.Stdout))
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
+}
+
+func TestShmSize(t *testing.T) {
+	setupNetworking(t)
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	// Configure a non-default /dev/shm size for this container.
+	const shmSizeBytes = 777 * 4096
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+		ShmSizeBytes:   new(int64(shmSizeBytes)),
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Run inside the container and check the kernel-reported mount options.
+	cmd := &repb.Command{
+		Arguments: []string{"grep", " /dev/shm ", "/proc/mounts"},
+	}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Contains(t, string(res.Stdout), "size=3108k")
 }
 
 func TestCDIDevicesMountsFromCDISpec(t *testing.T) {

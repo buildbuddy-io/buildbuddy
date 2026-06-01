@@ -4,8 +4,9 @@ DEFAULT_CMD_TPL = """
 export BAZEL_BINDIR=. &&
 export ROOTDIR=$$(pwd) &&
 export PACKAGEDIR=$$(dirname $(location {package})) &&
-export PATH=$$ROOTDIR/$$(dirname $(location {yarn})):$$ROOTDIR/$$(dirname $(NODE_PATH)):$$PATH &&
+export PATH=$$ROOTDIR/$$(dirname $(location {corepack})):$$ROOTDIR/$$(dirname $(NODE_PATH)):$$PATH &&
 cd $$PACKAGEDIR &&
+corepack enable &&
 yarn install &&
 yarn {command} &&
 cd build &&
@@ -18,8 +19,9 @@ EXECUTABLE_CMD_TPL = (
     """
 cat << EOF > $@
 export BAZEL_BINDIR=. &&
-export PATH=$$(pwd)/$$(dirname $(location {yarn})):$$(pwd)/$$(dirname $(NODE_PATH)):$$PATH &&
+export PATH=$$(pwd)/$$(dirname $(location {corepack})):$$(pwd)/$$(dirname $(NODE_PATH)):$$PATH &&
 cd $$(dirname $(location {package})) &&
+corepack enable &&
 yarn install &&""" +
 
     # To explain the complicated escaping here:
@@ -39,7 +41,7 @@ EOF
 """
 )
 
-def yarn(name, srcs, package, command = "build", deps = [], yarn = Label("//rules/yarn"), node = Label("@nodejs_toolchains//:resolved_toolchain"), **kwargs):
+def yarn(name, srcs, package, command = "build", deps = [], corepack = Label("//rules/yarn:corepack"), node = Label("@nodejs_toolchains//:resolved_toolchain"), **kwargs):
     extension = ".tar"
     executable = False
     if command != "build":
@@ -53,7 +55,7 @@ def yarn(name, srcs, package, command = "build", deps = [], yarn = Label("//rule
 
     cmd = cmd_tpl.format(
         package = package,
-        yarn = yarn,
+        corepack = corepack,
         command = command,
     )
 
@@ -63,7 +65,7 @@ def yarn(name, srcs, package, command = "build", deps = [], yarn = Label("//rule
         outs = [name + extension],
         cmd_bash = cmd,
         executable = executable,
-        tools = [yarn, node],
+        tools = [corepack, node],
         toolchains = [node],
         local = 1,
         **kwargs

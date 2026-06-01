@@ -1,3 +1,8 @@
+// Package execution_server implements the Remote Execution API's Execution
+// gRPC service. It dispatches Execute requests to executors via the
+// scheduler, receives progress updates from executors over PublishOperation,
+// fans those updates out to WaitExecution clients via Redis pub/sub, and
+// records execution metadata to Redis, the primary DB, and Clickhouse.
 package execution_server
 
 import (
@@ -38,7 +43,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
-	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -54,6 +58,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/go-redis/redis/v8"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/metadata"
@@ -178,6 +183,7 @@ type ExecutionServer struct {
 	invocationDB                      interfaces.InvocationDB
 	taskSizer                         interfaces.TaskSizer
 	actionCacheClient                 repb.ActionCacheClient
+	clock                             clockwork.Clock
 
 	mu          sync.Mutex
 	teeLimiters map[string]*rate.Limiter
@@ -243,6 +249,7 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 		invocationDB:                      invocationDB,
 		taskSizer:                         taskSizer,
 		actionCacheClient:                 actionCacheClient,
+		clock:                             env.GetClock(),
 	}, nil
 }
 
@@ -324,7 +331,7 @@ func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID,
 	// execution is complete.
 	redisErr := s.insertInvocationLinkInRedis(ctx, executionID, invocationID, linkType)
 	if redisErr != nil {
-		log.CtxWarningf(ctx, "Failed to add invocation link (invocation_id: %q, link_type: %d) in redis", invocationID, linkType)
+		log.CtxWarningf(ctx, "Failed to add invocation link (invocation_id: %q, link_type: %d) in redis: %v", invocationID, linkType, redisErr)
 	}
 
 	if !s.writeExecutionsToPrimaryDB {
@@ -444,6 +451,9 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.RequestedMilliCpu = properties.EstimatedMilliCPU
 				executionProto.RequestedFreeDiskBytes = properties.EstimatedFreeDiskBytes
 				executionProto.RequestedPool = properties.Pool
+				executionProto.RecycleRunner = properties.RecycleRunner
+				executionProto.Os = properties.OS
+				executionProto.Arch = properties.Arch
 			}
 
 			schedulingMeta := auxMeta.GetSchedulingMetadata()
@@ -504,10 +514,15 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 	return dbErr
 }
 
-// flushExecutionToOLAP flushes execution data to Clickhouse.
-func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID string) error {
+// flushExecutionToOLAP flushes execution data to Clickhouse. Returns the
+// merged StoredExecution if and only if the execution was successfully flushed.
+// Because operation updates can be retried, this function may be called twice
+// for the same execution. The Redis invocation-link cleanup at the end of the
+// first successful call ensures the second call short-circuits and returns a
+// nil StoredExecution.
+func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID string) (*repb.StoredExecution, error) {
 	if !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
-		return nil
+		return nil, nil
 	}
 
 	// Always clean up invocationLinks and execution updates from the collector.
@@ -526,12 +541,12 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 
 	executionProto, err := s.executionCollector.GetInProgressExecution(ctx, executionID)
 	if err != nil {
-		return status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
+		return nil, status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
 	}
 
 	links, err := s.executionCollector.GetExecutionInvocationLinks(ctx, executionID)
 	if err != nil {
-		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
+		return nil, status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
 	for _, link := range links {
 		executionProto := executionProto.CloneVT()
@@ -563,7 +578,20 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 			}
 		}
 	}
-	return nil
+	return executionProto, nil
+}
+
+func (s *ExecutionServer) flushAndRecordUsage(ctx context.Context, taskID string) {
+	execution, err := s.flushExecutionToOLAP(ctx, taskID)
+	if err != nil {
+		log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
+	}
+	if execution != nil {
+		// TODO(vanja) should this be done when the executor got a cache hit?
+		if err := s.updateUsageFromStoredExecution(ctx, execution); err != nil {
+			log.CtxWarningf(ctx, "Failed to update usage for execution %q: %s", taskID, err)
+		}
+	}
 }
 
 // getUnvalidatedActionResult fetches an action result from the cache but does
@@ -592,7 +620,7 @@ func (s *ExecutionServer) getActionResultFromCache(ctx context.Context, d *diges
 		return nil, err
 	}
 	chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
-	if err := action_cache_server.ValidateActionResult(ctx, s.cache, d.GetInstanceName(), d.GetDigestFunction(), chunkingEnabled, actionResult); err != nil {
+	if err := action_cache_server.ValidateActionResult(ctx, s.cache, d.GetInstanceName(), d.GetDigestFunction(), chunkingEnabled, s.env.GetExperimentFlagProvider(), actionResult); err != nil {
 		return nil, err
 	}
 	return actionResult, nil
@@ -742,7 +770,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		return nil, err
 	}
 	if wd := command.GetWorkingDirectory(); wd != "" {
-		if filepath.IsAbs(wd) || !filepath.IsLocal(wd) {
+		if filepath.IsAbs(wd) || !filepath.IsLocal(wd) || wd == "." {
 			return nil, status.InvalidArgumentErrorf("working_directory %q must be a relative path within the input root", wd)
 		}
 	}
@@ -871,9 +899,12 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	efp := s.env.GetExperimentFlagProvider()
-	if cdc.EnabledViaHeader(ctx) || (chunking.Enabled(ctx, efp) && efp != nil && efp.Boolean(ctx, "executor.upload_outputs_chunked", false)) {
+	if efp != nil && chunking.Enabled(ctx, efp) && efp.Boolean(ctx, "executor.upload_outputs_chunked", false) {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.upload_outputs_chunked")
-		executionTask.FastCdc_2020Params = chunking.FastCDCParams()
+		executionTask.FastCdc_2020Params = chunking.FastCDCWriteParams(ctx, efp)
+	}
+	if efp != nil && chunking.Enabled(ctx, efp) && efp.Boolean(ctx, "executor.download_inputs_chunked", false) {
+		executionTask.Experiments = append(executionTask.Experiments, "executor.download_inputs_chunked")
 	}
 
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
@@ -986,6 +1017,11 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		defer cancel()
 		if opts.recordActionMergingState {
 			_ = action_merger.DeletePendingExecution(ctx, s.rdb, executionID)
+		}
+		if s.enableRedisAvailabilityMonitoring {
+			if err := s.streamPubSub.DeleteMonitoredChannel(ctx, redisKeyForMonitoredTaskStatusStream(executionID)); err != nil {
+				log.CtxWarningf(ctx, "Failed to delete pubsub channel: %s", err)
+			}
 		}
 		return nil, status.UnavailableErrorf("Error scheduling execution task %q: %s", executionID, err)
 	}
@@ -1243,25 +1279,6 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 	}
 }
 
-func loopAfterTimeout(ctx context.Context, timeout time.Duration, f func() bool) {
-	ticker := time.NewTicker(timeout)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			{
-				return
-			}
-		case <-ticker.C:
-			{
-				if shouldContinue := f(); !shouldContinue {
-					return
-				}
-			}
-		}
-	}
-}
-
 func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string, reason error) error {
 	r, err := digest.ParseUploadResourceName(taskID)
 	if err != nil {
@@ -1304,7 +1321,7 @@ func (s *ExecutionServer) recordFailedExecution(ctx context.Context, taskID stri
 	if err := s.updateExecution(ctx, taskID, repb.ExecutionStage_COMPLETED, executeRsp, auxMetadata, properties, action, cmd); err != nil {
 		return err
 	}
-	if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
+	if _, err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
 		log.CtxWarningf(ctx, "MarkExecutionFailed: failed to flush execution to clickhouse: %s", err)
 	}
 	return nil
@@ -1326,38 +1343,61 @@ func (s *ExecutionServer) metadataForClickhouse(ctx context.Context, taskID stri
 	return action, cmd, properties, nil
 }
 
+// PublishOperation is called by the executor to publish updates to the
+// execution operation as the execution progresses. The server will stream these
+// updates to the client via WaitExecution, and will also use these updates to
+// keep the execution status in the database up-to-date.
 func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperationServer) error {
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.authenticator)
 	if err != nil {
 		return err
 	}
 	lastOp := &longrunningpb.Operation{}
-	lastWrite := time.Now()
 	taskID := ""
 	// Once the executor has called PublishOperation, we're in EXECUTING stage.
 	stage := repb.ExecutionStage_EXECUTING
 	mu := sync.Mutex{}
-	// 80% of executions take < 10 seconds in total. So here, we delay
-	// writes to the database if pubsub.Publish is successful, in an
-	// attempt to reduce DB load. To ensure that executions complete, even
-	// if no pubsub listener receives our published updates, we *always*
-	// write the execution on stage == COMPLETE or after 5 seconds have
-	// passed with no writes.
-	go loopAfterTimeout(ctx, time.Second, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		if time.Since(lastWrite) > 5*time.Second && taskID != "" {
-			// We only write additional metadata when the operation has completed, so
-			// we don't need to pass those fields here for intermediary updates.
-			if err := s.updateExecution(ctx, taskID, stage, operation.ExtractExecuteResponse(lastOp), nil, nil, nil, nil); err != nil {
-				log.CtxWarningf(ctx, "PublishOperation: FlushWrite: error updating execution: %s", err)
-				return false
+	// Most actions are fast so it doesn't make sense to write to the DB.
+	// Delay the first write to the DB until either the execution has been
+	// running for 5 seconds. We will write at most 2 times:
+	// 1) An intermediary update after 5 seconds if the execution is still running, to capture long-running executions in the DB.
+	// 2) A final update when the execution completes, to capture metadata that's only available at the end of the execution (e.g. cache hit/miss, detailed timing info, etc).
+	// At least one of these writes will happen. The first write must not happen
+	// if the second one did.
+	start := s.clock.Now()
+	go func(ctx context.Context) {
+		ticker := s.clock.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.Chan():
+				if func() (exit bool) {
+					mu.Lock()
+					defer mu.Unlock()
+					if stage == repb.ExecutionStage_COMPLETED {
+						// The main loop will handle this write. If it fails, the
+						// client will retry the PublishOperation call.
+						return true
+					}
+					if s.clock.Since(start) > 5*time.Second && taskID != "" {
+						// We only write additional metadata when the operation has completed, so
+						// we don't need to pass those fields here for intermediary updates.
+						if err := s.updateExecution(ctx, taskID, stage, operation.ExtractExecuteResponse(lastOp), nil, nil, nil, nil); err != nil {
+							ctx = log.EnrichContext(ctx, log.ExecutionIDKey, taskID)
+							log.CtxWarningf(ctx, "PublishOperation: FlushWrite: error updating execution: %s", err)
+						} else {
+							return true // only write once
+						}
+					}
+					return false
+				}() {
+					return
+				}
 			}
-			lastWrite = time.Now()
-			return false
 		}
-		return true
-	})
+	}(ctx) // pass in the ctx because the main loop will modify it and race against ctx.Done() otherwise.
 
 	deletePendingExecutionOnce := sync.OnceFunc(func() {
 		if taskID == "" {
@@ -1371,13 +1411,17 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	})
 	defer deletePendingExecutionOnce()
 
+	flushExecutionsOnEOF := false
+	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
+		flushExecutionsOnEOF = fp.Boolean(ctx, "remote_execution.flush_executions_after_cleanup", false)
+	}
+
 	for {
 		op, err := stream.Recv()
 		if err == io.EOF {
-			// TODO(Maggie): Flush execution data to DB when the stream is closed
-			//if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
-			//	log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
-			//}
+			if flushExecutionsOnEOF {
+				s.flushAndRecordUsage(ctx, taskID)
+			}
 			return stream.SendAndClose(&repb.PublishOperationResponse{})
 		}
 		if err != nil {
@@ -1449,10 +1493,12 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
 				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
 			}
-			if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties); err != nil {
+			if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties, flushExecutionsOnEOF); err != nil {
 				// Errors updating the router or recording usage are non-fatal.
 				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
 			}
+
+			recordResponseMetrics(response, auxMeta, s.getGroupIDForMetrics(ctx))
 		}
 		data, err := proto.Marshal(op)
 		if err != nil {
@@ -1472,12 +1518,10 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
-				lastWrite = time.Now()
-				// TODO(Maggie): After receiving cleanup stats, update execution in OLAP again.
-				// TODO(Maggie): Flush execution data to DB when the stream is closed.
-				// Don't flush early here.
-				if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
-					log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
+				if !flushExecutionsOnEOF {
+					if _, err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
+						log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
+					}
 				}
 				return nil
 			}()
@@ -1493,6 +1537,20 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				}
 			}
 		}
+	}
+}
+
+// records prometheus metrics about the response + metadata sizes.
+func recordResponseMetrics(rsp *repb.ExecuteResponse, auxMD *espb.ExecutionAuxiliaryMetadata, groupID string) {
+	if timeline := rsp.GetResult().GetExecutionMetadata().GetUsageStats().GetTimeline(); timeline != nil {
+		metrics.RemoteExecutionResourceUsageTimelineMetadataSizeBytes.With(prometheus.Labels{
+			metrics.GroupID: groupID,
+		}).Observe(float64(proto.Size(timeline)))
+	}
+	if inputFetchMetadata := auxMD.GetInputFetchDetailedStats(); inputFetchMetadata != nil {
+		metrics.RemoteExecutionInputDownloadBitmapMetadataSizeBytes.With(prometheus.Labels{
+			metrics.GroupID: groupID,
+		}).Observe(float64(proto.Size(inputFetchMetadata)))
 	}
 }
 
@@ -1533,7 +1591,12 @@ func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceN
 
 // markTaskComplete contains logic to be run when the task is complete but
 // before letting the client know that the task has completed.
-func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ACResourceName, executeResponse *repb.ExecuteResponse, action *repb.Action, cmd *repb.Command, properties *platform.Properties) error {
+//
+// When flushExecutionsOnEOF is false (the legacy path, experiment off),
+// usage is recorded here from the live ExecuteResponse + platform.Properties.
+// When true, usage is recorded later by flushAndRecordUsage from the merged
+// StoredExecution in Redis.
+func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ACResourceName, executeResponse *repb.ExecuteResponse, action *repb.Action, cmd *repb.Command, properties *platform.Properties, flushExecutionsOnEOF bool) error {
 	execErr := gstatus.ErrorProto(executeResponse.GetStatus())
 	router := s.env.GetTaskRouter()
 	if router != nil && !executeResponse.GetCachedResult() {
@@ -1558,9 +1621,11 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 		}
 	}
 
-	if err := s.updateUsage(ctx, executeResponse, properties); err != nil {
-		// TODO(vanja) should this be done when the executor got a cache hit?
-		log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", executeResponse, err)
+	if !flushExecutionsOnEOF {
+		if err := s.updateUsage(ctx, executeResponse, properties); err != nil {
+			// TODO(vanja) should this be done when the executor got a cache hit?
+			log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", executeResponse, err)
+		}
 	}
 
 	return nil
@@ -1595,6 +1660,47 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 	usg := executeResponse.GetResult().GetExecutionMetadata().GetUsageStats()
 	if !pool.IsSelfHosted && usg.GetCpuNanos() > 0 {
 		counts.CPUNanos = usg.GetCpuNanos()
+
+		// If quota is exceeded, the next execution will be blocked.
+		if qm := s.env.GetQuotaManager(); qm != nil {
+			namespace := quota.GetSKUKey(sku.RemoteExecutionExecuteWorkerCPUNanos)
+			if err := qm.Allow(ctx, namespace, counts.CPUNanos); err != nil {
+				log.CtxWarningf(ctx, "CPU time quota exhausted after execution: %s", err)
+			}
+		}
+	}
+	labels, err := usageutil.LabelsForUsageRecording(ctx, usageutil.ServerName())
+	if err != nil {
+		return status.WrapError(err, "compute usage labels")
+	}
+	return ut.Increment(ctx, labels, counts)
+}
+
+// updateUsageFromStoredExecution records usage counters from a merged
+// StoredExecution read out of Redis by flushExecutionToOLAP.
+func (s *ExecutionServer) updateUsageFromStoredExecution(ctx context.Context, execution *repb.StoredExecution) error {
+	ut := s.env.GetUsageTracker()
+	if ut == nil {
+		return nil
+	}
+	dur, err := executionDurationFromStored(execution)
+	if err != nil {
+		// If the task encountered an error, it's somewhat expected that the
+		// execution duration will be unset, so don't return an error. For
+		// example, we may have failed to pull the image, so execution could not
+		// even begin. Note that an error doesn't necessarily imply a missing
+		// exec duration though; we may get a DeadlineExceeded error if the task
+		// times out, but still get an exec duration.
+		if execution.GetStatusCode() != 0 {
+			return nil
+		}
+		return err
+	}
+
+	counts := &tables.UsageCounts{}
+	setExecutionDurationFromStored(counts, dur, execution)
+	if !execution.GetSelfHosted() && execution.GetCpuNanos() > 0 {
+		counts.CPUNanos = execution.GetCpuNanos()
 
 		// If quota is exceeded, the next execution will be blocked.
 		if qm := s.env.GetQuotaManager(); qm != nil {
@@ -1715,6 +1821,38 @@ func setExecutionDuration(counts *tables.UsageCounts, duration time.Duration, po
 		if props.OS == platform.LinuxOperatingSystemName {
 			counts.LinuxExecutionDurationUsec += duration.Microseconds()
 		} else if props.OS == platform.DarwinOperatingSystemName {
+			counts.MacExecutionDurationUsec += duration.Microseconds()
+		}
+	}
+}
+
+func executionDurationFromStored(execution *repb.StoredExecution) (time.Duration, error) {
+	startUsec := execution.GetWorkerStartTimestampUsec()
+	endUsec := execution.GetWorkerCompletedTimestampUsec()
+	if startUsec == 0 || endUsec == 0 {
+		return 0, status.InternalErrorf("Execution worker timestamps not set")
+	}
+	dur := time.UnixMicro(endUsec).Sub(time.UnixMicro(startUsec))
+	if dur <= 0 {
+		return 0, status.InternalErrorf("Execution duration is <= 0")
+	}
+	return dur, nil
+}
+
+func setExecutionDurationFromStored(counts *tables.UsageCounts, duration time.Duration, execution *repb.StoredExecution) {
+	if duration < 0 {
+		return
+	}
+	if execution.GetSelfHosted() {
+		if execution.GetOs() == platform.LinuxOperatingSystemName {
+			counts.SelfHostedLinuxExecutionDurationUsec += duration.Microseconds()
+		} else if execution.GetOs() == platform.DarwinOperatingSystemName {
+			counts.SelfHostedMacExecutionDurationUsec += duration.Microseconds()
+		}
+	} else {
+		if execution.GetOs() == platform.LinuxOperatingSystemName {
+			counts.LinuxExecutionDurationUsec += duration.Microseconds()
+		} else if execution.GetOs() == platform.DarwinOperatingSystemName {
 			counts.MacExecutionDurationUsec += duration.Microseconds()
 		}
 	}

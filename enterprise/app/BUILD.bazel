@@ -59,6 +59,7 @@ genrule(
         "//enterprise/app/code:monaco.css",
         "//enterprise/app/codesearch:codesearch.css",
         "//enterprise/app/executors:executors.css",
+        "//enterprise/app/cache_proxies:cache_proxies.css",
         "//enterprise/app/filter:css",
         "//app:style.css",
     ],

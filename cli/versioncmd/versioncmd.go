@@ -38,13 +38,19 @@ func runBazelVersion(args []string) (int, error) {
 	// the command to bazel
 	args = append([]string{"version"}, args...)
 
-	plugins, bazelArgs, execArgs, _, _, err := setup.Setup(args, tempDir)
+	bazelArgsStr, execArgs := arg.SplitExecutableArgs(args)
+	bazelArgs, err := arg.NewBazelArgs(bazelArgsStr)
+	if err != nil {
+		return 1, err
+	}
+
+	setupResult, err := setup.Setup(bazelArgs, execArgs, tempDir)
 	if err != nil {
 		return 1, status.WrapError(err, "bazel setup")
 	}
 
 	outputPath := filepath.Join(tempDir, "bazel.log")
 	return plugin.RunBazeliskWithPlugins(
-		arg.JoinExecutableArgs(bazelArgs, execArgs),
-		outputPath, plugins)
+		arg.JoinExecutableArgs(setupResult.BazelArgs.Forwarded(), setupResult.ExecArgs),
+		outputPath, setupResult.Plugins)
 }

@@ -146,6 +146,7 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 			TargetRepoDefaultBranch: event.GetRepo().GetDefaultBranch(),
 			TargetBranch:            branch,
 			IsTargetRepoPublic:      !event.GetRepo().GetPrivate(),
+			ChangedFiles:            pushEventChangedFiles(event),
 		}, nil
 
 	case *gh.PullRequestEvent:
@@ -181,6 +182,26 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 	default:
 		return nil, nil
 	}
+}
+
+// pushEventChangedFiles returns any files modified by a push event.
+func pushEventChangedFiles(event *gh.PushEvent) []string {
+	seen := map[string]struct{}{}
+	var files []string
+	add := func(paths []string) {
+		for _, p := range paths {
+			if _, ok := seen[p]; !ok {
+				seen[p] = struct{}{}
+				files = append(files, p)
+			}
+		}
+	}
+	for _, c := range event.Commits {
+		add(c.Added)
+		add(c.Removed)
+		add(c.Modified)
+	}
+	return files
 }
 
 type HasPullRequestEvent interface {
@@ -257,7 +278,7 @@ func (*githubGitProvider) IsTrusted(ctx context.Context, accessToken, repoURL, u
 	return level.GetPermission() == "admin" || level.GetPermission() == "write", nil
 }
 
-func (g *githubGitProvider) CreateStatus(ctx context.Context, token, repoURL, commitSHA string, payload any) error {
+func (g *githubGitProvider) CreateStatus(ctx context.Context, token, groupID, repoURL, commitSHA string, payload any) error {
 	s, ok := payload.(*gh_backend.GithubStatusPayload)
 	if !ok {
 		return status.InvalidArgumentErrorf("invalid GitHub status payload type %T (expected %T)", payload, &gh_backend.GithubStatusPayload{})
@@ -267,7 +288,7 @@ func (g *githubGitProvider) CreateStatus(ctx context.Context, token, repoURL, co
 	if err != nil {
 		return err
 	}
-	return client.CreateStatus(ctx, ownerRepo, commitSHA, s)
+	return client.CreateStatus(ctx, groupID, ownerRepo, commitSHA, s)
 }
 
 func webhookJSONPayload(r *http.Request) ([]byte, error) {

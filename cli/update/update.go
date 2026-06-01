@@ -23,6 +23,7 @@ var installScript string
 
 var (
 	flags         = flag.NewFlagSet("update", flag.ContinueOnError)
+	Flags         = flags
 	workspaceFlag = flags.Bool("workspace", false, "")
 	systemFlag    = flags.Bool("system", false, "")
 )

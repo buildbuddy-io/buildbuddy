@@ -29,10 +29,9 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
-
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 )
 
 const (
@@ -132,9 +131,12 @@ func addClientIPToContext(ctx context.Context) context.Context {
 
 func addPeerIPToContext(ctx context.Context) context.Context {
 	if p, ok := peer.FromContext(ctx); ok {
+		if p.Addr.Network() == "unix" {
+			return ctx
+		}
 		ap, err := netip.ParseAddrPort(p.Addr.String())
 		if err != nil {
-			alert.UnexpectedEvent("invalid peer %q", p.Addr.String(), err.Error())
+			alert.UnexpectedEvent("add_peer_ip_invalid_peer", p.Addr.String(), err.Error())
 			return ctx
 		}
 		return context.WithValue(ctx, clientip.ContextKey, ap.Addr().String())
@@ -466,33 +468,59 @@ func PropagateMetadataStreamInterceptor(keys ...string) grpc.StreamServerInterce
 	return contextReplacingStreamServerInterceptor(propagateMetadataFromIncomingToOutgoing(keys...))
 }
 
-func propagateBazelRequestMetadataIDsToSpan(ctx context.Context) {
+func requestMetadataAttributes(ctx context.Context) []attribute.KeyValue {
 	metadata := bazel_request.GetRequestMetadata(ctx)
-	attributes := make([]attribute.KeyValue, 0, 2)
+	attributes := make([]attribute.KeyValue, 0, 8)
 	if id := metadata.GetToolInvocationId(); id != "" {
 		attributes = append(attributes, attribute.String("invocation_id", id))
 	}
 	if id := metadata.GetActionId(); id != "" {
 		attributes = append(attributes, attribute.String("action_id", id))
 	}
+	if id := metadata.GetCorrelatedInvocationsId(); id != "" {
+		attributes = append(attributes, attribute.String("correlated_invocations_id", id))
+	}
+	if mnemonic := metadata.GetActionMnemonic(); mnemonic != "" {
+		attributes = append(attributes, attribute.String("action_mnemonic", mnemonic))
+	}
+	if id := metadata.GetTargetId(); id != "" {
+		attributes = append(attributes, attribute.String("target_id", id))
+	}
+	if id := metadata.GetConfigurationId(); id != "" {
+		attributes = append(attributes, attribute.String("configuration_id", id))
+	}
+	if toolName := metadata.GetToolDetails().GetToolName(); toolName != "" {
+		attributes = append(attributes, attribute.String("tool_name", toolName))
+	}
+	if toolVersion := metadata.GetToolDetails().GetToolVersion(); toolVersion != "" {
+		attributes = append(attributes, attribute.String("tool_version", toolVersion))
+	}
+	return attributes
+}
+
+func propagateBazelRequestMetadataToSpan(ctx context.Context) {
+	span := trace.SpanFromContext(ctx)
+	if !span.IsRecording() {
+		return
+	}
+	attributes := requestMetadataAttributes(ctx)
 	if len(attributes) == 0 {
 		return
 	}
-	span := trace.SpanFromContext(ctx)
 	span.SetAttributes(attributes...)
 }
 
-func propagateRequestMetadataIDsToSpanUnaryServerInterceptor() grpc.UnaryServerInterceptor {
+func propagateRequestMetadataToSpanUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
-		propagateBazelRequestMetadataIDsToSpan(ctx)
+		propagateBazelRequestMetadataToSpan(ctx)
 		return handler(ctx, req)
 	}
 }
 
-func propagateRequestMetadataIDsToSpanStreamServerInterceptor() grpc.StreamServerInterceptor {
+func propagateRequestMetadataToSpanStreamServerInterceptor() grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		ctx := stream.Context()
-		propagateBazelRequestMetadataIDsToSpan(ctx)
+		propagateBazelRequestMetadataToSpan(ctx)
 		return handler(srv, stream)
 	}
 }
@@ -528,7 +556,7 @@ func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnarySer
 	interceptors := []grpc.UnaryServerInterceptor{
 		unaryRecoveryInterceptor(),
 		copyHeadersUnaryServerInterceptor(),
-		propagateRequestMetadataIDsToSpanUnaryServerInterceptor(),
+		propagateRequestMetadataToSpanUnaryServerInterceptor(),
 		ClientIPUnaryServerInterceptor(),
 		subdomainUnaryServerInterceptor(),
 		requestIDUnaryServerInterceptor(),
@@ -554,7 +582,7 @@ func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamS
 	interceptors := []grpc.StreamServerInterceptor{
 		streamRecoveryInterceptor(),
 		copyHeadersStreamServerInterceptor(),
-		propagateRequestMetadataIDsToSpanStreamServerInterceptor(),
+		propagateRequestMetadataToSpanStreamServerInterceptor(),
 		clientIPStreamServerInterceptor(),
 		subdomainStreamServerInterceptor(),
 		requestIDStreamServerInterceptor(),

@@ -90,7 +90,7 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 		}
 
 		if chunkingEnabled {
-			c.CacheCapabilities.FastCdc_2020Params = chunking.FastCDCParams()
+			c.CacheCapabilities.FastCdc_2020Params = chunking.FastCDCParams(ctx, s.env.GetExperimentFlagProvider())
 		}
 	}
 	if s.supportRemoteExec {

@@ -27,9 +27,6 @@ import (
 	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/mem"
-
-	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver"
-	_ "google.golang.org/grpc/xds"
 )
 
 const (
@@ -161,11 +158,12 @@ func (p *ClientConnPool) NewStream(ctx context.Context, desc *grpc.StreamDesc, m
 	gauge := metrics.PendingClientRPCsPerConnection.WithLabelValues(p.targetForLogging, p.id, method, conn.index)
 	decFn := sync.OnceFunc(func() { gauge.Dec() })
 	opts = append(opts, grpc.OnFinish(func(_ error) { decFn() }))
+	gauge.Inc()
 	stream, err := conn.NewStream(ctx, desc, method, opts...)
 	if err != nil {
+		decFn()
 		return stream, err
 	}
-	gauge.Inc()
 	return stream, nil
 }
 

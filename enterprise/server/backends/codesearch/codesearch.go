@@ -3,7 +3,6 @@ package codesearch
 import (
 	"context"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -68,7 +67,15 @@ func (css *CodesearchService) Index(ctx context.Context, req *inpb.IndexRequest)
 	}
 
 	if req.GetReplacementStrategy() == inpb.ReplacementStrategy_REPLACE_REPO {
-		token, err := githubapp.GetRepositoryInstallationToken(ctx, css.env, claims.GroupID, req.GetGitRepo().GetRepoUrl())
+		gh := css.env.GetGitHubAppService()
+		if gh == nil {
+			return nil, status.UnimplementedError("No GitHub app configured")
+		}
+		app, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
+		if err != nil {
+			return nil, err
+		}
+		token, err := app.GetRepositoryInstallationToken(ctx, claims.GroupID, req.GetGitRepo().GetRepoUrl())
 		if err != nil {
 			return nil, err
 		}

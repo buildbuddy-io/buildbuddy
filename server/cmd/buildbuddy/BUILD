@@ -75,5 +75,6 @@ go_library(
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/version",
+        "@org_golang_google_grpc//xds",
     ],
 )

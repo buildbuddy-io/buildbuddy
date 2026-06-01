@@ -1220,7 +1220,7 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 					case *command_line.CommandLineSection_OptionList:
 						for _, option := range s.OptionList.Option {
 							if option.GetOptionName() == "terminal_columns" {
-								terminalColumns, err := strconv.ParseInt(option.OptionValue, 10, 64)
+								terminalColumns, err := strconv.ParseInt(option.OptionValue, 10, strconv.IntSize)
 								if err != nil {
 									terminalColumns = math.MaxInt
 								}

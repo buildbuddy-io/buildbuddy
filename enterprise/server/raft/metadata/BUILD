@@ -61,7 +61,6 @@ go_test(
         "//server/gossip",
         "//server/interfaces",
         "//server/remote_cache/digest",
-        "//server/testutil/quarantine",
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",

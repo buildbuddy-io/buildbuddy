@@ -1,0 +1,25 @@
+load("@rules_distroless//apt:defs.bzl", "dpkg_statusd")
+
+alias(
+    name = "data",
+    actual = {data_targets},
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "control",
+    actual = {control_targets},
+    visibility = ["//visibility:public"],
+)
+
+dpkg_statusd(
+    name = "statusd",
+    control = ":control",
+    package_name = "{name}"
+)
+
+filegroup(
+    name = "{target_name}",
+    srcs = {deps} + [":data", ":statusd"],
+    visibility = ["//visibility:public"],
+)

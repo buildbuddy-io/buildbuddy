@@ -3,6 +3,7 @@ package perms
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -121,10 +122,8 @@ func AuthorizeRead(u interfaces.UserInfo, acl *aclpb.ACL) error {
 		return nil
 	}
 	if perms&GROUP_READ != 0 {
-		for _, groupID := range u.GetAllowedGroups() {
-			if groupID == acl.GetGroupId() {
-				return nil
-			}
+		if slices.Contains(u.GetAllowedGroups(), acl.GetGroupId()) {
+			return nil
 		}
 	}
 
@@ -153,10 +152,8 @@ func AuthorizeWrite(authenticatedUser *interfaces.UserInfo, acl *aclpb.ACL) erro
 		return nil
 	}
 	if perms&GROUP_WRITE != 0 {
-		for _, groupID := range u.GetAllowedGroups() {
-			if groupID == acl.GetGroupId() {
-				return nil
-			}
+		if slices.Contains(u.GetAllowedGroups(), acl.GetGroupId()) {
+			return nil
 		}
 	}
 

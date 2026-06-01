@@ -191,4 +191,43 @@ func TestNew(t *testing.T) {
 	err = common.SetValueForFlagName(flags, "struct_slice", []testStruct{{Field: 3}}, map[string]struct{}{"struct_slice": {}}, false)
 	require.NoError(t, err)
 	assert.Equal(t, []testStruct{{Field: 1}, {Field: 2}}, *structSlice)
+
+	// Map flags: append=true merges the new map into the existing one
+	// (via Accumulable.Accumulate, later-wins on key conflicts).
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
+	defaultStringMap := map[string]string{"a": "1", "b": "2"}
+	stringMap := New(flags, "string_map", defaultStringMap, "")
+	assert.Equal(t, map[string]string{"a": "1", "b": "2"}, *stringMap)
+	err = common.SetValueForFlagName(flags, "string_map", map[string]string{"b": "20", "c": "3"}, map[string]struct{}{}, true)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"a": "1", "b": "20", "c": "3"}, *stringMap)
+
+	// append=true also merges when the flag is already in setFlags.
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
+	stringMap = New(flags, "string_map", defaultStringMap, "")
+	err = common.SetValueForFlagName(flags, "string_map", map[string]string{"c": "3"}, map[string]struct{}{"string_map": {}}, true)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"a": "1", "b": "2", "c": "3"}, *stringMap)
+
+	// append=false replaces when the flag hasn't been set.
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
+	stringMap = New(flags, "string_map", defaultStringMap, "")
+	err = common.SetValueForFlagName(flags, "string_map", map[string]string{"c": "3"}, map[string]struct{}{}, false)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"c": "3"}, *stringMap)
+
+	// append=false does not overwrite when the flag is already in setFlags.
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
+	stringMap = New(flags, "string_map", defaultStringMap, "")
+	err = common.SetValueForFlagName(flags, "string_map", map[string]string{"c": "3"}, map[string]struct{}{"string_map": {}}, false)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"a": "1", "b": "2"}, *stringMap)
+
+	// Map flags with struct values also merge.
+	flags = replaceFlagsForTesting(t) //nolint:SA4006
+	defaultStructMap := map[string]testStruct{"a": {Field: 1}}
+	structMap := New(flags, "struct_map", defaultStructMap, "")
+	err = common.SetValueForFlagName(flags, "struct_map", map[string]testStruct{"b": {Field: 2, Meadow: "meadow"}}, map[string]struct{}{}, true)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]testStruct{"a": {Field: 1}, "b": {Field: 2, Meadow: "meadow"}}, *structMap)
 }

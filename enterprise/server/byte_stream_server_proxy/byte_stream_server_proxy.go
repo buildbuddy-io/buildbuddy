@@ -3,6 +3,7 @@ package byte_stream_server_proxy
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"strconv"
@@ -16,10 +17,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -27,12 +30,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -40,7 +45,12 @@ import (
 )
 
 const (
-	defaultChunkUploadConcurrency = 32
+	defaultChunkTransferConcurrency = 32
+)
+
+var (
+	disableCDC          = flag.Bool("cache_proxy.disable_cdc", false, "If true, disable proxy-side CDC behavior, including chunked reads and intercepting/chunking large writes.")
+	skipWriteValidation = flag.Bool("cache_proxy.skip_write_validation", false, "If true, skip local cache write validation and rely on remote validation for cache proxy dual writes.")
 )
 
 func groupIDForMetrics(ctx context.Context) string {
@@ -49,6 +59,22 @@ func groupIDForMetrics(ctx context.Context) string {
 		return interfaces.AuthAnonymousUser
 	}
 	return c.GroupID
+}
+
+func actionMnemonicForMetrics(ctx context.Context) string {
+	requestMetadata := bazel_request.GetRequestMetadata(ctx)
+	actionMnemonic := requestMetadata.GetActionMnemonic()
+	if actionMnemonic == "" {
+		if requestMetadata.GetActionId() == bazel_request.BESUploadActionID {
+			return bazel_request.BESUploadActionID
+		}
+		return "unknown"
+	}
+	return actionMnemonic
+}
+
+func (s *ByteStreamServerProxy) shouldBypassLocalCacheForEncryption(ctx context.Context) bool {
+	return authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx)
 }
 
 type ByteStreamServerProxy struct {
@@ -92,7 +118,7 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		efp:                env.GetExperimentFlagProvider(),
 		localCache:         env.GetCache(),
 		remoteCAS:          env.GetContentAddressableStorageClient(),
-		bufPool:            bytebufferpool.VariableSize(int(chunking.MaxChunkSizeBytes())),
+		bufPool:            bytebufferpool.VariableSize(int(compression.ZstdCompressBound(chunking.MaxSupportedChunkSizeBytes()))),
 	}, nil
 }
 
@@ -129,6 +155,8 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 		chunksTotal:  readMetrics.chunksTotal,
 		chunksLocal:  readMetrics.chunksLocal,
 		chunksRemote: readMetrics.chunksRemote,
+		bytesLocal:   readMetrics.bytesLocal,
+		bytesRemote:  readMetrics.bytesRemote,
 	}
 	recordReadMetrics(bsm, readMetrics.cacheStatus)
 	return err
@@ -142,9 +170,17 @@ type readMetrics struct {
 	chunksTotal  int
 	chunksLocal  int
 	chunksRemote int
+	bytesLocal   int64
+	bytesRemote  int64
 }
 
 func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream) (readMetrics, error) {
+	if err := byte_stream_server.CheckReadPreconditions(req); err != nil {
+		return readMetrics{
+			cacheStatus: metrics.HitStatusLabel,
+			compressor:  "unknown",
+		}, err
+	}
 	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
 	if err != nil {
 		return readMetrics{
@@ -152,12 +188,12 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 			compressor:  "unknown",
 		}, err
 	}
-
-	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
+	remoteOnly := s.shouldBypassLocalCacheForEncryption(ctx)
+	if proxy_util.SkipRemote(ctx) && remoteOnly {
 		return readMetrics{
 			cacheStatus: metrics.UncacheableStatusLabel,
 			compressor:  rn.GetCompressor().String(),
-		}, s.readRemoteOnly(ctx, req, stream)
+		}, status.FailedPreconditionError("proxy_skip_remote is incompatible with encrypted cache requests on proxies without encryption support")
 	}
 
 	// Store auth headers in context so they can be reused between the
@@ -178,47 +214,54 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 		}, nil
 	}
 
+	if s.shouldReadChunked(ctx, req, rn) {
+		chunkMetrics, err := s.readChunked(ctx, req, stream, rn, remoteOnly)
+		if err == nil {
+			cacheStatus := metrics.MissStatusLabel
+			if remoteOnly {
+				cacheStatus = metrics.UncacheableStatusLabel
+			} else if chunkMetrics.chunksRemote == 0 {
+				cacheStatus = metrics.HitStatusLabel
+			}
+			return readMetrics{
+				cacheStatus:  cacheStatus,
+				compressor:   rn.GetCompressor().String(),
+				chunked:      true,
+				blobBytes:    rn.GetDigest().GetSizeBytes(),
+				chunksTotal:  chunkMetrics.chunksLocal + chunkMetrics.chunksRemote,
+				chunksLocal:  chunkMetrics.chunksLocal,
+				chunksRemote: chunkMetrics.chunksRemote,
+				bytesLocal:   chunkMetrics.bytesLocal,
+				bytesRemote:  chunkMetrics.bytesRemote,
+			}, nil
+		}
+
+		if stream.frames > 0 {
+			cacheStatus := metrics.MissStatusLabel
+			if remoteOnly {
+				cacheStatus = metrics.UncacheableStatusLabel
+			}
+			return readMetrics{
+				cacheStatus: cacheStatus,
+				compressor:  rn.GetCompressor().String(),
+			}, err
+		}
+	}
+
+	if remoteOnly {
+		return readMetrics{
+			cacheStatus: metrics.UncacheableStatusLabel,
+			compressor:  rn.GetCompressor().String(),
+		}, s.readRemoteOnly(ctx, req, stream)
+	}
+
 	localErr := s.local.ReadCASResource(ctx, rn, req.GetReadOffset(), req.GetReadLimit(), stream)
 	// If some responses were streamed to the client, just return the
 	// error. Otherwise, fall-back to remote. We might be able to continue
 	// streaming to the client by doing an offset read from the remote
 	// cache, but keep it simple for now.
 	if localErr != nil && stream.frames == 0 {
-		// Recover from local error if no frames have been sent
-
-		// If the blob does not exist locally, it might exist in chunks.
-		// If chunking is enabled and the blob is large enough, try to read the chunks.
-		// TODO(buildbuddy-internal#6426): Once most large blobs are chunked, consider
-		// attempting the chunked read first.
-		var chunkedErr error
-		if s.shouldReadChunked(ctx, req, rn) {
-			chunkMetrics, err := s.readChunked(ctx, req, stream, rn)
-			chunkedErr = err
-			if chunkedErr == nil {
-				return readMetrics{
-					cacheStatus:  metrics.MissStatusLabel,
-					compressor:   rn.GetCompressor().String(),
-					chunked:      true,
-					blobBytes:    rn.GetDigest().GetSizeBytes(),
-					chunksTotal:  chunkMetrics.chunksLocal + chunkMetrics.chunksRemote,
-					chunksLocal:  chunkMetrics.chunksLocal,
-					chunksRemote: chunkMetrics.chunksRemote,
-				}, nil
-			}
-
-			if stream.frames > 0 {
-				return readMetrics{
-					cacheStatus: metrics.MissStatusLabel,
-					compressor:  rn.GetCompressor().String(),
-				}, chunkedErr
-			}
-		}
-
 		remoteErr := s.readRemoteWriteLocal(req, stream)
-		if remoteErr != nil && chunkedErr != nil {
-			// TODO(buildbuddy-internal#6426): Remove once root cause for missing digests is found.
-			log.CtxWarningf(ctx, "Proxy chunked read failed for %s (remote fallback also failed): chunkedErr=%s remoteErr=%s", rn.DownloadString(), chunkedErr, remoteErr)
-		}
 		return readMetrics{
 			cacheStatus: metrics.MissStatusLabel,
 			compressor:  rn.GetCompressor().String(),
@@ -232,8 +275,7 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 }
 
 func (s *ByteStreamServerProxy) shouldReadChunked(ctx context.Context, req *bspb.ReadRequest, rn *digest.CASResourceName) bool {
-	if authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx) {
-		// TODO(buildbuddy-internal#6426): Read and write chunked blobs for encrypted requests.
+	if *disableCDC {
 		return false
 	}
 	return s.localCache != nil && s.remoteCAS != nil &&
@@ -243,9 +285,22 @@ func (s *ByteStreamServerProxy) shouldReadChunked(ctx context.Context, req *bspb
 type chunkedReadMetrics struct {
 	chunksLocal  int
 	chunksRemote int
+	bytesLocal   int64
+	bytesRemote  int64
 }
 
-func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream, rn *digest.CASResourceName) (chunkedReadMetrics, error) {
+type chunkReadRequest struct {
+	rn     *digest.CASResourceName
+	offset int64
+}
+
+type chunkReadResult struct {
+	data   []byte
+	err    error
+	remote bool
+}
+
+func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream, rn *digest.CASResourceName, remoteOnly bool) (chunkedReadMetrics, error) {
 	var m chunkedReadMetrics
 	if s.localCache == nil || s.remoteCAS == nil {
 		return m, status.UnimplementedError("chunked reads not available")
@@ -261,102 +316,339 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 		return m, err
 	}
 
-	instanceName := rn.GetInstanceName()
-	digestFunction := rn.GetDigestFunction()
-
-	splitReq := &repb.SplitBlobRequest{
-		BlobDigest:     rn.GetDigest(),
-		InstanceName:   instanceName,
-		DigestFunction: digestFunction,
+	chunkDigests, err := s.chunkDigests(ctx, rn, remoteOnly)
+	if err != nil {
+		return m, err
 	}
-	splitResp, err := s.remoteCAS.SplitBlob(ctx, splitReq)
+
+	chunkRequests := makeChunkReadRequests(rn, chunkDigests, req.GetReadOffset())
+	if len(chunkRequests) == 0 {
+		return m, nil
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+
+	var localWriteGroup errgroup.Group
+	localWriteGroup.SetLimit(defaultChunkTransferConcurrency)
+
+	resultChans := make([]chan chunkReadResult, len(chunkRequests))
+	defer s.drainPendingChunkReadsAsync(resultChans)
+	defer cancel()
+
+	nextStart := s.fillChunkReadWindow(ctx, resultChans, chunkRequests, 0, 0, remoteOnly)
+
+	for nextRead, chunkRequest := range chunkRequests {
+		resultCh := resultChans[nextRead]
+		var result chunkReadResult
+		select {
+		case result = <-resultCh:
+		case <-ctx.Done():
+			return m, ctx.Err()
+		}
+		resultChans[nextRead] = nil
+		if result.err != nil {
+			return m, result.err
+		}
+		if len(result.data) > 0 {
+			if err := stream.Send(&bspb.ReadResponse{Data: result.data}); err != nil {
+				s.bufPool.Put(result.data)
+				return m, err
+			}
+		}
+		nextStart = s.fillChunkReadWindow(ctx, resultChans, chunkRequests, nextStart, nextRead+1, remoteOnly)
+		if !result.remote {
+			m.chunksLocal++
+			m.bytesLocal += int64(len(result.data))
+			s.bufPool.Put(result.data)
+			continue
+		}
+
+		m.chunksRemote++
+		m.bytesRemote += int64(len(result.data))
+		if remoteOnly || chunkRequest.offset != 0 {
+			// Remote-only and incomplete chunks do not need to be stored in the local cache.
+			s.bufPool.Put(result.data)
+			continue
+		}
+
+		data := result.data
+		rn := chunkRequest.rn
+		localWriteGroup.Go(func() error {
+			defer s.bufPool.Put(data)
+
+			// Try to finish warming the local cache even if the client
+			// cancels the read; this chunk is likely to be used again.
+			// This is best-effort only, so bound the detached
+			// write-back with its own timeout.
+			writeCtx, writeCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+			defer writeCancel()
+
+			rawStream := &rawWriteStream{
+				ctx:          writeCtx,
+				resourceName: rn.NewUploadString(),
+				data:         data,
+			}
+			if err := s.local.Write(rawStream); err != nil {
+				metrics.ByteStreamProxyChunkedReadLocalWriteBackFailures.With(prometheus.Labels{
+					metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+				}).Inc()
+			}
+			return nil
+		})
+	}
+	_ = localWriteGroup.Wait()
+	return m, nil
+}
+
+func (s *ByteStreamServerProxy) chunkDigests(ctx context.Context, rn *digest.CASResourceName, remoteOnly bool) ([]*repb.Digest, error) {
+	fastPathEnabled := s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.cdc_read_fast_path", false)
+	if fastPathEnabled && !remoteOnly {
+		if chunkDigests, ok := s.localChunkDigests(ctx, rn); ok {
+			return chunkDigests, nil
+		}
+	}
+	splitResp, err := s.remoteCAS.SplitBlob(ctx, &repb.SplitBlobRequest{
+		BlobDigest:     rn.GetDigest(),
+		InstanceName:   rn.GetInstanceName(),
+		DigestFunction: rn.GetDigestFunction(),
+	})
 	if err != nil {
 		metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
 			metrics.ChunkedFailureReasonLabel: "split_blob_error",
 			metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
 		}).Inc()
-		return m, err
+		return nil, err
 	}
+	chunkDigests := splitResp.GetChunkDigests()
+	if !remoteOnly {
+		s.storeLocalChunkedManifest(ctx, rn, chunkDigests)
+	}
+	return chunkDigests, nil
+}
 
-	offset := req.GetReadOffset()
-	for _, chunkDigest := range splitResp.GetChunkDigests() {
+func (s *ByteStreamServerProxy) localChunkDigests(ctx context.Context, rn *digest.CASResourceName) ([]*repb.Digest, bool) {
+	manifest, err := chunking.LoadManifest(ctx, s.localCache, rn.GetDigest(), rn.GetInstanceName(), rn.GetDigestFunction())
+	if err != nil {
+		outcome := "manifest_error"
+		if status.IsNotFoundError(err) {
+			outcome = "manifest_miss"
+		}
+		recordChunkedReadFastPathAttempt(outcome)
+		return nil, false
+	}
+	chunkResourceNames := manifest.ChunkResourceNames()
+	for _, chunkRN := range chunkResourceNames {
+		chunkRN.Compressor = rn.GetCompressor()
+	}
+	missing, err := s.localCache.FindMissing(ctx, chunkResourceNames)
+	if err != nil {
+		recordChunkedReadFastPathAttempt("find_missing_error")
+		return nil, false
+	}
+	if len(missing) > 0 {
+		recordChunkedReadFastPathAttempt("chunks_missing")
+		return nil, false
+	}
+	recordChunkedReadFastPathAttempt("hit")
+	return manifest.ChunkDigests, true
+}
+
+func (s *ByteStreamServerProxy) storeLocalChunkedManifest(ctx context.Context, rn *digest.CASResourceName, chunkDigests []*repb.Digest) {
+	manifest := &chunking.Manifest{
+		BlobDigest:     rn.GetDigest(),
+		ChunkDigests:   chunkDigests,
+		InstanceName:   rn.GetInstanceName(),
+		DigestFunction: rn.GetDigestFunction(),
+	}
+	err := manifest.StoreWithoutVerification(ctx, s.localCache)
+	metrics.ByteStreamChunkedReadLocalManifestStoreAttempts.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+	}).Inc()
+}
+
+func recordChunkedReadFastPathAttempt(outcome string) {
+	metrics.ByteStreamChunkedReadFastPathAttempts.With(prometheus.Labels{
+		metrics.FastPathOutcomeLabel: outcome,
+	}).Inc()
+}
+
+func makeChunkReadRequests(rn *digest.CASResourceName, chunkDigests []*repb.Digest, readOffset int64) []chunkReadRequest {
+	instanceName := rn.GetInstanceName()
+	digestFunction := rn.GetDigestFunction()
+	compressor := rn.GetCompressor()
+
+	chunkRequests := make([]chunkReadRequest, 0, len(chunkDigests))
+	for _, chunkDigest := range chunkDigests {
 		chunkSize := chunkDigest.GetSizeBytes()
-		if offset >= chunkSize {
-			offset -= chunkSize
+		if readOffset >= chunkSize {
+			readOffset -= chunkSize
 			continue
 		}
 
 		chunkRN := digest.NewCASResourceName(chunkDigest, instanceName, digestFunction)
-		chunkRN.SetCompressor(rn.GetCompressor())
-		intraChunkOffset := offset
-		offset = 0
+		chunkRN.SetCompressor(compressor)
+		chunkRequests = append(chunkRequests, chunkReadRequest{
+			rn:     chunkRN,
+			offset: readOffset,
+		})
+		readOffset = 0
+	}
+	return chunkRequests
+}
 
-		// If we're midway through a chunk (non-zero offset),
-		// read remote only, since we can't cache a partial chunk locally.
-		if intraChunkOffset > 0 {
-			remoteReq := &bspb.ReadRequest{
-				ResourceName: chunkRN.DownloadString(),
-				ReadOffset:   intraChunkOffset,
-			}
-			if err := s.readRemoteOnly(ctx, remoteReq, stream); err != nil {
-				metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
-					metrics.ChunkedFailureReasonLabel: "chunk_remote_fetch_error_partial",
-					metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
-				}).Inc()
-				return m, err
-			}
-			m.chunksRemote++
+func (s *ByteStreamServerProxy) fillChunkReadWindow(ctx context.Context, resultChans []chan chunkReadResult, chunkRequests []chunkReadRequest, nextStart, nextRead int, remoteOnly bool) int {
+	for nextStart < len(chunkRequests) && nextStart-nextRead < defaultChunkTransferConcurrency {
+		req := chunkRequests[nextStart]
+		resultCh := make(chan chunkReadResult, 1)
+		resultChans[nextStart] = resultCh
+		go func() {
+			resultCh <- s.readChunk(ctx, req.rn, req.offset, remoteOnly)
+		}()
+		nextStart++
+	}
+	return nextStart
+}
+
+func (s *ByteStreamServerProxy) drainPendingChunkReadsAsync(resultChans []chan chunkReadResult) {
+	var pending []chan chunkReadResult
+	for i, resultCh := range resultChans {
+		if resultCh == nil {
 			continue
 		}
+		resultChans[i] = nil
+		pending = append(pending, resultCh)
+	}
+	if len(pending) == 0 {
+		return
+	}
+	go drainChunkReadResults(s.bufPool, pending)
+}
 
-		bytesBefore := stream.bytes
-		localErr := s.local.ReadCASResource(ctx, chunkRN, 0, 0, stream)
-		if localErr == nil {
-			m.chunksLocal++
-			continue
+func drainChunkReadResults(bufPool *bytebufferpool.VariableSizePool, resultChans []chan chunkReadResult) {
+	for _, resultCh := range resultChans {
+		result := <-resultCh
+		bufPool.Put(result.data)
+	}
+}
+
+func (s *ByteStreamServerProxy) readChunk(ctx context.Context, rn *digest.CASResourceName, offset int64, remoteOnly bool) chunkReadResult {
+	capacity := rn.GetDigest().GetSizeBytes() - offset
+	if rn.GetCompressor() == repb.Compressor_ZSTD {
+		capacity = compression.ZstdCompressBound(capacity)
+	}
+	if remoteOnly {
+		data, err := s.readRemoteChunk(ctx, rn, offset, capacity)
+		if err != nil {
+			return chunkReadResult{err: err, remote: true}
 		}
+		return chunkReadResult{data: data, remote: true}
+	}
 
-		// Recover from any local error, regardless of whether partial data was already sent.
-		chunkOffset := stream.bytes - bytesBefore
-		if chunkOffset > 0 {
-			metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
-				metrics.ChunkedFailureReasonLabel: "chunk_local_read_error_partial",
-				metrics.StatusHumanReadableLabel:  status.MetricsLabel(localErr),
-			}).Inc()
-
-			// If compressed, we can't accurately get the offset.
-			if rn.GetCompressor() != repb.Compressor_IDENTITY {
-				return m, localErr
-			}
-			remoteReq := &bspb.ReadRequest{
-				ResourceName: chunkRN.DownloadString(),
-				ReadOffset:   chunkOffset,
-			}
-			if err := s.readRemoteOnly(ctx, remoteReq, stream); err != nil {
-				metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
-					metrics.ChunkedFailureReasonLabel: "chunk_remote_fetch_error_partial",
-					metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
-				}).Inc()
-				return m, err
-			}
-			m.chunksRemote++
-			continue
+	buf := s.bufPool.Get(capacity)
+	stream := newChunkBufferStream(ctx, buf)
+	localErr := s.local.ReadCASResource(ctx, rn, offset, 0, stream)
+	if localErr == nil {
+		data := stream.Bytes()
+		if rn.GetCompressor() != repb.Compressor_ZSTD && int64(len(data)) != rn.GetDigest().GetSizeBytes()-offset {
+			localErr = io.ErrUnexpectedEOF
+		} else {
+			return chunkReadResult{data: data}
 		}
-
+	}
+	s.bufPool.Put(buf)
+	if !status.IsNotFoundError(localErr) {
 		metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
 			metrics.ChunkedFailureReasonLabel: "chunk_local_read_error",
 			metrics.StatusHumanReadableLabel:  status.MetricsLabel(localErr),
 		}).Inc()
-		if err := s.readRemoteWriteLocal(&bspb.ReadRequest{ResourceName: chunkRN.DownloadString()}, stream); err != nil {
-			metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
-				metrics.ChunkedFailureReasonLabel: "chunk_remote_fetch_error",
-				metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
-			}).Inc()
-			return m, err
-		}
-		m.chunksRemote++
 	}
-	return m, nil
+
+	data, err := s.readRemoteChunk(ctx, rn, offset, capacity)
+	if err != nil {
+		return chunkReadResult{err: err, remote: true}
+	}
+	return chunkReadResult{data: data, remote: true}
+}
+
+func (s *ByteStreamServerProxy) readRemoteChunk(ctx context.Context, rn *digest.CASResourceName, offset, capacity int64) ([]byte, error) {
+	req := &bspb.ReadRequest{
+		ResourceName: rn.DownloadString(),
+		ReadOffset:   offset,
+	}
+	data, err := retry.Do(ctx, chunkReadRetryOptions(), func(ctx context.Context) ([]byte, error) {
+		buf := s.bufPool.Get(capacity)
+		stream := newChunkBufferStream(ctx, buf)
+		err := s.readRemoteOnly(ctx, req, stream)
+		if err == nil {
+			data := stream.Bytes()
+			if rn.GetCompressor() != repb.Compressor_ZSTD && int64(len(data)) != rn.GetDigest().GetSizeBytes()-offset {
+				s.bufPool.Put(buf)
+				return nil, io.ErrUnexpectedEOF
+			}
+			return data, nil
+		}
+		s.bufPool.Put(buf)
+		if err == io.ErrShortBuffer ||
+			status.IsNotFoundError(err) ||
+			status.IsPermissionDeniedError(err) ||
+			status.IsUnauthenticatedError(err) ||
+			status.IsInvalidArgumentError(err) ||
+			status.IsFailedPreconditionError(err) ||
+			status.IsOutOfRangeError(err) ||
+			status.IsUnimplementedError(err) {
+			return nil, retry.NonRetryableError(err)
+		}
+		return nil, err
+	})
+	if err != nil {
+		reason := "chunk_remote_fetch_error"
+		if offset > 0 {
+			reason = "chunk_remote_fetch_error_partial"
+		}
+		metrics.ByteStreamProxyChunkedReadFailures.With(prometheus.Labels{
+			metrics.ChunkedFailureReasonLabel: reason,
+			metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
+		}).Inc()
+	}
+	return data, err
+}
+
+type chunkBufferStream struct {
+	ctx  context.Context
+	data []byte
+}
+
+func newChunkBufferStream(ctx context.Context, buf []byte) *chunkBufferStream {
+	return &chunkBufferStream{
+		ctx:  ctx,
+		data: buf[:0],
+	}
+}
+
+func (s *chunkBufferStream) Send(message *bspb.ReadResponse) error {
+	if len(s.data)+len(message.GetData()) > cap(s.data) {
+		return io.ErrShortBuffer
+	}
+	s.data = append(s.data, message.GetData()...)
+	return nil
+}
+
+func (s *chunkBufferStream) SetHeader(metadata.MD) error  { return nil }
+func (s *chunkBufferStream) SendHeader(metadata.MD) error { return nil }
+func (s *chunkBufferStream) SetTrailer(metadata.MD)       {}
+func (s *chunkBufferStream) Context() context.Context     { return s.ctx }
+func (s *chunkBufferStream) SendMsg(any) error            { return nil }
+func (s *chunkBufferStream) RecvMsg(any) error            { return io.EOF }
+
+func (s *chunkBufferStream) Bytes() []byte {
+	return s.data
+}
+
+func chunkReadRetryOptions() *retry.Options {
+	opts := retry.DefaultOptions()
+	opts.MaxRetries = 3
+	opts.Name = "proxy chunk read"
+	return opts
 }
 
 func (s *ByteStreamServerProxy) readRemoteOnly(ctx context.Context, req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
@@ -494,6 +786,7 @@ type byteStreamMetrics struct {
 	requestType       string
 	compressor        string
 	groupID           string
+	actionMnemonic    string
 	err               error
 	bytes             int64
 	chunked           bool
@@ -501,6 +794,8 @@ type byteStreamMetrics struct {
 	chunksTotal       int
 	chunksLocal       int
 	chunksRemote      int
+	bytesLocal        int64
+	bytesRemote       int64
 	chunksDeduped     int
 	chunkBytesTotal   int64
 	chunkBytesDeduped int64
@@ -545,6 +840,12 @@ func recordReadMetrics(bsm byteStreamMetrics, cacheStatus string) {
 		if bsm.chunksRemote > 0 {
 			metrics.ByteStreamChunkedReadChunksRemote.With(chunkedLabels).Add(float64(bsm.chunksRemote))
 		}
+		if bsm.bytesLocal > 0 {
+			metrics.ByteStreamChunkedReadBytesLocal.With(chunkedLabels).Add(float64(bsm.bytesLocal))
+		}
+		if bsm.bytesRemote > 0 {
+			metrics.ByteStreamChunkedReadBytesRemote.With(chunkedLabels).Add(float64(bsm.bytesRemote))
+		}
 	}
 }
 
@@ -582,15 +883,26 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	meteredStream := &meteredServerSideClientStream{compressor: "unknown", ByteStream_WriteServer: stream}
 	stream = meteredStream
 
-	// TODO(buildbuddy-internal#6426): Read and write chunked blobs for encrypted requests.
-	encryptionRequested := authutil.EncryptionEnabled(ctx, s.authenticator) && !s.supportsEncryption(ctx)
-	if s.writeChunkingEnabled(ctx) && !encryptionRequested && !proxy_util.SkipRemote(ctx) {
+	encryptionRequested := s.shouldBypassLocalCacheForEncryption(ctx)
+	if proxy_util.SkipRemote(ctx) && encryptionRequested {
+		err := status.FailedPreconditionError("proxy_skip_remote is incompatible with encrypted cache requests on proxies without encryption support")
+		recordWriteMetrics(byteStreamMetrics{
+			requestType: requestTypeLabel,
+			compressor:  meteredStream.compressor,
+			err:         err,
+			bytes:       meteredStream.bytes,
+		})
+		return err
+	}
+
+	if s.writeChunkingEnabled(ctx) && !proxy_util.SkipRemote(ctx) {
 		result, err := s.writeChunked(ctx, stream)
 		if err == nil {
 			recordWriteMetrics(byteStreamMetrics{
 				requestType:       requestTypeLabel,
 				compressor:        meteredStream.compressor,
 				groupID:           groupIDForMetrics(ctx),
+				actionMnemonic:    actionMnemonicForMetrics(ctx),
 				err:               nil,
 				bytes:             meteredStream.bytes,
 				chunked:           true,
@@ -622,7 +934,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	} else if proxy_util.SkipRemote(ctx) {
 		err = s.writeLocalOnly(stream)
 	} else {
-		err = s.dualWrite(ctx, stream)
+		err = s.dualWrite(ctx, stream, s.skipWriteValidation(ctx))
 	}
 	bsm := byteStreamMetrics{
 		requestType: requestTypeLabel,
@@ -653,13 +965,22 @@ func (s *ByteStreamServerProxy) writeLocalOnly(stream bspb.ByteStream_WriteServe
 	return s.local.Write(stream)
 }
 
+func (s *ByteStreamServerProxy) skipWriteValidation(ctx context.Context) bool {
+	return !proxy_util.SkipRemote(ctx) && (*skipWriteValidation || s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.skip_write_validation", false))
+}
+
 type forwardingWriteStream struct {
 	bspb.ByteStream_WriteServer
+	ctx             context.Context
 	remote          bspb.ByteStream_WriteClient
 	recvErr         error
 	remoteSendErr   error
+	remoteResp      *bspb.WriteResponse
+	remoteCloseErr  error
+	remoteClosed    bool
 	finishWriteSent bool
 	localFinished   bool
+	skipValidation  bool
 }
 
 func (s *forwardingWriteStream) Recv() (*bspb.WriteRequest, error) {
@@ -679,8 +1000,25 @@ func (s *forwardingWriteStream) Recv() (*bspb.WriteRequest, error) {
 	}
 	if req.GetFinishWrite() {
 		s.finishWriteSent = true
+		if s.skipValidation {
+			// Wait for the remote to validate and commit before returning the
+			// final request to the local server; the local server commits after
+			// processing this request.
+			if err := s.closeRemote(); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return req, nil
+}
+
+func (s *forwardingWriteStream) closeRemote() error {
+	if s.remoteClosed {
+		return s.remoteCloseErr
+	}
+	s.remoteResp, s.remoteCloseErr = s.remote.CloseAndRecv()
+	s.remoteClosed = true
+	return s.remoteCloseErr
 }
 
 func (s *forwardingWriteStream) SendAndClose(resp *bspb.WriteResponse) error {
@@ -689,43 +1027,54 @@ func (s *forwardingWriteStream) SendAndClose(resp *bspb.WriteResponse) error {
 	return nil
 }
 
-func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteStream_WriteServer) error {
+func (s *forwardingWriteStream) Context() context.Context {
+	return s.ctx
+}
+
+func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteStream_WriteServer, skipValidation bool) error {
 	remoteStream, err := s.remote.Write(ctx)
 	if err != nil {
 		return err
 	}
-	forwarding := &forwardingWriteStream{ByteStream_WriteServer: stream, remote: remoteStream}
+	localCtx := stream.Context()
+	if skipValidation {
+		localCtx = byte_stream_server.ContextWithSkipWriteValidation(localCtx)
+	}
+	forwarding := &forwardingWriteStream{
+		ByteStream_WriteServer: stream,
+		ctx:                    localCtx,
+		remote:                 remoteStream,
+		skipValidation:         skipValidation,
+	}
 	localErr := s.local.Write(forwarding)
 
-	if forwarding.recvErr != nil {
+	// In gRPC streaming, io.EOF from Recv() is the normal end-of-stream signal.
+	// Ignore it here so we can forward any frames already received to the
+	// remote and return whatever CloseAndRecv() returns below.
+	if forwarding.recvErr != nil && forwarding.recvErr != io.EOF {
 		return forwarding.recvErr
 	}
-	if localErr != nil {
+	if localErr != nil && forwarding.remoteCloseErr == nil {
 		log.CtxInfof(ctx, "error writing to local bytestream server for write: %s", localErr)
 	}
 	if forwarding.remoteSendErr != nil && forwarding.remoteSendErr != io.EOF {
 		// Remote failed, so fail the whole request
 		return forwarding.remoteSendErr
 	}
+	if forwarding.remoteCloseErr != nil {
+		return forwarding.remoteCloseErr
+	}
 	if !forwarding.finishWriteSent && forwarding.remoteSendErr == nil {
-		// Local write returned, but remoteSendErr != EOF so we need to forward
-		// the rest.
-		if localErr == nil {
-			log.CtxInfo(ctx, "local write done but remote write is not")
-		}
+		// If the remote write is still open, flush any remaining requests to
+		// the remote.
 		if err := flushToRemote(stream, remoteStream); err != nil {
 			return err
 		}
 	}
-	if localErr == nil && !forwarding.localFinished {
-		// Only log this if the local write didn't fail.
-		log.CtxInfo(ctx, "remote write done but local write is not")
-	}
-	resp, err := remoteStream.CloseAndRecv()
-	if err != nil {
+	if err := forwarding.closeRemote(); err != nil {
 		return err
 	}
-	return stream.SendAndClose(resp)
+	return stream.SendAndClose(forwarding.remoteResp)
 }
 
 func flushToRemote(stream bspb.ByteStream_WriteServer, remoteStream bspb.ByteStream_WriteClient) error {
@@ -751,6 +1100,10 @@ func flushToRemote(stream bspb.ByteStream_WriteServer, remoteStream bspb.ByteStr
 }
 
 func recordWriteMetrics(bsm byteStreamMetrics) {
+	actionMnemonic := bsm.actionMnemonic
+	if actionMnemonic == "" {
+		actionMnemonic = "unknown"
+	}
 	labels := prometheus.Labels{
 		metrics.StatusLabel:           status.MetricsLabel(bsm.err),
 		metrics.CacheHitMissStatus:    metrics.MissStatusLabel,
@@ -772,18 +1125,32 @@ func recordWriteMetrics(bsm byteStreamMetrics) {
 			metrics.CompressionType: bsm.compressor,
 			metrics.GroupID:         bsm.groupID,
 		}
+
+		// Keep group ID and action mnemonic separate, so we avoid multiplicative
+		// cardinality increase, while preserving the insights.
+		chunkedLabelsWithActionMnemonic := prometheus.Labels{
+			metrics.StatusLabel:     status.MetricsLabel(bsm.err),
+			metrics.CompressionType: bsm.compressor,
+			metrics.ActionMnemonic:  actionMnemonic,
+		}
 		metrics.ByteStreamChunkedWriteBlobBytes.With(chunkedLabels).Add(float64(bsm.blobBytes))
 		if bsm.chunksTotal > 0 {
 			metrics.ByteStreamChunkedWriteChunksTotal.With(chunkedLabelsWithGroup).Add(float64(bsm.chunksTotal))
+			metrics.ByteStreamChunkedWriteChunksTotalByActionMnemonic.With(chunkedLabelsWithActionMnemonic).Add(float64(bsm.chunksTotal))
 		}
 		if bsm.chunksDeduped > 0 {
 			metrics.ByteStreamChunkedWriteChunksDeduped.With(chunkedLabelsWithGroup).Add(float64(bsm.chunksDeduped))
+			metrics.ByteStreamChunkedWriteChunksDedupedByActionMnemonic.With(chunkedLabelsWithActionMnemonic).Add(float64(bsm.chunksDeduped))
 		}
 		if bsm.chunkBytesTotal > 0 {
 			metrics.ByteStreamChunkedWriteChunkBytes.With(chunkedLabels).Add(float64(bsm.chunkBytesTotal))
+			metrics.ByteStreamChunkedWriteChunkBytesByGroup.With(chunkedLabelsWithGroup).Add(float64(bsm.chunkBytesTotal))
+			metrics.ByteStreamChunkedWriteChunkBytesByActionMnemonic.With(chunkedLabelsWithActionMnemonic).Add(float64(bsm.chunkBytesTotal))
 		}
 		if bsm.chunkBytesDeduped > 0 {
 			metrics.ByteStreamChunkedWriteDedupedChunkBytes.With(chunkedLabels).Add(float64(bsm.chunkBytesDeduped))
+			metrics.ByteStreamChunkedWriteDedupedChunkBytesByGroup.With(chunkedLabelsWithGroup).Add(float64(bsm.chunkBytesDeduped))
+			metrics.ByteStreamChunkedWriteDedupedChunkBytesByActionMnemonic.With(chunkedLabelsWithActionMnemonic).Add(float64(bsm.chunkBytesDeduped))
 		}
 		totalDuration := bsm.chunkingDuration + bsm.remoteDuration
 		metrics.ByteStreamChunkedWriteDurationUsec.With(chunkedLabels).Observe(float64(totalDuration.Microseconds()))
@@ -811,14 +1178,19 @@ func (s *replayableWriteStream) Recv() (*bspb.WriteRequest, error) {
 }
 
 func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
-	if s.localCache == nil || s.remoteCAS == nil {
+	if *disableCDC || s.localCache == nil || s.remoteCAS == nil {
 		return false
 	}
-	if cdc.EnabledViaHeader(ctx) {
-		return true
+	if bazel_request.GetRequestMetadata(ctx).GetActionId() == "bes-upload" {
+		return false
 	}
-	return chunking.Enabled(ctx, s.efp) &&
-		s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", false)
+	// The write is already a content-defined chunk — never re-chunk it.
+	if cdc.IsChunked(ctx) {
+		return false
+	}
+	return s.efp != nil &&
+		s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", false) &&
+		chunking.Enabled(ctx, s.efp)
 }
 
 type writeChunkedResult struct {
@@ -847,8 +1219,8 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	}
 
 	blobSize := rn.GetDigest().GetSizeBytes()
-	if blobSize <= chunking.MaxChunkSizeBytes() {
-		return writeChunkedResult{firstReq: firstReq}, status.UnimplementedError("blob too small for chunking")
+	if !chunking.ShouldUploadChunked(ctx, s.efp, rn.GetDigest()) {
+		return writeChunkedResult{firstReq: firstReq}, status.UnimplementedError("blob outside chunking size range")
 	}
 
 	if spn.IsRecording() {
@@ -862,13 +1234,17 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 	if err != nil {
 		return writeChunkedResult{}, err
 	}
+	remoteOnly := s.shouldBypassLocalCacheForEncryption(ctx)
 
 	var chunkDigests []*repb.Digest
 
 	digestFunction := rn.GetDigestFunction()
 	instanceName := rn.GetInstanceName()
 	compressor := rn.GetCompressor()
-	uploader, err := newChunkUploader(ctx, s, instanceName, digestFunction)
+	// Tag outgoing chunk uploads so intermediaries downstream of this proxy
+	// do not re-chunk them.
+	chunkUploadCtx := cdc.ContextWithChunked(ctx)
+	uploader, err := newChunkUploader(chunkUploadCtx, s, instanceName, digestFunction)
 	if err != nil {
 		return writeChunkedResult{}, err
 	}
@@ -888,7 +1264,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		chunkRN := digest.NewCASResourceName(chunkDigest, instanceName, digestFunction)
 		chunkRN.SetCompressor(repb.Compressor_ZSTD)
 
-		poolBuf := s.bufPool.Get(int64(len(chunkData)))
+		poolBuf := s.bufPool.Get(compression.ZstdCompressBound(int64(len(chunkData))))
 		_, compressSpn := tracing.StartNamedSpan(chunkCtx, "CompressZstd")
 		compressedData := compression.CompressZstd(poolBuf, chunkData)
 		compressSpn.End()
@@ -900,22 +1276,25 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 			)
 		}
 
-		localWriteCtx, localWriteSpn := tracing.StartNamedSpan(chunkCtx, "localChunkWrite")
-		defer localWriteSpn.End()
-		rawStream := &rawWriteStream{
-			ctx:          localWriteCtx,
-			resourceName: chunkRN.NewUploadString(),
-			data:         compressedData,
-		}
-		if err := s.local.Write(rawStream); err != nil {
-			s.bufPool.Put(poolBuf)
-			return status.InternalErrorf("writing chunk %s to local: %s", chunkRN.DownloadString(), err)
+		if !remoteOnly {
+			localWriteCtx, localWriteSpn := tracing.StartNamedSpan(chunkCtx, "localChunkWrite")
+			rawStream := &rawWriteStream{
+				ctx:          localWriteCtx,
+				resourceName: chunkRN.NewUploadString(),
+				data:         compressedData,
+			}
+			if err := s.local.Write(rawStream); err != nil {
+				localWriteSpn.End()
+				s.bufPool.Put(poolBuf)
+				return status.InternalErrorf("writing chunk %s to local: %s", chunkRN.DownloadString(), err)
+			}
+			localWriteSpn.End()
 		}
 		uploader.addChunk(compressedData, poolBuf, chunkDigest)
 		return nil
 	}
 
-	chunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), chunkWriteFn)
+	chunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes(ctx, s.efp)), chunkWriteFn)
 	if err != nil {
 		return writeChunkedResult{}, status.InternalErrorf("creating chunker: %s", err)
 	}
@@ -1061,9 +1440,12 @@ type chunkUploader struct {
 
 // newChunkUploader batches chunks into FMB groups and upload requests of up to 2 MiB.
 func newChunkUploader(ctx context.Context, s *ByteStreamServerProxy, instanceName string, digestFunction repb.DigestFunction_Value) (*chunkUploader, error) {
-	concurrency := int(s.efp.Int64(ctx, "cache_proxy.chunk_upload_concurrency", defaultChunkUploadConcurrency))
+	concurrency := defaultChunkTransferConcurrency
+	if s.efp != nil {
+		concurrency = int(s.efp.Int64(ctx, "cache_proxy.chunk_upload_concurrency", defaultChunkTransferConcurrency))
+	}
 	if concurrency <= 0 {
-		concurrency = defaultChunkUploadConcurrency
+		concurrency = defaultChunkTransferConcurrency
 	}
 	fmbG, fmbCtx := errgroup.WithContext(ctx)
 	fmbG.SetLimit(1)

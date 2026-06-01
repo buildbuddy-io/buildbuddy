@@ -1240,23 +1240,10 @@
             ]
           }
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "A"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "macstadium"
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": {
-        "h": 8,
+        "h": 9,
         "w": 12,
         "x": 7,
         "y": 45
@@ -1283,9 +1270,106 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(up{job=\"mac-executor\"})",
+          "expr": "sum by (region) (up{job=~\".*executor.*\"})",
           "instant": false,
           "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Executors by Region",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "bars",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 7,
+        "y": 54
+      },
+      "id": 19,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum(up{job=\"mac-executor\", nodename=~\"macstadium-iteration_inc_1|macstadium-iteration_inc_2|macstadium-iteration_inc_3|macstadium-mobile_native_foundation_1|macstadium-mobile_native_foundation_6\"})",
+          "instant": false,
+          "legendFormat": "darwin/amd64",
           "range": true,
           "refId": "A"
         },
@@ -1295,10 +1379,23 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (region) (up{region=\"us-sjc\", job=~\".*executor.*\"})",
+          "expr": "sum(up{job=\"mac-executor\", nodename!~\"macstadium-iteration_inc_1|macstadium-iteration_inc_2|macstadium-iteration_inc_3|macstadium-mobile_native_foundation_1|macstadium-mobile_native_foundation_6\"})",
           "hide": false,
           "instant": false,
-          "legendFormat": "__auto",
+          "legendFormat": "darwin/arm64",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum(up{job=~\".*executor.*\", job!~\"mac-executor|executor-arm64\"})",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "linux/amd64",
           "range": true,
           "refId": "C"
         },
@@ -1308,15 +1405,15 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (region) (up{region!=\"us-sjc\", job=\"executor\"})",
+          "expr": "sum(up{job=~\".*executor-arm64.*\"})",
           "hide": false,
           "instant": false,
-          "legendFormat": "__auto",
+          "legendFormat": "linux/arm64",
           "range": true,
-          "refId": "B"
+          "refId": "D"
         }
       ],
-      "title": "Running Executors ",
+      "title": "Executors by OS/Arch",
       "type": "timeseries"
     },
     {
@@ -1414,7 +1511,7 @@
         "h": 8,
         "w": 12,
         "x": 7,
-        "y": 53
+        "y": 62
       },
       "id": 2,
       "options": {
@@ -1438,7 +1535,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (pooltype) (\n    label_replace(\n    label_replace(\n    label_replace(\n    label_replace(\n        node_uname_info{component=\"node-exporter\", nodename=~\".*executor.*\", region=~\"(us-central1|us-west1|us-west2)\"},\n        \"nodepool\", \"$2\", \"nodename\", \"^gke-(dev|prod)-[^-]*-(.*)-[0-9a-f]{8}-(grp-)?.{4}$\"\n    ),\n        \"pooltype\", \"spot\", \"nodepool\", \"^spot-.*$\"\n    ),\n        \"pooltype\", \"non-spot\", \"nodepool\", \"^(bb|executor)-.*$\"\n    ),\n        \"pooltype\", \"workflows\", \"nodepool\", \"^(workflow-executor)-.*$\"\n    )\n)",
+          "expr": "sum by (pooltype) (\n    label_replace(\n    label_replace(\n    label_replace(\n    label_replace(\n        node_uname_info{nodename=~\".*executor.*\", region=~\"(us-central1|us-west1|us-west2)\"},\n        \"nodepool\", \"$2\", \"nodename\", \"^gke-(dev|prod)-[^-]*-(.*)-[0-9a-f]{8}-(grp-)?.{4}$\"\n    ),\n        \"pooltype\", \"spot\", \"nodepool\", \"^spot-.*$\"\n    ),\n        \"pooltype\", \"non-spot\", \"nodepool\", \"^(bb|executor)-.*$\"\n    ),\n        \"pooltype\", \"workflows\", \"nodepool\", \"^(workflow-executor)-.*$\"\n    )\n)",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -1611,7 +1708,7 @@
         "h": 8,
         "w": 12,
         "x": 7,
-        "y": 61
+        "y": 70
       },
       "id": 11,
       "options": {
@@ -1776,7 +1873,7 @@
         "h": 8,
         "w": 12,
         "x": 7,
-        "y": 69
+        "y": 78
       },
       "id": 13,
       "options": {

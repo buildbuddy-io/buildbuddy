@@ -50,6 +50,13 @@ Examples:
   bb execution get uploads/.../blobs/... --output=json
 `
 
+var (
+	Flags  = flag.NewFlagSet("execution get", flag.ContinueOnError)
+	target = Flags.String("target", login.DefaultApiTarget, "BuildBuddy gRPC target")
+	apiKey = Flags.String("api_key", "", "Optionally override BuildBuddy API key")
+	output = Flags.String("output", "markdown", "Output format: markdown (or md), json")
+)
+
 type getFlags struct {
 	target string
 	apiKey string
@@ -74,19 +81,14 @@ func HandleExecution(args []string) (int, error) {
 }
 
 func handleGet(args []string) (int, error) {
-	f := flag.NewFlagSet("execution get", flag.ContinueOnError)
-	target := f.String("target", login.DefaultApiTarget, "BuildBuddy gRPC target")
-	apiKey := f.String("api_key", "", "Optionally override BuildBuddy API key")
-	output := f.String("output", "markdown", "Output format: markdown (or md), json")
-
-	if err := arg.ParseFlagSet(f, args); err != nil {
+	if err := arg.ParseFlagSet(Flags, args); err != nil {
 		if err == flag.ErrHelp {
 			log.Print(usage)
 			return 1, nil
 		}
 		return -1, err
 	}
-	if f.NArg() != 1 {
+	if Flags.NArg() != 1 {
 		log.Print(usage)
 		return 1, nil
 	}
@@ -105,7 +107,7 @@ func handleGet(args []string) (int, error) {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	}
 
-	executionID := f.Arg(0)
+	executionID := Flags.Arg(0)
 	executeResponse, err := fetchExecuteResponse(ctx, flags.target, executionID)
 	if err != nil {
 		return -1, err

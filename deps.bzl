@@ -32,11 +32,11 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_firecracker_microvm_firecracker",
         build_file_content = "\n".join([
             'package(default_visibility = ["//visibility:public"])',
-            'filegroup(name = "firecracker", srcs = ["firecracker-{release}"])',
-            'filegroup(name = "jailer", srcs = ["jailer-{release}"])',
-        ]).format(release = "v1.13.0-with_clock_reset_patch-20251029-d33011c6788153a8a601e1b7000466c1ff1ecfc7"),
-        sha256 = "d08f5245fcb84c59bdb060385e3058f4667765afbea5c3cbfcb969d570d624bf",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/firecracker/firecracker-v1.13.0-with_clock_reset_patch.tgz"],
+            'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',
+            'filegroup(name = "jailer", srcs = ["release-{release}/jailer-{release}"])',
+        ]).format(release = "v1.15.1-x86_64"),
+        sha256 = "d4a32ab2322d887ca1bc4a4e7afa9cc35393e6362dfc2b3becb389d362e4275a",
+        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.15.1/firecracker-v1.15.1-x86_64.tgz"],
     )
     http_archive(
         name = "com_github_firecracker_microvm_firecracker_arm64",
@@ -194,6 +194,30 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
     http_file(
+        name = "io_bazel_bazel-9.1.0-darwin-arm64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.0/bazel-9.1.0-darwin-arm64"],
+        sha256 = "084a1784fa8f0dcae77fb4e88faa15048d8149a36c947ce198508bffb060e1bb",
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-9.1.0-darwin-x86_64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.0/bazel-9.1.0-darwin-x86_64"],
+        sha256 = "666c6c79eda285cada5f5c39c891c6dd7ee0971b20bff365ea87a4b897271433",
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-9.1.0-linux-arm64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.0/bazel-9.1.0-linux-arm64"],
+        sha256 = "ba933bfc943e4c44f0743a5823aa2312a34b39628532add5dd037e08d8ec27a4",
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-9.1.0-linux-x86_64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.0/bazel-9.1.0-linux-x86_64"],
+        sha256 = "a667454f3f4f8878df8199136b82c199f6ada8477b337fae3b1ef854f01e4e2f",
+        executable = True,
+    )
+    http_file(
         name = "com_github_bazelbuild_bazelisk-bazelisk-darwin-amd64",
         urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-darwin-amd64"],
         sha256 = "0af019eeb642fa70744419d02aa32df55e6e7a084105d49fb26801a660aa56d3",
@@ -219,20 +243,20 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux",
-        sha256 = "938f14fee55f3e4afeb14e812ef54c7bdc77bc22818a3b7af168f68736af18be",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-938f14fee55f3e4afeb14e812ef54c7bdc77bc22818a3b7af168f68736af18be"],
+        sha256 = "0e1ec2bd6a3a6e5a50b220401dd14174eee234b532dcf1279777a181221d502f",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-0e1ec2bd6a3a6e5a50b220401dd14174eee234b532dcf1279777a181221d502f"],
         executable = True,
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux-6.1",
-        sha256 = "9110b8339c31e83c65afd3cd891a9c70ec5f6f801076f8802f6f92725f0ebc82",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.1-9110b8339c31e83c65afd3cd891a9c70ec5f6f801076f8802f6f92725f0ebc82"],
+        sha256 = "10ec6f850aff3fe98fdaa603b299fb22ad67d5013b7a28801a7c6b75e4c3406f",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.1-10ec6f850aff3fe98fdaa603b299fb22ad67d5013b7a28801a7c6b75e4c3406f"],
         executable = True,
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux-arm64",
-        sha256 = "6e10d53bdf88678143cd9d008a426c43f789b77d47335d8e411a66a365ed658a",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-6e10d53bdf88678143cd9d008a426c43f789b77d47335d8e411a66a365ed658a"],
+        sha256 = "e6870fdc288621a5c9e3424bcd7ddee03816483e61846368de25e93f3db8e52e",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-e6870fdc288621a5c9e3424bcd7ddee03816483e61846368de25e93f3db8e52e"],
         executable = True,
     )
     http_file(

@@ -8,6 +8,8 @@ The BuildBuddy API let's you programmatically obtain information about your Baze
 
 Requests can be made via JSON or using Protobuf. The examples below are using the JSON API. For a full overview of the service, you can view the [service definition](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/service.proto) or the [individual protos](https://github.com/buildbuddy-io/buildbuddy/tree/master/proto/api/v1).
 
+If you're configuring a coding agent or MCP client, see the [BuildBuddy MCP Server docs](enterprise-mcp.md).
+
 ## GetInvocation
 
 The `GetInvocation` endpoint allows you to fetch invocations associated with a commit SHA or invocation ID. View full [Invocation proto](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/invocation.proto).
@@ -76,6 +78,10 @@ message GetInvocationRequest {
 
   // If true, include artifacts attached to the invocation.
   bool include_artifacts = 4;
+
+  // If true, include build tool logs, such as the timing profile and compact
+  // execution log if available.
+  bool include_build_tool_logs = 6;
 
   // If true, include child invocations (if this invocation was a workflow).
   bool include_child_invocations = 5;
@@ -197,6 +203,10 @@ message Invocation {
   // Any artifacts that were attached to this invocation.
   // Only included if include_artifacts = true.
   repeated File artifacts = 24;
+
+  // Build tool logs, such as timing profiles and compact execution logs. Only
+  // included if include_build_tool_logs = true.
+  repeated File build_tool_logs = 27;
 
   // The state of the build event stream for the invocation.
   InvocationStatus invocationStatus = 25;
@@ -339,6 +349,7 @@ rpc GetAuditLog(GetAuditLogRequest) returns (GetAuditLogResponse);
 ### Access Requirements
 
 - Use an **Org API key** of type **Audit log reader key** (recommended) or **Org admin key**.
+- Set `request_context.group_id` to retrieve logs for a different organization that the caller is authorized to access.
 - If the key does not meet the access requirements, the request returns `PermissionDenied`.
 
 ### Example cURL request
@@ -389,6 +400,11 @@ message GetAuditLogRequest {
   // If unset or less than 1, a server default is used.
   // Values greater than 1000 are capped at 1000.
   int32 page_size = 3;
+
+  // Optional request context.
+  // Set group_id to query a different organization when the caller is
+  // authorized to access it.
+  context.RequestContext request_context = 4;
 }
 ```
 
@@ -858,6 +874,10 @@ message File {
   string uri = 2;
   string hash = 3;
   int64 size_bytes = 4;
+
+  // Inline file contents, if present in the build event stream. In JSON
+  // responses, this is base64-encoded.
+  bytes contents = 5;
 }
 ```
 

@@ -63,6 +63,7 @@ proto_library(
         ":invocation_proto",
         ":iprules_proto",
         ":secrets_proto",
+        ":usage_proto",
         ":user_list_proto",
         ":workflow_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -150,6 +151,16 @@ proto_library(
         "@com_google_protobuf//:field_mask_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@googleapis//google/rpc:status_proto",
+    ],
+)
+
+proto_library(
+    name = "cache_proxy_proto",
+    srcs = ["cache_proxy.proto"],
+    deps = [
+        ":acl_proto",
+        ":context_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 
@@ -432,6 +443,8 @@ proto_library(
     ],
     deps = [
         ":context_proto",
+        ":user_id_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 
@@ -469,7 +482,6 @@ proto_library(
     ],
     deps = [
         ":context_proto",
-        ":git_proto",
     ],
 )
 
@@ -609,7 +621,6 @@ proto_library(
         "grp.proto",
     ],
     deps = [
-        ":api_key_proto",
         ":capability_proto",
         ":context_proto",
         ":user_id_proto",
@@ -654,6 +665,7 @@ proto_library(
         ":auditlog_proto",
         ":bazel_config_proto",
         ":cache_proto",
+        ":cache_proxy_proto",
         ":encryption_proto",
         ":eventlog_proto",
         ":execution_stats_proto",
@@ -815,7 +827,6 @@ proto_library(
     srcs = ["zip.proto"],
     deps = [
         ":context_proto",
-        ":remote_execution_proto",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
     ],
 )
@@ -996,6 +1007,7 @@ go_proto_library(
         ":invocation_go_proto",
         ":iprules_go_proto",
         ":secrets_go_proto",
+        ":usage_go_proto",
         ":user_list_go_proto",
         ":workflow_go_proto",
     ],
@@ -1165,6 +1177,8 @@ go_proto_library(
     proto = ":usage_proto",
     deps = [
         ":context_go_proto",
+        ":user_id_go_proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
@@ -1473,6 +1487,7 @@ go_proto_library(
         ":auditlog_go_proto",
         ":bazel_config_go_proto",
         ":cache_go_proto",
+        ":cache_proxy_go_proto",
         ":encryption_go_proto",
         ":eventlog_go_proto",
         ":execution_stats_go_proto",
@@ -1568,9 +1583,21 @@ go_proto_library(
     proto = ":cache_proto",
     deps = [
         ":context_go_proto",
+        ":execution_stats_go_proto",
         ":remote_execution_go_proto",
         ":resource_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
+    ],
+)
+
+go_proto_library(
+    name = "cache_proxy_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy",
+    mode = "messages_and_services",
+    proto = ":cache_proxy_proto",
+    deps = [
+        ":acl_go_proto",
+        ":context_go_proto",
     ],
 )
 
@@ -1889,6 +1916,7 @@ ts_proto_library(
         ":iprules_ts_proto",
         ":secrets_ts_proto",
         ":timestamp_ts_proto",
+        ":usage_ts_proto",
         ":user_list_ts_proto",
         ":workflow_ts_proto",
     ],
@@ -2147,6 +2175,11 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "stored_invocation_ts_proto",
+    proto = ":stored_invocation_proto",
+)
+
+ts_proto_library(
     name = "invocation_ts_proto",
     proto = ":invocation_proto",
     deps = [
@@ -2191,6 +2224,8 @@ ts_proto_library(
     proto = ":usage_proto",
     deps = [
         ":context_ts_proto",
+        ":timestamp_ts_proto",
+        ":user_id_ts_proto",
     ],
 )
 
@@ -2320,10 +2355,21 @@ ts_proto_library(
     deps = [
         ":context_ts_proto",
         ":duration_ts_proto",
+        ":execution_stats_ts_proto",
         ":field_mask_ts_proto",
         ":grpc_status_ts_proto",
         ":remote_execution_ts_proto",
         ":resource_ts_proto",
+        ":timestamp_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "cache_proxy_ts_proto",
+    proto = ":cache_proxy_proto",
+    deps = [
+        ":acl_ts_proto",
+        ":context_ts_proto",
         ":timestamp_ts_proto",
     ],
 )
@@ -2370,6 +2416,7 @@ ts_proto_library(
         ":api_key_ts_proto",
         ":auditlog_ts_proto",
         ":bazel_config_ts_proto",
+        ":cache_proxy_ts_proto",
         ":cache_ts_proto",
         ":encryption_ts_proto",
         ":eventlog_ts_proto",

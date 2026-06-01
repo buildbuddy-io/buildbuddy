@@ -38,9 +38,14 @@ go_test(
     tags = ["block-network"],
     deps = [
         "//enterprise/server/raft/testutil",
+        "//proto:raft_go_proto",
         "//server/util/disk",
+        "//server/util/grpc_server",
         "//server/util/proto",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )

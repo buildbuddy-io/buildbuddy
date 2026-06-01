@@ -292,24 +292,15 @@ func (c *PeerWatcher) processEvents(watcher watch.Interface, resourceVersion *st
 }
 
 // podAddr returns the "ip:port" address for a pod, or "" if the pod
-// is not ready to receive traffic.
+// is not running. We deliberately do not gate on PodReady or
+// ContainersReady, since those wait for readiness probes — and the
+// readiness probe can itself depend on having enough peers, leading
+// to a deadlock during cold start.
 func (c *PeerWatcher) podAddr(pod corev1.Pod) string {
-	if pod.Status.PodIP == "" {
+	if pod.Status.PodIP == "" || pod.Status.Phase != corev1.PodRunning {
 		return ""
 	}
-	if pod.Status.Phase != corev1.PodRunning {
-		return ""
-	}
-	for _, cond := range pod.Status.Conditions {
-		// We can't wait for the PodReady condition alone, since that
-		// relies on health checks, which can depend on having enough peers.
-		if cond.Type == corev1.PodReady || cond.Type == corev1.ContainersReady {
-			if cond.Status == corev1.ConditionTrue {
-				return net.JoinHostPort(pod.Status.PodIP, c.port)
-			}
-		}
-	}
-	return ""
+	return net.JoinHostPort(pod.Status.PodIP, c.port)
 }
 
 func (c *PeerWatcher) updatePod(pod *corev1.Pod) {

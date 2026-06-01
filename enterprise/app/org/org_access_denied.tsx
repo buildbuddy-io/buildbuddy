@@ -1,6 +1,7 @@
 import React from "react";
 import authService from "../../../app/auth/auth_service";
 import { User } from "../../../app/auth/user";
+import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import { user } from "../../../proto/user_ts_proto";
 
@@ -28,7 +29,7 @@ export default class OrgAccessDeniedComponent extends React.Component<Props> {
             </div>
             {!deniedByIpRules && <div className="details">You are not authorized to access this organization.</div>}
             {deniedByIpRules && <div className="details">Access blocked by Organization IP Rules.</div>}
-            {!deniedByIpRules && (
+            {!deniedByIpRules && capabilities.config.groupMembershipRequestsEnabled && (
               <div>
                 <FilledButton
                   onClick={() => {

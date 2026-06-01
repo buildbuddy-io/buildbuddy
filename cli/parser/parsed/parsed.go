@@ -97,6 +97,12 @@ type Args interface {
 	// location for that type of argument. Startup options
 	Append(...arguments.Argument) error
 
+	// Prepend prepends the given options by inserting them in the first valid
+	// location for that type of option. It does not support arguments because,
+	// due to the nature of the bazel subcommand, it is inherently poorly defined
+	// what prepending an argument would even mean.
+	Prepend(...options.Option) error
+
 	// SplitExecutableArgs returns the args split up between the args that bazel
 	// consumes directly and the args that will passed to the executable bazel is
 	// running. This is a concept that only makes sense when using the `run`
@@ -436,8 +442,28 @@ func (a *OrderedArgs) RemoveStartupOptions(optionNames ...string) []*IndexedOpti
 	return removeOptions[*StartupOption, *Command](a, optionNames...)
 }
 
+// RemoveAndAccumulateStartupOption removes all the startup options with
+// optionName from the passed args and accumulates all of the options into a
+// single value, with the zero value of the type T as the starting accumulator
+// value. It exists primarily to strip options from the arguments that will be
+// passed to bazel and resolve them into a value to be used by the caller.
+func RemoveAndAccumulateStartupOption[T options.ValueType](a *OrderedArgs, optionName string) (T, error) {
+	opts := a.RemoveStartupOptions(optionName)
+	return accumulateHelper[T](opts)
+}
+
 func (a *OrderedArgs) RemoveCommandOptions(optionNames ...string) []*IndexedOption {
 	return removeOptions[*CommandOption, *DoubleDash](a, optionNames...)
+}
+
+// RemoveAndAccumulateCommandpOption removes all the command options with
+// optionName from the passed args and accumulates all of the options into a
+// single value, with the zero value of the type T as the starting accumulator
+// value. It exists primarily to strip options from the arguments that will be
+// passed to bazel and resolve them into a value to be used by the caller.
+func RemoveAndAccumulateCommandOption[T options.ValueType](a *OrderedArgs, optionName string) (T, error) {
+	opts := a.RemoveCommandOptions(optionName)
+	return accumulateHelper[T](opts)
 }
 
 func removeOptions[DesiredOption ClassifiedOption, Terminates Classified](a *OrderedArgs, optionNames ...string) []*IndexedOption {
@@ -459,6 +485,63 @@ func removeOptions[DesiredOption ClassifiedOption, Terminates Classified](a *Ord
 		}
 	}
 	return removed
+}
+
+func accumulateHelper[T options.ValueType, O options.Option](opts []O) (T, error) {
+	acc := *new(T)
+	switch any(acc).(type) {
+	case string:
+		return options.AccumulateValues[O](acc, opts)
+	case []string:
+		return options.AccumulateValues[O](acc, opts)
+	case bool:
+		return options.AccumulateValues[O](acc, opts)
+	case options.BoolOrEnum:
+		return options.AccumulateValues[O](acc, opts)
+	default:
+		return acc, fmt.Errorf("Accumulator is of unsupported type %T.", acc)
+	}
+}
+
+func (a *OrderedArgs) Prepend(opts ...options.Option) error {
+	commandOptionInsertIndex := -1
+	for _, opt := range slices.Backward(opts) {
+		var err error
+		if commandOptionInsertIndex, err = a.prependOption(opt, commandOptionInsertIndex); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *OrderedArgs) prependOption(option options.Option, commandIndex int) (int, error) {
+	if commandIndex == -1 {
+		if commandIndex, _ = Find[*Command](a.Args); commandIndex == -1 {
+			commandIndex = len(a.Args)
+		}
+	}
+	command := "startup"
+	if commandIndex < len(a.Args) {
+		command = a.Args[commandIndex].GetValue()
+	}
+	if option.PluginID() == options.UnknownBuiltinPluginID && !option.HasSupportedCommands() {
+		// If this is an unknown option with no listed supported commands, assume it
+		// supports this command (or "startup" in the rare case that no command was
+		// provided.
+		option.GetDefinition().AddSupportedCommand(command)
+	}
+	if option.Supports("startup") {
+		a.Args = slices.Insert(a.Args, 0, arguments.Argument(option))
+		return commandIndex + 1, nil
+	}
+	if command == "startup" {
+		return commandIndex, fmt.Errorf("Failed to append Option: option '%s' is not a startup option and no command was provided.", option.Name())
+	}
+	if !option.Supports(command) {
+		return commandIndex, fmt.Errorf("Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it.", option.Name(), command)
+	}
+	a.Args = slices.Insert(a.Args, commandIndex+1, arguments.Argument(option))
+	return commandIndex, nil
 }
 
 func (a *OrderedArgs) Append(args ...arguments.Argument) error {
@@ -584,25 +667,24 @@ func (a *OrderedArgs) appendOption(option options.Option, startupOptionInsertInd
 }
 
 // ConsumeRCFileOptions removes all rc-file related options from the provided
-// args. Returns the rc files that should be parsed and whether future rc files
-// should be suppressed (either because the user explicitly set --ignore_all_rc_files
-// or passed --bazelrc=/dev/null).
-func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (ignoreAll bool, rcFiles []string, err error) {
+// args and appends an `ignore_all_rc_files` option to the startup options.
+// Returns a slice of all the rc files that should be parsed.
+func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []string, err error) {
 	if ignore, err := options.AccumulateValues[*IndexedOption](false, a.RemoveStartupOptions("ignore_all_rc_files")); err != nil {
-		return false, nil, fmt.Errorf("Failed to get value from 'ignore_all_rc_files' option: %s", err)
+		return nil, fmt.Errorf("Failed to get value from 'ignore_all_rc_files' option: %s", err)
 	} else if ignore {
 		// Before we do anything, check whether --ignore_all_rc_files is already
 		// set. If so, return an empty list of RC files, since bazel will do the
 		// same.
 		a.RemoveStartupOptions("system_rc", "workspace_rc", "home_rc")
-		return true, nil, nil
+		return nil, nil
 	}
 
 	// Parse rc files in the order defined here:
 	// https://bazel.build/run/bazelrc#bazelrc-file-locations
 	for _, optName := range []string{"system_rc", "workspace_rc", "home_rc"} {
 		if v, err := options.AccumulateValues[*IndexedOption](true, a.RemoveStartupOptions(optName)); err != nil {
-			return false, nil, fmt.Errorf("Failed to get value from '%s' option: %s", optName, err)
+			return nil, fmt.Errorf("Failed to get value from '%s' option: %s", optName, err)
 		} else if !v {
 			// When these flags are false, they have no effect on the list of
 			// rcFiles we should parse.
@@ -634,13 +716,14 @@ func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (ignoreAll bool,
 	for _, indexedOption := range a.RemoveStartupOptions("bazelrc") {
 		o := indexedOption.Option
 		if o.GetValue() == "/dev/null" {
-			// --bazelrc=/dev/null signals that the user wants all subsequent rc
-			// files ignored. All previous rc files should still be parsed.
-			return true, rcFiles, nil
+			// if we encounter --bazelrc=/dev/null, that means bazel will ignore
+			// subsequent --bazelrc args, so we ignore them as well.
+			break
 		}
 		rcFiles = append(rcFiles, o.GetValue())
+		continue
 	}
-	return false, rcFiles, nil
+	return rcFiles, nil
 }
 
 type Config struct {
@@ -961,6 +1044,32 @@ func (a *PartitionedArgs) RemoveCommandOptions(optionNames ...string) []*Indexed
 		}
 	}
 	return removed
+}
+
+func (a *PartitionedArgs) Prepend(opts ...options.Option) error {
+	for _, opt := range slices.Backward(opts) {
+		if opt.PluginID() == options.UnknownBuiltinPluginID && !opt.HasSupportedCommands() {
+			// If this is an unknown option with no listed supported commands, assume it
+			// supports this command (or "startup" in the rare case that no command was
+			// provided.
+			command := "startup"
+			if a.Command != nil {
+				command = *a.Command
+			}
+			opt.GetDefinition().AddSupportedCommand(command)
+		}
+		switch {
+		case opt.Supports("startup"):
+			a.StartupOptions = append([]options.Option{opt}, a.StartupOptions...)
+		case a.Command == nil:
+			return fmt.Errorf("Failed to append Option: option '%s' is not a startup option and no command was provided.", opt.Name())
+		case opt.Supports(*a.Command):
+			a.CommandOptions = append([]options.Option{opt}, a.CommandOptions...)
+		default:
+			return fmt.Errorf("Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it.", opt.Name(), *a.Command)
+		}
+	}
+	return nil
 }
 
 func (a *PartitionedArgs) Append(args ...arguments.Argument) error {

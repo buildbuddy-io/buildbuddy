@@ -117,7 +117,7 @@ func verifyRole(t *testing.T, ur scim.UserResource, expectedRole string) {
 }
 
 func updateUserSubID(t *testing.T, ctx context.Context, udb interfaces.UserDB, userID string, g *tables.Group) {
-	u, err := udb.GetUserByID(ctx, userID)
+	u, err := udb.GetUserByID(ctx, userID, &interfaces.GetUserOpts{})
 	require.NoError(t, err)
 	u.SubID = saml.SubIDForUserName(u.Email, g)
 	err = udb.UpdateUser(ctx, u)
@@ -373,7 +373,7 @@ func TestCreateUser(t *testing.T) {
 		verifyRole(t, ur, role.Developer.String())
 		require.True(t, ur.Active)
 
-		u, err := udb.GetUserByID(userCtx, createdUser.ID)
+		u, err := udb.GetUserByID(userCtx, createdUser.ID, &interfaces.GetUserOpts{})
 		require.NoError(t, err)
 		require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/user500@org1.io", u.SubID)
 	}
@@ -479,7 +479,7 @@ func TestCreateUser(t *testing.T) {
 		verifyRole(t, ur, role.Developer.String())
 		require.True(t, ur.Active)
 
-		u, err := udb.GetUserByID(userCtx, createdUser.ID)
+		u, err := udb.GetUserByID(userCtx, createdUser.ID, &interfaces.GetUserOpts{})
 		require.NoError(t, err)
 		require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/user501@org1.io", u.SubID)
 	}
@@ -562,7 +562,7 @@ func TestDeleteUser(t *testing.T) {
 		err = json.Unmarshal(body, &updatedUser)
 		require.NoError(t, err)
 		require.False(t, updatedUser.Active)
-		_, err = udb.GetUserByID(userCtx, "US101")
+		_, err = udb.GetUserByID(userCtx, "US101", &interfaces.GetUserOpts{})
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err))
 	}
@@ -581,7 +581,7 @@ func TestDeleteUser(t *testing.T) {
 		err = json.Unmarshal(body, &updatedUser)
 		require.NoError(t, err)
 		require.False(t, updatedUser.Active)
-		_, err = udb.GetUserByID(userCtx, "US102")
+		_, err = udb.GetUserByID(userCtx, "US102", &interfaces.GetUserOpts{})
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err))
 	}
@@ -608,7 +608,7 @@ func TestDeleteUser(t *testing.T) {
 		err = json.Unmarshal(body, &updatedUser)
 		require.NoError(t, err)
 		require.False(t, updatedUser.Active)
-		_, err = udb.GetUserByID(userCtx, "US103")
+		_, err = udb.GetUserByID(userCtx, "US103", &interfaces.GetUserOpts{})
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err))
 	}
@@ -618,7 +618,7 @@ func TestDeleteUser(t *testing.T) {
 		code, body := tc.Delete(baseURL + "/scim/Users/US104")
 		require.Equal(tc.t, http.StatusNoContent, code, "body: %s", string(body))
 		require.NoError(t, err)
-		_, err = udb.GetUserByID(userCtx, "US104")
+		_, err = udb.GetUserByID(userCtx, "US104", &interfaces.GetUserOpts{})
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err))
 	}
@@ -701,7 +701,7 @@ func TestUpdateUser(t *testing.T) {
 	verifyRole(t, updatedUser, role.Developer.String())
 
 	// Verify that SubID was updated to reflect the new email.
-	u, err := udb.GetUserByID(userCtx, updatedUser.ID)
+	u, err := udb.GetUserByID(userCtx, updatedUser.ID, &interfaces.GetUserOpts{})
 	require.NoError(t, err)
 	require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/puttest@example.domain", u.SubID)
 
@@ -752,7 +752,7 @@ func TestUpdateUser(t *testing.T) {
 		verifyRole(t, updatedUser, role.Developer.String())
 
 		// Verify that SubID was updated to reflect the new email.
-		u, err = udb.GetUserByID(userCtx, updatedUser.ID)
+		u, err = udb.GetUserByID(userCtx, updatedUser.ID, &interfaces.GetUserOpts{})
 		require.NoError(t, err)
 		require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/somenewemail@example.domain", u.SubID)
 	}
@@ -809,7 +809,7 @@ func TestUpdateUser(t *testing.T) {
 		verifyRole(t, updatedUser, role.Developer.String())
 
 		// Verify that SubID was updated to reflect the new email.
-		u, err = udb.GetUserByID(userCtx, updatedUser.ID)
+		u, err = udb.GetUserByID(userCtx, updatedUser.ID, &interfaces.GetUserOpts{})
 		require.NoError(t, err)
 		require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/"+newEmail, u.SubID)
 	}

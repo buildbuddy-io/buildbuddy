@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//codesearch/github",
         "//codesearch/index",
+        "//codesearch/indexprofile",
         "//codesearch/performance",
         "//codesearch/query",
         "//codesearch/schema",

@@ -123,7 +123,7 @@ type FakeGitHubStatus struct {
 	RepoStatus *github.GithubStatusPayload
 }
 
-func (c *FakeGitHubStatusClient) CreateStatus(ctx context.Context, ownerRepo, commitSHA string, p *github.GithubStatusPayload) error {
+func (c *FakeGitHubStatusClient) CreateStatus(ctx context.Context, groupID, ownerRepo, commitSHA string, p *github.GithubStatusPayload) error {
 	s := &FakeGitHubStatus{
 		OwnerRepo:  ownerRepo,
 		CommitSHA:  commitSHA,
@@ -133,7 +133,7 @@ func (c *FakeGitHubStatusClient) CreateStatus(ctx context.Context, ownerRepo, co
 	return nil
 }
 
-func (c *FakeGitHubStatusClient) IsStatusReportingEnabled(ctx context.Context, repoURL string) (bool, error) {
+func (c *FakeGitHubStatusClient) IsStatusReportingEnabled(ctx context.Context, groupID, repoURL string) (bool, error) {
 	return c.StatusReportingEnabled, nil
 }
 

@@ -240,11 +240,13 @@ func TestPodDeletedDuringWatch(t *testing.T) {
 	require.Equal(t, map[string]string{"cache-0": "10.0.0.1:7999", "cache-1": "10.0.0.2:7999"}, peers)
 }
 
-func TestPodNotReadyExcluded(t *testing.T) {
+// A peer that is running but not yet passing its readiness probe must
+// still be discoverable — the readiness probe can itself depend on
+// peer connectivity, so gating on it would deadlock cold start.
+func TestPodNotReadyIncluded(t *testing.T) {
 	ownerRefs := replicaSetOwnerRef("cache-rs")
 
 	pod0 := readyPod("cache-0", "10.0.0.1", ownerRefs)
-	// pod1 is not ready
 	pod1 := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            "cache-1",
@@ -252,11 +254,13 @@ func TestPodNotReadyExcluded(t *testing.T) {
 			OwnerReferences: ownerRefs,
 			Labels:          map[string]string{"app": "cache"},
 		},
+		Spec: corev1.PodSpec{NodeName: "cache-1"},
 		Status: corev1.PodStatus{
 			PodIP: "10.0.0.2",
 			Phase: corev1.PodRunning,
 			Conditions: []corev1.PodCondition{
 				{Type: corev1.PodReady, Status: corev1.ConditionFalse},
+				{Type: corev1.ContainersReady, Status: corev1.ConditionFalse},
 			},
 		},
 	}
@@ -267,10 +271,15 @@ func TestPodNotReadyExcluded(t *testing.T) {
 	testingPeerWatcher(t, client, pc)
 
 	peers := pc.waitForUpdate(t, 5*time.Second)
-	require.Equal(t, map[string]string{"cache-0": "10.0.0.1:7999"}, peers)
+	require.Equal(t, map[string]string{
+		"cache-0": "10.0.0.1:7999",
+		"cache-1": "10.0.0.2:7999",
+	}, peers)
 }
 
-func TestPodBecomesUnready(t *testing.T) {
+// A peer that flips PodReady to false stays in the set, since we
+// don't gate on readiness probes.
+func TestPodStaysIncludedWhenReadyFlips(t *testing.T) {
 	ownerRefs := replicaSetOwnerRef("cache-rs")
 
 	pod0 := readyPod("cache-0", "10.0.0.1", ownerRefs)
@@ -288,15 +297,92 @@ func TestPodBecomesUnready(t *testing.T) {
 	// Wait for watch to be established.
 	waitForWatch(t, client, "pods")
 
-	// Make pod1 unready.
+	// Flip pod1 to not-ready. The peer should remain in the set.
 	pod1.Status.Conditions = []corev1.PodCondition{
 		{Type: corev1.PodReady, Status: corev1.ConditionFalse},
 	}
 	_, err := client.CoreV1().Pods(testNamespace).Update(context.Background(), pod1, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
-	peers = pc.waitForUpdate(t, 5*time.Second)
-	require.Equal(t, map[string]string{"cache-0": "10.0.0.1:7999"}, peers)
+	// Then trigger a real change (delete pod0) and verify pod1 is
+	// still present in the resulting peer map.
+	err = client.CoreV1().Pods(testNamespace).Delete(context.Background(), "cache-0", metav1.DeleteOptions{})
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		pc.mu.Lock()
+		defer pc.mu.Unlock()
+		latest := pc.updates[len(pc.updates)-1]
+		_, hasPod1 := latest["cache-1"]
+		_, hasPod0 := latest["cache-0"]
+		return hasPod1 && !hasPod0
+	}, 5*time.Second, 10*time.Millisecond, "expected pod1 to remain after readiness flip and pod0 deletion")
+}
+
+func TestPodAddr(t *testing.T) {
+	pw := &PeerWatcher{port: "7999"}
+	tests := []struct {
+		name string
+		pod  corev1.Pod
+		want string
+	}{
+		{
+			name: "running with no conditions is included",
+			pod: corev1.Pod{Status: corev1.PodStatus{
+				PodIP: "10.0.0.1",
+				Phase: corev1.PodRunning,
+			}},
+			want: "10.0.0.1:7999",
+		},
+		{
+			name: "running but PodReady=False is included",
+			pod: corev1.Pod{Status: corev1.PodStatus{
+				PodIP: "10.0.0.1",
+				Phase: corev1.PodRunning,
+				Conditions: []corev1.PodCondition{
+					{Type: corev1.PodReady, Status: corev1.ConditionFalse},
+					{Type: corev1.ContainersReady, Status: corev1.ConditionFalse},
+				},
+			}},
+			want: "10.0.0.1:7999",
+		},
+		{
+			name: "no PodIP is excluded",
+			pod: corev1.Pod{Status: corev1.PodStatus{
+				Phase: corev1.PodRunning,
+			}},
+			want: "",
+		},
+		{
+			name: "Phase=Pending is excluded even with IP",
+			pod: corev1.Pod{Status: corev1.PodStatus{
+				PodIP: "10.0.0.1",
+				Phase: corev1.PodPending,
+			}},
+			want: "",
+		},
+		{
+			name: "Phase=Succeeded is excluded",
+			pod: corev1.Pod{Status: corev1.PodStatus{
+				PodIP: "10.0.0.1",
+				Phase: corev1.PodSucceeded,
+			}},
+			want: "",
+		},
+		{
+			name: "Phase=Failed is excluded",
+			pod: corev1.Pod{Status: corev1.PodStatus{
+				PodIP: "10.0.0.1",
+				Phase: corev1.PodFailed,
+			}},
+			want: "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, pw.podAddr(tc.pod))
+		})
+	}
 }
 
 func TestNoPodIPExcluded(t *testing.T) {

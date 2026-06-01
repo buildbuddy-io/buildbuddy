@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -122,13 +123,19 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		return nil, err
 	}
 
-	if len(missing) > 0 && chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
+	// The chunked-manifest fallback lookup is skipped when the caller signals
+	// that these digests are individual content-defined chunks, not whole blobs.
+	// Otherwise, use the same fallback threshold as read paths so blobs chunked
+	// with an older, smaller chunk size still count as present after increasing
+	// the current chunk size.
+	if efp := s.env.GetExperimentFlagProvider(); len(missing) > 0 && !cdc.IsChunked(ctx) && chunking.Enabled(ctx, efp) {
 		checker := chunking.NewMissingChunkChecker(s.cache)
+		chunkedReadFallbackSizeBytes := chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
 
 		// https://go.dev/wiki/SliceTricks#filtering-without-allocating
 		stillMissing := missing[:0]
 		for _, d := range missing {
-			if d.GetSizeBytes() <= chunking.MaxChunkSizeBytes() {
+			if d.GetSizeBytes() <= chunkedReadFallbackSizeBytes {
 				stillMissing = append(stillMissing, d)
 				continue
 			}
@@ -335,11 +342,18 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		return nil, err
 	}
 
-	if qm := s.env.GetQuotaManager(); qm != nil {
-		totalDownloadSize := int64(0)
-		for _, readDigest := range req.GetDigests() {
-			totalDownloadSize += readDigest.GetSizeBytes()
+	totalDownloadSize := int64(0)
+	for _, readDigest := range req.GetDigests() {
+		size := readDigest.GetSizeBytes()
+		if size < 0 {
+			return nil, status.InvalidArgumentError("Invalid (negative) digest size")
 		}
+		if totalDownloadSize > rpcutil.GRPCMaxSizeBytes-size {
+			return nil, status.InvalidArgumentErrorf("BatchReadBlobs request exceeds server limit of %d bytes", rpcutil.GRPCMaxSizeBytes)
+		}
+		totalDownloadSize += size
+	}
+	if qm := s.env.GetQuotaManager(); qm != nil {
 		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), totalDownloadSize); err != nil {
 			return nil, err
 		}
@@ -353,7 +367,12 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	cacheRequest := make([]*rspb.ResourceName, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
 	clientAcceptsZstd := remote_cache_config.ZstdTranscodingEnabled() && clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD)
-	chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
+	efp := s.env.GetExperimentFlagProvider()
+	chunkingEnabled := chunking.Enabled(ctx, efp)
+	chunkedReadFallbackSizeBytes := int64(0)
+	if chunkingEnabled {
+		chunkedReadFallbackSizeBytes = chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
+	}
 	readZstd := clientAcceptsZstd && s.cache.SupportsCompressor(repb.Compressor_ZSTD)
 
 	requestedResources := make([]*digest.ResourceName, 0, len(req.GetDigests()))
@@ -393,7 +412,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		// It's unexpected, but BatchReadBlobs may be used for blobs that are
 		// large enough to be chunked. If the blob was not found and it's large
 		// enough to be chunked, try to reassemble it from CDC chunks.
-		if (!ok || os.IsNotExist(err)) && rn.GetDigest().GetSizeBytes() > chunking.MaxChunkSizeBytes() && chunkingEnabled {
+		if (!ok || os.IsNotExist(err)) && chunkingEnabled && rn.GetDigest().GetSizeBytes() > chunkedReadFallbackSizeBytes {
 			if assembled, assembleErr := s.readChunkedBlob(ctx, rn.GetDigest(), req.GetInstanceName(), req.GetDigestFunction(), readZstd); assembleErr == nil {
 				data = assembled
 				ok = true
@@ -454,12 +473,7 @@ func clientAcceptsCompressor(acceptableCompressors []repb.Compressor_Value, comp
 	if compressor == repb.Compressor_IDENTITY {
 		return true
 	}
-	for _, c := range acceptableCompressors {
-		if c == compressor {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(acceptableCompressors, compressor)
 }
 
 func zstdDecompress(data []byte, decompressedLength int64) ([]byte, error) {
@@ -1141,8 +1155,7 @@ func isComplete(children []*capb.DirectoryWithDigest) bool {
 			return false
 		}
 		for _, dirNode := range child.GetDirectory().GetDirectories() {
-			grn := digest.NewResourceName(dirNode.GetDigest(), "", rspb.CacheType_CAS, rn.GetDigestFunction())
-			if grn.IsEmpty() {
+			if digest.IsEmptyHash(dirNode.GetDigest(), rn.GetDigestFunction()) {
 				continue
 			}
 			if _, ok := allDigests[dirNode.GetDigest().GetHash()]; !ok {
@@ -1218,6 +1231,9 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 }
 
 func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, readZstd bool) ([]byte, error) {
+	if blobDigest.GetSizeBytes() > rpcutil.GRPCMaxSizeBytes {
+		return nil, status.NotFoundErrorf("blob %s not found", blobDigest.GetHash())
+	}
 	manifest, err := chunking.LoadManifest(ctx, s.cache, blobDigest, instanceName, digestFunction)
 	if err != nil {
 		return nil, err

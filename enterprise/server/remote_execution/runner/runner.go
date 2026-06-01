@@ -409,9 +409,7 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		}
 		if txInfo != nil {
 			fillStatsFromTransferInfo(ioStats, txInfo)
-			if dirtools.InputFetchMetadataEnabled() {
-				res.InputFetchMetadata = txInfo.InputFetchMetadata
-			}
+			res.InputFetchMetadata = txInfo.InputFetchMetadata
 		}
 		res.VfsStats = r.Workspace.ComputeVFSStats()
 	}()
@@ -978,6 +976,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	onDisk, _ := c.IsImageCached(ctx)
 	pullStart := time.Now()
 	pullErr := c.PullImage(ctx, creds)
+	pullDuration := time.Since(pullStart)
 	container.RecordImageFetchMetrics(
 		c.IsolationType(),
 		oci.RegistryETLDPlusOne(platProps.ContainerImage),
@@ -986,8 +985,9 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		!creds.IsEmpty(),
 		platProps.UseOCIFetcher,
 		pullErr,
-		time.Since(pullStart),
+		pullDuration,
 	)
+	container.LogImagePullError(ctx, platProps.ContainerImage, c.IsolationType(), metrics.ImageFetchTriggerWarmup, platProps.UseOCIFetcher, pullErr, pullDuration)
 	if pullErr != nil {
 		return pullErr
 	}
@@ -1010,7 +1010,7 @@ func (p *pool) Warmup(ctx context.Context) {
 	defer cancel()
 
 	eg, ctx := errgroup.WithContext(ctx)
-	for _, cfg := range p.warmupConfigs() {
+	for _, cfg := range WarmupConfigs() {
 		cfg := cfg
 		eg.Go(func() error {
 			return p.warmupImage(ctx, &cfg)
@@ -1021,7 +1021,8 @@ func (p *pool) Warmup(ctx context.Context) {
 	}
 }
 
-func (p *pool) warmupConfigs() []WarmupConfig {
+// WarmupConfigs returns the images configured for executor startup warmup.
+func WarmupConfigs() []WarmupConfig {
 	var out []WarmupConfig
 	for _, isolation := range executorplatform.GetExecutorProperties().SupportedIsolationTypes {
 		// Bare/sandbox isolation types don't support container images.

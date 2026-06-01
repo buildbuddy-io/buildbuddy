@@ -14,15 +14,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -71,6 +68,73 @@ func TestChunker_ReassemblesOriginalData(t *testing.T) {
 		reassembled.Write(chunk)
 	}
 	require.Equal(t, originalData, reassembled.Bytes(), "reassembled data should match original")
+}
+
+func TestShouldUploadChunkedWithMax(t *testing.T) {
+	avgChunkSizeBytes := int64(512 * 1024)
+
+	for _, tc := range []struct {
+		name              string
+		sizeBytes         int64
+		maxWriteSizeBytes int64
+		want              bool
+	}{
+		{
+			name:              "below minimum",
+			sizeBytes:         1 * 1024 * 1024,
+			maxWriteSizeBytes: 5 * 1024 * 1024,
+			want:              false,
+		},
+		{
+			name:              "within range",
+			sizeBytes:         3 * 1024 * 1024,
+			maxWriteSizeBytes: 5 * 1024 * 1024,
+			want:              true,
+		},
+		{
+			name:              "above max",
+			sizeBytes:         6 * 1024 * 1024,
+			maxWriteSizeBytes: 5 * 1024 * 1024,
+			want:              false,
+		},
+		{
+			name:              "unset max",
+			sizeBytes:         3 * 1024 * 1024,
+			maxWriteSizeBytes: 0,
+			want:              true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := &repb.Digest{Hash: "hash", SizeBytes: tc.sizeBytes}
+			require.Equal(t, tc.want, chunking.ShouldUploadChunkedWithMax(d, avgChunkSizeBytes, tc.maxWriteSizeBytes))
+		})
+	}
+}
+
+func TestShouldReadChunkedUsesReadFallbackThreshold(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
+
+	ctx := context.Background()
+	assert.False(t, chunking.ShouldUploadChunked(ctx, nil, &repb.Digest{
+		Hash:      "hash",
+		SizeBytes: 3 * 1024 * 1024,
+	}))
+	assert.True(t, chunking.ShouldReadChunked(ctx, nil, 3*1024*1024, 0, 0))
+	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, 3*1024*1024, 0, 0))
+	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, 5*1024*1024, 0, 0))
+	assert.False(t, chunking.ShouldReadChunked(ctx, nil, 2*1024*1024, 0, 0))
+	assert.False(t, chunking.ShouldReadChunked(ctx, nil, 3*1024*1024, 0, 1024))
+}
+
+func TestReadFallbackThresholdClampsToMaxChunkSize(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 4*1024*1024+1)
+
+	require.NoError(t, chunking.ValidateConfig())
+	ctx := context.Background()
+	efp := booleanFlagProvider{}
+	require.Equal(t, chunking.MaxChunkSizeBytes(ctx, efp), chunking.MinChunkedReadFallbackSizeBytes(ctx, efp))
 }
 
 func TestChunker_DeterministicChunking(t *testing.T) {
@@ -152,7 +216,7 @@ func TestStoreAndLoad(t *testing.T) {
 			require.NoError(t, err)
 
 			var chunkDigests []*repb.Digest
-			c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), func(data []byte) error {
+			c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes(ctx, nil)), func(data []byte) error {
 				d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
 				if err != nil {
 					return err
@@ -200,45 +264,6 @@ func TestStoreAndLoad(t *testing.T) {
 	}
 }
 
-func TestLoadManifest_LegacyFallback(t *testing.T) {
-	ctx := context.Background()
-	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
-	require.NoError(t, err)
-	cache := te.GetCache()
-
-	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 100)
-	chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 150)
-	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
-	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
-
-	allData := append(chunk1Data, chunk2Data...)
-	blobDigest, err := digest.Compute(bytes.NewReader(allData), repb.DigestFunction_SHA256)
-	require.NoError(t, err)
-
-	manifestBytes, err := proto.Marshal(&repb.ActionResult{
-		OutputFiles: []*repb.OutputFile{
-			{Path: "chunk_0", Digest: chunk1RN.GetDigest()},
-			{Path: "chunk_1", Digest: chunk2RN.GetDigest()},
-		},
-	})
-	require.NoError(t, err)
-
-	legacyACDigest := &repb.Digest{Hash: blobDigest.GetHash(), SizeBytes: blobDigest.GetSizeBytes()}
-	legacyRN := digest.NewACResourceName(legacyACDigest, "_bb_chunked_manifest_v2_/", repb.DigestFunction_SHA256)
-	require.NoError(t, cache.Set(ctx, legacyRN.ToProto(), manifestBytes))
-
-	loaded, err := chunking.LoadManifest(ctx, cache, blobDigest, "", repb.DigestFunction_SHA256)
-	require.NoError(t, err)
-	require.Equal(t, 2, len(loaded.ChunkDigests))
-	assert.Equal(t, chunk1RN.GetDigest().GetHash(), loaded.ChunkDigests[0].GetHash())
-	assert.Equal(t, chunk2RN.GetDigest().GetHash(), loaded.ChunkDigests[1].GetHash())
-
-	flags.Set(t, "cache.chunking.check_legacy_manifests", false)
-	_, err = chunking.LoadManifest(ctx, cache, blobDigest, "", repb.DigestFunction_SHA256)
-	require.True(t, status.IsNotFoundError(err))
-}
-
 func TestStore_MissingChunk(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
@@ -254,7 +279,7 @@ func TestStore_MissingChunk(t *testing.T) {
 	require.NoError(t, err)
 
 	var chunkDigests []*repb.Digest
-	c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), func(data []byte) error {
+	c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes(ctx, nil)), func(data []byte) error {
 		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
 		if err != nil {
 			return err
@@ -504,60 +529,48 @@ func (c *findMissingTrackingCache) FindMissing(ctx context.Context, resources []
 	return c.Cache.FindMissing(ctx, resources)
 }
 
-func TestEnabledViaHeader(t *testing.T) {
-	tests := []struct {
-		name string
-		md   metadata.MD
-		want bool
-	}{
-		{
-			name: "no metadata",
-			md:   nil,
-			want: false,
-		},
-		{
-			name: "header not set",
-			md:   metadata.MD{},
-			want: false,
-		},
-		{
-			name: "header set to true",
-			md:   metadata.Pairs(cdc.EnabledHeaderName, "true"),
-			want: true,
-		},
-		{
-			name: "header set to false",
-			md:   metadata.Pairs(cdc.EnabledHeaderName, "false"),
-			want: false,
-		},
-		{
-			name: "header set to empty",
-			md:   metadata.Pairs(cdc.EnabledHeaderName, ""),
-			want: false,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
-			if tc.md != nil {
-				ctx = metadata.NewIncomingContext(ctx, tc.md)
-			}
-			assert.Equal(t, tc.want, cdc.EnabledViaHeader(ctx))
-		})
-	}
+type booleanFlagProvider struct {
+	interfaces.ExperimentFlagProvider
+	values map[string]bool
 }
 
-func TestEnabled_HeaderOverridesExperimentFlag(t *testing.T) {
-	ctx := metadata.NewIncomingContext(
-		context.Background(),
-		metadata.Pairs(cdc.EnabledHeaderName, "true"),
-	)
-	assert.True(t, chunking.Enabled(ctx, nil))
+func (p booleanFlagProvider) Boolean(ctx context.Context, flagName string, defaultValue bool, opts ...any) bool {
+	v, ok := p.values[flagName]
+	if !ok {
+		return defaultValue
+	}
+	return v
+}
+
+func (p booleanFlagProvider) Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64 {
+	return defaultValue
 }
 
 func TestEnabled_FallsBackToExperimentFlag(t *testing.T) {
 	ctx := context.Background()
-	assert.False(t, chunking.Enabled(ctx, nil))
+	assert.True(t, chunking.Enabled(ctx, nil))
+}
+
+func TestEnabled_UsesExperimentFlag(t *testing.T) {
+	ctx := context.Background()
+	assert.False(t, chunking.Enabled(ctx, booleanFlagProvider{
+		values: map[string]bool{"cache.chunking_enabled": false},
+	}))
+	assert.True(t, chunking.Enabled(ctx, booleanFlagProvider{
+		values: map[string]bool{"cache.chunking_enabled": true},
+	}))
+}
+
+func TestShouldReadChunkedOnProxy_UsesExperimentFlag(t *testing.T) {
+	ctx := context.Background()
+	size := chunking.MaxChunkSizeBytes(ctx, nil) + 1
+	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, size, 0, 0))
+	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, booleanFlagProvider{
+		values: map[string]bool{"cache_proxy.attempt_chunked_reads": false},
+	}, size, 0, 0))
+	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, booleanFlagProvider{
+		values: map[string]bool{"cache.chunking_enabled": false},
+	}, size, 0, 0))
 }
 
 func BenchmarkStore(b *testing.B) {

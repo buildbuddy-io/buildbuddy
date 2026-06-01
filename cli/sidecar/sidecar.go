@@ -1,3 +1,19 @@
+// Package sidecar manages the bb CLI's sidecar process: a long-lived background
+// helper that bazel talks to in place of the configured BES and remote cache
+// backends. The sidecar is started lazily, reused across CLI invocations with
+// matching configuration, and self-terminates after a period of inactivity.
+//
+// ConfigureSidecar rewrites a bazel argv to point --bes_backend and/or
+// --remote_cache at the sidecar's local unix socket, starting the sidecar if
+// one is not already running. If the sidecar cannot be started or reached, the
+// original argv is returned and the build proceeds directly against the
+// configured backends.
+//
+// Related packages:
+//   - cli/cmd/sidecar — the sidecar binary's main entrypoint; runs the
+//     long-lived process that this package starts and reuses.
+//   - cli/sidecar_proxy — the gRPC services (ByteStream/CAS/AC/Capabilities)
+//     that the sidecar process exposes to bazel.
 package sidecar
 
 import (
@@ -9,6 +25,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -159,16 +176,11 @@ func isFlagTrue(flag string) bool {
 	return false
 }
 
-func isCI(args []string) bool {
+func isCI(args *arg.BazelArgs) bool {
 	if isFlagTrue(os.Getenv("CI")) {
 		return true
 	}
-	for _, md := range arg.GetMulti(args, "build_metadata") {
-		if md == "ROLE=CI" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(args.GetAllFlagsWithName("build_metadata"), "ROLE=CI")
 }
 
 // Instance holds information about the running sidecar instance.
@@ -225,22 +237,13 @@ func parseLogTimestamp(line string) (time.Time, bool) {
 	return t, true
 }
 
-func ConfigureSidecar(args []string) ([]string, *Instance) {
+func ConfigureSidecar(args *arg.BazelArgs) (*Instance, error) {
 	// Allow an escape hatch to disable all sidecar features.
 	if os.Getenv("BB_DISABLE_SIDECAR") == "1" || os.Getenv("BB_DISABLE_SIDECAR") == "true" {
-		return args, nil
+		return nil, nil
 	}
 
-	originalArgs := args
-
-	if isCI(args) {
-		log.Debugf("CI build detected.")
-		syncFlag := arg.Get(args, "sync")
-		if !isFlagTrue(syncFlag) {
-			log.Debugf("CI build detected. add --sync=true")
-			args = arg.Append(args, "--sync=true")
-		}
-	}
+	originalArgs := args.Forwarded()
 
 	log.Debugf("Configuring sidecar")
 
@@ -249,26 +252,33 @@ func ConfigureSidecar(args []string) ([]string, *Instance) {
 	cacheDir, err := storage.CacheDir()
 	if err != nil {
 		log.Warnf("Sidecar could not be initialized, continuing without sidecar: %s", err)
-		return args, nil
+		return nil, nil
 	}
 
 	// Re(Start) the sidecar if the flags set don't match.
 	sidecarArgs := []string{}
-	besBackendFlag := arg.Get(args, "bes_backend")
-	remoteCacheFlag := arg.Get(args, "remote_cache")
-	remoteExecFlag := arg.Get(args, "remote_executor")
-	synchronousWriteFlag, args := arg.Pop(args, "sync")
+	besBackendFlag := args.Get("bes_backend")
+	remoteCacheFlag := args.Get("remote_cache")
+	remoteExecFlag := args.Get("remote_executor")
+	synchronousWriteFlag, err := args.Pop("sync")
+	if err != nil {
+		return nil, err
+	}
+	if !isFlagTrue(synchronousWriteFlag) && isCI(args) {
+		log.Debugf("CI build detected, enabling sync.")
+		synchronousWriteFlag = "true"
+	}
 
 	// Read config YAML.
 	ws, err := workspace.Path()
 	if err != nil {
 		// Not in a bazel workspace
-		return args, nil
+		return nil, nil
 	}
 	cf, err := config.LoadFile(filepath.Join(ws, config.WorkspaceRelativeConfigPath))
 	if err != nil {
 		log.Warnf("Failed to load buildbuddy.yaml: %s", err)
-		return args, nil
+		return nil, nil
 	}
 
 	sidecarBESEnabled := false
@@ -288,13 +298,15 @@ func ConfigureSidecar(args []string) ([]string, *Instance) {
 
 	if !sidecarBESEnabled && !sidecarCacheEnabled {
 		// Sidecar is not needed for this invocation; don't start it.
-		return args, nil
+		return nil, nil
 	}
 
 	if synchronousWriteFlag == "1" || synchronousWriteFlag == "true" {
 		sidecarArgs = append(sidecarArgs, "--local_cache_proxy.synchronous_write")
 		sidecarArgs = append(sidecarArgs, "--bes_synchronous")
-		args = arg.Append(args, "--bes_upload_mode=wait_for_upload_complete")
+		if err := args.Append("--bes_upload_mode=wait_for_upload_complete"); err != nil {
+			return nil, err
+		}
 	}
 
 	sidecarArgs = append(sidecarArgs, []string{
@@ -318,7 +330,10 @@ func ConfigureSidecar(args []string) ([]string, *Instance) {
 		instance, err := restartSidecarIfNecessary(ctx, cacheDir, sidecarArgs)
 		if err != nil {
 			log.Warnf("Sidecar could not be initialized, continuing without sidecar: %s", err)
-			return originalArgs, nil
+			if err := args.Set(originalArgs); err != nil {
+				return nil, err
+			}
+			return nil, nil
 		}
 		if err := keepaliveSidecar(ctx, instance.SockPath); err != nil {
 			// If we fail to connect, the sidecar might have been abruptly
@@ -332,19 +347,28 @@ func ConfigureSidecar(args []string) ([]string, *Instance) {
 			continue
 		}
 		if sidecarBESEnabled {
-			args = arg.Append(args, fmt.Sprintf("--bes_backend=unix://%s", instance.SockPath))
+			if err := args.Append(fmt.Sprintf("--bes_backend=unix://%s", instance.SockPath)); err != nil {
+				return nil, err
+			}
 		}
 		if sidecarCacheEnabled {
-			args = arg.Append(args, fmt.Sprintf("--remote_cache=unix://%s", instance.SockPath))
+			if err := args.Append(fmt.Sprintf("--remote_cache=unix://%s", instance.SockPath)); err != nil {
+				return nil, err
+			}
 			// Set bytestream URI prefix to match the actual remote cache
 			// backend, rather than the sidecar socket.
-			instanceName := arg.Get(args, "remote_instance_name")
-			args = arg.Append(args, fmt.Sprintf("--remote_bytestream_uri_prefix=%s", bytestreamURIPrefix(remoteCacheFlag, instanceName)))
+			instanceName := args.Get("remote_instance_name")
+			if err := args.Append(fmt.Sprintf("--remote_bytestream_uri_prefix=%s", bytestreamURIPrefix(remoteCacheFlag, instanceName))); err != nil {
+				return nil, err
+			}
 		}
-		return args, instance
+		return instance, nil
 	}
 	log.Warnf("Could not connect to sidecar, continuing without sidecar: %s", connectionErr)
-	return originalArgs, nil
+	if err := args.Set(originalArgs); err != nil {
+		return nil, err
+	}
+	return nil, nil
 }
 
 func bytestreamURIPrefix(cacheTarget, instanceName string) string {

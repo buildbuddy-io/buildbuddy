@@ -24,6 +24,8 @@ import (
 
 	mdspb "github.com/buildbuddy-io/buildbuddy/proto/metadata_service"
 	http_interceptors "github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
+
+	_ "github.com/buildbuddy-io/buildbuddy/server/util/kuberesolver" // registers kube:// resolver.
 )
 
 var (

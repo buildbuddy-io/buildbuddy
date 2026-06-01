@@ -2,7 +2,6 @@ package scheduler_server
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"math/rand"
@@ -27,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
@@ -61,6 +62,8 @@ var (
 	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
 	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
 	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", false, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
+	debugExecutorLabelsKey       = flag.String("remote_execution.debug_executor_labels_key", "", "If set, requests using the 'debug-executor-labels' platform property must also set the 'debug-executor-labels-key' platform property to this value, otherwise the requested labels are ignored. If empty, anyone can use 'debug-executor-labels'.", flag.Secret)
+	unclaimedTasksCacheTTL       = flag.Duration("remote_execution.unclaimed_tasks_cache_ttl", 1*time.Second, "If set, cache the unclaimed task list in memory for up to this TTL", flag.Internal)
 )
 
 const (
@@ -707,6 +710,68 @@ func filterToDebugExecutorID(nodes []*executionNode, task *repb.ExecutionTask) (
 	return id, nil
 }
 
+// Parses the requested executor labels from the "debug-executor-labels"
+// platform property. The value is a comma-separated list of "key=value" pairs;
+// entries without an "=" are treated as a key with an empty value.
+//
+// If the remote_execution.debug_executor_labels_key flag is set, the request
+// must also set the "debug-executor-labels-key" platform property to the
+// configured value, otherwise the labels are ignored (returns nil). If the
+// flag is unset, anyone may use the feature.
+func parseDebugExecutorLabels(ctx context.Context, task *repb.ExecutionTask) map[string]string {
+	raw := platform.FindEffectiveValue(task, "debug-executor-labels")
+	if raw == "" {
+		return nil
+	}
+	if *debugExecutorLabelsKey != "" && platform.FindEffectiveValue(task, "debug-executor-labels-key") != *debugExecutorLabelsKey {
+		alert.CtxUnexpectedEvent(ctx, "unauthorized_debug_executor_labels", "debug-executor-labels used without a matching debug-executor-labels-key; ignoring")
+		return nil
+	}
+	out := make(map[string]string)
+	for entry := range strings.SplitSeq(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		k, v, _ := strings.Cut(entry, "=")
+		out[strings.TrimSpace(k)] = strings.TrimSpace(v)
+	}
+	return out
+}
+
+// executorHasAllLabels reports whether the executor's labels contain every
+// requested key with a matching value.
+func executorHasAllLabels(executorLabels, requested map[string]string) bool {
+	for k, v := range requested {
+		if executorLabels[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+// If the debug-executor-labels platform property is set, filters the given
+// nodes to those whose labels match every requested key=value pair. If no
+// nodes match, fires an internal alert and returns an unfiltered list so
+// scheduling can proceed, making the debug-executor-labels best effort.
+func filterToDebugExecutorLabels(ctx context.Context, nodes []*executionNode, task *repb.ExecutionTask) []*executionNode {
+	requested := parseDebugExecutorLabels(ctx, task)
+	if len(requested) == 0 {
+		return nodes
+	}
+	var out []*executionNode
+	for _, n := range nodes {
+		if executorHasAllLabels(n.GetLabels(), requested) {
+			out = append(out, n)
+		}
+	}
+	if len(out) == 0 {
+		alert.CtxUnexpectedEvent(ctx, "unrecognized_debug_executor_labels", "no executors found with debug-executor-labels %v; scheduling without filter", requested)
+		return nodes
+	}
+	return out
+}
+
 func filterToHostnamePattern(ctx context.Context, nodes []*executionNode, pattern string) []*executionNode {
 	p, err := regexp.Compile(pattern)
 	if err != nil {
@@ -773,21 +838,28 @@ func (k *nodePoolKey) redisUnclaimedTasksKey() string {
 }
 
 type nodePool struct {
-	env       environment.Env
-	rdb       redis.UniversalClient
+	rdb   redis.UniversalClient
+	clock clockwork.Clock
+
 	mu        sync.Mutex
 	lastFetch time.Time
 	nodes     []*executionNode
 	key       nodePoolKey
 	// Executors that are currently connected to this instance of the scheduler server.
 	connectedExecutors []*executionNode
+
+	unclaimedTasksSingleFlight singleflight.Group[string, []string]
+
+	unclaimedTasksMu     sync.Mutex
+	unclaimedTasks       []string
+	unclaimedTasksExpiry time.Time
 }
 
 func newNodePool(env environment.Env, key nodePoolKey) *nodePool {
 	np := &nodePool{
-		env: env,
-		key: key,
-		rdb: env.GetRemoteExecutionRedisClient(),
+		key:   key,
+		rdb:   env.GetRemoteExecutionRedisClient(),
+		clock: env.GetClock(),
 	}
 	return np
 }
@@ -964,9 +1036,10 @@ func (np *nodePool) RemoveUnclaimedTask(ctx context.Context, taskID string) erro
 }
 
 func (np *nodePool) SampleUnclaimedTasks(ctx context.Context, n int) ([]string, error) {
-	// Get all task IDs. Redis >=6.2 has a ZRANDMEMBER command, but we don't want to assume that onprem customers have a
-	// relatively new Redis version.
-	unclaimed, err := np.rdb.ZRange(ctx, np.key.redisUnclaimedTasksKey(), 0, -1).Result()
+	// Get all task IDs using ZRANGE (with short in-memory caching). Redis >=6.2
+	// has a ZRANDMEMBER command, but we don't want to assume that onprem
+	// customers have a relatively new Redis version.
+	unclaimed, err := np.getAllTaskIDs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -976,6 +1049,40 @@ func (np *nodePool) SampleUnclaimedTasks(ctx context.Context, n int) ([]string, 
 		unclaimed[i], unclaimed[j] = unclaimed[j], unclaimed[i]
 	})
 	return unclaimed[:min(n, len(unclaimed))], nil
+}
+
+// Gets all currently unclaimed tasks. If a TTL is configured, the result is
+// cached for a short duration to avoid excessive Redis compute, which can
+// become problematic for very large executor pools issuing a steady stream of
+// AskForMoreWorkRequests.
+func (np *nodePool) getAllTaskIDs(ctx context.Context) ([]string, error) {
+	// The singleflight group should help reduce some concurrent lookups which
+	// are more likely to happen if the list is large.
+	unclaimed, _, err := np.unclaimedTasksSingleFlight.Do(ctx, "" /*=key*/, func(ctx context.Context) ([]string, error) {
+		if !np.unclaimedTasksExpiry.IsZero() && np.clock.Now().Before(np.unclaimedTasksExpiry) {
+			np.unclaimedTasksMu.Lock()
+			defer np.unclaimedTasksMu.Unlock()
+			return np.unclaimedTasks, nil
+		}
+		unclaimed, err := np.rdb.ZRange(ctx, np.key.redisUnclaimedTasksKey(), 0, -1).Result()
+		if err != nil {
+			return nil, err
+		}
+		if *unclaimedTasksCacheTTL <= 0 {
+			return unclaimed, nil
+		}
+
+		np.unclaimedTasksMu.Lock()
+		defer np.unclaimedTasksMu.Unlock()
+		np.unclaimedTasks = unclaimed
+		np.unclaimedTasksExpiry = np.clock.Now().Add(*unclaimedTasksCacheTTL)
+
+		return unclaimed, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return slices.Clone(unclaimed), nil
 }
 
 type persistedTask struct {
@@ -1070,7 +1177,7 @@ func (c *schedulerClientCache) get(hostPort string) (*schedulerClient, error) {
 type Options struct {
 	LocalPortOverride               int32
 	RequireExecutorAuthorization    bool
-	Clock                           clockwork.Clock
+	Clock                           clockwork.Clock // TODO: get this from env
 	ActionMergingLeaseTTLOverride   time.Duration
 	LeaseDuration, LeaseGracePeriod time.Duration
 }
@@ -1092,6 +1199,8 @@ type SchedulerServer struct {
 	forceUserOwnedDarwinExecutors bool
 	// Force windows executions to use executors owned by user.
 	forceUserOwnedWindowsExecutors bool
+	// Reject anonymous requests for ARM Linux remote build execution.
+	disableAnonymousArmLinuxExecution bool
 	// If enabled, executors will be required to present an API key with appropriate capabilities in order to register.
 	requireExecutorAuthorization bool
 
@@ -1150,7 +1259,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		}
 	}
 
-	clock := clockwork.NewRealClock()
+	clock := env.GetClock()
 	if options.Clock != nil {
 		clock = options.Clock
 	}
@@ -1176,6 +1285,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		enableUserOwnedExecutors:          remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
 		forceUserOwnedDarwinExecutors:     remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedDarwinExecutors(),
 		forceUserOwnedWindowsExecutors:    remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedWindowsExecutors(),
+		disableAnonymousArmLinuxExecution: remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.DisableAnonymousArmLinuxExecution(),
 		requireExecutorAuthorization:      options.RequireExecutorAuthorization || (remote_execution_config.RemoteExecutionEnabled() && *requireExecutorAuthorization),
 		enableRedisAvailabilityMonitoring: remote_execution_config.RemoteExecutionEnabled() && env.GetRemoteExecutionService().RedisAvailabilityMonitoringEnabled(),
 		ownHostPort:                       fmt.Sprintf("%s:%d", ownHostname, ownPort),
@@ -1243,7 +1353,7 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 }
 
 func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType platform.PoolType) (*interfaces.PoolInfo, error) {
-	poolInfo, err := s.getPoolInfo(ctx, os, requestedPool, workflowID, poolType)
+	poolInfo, err := s.getPoolInfo(ctx, os, arch, requestedPool, workflowID, poolType)
 	if err != nil {
 		return nil, err
 	}
@@ -1257,7 +1367,7 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, arch, requestedPo
 	return poolInfo, nil
 }
 
-func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, requestedPool, workflowID string, poolType platform.PoolType) (*interfaces.PoolInfo, error) {
+func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, arch, requestedPool, workflowID string, poolType platform.PoolType) (*interfaces.PoolInfo, error) {
 	// Note: The defaultPoolName flag only applies to the shared executor pool.
 	// The pool name for self-hosted pools is always determined directly from
 	// platform props.
@@ -1289,6 +1399,9 @@ func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, requestedPool, wo
 			}
 			if s.forceUserOwnedWindowsExecutors && os == windowsOperatingSystemName {
 				return nil, status.FailedPreconditionErrorf("Windows remote build execution is not enabled for anonymous requests.")
+			}
+			if s.disableAnonymousArmLinuxExecution && os == platform.LinuxOperatingSystemName && arch == platform.ARM64ArchitectureName {
+				return nil, status.FailedPreconditionErrorf("ARM Linux remote build execution is not enabled for anonymous requests.")
 			}
 			if poolType == platform.PoolTypeSelfHosted {
 				return nil, status.FailedPreconditionErrorf("Self-hosted executors not enabled for anonymous requests.")
@@ -1745,6 +1858,9 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 		if id := platform.FindEffectiveValue(fullTask, "debug-executor-id"); id != "" {
 			continue
 		}
+		if requested := parseDebugExecutorLabels(ctx, fullTask); len(requested) > 0 && !executorHasAllLabels(node.GetLabels(), requested) {
+			continue
+		}
 
 		tasksThatFit = append(tasksThatFit, task)
 	}
@@ -2116,6 +2232,11 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		taskProto.Experiments = append(taskProto.Experiments, "upgrade-fc-guest-kernel")
 	}
 
+	const recordInputFetchMetadataExperimentName = "remote_execution.record_input_fetch_metadata"
+	if fp.Boolean(ctx, recordInputFetchMetadataExperimentName, false, expOptions...) {
+		taskProto.Experiments = append(taskProto.Experiments, recordInputFetchMetadataExperimentName)
+	}
+
 	return taskProto
 }
 
@@ -2241,6 +2362,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				log.CtxWarningf(ctx, "No executors found matching routing config %q in pool %q with os %q with arch %q", routingConfig, pool, os, arch)
 				return status.UnavailableErrorf("no executors found matching routing config")
 			}
+			candidateNodes = filterToDebugExecutorLabels(ctx, candidateNodes, task)
 			rankedNodes = s.taskRouter.RankNodes(ctx, task.GetAction(), cmd, remoteInstanceName, toNodeInterfaces(candidateNodes))
 		}
 
@@ -2391,6 +2513,9 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 		emitRemoteRunnerMetric(ctx, task, metadata, "initial")
 	}
 	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task, opts); err != nil {
+		if _, err := s.deleteTask(ctx, taskID); err != nil {
+			log.CtxWarningf(ctx, "Failed to delete task after scheduling failure: %s", err)
+		}
 		return nil, err
 	}
 	return &scpb.ScheduleTaskResponse{}, nil

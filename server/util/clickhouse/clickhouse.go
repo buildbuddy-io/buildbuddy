@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"syscall"
@@ -15,7 +17,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/gormutil"
@@ -326,15 +330,46 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 	return nil
 }
 
+// FillExecutionResourceFieldsFromExecutionID populates the split columns
+// (InstanceName, ExecutionUUID, Compressor, DigestFunction, ActionDigestHash,
+// ActionDigestSize) on out by parsing executionID. Returns
+// InvalidArgumentError when executionID is empty or unparseable.
+func FillExecutionResourceFieldsFromExecutionID(out *schema.Execution, executionID string) error {
+	if executionID == "" {
+		return status.InvalidArgumentError("execution ID is empty")
+	}
+
+	rn, executionUUID, err := digest.ParseUploadResourceNameWithUUID(executionID)
+	if err != nil {
+		return status.InvalidArgumentErrorf("parse execution ID %q: %s", executionID, err)
+	}
+	d := rn.GetDigest()
+	digestBytes, err := hex.DecodeString(d.GetHash())
+	if err != nil {
+		return status.InvalidArgumentErrorf("decode action digest for execution %q: %s", executionID, err)
+	}
+	sizeBytes := d.GetSizeBytes()
+	if sizeBytes < 0 || sizeBytes > math.MaxUint32 {
+		return status.InvalidArgumentErrorf("action digest size out of range for execution %q: %d", executionID, sizeBytes)
+	}
+
+	out.InstanceName = rn.GetInstanceName()
+	out.ExecutionUUID = executionUUID
+	out.Compressor = digest.CompressorSegment(rn.GetCompressor())
+	out.DigestFunction = digest.DigestFunctionSegment(rn.GetDigestFunction())
+	out.ActionDigestHash = string(digestBytes)
+	out.ActionDigestSize = uint32(sizeBytes)
+	return nil
+}
+
 // ExecutionFromProto converts the proto representation of an OLAP execution to
 // the OLAP table representation.
 // TODO: move to enterprise/server/util/execution, which has similar conversion
 // logic.
-func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schema.Execution {
-	return &schema.Execution{
+func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*schema.Execution, error) {
+	out := &schema.Execution{
 		GroupID:                            in.GetGroupId(),
 		UpdatedAtUsec:                      in.GetUpdatedAtUsec(),
-		ExecutionID:                        in.GetExecutionId(),
 		InvocationUUID:                     in.GetInvocationUuid(),
 		CreatedAtUsec:                      in.GetCreatedAtUsec(),
 		UserID:                             in.GetUserId(),
@@ -343,6 +378,8 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) *s
 		ClientIP:                           in.GetClientIp(),
 		SelfHosted:                         in.GetSelfHosted(),
 		Region:                             in.GetRegion(),
+		OS:                                 in.GetOs(),
+		Arch:                               in.GetArch(),
 		Stage:                              in.GetStage(),
 		FileDownloadCount:                  in.GetFileDownloadCount(),
 		FileDownloadSizeBytes:              in.GetFileDownloadSizeBytes(),
@@ -395,6 +432,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) *s
 		CachedResult:                       in.GetCachedResult(),
 		DoNotCache:                         in.GetDoNotCache(),
 		SkipCacheLookup:                    in.GetSkipCacheLookup(),
+		RecycleRunner:                      in.GetRecycleRunner(),
 		RequestedIsolationType:             in.GetRequestedIsolationType(),
 		EffectiveIsolationType:             in.GetEffectiveIsolationType(),
 		RequestedTimeoutUsec:               in.GetRequestedTimeoutUsec(),
@@ -422,14 +460,27 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) *s
 		RequestedPool:                      in.GetRequestedPool(),
 		EffectivePool:                      in.GetEffectivePool(),
 	}
+
+	if err := FillExecutionResourceFieldsFromExecutionID(out, in.GetExecutionId()); err != nil {
+		return out, err
+	}
+	return out, nil
 }
 
 func (h *DBHandle) FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error {
 	entries := make([]*schema.Execution, 0, len(executions))
 	for _, e := range executions {
-		entries = append(entries, ExecutionFromProto(e, inv))
+		entry, err := ExecutionFromProto(e, inv)
+		if err != nil {
+			alert.CtxUnexpectedEvent(ctx, "clickhouse_malformed_execution_id", "invocation %q: %s", inv.GetInvocationId(), err)
+			continue
+		}
+		entries = append(entries, entry)
 	}
 	num := len(entries)
+	if num == 0 {
+		return nil
+	}
 	if err := h.insertWithRetrier(ctx, (&schema.Execution{}).TableName(), num, &entries); err != nil {
 		return status.UnavailableErrorf("failed to insert %d execution(s) for invocation (invocation_id = %q), err: %s", num, inv.GetInvocationId(), err)
 	}
