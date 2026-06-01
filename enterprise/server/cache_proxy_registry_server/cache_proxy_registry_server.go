@@ -171,7 +171,7 @@ func (s *CacheProxyRegistryServer) RegisterAndStreamHeartbeat(stream cppb.CacheP
 				return err
 			}
 			proxyID = node.GetProxyId()
-			log.CtxDebugf(ctx, "Cache proxy %q (host %q) checked in", proxyID, node.GetHost())
+			log.CtxDebugf(ctx, "Cache proxy %q (host ID %q, host %q) checked in", proxyID, node.GetProxyHostId(), node.GetHost())
 		case <-checkCredentialsTicker.Chan():
 			if _, err := s.authorize(ctx); err != nil {
 				if status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err) {

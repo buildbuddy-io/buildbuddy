@@ -21,8 +21,10 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -36,9 +38,10 @@ import (
 )
 
 var (
-	apiKey    = flag.String("cache_proxy.api_key", "", "API Key used to authorize the cache proxy with the BuildBuddy app server.", flag.Secret)
-	appTarget = flag.String("cache_proxy.app_target", "", "Optional BuildBuddy app gRPC target the cache proxy registers itself with for the deployment view (e.g. grpcs://app.buildbuddy.io). Requires --cache_proxy.api_key. If unset, no registration is attempted.")
-	labels    = flag.Map[string, string]("cache_proxy.labels", map[string]string{}, "Optional key-value labels identifying this cache proxy, similar to Kubernetes labels (e.g. 'region=us-east1,environment=prod'). Reported at registration and surfaced on the cache proxy admin page.")
+	apiKey            = flag.String("cache_proxy.api_key", "", "API Key used to authorize the cache proxy with the BuildBuddy app server.", flag.Secret)
+	appTarget         = flag.String("cache_proxy.app_target", "", "Optional BuildBuddy app gRPC target the cache proxy registers itself with for the deployment view (e.g. grpcs://app.buildbuddy.io). Requires --cache_proxy.api_key. If unset, no registration is attempted.")
+	metadataDirectory = flag.String("cache_proxy.metadata_directory", "", "Directory where the cache proxy persists its stable host ID. If unset, it will attempt to persist the ID under the OS user config dir; if persistence fails, a new ID will be generated on each restart.")
+	labels            = flag.Map[string, string]("cache_proxy.labels", map[string]string{}, "Optional key-value labels identifying this cache proxy, similar to Kubernetes labels (e.g. 'region=us-east1,environment=prod'). Reported at registration and surfaced on the cache proxy admin page.")
 )
 
 var (
@@ -210,6 +213,29 @@ func sendHeartbeat(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClie
 		}
 	}
 	return err
+}
+
+// getProxyHostID returns an ID that identifies the host this cache proxy
+// process is running on. If --cache_proxy.metadata_directory is set and
+// writable, the ID is persisted there and survives process restarts.
+// If it's unset, we attempt to persist the ID under the OS user config dir
+// (via hostid.GetHostID("")). If the ID can't be persisted, we fall back to
+// a process-wide random UUID, so the proxy may appear as a new host after
+// each restart.
+func getProxyHostID() string {
+	dir := *metadataDirectory
+	if dir != "" {
+		if err := disk.EnsureDirectoryExists(dir); err == nil {
+			if id, err := hostid.GetHostID(dir); err == nil {
+				return id
+			} else {
+				log.Warningf("Cache Proxy: could not read/create stable host ID in %q: %s", dir, err)
+			}
+		} else {
+			log.Warningf("Cache Proxy: metadata directory %q is unusable: %s", dir, err)
+		}
+	}
+	return hostid.GetFailsafeHostID(dir)
 }
 
 func sleepWithContext(ctx context.Context, d time.Duration) (cancelled bool) {

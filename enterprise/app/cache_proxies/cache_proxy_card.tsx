@@ -35,12 +35,12 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
               <div>{this.props.node.host}</div>
             </div>
             <div className="cache-proxy-section">
-              <div className="cache-proxy-section-title">Proxy ID:</div>
+              <div className="cache-proxy-section-title">Proxy Instance ID:</div>
               <div>{this.props.node.proxyId}</div>
             </div>
             {this.props.node.proxyHostId && (
               <div className="cache-proxy-section">
-                <div className="cache-proxy-section-title">Host ID:</div>
+                <div className="cache-proxy-section-title">Proxy Host ID:</div>
                 <div>{this.props.node.proxyHostId}</div>
               </div>
             )}
@@ -54,12 +54,6 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
               <div className="cache-proxy-section">
                 <div className="cache-proxy-section-title">Architecture:</div>
                 <div>{this.props.node.arch}</div>
-              </div>
-            )}
-            {this.props.node.version && (
-              <div className="cache-proxy-section">
-                <div className="cache-proxy-section-title">Version:</div>
-                <div>{this.props.node.version}</div>
               </div>
             )}
             {this.props.node.labels && Object.keys(this.props.node.labels).length > 0 && (
@@ -80,6 +74,12 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
               <div className="cache-proxy-section">
                 <div className="cache-proxy-section-title">Uptime:</div>
                 <div>{format.durationSince(this.props.node.startTime)}</div>
+              </div>
+            )}
+            {this.props.node.version && (
+              <div className="cache-proxy-section">
+                <div className="cache-proxy-section-title">Version:</div>
+                <div>{this.props.node.version}</div>
               </div>
             )}
             {this.props.lastCheckInTime && (
