@@ -328,7 +328,7 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 		}
 		// Prove the caller can access the manifest before serving from cache.
 		if !req.GetBypassRegistry() {
-			if err := s.requireRegistryAccess(ctx, imageRef, req.GetCredentials()); err != nil {
+			if err := s.proveManifestAccess(ctx, imageRef, req.GetCredentials()); err != nil {
 				return nil, err
 			}
 		}
@@ -466,10 +466,10 @@ func (s *ociFetcherServer) evictPuller(imageRef gcrname.Reference, creds *rgpb.C
 	s.mu.Unlock()
 }
 
-// requireRegistryAccess checks that the caller's credentials allow accessing
+// proveManifestAccess checks that the caller's credentials allow accessing
 // the given image ref in the remote registry. Results are cached for
 // manifestCacheTTL to avoid a HEAD request on every cache-hit FetchManifest call.
-func (s *ociFetcherServer) requireRegistryAccess(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) error {
+func (s *ociFetcherServer) proveManifestAccess(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) error {
 	key := manifestCacheKey(imageRef, creds)
 	if s.manifestCache.Contains(key) {
 		return nil
