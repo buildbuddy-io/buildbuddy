@@ -187,10 +187,10 @@ func TestGetStatHeatmap_LogScale(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// The range spans 4 powers of 10 (<= 4), so each decade is subdivided into
-	// 1-2-4-6-8-10 steps, anchored at the floor power of 10 of the minimum
-	// (5 -> 1) up to the smallest power of 10 above the max (5000 -> 10000).
-	require.Equal(t, []int64{1, 2, 4, 6, 8, 10, 20, 40, 60, 80, 100, 200, 400, 600, 800, 1000, 2000, 4000, 6000, 8000, 10000}, rsp.GetBucketBracket())
+	// The range spans 4 powers of 10, so each decade is subdivided into
+	// 1-2-4-6-8-10 steps and we trim down to only buckets that enclose
+	// the metric range of [5, 5000].
+	require.Equal(t, []int64{4, 6, 8, 10, 20, 40, 60, 80, 100, 200, 400, 600, 800, 1000, 2000, 4000, 6000}, rsp.GetBucketBracket())
 	require.False(t, rsp.GetMetricHadNegativeValues())
 
 	// Every invocation should be counted exactly once across all buckets.
