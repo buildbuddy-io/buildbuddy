@@ -161,8 +161,8 @@ func main() {
 	log.Infof("PR #%d on %s/%s  (head: %s, base: %s)", pr.GetNumber(), owner, repoName, headShort, pr.GetBase().GetRef())
 
 	// To prevent spamming the PR with reviews, we only post a review if the PR doesn't already have a bot review.
-	// Set FORCE=1 to override and post a new review.
-	if os.Getenv("FORCE") != "1" {
+	// Set AGENT_REVIEW_FORCE=1 to override and post a new review.
+	if os.Getenv("AGENT_REVIEW_FORCE") != "1" {
 		log.Info("Checking for existing reviews...")
 		reviews, _, err := gh.PullRequests.ListReviews(ctx, owner, repoName, pr.GetNumber(), nil)
 		if err != nil {
@@ -309,11 +309,11 @@ func fetchRepoInfo(gh *github.Client) (owner, repo, branch string, err error) {
 		NameWithOwner string `json:"nameWithOwner"`
 	}
 	if err := json.Unmarshal([]byte(repoRaw), &repoInfo); err != nil {
-		log.Fatalf("failed to parse repo info: %v", err)
+		return "", "", "", fmt.Errorf("failed to parse repo info: %v", err)
 	}
 	parts := strings.SplitN(repoInfo.NameWithOwner, "/", 2)
 	if len(parts) != 2 {
-		log.Fatalf("unexpected nameWithOwner format: %q", repoInfo.NameWithOwner)
+		return "", "", "", fmt.Errorf("unexpected nameWithOwner format: %q", repoInfo.NameWithOwner)
 	}
 	owner, repoName := parts[0], parts[1]
 
@@ -337,12 +337,13 @@ func postReview(ctx context.Context, gh *github.Client, owner, repo string, prNu
 	if err != nil && len(comments) > 0 {
 		// Inline POST failed (likely invalid line numbers) — fold findings into body and retry.
 		log.Info("Warning: POST with inline comments failed — retrying as single body comment.")
-		fallbackBody := body + "\n\n### Inline findings\n"
+		var fallbackBody strings.Builder
+		fallbackBody.WriteString(body + "\n\n### Inline findings\n")
 		for _, c := range comments {
-			fallbackBody += fmt.Sprintf("- `%s:%d` — %s\n", c.GetPath(), c.GetLine(), c.GetBody())
+			fallbackBody.WriteString(fmt.Sprintf("- `%s:%d` — %s\n", c.GetPath(), c.GetLine(), c.GetBody()))
 		}
 		req.Comments = nil
-		req.Body = github.String(fallbackBody)
+		req.Body = github.String(fallbackBody.String())
 		posted, _, err = gh.PullRequests.CreateReview(ctx, owner, repo, prNumber, req)
 	}
 	if err != nil {
