@@ -17,6 +17,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -37,6 +38,7 @@ import (
 var (
 	apiKey    = flag.String("cache_proxy.api_key", "", "API Key used to authorize the cache proxy with the BuildBuddy app server.", flag.Secret)
 	appTarget = flag.String("cache_proxy.app_target", "", "Optional BuildBuddy app gRPC target the cache proxy registers itself with for the deployment view (e.g. grpcs://app.buildbuddy.io). Requires --cache_proxy.api_key. If unset, no registration is attempted.")
+	labels    = flag.Map[string, string]("cache_proxy.labels", map[string]string{}, "Optional key-value labels identifying this cache proxy, similar to Kubernetes labels (e.g. 'region=us-east1,environment=prod'). Reported at registration and surfaced on the cache proxy admin page.")
 )
 
 var (
@@ -54,9 +56,15 @@ var (
 
 	// How long to wait before retrying after a failed connection or stream.
 	retryInterval = 5 * time.Second
+
+	// Limits on the labels reported at registration. Registration fails if a
+	// key or value is longer than maxLabelLen, or if there are more than
+	// maxLabels labels.
+	maxLabels   = 20
+	maxLabelLen = 50
 )
 
-func Register(env *real_environment.RealEnv) {
+func Register(env *real_environment.RealEnv) error {
 	if *appTarget == "" || *apiKey == "" {
 		if *appTarget == "" && *apiKey == "" {
 			log.Debug("Skipping Cache Proxy registration because both --cache_proxy.app_target and --cache_proxy.api_key are unset")
@@ -65,7 +73,7 @@ func Register(env *real_environment.RealEnv) {
 		} else {
 			log.Debug("Skipping Cache Proxy registration because --cache_proxy.api_key is unset")
 		}
-		return
+		return nil
 	}
 
 	hostname, err := os.Hostname()
@@ -75,6 +83,21 @@ func Register(env *real_environment.RealEnv) {
 		hostname = "unknown"
 	}
 	proxyID := uuid.NewString()
+	if len(*labels) > maxLabels {
+		return status.InvalidArgumentErrorf("too many cache proxy labels: %d (max %d)", len(*labels), maxLabels)
+	}
+	trimmedLabels := make(map[string]string, len(*labels))
+	for k, v := range *labels {
+		key := strings.TrimSpace(k)
+		val := strings.TrimSpace(v)
+		if len(key) > maxLabelLen {
+			return status.InvalidArgumentErrorf("cache proxy label key %q is too long: %d chars (max %d)", key, len(key), maxLabelLen)
+		}
+		if len(val) > maxLabelLen {
+			return status.InvalidArgumentErrorf("cache proxy label value %q is too long: %d chars (max %d)", val, len(val), maxLabelLen)
+		}
+		trimmedLabels[key] = val
+	}
 	log.Infof("Registering Cache Proxy %s on host %q", proxyID, hostname)
 	node := &cppb.CacheProxyNode{
 		Host:      hostname,
@@ -83,6 +106,7 @@ func Register(env *real_environment.RealEnv) {
 		Arch:      runtime.GOARCH,
 		Version:   version.Tag(),
 		StartTime: timestamppb.Now(),
+		Labels:    trimmedLabels,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -91,6 +115,7 @@ func Register(env *real_environment.RealEnv) {
 		return nil
 	})
 	go run(ctx, env, *appTarget, *apiKey, node)
+	return nil
 }
 
 func run(ctx context.Context, env environment.Env, target, apiKey string, node *cppb.CacheProxyNode) {
