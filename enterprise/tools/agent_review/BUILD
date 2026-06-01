@@ -6,7 +6,10 @@ go_library(
     embedsrcs = ["settings.json"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/agent_review",
     visibility = ["//visibility:private"],
-    deps = ["//server/util/log"],
+    deps = [
+        "//server/util/log",
+        "@com_github_google_go_github_v59//github",
+    ],
 )
 
 go_binary(

@@ -2,8 +2,8 @@
 //
 // Usage:
 //
-//	bazel run //tools/agent_review              # review current branch's open PR
-//	bazel run //tools/agent_review -- --dry_run    # print payload without posting
+//	bazel run //enterprise/tools/agent_review              # review current branch's open PR
+//	bazel run //enterprise/tools/agent_review -- --dry_run    # print payload without posting
 //
 // Requirements: claude, gh, git
 package main
@@ -11,6 +11,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	_ "embed"
 	"encoding/json"
 	"flag"
@@ -22,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/google/go-github/v59/github"
 )
 
 //go:embed settings.json
@@ -54,16 +56,6 @@ Rules:
 REVIEW:
 `
 
-type prInfo struct {
-	Number      int    `json:"number"`
-	HeadRefOid  string `json:"headRefOid"`
-	BaseRefName string `json:"baseRefName"`
-}
-
-type repoInfo struct {
-	NameWithOwner string `json:"nameWithOwner"`
-}
-
 type reviewComment struct {
 	File     string `json:"file"`
 	Line     int    `json:"line"`
@@ -74,30 +66,6 @@ type reviewComment struct {
 type reviewJSON struct {
 	Summary  string          `json:"summary"`
 	Comments []reviewComment `json:"comments"`
-}
-
-type ghReview struct {
-	User struct {
-		Type string `json:"type"`
-	} `json:"user"`
-}
-
-type inlineComment struct {
-	Path string `json:"path"`
-	Line int    `json:"line"`
-	Side string `json:"side"`
-	Body string `json:"body"`
-}
-
-type reviewPayload struct {
-	CommitID string          `json:"commit_id"`
-	Event    string          `json:"event"`
-	Body     string          `json:"body"`
-	Comments []inlineComment `json:"comments"`
-}
-
-type reviewResponse struct {
-	HTMLURL string `json:"html_url"`
 }
 
 func run(args ...string) (string, error) {
@@ -120,19 +88,36 @@ func runStdin(stdin string, args ...string) (string, error) {
 	return strings.TrimRight(stdout.String(), "\n"), nil
 }
 
+func newGHClient() *github.Client {
+	token := os.Getenv("REPO_TOKEN")
+	if token == "" {
+		token = os.Getenv("GH_TOKEN")
+	}
+	if token == "" {
+		token = os.Getenv("GITHUB_TOKEN")
+	}
+	if token == "" {
+		log.Fatal("no GitHub token found; set REPO_TOKEN, GH_TOKEN, or GITHUB_TOKEN")
+	}
+	// Propagate to GH_TOKEN so gh CLI (used by claude /review) can authenticate.
+	os.Setenv("GH_TOKEN", token)
+	return github.NewClient(nil).WithAuthToken(token)
+}
+
 func main() {
 	flag.Parse()
+	ctx := context.Background()
+
+	for _, tool := range []string{"gh", "claude"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			log.Fatalf("%s is not installed or not in PATH", tool)
+		}
+	}
 
 	if dir := os.Getenv("BUILD_WORKSPACE_DIRECTORY"); dir != "" {
 		if err := os.Chdir(dir); err != nil {
 			log.Fatalf("failed to chdir to workspace: %v", err)
 		}
-	}
-
-	// The GH API reads the GH_TOKEN environment variable, but the BB remote runner
-	// sets the token in REPO_TOKEN.
-	if token := os.Getenv("REPO_TOKEN"); token != "" {
-		os.Setenv("GH_TOKEN", token)
 	}
 
 	// Copy settings.json into a temp dir and point CLAUDE_CONFIG_DIR there so
@@ -148,47 +133,44 @@ func main() {
 	}
 	os.Setenv("CLAUDE_CONFIG_DIR", claudeConfigDir)
 
+	gh := newGHClient()
+
 	// Fetch the PR associated with the current, checked-out branch.
-	log.Info("Fetching PR info...")
-	prRaw, err := run("gh", "pr", "view", "--json", "number,headRefOid,baseRefName")
+	owner, repoName, branch, err := fetchRepoInfo(gh)
 	if err != nil {
+		log.Fatalf("failed to fetch repo info: %v", err)
+	}
+	log.Info("Fetching PR info...")
+	prs, _, err := gh.PullRequests.List(ctx, owner, repoName, &github.PullRequestListOptions{
+		Head:  owner + ":" + branch,
+		State: "open",
+	})
+	if err != nil {
+		log.Fatalf("failed to list PRs: %v", err)
+	}
+	if len(prs) == 0 {
 		log.Fatal("no open PR found for the current branch.")
 	}
-	var pr prInfo
-	if err := json.Unmarshal([]byte(prRaw), &pr); err != nil {
-		log.Fatalf("failed to parse PR info: %v", err)
-	}
+	pr := prs[0]
 
-	repoRaw, err := run("gh", "repo", "view", "--json", "nameWithOwner")
-	if err != nil {
-		log.Fatalf("failed to get repo info: %v", err)
-	}
-	var repo repoInfo
-	if err := json.Unmarshal([]byte(repoRaw), &repo); err != nil {
-		log.Fatalf("failed to parse repo info: %v", err)
-	}
-
-	headShort := pr.HeadRefOid
+	headSHA := pr.GetHead().GetSHA()
+	headShort := headSHA
 	if len(headShort) > 8 {
 		headShort = headShort[:8]
 	}
-	log.Infof("PR #%d on %s  (head: %s, base: %s)", pr.Number, repo.NameWithOwner, headShort, pr.BaseRefName)
+	log.Infof("PR #%d on %s/%s  (head: %s, base: %s)", pr.GetNumber(), owner, repoName, headShort, pr.GetBase().GetRef())
 
 	// To prevent spamming the PR with reviews, we only post a review if the PR doesn't already have a bot review.
 	// Set FORCE=1 to override and post a new review.
 	if os.Getenv("FORCE") != "1" {
 		log.Info("Checking for existing reviews...")
-		reviewsRaw, err := run("gh", "api", fmt.Sprintf("repos/%s/pulls/%d/reviews", repo.NameWithOwner, pr.Number))
+		reviews, _, err := gh.PullRequests.ListReviews(ctx, owner, repoName, pr.GetNumber(), nil)
 		if err != nil {
 			log.Fatalf("failed to fetch existing reviews: %v", err)
 		}
-		var reviews []ghReview
-		if err := json.Unmarshal([]byte(reviewsRaw), &reviews); err != nil {
-			log.Fatalf("failed to parse reviews: %v", err)
-		}
 		for _, r := range reviews {
-			if r.User.Type == "Bot" {
-				log.Infof("PR #%d already has a bot review — skipping (set FORCE=1 to override).", pr.Number)
+			if r.GetUser().GetType() == "Bot" {
+				log.Infof("PR #%d already has a bot review — skipping (set FORCE=1 to override).", pr.GetNumber())
 				os.Exit(0)
 			}
 		}
@@ -198,10 +180,9 @@ func main() {
 	log.Info("Running claude /review  (this may take a minute)...")
 	reviewPrompt := fmt.Sprintf(
 		"Review PR #%d. /review\n\nFor every finding, include the exact file path and line number in the format `path/to/file.go:42` so findings can be posted as inline GitHub comments.",
-		pr.Number,
+		pr.GetNumber(),
 	)
 	reviewText, err := run("claude", "--print", reviewPrompt)
-
 	if err != nil {
 		log.Fatalf("claude /review failed: %v", err)
 	}
@@ -214,11 +195,11 @@ func main() {
 	reviewJSONStr, parseErr := runStdin(parsePrompt+reviewText, "claude", "--print", "--allowedTools", "")
 	if parseErr != nil {
 		log.Info("Warning: failed to parse review into JSON — posting as a single body comment.")
-		postReviewAsBodyComment(repo.NameWithOwner, pr.Number, pr.HeadRefOid, reviewText)
+		postReview(ctx, gh, owner, repoName, pr.GetNumber(), headSHA, reviewText, nil)
 		return
 	}
 
-	// Strip accidental markdown fences
+	// Strip accidental markdown fences.
 	var cleanLines []string
 	for line := range strings.SplitSeq(reviewJSONStr, "\n") {
 		if !strings.HasPrefix(line, "```") {
@@ -230,7 +211,7 @@ func main() {
 	var review reviewJSON
 	if err := json.Unmarshal([]byte(reviewJSONStr), &review); err != nil {
 		log.Info("Warning: structured JSON is invalid — posting as a single body comment.")
-		postReviewAsBodyComment(repo.NameWithOwner, pr.Number, pr.HeadRefOid, reviewText)
+		postReview(ctx, gh, owner, repoName, pr.GetNumber(), headSHA, reviewText, nil)
 		return
 	}
 	log.Infof("    Found %d candidate line-level comment(s).", len(review.Comments))
@@ -238,9 +219,7 @@ func main() {
 	// GitHub only accepts inline comments on lines present in the diff hunks.
 	// Fetch the PR diff to generate a set of valid line numbers.
 	log.Info("Fetching PR diff to validate line numbers...")
-	diff, err := run("gh", "api",
-		fmt.Sprintf("repos/%s/pulls/%d", repo.NameWithOwner, pr.Number),
-		"-H", "Accept: application/vnd.github.diff")
+	diff, _, err := gh.PullRequests.GetRaw(ctx, owner, repoName, pr.GetNumber(), github.RawOptions{Type: github.Diff})
 	if err != nil {
 		log.Fatalf("failed to fetch PR diff: %v", err)
 	}
@@ -280,17 +259,17 @@ func main() {
 		log.Warningf("diff scanner error (some inline comments may be demoted to body): %v", err)
 	}
 
-	// Partition the comments into inline and body comments.
-	var inlineComments []inlineComment
+	// Partition comments into inline and body overflow.
+	var inlineComments []*github.DraftReviewComment
 	var overflowLines []string
 
 	for _, c := range review.Comments {
 		if validLines[fileLine{c.File, c.Line}] {
-			inlineComments = append(inlineComments, inlineComment{
-				Path: c.File,
-				Line: c.Line,
-				Side: "RIGHT",
-				Body: fmt.Sprintf("**[%s]** %s", c.Severity, c.Body),
+			inlineComments = append(inlineComments, &github.DraftReviewComment{
+				Path: github.String(c.File),
+				Line: github.Int(c.Line),
+				Side: github.String("RIGHT"),
+				Body: github.String(fmt.Sprintf("**[%s]** %s", c.Severity, c.Body)),
 			})
 		} else {
 			overflowLines = append(overflowLines, fmt.Sprintf("- **[%s]** `%s:%d` — %s", c.Severity, c.File, c.Line, c.Body))
@@ -305,84 +284,71 @@ func main() {
 	overflowCount := len(review.Comments) - len(inlineComments)
 	log.Infof("    %d inline comment(s), %d folded into body.", len(inlineComments), overflowCount)
 
-	// Fallback body includes inline findings as markdown so nothing is dropped
-	// if the inline POST fails, and we need to post the feedback as a single body comment.
-	fullBodyFallback := fullBody
-	if len(inlineComments) > 0 {
-		var inlineLines []string
-		for _, c := range inlineComments {
-			inlineLines = append(inlineLines, fmt.Sprintf("- `%s:%d` — %s", c.Path, c.Line, c.Body))
-		}
-		fullBodyFallback += "\n\n### Inline findings\n" + strings.Join(inlineLines, "\n")
-	}
-
-	// Build the review payload.
-	if inlineComments == nil {
-		inlineComments = []inlineComment{}
-	}
-	payload := reviewPayload{
-		CommitID: pr.HeadRefOid,
-		Event:    "COMMENT",
-		Body:     fullBody,
-		Comments: inlineComments,
-	}
-	payloadBytes, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
-		log.Fatalf("failed to marshal payload: %v", err)
-	}
-
 	if *dryRun {
+		req := &github.PullRequestReviewRequest{
+			CommitID: github.String(headSHA),
+			Event:    github.String("COMMENT"),
+			Body:     github.String(fullBody),
+			Comments: inlineComments,
+		}
+		payloadBytes, _ := json.MarshalIndent(req, "", "  ")
 		fmt.Println("Dry run — payload that would be posted:")
 		fmt.Println(string(payloadBytes))
 		os.Exit(0)
 	}
 
-	log.Info("Payload to be posted:")
-	log.Infof("%s", string(payloadBytes))
-
-	log.Info("Posting review to GitHub...")
-	responseStr, err := runStdin(string(payloadBytes), "gh", "api",
-		fmt.Sprintf("repos/%s/pulls/%d/reviews", repo.NameWithOwner, pr.Number),
-		"--method", "POST", "--input", "-")
-	if err != nil {
-		log.Info("Warning: POST with inline comments failed (likely invalid line numbers) — retrying as single body comment.")
-		fallbackPayload := reviewPayload{
-			CommitID: pr.HeadRefOid,
-			Event:    "COMMENT",
-			Body:     fullBodyFallback,
-			Comments: []inlineComment{},
-		}
-		fallbackBytes, _ := json.Marshal(fallbackPayload)
-		responseStr, err = runStdin(string(fallbackBytes), "gh", "api",
-			fmt.Sprintf("repos/%s/pulls/%d/reviews", repo.NameWithOwner, pr.Number),
-			"--method", "POST", "--input", "-")
-		if err != nil {
-			log.Fatal("gh api POST failed. Check that REPO_TOKEN has pull_requests: write permission.")
-		}
-	}
-
-	log.Info("GitHub response:")
-	log.Infof("%s", responseStr)
-
-	var response reviewResponse
-	if err := json.Unmarshal([]byte(responseStr), &response); err == nil && response.HTMLURL != "" {
-		log.Infof("Review posted to: %s", response.HTMLURL)
-	}
+	postReview(ctx, gh, owner, repoName, pr.GetNumber(), headSHA, fullBody, inlineComments)
 }
 
-func postReviewAsBodyComment(repo string, prNumber int, headSHA, body string) {
-	log.Info("Posting review as single body comment...")
-	payload, _ := json.Marshal(reviewPayload{
-		CommitID: headSHA,
-		Event:    "COMMENT",
-		Body:     body,
-		Comments: []inlineComment{},
-	})
-	if _, err := runStdin(string(payload), "gh", "api",
-		fmt.Sprintf("repos/%s/pulls/%d/reviews", repo, prNumber),
-		"--method", "POST", "--input", "-"); err != nil {
-		log.Fatal("gh api POST failed. Check that REPO_TOKEN has pull_requests: write permission.")
+func fetchRepoInfo(gh *github.Client) (owner, repo, branch string, err error) {
+	repoRaw, err := run("gh", "repo", "view", "--json", "nameWithOwner")
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to get repo info: %v", err)
 	}
-	log.Info("Done: posted review as a single comment.")
-	os.Exit(0)
+	var repoInfo struct {
+		NameWithOwner string `json:"nameWithOwner"`
+	}
+	if err := json.Unmarshal([]byte(repoRaw), &repoInfo); err != nil {
+		log.Fatalf("failed to parse repo info: %v", err)
+	}
+	parts := strings.SplitN(repoInfo.NameWithOwner, "/", 2)
+	if len(parts) != 2 {
+		log.Fatalf("unexpected nameWithOwner format: %q", repoInfo.NameWithOwner)
+	}
+	owner, repoName := parts[0], parts[1]
+
+	branch, err = run("git", "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to get current branch: %v", err)
+	}
+
+	return owner, repoName, branch, nil
+}
+
+func postReview(ctx context.Context, gh *github.Client, owner, repo string, prNumber int, headSHA, body string, comments []*github.DraftReviewComment) {
+	log.Info("Posting review to GitHub...")
+	req := &github.PullRequestReviewRequest{
+		CommitID: github.String(headSHA),
+		Event:    github.String("COMMENT"),
+		Body:     github.String(body),
+		Comments: comments,
+	}
+	posted, _, err := gh.PullRequests.CreateReview(ctx, owner, repo, prNumber, req)
+	if err != nil && len(comments) > 0 {
+		// Inline POST failed (likely invalid line numbers) — fold findings into body and retry.
+		log.Info("Warning: POST with inline comments failed — retrying as single body comment.")
+		fallbackBody := body + "\n\n### Inline findings\n"
+		for _, c := range comments {
+			fallbackBody += fmt.Sprintf("- `%s:%d` — %s\n", c.GetPath(), c.GetLine(), c.GetBody())
+		}
+		req.Comments = nil
+		req.Body = github.String(fallbackBody)
+		posted, _, err = gh.PullRequests.CreateReview(ctx, owner, repo, prNumber, req)
+	}
+	if err != nil {
+		log.Fatalf("failed to post review: %v", err)
+	}
+	if url := posted.GetHTMLURL(); url != "" {
+		log.Infof("Review posted to: %s", url)
+	}
 }
