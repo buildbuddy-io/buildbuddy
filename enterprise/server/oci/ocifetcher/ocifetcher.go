@@ -41,9 +41,6 @@ const (
 	blobChunkSize       = 256 * 1000 // 256 KB to match cachetools buffer size
 	pullerLRUMaxEntries = 1000
 
-	// manifestCacheTTL is how long a successful registry auth check is cached before
-	// re-validation with the remote registry is required. Matches the executor
-	// image cache token TTL.
 	manifestCacheTTL        = 15 * time.Minute
 	manifestCacheMaxEntries = 1000
 )
@@ -326,7 +323,6 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
 		}
-		// Prove the caller can access the manifest before serving from cache.
 		if !req.GetBypassRegistry() {
 			if err := s.proveManifestAccess(ctx, imageRef, req.GetCredentials()); err != nil {
 				return nil, err
@@ -467,8 +463,7 @@ func (s *ociFetcherServer) evictPuller(imageRef gcrname.Reference, creds *rgpb.C
 }
 
 // proveManifestAccess checks that the caller's credentials allow accessing
-// the given image ref in the remote registry. Results are cached for
-// manifestCacheTTL to avoid a HEAD request on every cache-hit FetchManifest call.
+// the given manifest ref in the remote registry.
 func (s *ociFetcherServer) proveManifestAccess(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) error {
 	key := manifestCacheKey(imageRef, creds)
 	if s.manifestCache.Contains(key) {
@@ -572,9 +567,6 @@ func (s *ociFetcherServer) streamBlob(rc io.Reader, stream ofpb.OCIFetcher_Fetch
 	}
 }
 
-// manifestCacheKey returns a cache key for a successful registry auth check.
-// It includes the full image ref (including digest) so entries are scoped
-// to the exact resource being served.
 func manifestCacheKey(ref gcrname.Reference, creds *rgpb.Credentials) string {
 	if creds == nil {
 		return hash.Strings(ref.String(), "", "")
