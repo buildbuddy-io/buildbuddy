@@ -227,7 +227,7 @@ func regionVariable() *dashboard.QueryVariableBuilder {
 }
 
 func deviceVariable() *dashboard.QueryVariableBuilder {
-	return dash.QueryVar("device", `label_values(interfaces_interface_state_counters_in_octets{region="$region"},source)`).
+	return dash.QueryVar("device", `label_values(interfaces_interface_state_counters_in_octets{region="${region}"},source)`).
 		Refresh(dashboard.VariableRefreshOnDashboardLoad).
 		IncludeAll(true).
 		Current(dash.SelectedOption("All", "$__all"))
