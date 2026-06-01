@@ -335,6 +335,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
+      "description": "The number of Firecracker execution errors, labeled by reason.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -413,7 +414,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (reason, job)(increase(buildbuddy_firecracker_execution_error_count{job=~\"executor-workflows(-experimental|-axe)?\"}[5m]))",
+          "expr": "sum by (reason, job)(increase(buildbuddy_firecracker_execution_error_count{job=~\"executor-workflows.*\", region=~\"$region\"}[5m]))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
