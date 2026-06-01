@@ -337,12 +337,13 @@ func postReview(ctx context.Context, gh *github.Client, owner, repo string, prNu
 	if err != nil && len(comments) > 0 {
 		// Inline POST failed (likely invalid line numbers) — fold findings into body and retry.
 		log.Info("Warning: POST with inline comments failed — retrying as single body comment.")
-		fallbackBody := body + "\n\n### Inline findings\n"
+		var fallbackBody strings.Builder
+		fallbackBody.WriteString(body + "\n\n### Inline findings\n")
 		for _, c := range comments {
-			fallbackBody += fmt.Sprintf("- `%s:%d` — %s\n", c.GetPath(), c.GetLine(), c.GetBody())
+			fallbackBody.WriteString(fmt.Sprintf("- `%s:%d` — %s\n", c.GetPath(), c.GetLine(), c.GetBody()))
 		}
 		req.Comments = nil
-		req.Body = github.String(fallbackBody)
+		req.Body = github.String(fallbackBody.String())
 		posted, _, err = gh.PullRequests.CreateReview(ctx, owner, repo, prNumber, req)
 	}
 	if err != nil {
