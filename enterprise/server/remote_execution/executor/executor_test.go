@@ -326,11 +326,13 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 		{
 			name: "WithStats",
 			postCompletionStats: &espb.PostCompletionStats{
-				SnapshotSavedLocally:  true,
-				SnapshotSavedRemotely: true,
-				SnapshotIsDiff:        true,
-				SnapshotSizeBytes:     12345,
-				PauseDurationUsec:     67890,
+				PauseDurationUsec: 67890,
+				FirecrackerPostExecStats: &espb.FirecrackerPostExecStats{
+					SnapshotSavedLocally:  true,
+					SnapshotSavedRemotely: true,
+					SnapshotIsDiff:        true,
+					SnapshotSizeBytes:     12345,
+				},
 			},
 		},
 		{

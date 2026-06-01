@@ -2922,7 +2922,9 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	c.postCompletionStats = &espb.PostCompletionStats{}
+	c.postCompletionStats = &espb.PostCompletionStats{
+		FirecrackerPostExecStats: &espb.FirecrackerPostExecStats{},
+	}
 	start := time.Now()
 	err := c.pause(ctx)
 
@@ -3006,7 +3008,7 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		return status.WrapError(err, "unmount vbds")
 	}
 
-	c.postCompletionStats.SnapshotIsDiff = snapDetails.snapshotType == diffSnapshotType
+	c.postCompletionStats.FirecrackerPostExecStats.SnapshotIsDiff = snapDetails.snapshotType == diffSnapshotType
 	if shouldSaveSnapshot {
 		if err := c.saveSnapshot(ctx, snapDetails); err != nil {
 			if err := c.emitChunkedSnapshotMetrics(ctx, snapDetails.snapshotType == diffSnapshotType); err != nil {
@@ -3014,8 +3016,8 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 			}
 			return err
 		}
-		c.postCompletionStats.SnapshotSavedLocally = snapDetails.saveLocalSnapshot
-		c.postCompletionStats.SnapshotSavedRemotely = snapDetails.saveRemoteSnapshot
+		c.postCompletionStats.FirecrackerPostExecStats.SnapshotSavedLocally = snapDetails.saveLocalSnapshot
+		c.postCompletionStats.FirecrackerPostExecStats.SnapshotSavedRemotely = snapDetails.saveRemoteSnapshot
 	}
 
 	if err := c.emitChunkedSnapshotMetrics(ctx, snapDetails.snapshotType == diffSnapshotType); err != nil {
@@ -3100,7 +3102,7 @@ func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context, i
 
 		log.CtxDebugf(ctx, "For chunked %s snapshot, %d MB (%d chunks) were dirty%s", name, dirtyBytes/(1024*1024), dirtyChunkCount, chunkSrcLog.String())
 	}
-	c.postCompletionStats.SnapshotSizeBytes = totalSnapshotBytes
+	c.postCompletionStats.FirecrackerPostExecStats.SnapshotSizeBytes = totalSnapshotBytes
 	return nil
 }
 
