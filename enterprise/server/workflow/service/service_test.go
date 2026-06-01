@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
@@ -231,6 +232,28 @@ func configureExperiments(t *testing.T, env *testenv.TestEnv, flags map[string]b
 		}
 	}
 	testProvider := memprovider.NewInMemoryProvider(inMemoryFlags)
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+}
+
+func enableCIRunnerDefaultTimeoutExperiment(t *testing.T, env *testenv.TestEnv, groupStatus grpb.Group_GroupStatus, timeout string) {
+	t.Helper()
+
+	evaluator := func(_ memprovider.InMemoryFlag, flatCtx openfeature.FlattenedContext) (any, openfeature.ProviderResolutionDetail) {
+		if flatCtx["group_status"] == grpb.Group_GroupStatus_name[int32(groupStatus)] {
+			return timeout, openfeature.ProviderResolutionDetail{Reason: openfeature.TargetingMatchReason}
+		}
+		return "", openfeature.ProviderResolutionDetail{Reason: openfeature.DefaultReason}
+	}
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		ci_runner_util.DefaultTimeoutExperimentName: {
+			State:            memprovider.Enabled,
+			ContextEvaluator: &evaluator,
+		},
+	})
 	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
 
 	fp, err := experiments.NewFlagProvider("test")
@@ -2305,5 +2328,58 @@ actions:
 		require.Equal(t, "Test", actionName)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for scheduled workflow execution")
+	}
+}
+
+func TestTimeout(t *testing.T) {
+	tests := []struct {
+		name                  string
+		groupStatus           grpb.Group_GroupStatus
+		expectedTimeout       time.Duration
+		expectedTimeoutReason string
+	}{
+		{name: "timeout configured in experiment", groupStatus: grpb.Group_FREE_TIER_GROUP_STATUS, expectedTimeout: 1 * time.Hour, expectedTimeoutReason: ci_runner_util.FreeTierTimeoutReason},
+		{name: "timeout not configured in experiment", groupStatus: grpb.Group_ENTERPRISE_GROUP_STATUS, expectedTimeout: 2 * time.Hour},
+	}
+
+	for _, tc := range tests {
+		ctx := context.Background()
+		u, lis := testhttp.NewServer(t)
+		flags.Set(t, "app.build_buddy_url", *u)
+		flags.Set(t, "remote_execution.enable_remote_exec", true)
+		te := newTestEnv(t)
+		ctx, _, gid := authenticate(t, ctx, te)
+
+		execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+		te.SetRemoteExecutionClient(execClient)
+		go http.Serve(lis, te.GetWorkflowService())
+		provider := setupFakeGitProvider(t, te)
+		repoURL := makeTempRepo(t)
+		runBBServer(ctx, t, te)
+		repo := createWorkflow(t, te, repoURL, gid, false)
+
+		updateGroupStatus(t, te, gid, tc.groupStatus)
+		enableCIRunnerDefaultTimeoutExperiment(t, te, grpb.Group_FREE_TIER_GROUP_STATUS, "1h")
+
+		config := `
+actions:
+  - name: "Test"
+    triggers: { push: { branches: [ "*" ] } }
+    bazel_commands: [ "test //..." ]
+    timeout: "2h"
+`
+
+		pushToDefaultBranch(t, te, repo, provider, config)
+
+		execReq := execClient.NextExecuteRequest()
+		exec := getExecution(t, ctx, te, execReq.Payload)
+		expectedTimeout := tc.expectedTimeout.String()
+		require.Contains(t, exec.Command.GetArguments(), "--timeout="+expectedTimeout, tc.name)
+		if tc.expectedTimeoutReason != "" {
+			require.Contains(t, exec.Command.GetArguments(), "--timeout_reason="+tc.expectedTimeoutReason, tc.name)
+		} else {
+			require.NotContains(t, exec.Command.GetArguments(), "--timeout_reason="+ci_runner_util.FreeTierTimeoutReason, tc.name)
+		}
+		require.Equal(t, tc.expectedTimeout+workflow.TimeoutGracePeriod, exec.Action.GetTimeout().AsDuration(), tc.name)
 	}
 }

@@ -7,9 +7,9 @@ import LinkButton from "../components/button/link_button";
 import SetupCodeComponent from "../docs/setup_code";
 import errorService from "../errors/error_service";
 import format from "../format/format";
-import rpcService, { FileEncoding } from "../service/rpc_service";
+import rpcService, { CancelablePromise, FileEncoding } from "../service/rpc_service";
+import { Profile, readProfile, Thread } from "../trace/compact_trace";
 import TimingProfileDropTarget from "../trace/timing_profile_drop_target";
-import { Profile, readProfile } from "../trace/trace_events";
 import TraceViewer from "../trace/trace_viewer";
 import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
 import InvocationModel from "./invocation_model";
@@ -36,11 +36,9 @@ interface State {
   viewerKey: number;
 }
 
-interface Thread {
-  id: number;
-  totalDuration: number;
-  name: string;
-  events: any[];
+interface TraceEventRef {
+  thread: Thread;
+  eventIndex: number;
 }
 
 const sortByStorageKey = "InvocationTimingCardComponent.sortBy";
@@ -76,6 +74,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
   };
 
   private progressRef = React.createRef<HTMLDivElement>();
+  private profileRPC?: CancelablePromise;
 
   componentDidMount() {
     this.fetchProfile();
@@ -83,11 +82,38 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
   componentDidUpdate(prevProps: Props) {
     if (this.props.model !== prevProps.model) {
+      this.cancelProfileLoad();
       this.setState(createEmptyProfileState(), () => this.fetchProfile());
     }
   }
 
+  componentWillUnmount() {
+    this.cancelProfileLoad();
+  }
+
   getProfileFile(): build_event_stream.File | undefined {
+    // To override the auto-loaded profile (for debugging):
+    // - Upload a profile with `bb upload --target=grpc://localhost:1985 <profile_path>`
+    // - Copy the resulting resource name that it prints
+    // - Check whether the file is gzipped by running `file <profile_path>`
+    // - If it's gzipped, set ?debug_profile_gz=<resource_name> in the URL.
+    //   Otherwise, set ?debug_profile_json=<resource_name>
+    const params = new URLSearchParams(window.location.search);
+    const debugProfileGzippedRN = params.get("debug_profile_gz");
+    if (debugProfileGzippedRN) {
+      return new build_event_stream.File({
+        name: "timing_profile.gz",
+        uri: "bytestream://localhost:1985/" + debugProfileGzippedRN.replace(/^\/+/, ""),
+      });
+    }
+    const debugProfileRN = params.get("debug_profile_json");
+    if (debugProfileRN) {
+      return new build_event_stream.File({
+        name: "timing_profile.json",
+        uri: "bytestream://localhost:1985/" + debugProfileRN.replace(/^\/+/, ""),
+      });
+    }
+
     // Bazel 8 semi-fixed the profile name with: https://github.com/bazelbuild/bazel/pull/22345
     const version = this.props.model?.getBazelVersion();
     if (version && version.major >= 8) {
@@ -113,7 +139,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     return Boolean(this.getProfileFile()?.uri?.startsWith("bytestream://"));
   }
 
-  setProgress(bytesLoaded: number, digestSize: number, encoding: FileEncoding) {
+  setProgress(bytesLoaded: number, digestSize: number, encoding: FileEncoding, done = false) {
     const container = this.progressRef.current;
     if (!container) return;
 
@@ -122,7 +148,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       approxCompressionRatio = 11.3;
     }
 
-    const compressedBytesLoaded = Math.min(bytesLoaded / approxCompressionRatio, digestSize);
+    const compressedBytesLoaded = done ? digestSize : Math.min(bytesLoaded / approxCompressionRatio, digestSize);
     const progressPercent = 100 * Math.min(1, compressedBytesLoaded / digestSize);
 
     const spinner = container.querySelector(".loading") as HTMLElement;
@@ -131,15 +157,19 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     const progressContainer = container.querySelector(".timing-profile-progress")!;
     progressContainer.removeAttribute("hidden");
     const progressLabel = progressContainer.querySelector(".progress-label")!;
-    progressLabel.innerHTML = `Loading profile (${format.bytes(compressedBytesLoaded)} / ${format.bytes(digestSize)})`;
+    const label = done ? "Finalizing profile" : "Loading profile";
+    progressLabel.innerHTML = `${label} (${format.bytes(compressedBytesLoaded)} / ${format.bytes(digestSize)})`;
 
     const progressBarInner = progressContainer.querySelector(".progress-bar-inner") as HTMLElement;
     progressBarInner.style.width = `${progressPercent}%`;
   }
 
   fetchProfile(ignoreSizeLimit = false) {
+    this.cancelProfileLoad();
+
     if (!this.isTimingEnabled()) {
       this.setState({ loading: false });
+      return;
     }
 
     // Already fetched
@@ -166,15 +196,23 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       // Set the stored encoding header to prevent the server from double-gzipping.
       headers: { "X-Stored-Encoding-Hint": storedEncoding },
     };
-    rpcService
+    this.profileRPC = rpcService
       .fetchBytestreamFile(profileFile.uri, this.props.model.getInvocationId(), "stream", { init })
       .then((response) => {
         if (!response.body) throw new Error("response body is null");
-        return readProfile(response.body, (n) => this.setProgress(n, digestSize, storedEncoding));
+        return readProfile(response.body, (n, done) => this.setProgress(n, digestSize, storedEncoding, done));
       })
       .then((profile) => this.updateProfile(profile))
       .catch((e) => errorService.handleError(e))
-      .finally(() => this.setState({ loading: false }));
+      .finally(() => {
+        this.profileRPC = undefined;
+        this.setState({ loading: false });
+      });
+  }
+
+  private cancelProfileLoad() {
+    this.profileRPC?.cancel();
+    this.profileRPC = undefined;
   }
 
   private buildDerivedProfileState(profile: Profile) {
@@ -182,29 +220,15 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     const durationByNameMap = new Map<string, number>();
     const durationByCategoryMap = new Map<string, number>();
 
-    for (let event of profile.traceEvents || []) {
-      let thread = threadMap.get(event.tid) || {
-        name: "",
-        totalDuration: 0,
-        id: event.tid,
-        events: [] as any[],
-      };
-
-      if (event.dur) {
-        durationByNameMap.set(event.name, (durationByNameMap.get(event.name) || 0) + event.dur);
-        durationByCategoryMap.set(event.cat, (durationByCategoryMap.get(event.cat) || 0) + event.dur);
+    for (const thread of profile.threads) {
+      threadMap.set(thread.tid, thread);
+      for (let i = 0; i < thread.length; i++) {
+        const dur = thread.dur[i];
+        const name = thread.getName(i);
+        const cat = thread.getCat(i);
+        durationByNameMap.set(name, (durationByNameMap.get(name) || 0) + dur);
+        durationByCategoryMap.set(cat, (durationByCategoryMap.get(cat) || 0) + dur);
       }
-
-      if (event.ph == "X") {
-        // Duration events
-        thread.events.push(event);
-        thread.totalDuration += event.dur;
-      } else if (event.ph == "M" && event.name == "thread_name") {
-        // Metadata events
-        thread.name = event.args.name;
-      }
-
-      threadMap.set(event.tid, thread);
     }
 
     return {
@@ -252,16 +276,16 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     );
   }
 
-  sortIdAsc(a: any, b: any) {
-    return a.id - b.id;
+  sortIdAsc(a: Thread, b: Thread) {
+    return a.tid - b.tid;
   }
 
-  sortDurationDesc(a: any, b: any) {
-    return b.dur - a.dur;
+  sortDurationDesc(a: TraceEventRef, b: TraceEventRef) {
+    return b.thread.dur[b.eventIndex] - a.thread.dur[a.eventIndex];
   }
 
-  sortTimeAsc(a: any, b: any) {
-    return a.ts - b.ts;
+  sortTimeAsc(a: TraceEventRef, b: TraceEventRef) {
+    return a.thread.ts[a.eventIndex] - b.thread.ts[b.eventIndex];
   }
 
   handleMoreEventsClicked(threadId: number) {
@@ -382,6 +406,14 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     return suggestion ? <SuggestionComponent suggestion={suggestion} /> : null;
   }
 
+  private getEventRefs(thread: Thread) {
+    const refs: TraceEventRef[] = [];
+    for (let eventIndex = 0; eventIndex < thread.length; eventIndex++) {
+      refs.push({ thread, eventIndex });
+    }
+    return refs;
+  }
+
   render() {
     let threads = Array.from(this.state.threadMap.values());
 
@@ -401,6 +433,12 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
     const profileFile = this.getProfileFile();
     const downloadHref = getProfileDownloadHref(profileFile, this.props.model.getInvocationId());
+    const eventSort = this.state.sortBy == sortByTimeAscStorageValue ? this.sortTimeAsc : this.sortDurationDesc;
+    const allEventRefs =
+      this.state.groupBy == groupByAllStorageValue
+        ? threads.flatMap((thread: Thread) => this.getEventRefs(thread)).sort(eventSort)
+        : [];
+    const allEventsPageSize = this.state.eventPageSize * this.getNumPagesForThread(0);
 
     return (
       <>
@@ -526,35 +564,33 @@ export default class InvocationTimingCardComponent extends React.Component<Props
                         <div>{thread.name}</div>
                       </div>
                       <ul>
-                        {thread.events
-                          .sort(
-                            this.state.sortBy == sortByTimeAscStorageValue ? this.sortTimeAsc : this.sortDurationDesc
-                          )
-                          .slice(0, this.state.eventPageSize * this.getNumPagesForThread(thread.id))
-                          .map((event) => (
-                            <li>
-                              <div className="list-grid">
-                                <div>
-                                  {event.name} {event.args?.target}
+                        {this.getEventRefs(thread)
+                          .sort(eventSort)
+                          .slice(0, this.state.eventPageSize * this.getNumPagesForThread(thread.tid))
+                          .map((eventRef) => {
+                            const eventIndex = eventRef.eventIndex;
+                            const dur = eventRef.thread.dur[eventIndex];
+                            return (
+                              <li>
+                                <div className="list-grid">
+                                  <div>
+                                    {eventRef.thread.getName(eventIndex)} {eventRef.thread.getTarget(eventIndex)}
+                                  </div>
+                                  <div>{format.durationUsec(dur)}</div>
                                 </div>
-                                <div>{format.durationUsec(event.dur)}</div>
-                              </div>
-                              <div
-                                className="list-percent"
-                                data-percent={`${(100 * (event.dur / this.props.model.getDurationMicros())).toFixed(
-                                  0
-                                )}%`}
-                                style={{
-                                  width: `${(100 * (event.dur / this.props.model.getDurationMicros())).toPrecision(
-                                    3
-                                  )}%`,
-                                }}></div>
-                            </li>
-                          ))}
+                                <div
+                                  className="list-percent"
+                                  data-percent={`${(100 * (dur / this.props.model.getDurationMicros())).toFixed(0)}%`}
+                                  style={{
+                                    width: `${(100 * (dur / this.props.model.getDurationMicros())).toPrecision(3)}%`,
+                                  }}></div>
+                              </li>
+                            );
+                          })}
                       </ul>
-                      {thread.events.length > this.state.eventPageSize * this.getNumPagesForThread(thread.id) &&
+                      {thread.length > this.state.eventPageSize * this.getNumPagesForThread(thread.tid) &&
                         !!this.state.eventPageSize && (
-                          <div className="more" onClick={this.handleMoreEventsClicked.bind(this, thread.id)}>
+                          <div className="more" onClick={this.handleMoreEventsClicked.bind(this, thread.tid)}>
                             See more events
                           </div>
                         )}
@@ -569,32 +605,30 @@ export default class InvocationTimingCardComponent extends React.Component<Props
                     <div>All events</div>
                   </div>
                   <ul>
-                    {threads
-                      .flatMap((thread: Thread) => thread.events)
-                      .sort(this.state.sortBy == sortByTimeAscStorageValue ? this.sortTimeAsc : this.sortDurationDesc)
-                      .slice(0, this.state.eventPageSize * this.getNumPagesForThread(0))
-                      .map((event) => (
+                    {allEventRefs.slice(0, allEventsPageSize).map((eventRef) => {
+                      const eventIndex = eventRef.eventIndex;
+                      const dur = eventRef.thread.dur[eventIndex];
+                      return (
                         <li>
                           <div className="list-grid">
-                            <div>{event.name}</div>
-                            <div>{format.durationUsec(event.dur)}</div>
+                            <div>{eventRef.thread.getName(eventIndex)}</div>
+                            <div>{format.durationUsec(dur)}</div>
                           </div>
                           <div
                             className="list-percent"
-                            data-percent={`${(100 * (event.dur / this.props.model.getDurationMicros())).toFixed(0)}%`}
+                            data-percent={`${(100 * (dur / this.props.model.getDurationMicros())).toFixed(0)}%`}
                             style={{
-                              width: `${(100 * (event.dur / this.props.model.getDurationMicros())).toPrecision(3)}%`,
+                              width: `${(100 * (dur / this.props.model.getDurationMicros())).toPrecision(3)}%`,
                             }}></div>
                         </li>
-                      ))}
+                      );
+                    })}
                   </ul>
-                  {threads.flatMap((thread: Thread) => thread.events).length >
-                    this.state.eventPageSize * this.getNumPagesForThread(0) &&
-                    !!this.state.eventPageSize && (
-                      <div className="more" onClick={this.handleMoreEventsClicked.bind(this, 0)}>
-                        See more events
-                      </div>
-                    )}
+                  {allEventRefs.length > allEventsPageSize && !!this.state.eventPageSize && (
+                    <div className="more" onClick={this.handleMoreEventsClicked.bind(this, 0)}>
+                      See more events
+                    </div>
+                  )}
                 </div>
               </div>
             )}

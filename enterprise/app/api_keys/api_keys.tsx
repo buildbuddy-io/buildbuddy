@@ -315,6 +315,10 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onChange("capability", [capability.Capability.CACHE_WRITE, capability.Capability.REGISTER_EXECUTOR]);
   }
 
+  private onSelectCacheProxy(onChange: (name: string, value: any) => any) {
+    onChange("capability", [capability.Capability.CACHE_WRITE, capability.Capability.REGISTER_CACHE_PROXY]);
+  }
+
   private onSelectOrgAdmin(onChange: (name: string, value: any) => any) {
     onChange("capability", [capability.Capability.ORG_ADMIN]);
   }
@@ -440,6 +444,21 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                     />
                     <span>
                       Executor key <span className="field-description">(for self-hosted executors)</span>
+                    </span>
+                  </label>
+                </div>
+              )}
+              {/* User-owned keys cannot be used to register cache proxies. */}
+              {capabilities.cacheProxyKeyCreation && !this.props.userOwnedOnly && (
+                <div className="field-container">
+                  <label className="checkbox-row">
+                    <input
+                      type="radio"
+                      onChange={this.onSelectCacheProxy.bind(this, onChange)}
+                      checked={isCacheProxyKey(request)}
+                    />
+                    <span>
+                      Cache proxy key <span className="field-description">(for self-hosted cache proxies)</span>
                     </span>
                   </label>
                 </div>
@@ -688,6 +707,10 @@ function isExecutorKey<T extends ApiKeyFields>(apiKey: T | null) {
   return hasExactCapabilities(apiKey, [capability.Capability.CACHE_WRITE, capability.Capability.REGISTER_EXECUTOR]);
 }
 
+function isCacheProxyKey<T extends ApiKeyFields>(apiKey: T | null) {
+  return hasExactCapabilities(apiKey, [capability.Capability.CACHE_WRITE, capability.Capability.REGISTER_CACHE_PROXY]);
+}
+
 function isOrgAdminKey<T extends ApiKeyFields>(apiKey: T | null) {
   return hasExactCapabilities(apiKey, [capability.Capability.ORG_ADMIN]);
 }
@@ -708,6 +731,8 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
     capabilities = "CAS-only";
   } else if (isExecutorKey(apiKey)) {
     capabilities = "Executor";
+  } else if (isCacheProxyKey(apiKey)) {
+    capabilities = "Cache Proxy";
   } else if (isOrgAdminKey(apiKey)) {
     capabilities = "Org admin";
   } else if (isAuditLogReader(apiKey)) {

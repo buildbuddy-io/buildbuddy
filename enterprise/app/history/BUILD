@@ -27,6 +27,7 @@ ts_library(
         "//app/router:router_params",
         "//app/service:rpc_service",
         "//app/shortcuts",
+        "//app/util:url",
         "//enterprise/app/filter",
         "//enterprise/app/filter:filter_util",
         "//enterprise/app/history:history_invocation_stat_card",

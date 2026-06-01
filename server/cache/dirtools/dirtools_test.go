@@ -1747,7 +1747,11 @@ func TestDownloadTree_ChunkedInputFiles_ReusesCachedChunksAndUpdatesLocations(t 
 	}
 
 	chunkReadCount := func(d *repb.Digest) int {
-		return byteStream.readCount(digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256).DownloadString())
+		// cachetools.GetBlob upgrades large reads to ZSTD regardless of the
+		// enable_download_compression flag, so look up the compressed name.
+		rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+		rn.SetCompressor(repb.Compressor_ZSTD)
+		return byteStream.readCount(rn.DownloadString())
 	}
 
 	download(fileNode1, blob1)

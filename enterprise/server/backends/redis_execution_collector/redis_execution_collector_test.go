@@ -70,6 +70,7 @@ func TestCollectExecutionUpdates(t *testing.T) {
 	err := collector.AddExecutionInvocationLink(ctx, &sipb.StoredInvocationLink{
 		ExecutionId:  executionID,
 		InvocationId: invocationID,
+		Type:         sipb.StoredInvocationLink_NEW,
 	}, true /*=storeReverseLink*/)
 	require.NoError(t, err)
 
@@ -98,6 +99,7 @@ func TestCollectExecutionUpdates(t *testing.T) {
 			ExitCode:                     1,
 			WorkerStartTimestampUsec:     1e6,
 			WorkerCompletedTimestampUsec: 2e6,
+			InvocationLinkType:           int32(sipb.StoredInvocationLink_NEW),
 		},
 	}, executions, protocmp.Transform()))
 

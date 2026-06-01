@@ -213,6 +213,9 @@ message FrontendConfig {
 
   // Maximum timing profile size that the UI will load.
   int64 timing_profile_max_size_bytes = 69;
+
+  // Whether cache proxy keys can be created.
+  bool cache_proxy_key_creation_enabled = 70;
 }
 
 message Region {

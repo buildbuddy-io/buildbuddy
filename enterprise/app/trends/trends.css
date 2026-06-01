@@ -50,6 +50,13 @@
   color: var(--color-text-primary);
 }
 
+/* margin is given to heatmap so that y axis can render nicely. */
+.drilldown-chart-title {
+  font-weight: 600;
+  font-size: 20px;
+  margin-bottom: 0;
+}
+
 .trend-chart-hover {
   background-color: var(--color-trends-hovercard-bg);
   color: var(--color-hovercard-text);
@@ -126,7 +133,7 @@
 
 .drilldown-page-warning-section {
   display: inline-block;
-  margin: 0 0 16px;
+  margin: 16px 0 0;
 }
 
 .drilldown-page-dd-chart {
@@ -208,6 +215,10 @@
 .select.drilldown-page-select {
   font-size: 16px;
   margin: 0;
+}
+
+.drilldown-page-selection-group .select-wrapper + .select-wrapper {
+  margin-left: 8px;
 }
 
 .drilldown-selection-summary {

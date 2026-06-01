@@ -270,6 +270,10 @@ func (r *CASResourceName) NewUploadString() string {
 	return r.UploadString(guuid.New().String())
 }
 
+func (r *CASResourceName) Clone() *CASResourceName {
+	return &CASResourceName{ResourceName{rn: r.ToProto().CloneVT()}}
+}
+
 type ACResourceName struct {
 	ResourceName
 }

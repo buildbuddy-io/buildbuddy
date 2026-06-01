@@ -43,6 +43,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -351,6 +352,30 @@ func (e *Evaluator) queryRulesAndRecipients(ctx context.Context) ([]*alertRule, 
 		RecipientFirstName string
 		RecipientLastName  string
 	}
+	recipientMembershipsQuery := `
+		SELECT ug.group_group_id AS group_id,
+		ug.user_user_id AS user_id
+		FROM "UserGroups" AS ug
+		WHERE ug.membership_status = ?
+		AND (ug.role & ?) = ?
+	`
+	args := []any{
+		int32(grpb.GroupMembershipStatus_MEMBER),
+		uint32(role.Admin),
+		uint32(role.Admin),
+	}
+	if authutil.UserListsEnabled() {
+		recipientMembershipsQuery += `
+		UNION
+		SELECT ulg.group_group_id AS group_id,
+		uul.user_user_id AS user_id
+		FROM "UserListGroups" AS ulg
+		JOIN "UserUserLists" AS uul
+			ON uul.user_list_user_list_id = ulg.user_list_user_list_id
+		WHERE (ulg.role & ?) = ?
+		`
+		args = append(args, uint32(role.Admin), uint32(role.Admin))
+	}
 	rq := e.dbh.NewQuery(ctx, "usage_alert_query_rules_and_recipients").Raw(`
 		SELECT r.*,
 		COALESCE(g.name, '') AS group_name,
@@ -360,13 +385,12 @@ func (e *Evaluator) queryRulesAndRecipients(ctx context.Context) ([]*alertRule, 
 		u.last_name AS recipient_last_name
 		FROM "UsageAlertingRules" AS r
 		LEFT JOIN "Groups" AS g ON g.group_id = r.group_id
-		JOIN "UserGroups" AS ug ON ug.group_group_id = r.group_id
-		JOIN "Users" AS u ON u.user_id = ug.user_user_id
-		WHERE ug.membership_status = ?
-		AND (ug.role & ?) = ?
-		AND TRIM(u.email) <> ''
+		JOIN (`+recipientMembershipsQuery+`) AS recipient_memberships
+			ON recipient_memberships.group_id = r.group_id
+		JOIN "Users" AS u ON u.user_id = recipient_memberships.user_id
+		WHERE TRIM(u.email) <> ''
 		ORDER BY r.group_id ASC, r.usage_alerting_rule_id ASC, u.user_id ASC
-	`, int32(grpb.GroupMembershipStatus_MEMBER), uint32(role.Admin), uint32(role.Admin))
+	`, args...)
 	rows, err := db.ScanAll(rq, &ruleRecipientRow{})
 	if err != nil {
 		return nil, err
@@ -603,7 +627,7 @@ func buildAlertEmail(alert *alertRule, metric *metricDefinition, recipients []em
 	if alert.groupURLIdentifier != "" && subdomain.Enabled() {
 		usageURL = subdomain.ReplaceURLSubdomainForGroup(usageURL, &tables.Group{URLIdentifier: alert.groupURLIdentifier})
 	}
-	subject := fmt.Sprintf("[BuildBuddy Usage Alert] [%s] %s %s threshold reached", groupDisplayName, usageAlertingWindowLabel(rule.Window), metric.Display)
+	subject := fmt.Sprintf("[BuildBuddy Usage] %s %s threshold reached (%s)", usageAlertingWindowLabel(rule.Window), metric.Display, groupDisplayName)
 	bodyTemplate, err := alertEmailBodyTemplate()
 	if err != nil {
 		return nil, fmt.Errorf("load email body template: %w", err)

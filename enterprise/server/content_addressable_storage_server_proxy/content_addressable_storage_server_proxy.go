@@ -92,7 +92,7 @@ func newCacheMetrics() *cacheMetrics {
 func (m *cacheMetrics) addUpdateMetrics(requests []*repb.BatchUpdateBlobsRequest_Request) *cacheMetrics {
 	status := metrics.MissStatusLabel
 	for _, request := range requests {
-		compressor := request.GetCompressor().String()
+		compressor := compressorLabel(request.GetCompressor())
 		m.digestsPerStatusAndCompressor[status][compressor]++
 		m.bytesPerStatusAndCompressor[status][compressor] += len(request.Data)
 	}
@@ -101,11 +101,20 @@ func (m *cacheMetrics) addUpdateMetrics(requests []*repb.BatchUpdateBlobsRequest
 
 func (m *cacheMetrics) addReadMetrics(status string, responses []*repb.BatchReadBlobsResponse_Response) *cacheMetrics {
 	for _, response := range responses {
-		compressor := response.GetCompressor().String()
+		compressor := compressorLabel(response.GetCompressor())
 		m.digestsPerStatusAndCompressor[status][compressor]++
 		m.bytesPerStatusAndCompressor[status][compressor] += len(response.Data)
 	}
 	return m
+}
+
+func compressorLabel(compressor repb.Compressor_Value) string {
+	switch compressor {
+	case repb.Compressor_IDENTITY, repb.Compressor_ZSTD:
+		return compressor.String()
+	default:
+		return "unknown"
+	}
 }
 
 func (m *cacheMetrics) addGetTreeMetrics(digests, bytes int) *cacheMetrics {

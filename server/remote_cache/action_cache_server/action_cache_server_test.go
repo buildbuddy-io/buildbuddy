@@ -639,10 +639,10 @@ func TestValidateActionResult_ChunkedOutputFile(t *testing.T) {
 	}
 
 	chunkingEnabled := true
-	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, chunkingEnabled, ar))
+	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, chunkingEnabled, te.GetExperimentFlagProvider(), ar))
 
 	chunkingDisabled := false
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, chunkingDisabled, ar)
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, chunkingDisabled, te.GetExperimentFlagProvider(), ar)
 	require.Error(t, err)
 	assert.True(t, status.IsNotFoundError(err))
 }

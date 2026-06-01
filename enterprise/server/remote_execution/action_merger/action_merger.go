@@ -154,7 +154,7 @@ func CheckMerged(ctx context.Context, rdb redis.UniversalClient, adResource *dig
 		return false, err
 	}
 	rawCount, err := rdb.HGet(ctx, key, actionCountKey).Result()
-	if err == redis.Nil {
+	if err == redis.Nil || rawCount == "" {
 		return false, nil
 	}
 	count, err := strconv.Atoi(rawCount)

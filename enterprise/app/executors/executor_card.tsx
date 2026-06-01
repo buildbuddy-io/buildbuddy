@@ -38,6 +38,20 @@ export default class ExecutorCardComponent extends React.Component<Props> {
                 <div>{this.props.node.osDisplayName}</div>
               </div>
             )}
+            {this.props.node.labels && Object.keys(this.props.node.labels).length > 0 && (
+              <div className="executor-section">
+                <div className="executor-section-title">Labels:</div>
+                <div>
+                  {Object.entries(this.props.node.labels)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([k, v]) => (
+                      <div key={k}>
+                        <b>{k}</b>: {v}
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
             {this.props.node.startTime && (
               <div className="executor-section">
                 <div className="executor-section-title">Uptime:</div>

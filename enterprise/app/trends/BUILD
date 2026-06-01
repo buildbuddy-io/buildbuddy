@@ -100,6 +100,7 @@ ts_library(
         "//:node_modules/tslib",
         "//app/auth:user",
         "//app/capabilities",
+        "//app/components/banner",
         "//app/components/button",
         "//app/components/select",
         "//app/components/spinner",

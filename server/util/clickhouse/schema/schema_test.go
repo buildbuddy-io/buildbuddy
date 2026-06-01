@@ -8,10 +8,9 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/go-faker/faker/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/go-faker/faker/v4"
 )
 
 func TestSchemaInSync(t *testing.T) {
@@ -178,4 +177,31 @@ SETTINGS index_granularity = 8192
 	assert.Contains(t, projectionNames, "projection_commits")
 	assert.Contains(t, projectionNames, "projection_targets")
 
+}
+
+func TestUsageViewQuery(t *testing.T) {
+	const expectedQuery = "SELECT group_id, period_start, sku, labels, SUM(count) AS count " +
+		"FROM RawUsage FINAL GROUP BY group_id, period_start, sku, labels"
+
+	// RawUsage may contain duplicate flushes from Redis buffers, so the view
+	// deduplicates with FINAL before aggregating counts by Usage dimensions.
+	assert.Equal(t, expectedQuery, (&Usage{}).ViewQuery())
+}
+
+func TestSameViewQuery(t *testing.T) {
+	// ClickHouse may store the saved SELECT with different formatting and
+	// function casing, so avoid replacing the view when the query is
+	// semantically the same for this generated view.
+	assert.True(t, sameViewQuery(
+		"SELECT `group_id`, `period_start`, `sku`, `labels`, sum(`count`) AS `count` FROM `db_name`.`RawUsage` FINAL GROUP BY `group_id`, `period_start`, `sku`, `labels`",
+		"SELECT group_id, period_start, sku, labels, SUM(count) AS count FROM RawUsage FINAL GROUP BY group_id, period_start, sku, labels",
+		"db_name",
+	))
+
+	// A different grouping or aggregate expression should trigger replacement.
+	assert.False(t, sameViewQuery(
+		"SELECT group_id, period_start, sku, SUM(count) AS count FROM RawUsage FINAL GROUP BY group_id, period_start, sku",
+		"SELECT group_id, period_start, sku, labels, SUM(count) AS count FROM RawUsage FINAL GROUP BY group_id, period_start, sku, labels",
+		"",
+	))
 }

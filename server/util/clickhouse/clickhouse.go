@@ -368,12 +368,8 @@ func FillExecutionResourceFieldsFromExecutionID(out *schema.Execution, execution
 // logic.
 func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*schema.Execution, error) {
 	out := &schema.Execution{
-		GroupID:       in.GetGroupId(),
-		UpdatedAtUsec: in.GetUpdatedAtUsec(),
-		// ExecutionID is no longer read on the OLAP path, but we keep
-		// dual-writing it so the column stays populated in case we need
-		// to roll back the read migration.
-		ExecutionID:                        in.GetExecutionId(),
+		GroupID:                            in.GetGroupId(),
+		UpdatedAtUsec:                      in.GetUpdatedAtUsec(),
 		InvocationUUID:                     in.GetInvocationUuid(),
 		CreatedAtUsec:                      in.GetCreatedAtUsec(),
 		UserID:                             in.GetUserId(),
@@ -382,6 +378,8 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		ClientIP:                           in.GetClientIp(),
 		SelfHosted:                         in.GetSelfHosted(),
 		Region:                             in.GetRegion(),
+		OS:                                 in.GetOs(),
+		Arch:                               in.GetArch(),
 		Stage:                              in.GetStage(),
 		FileDownloadCount:                  in.GetFileDownloadCount(),
 		FileDownloadSizeBytes:              in.GetFileDownloadSizeBytes(),
@@ -434,6 +432,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		CachedResult:                       in.GetCachedResult(),
 		DoNotCache:                         in.GetDoNotCache(),
 		SkipCacheLookup:                    in.GetSkipCacheLookup(),
+		RecycleRunner:                      in.GetRecycleRunner(),
 		RequestedIsolationType:             in.GetRequestedIsolationType(),
 		EffectiveIsolationType:             in.GetEffectiveIsolationType(),
 		RequestedTimeoutUsec:               in.GetRequestedTimeoutUsec(),

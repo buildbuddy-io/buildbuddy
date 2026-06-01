@@ -300,6 +300,10 @@ type Option interface {
 	BoolLike() BoolLike
 }
 
+type ValueType interface {
+	string | []string | bool | BoolOrEnum
+}
+
 // The base type for all option types. Handles a lot of formatting and option
 // representation transformations.
 type optionBase struct {
@@ -901,7 +905,7 @@ func NameFilter[O Option](name string) func(O) bool {
 // options in order. It should only be called with opts that all share the same
 // definition, and an initial value that matches the type of value that
 // definition implies. Otherwise, its output will be nonsensical.
-func AccumulateValues[O Option, T string | []string | bool | BoolOrEnum, S seq.Sequenceable[O]](acc T, opts S) (T, error) {
+func AccumulateValues[O Option, T ValueType, S seq.Sequenceable[O]](acc T, opts S) (T, error) {
 	p := any(&acc)
 	for opt := range seq.Sequence[O](opts) {
 		switch p := p.(type) {

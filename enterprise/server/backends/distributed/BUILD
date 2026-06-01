@@ -11,7 +11,6 @@ go_library(
         "//enterprise/server/util/distributed_client",
         "//enterprise/server/util/heartbeat",
         "//enterprise/server/util/redisutil",
-        "//proto:distributed_cache_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/environment",

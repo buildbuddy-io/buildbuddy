@@ -20,6 +20,7 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//app/util:popup",
+        "//app/util:url",
         "//proto:group_ts_proto",
     ],
 )

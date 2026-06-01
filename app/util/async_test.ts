@@ -1,4 +1,4 @@
-import { CancelablePromise } from "./async";
+import { CancelablePromise, nextAnimationFrame } from "./async";
 
 function delayedResolve<T>(value?: T, delayMs: number = 1): Promise<T | undefined> {
   return new Promise((resolve) => setTimeout(() => resolve(value), delayMs));
@@ -146,5 +146,30 @@ describe("CancelablePromise", () => {
       },
     }).cancel();
     expect(value).toBe(1);
+  });
+});
+
+describe("nextAnimationFrame", () => {
+  it("should resolve immediately when requestAnimationFrame is unavailable", async () => {
+    const testGlobal = globalThis as unknown as { requestAnimationFrame?: typeof requestAnimationFrame };
+    const originalRequestAnimationFrame = testGlobal.requestAnimationFrame;
+    testGlobal.requestAnimationFrame = undefined;
+
+    try {
+      let resolved = false;
+      const promise = nextAnimationFrame().then(() => {
+        resolved = true;
+      });
+      await Promise.resolve();
+
+      expect(resolved).toBe(true);
+      await promise;
+    } finally {
+      if (originalRequestAnimationFrame) {
+        testGlobal.requestAnimationFrame = originalRequestAnimationFrame;
+      } else {
+        delete testGlobal.requestAnimationFrame;
+      }
+    }
   });
 });

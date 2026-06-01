@@ -1,9 +1,12 @@
 package remote_execution_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math/rand"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -27,12 +31,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -42,6 +49,8 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -1654,6 +1663,153 @@ func TestCommandWithMissingInputRootDigest(t *testing.T) {
 	// NotFound errors should not be retried by the scheduler, since this test
 	// is simulating a bazel task, and bazel will retry on its own.
 	assert.Equal(t, 1, int(taskCount-initialTaskCount), "unexpected number of tasks started")
+}
+
+func TestBazelRemoteBuildWithChunkedGeneratedInputAfterChunkSizeIncrease(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 512*1024)
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
+
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+		"executor.upload_outputs_chunked": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
+		EnvModifier: func(env *testenv.TestEnv) {
+			env.SetExperimentFlagProvider(fp)
+		},
+	})
+	rbe.AddExecutor(t)
+
+	// The producer calls this after writing its output. This changes the app's
+	// chunk size before the executor uploads that output; the execution task
+	// still has the old CDC params, so the output is written as an old-style
+	// chunked-only blob that is below the new write threshold.
+	bumpedChunkSize := make(chan struct{})
+	var bumpOnce sync.Once
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	bumpServer := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/bump" {
+				http.NotFound(w, r)
+				return
+			}
+			if err := flagutil.SetValueForFlagName("cache.avg_chunk_size_bytes", 1024*1024, nil, false); err != nil {
+				t.Errorf("failed to bump chunk size: %s", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			bumpOnce.Do(func() { close(bumpedChunkSize) })
+		}),
+	}
+	go func() {
+		if err := bumpServer.Serve(lis); err != nil && err != http.ErrServerClosed {
+			t.Errorf("bump server failed: %s", err)
+		}
+	}()
+	t.Cleanup(func() {
+		require.NoError(t, bumpServer.Shutdown(context.Background()))
+	})
+	bumpPort := lis.Addr().(*net.TCPAddr).Port
+
+	const largeOutputSize = 3 * 1024 * 1024
+	ws := testbazel.MakeTempModule(t, map[string]string{
+		"BUILD": fmt.Sprintf(`
+genrule(
+    name = "producer",
+    outs = ["large.bin"],
+    cmd_bash = "dd if=/dev/zero of=$@ bs=1024 count=%d 2>/dev/null && { printf 'GET /bump HTTP/1.0\r\n\r\n' >&3; cat <&3 >/dev/null; } 3<>/dev/tcp/127.0.0.1/%d",
+    exec_properties = {
+        "OSFamily": "%s",
+        "Arch": "%s",
+    },
+)
+
+genrule(
+    name = "consumer",
+    srcs = [":producer"],
+    outs = ["consumer.txt"],
+    cmd_bash = "wc -c < $(location :producer) > $@",
+    exec_properties = {
+        "OSFamily": "%s",
+        "Arch": "%s",
+    },
+)
+`, largeOutputSize/1024, bumpPort, runtime.GOOS, runtime.GOARCH, runtime.GOOS, runtime.GOARCH),
+	})
+
+	buildFlags := func(target string) []string {
+		return []string{
+			target,
+			"--remote_executor=" + rbe.GetRemoteExecutionTarget(),
+			"--remote_header=x-buildbuddy-api-key=" + rbe.APIKey1,
+			"--remote_download_outputs=minimal",
+			"--remote_local_fallback=false",
+			"--rewind_lost_inputs",
+			"--spawn_strategy=remote",
+			"--jobs=1",
+			"--verbose_failures",
+		}
+	}
+
+	ctx := context.Background()
+	// Build the consumer in the same Bazel invocation. After the producer bumps
+	// the chunk size, Bazel's input preflight for the consumer must still see
+	// the chunked-only generated input as present, not as a lost input.
+	build := testbazel.Invoke(ctx, t, ws, "build", buildFlags("//:consumer")...)
+	require.NotContains(t, build.Stderr, "lost input too many times")
+	require.NotContains(t, build.Stderr, "Lost inputs no longer available remotely")
+	require.NoError(t, build.Error, build.Stderr)
+	select {
+	case <-bumpedChunkSize:
+	default:
+		require.Fail(t, "producer did not bump chunk size")
+	}
+
+	largeDigest, err := digest.Compute(bytes.NewReader(make([]byte, largeOutputSize)), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	casClient := rbe.GetContentAddressableStorageClient()
+	cacheCtx := metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", rbe.APIKey1)
+
+	splitResp, err := casClient.SplitBlob(cacheCtx, &repb.SplitBlobRequest{
+		BlobDigest:     largeDigest,
+		DigestFunction: repb.DigestFunction_SHA256,
+	})
+	require.NoError(t, err)
+	require.Greater(t, len(splitResp.GetChunkDigests()), 1)
+
+	missingRsp, err := casClient.FindMissingBlobs(cdc.ContextWithChunked(cacheCtx), &repb.FindMissingBlobsRequest{
+		BlobDigests:    []*repb.Digest{largeDigest},
+		DigestFunction: repb.DigestFunction_SHA256,
+	})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []*repb.Digest{largeDigest}, missingRsp.GetMissingBlobDigests())
+
+	missingRsp, err = casClient.FindMissingBlobs(cacheCtx, &repb.FindMissingBlobsRequest{
+		BlobDigests:    []*repb.Digest{largeDigest},
+		DigestFunction: repb.DigestFunction_SHA256,
+	})
+	require.NoError(t, err)
+	require.Empty(t, missingRsp.GetMissingBlobDigests())
 }
 
 func TestRedisRestart(t *testing.T) {

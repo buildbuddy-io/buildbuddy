@@ -264,7 +264,7 @@ type Group struct {
 	IsParent bool `gorm:"not null;default:0"`
 
 	// The status of the group: free tier, enterprise, etc.
-	Status grpb.Group_GroupStatus `gorm:"not null;default:0"`
+	Status grpb.Group_GroupStatus `gorm:"not null;default:1"`
 }
 
 func (g *Group) TableName() string {
@@ -801,14 +801,24 @@ type UsageCounts struct {
 	// NOTE: New fields added here should be annotated with
 	// `gorm:"not null;default:0"`
 
-	LinuxExecutionDurationUsec           int64 `gorm:"not null;default:0"`
-	MacExecutionDurationUsec             int64 `gorm:"not null;default:0"`
-	SelfHostedLinuxExecutionDurationUsec int64 `gorm:"not null;default:0"`
-	SelfHostedMacExecutionDurationUsec   int64 `gorm:"not null;default:0"`
-	TotalUploadSizeBytes                 int64 `gorm:"not null;default:0"`
-	TotalCachedActionExecUsec            int64 `gorm:"not null;default:0"`
-	CPUNanos                             int64 `gorm:"not null;default:0"`
-	MemoryGBUsec                         int64 `gorm:"not null;default:0"`
+	LinuxExecutionDurationUsec                        int64 `gorm:"not null;default:0"`
+	MacExecutionDurationUsec                          int64 `gorm:"not null;default:0"`
+	SelfHostedLinuxExecutionDurationUsec              int64 `gorm:"not null;default:0"`
+	SelfHostedMacExecutionDurationUsec                int64 `gorm:"not null;default:0"`
+	TotalUploadSizeBytes                              int64 `gorm:"not null;default:0"`
+	TotalCachedActionExecUsec                         int64 `gorm:"not null;default:0"`
+	CPUNanos                                          int64 `gorm:"not null;default:0"`
+	MemoryGBUsec                                      int64 `gorm:"not null;default:0"`
+	LinuxArm64ExecutionBurstableComputeDurationUsec   int64 `gorm:"not null;default:0"`
+	LinuxArm64ExecutionComputeDurationUsec            int64 `gorm:"not null;default:0"`
+	LinuxX86_64ExecutionBurstableComputeDurationUsec  int64 `gorm:"column:linux_x86_64_execution_burstable_compute_duration_usec;not null;default:0"`
+	LinuxX86_64ExecutionComputeDurationUsec           int64 `gorm:"column:linux_x86_64_execution_compute_duration_usec;not null;default:0"`
+	DarwinArm64ExecutionBurstableComputeDurationUsec  int64 `gorm:"not null;default:0"`
+	DarwinArm64ExecutionComputeDurationUsec           int64 `gorm:"not null;default:0"`
+	DarwinX86_64ExecutionBurstableComputeDurationUsec int64 `gorm:"column:darwin_x86_64_execution_burstable_compute_duration_usec;not null;default:0"`
+	DarwinX86_64ExecutionComputeDurationUsec          int64 `gorm:"column:darwin_x86_64_execution_compute_duration_usec;not null;default:0"`
+	LocalSnapshotSavedBytes                           int64 `gorm:"not null;default:0"`
+	RemoteSnapshotSavedBytes                          int64 `gorm:"not null;default:0"`
 }
 
 type UsageLabels struct {

@@ -1147,7 +1147,7 @@ func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
 	require.ElementsMatch(t, digestStrings(blobDigest, regularDigest), digestStrings(rsp.MissingBlobDigests...))
 }
 
-func TestFindMissingBlobsDoesNotUseReadFallbackThreshold(t *testing.T) {
+func TestFindMissingBlobsUsesReadFallbackThreshold(t *testing.T) {
 	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
 	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
 
@@ -1202,6 +1202,12 @@ func TestFindMissingBlobsDoesNotUseReadFallbackThreshold(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	require.Empty(t, rsp.MissingBlobDigests)
+
+	rsp, err = casClient.FindMissingBlobs(cdc.ContextWithChunked(ctx), &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{blobDigest},
+	})
+	require.NoError(t, err)
 	require.Len(t, rsp.MissingBlobDigests, 1)
 	require.Equal(t, blobDigest.GetHash(), rsp.MissingBlobDigests[0].GetHash())
 }
@@ -1306,6 +1312,69 @@ func TestBatchReadBlobsWithChunkedBlob(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBatchReadBlobsWithMismatchedChunkedManifest(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+	cache := te.GetCache()
+
+	chunkRN, chunk := testdigest.RandomCASResourceBuf(t, 1024)
+	require.NoError(t, cache.Set(ctx, chunkRN, chunk))
+
+	corruptDigest, _ := testdigest.NewReader(t, 3*1024*1024)
+	manifest := &chunking.Manifest{
+		BlobDigest:     corruptDigest,
+		ChunkDigests:   []*repb.Digest{chunkRN.GetDigest()},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	require.NoError(t, manifest.StoreWithoutVerification(ctx, cache))
+
+	readResp, err := casClient.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
+		Digests: []*repb.Digest{corruptDigest},
+	})
+	require.NoError(t, err)
+	require.Len(t, readResp.GetResponses(), 1)
+	require.Equal(t, int32(gcodes.NotFound), readResp.GetResponses()[0].GetStatus().GetCode())
+}
+
+func TestBatchReadBlobsRejectsOversizedRequest(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	_, err := casClient.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
+		Digests: []*repb.Digest{
+			{Hash: strings.Repeat("a", 64), SizeBytes: 3 * 1000 * 1000},
+			{Hash: strings.Repeat("b", 64), SizeBytes: 2 * 1000 * 1000},
+		},
+	})
+	require.Error(t, err)
+	require.Equal(t, gcodes.InvalidArgument, gstatus.Code(err))
 }
 
 func TestSpliceBlobReadOnlyKey(t *testing.T) {

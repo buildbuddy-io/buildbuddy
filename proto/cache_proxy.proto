@@ -37,6 +37,11 @@ message CacheProxyNode {
 
   // Time when this cache proxy process started.
   google.protobuf.Timestamp start_time = 7;
+
+  // Optional set of key-value labels identifying this cache proxy. Set
+  // operationally (e.g. region, canary, environment) and surfaced on the
+  // deployment view.
+  map<string, string> labels = 8;
 }
 
 // RegisterCacheProxyRequest is sent on the client-side stream from the proxy
@@ -75,7 +80,9 @@ message RegisteredCacheProxy {
   google.protobuf.Timestamp last_ping_time = 4;
 }
 
-service CacheProxyAPI {
+// CacheProxyRegistry runs on the main BuildBuddy app and tracks the set of
+// live cache proxies for each group, so the deployment view can list them.
+service CacheProxyRegistry {
   // RegisterAndStreamHeartbeat is opened by the cache proxy on startup. The
   // proxy sends an initial RegisterCacheProxyRequest with its identifying
   // info, then re-sends the same message periodically as a heartbeat. The

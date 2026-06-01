@@ -62,6 +62,7 @@ go_test(
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/util/platform",
         "//server/util/rexec",
         "//server/util/status",
         "//server/util/testing/flags",
@@ -72,6 +73,7 @@ go_test(
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

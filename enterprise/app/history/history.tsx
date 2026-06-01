@@ -26,6 +26,7 @@ import router, { Path } from "../../../app/router/router";
 import { ROLE_PARAM_NAME } from "../../../app/router/router_params";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import shortcuts, { KeyCombo } from "../../../app/shortcuts/shortcuts";
+import { tryParseURL } from "../../../app/util/url";
 import { invocation_status } from "../../../proto/invocation_status_ts_proto";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import FilterComponent from "../filter/filter";
@@ -468,18 +469,16 @@ export default class HistoryComponent extends React.Component<Props, State> {
     // TODO(bduffany): Make sure scope-filtered queries are optimized and remove this limitation.
     const hideSummaryStats = Boolean(scope);
 
+    const repoUrl = tryParseURL(this.state.invocations?.length ? this.state.invocations[0].repoUrl : "");
+
     const commitLink =
-      this.state.invocations?.length &&
-      this.state.invocations[0].repoUrl &&
-      this.state.invocations[0].repoUrl.startsWith("https://github.com")
-        ? `${this.state.invocations[0].repoUrl}/commit/${this.props.commit}`
+      repoUrl && repoUrl.protocol === "https://" && repoUrl.hostname === "github.com"
+        ? `${repoUrl.toString()}/commit/${this.props.commit}`
         : "";
 
     const branchLink =
-      this.state.invocations?.length &&
-      this.state.invocations[0].repoUrl &&
-      this.state.invocations[0].repoUrl.startsWith("https://github.com")
-        ? `${this.state.invocations[0].repoUrl}/tree/${this.props.branch}`
+      repoUrl && repoUrl.protocol === "https://" && repoUrl.hostname === "github.com"
+        ? `${repoUrl.toString()}/tree/${this.props.branch}`
         : "";
 
     return (

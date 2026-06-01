@@ -98,8 +98,6 @@ var (
 	enablePCI                             = flag.Bool("executor.firecracker_enable_pci", true, "Enable PCI for firecracker VMs. Should only be enabled if firecracker version is v1.14.4+.", flag.Internal)
 	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
-	exportSnapshotToCOW = flag.Bool("executor.firecracker_export_snapshot_to_cow", true, "Export Firecracker memory snapshots directly to a VBD-backed COWStore instead of a temporary file on disk that is later converted to a COWStore.", flag.Internal)
-
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
 	debugDisableCgroup      = flag.Bool("debug_disable_cgroup", false, "Disable firecracker cgroup setup.")
@@ -1067,39 +1065,6 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 
 	snapshotSharingEnabled := snaputil.IsChunkedSnapshotSharingEnabled()
 	memSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.memSnapshotName)
-
-	if snapshotDetails.snapshotType == diffSnapshotType && !*exportSnapshotToCOW {
-		baseMemSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
-		mergeStart := time.Now()
-		concurrency := mergeDiffSnapshotConcurrency
-		if *snaputil.ThrottleSnapshotWrites {
-			concurrency = 1
-		}
-		if err := MergeDiffSnapshot(ctx, baseMemSnapshotPath, c.memoryStore, memSnapshotPath, concurrency, mergeDiffSnapshotBlockSize); err != nil {
-			return status.UnknownErrorf("merge diff snapshot failed: %s", err)
-		}
-		log.CtxDebugf(ctx, "VMM merge diff snapshot took %s", time.Since(mergeStart))
-		// Use the merged memory snapshot.
-		memSnapshotPath = baseMemSnapshotPath
-	}
-
-	// If exportSnapshotToCOW=true, the COWStore should've been populated
-	// as firecracker wrote the snapshot.
-	//
-	// Otherwise, for full snapshots, we need to convert the snapshot file on disk to a COWStore.
-	// For diff snapshots, we updated the COWStore in mergeDiffSnapshot above,
-	if snapshotSharingEnabled && c.memoryStore == nil {
-		memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
-		concurrency := snaputil.ConvertToCOWConcurrency
-		if *snaputil.ThrottleSnapshotWrites {
-			concurrency = 1
-		}
-		memoryStore, err := c.convertToCOW(ctx, memSnapshotPath, memChunkDir, concurrency)
-		if err != nil {
-			return status.WrapError(err, "convert memory snapshot to COWStore")
-		}
-		c.memoryStore = memoryStore
-	}
 
 	vmd := c.getVMMetadata().CloneVT()
 	vmd.SavedSnapshotVersionNumber++
@@ -2529,6 +2494,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		c.observeStageDuration("task_lifecycle", timeSinceContainerInit)
 		c.observeStageDuration("exec", execDuration)
 		c.emitCOWAndUFFDMetrics(stage) // Emit metrics for the current stage, even if it failed.
+		c.emitFirecrackerErrorMetric(result, string(result.AuxiliaryLogs[vmLogTailFileName]))
 	}()
 
 	if c.fsLayout == nil {
@@ -3269,57 +3235,51 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 		memSnapshotName = diffMemSnapshotName
 	}
 
-	if *exportSnapshotToCOW {
-		if !snaputil.IsChunkedSnapshotSharingEnabled() {
-			return nil, status.InvalidArgumentErrorf("exportSnapshotToCOW is only supported when chunked snapshot sharing is enabled")
+	// We export full snapshots directly to a COWStore. Create the COWStore here.
+	// For diff snapshots, we'll use the existing memoryStore.
+	if snapshotType == fullSnapshotType {
+		memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
+		if err := os.Mkdir(memChunkDir, 0755); err != nil {
+			return nil, status.WrapError(err, "make memory chunk dir")
+		}
+		memorySizeBytes := c.vmConfig.GetMemSizeMb() * 1024 * 1024
+		if memorySizeBytes <= 0 {
+			return nil, status.InternalErrorf("invalid memory snapshot size %d bytes", memorySizeBytes)
 		}
 
-		// If the full snapshot should be exported straight to a COWStore, create it here.
-		// For diff snapshots, we'll use the existing memoryStore.
-		if snapshotType == fullSnapshotType {
-			memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
-			if err := os.Mkdir(memChunkDir, 0755); err != nil {
-				return nil, status.WrapError(err, "make memory chunk dir")
-			}
-			memorySizeBytes := c.vmConfig.GetMemSizeMb() * 1024 * 1024
-			if memorySizeBytes <= 0 {
-				return nil, status.InternalErrorf("invalid memory snapshot size %d bytes", memorySizeBytes)
-			}
-
-			memoryStore, err := copy_on_write.NewCOWStore(c.vmCtx, c.env, memoryChunkDirName, nil, copy_on_write.COWOptions{
-				ChunkSizeBytes:     cowChunkSizeBytes(),
-				TotalSizeBytes:     memorySizeBytes,
-				DataDir:            memChunkDir,
-				RemoteInstanceName: c.snapshotKeySet.GetBranchKey().GetInstanceName(),
-				RemoteEnabled:      c.supportsRemoteSnapshots,
-				MaxMmappedChunks:   c.snapshotWriteMaxMmappedChunks(),
-			})
-			if err != nil {
-				return nil, status.WrapError(err, "create memory COWStore")
-			}
-			c.memoryStore = memoryStore
-		}
-
-		if c.memoryStore == nil {
-			return nil, status.InternalErrorf("memory store not created when exporting snapshot to COW")
-		}
-
-		// Create a FUSE-backed VBD for the memory snapshot so that we can capture writes
-		// as it's being exported by firecracker and write them directly to the COWStore.
-		d, err := vbd.New(c.memoryStore)
+		memoryStore, err := copy_on_write.NewCOWStore(c.vmCtx, c.env, memoryChunkDirName, nil, copy_on_write.COWOptions{
+			ChunkSizeBytes:     cowChunkSizeBytes(),
+			TotalSizeBytes:     memorySizeBytes,
+			DataDir:            memChunkDir,
+			RemoteInstanceName: c.snapshotKeySet.GetBranchKey().GetInstanceName(),
+			RemoteEnabled:      c.supportsRemoteSnapshots,
+			MaxMmappedChunks:   c.snapshotWriteMaxMmappedChunks(),
+		})
 		if err != nil {
-			return nil, status.WrapError(err, "create memory snapshot VBD")
+			return nil, status.WrapError(err, "create memory COWStore")
 		}
-		relVBDPath := memSnapshotName + vbdMountDirSuffix
-		mountPath := filepath.Join(c.getChroot(), relVBDPath)
-		if err := d.Mount(c.vmCtx, mountPath); err != nil {
-			return nil, status.WrapError(err, "mount memory snapshot VBD")
-		}
-
-		memSnapshotName = filepath.Join(relVBDPath, vbd.FileName)
-		c.memorySnapshotExportVBD = d
-		log.CtxDebugf(ctx, "Mounted memory snapshot VBD to %s", mountPath)
+		c.memoryStore = memoryStore
 	}
+
+	if c.memoryStore == nil {
+		return nil, status.InternalErrorf("memory store not created when exporting snapshot to COW")
+	}
+
+	// Create a FUSE-backed VBD for the memory snapshot so that we can capture writes
+	// as it's being exported by firecracker and write them directly to the COWStore.
+	d, err := vbd.New(c.memoryStore)
+	if err != nil {
+		return nil, status.WrapError(err, "create memory snapshot VBD")
+	}
+	relVBDPath := memSnapshotName + vbdMountDirSuffix
+	mountPath := filepath.Join(c.getChroot(), relVBDPath)
+	if err := d.Mount(c.vmCtx, mountPath); err != nil {
+		return nil, status.WrapError(err, "mount memory snapshot VBD")
+	}
+
+	memSnapshotName = filepath.Join(relVBDPath, vbd.FileName)
+	c.memorySnapshotExportVBD = d
+	log.CtxDebugf(ctx, "Mounted memory snapshot VBD to %s", mountPath)
 
 	return &snapshotDetails{
 		snapshotType:        snapshotType,
@@ -3341,14 +3301,12 @@ func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetai
 		metrics.Stage: "create_snapshot",
 	}).Dec()
 
-	if *exportSnapshotToCOW && c.memoryStore != nil && snapshotDetails.snapshotType == diffSnapshotType {
-		// By default, mmapped chunks are managed by the executor-wide shared LRU.
-		//
-		// When exporting the diff snapshot, we should limit the number of chunks mmapped at a time.
-		// Snapshots are exported sequentially, so we don't want recently touched chunks to stay mmapped longer than necessary.
-		if err := c.memoryStore.LimitMmappedChunks(c.snapshotWriteMaxMmappedChunks()); err != nil {
-			return status.WrapError(err, "set limited LRU for diff snapshot export")
-		}
+	// By default, mmapped chunks are managed by the executor-wide shared LRU.
+	//
+	// When exporting snapshots, we should limit the number of chunks mmapped at a time.
+	// Snapshots are exported sequentially, so we don't want recently touched chunks to stay mmapped longer than necessary.
+	if err := c.memoryStore.LimitMmappedChunks(c.snapshotWriteMaxMmappedChunks()); err != nil {
+		return status.WrapError(err, "set limited LRU for snapshot export")
 	}
 
 	machineStart := time.Now()
@@ -3491,6 +3449,52 @@ func (c *FirecrackerContainer) parseOOMError(logTail string) error {
 		}
 	}
 	return status.ResourceExhaustedErrorf("some processes ran out of memory, and were killed:\n%s", oomLines.String())
+}
+
+func (c *FirecrackerContainer) emitFirecrackerErrorMetric(result *interfaces.CommandResult, logTail string) {
+	if result == nil || result.Error == nil {
+		return
+	}
+	if status.IsDeadlineExceededError(result.Error) ||
+		status.IsCanceledError(result.Error) ||
+		errors.Is(result.Error, context.DeadlineExceeded) ||
+		errors.Is(result.Error, context.Canceled) {
+		return
+	}
+
+	reasons := c.firecrackerErrorReasons(result.Error, logTail)
+	for _, reason := range reasons {
+		metrics.FirecrackerErrorCount.With(prometheus.Labels{
+			metrics.FirecrackerErrorReason: reason,
+		}).Inc()
+	}
+}
+
+func (c *FirecrackerContainer) firecrackerErrorReasons(execErr error, logTail string) []string {
+	errorReasons := []string{}
+	msg := strings.ToLower(execErr.Error())
+
+	if strings.Contains(msg, "vm health check failed") {
+		errorReasons = append(errorReasons, "vm_health_check_failed")
+	}
+	if strings.Contains(msg, "signal: killed") {
+		errorReasons = append(errorReasons, "signal_killed")
+	}
+	if strings.Contains(logTail, "connection reset by peer") {
+		errorReasons = append(errorReasons, "connection_reset_by_peer")
+	}
+	if strings.Contains(logTail, "vsock: error reading from backing stream") {
+		errorReasons = append(errorReasons, "vsock_connection_reset")
+	}
+	if strings.Contains(logTail, "failed to update balloon stats, missing descriptor.") {
+		errorReasons = append(errorReasons, "balloon_stats_missing_descriptor")
+	}
+
+	if len(errorReasons) == 0 {
+		errorReasons = append(errorReasons, "unknown")
+	}
+
+	return errorReasons
 }
 
 // parseSegFault looks for segfaults in the kernel logs and returns an error if found.

@@ -4,13 +4,18 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -18,6 +23,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -26,6 +33,7 @@ import (
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -120,6 +128,65 @@ func (*fakeExecuteStream) Recv() (*longrunningpb.Operation, error) {
 	return &longrunningpb.Operation{Name: "fake-operation-name", Metadata: metadata}, nil
 }
 
+type execution struct {
+	Action  *repb.Action
+	Command *repb.Command
+}
+
+func getExecution(t *testing.T, ctx context.Context, te *testenv.TestEnv, executeRequest *repb.ExecuteRequest) *execution {
+	instanceName := executeRequest.GetInstanceName()
+	ar := digest.NewCASResourceName(executeRequest.GetActionDigest(), instanceName, repb.DigestFunction_BLAKE3)
+	action := &repb.Action{}
+	err := cachetools.GetBlobAsProto(ctx, te.GetByteStreamClient(), ar, action)
+	require.NoError(t, err)
+	cr := digest.NewCASResourceName(action.GetCommandDigest(), instanceName, repb.DigestFunction_BLAKE3)
+	command := &repb.Command{}
+	err = cachetools.GetBlobAsProto(ctx, te.GetByteStreamClient(), cr, command)
+	require.NoError(t, err)
+	return &execution{
+		Action:  action,
+		Command: command,
+	}
+}
+
+func setGroupStatus(t *testing.T, te *testenv.TestEnv, ctx context.Context, groupStatus grpb.Group_GroupStatus) context.Context {
+	tu, err := te.GetUserDB().GetUser(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, tu.Groups)
+	gid := tu.Groups[0].Group.GroupID
+	err = te.GetDBHandle().NewQuery(context.Background(), "update_group_status_for_test").Raw(`
+		UPDATE "Groups" SET status = ? WHERE group_id = ?`,
+		int32(groupStatus), gid).Exec().Error
+	require.NoError(t, err)
+
+	auth := te.GetAuthenticator().(*testauth.TestAuthenticator)
+	authCtx, err := auth.WithAuthenticatedUser(context.Background(), tu.UserID)
+	require.NoError(t, err)
+	jwt, err := auth.TestJWTForUserID(tu.UserID)
+	require.NoError(t, err)
+	return metadata.AppendToOutgoingContext(authCtx, authutil.ContextTokenStringKey, jwt)
+}
+
+func configureTimeout(t *testing.T, env *testenv.TestEnv, groupStatus grpb.Group_GroupStatus, timeout string) {
+	evaluator := func(_ memprovider.InMemoryFlag, flatCtx openfeature.FlattenedContext) (any, openfeature.ProviderResolutionDetail) {
+		if flatCtx["group_status"] == grpb.Group_GroupStatus_name[int32(groupStatus)] {
+			return timeout, openfeature.ProviderResolutionDetail{Reason: openfeature.TargetingMatchReason}
+		}
+		return "", openfeature.ProviderResolutionDetail{Reason: openfeature.DefaultReason}
+	}
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		ci_runner_util.DefaultTimeoutExperimentName: {
+			State:            memprovider.Enabled,
+			ContextEvaluator: &evaluator,
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+}
+
 func TestRun_WithoutRepoURL(t *testing.T) {
 	te, ctx := getEnv(t)
 
@@ -133,6 +200,47 @@ func TestRun_WithoutRepoURL(t *testing.T) {
 
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	require.Equal(t, 1, len(execClient.executeRequests))
+}
+
+func TestTimeout(t *testing.T) {
+	tests := []struct {
+		name                  string
+		groupStatus           grpb.Group_GroupStatus
+		expectedTimeout       time.Duration
+		expectedTimeoutReason string
+	}{
+		{name: "timeout configured in experiment", groupStatus: grpb.Group_FREE_TIER_GROUP_STATUS, expectedTimeout: 1 * time.Hour, expectedTimeoutReason: ci_runner_util.FreeTierTimeoutReason},
+		{name: "timeout not configured in experiment", groupStatus: grpb.Group_ENTERPRISE_GROUP_STATUS, expectedTimeout: 24 * time.Hour},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			te, ctx := getEnv(t)
+			configureTimeout(t, te, grpb.Group_FREE_TIER_GROUP_STATUS, "1h")
+
+			ctx = setGroupStatus(t, te, ctx, tc.groupStatus)
+
+			r, err := New(te)
+			require.NoError(t, err)
+
+			_, err = r.Run(ctx, &rnpb.RunRequest{
+				Steps:   []*rnpb.Step{{Run: "echo hello"}},
+				Timeout: "24h",
+			})
+			require.NoError(t, err)
+
+			execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+			require.Equal(t, 1, len(execClient.executeRequests))
+			exec := getExecution(t, ctx, te, execClient.executeRequests[0].Payload)
+			expectedTimeout := tc.expectedTimeout.String()
+			require.Contains(t, exec.Command.GetArguments(), "--timeout="+expectedTimeout)
+			if tc.expectedTimeoutReason != "" {
+				require.Contains(t, exec.Command.GetArguments(), "--timeout_reason="+tc.expectedTimeoutReason)
+			} else {
+				require.NotContains(t, exec.Command.GetArguments(), "--timeout_reason="+ci_runner_util.FreeTierTimeoutReason)
+			}
+			require.Equal(t, tc.expectedTimeout+TimeoutGracePeriod, exec.Action.GetTimeout().AsDuration())
+		})
+	}
 }
 
 func TestRemoteHeaders_EnvOverrides(t *testing.T) {

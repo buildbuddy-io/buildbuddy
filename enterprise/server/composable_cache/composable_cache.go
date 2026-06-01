@@ -84,6 +84,18 @@ func (c *ComposableCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte
 	return innerRsp, nil
 }
 
+func (c *ComposableCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	data, err := c.Get(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	md, err := c.Metadata(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data, md, nil
+}
+
 func (c *ComposableCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	if len(resources) == 0 {
 		return nil, nil

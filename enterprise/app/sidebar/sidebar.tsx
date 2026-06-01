@@ -12,6 +12,7 @@ import {
   LayoutGrid,
   List,
   MessageCircle,
+  Network,
   PanelLeftClose,
   PanelLeftOpen,
   PlayCircle,
@@ -70,6 +71,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
 
   isExecutorsSelected() {
     return this.props.path.startsWith("/executors/");
+  }
+
+  isCacheProxiesSelected() {
+    return this.props.path.startsWith("/cache-proxies/");
   }
 
   isTapSelected() {
@@ -217,6 +222,12 @@ export default class SidebarComponent extends React.Component<Props, State> {
             <SidebarLink selected={this.isExecutorsSelected()} href={Path.executorsPath} title="Executors">
               <Cloud className="icon" />
               <span className="sidebar-item-text">Executors</span>
+            </SidebarLink>
+          )}
+          {router.canAccessCacheProxiesPage(this.props.user) && (
+            <SidebarLink selected={this.isCacheProxiesSelected()} href={Path.cacheProxiesPath} title="Cache Proxies">
+              <Network className="icon" />
+              <span className="sidebar-item-text">Cache Proxies</span>
             </SidebarLink>
           )}
           {router.canAccessWorkflowsPage() && (

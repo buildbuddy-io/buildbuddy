@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
@@ -464,7 +465,8 @@ type WriteWithTailCloser interface {
 // N lines.
 type ANSICursorBufferWriter struct {
 	WriteWithTailCloser
-	terminal *terminal.ScreenWriter
+	terminal          *terminal.ScreenWriter
+	seenCursorControl bool
 }
 
 func NewANSICursorBufferWriter(closer WriteWithTailCloser, terminal *terminal.ScreenWriter) *ANSICursorBufferWriter {
@@ -474,6 +476,9 @@ func NewANSICursorBufferWriter(closer WriteWithTailCloser, terminal *terminal.Sc
 func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, error) {
 	if len(p) == 0 {
 		return w.WriteWithTailCloser.WriteWithTail(ctx, p, nil)
+	}
+	if containsCursorControl(p) {
+		w.seenCursorControl = true
 	}
 	if _, err := w.terminal.Write(p); err != nil {
 		return 0, err
@@ -487,5 +492,72 @@ func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, erro
 }
 
 func (w *ANSICursorBufferWriter) Close(ctx context.Context) error {
+	if w.seenCursorControl {
+		// Bazel curses progress can leave cleared rows in the final terminal
+		// screen. Drop only those trailing blank rows before the volatile tail is
+		// flushed as durable log text.
+		trimmedTail := []byte(trimTrailingBlankANSILines(w.terminal.Render()))
+		if _, err := w.WriteWithTailCloser.WriteWithTail(ctx, []byte{}, trimmedTail); err != nil {
+			return err
+		}
+	}
 	return w.WriteWithTailCloser.Close(ctx)
+}
+
+func containsCursorControl(p []byte) bool {
+	if bytes.Contains(p, []byte{'\r'}) {
+		return true
+	}
+	for i := 0; i < len(p)-1; i++ {
+		if p[i] != '\x1b' || p[i+1] != '[' {
+			continue
+		}
+		for j := i + 2; j < len(p); j++ {
+			if p[j] < 0x40 || p[j] > 0x7e {
+				continue
+			}
+			if strings.ContainsRune("ABCDHJKsu", rune(p[j])) {
+				return true
+			}
+			i = j
+			break
+		}
+	}
+	return false
+}
+
+func trimTrailingBlankANSILines(s string) string {
+	end := len(s)
+	for end > 0 {
+		lineStart := strings.LastIndexByte(s[:end], '\n')
+		line := s[lineStart+1 : end]
+		if !isBlankANSILine(line) {
+			break
+		}
+		if lineStart < 0 {
+			return ""
+		}
+		end = lineStart
+	}
+	return s[:end]
+}
+
+func isBlankANSILine(line string) bool {
+	var b strings.Builder
+	inCSI := false
+	for i := 0; i < len(line); i++ {
+		if inCSI {
+			if line[i] >= 0x40 && line[i] <= 0x7e {
+				inCSI = false
+			}
+			continue
+		}
+		if line[i] == '\x1b' && i+1 < len(line) && line[i+1] == '[' {
+			inCSI = true
+			i++
+			continue
+		}
+		b.WriteByte(line[i])
+	}
+	return strings.TrimSpace(b.String()) == ""
 }

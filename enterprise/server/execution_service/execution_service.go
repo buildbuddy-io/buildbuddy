@@ -55,6 +55,12 @@ type ExecutionService struct {
 	env environment.Env
 }
 
+type primaryDBExecution struct {
+	tables.Execution
+
+	InvocationLinkType int8 `gorm:"column:invocation_link_type"`
+}
+
 func NewExecutionService(env environment.Env) *ExecutionService {
 	return &ExecutionService{
 		env: env,
@@ -68,7 +74,7 @@ func checkPreconditions(req *espb.GetExecutionRequest) error {
 	return status.FailedPreconditionError("An execution lookup with invocation_id must be provided")
 }
 
-func (es *ExecutionService) getInvocationExecutionsFromPrimaryDB(ctx context.Context, lookup *espb.ExecutionLookup) ([]*tables.Execution, error) {
+func (es *ExecutionService) getInvocationExecutionsFromPrimaryDB(ctx context.Context, lookup *espb.ExecutionLookup) ([]*primaryDBExecution, error) {
 	invocationID := lookup.GetInvocationId()
 	actionDigestHash := lookup.GetActionDigestHash()
 	executionID := lookup.GetExecutionId()
@@ -76,7 +82,10 @@ func (es *ExecutionService) getInvocationExecutionsFromPrimaryDB(ctx context.Con
 	// Note: the invocation row may not be created yet because workflow
 	// invocations are created by the execution itself.
 	q := query_builder.NewQuery(`
-		SELECT e.* FROM "InvocationExecutions" ie
+		SELECT
+			e.*,
+			ie.type AS invocation_link_type
+		FROM "InvocationExecutions" ie
 		JOIN "Executions" e ON e.execution_id = ie.execution_id
 		LEFT JOIN "Invocations" i ON i.invocation_id = e.invocation_id
 	`)
@@ -104,7 +113,7 @@ func (es *ExecutionService) getInvocationExecutionsFromPrimaryDB(ctx context.Con
 
 	queryStr, args := q.Build()
 	rq := dbh.NewQuery(ctx, "execution_server_get_executions").Raw(queryStr, args...)
-	executions, err := db.ScanAll(rq, &tables.Execution{})
+	executions, err := db.ScanAll(rq, &primaryDBExecution{})
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +121,7 @@ func (es *ExecutionService) getInvocationExecutionsFromPrimaryDB(ctx context.Con
 	// since we aren't doing a strict match on the hash part of the execution
 	// ID. Filter out false positives here.
 	if actionDigestHash != "" {
-		executions = slices.DeleteFunc(executions, func(e *tables.Execution) bool {
+		executions = slices.DeleteFunc(executions, func(e *primaryDBExecution) bool {
 			parts := strings.Split(e.ExecutionID, "/")
 			return len(parts) < 2 || parts[len(parts)-2] != actionDigestHash
 		})
@@ -358,7 +367,7 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 }
 
 func (es *ExecutionService) lookupExecutions(ctx context.Context, lookup *espb.ExecutionLookup) ([]*espb.Execution, error) {
-	var primaryDBExecutions []*tables.Execution
+	var primaryDBExecutions []*primaryDBExecution
 	var olapExecutions []*olaptables.Execution
 
 	var eg errgroup.Group
@@ -402,7 +411,7 @@ func (es *ExecutionService) lookupExecutions(ctx context.Context, lookup *espb.E
 		if olapExecutionIDs[e.ExecutionID] {
 			continue
 		}
-		proto, err := execution.TableExecToClientProto(e)
+		proto, err := execution.TableExecToClientProto(&e.Execution, e.InvocationLinkType)
 		if err != nil {
 			return nil, status.WrapError(err, "convert execution to client proto")
 		}

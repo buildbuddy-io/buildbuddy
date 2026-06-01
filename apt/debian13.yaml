@@ -1,0 +1,29 @@
+# when you update this file, run:
+# bazel run @debian13//:lock
+version: 1
+
+sources:
+  # trixie is the codename for debian 13
+  - channel: trixie main
+    url: https://snapshot.debian.org/archive/debian/20260318T142916Z
+  - channel: trixie-updates main
+    url: https://snapshot.debian.org/archive/debian/20260318T142916Z
+  - channel: trixie-security main
+    url: https://snapshot.debian.org/archive/debian-security/20260318T142916Z
+
+archs:
+  - "amd64"
+  - "arm64"
+
+packages:
+  # Base system packages
+  - base-files
+  - netbase
+  - tzdata
+  - media-types
+
+  # CA certificates package
+  - ca-certificates
+
+  # base-nossl packages
+  - libc6
