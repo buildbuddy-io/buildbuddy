@@ -80,7 +80,7 @@ func addNode(t *testing.T, ts *testutil.TestingStore, ctx context.Context, range
 
 func TestConfiguredClusters(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 	sf.StartShard(t, ctx, s1)
 	s1.Stop()
@@ -92,9 +92,9 @@ func TestLeasedRange_LeaseInvalid(t *testing.T) {
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 	sf.StartShard(t, ctx, s1)
 	stores := []*testutil.TestingStore{s1, s2, s3}
@@ -136,9 +136,9 @@ func TestLeasedRange_LeaseNotCurrent(t *testing.T) {
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 	sf.StartShard(t, ctx, s1)
 	stores := []*testutil.TestingStore{s1, s2, s3}
@@ -163,7 +163,7 @@ func TestLeasedRange_LeaseNotCurrent(t *testing.T) {
 
 func TestAddGetRemoveRange(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
 	r1 := s1.NewReplica(1, 1)
 
 	rd := &rfpb.RangeDescriptor{
@@ -191,9 +191,9 @@ func TestUpdateRangeDescriptor(t *testing.T) {
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
@@ -221,10 +221,10 @@ func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 	// set up r1 and r2 on s1, s2, s3; start r2 on s4 as voter; but r2 is not
 	// in range descriptor.
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
-	s4 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
+	s4 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2, s3}
@@ -282,9 +282,9 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2, s3}
@@ -327,9 +327,9 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2, s3}
@@ -396,9 +396,9 @@ func TestStartMissingShard(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	allStores := []*testutil.TestingStore{s1, s2, s3}
@@ -500,7 +500,7 @@ func TestAutomaticSplitting(t *testing.T) {
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
-	s1 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1}
@@ -553,9 +553,9 @@ func TestAddReplica(t *testing.T) {
 	// the single op timeout to make it less sensitive.
 	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	sf.StartShard(t, ctx, s1, s2)
@@ -607,9 +607,9 @@ func TestAddReplica_MetaRange(t *testing.T) {
 	// the single op timeout to make it less sensitive.
 	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	sf.StartShard(t, ctx, s1, s2)
@@ -663,9 +663,9 @@ func TestAddReplica_ExistingStaging(t *testing.T) {
 	// the single op timeout to make it less sensitive.
 	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	sf.StartShard(t, ctx, s1, s2)
@@ -731,9 +731,9 @@ func TestAddReplica_NonVoterNotStarted(t *testing.T) {
 	// the single op timeout to make it less sensitive.
 	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	sf.StartShard(t, ctx, s1, s2)
@@ -803,9 +803,9 @@ func TestAddReplica_NonVoterStarted(t *testing.T) {
 	// the single op timeout to make it less sensitive.
 	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	sf.StartShard(t, ctx, s1, s2)
@@ -883,9 +883,9 @@ func TestAddReplica_Voter(t *testing.T) {
 	// the single op timeout to make it less sensitive.
 	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	sf.StartShard(t, ctx, s1, s2)
@@ -973,9 +973,9 @@ func TestRemoveReplicaRemoveData(t *testing.T) {
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2, s3}
@@ -1074,9 +1074,9 @@ func TestRemoveData_ShardStartedNoRangeDescriptor(t *testing.T) {
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2, s3}
@@ -1110,9 +1110,9 @@ func TestRemoveReplicaRemoveData_StagingReplicaStarted(t *testing.T) {
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2, s3}
@@ -1204,9 +1204,9 @@ func testRemoveReplicaRemoveData_StagingReplicaNotStarted(t *testing.T, addFunc 
 
 	// Set up 3 stores with range 1 on all three stores and range 2 on s1 and s2.
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	sf.StartShard(t, ctx, s1, s2)
@@ -1297,9 +1297,9 @@ func TestRemoveReplicaRemoveData_StagingReplicaNotAdded(t *testing.T) {
 	// Set up 3 stores with range 1 on all three stores; range 2 on s1 and s2;
 	// but not opened on s3.
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2}
@@ -1375,10 +1375,10 @@ func TestAddRangeBack(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_driver", false)
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
-	s4 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
+	s4 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 	stores := []*testutil.TestingStore{s1, s2, s3, s4}
 	sf.StartShard(t, ctx, stores...)
@@ -1533,7 +1533,7 @@ func writeNRecordsAndFlush(ctx context.Context, t *testing.T, store *testutil.Te
 func TestSplitMetaRange(t *testing.T) {
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	sf.StartShard(t, ctx, s1)
@@ -1590,9 +1590,9 @@ func TestSplitNonMetaRange(t *testing.T) {
 	// the single op timeout to make it less sensitive.
 	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2, s3}
@@ -1678,8 +1678,8 @@ func TestPostFactoSplit(t *testing.T) {
 	flags.Set(t, "cache.raft.min_replicas_per_range", 2)
 
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2}
@@ -1757,7 +1757,7 @@ func TestPostFactoSplit(t *testing.T) {
 func TestManySplits(t *testing.T) {
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 	stores := []*testutil.TestingStore{s1}
 
@@ -1852,8 +1852,8 @@ func TestCleanupExpiredSessions(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2}
@@ -1907,8 +1907,8 @@ func TestCleanupExpiredSessions(t *testing.T) {
 func TestSplitAcrossClusters(t *testing.T) {
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2}
@@ -1968,8 +1968,8 @@ func TestUpReplicate(t *testing.T) {
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	// start shards for s1 and s2
@@ -1999,7 +1999,7 @@ func TestUpReplicate(t *testing.T) {
 	desiredAppliedIndex, err := r.LastAppliedIndex()
 	require.NoError(t, err)
 
-	s3 := sf.NewStore(t)
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	for {
 		// advance the clock to trigger scan replicas
 		clock.Advance(61 * time.Second)
@@ -2047,16 +2047,16 @@ func TestDownReplicate(t *testing.T) {
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	// start shards for s1, s2, s3
 	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
 
-	s4 := sf.NewStore(t)
+	s4 := sf.NewStore(t, testutil.StoreOptions{})
 
 	// Added a replica for range 2, so the number of replicas for range 2 exceeds the cache.raft.min_replicas_per_range
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
@@ -2189,9 +2189,9 @@ func TestReplaceDeadReplica(t *testing.T) {
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	// start shards for s1, s2, s3
@@ -2217,7 +2217,7 @@ func TestReplaceDeadReplica(t *testing.T) {
 	desiredAppliedIndex, err := r.LastAppliedIndex()
 	require.NoError(t, err)
 
-	s4 := sf.NewStore(t)
+	s4 := sf.NewStore(t, testutil.StoreOptions{})
 	log.Info("=====s4 started")
 	// Stop store 3
 	s3.Stop()
@@ -2270,10 +2270,10 @@ func TestRemoveDeadReplica(t *testing.T) {
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
-	s4 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
+	s4 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	// start shards for s1, s2, s3, s4
@@ -2345,10 +2345,10 @@ func TestRebalance(t *testing.T) {
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
-	s4 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
+	s4 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	partition := disk.Partition{
@@ -2407,11 +2407,11 @@ func TestZoneAwareRebalance(t *testing.T) {
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
 
 	// 3 stores in zone-a, 1 in zone-b, 1 in zone-c.
-	s1 := sf.NewStoreWithZone(t, "zone-a")
-	s2 := sf.NewStoreWithZone(t, "zone-a")
-	s3 := sf.NewStoreWithZone(t, "zone-a")
-	s4 := sf.NewStoreWithZone(t, "zone-b")
-	s5 := sf.NewStoreWithZone(t, "zone-c")
+	s1 := sf.NewStore(t, testutil.StoreOptions{Zone: "zone-a"})
+	s2 := sf.NewStore(t, testutil.StoreOptions{Zone: "zone-a"})
+	s3 := sf.NewStore(t, testutil.StoreOptions{Zone: "zone-a"})
+	s4 := sf.NewStore(t, testutil.StoreOptions{Zone: "zone-b"})
+	s5 := sf.NewStore(t, testutil.StoreOptions{Zone: "zone-c"})
 	ctx := context.Background()
 
 	partition := disk.Partition{
@@ -2457,7 +2457,7 @@ func TestBringupSetRanges(t *testing.T) {
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
-	s1 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1}
@@ -2519,9 +2519,9 @@ func TestSetupNewPartitions(t *testing.T) {
 	}
 	sf.SetPartitions(partitions)
 
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 	// start shards for s1, s2, s3
 	log.Infof("==== start 3 shards====")
@@ -2642,9 +2642,9 @@ func TestSoftDeletePartitions(t *testing.T) {
 	sf.SetPartitions(partitions)
 
 	ctx := context.Background()
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	stores := []*testutil.TestingStore{s1, s2, s3}
 	// Initialize partitions
 	log.Infof("==== start 3 shards====")
@@ -2723,9 +2723,9 @@ func TestHardDeletePartitions(t *testing.T) {
 	sf.SetPartitions(partitions)
 
 	ctx := context.Background()
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	stores := []*testutil.TestingStore{s1, s2, s3}
 	// Initialize partitions
 	log.Infof("==== start 3 shards====")
@@ -2822,9 +2822,9 @@ func TestNonSoftDeletedPartitionsNotDeleted(t *testing.T) {
 	sf.SetPartitions(partitions)
 
 	ctx := context.Background()
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	stores := []*testutil.TestingStore{s1, s2, s3}
 	// Initialize partitions
 	log.Infof("==== start 3 shards====")
