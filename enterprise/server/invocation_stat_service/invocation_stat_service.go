@@ -777,7 +777,7 @@ func trimBuckets(buckets []int64, low int64, high int64) []int64 {
 	start := 0
 	end := len(buckets) - 1
 	for i := range buckets {
-		if buckets[i] < low {
+		if buckets[i] <= low {
 			start = i
 		}
 		if buckets[i] > high {
@@ -807,7 +807,7 @@ func getLogMetricBuckets(low int64, high int64) ([]int64, bool) {
 
 	decadesSpanned := math.Log10(float64(high / max(low, 1)))
 	if decadesSpanned < 1 {
-		return evenlySpacedBuckets(low, high, maxNumMetricBuckets), false
+		return evenlySpacedBuckets(low, high, maxNumMetricBuckets), hadNegativeMetricValues
 	}
 
 	buckets := make([]int64, 0, maxNumMetricBuckets+1)
