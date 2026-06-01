@@ -1117,8 +1117,8 @@ func TestServerBypassRegistry(t *testing.T) {
 		// Verify registry was hit
 		require.Greater(t, counter.Snapshot()[http.MethodGet+" /v2/test-image/manifests/"+digest], 0)
 
-		// Second fetch by digest - proves registry access via HEAD,
-		// then serves from cache.
+		// Second fetch by digest - auth was already cached from the first fetch,
+		// so no HEAD request is needed; served directly from cache.
 		counter.Reset()
 		resp, err = server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
 			Ref: imageName + "@" + digest,
@@ -1126,9 +1126,7 @@ func TestServerBypassRegistry(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expectedManifest, resp.GetManifest())
 
-		assertRequests(t, counter, map[string]int{
-			http.MethodHead + " /v2/test-image/manifests/" + digest: 1,
-		})
+		assertRequests(t, counter, map[string]int{})
 	})
 
 	// Test that FetchManifest caching works for tag refs (HEAD to resolve, then cache lookup)

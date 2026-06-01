@@ -40,6 +40,12 @@ import (
 const (
 	blobChunkSize       = 256 * 1000 // 256 KB to match cachetools buffer size
 	pullerLRUMaxEntries = 1000
+
+	// manifestCacheTTL is how long a successful registry auth check is cached before
+	// re-validation with the remote registry is required. Matches the executor
+	// image cache token TTL.
+	manifestCacheTTL        = 15 * time.Minute
+	manifestCacheMaxEntries = 1000
 )
 
 var (
@@ -59,6 +65,11 @@ type ociFetcherServer struct {
 
 	mu        sync.Mutex
 	pullerLRU lru.LRU[*pullerLRUEntry]
+
+	// manifestCache caches successful registry auth checks (HEAD requests) so that
+	// repeated FetchManifest calls for a cached digest do not hammer the registry.
+	// Entries expire after manifestCacheTTL.
+	manifestCache lru.LRU[struct{}]
 
 	// blobFetchGroup deduplicates concurrent blob fetch requests.
 	// Only one request fetches from upstream and writes to cache;
@@ -98,12 +109,22 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 	if err != nil {
 		return nil, status.InternalErrorf("error initializing puller cache: %s", err)
 	}
+	manifestCache, err := lru.New[struct{}](&lru.Config[struct{}]{
+		SizeFn:     func(_ struct{}) int64 { return 1 },
+		MaxSize:    int64(manifestCacheMaxEntries),
+		TTL:        manifestCacheTTL,
+		ThreadSafe: true,
+	})
+	if err != nil {
+		return nil, status.InternalErrorf("error initializing manifest cache: %s", err)
+	}
 	return &ociFetcherServer{
 		allowedPrivateIPs: allowedPrivateIPs,
 		mirrors:           Mirrors(),
 		bsClient:          bsClient,
 		acClient:          acClient,
 		pullerLRU:         pullerLRU,
+		manifestCache:     manifestCache,
 	}, nil
 }
 
@@ -307,9 +328,7 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 		}
 		// Prove the caller can access the manifest before serving from cache.
 		if !req.GetBypassRegistry() {
-			if _, err := withPullerRetry(ctx, s, imageRef, req.GetCredentials(), func(puller *remote.Puller) (*gcr.Descriptor, error) {
-				return puller.Head(ctx, imageRef)
-			}); err != nil {
+			if err := s.requireRegistryAccess(ctx, imageRef, req.GetCredentials()); err != nil {
 				return nil, err
 			}
 		}
@@ -447,6 +466,23 @@ func (s *ociFetcherServer) evictPuller(imageRef gcrname.Reference, creds *rgpb.C
 	s.mu.Unlock()
 }
 
+// requireRegistryAccess checks that the caller's credentials allow accessing
+// the given image ref in the remote registry. Results are cached for
+// manifestCacheTTL to avoid a HEAD request on every cache-hit FetchManifest call.
+func (s *ociFetcherServer) requireRegistryAccess(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) error {
+	key := manifestCacheKey(imageRef, creds)
+	if s.manifestCache.Contains(key) {
+		return nil
+	}
+	if _, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*gcr.Descriptor, error) {
+		return puller.Head(ctx, imageRef)
+	}); err != nil {
+		return err
+	}
+	s.manifestCache.Add(key, struct{}{})
+	return nil
+}
+
 // fetchBlobFromCache attempts to fetch a blob from the cache and streams it directly to the gRPC response.
 // Returns nil if successful, NotFoundError if not in cache, or another error on failure.
 func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, repo gcrname.Repository, hash gcr.Hash) error {
@@ -534,6 +570,16 @@ func (s *ociFetcherServer) streamBlob(rc io.Reader, stream ofpb.OCIFetcher_Fetch
 			return status.InternalErrorf("error reading blob: %s", err)
 		}
 	}
+}
+
+// manifestCacheKey returns a cache key for a successful registry auth check.
+// It includes the full image ref (including digest) so entries are scoped
+// to the exact resource being served.
+func manifestCacheKey(ref gcrname.Reference, creds *rgpb.Credentials) string {
+	if creds == nil {
+		return hash.Strings(ref.String(), "", "")
+	}
+	return hash.Strings(ref.String(), creds.GetUsername(), creds.GetPassword())
 }
 
 func pullerKey(ref gcrname.Reference, creds *rgpb.Credentials) string {
