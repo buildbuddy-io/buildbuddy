@@ -12,11 +12,11 @@ import (
 	"github.com/grafana/grafana-foundation-sdk/go/timeseries"
 )
 
-// SJC external uplinks. The "External Throughput" panel sums only these
+// External uplinks. The "External Throughput" panel sums only these
 // device + interface pairs so it tracks traffic leaving the DC rather
 // than aggregate device throughput.
 const (
-	externalDevices    = "sjc-s1|sjc-s2"
+	externalDevices    = "[a-z]{3}-s[12]"
 	externalInterfaces = "Ethernet1/1|Ethernet31/1"
 )
 
@@ -227,7 +227,7 @@ func regionVariable() *dashboard.QueryVariableBuilder {
 }
 
 func deviceVariable() *dashboard.QueryVariableBuilder {
-	return dash.QueryVar("device", `label_values(interfaces_interface_state_counters_in_octets,source)`).
+	return dash.QueryVar("device", `label_values(interfaces_interface_state_counters_in_octets{region="$region"},source)`).
 		Refresh(dashboard.VariableRefreshOnDashboardLoad).
 		IncludeAll(true).
 		Current(dash.SelectedOption("All", "$__all"))
