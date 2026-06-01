@@ -695,23 +695,15 @@ func getTableForMetric(metric *sfpb.Metric) string {
 // powers-of-10 buckets.
 const maxNumMetricBuckets = 20
 
-// maxLogBucketsToSubdivide is the largest number of powers-of-10 log buckets
-// that we'll subdivide into 1-2-4-6-8-10 steps. Subdividing multiplies the
-// decade count by 5, so capping at 4 keeps us at or under maxNumMetricBuckets
-// (4*5 = 20).
-const maxLogBucketsToSubdivide = 4
+// The largest number of decade buckets that we'll subdivide into steps of
+// (1,2,4,6,8,10). Subdividing multiplies the bucket count by 5, so capping at
+// 4 keeps us at or under maxNumMetricBuckets.
+const maxDecadesToSubdivideCoarsely = 4
 
-// maxDecadesToSubdivideFinely is the largest number of decade buckets that
-// we'll subdivide into single-integer steps (1,2,3,...,9,10). This multiplies
-// the decade count by 9, so capping at 2 keeps us at or under
-// maxNumMetricBuckets even with the extra [0, 1) catch-all bucket (2*9+1 = 19).
+// The largest number of decade buckets that we'll subdivide into steps of
+// (1,2,3,... 10). Subdividing multiplies the bucket count by 9, so capping at
+// 2 keeps us at or under maxNumMetricBuckets.
 const maxDecadesToSubdivideFinely = 2
-
-// subDecadeLogBucketCount is the number of evenly-spaced (linear) buckets we
-// emit when a log-scale range spans less than a single decade -- powers of 10
-// can't subdivide such a range any further, so we fall back to linear bucketing
-// (with log-proportional bucket heights handled client-side).
-const subDecadeLogBucketCount = 20
 
 var fineLogStepMultipliers = []int64{1, 2, 3, 4, 5, 6, 7, 8, 9}
 var coarseLogStepMultipliers = []int64{1, 2, 4, 6, 8}
@@ -781,6 +773,21 @@ func getLinearMetricBuckets(low int64, high int64) []int64 {
 	return buckets
 }
 
+func trimBuckets(buckets []int64, low int64, high int64) []int64 {
+	start := 0
+	end := len(buckets) - 1
+	for i := range buckets {
+		if buckets[i] < low {
+			start = i
+		}
+		if buckets[i] > high {
+			end = i
+			break
+		}
+	}
+	return buckets[start : end+1]
+}
+
 // getLogMetricBuckets returns powers-of-10 bucket boundaries spanning
 // [low, high]. The lowest bucket is anchored at the largest power of 10 <= low,
 // and the final boundary is the smallest power of 10 strictly greater than high
@@ -789,8 +796,8 @@ func getLinearMetricBuckets(low int64, high int64) []int64 {
 // prepended; when low is negative the bottom is clamped to 0 and hadNegative is
 // set so the caller can warn that negative values were grouped into that
 // bucket.
-func getLogMetricBuckets(low int64, high int64) (buckets []int64, hadNegative bool) {
-	hadNegative = low < 0
+func getLogMetricBuckets(low int64, high int64) ([]int64, bool) {
+	hadNegativeMetricValues := low < 0
 	if low < 0 {
 		low = 0
 	}
@@ -798,13 +805,12 @@ func getLogMetricBuckets(low int64, high int64) (buckets []int64, hadNegative bo
 		high = 0
 	}
 
-	// A log scale can't resolve a range that spans less than a single decade
-	// (a factor of 10), so fall back to evenly-spaced linear buckets there.
-	if low >= 1 && high/low < 10 {
-		return evenlySpacedBuckets(low, high, subDecadeLogBucketCount), false
+	decadesSpanned := math.Log10(float64(high / max(low, 1)))
+	if decadesSpanned < 1 {
+		return evenlySpacedBuckets(low, high, maxNumMetricBuckets), false
 	}
 
-	buckets = make([]int64, 0, maxNumMetricBuckets+1)
+	buckets := make([]int64, 0, maxNumMetricBuckets+1)
 	power := int64(1)
 	if low < 1 {
 		// Prepend a [0, 1) catch-all bucket for sub-1 (and clamped negative)
@@ -836,10 +842,15 @@ func getLogMetricBuckets(low int64, high int64) (buckets []int64, hadNegative bo
 	// decades, or 1-2-4-6-8-10 for up to four.
 	if decadeCount <= maxDecadesToSubdivideFinely {
 		buckets = subdivideLogBuckets(buckets, fineLogStepMultipliers)
-	} else if len(buckets)-1 <= maxLogBucketsToSubdivide {
+	} else if len(buckets)-1 <= maxDecadesToSubdivideCoarsely {
 		buckets = subdivideLogBuckets(buckets, coarseLogStepMultipliers)
 	}
-	return buckets, hadNegative
+
+	// Because we take the original log_10 scale and add extra buckets, we might
+	// end up going from (10, 100) to (10, 20, 30, ... 100).  If the "low" value
+	// is 27, this means we don't actually want to return the (10, 20) interval
+	// as a bucket, so we trim that out here.
+	return trimBuckets(buckets, low, high), hadNegativeMetricValues
 }
 
 // subdivideLogBuckets replaces each powers-of-10 decade boundary 10^k with the
