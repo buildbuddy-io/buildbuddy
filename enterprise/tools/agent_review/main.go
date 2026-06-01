@@ -3,7 +3,7 @@
 // Usage:
 //
 //	bazel run //tools/agent_review              # review current branch's open PR
-//	bazel run //tools/agent_review -- --dry-run    # print payload without posting
+//	bazel run //tools/agent_review -- --dry_run    # print payload without posting
 //
 // Requirements: claude, gh, git
 package main
@@ -11,6 +11,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -23,7 +24,35 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
-var dryRun = flag.Bool("dry-run", false, "print payload without posting")
+//go:embed settings.json
+var settingsSrc []byte
+
+var dryRun = flag.Bool("dry_run", false, "print payload without posting")
+
+const parsePrompt = `Parse the code review below and output ONLY a valid JSON object — no markdown fences, no explanation.
+
+Schema:
+{
+  "summary": "<concise overall summary as markdown, max ~3 sentences>",
+  "comments": [
+    {
+      "file": "<file path relative to repo root, e.g. server/foo.go>",
+      "line": <integer — the line number in the NEW version of the file>,
+      "body": "<full comment text as markdown>",
+      "severity": "<critical | warning | suggestion>"
+    }
+  ]
+}
+
+Rules:
+- Include a comment entry for every finding that mentions a file path, even if the line number is approximate — use the nearest relevant line you can infer from context.
+- Findings with no file reference at all go into "summary".
+- File paths must be relative (no leading slash, no absolute paths).
+- Remove any footnote-style numeric references such as "(#1)" or "(#2)" from comment bodies and the summary — GitHub interprets these as issue/PR links.
+- Output ONLY the JSON object. No other text before or after it.
+
+REVIEW:
+`
 
 type prInfo struct {
 	Number      int    `json:"number"`
@@ -109,10 +138,6 @@ func main() {
 	// Copy settings.json into a temp dir and point CLAUDE_CONFIG_DIR there so
 	// Claude's runtime state files (.claude.json, backups/, etc.) don't dirty
 	// the tracked repo tree.
-	settingsSrc, err := os.ReadFile("tools/agent_review/settings.json")
-	if err != nil {
-		log.Fatalf("failed to read tools/agent_review/settings.json: %v", err)
-	}
 	claudeConfigDir, err := os.MkdirTemp("", "claude-config-*")
 	if err != nil {
 		log.Fatalf("failed to create temp Claude config dir: %v", err)
@@ -124,7 +149,7 @@ func main() {
 	os.Setenv("CLAUDE_CONFIG_DIR", claudeConfigDir)
 
 	// Fetch the PR associated with the current, checked-out branch.
-	log.Info("==> Fetching PR info...")
+	log.Info("Fetching PR info...")
 	prRaw, err := run("gh", "pr", "view", "--json", "number,headRefOid,baseRefName")
 	if err != nil {
 		log.Fatal("no open PR found for the current branch.")
@@ -152,7 +177,7 @@ func main() {
 	// To prevent spamming the PR with reviews, we only post a review if the PR doesn't already have a bot review.
 	// Set FORCE=1 to override and post a new review.
 	if os.Getenv("FORCE") != "1" {
-		log.Info("==> Checking for existing reviews...")
+		log.Info("Checking for existing reviews...")
 		reviewsRaw, err := run("gh", "api", fmt.Sprintf("repos/%s/pulls/%d/reviews", repo.NameWithOwner, pr.Number))
 		if err != nil {
 			log.Fatalf("failed to fetch existing reviews: %v", err)
@@ -163,14 +188,14 @@ func main() {
 		}
 		for _, r := range reviews {
 			if r.User.Type == "Bot" {
-				log.Infof("==> PR #%d already has a bot review — skipping (set FORCE=1 to override).", pr.Number)
+				log.Infof("PR #%d already has a bot review — skipping (set FORCE=1 to override).", pr.Number)
 				os.Exit(0)
 			}
 		}
 	}
 
 	// Have the agent generate the review.
-	log.Info("==> Running claude /review  (this may take a minute)...")
+	log.Info("Running claude /review  (this may take a minute)...")
 	reviewPrompt := fmt.Sprintf(
 		"Review PR #%d. /review\n\nFor every finding, include the exact file path and line number in the format `path/to/file.go:42` so findings can be posted as inline GitHub comments.",
 		pr.Number,
@@ -185,33 +210,8 @@ func main() {
 	}
 
 	// Have the agent convert the review to structured JSON.
-	log.Info("==> Structuring review output into JSON...")
-	parsePrompt := `Parse the code review below and output ONLY a valid JSON object — no markdown fences, no explanation.
-
-Schema:
-{
-  "summary": "<concise overall summary as markdown, max ~3 sentences>",
-  "comments": [
-    {
-      "file": "<file path relative to repo root, e.g. server/foo.go>",
-      "line": <integer — the line number in the NEW version of the file>,
-      "body": "<full comment text as markdown>",
-      "severity": "<critical | warning | suggestion>"
-    }
-  ]
-}
-
-Rules:
-- Include a comment entry for every finding that mentions a file path, even if the line number is approximate — use the nearest relevant line you can infer from context.
-- Findings with no file reference at all go into "summary".
-- File paths must be relative (no leading slash, no absolute paths).
-- Output ONLY the JSON object. No other text before or after it.
-
-REVIEW:
-
-` + reviewText
-
-	reviewJSONStr, parseErr := runStdin(parsePrompt, "claude", "--print", "--allowedTools", "")
+	log.Info("Structuring review output into JSON...")
+	reviewJSONStr, parseErr := runStdin(parsePrompt+reviewText, "claude", "--print", "--allowedTools", "")
 	if parseErr != nil {
 		log.Info("Warning: failed to parse review into JSON — posting as a single body comment.")
 		postReviewAsBodyComment(repo.NameWithOwner, pr.Number, pr.HeadRefOid, reviewText)
@@ -237,7 +237,7 @@ REVIEW:
 
 	// GitHub only accepts inline comments on lines present in the diff hunks.
 	// Fetch the PR diff to generate a set of valid line numbers.
-	log.Info("==> Fetching PR diff to validate line numbers...")
+	log.Info("Fetching PR diff to validate line numbers...")
 	diff, err := run("gh", "api",
 		fmt.Sprintf("repos/%s/pulls/%d", repo.NameWithOwner, pr.Number),
 		"-H", "Accept: application/vnd.github.diff")
@@ -332,15 +332,15 @@ REVIEW:
 	}
 
 	if *dryRun {
-		fmt.Println("==> Dry run — payload that would be posted:")
+		fmt.Println("Dry run — payload that would be posted:")
 		fmt.Println(string(payloadBytes))
 		os.Exit(0)
 	}
 
-	log.Info("==> Payload to be posted:")
+	log.Info("Payload to be posted:")
 	log.Infof("%s", string(payloadBytes))
 
-	log.Info("==> Posting review to GitHub...")
+	log.Info("Posting review to GitHub...")
 	responseStr, err := runStdin(string(payloadBytes), "gh", "api",
 		fmt.Sprintf("repos/%s/pulls/%d/reviews", repo.NameWithOwner, pr.Number),
 		"--method", "POST", "--input", "-")
@@ -361,7 +361,7 @@ REVIEW:
 		}
 	}
 
-	log.Info("==> GitHub response:")
+	log.Info("GitHub response:")
 	log.Infof("%s", responseStr)
 
 	var response reviewResponse
@@ -371,7 +371,7 @@ REVIEW:
 }
 
 func postReviewAsBodyComment(repo string, prNumber int, headSHA, body string) {
-	log.Info("==> Posting review as single body comment...")
+	log.Info("Posting review as single body comment...")
 	payload, _ := json.Marshal(reviewPayload{
 		CommitID: headSHA,
 		Event:    "COMMENT",
