@@ -600,6 +600,89 @@ func TestMergeActuallyMerges(t *testing.T) {
 	assert.Equal(t, expectedBytes, plBytes)
 }
 
+func TestSparseNgramFrequenciesArePersisted(t *testing.T) {
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.SparseNgramField, "content", true),
+		},
+	)
+	doc := docSchema.MustMakeDocument(
+		map[string][]byte{
+			"id":      []byte("1"),
+			"content": []byte("abc abc abc"),
+		},
+	)
+
+	w, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+	require.NoError(t, w.AddDocument(doc))
+	require.NoError(t, w.Flush())
+
+	plBytes, closer, err := db.Get([]byte("testns:gra:abc:content"))
+	require.NoError(t, err)
+	defer closer.Close()
+
+	pl, err := posting.Unmarshal(plBytes)
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1}, pl.ToArray())
+	assert.Equal(t, uint32(3), pl.Frequency(1))
+}
+
+func TestSparseNgramFrequenciesAcrossMultipleDocs(t *testing.T) {
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.SparseNgramField, "content", true),
+		},
+	)
+
+	// Index three docs with different per-doc frequencies for the same ngram.
+	// This also exercises the pebble merger path, since each AddDocument's
+	// posting list is merged into the on-disk value.
+	docs := []struct {
+		id      string
+		content string
+		wantTF  uint32
+	}{
+		{"1", "abc", 1},
+		{"2", "abc abc abc", 3},
+		{"3", "abc abc abc abc abc", 5},
+	}
+	w, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+	for _, d := range docs {
+		require.NoError(t, w.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
+			"id":      []byte(d.id),
+			"content": []byte(d.content),
+		})))
+	}
+	require.NoError(t, w.Flush())
+
+	plBytes, closer, err := db.Get([]byte("testns:gra:abc:content"))
+	require.NoError(t, err)
+	defer closer.Close()
+
+	pl, err := posting.Unmarshal(plBytes)
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1, 2, 3}, pl.ToArray())
+	for i, d := range docs {
+		docID := uint64(i + 1)
+		assert.Equal(t, d.wantTF, pl.Frequency(docID), "docID=%d (%s)", docID, d.id)
+	}
+
+	// Round-trip through UnmarshalReadOnly too, which is the path the query
+	// engine takes against pebble-owned memory.
+	roList, err := posting.UnmarshalReadOnly(plBytes)
+	require.NoError(t, err)
+	for i, d := range docs {
+		docID := uint64(i + 1)
+		assert.Equal(t, d.wantTF, roList.Frequency(docID), "readonly docID=%d (%s)", docID, d.id)
+	}
+}
+
 func printDB(t testing.TB, db *pebble.DB) {
 	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{0},

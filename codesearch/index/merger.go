@@ -33,7 +33,7 @@ func initRoaringMerger(key, value []byte) (pebble.ValueMerger, error) {
 	// For now, we assume all values are posting lists.
 	if len(value) == 0 {
 		return &roaringValueMerger{
-			pl: posting.NewList(),
+			pl: posting.NewMergeList(),
 		}, nil
 	}
 
@@ -48,11 +48,14 @@ func initRoaringMerger(key, value []byte) (pebble.ValueMerger, error) {
 }
 
 type roaringValueMerger struct {
-	pl posting.List
+	pl *posting.MergeList
 }
 
-func mergeInto(pl posting.List, docIdBytes []byte) error {
-	newPl, err := posting.Unmarshal(docIdBytes)
+func mergeInto(pl *posting.MergeList, docIdBytes []byte) error {
+	// UnmarshalReadOnly avoids copying docIdBytes; pl.Or reads it eagerly and
+	// does not retain it, so the no-copy view is safe for the duration of the
+	// merge.
+	newPl, err := posting.UnmarshalReadOnly(docIdBytes)
 	if err != nil {
 		return err
 	}
