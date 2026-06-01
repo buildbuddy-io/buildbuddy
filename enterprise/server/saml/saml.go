@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -24,10 +23,17 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/crewjam/saml"
 	"github.com/crewjam/saml/samlsp"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/jonboulle/clockwork"
+)
+
+const (
+	samlProviderCacheSize = 10_000
+	samlProviderCacheTTL  = 2 * time.Minute
 )
 
 var (
@@ -209,8 +215,7 @@ func (p cookieSessionProvider) GetSession(r *http.Request) (samlsp.Session, erro
 
 type SAMLAuthenticator struct {
 	env           environment.Env
-	mu            sync.Mutex
-	samlProviders map[string]*samlsp.Middleware
+	samlProviders lru.LRU[*samlsp.Middleware]
 }
 
 func IsEnabled(env environment.Env) bool {
@@ -227,10 +232,28 @@ func NewSAMLAuthenticator(env environment.Env) (*SAMLAuthenticator, error) {
 	if *key != "" && *keyFile != "" {
 		return nil, status.FailedPreconditionError("only one of SAML 'key' and 'key_file' may be set")
 	}
+	cache, err := newSAMLProviderCache(env.GetClock())
+	if err != nil {
+		return nil, err
+	}
 	return &SAMLAuthenticator{
 		env:           env,
-		samlProviders: make(map[string]*samlsp.Middleware),
+		samlProviders: cache,
 	}, nil
+}
+
+func newSAMLProviderCache(clock clockwork.Clock) (lru.LRU[*samlsp.Middleware], error) {
+	cache, err := lru.New[*samlsp.Middleware](&lru.Config[*samlsp.Middleware]{
+		MaxSize:    samlProviderCacheSize,
+		SizeFn:     func(*samlsp.Middleware) int64 { return 1 },
+		TTL:        samlProviderCacheTTL,
+		ThreadSafe: true,
+		Clock:      clock,
+	})
+	if err != nil {
+		return nil, status.InternalErrorf("error initializing SAML provider cache: %s", err)
+	}
+	return cache, nil
 }
 
 func (a *SAMLAuthenticator) SSOEnabled() bool {
@@ -362,9 +385,7 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 	if slug == "" {
 		return nil, status.FailedPreconditionError("Organization slug not set")
 	}
-	a.mu.Lock()
-	provider, ok := a.samlProviders[slug]
-	a.mu.Unlock()
+	provider, ok := a.samlProviders.Get(slug)
 	if ok {
 		return provider, nil
 	}
@@ -477,9 +498,7 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 		csp.oldDomain = opts.URL.Host
 	}
 	samlSP.Session = csp
-	a.mu.Lock()
-	a.samlProviders[slug] = samlSP
-	a.mu.Unlock()
+	a.samlProviders.Add(slug, samlSP)
 	return samlSP, nil
 }
 

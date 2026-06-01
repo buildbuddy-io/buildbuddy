@@ -234,6 +234,9 @@ message GetStatHeatmapRequest {
   context.RequestContext request_context = 1;
   TrendQuery query = 2;
   stat_filter.Metric metric = 3;
+  // When true, the metric axis is bucketed on a logarithmic (powers-of-10)
+  // scale instead of evenly dividing the metric range linearly.
+  bool log_scale = 4;
 }
 
 message HeatmapColumn {
@@ -251,6 +254,10 @@ message GetStatHeatmapResponse {
   repeated int64 bucket_bracket = 3;
   // Each entry in the heatmap response is a histogram for a given time bucket.
   repeated HeatmapColumn column = 4;
+  // Set when a log-scale heatmap was requested for a metric that contains
+  // negative values. Those values can't be represented on a log scale, so the
+  // bucket range is clamped to zero and the negative values are dropped.
+  bool metric_had_negative_values = 5;
 }
 
 // A drilldown request fetches a set of charts.  Each chart shows a comparison

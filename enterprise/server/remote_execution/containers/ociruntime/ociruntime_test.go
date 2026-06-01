@@ -1587,36 +1587,16 @@ func TestPathSanitization(t *testing.T) {
 		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
-			te := testenv.GetTestEnv(t)
 			cacheRoot := testfs.MakeTempDir(t)
 			testfs.WriteAllFileContents(t, cacheRoot, map[string]string{
 				"test-link-target": "Hello",
 			})
-			// Set up a filecache for the image store
-			fcDir := testfs.MakeTempDir(t)
-			fc, err := filecache.NewFileCache(fcDir, 1_000_000_000, false)
-			require.NoError(t, err)
-			t.Cleanup(func() { fc.Close() })
-			fc.WaitForDirectoryScanToComplete()
-
-			resolver, err := oci.NewResolver(te)
-			require.NoError(t, err)
-			require.NotNil(t, resolver)
-			imageStore, err := ociruntime.NewImageStore(resolver, cacheRoot, fc)
-			require.NoError(t, err)
-			// Load busybox oci image
-			busyboxImg := testregistry.ImageFromRlocationpath(t, busyboxImageRlocationpath)
-			// Append an invalid layer
 			layer := testregistry.NewBytesLayer(t, test.Tar)
-			mutatedImg, err := mutate.AppendLayers(busyboxImg, layer)
-			require.NoError(t, err)
-			// Start a test registry and push the mutated busybox image to it
-			reg := testregistry.Run(t, testregistry.Opts{})
-			image := reg.Push(t, mutatedImg, "test-file-ownership:latest", nil)
+			image := pushSingleLayerImage(t, "test-path-sanitization:latest", layer)
 
 			// Make sure we get an error when pulling this image.
 			ctx := context.Background()
-			lockedImg, err := imageStore.PullAndLockImage(ctx, image, oci.Credentials{}, false)
+			lockedImg, err := newImageStoreForTest(t, cacheRoot).PullAndLockImage(ctx, image, oci.Credentials{}, false)
 			if lockedImg != nil {
 				defer lockedImg.Unlock()
 			}
@@ -1625,6 +1605,293 @@ func TestPathSanitization(t *testing.T) {
 			assert.Contains(t, err.Error(), test.ExpectedError)
 		})
 	}
+}
+
+func newImageStoreForTest(t *testing.T, layerDir string) *ociruntime.ImageStore {
+	te := testenv.GetTestEnv(t)
+	resolver, err := oci.NewResolver(te)
+	require.NoError(t, err)
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 1_000_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+	imageStore, err := ociruntime.NewImageStore(resolver, layerDir, fc)
+	require.NoError(t, err)
+	return imageStore
+}
+
+func pushSingleLayerImage(t *testing.T, name string, layer containerregistry.Layer) string {
+	img, err := mutate.AppendLayers(empty.Image, layer)
+	require.NoError(t, err)
+	reg := testregistry.Run(t, testregistry.Opts{})
+	return reg.Push(t, img, name, nil)
+}
+
+func pullSingleLayerImage(t *testing.T, image string) *ociruntime.LockedImage {
+	lockedImg, err := newImageStoreForTest(t, testfs.MakeTempDir(t)).PullAndLockImage(context.Background(), image, oci.Credentials{}, false)
+	require.NoError(t, err)
+	require.NotNil(t, lockedImg)
+	t.Cleanup(lockedImg.Unlock)
+	return lockedImg
+}
+
+func singleLayerPath(t testing.TB, lockedImg *ociruntime.LockedImage) string {
+	t.Helper()
+	require.NotNil(t, lockedImg)
+	require.Len(t, lockedImg.Layers, 1)
+	return lockedImg.Layers[0].Path
+}
+
+// TestImageStoreRejectsLayerSymlinkEscape verifies that layer extraction cannot
+// write through symlinks created by earlier entries in the same archive.
+func TestImageStoreRejectsLayerSymlinkEscape(t *testing.T) {
+	setupNetworking(t)
+
+	// Cover both absolute symlink targets and relative targets that walk out of
+	// the layer unpack directory.
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T) (layerDir, linkname, escapeFile string)
+	}{
+		{
+			name: "absolute link",
+			setup: func(t *testing.T) (string, string, string) {
+				escapeDir := testfs.MakeTempDir(t)
+				escapeFile := filepath.Join(escapeDir, "pwned.txt")
+				return testfs.MakeTempDir(t), escapeFile, escapeFile
+			},
+		},
+		{
+			name: "relative link",
+			setup: func(t *testing.T) (string, string, string) {
+				rootDir := testfs.MakeTempDir(t)
+				layerDir := filepath.Join(rootDir, "layers")
+				escapeDir := filepath.Join(rootDir, "escape")
+				require.NoError(t, os.MkdirAll(escapeDir, 0755))
+				escapeFile := filepath.Join(escapeDir, "pwned.txt")
+				// Extracted layers are unpacked below v2/<algorithm>/<digest>.tmp.
+				// Compute the relative symlink target from that depth so the test
+				// keeps pointing at the escape dir if the root path changes.
+				unpackDir := filepath.Join(layerDir, "v2", "sha256", "layer.tmp")
+				linkname, err := filepath.Rel(unpackDir, escapeFile)
+				require.NoError(t, err)
+				require.Equal(t, escapeFile, filepath.Clean(filepath.Join(unpackDir, linkname)))
+				return layerDir, linkname, escapeFile
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			uid := os.Getuid()
+			gid := os.Getgid()
+			layerDir, linkname, escapeFile := tc.setup(t)
+			// The first entry creates the escape symlink; the second entry tries
+			// to extract a regular file through that same path.
+			layerTar := testtar.EntriesBytes(t, []testtar.Entry{
+				{
+					Header: &tar.Header{
+						Name:     "pwned.txt",
+						Typeflag: tar.TypeSymlink,
+						Linkname: linkname,
+						Uid:      uid,
+						Gid:      gid,
+					},
+				},
+				{
+					Header: &tar.Header{
+						Name:     "pwned.txt",
+						Typeflag: tar.TypeReg,
+						Mode:     0644,
+						Uid:      uid,
+						Gid:      gid,
+					},
+					Data: []byte("pwned"),
+				},
+			})
+			layer := testregistry.NewBytesLayer(t, layerTar)
+			image := pushSingleLayerImage(t, "test-layer-symlink-escape:latest", layer)
+
+			lockedImg, err := newImageStoreForTest(t, layerDir).PullAndLockImage(context.Background(), image, oci.Credentials{}, false)
+			if lockedImg != nil {
+				defer lockedImg.Unlock()
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "create file")
+			assert.Contains(t, err.Error(), "pwned.txt")
+
+			// The pull should fail before anything is written outside the layer
+			// destination, regardless of how the symlink target was spelled.
+			_, err = os.Stat(escapeFile)
+			assert.True(t, os.IsNotExist(err), "file outside layer destination should not be created")
+		})
+	}
+}
+
+// TestImageStorePreservesLayerDirectoryModeBits ensures that the os.Root-backed
+// fsync helpers keep tar special mode bits intact.
+func TestImageStorePreservesLayerDirectoryModeBits(t *testing.T) {
+	setupNetworking(t)
+
+	uid := os.Getuid()
+	gid := os.Getgid()
+	// os.Root create APIs only accept permission bits, so extraction needs to
+	// apply setuid, setgid, and sticky bits after creating each entry.
+	layer := testregistry.NewBytesLayer(t, testtar.EntriesBytes(t, []testtar.Entry{
+		{
+			Header: &tar.Header{
+				Name:     "sticky-dir",
+				Typeflag: tar.TypeDir,
+				Mode:     01777,
+				Uid:      uid,
+				Gid:      gid,
+			},
+		},
+		{
+			Header: &tar.Header{
+				Name:     "setgid-dir",
+				Typeflag: tar.TypeDir,
+				Mode:     02775,
+				Uid:      uid,
+				Gid:      gid,
+			},
+		},
+		{
+			Header: &tar.Header{
+				Name:     "setuid-file",
+				Typeflag: tar.TypeReg,
+				Mode:     04755,
+				Uid:      uid,
+				Gid:      gid,
+			},
+			Data: []byte("setuid"),
+		},
+	}))
+	image := pushSingleLayerImage(t, "test-layer-directory-mode-bits:latest", layer)
+	lockedImg := pullSingleLayerImage(t, image)
+	layerPath := singleLayerPath(t, lockedImg)
+
+	for _, tc := range []struct {
+		name string
+		mode os.FileMode
+	}{
+		{name: "sticky-dir", mode: os.ModeSticky | 0777},
+		{name: "setgid-dir", mode: os.ModeSetgid | 0775},
+		{name: "setuid-file", mode: os.ModeSetuid | 0755},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info, err := os.Stat(filepath.Join(layerPath, tc.name))
+			require.NoError(t, err)
+			// Compare only the permission and special bits controlled by the tar
+			// header; other os.FileMode bits describe the file type.
+			assert.Equal(t, tc.mode, info.Mode()&(os.ModePerm|os.ModeSticky|os.ModeSetgid|os.ModeSetuid))
+		})
+	}
+}
+
+// TestImageStoreAppliesLayerRootOwnership covers the tar entry for ".", which
+// represents the extracted layer directory itself.
+func TestImageStoreAppliesLayerRootOwnership(t *testing.T) {
+	setupNetworking(t)
+
+	uid := os.Getuid()
+	gid := os.Getgid()
+	// Pick a group distinct from the process default so the assertion proves that
+	// extraction applied the root directory header instead of leaving defaults.
+	groups, err := os.Getgroups()
+	require.NoError(t, err)
+	for _, groupID := range groups {
+		if groupID != gid {
+			gid = groupID
+			break
+		}
+	}
+	if gid == os.Getgid() {
+		if os.Getuid() != 0 {
+			t.Skip("no alternate group available to test layer root ownership")
+		}
+		gid++
+	}
+	layer := testregistry.NewBytesLayer(t, testtar.EntryBytes(t, &tar.Header{
+		Name:     ".",
+		Typeflag: tar.TypeDir,
+		Mode:     0755,
+		Uid:      uid,
+		Gid:      gid,
+	}, nil))
+	image := pushSingleLayerImage(t, "test-layer-root-ownership:latest", layer)
+	lockedImg := pullSingleLayerImage(t, image)
+
+	var st syscall.Stat_t
+	require.NoError(t, syscall.Stat(singleLayerPath(t, lockedImg), &st))
+	assert.Equal(t, uid, int(st.Uid))
+	assert.Equal(t, gid, int(st.Gid))
+}
+
+// TestImageStoreExtractsWhiteouts verifies OCI whiteout translation through
+// the os.Root-backed fsync helpers.
+func TestImageStoreExtractsWhiteouts(t *testing.T) {
+	dir := testfs.MakeTempDir(t)
+	// Whiteout extraction depends on filesystem and privilege support for the
+	// trusted.overlay.opaque xattr and character device nodes.
+	if err := syscall.Setxattr(dir, "trusted.overlay.opaque", []byte{'y'}, 0); err != nil {
+		t.Skipf("setting trusted.overlay.opaque requires whiteout xattr support: %s", err)
+	}
+	if err := syscall.Mknod(filepath.Join(dir, "deleted"), syscall.S_IFCHR, 0); err != nil {
+		t.Skipf("creating overlayfs whiteout marker requires mknod support: %s", err)
+	}
+	setupNetworking(t)
+
+	uid := os.Getuid()
+	gid := os.Getgid()
+	// OCI represents deletions with .wh.* archive entries. Extraction converts
+	// those marker entries into overlayfs metadata in the unpacked layer.
+	layer := testregistry.NewBytesLayer(t, testtar.EntriesBytes(t, []testtar.Entry{
+		{
+			Header: &tar.Header{
+				Name:     "opaque",
+				Typeflag: tar.TypeDir,
+				Mode:     0755,
+				Uid:      uid,
+				Gid:      gid,
+			},
+		},
+		{
+			Header: &tar.Header{
+				Name:     "opaque/.wh..wh..opq",
+				Typeflag: tar.TypeReg,
+				Mode:     0644,
+				Uid:      uid,
+				Gid:      gid,
+			},
+		},
+		{
+			Header: &tar.Header{
+				Name:     ".wh.deleted",
+				Typeflag: tar.TypeReg,
+				Mode:     0644,
+				Uid:      uid,
+				Gid:      gid,
+			},
+		},
+	}))
+	image := pushSingleLayerImage(t, "test-layer-whiteouts:latest", layer)
+	lockedImg := pullSingleLayerImage(t, image)
+	layerPath := singleLayerPath(t, lockedImg)
+
+	buf := make([]byte, 1)
+	n, err := syscall.Getxattr(filepath.Join(layerPath, "opaque"), "trusted.overlay.opaque", buf)
+	require.NoError(t, err)
+	assert.Equal(t, []byte{'y'}, buf[:n])
+
+	// File whiteouts should become character-device deletion markers, and the
+	// original .wh.* archive entry should not be left behind.
+	var st syscall.Stat_t
+	whiteoutPath := filepath.Join(layerPath, "deleted")
+	require.NoError(t, syscall.Lstat(whiteoutPath, &st))
+	assert.Equal(t, uint32(syscall.S_IFCHR), st.Mode&syscall.S_IFMT)
+	assert.Equal(t, uint64(0), uint64(st.Rdev))
+	_, err = os.Lstat(filepath.Join(layerPath, ".wh.deleted"))
+	assert.True(t, os.IsNotExist(err), "whiteout marker should be represented as the deleted path")
 }
 
 func TestImageStoreTracksUncompressedLayerSize(t *testing.T) {

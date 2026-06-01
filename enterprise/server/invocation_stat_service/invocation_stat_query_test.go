@@ -2,6 +2,7 @@ package invocation_stat_service
 
 import (
 	"context"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -55,4 +56,120 @@ func TestGetDrilldownSubquery_NonExitCode(t *testing.T) {
 	require.Contains(t, query, "worker as gorm_worker")
 	require.Contains(t, query, "GROUP BY gorm_worker")
 	require.NotContains(t, query, "toString(exit_code)")
+}
+
+func TestGetLogMetricBuckets(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		low             int64
+		high            int64
+		wantBuckets     []int64
+		wantHadNegative bool
+	}{
+		{
+			name:        "sub-decade range uses evenly-spaced linear buckets",
+			low:         100,
+			high:        199,
+			wantBuckets: []int64{100, 105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180, 185, 190, 195, 200},
+		},
+		{
+			name:        "sub-decade range crossing a power of 10 stays linear",
+			low:         80,
+			high:        120,
+			wantBuckets: []int64{80, 83, 86, 89, 92, 95, 98, 101, 104, 107, 110, 113, 116, 119, 122},
+		},
+		{
+			name:        "single value yields one linear bucket",
+			low:         12,
+			high:        12,
+			wantBuckets: []int64{12, 13},
+		},
+		{
+			name:        "two decades subdivide into single integers trimmed properly",
+			low:         5,
+			high:        50,
+			wantBuckets: []int64{5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60},
+		},
+		{
+			name:        "two decades with zero min prepend [0,1) and subdivide into single integers",
+			low:         0,
+			high:        50,
+			wantBuckets: []int64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60},
+		},
+		{
+			name:        "three to four decades subdivide into 1-2-4-6-8-10 trimmed properly",
+			low:         5,
+			high:        5000,
+			wantBuckets: []int64{4, 6, 8, 10, 20, 40, 60, 80, 100, 200, 400, 600, 800, 1000, 2000, 4000, 6000},
+		},
+		{
+			name:        "zero min prepends [0,1) bucket and subdivides decades",
+			low:         0,
+			high:        500,
+			wantBuckets: []int64{0, 1, 2, 4, 6, 8, 10, 20, 40, 60, 80, 100, 200, 400, 600},
+		},
+		{
+			name:            "negative min clamps to zero and flags",
+			low:             -50,
+			high:            900,
+			wantBuckets:     []int64{0, 1, 2, 4, 6, 8, 10, 20, 40, 60, 80, 100, 200, 400, 600, 800, 1000},
+			wantHadNegative: true,
+		},
+		{
+			name:        "all zero values yields single [0,1) bucket",
+			low:         0,
+			high:        0,
+			wantBuckets: []int64{0, 1},
+		},
+		{
+			name:            "all negative values",
+			low:             -100,
+			high:            -1,
+			wantBuckets:     []int64{0, 1},
+			wantHadNegative: true,
+		},
+		{
+			name:        "more than four decades stay pure powers of 10",
+			low:         5,
+			high:        50000,
+			wantBuckets: []int64{1, 10, 100, 1000, 10000, 100000},
+		},
+		{
+			name:        "many decades stay pure powers of 10",
+			low:         0,
+			high:        10000000,
+			wantBuckets: []int64{0, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buckets, hadNegative := getLogMetricBuckets(tc.low, tc.high)
+			require.Equal(t, tc.wantBuckets, buckets)
+			require.Equal(t, tc.wantHadNegative, hadNegative)
+			// Boundaries must be strictly increasing so roundDown buckets correctly.
+			for i := 1; i < len(buckets); i++ {
+				require.Greater(t, buckets[i], buckets[i-1])
+			}
+		})
+	}
+}
+
+func TestGetLogMetricBuckets_CapsBucketCountWithoutOverflow(t *testing.T) {
+	buckets, hadNegative := getLogMetricBuckets(0, math.MaxInt64)
+	require.False(t, hadNegative)
+	// At most maxNumMetricBuckets buckets (maxNumMetricBuckets+1 boundaries).
+	require.LessOrEqual(t, len(buckets)-1, maxNumMetricBuckets)
+	for i := 1; i < len(buckets); i++ {
+		require.Greater(t, buckets[i], buckets[i-1])
+	}
+}
+
+func TestGetLinearMetricBuckets(t *testing.T) {
+	buckets := getLinearMetricBuckets(0, 100)
+	require.Len(t, buckets, maxNumMetricBuckets+1)
+	require.Equal(t, int64(0), buckets[0])
+	// Evenly spaced.
+	step := buckets[1] - buckets[0]
+	for i := 1; i < len(buckets); i++ {
+		require.Equal(t, step, buckets[i]-buckets[i-1])
+	}
 }

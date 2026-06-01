@@ -158,7 +158,9 @@ func main() {
 	// registry so we show up on the /cache-proxies admin page. This is a
 	// no-op unless --cache_proxy.app_target and --cache_proxy.api_key are
 	// both set, and never affects the cache-serving path.
-	cache_proxy_registration.Register(env)
+	if err := cache_proxy_registration.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 	env.GetMux().Handle("/healthz", env.GetHealthChecker().LivenessHandler())

@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -37,11 +38,16 @@ const testSlug = "saml-int-test-org"
 // metadata over HTTP and exposes the underlying *saml.IdentityProvider so
 // tests can synthesize signed SAML responses without driving a browser.
 type testIDP struct {
-	HTTPServer *httptest.Server
-	IDP        *saml.IdentityProvider
+	HTTPServer       *httptest.Server
+	IDP              *saml.IdentityProvider
+	metadataRequests atomic.Int64
 }
 
 func (i *testIDP) MetadataURL() string { return i.HTTPServer.URL + "/metadata" }
+
+func (i *testIDP) MetadataRequests() int64 {
+	return i.metadataRequests.Load()
+}
 
 func startTestIDP(t *testing.T) *testIDP {
 	t.Helper()
@@ -51,8 +57,10 @@ func startTestIDP(t *testing.T) *testIDP {
 		Key:         key,
 		Certificate: cert,
 	}
+	testIDP := &testIDP{IDP: idp}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/metadata", func(w http.ResponseWriter, r *http.Request) {
+		testIDP.metadataRequests.Add(1)
 		w.Header().Set("Content-Type", "application/samlmetadata+xml")
 		body, err := xml.Marshal(idp.Metadata())
 		if err != nil {
@@ -68,7 +76,8 @@ func startTestIDP(t *testing.T) *testIDP {
 	require.NoError(t, err)
 	idp.MetadataURL = url.URL{Scheme: listener.Scheme, Host: listener.Host, Path: "/metadata"}
 	idp.SSOURL = url.URL{Scheme: listener.Scheme, Host: listener.Host, Path: "/sso"}
-	return &testIDP{HTTPServer: httpServer, IDP: idp}
+	testIDP.HTTPServer = httpServer
+	return testIDP
 }
 
 func generateSelfSignedCert(t *testing.T) (*x509.Certificate, *rsa.PrivateKey) {
@@ -99,17 +108,21 @@ func encodeKeyPEM(key *rsa.PrivateKey) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
 }
 
-func startBuildBuddy(t *testing.T, idp *testIDP) *app.App {
+func startBuildBuddy(t *testing.T, idp *testIDP, extraArgs ...string) *app.App {
 	t.Helper()
 	spCert, spKey := generateSelfSignedCert(t)
 	appConfig := buildbuddy_enterprise.DefaultAppConfig(t)
 	appConfig.HttpPort = testport.FindFree(t)
 	bbURL := fmt.Sprintf("http://localhost:%d", appConfig.HttpPort)
+	args := []string{
+		"--auth.saml.cert=" + string(encodeCertPEM(spCert)),
+		"--auth.saml.key=" + string(encodeKeyPEM(spKey)),
+		"--app.build_buddy_url=" + bbURL,
+	}
+	args = append(args, extraArgs...)
 	bb := buildbuddy_enterprise.RunWithConfig(
 		t, appConfig, buildbuddy_enterprise.DefaultConfig,
-		"--auth.saml.cert="+string(encodeCertPEM(spCert)),
-		"--auth.saml.key="+string(encodeKeyPEM(spKey)),
-		"--app.build_buddy_url="+bbURL,
+		args...,
 	)
 
 	wc := buildbuddy_enterprise.LoginAsDefaultSelfAuthUser(t, bb)
@@ -126,6 +139,20 @@ func startBuildBuddy(t *testing.T, idp *testIDP) *app.App {
 	require.Greaterf(t, res.RowsAffected, int64(0),
 		"failed to set saml_idp_metadata_url: no Groups row matched url_identifier=%q", testSlug)
 	return bb
+}
+
+func TestSAMLProviderCacheReusesProvider(t *testing.T) {
+	idp := startTestIDP(t)
+	bb := startBuildBuddy(t, idp)
+
+	fetchSPMetadata(t, bb)
+	require.Equal(t, int64(1), idp.MetadataRequests())
+
+	fetchSPMetadata(t, bb)
+	require.Equal(t, int64(1), idp.MetadataRequests())
+
+	fetchSPMetadata(t, bb)
+	require.Equal(t, int64(1), idp.MetadataRequests())
 }
 
 // fetchSPMetadata GETs BuildBuddy's SAML SP metadata via /auth/saml/metadata.

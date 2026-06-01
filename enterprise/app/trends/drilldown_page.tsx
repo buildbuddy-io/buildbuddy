@@ -7,6 +7,7 @@ import { Bar, BarChart, CartesianGrid, Tooltip, TooltipProps, XAxis } from "rech
 import { CategoricalChartState } from "recharts/types/chart/types";
 import { User } from "../../../app/auth/user";
 import capabilities from "../../../app/capabilities/capabilities";
+import Banner from "../../../app/components/banner/banner";
 import FilledButton from "../../../app/components/button/button";
 import Select, { Option } from "../../../app/components/select/select";
 import Spinner from "../../../app/components/spinner/spinner";
@@ -37,6 +38,7 @@ import HeatmapComponent, { HeatmapSelection } from "./heatmap";
 const DD_SELECTED_METRIC_URL_PARAM: string = "ddMetric";
 const DD_SELECTED_AREA_URL_PARAM = "ddSelection";
 const DD_ZOOM_URL_PARAM: string = "ddZoom";
+const DD_SCALE_URL_PARAM: string = "ddScale";
 const EMPTY_LABEL = "(empty)";
 
 function convertMetricUrlParam(param: string): MetricOption | undefined {
@@ -423,6 +425,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     // Build request...
     const heatmapRequest = stats.GetStatHeatmapRequest.create({});
     heatmapRequest.metric = this.selectedMetric.metric;
+    heatmapRequest.logScale = this.isLogScale();
     const isExecution = isExecutionMetric(heatmapRequest.metric);
 
     heatmapRequest.query = new stats.TrendQuery({
@@ -507,6 +510,24 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       [DD_SELECTED_METRIC_URL_PARAM]: encodeMetricUrlParam(option.metric),
       [DD_SELECTED_AREA_URL_PARAM]: "",
       [DD_ZOOM_URL_PARAM]: "",
+    });
+  }
+
+  isLogScale(): boolean {
+    return this.props.search.get(DD_SCALE_URL_PARAM) === "log";
+  }
+
+  handleScaleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const newScale = e.target.value;
+    if ((newScale === "log") === this.isLogScale()) {
+      return;
+    }
+    // The bucket boundaries differ between scales, so any existing selection is
+    // no longer valid.
+    router.updateParams({
+      ...Object.fromEntries(this.props.search.entries()),
+      [DD_SCALE_URL_PARAM]: newScale,
+      [DD_SELECTED_AREA_URL_PARAM]: "",
     });
   }
 
@@ -840,7 +861,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   render() {
     return (
       <div className="trend-chart">
-        <div className="trend-chart-title">
+        <div className="drilldown-chart-title">
           <span className="drilldown-by-text">Drilldown by</span>
           <div className="drilldown-page-selection-group">
             <Select
@@ -856,6 +877,13 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   )
               )}
             </Select>
+            <Select
+              className="drilldown-page-select"
+              onChange={this.handleScaleChange.bind(this)}
+              value={this.isLogScale() ? "log" : "linear"}>
+              <Option value="linear">Linear scale</Option>
+              <Option value="log">Log scale</Option>
+            </Select>
             {this.renderZoomChip()}
           </div>
         </div>
@@ -864,8 +892,14 @@ export default class DrilldownPageComponent extends React.Component<Props, State
           <>
             {this.state.heatmapData && (
               <>
+                {this.isLogScale() && this.state.heatmapData.metricHadNegativeValues && (
+                  <Banner type="warning" className="drilldown-page-warning-section">
+                    This metric has negative values that are not displayed on this logarithmic scale.
+                  </Banner>
+                )}
                 <HeatmapComponent
                   heatmapData={this.state.heatmapData || stats.GetStatHeatmapResponse.create({})}
+                  logScale={this.isLogScale()}
                   metricBucketFormatter={(v) => renderMetricValue(this.selectedMetric.metric, v)}
                   metricBucketName={this.selectedMetric.name}
                   valueFormatter={(v) => this.renderBucketValue(v)}
