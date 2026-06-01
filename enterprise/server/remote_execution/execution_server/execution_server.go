@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -47,6 +48,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -65,6 +67,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/RoaringBitmap/roaring"
 	executil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -78,6 +81,7 @@ import (
 const (
 	updateExecutionTimeout             = 15 * time.Second
 	deletePendingExecutionExtraTimeout = 10 * time.Second
+	inputFetchProfileKeyPrefix         = "vfs-input-fetch-profile/v1"
 
 	// When an action finishes, schedule the corresponding pubsub channel to
 	// be discarded after this time. There may be multiple waiters for a single
@@ -90,6 +94,7 @@ var (
 
 	writeExecutionProgressStateToRedis = flag.Bool("remote_execution.write_execution_progress_state_to_redis", false, "If enabled, write initial execution metadata and progress updates (stage changes) to redis. This state is cleared when the execution is complete.", flag.Internal)
 	writeExecutionsToPrimaryDB         = flag.Bool("remote_execution.write_executions_to_primary_db", true, "If enabled, write executions and invocation-execution links to the primary DB.", flag.Internal)
+	inputFetchProfileLookupTimeout     = flag.Duration("remote_execution.vfs_input_fetch_profile_lookup_timeout", time.Second, "Maximum time to wait for a best-effort VFS input fetch profile lookup before dispatching without predicted inputs.", flag.Internal)
 
 	teeInstanceNamePrefix = flag.String("remote_execution.tee_instance_name_prefix", "", "Instance name prefix used to identify tee'ed actions", flag.Internal)
 )
@@ -158,6 +163,93 @@ func primaryOutputPath(cmd *repb.Command) string {
 		}
 	}
 	return ""
+}
+
+func normalizedWorkingDirectory(cmd *repb.Command) string {
+	if cmd == nil {
+		return ""
+	}
+	workingDirectory := path.Clean(cmd.GetWorkingDirectory())
+	if workingDirectory == "." {
+		return ""
+	}
+	return workingDirectory
+}
+
+func inputFetchProfilePlatform(platformProto, platformOverrides *repb.Platform) *repb.Platform {
+	propertyValues := make(map[string]string)
+	addProperties := func(properties []*repb.Platform_Property) {
+		for _, prop := range properties {
+			name := strings.ToLower(strings.TrimSpace(prop.GetName()))
+			if name == "" {
+				continue
+			}
+			value := strings.TrimSpace(prop.GetValue())
+			if value == "" {
+				delete(propertyValues, name)
+				continue
+			}
+			propertyValues[name] = value
+		}
+	}
+	addProperties(platformProto.GetProperties())
+	addProperties(platformOverrides.GetProperties())
+
+	names := make([]string, 0, len(propertyValues))
+	for name := range propertyValues {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	platformProto = &repb.Platform{Properties: make([]*repb.Platform_Property, 0, len(names))}
+	for _, name := range names {
+		platformProto.Properties = append(platformProto.Properties, &repb.Platform_Property{
+			Name:  name,
+			Value: propertyValues[name],
+		})
+	}
+	return platformProto
+}
+
+func inputFetchProfileResourceName(cmd *repb.Command, platformProto, platformOverrides *repb.Platform, groupID, instanceName string, digestFunction repb.DigestFunction_Value) (*digest.ACResourceName, string, error) {
+	primaryOutput := primaryOutputPath(cmd)
+	if primaryOutput == "" {
+		return nil, "", nil
+	}
+	if groupID == "" {
+		groupID = interfaces.AuthAnonymousUser
+	}
+	if platformProto == nil {
+		platformProto = &repb.Platform{}
+	}
+	platformBytes, err := proto.Marshal(inputFetchProfilePlatform(platformProto, platformOverrides))
+	if err != nil {
+		return nil, "", status.InternalErrorf("failed to marshal platform: %s", err)
+	}
+	key := strings.Join([]string{
+		inputFetchProfileKeyPrefix,
+		groupID,
+		hash.String(instanceName),
+		hash.Bytes(platformBytes),
+		hash.String(normalizedWorkingDirectory(cmd)),
+		hash.String(primaryOutput),
+	}, "/")
+	d, err := digest.Compute(strings.NewReader(key), digestFunction)
+	if err != nil {
+		return nil, "", err
+	}
+	return digest.NewACResourceName(d, instanceName, digestFunction), primaryOutput, nil
+}
+
+func inputFetchProfileBitmapCardinality(data []byte) (uint64, error) {
+	if len(data) == 0 {
+		return 0, nil
+	}
+	bitmap := roaring.New()
+	if err := bitmap.UnmarshalBinary(data); err != nil {
+		return 0, err
+	}
+	return bitmap.GetCardinality(), nil
 }
 
 func redisKeyForTaskStatusStream(taskID string) string {
@@ -741,6 +833,38 @@ func (s *ExecutionServer) dispatchHedge(ctx context.Context, req *repb.ExecuteRe
 	return err
 }
 
+func (s *ExecutionServer) attachInputFetchProfile(ctx context.Context, task *repb.ExecutionTask, props *platform.Properties, groupID string) {
+	if !props.EnableVFS {
+		return
+	}
+	rn, primaryOutput, err := inputFetchProfileResourceName(task.GetCommand(), platform.GetProto(task.GetAction(), task.GetCommand()), task.GetPlatformOverrides(), groupID, task.GetExecuteRequest().GetInstanceName(), task.GetExecuteRequest().GetDigestFunction())
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to compute VFS input fetch profile key: %s", err)
+		return
+	}
+	if rn == nil {
+		return
+	}
+	profileLookupCtx, cancel := context.WithTimeout(ctx, *inputFetchProfileLookupTimeout)
+	defer cancel()
+	ar, err := cachetools.GetActionResult(profileLookupCtx, s.actionCacheClient, rn)
+	if err != nil {
+		if gstatus.Code(err) != gcodes.NotFound {
+			log.CtxWarningf(ctx, "Failed to read VFS input fetch profile for primary output %q: %s", primaryOutput, err)
+		}
+		return
+	}
+	profile := &espb.InputFetchMetadata{}
+	if err := proto.Unmarshal(ar.GetStdoutRaw(), profile); err != nil {
+		log.CtxWarningf(ctx, "Failed to parse VFS input fetch profile for primary output %q: %s", primaryOutput, err)
+		return
+	}
+	task.PredictedInputFetchIndicesBitmap = slices.Clone(profile.GetAccessedFileIndicesBitmap())
+	if len(task.PredictedInputFetchIndicesBitmap) > 0 {
+		log.CtxDebugf(ctx, "Loaded VFS input fetch profile for primary output %q with %d bitmap bytes", primaryOutput, len(task.PredictedInputFetchIndicesBitmap))
+	}
+}
+
 type dispatchOpts struct {
 	recordActionMergingState bool
 	teedRequest              bool
@@ -906,6 +1030,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if efp != nil && chunking.Enabled(ctx, efp) && efp.Boolean(ctx, "executor.download_inputs_chunked", false) {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.download_inputs_chunked")
 	}
+	s.attachInputFetchProfile(ctx, executionTask, props, taskGroupID)
 
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
 	secretService := s.env.GetSecretService()
@@ -1589,6 +1714,58 @@ func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceN
 	return cachetools.UploadActionResult(ctx, s.actionCacheClient, actionResourceName, response.GetResult())
 }
 
+func inputFetchProfileGroupID(ctx context.Context, authenticator interfaces.Authenticator, auxMetadata *espb.ExecutionAuxiliaryMetadata) string {
+	if groupID := auxMetadata.GetSchedulingMetadata().GetTaskGroupId(); groupID != "" {
+		return groupID
+	}
+	if authenticator != nil {
+		if user, err := authenticator.AuthenticatedUser(ctx); err == nil {
+			return user.GetGroupID()
+		}
+	}
+	return interfaces.AuthAnonymousUser
+}
+
+func (s *ExecutionServer) storeInputFetchProfile(ctx context.Context, actionResourceName *digest.ACResourceName, executeResponse *repb.ExecuteResponse, action *repb.Action, cmd *repb.Command, props *platform.Properties) error {
+	if !props.EnableVFS || executeResponse.GetCachedResult() || executeResponse.GetStatus().GetCode() != 0 || executeResponse.GetResult().GetExitCode() != 0 {
+		return nil
+	}
+	auxMetadata := &espb.ExecutionAuxiliaryMetadata{}
+	ok, err := rexec.FindFirstAuxiliaryMetadata(executeResponse.GetResult().GetExecutionMetadata(), auxMetadata)
+	if err != nil {
+		return status.WrapError(err, "parse execution auxiliary metadata")
+	}
+	if !ok || auxMetadata.GetInputFetchDetailedStats() == nil {
+		return nil
+	}
+	accessedBitmap := auxMetadata.GetInputFetchDetailedStats().GetAccessedFileIndicesBitmap()
+	accessedInputCount, err := inputFetchProfileBitmapCardinality(accessedBitmap)
+	if err != nil {
+		return status.WrapError(err, "unmarshal VFS accessed input bitmap")
+	}
+	if accessedInputCount == 0 {
+		return nil
+	}
+	groupID := inputFetchProfileGroupID(ctx, s.authenticator, auxMetadata)
+	rn, primaryOutput, err := inputFetchProfileResourceName(cmd, platform.GetProto(action, cmd), auxMetadata.GetPlatformOverrides(), groupID, actionResourceName.GetInstanceName(), actionResourceName.GetDigestFunction())
+	if err != nil {
+		return err
+	}
+	if rn == nil {
+		return nil
+	}
+	profile := &espb.InputFetchMetadata{AccessedFileIndicesBitmap: accessedBitmap}
+	b, err := proto.Marshal(profile)
+	if err != nil {
+		return err
+	}
+	if err := cachetools.UploadActionResult(ctx, s.actionCacheClient, rn, &repb.ActionResult{StdoutRaw: b}); err != nil {
+		return err
+	}
+	log.CtxDebugf(ctx, "Stored VFS input fetch profile for primary output %q with %d input indices", primaryOutput, accessedInputCount)
+	return nil
+}
+
 // markTaskComplete contains logic to be run when the task is complete but
 // before letting the client know that the task has completed.
 //
@@ -1618,6 +1795,9 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 		md := executeResponse.GetResult().GetExecutionMetadata()
 		if err := s.taskSizer.Update(ctx, cmd, properties, md); err != nil {
 			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
+		}
+		if err := s.storeInputFetchProfile(ctx, actionResourceName, executeResponse, action, cmd, properties); err != nil {
+			log.CtxWarningf(ctx, "Failed to store VFS input fetch profile: %s", err)
 		}
 	}
 
