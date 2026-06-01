@@ -23,7 +23,9 @@ import (
 	"cmp"
 	"container/heap"
 	"context"
+	"encoding/binary"
 	"flag"
+	"hash/fnv"
 	"maps"
 	"math"
 	"math/rand"
@@ -875,6 +877,7 @@ func (rq *Queue) findNodesForAllocation(storesWithStats *storemap.StoresWithStat
 func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats) *rfpb.NodeDescriptor {
 	var candidates []*candidate
 	existing := append(rd.GetReplicas(), rd.GetRemoved()...)
+	rangeID := rd.GetRangeId()
 	for _, su := range storesWithStats.Usages {
 		if storeHasReplica(su.GetNode(), rd.GetStaging()) {
 			// There is a staging replica, complete it.
@@ -889,11 +892,13 @@ func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor, storesWithStats
 			continue
 		}
 		rq.log.Debugf("add node %+v to candidate list", su.GetNode())
+		nhid := su.GetNode().GetNhid()
 		candidates = append(candidates, &candidate{
-			nhid:                  su.GetNode().GetNhid(),
+			nhid:                  nhid,
 			usage:                 su,
 			replicaCount:          su.GetReplicaCount(),
 			replicaCountMeanLevel: replicaCountMeanLevel(storesWithStats, su),
+			rendezvousScore:       rendezvousScore(rangeID, nhid),
 		})
 	}
 
@@ -1054,38 +1059,6 @@ type rebalanceChoice struct {
 type rebalanceOp struct {
 	from *candidate
 	to   *candidate
-}
-
-func compareOp(op1 *rebalanceOp, op2 *rebalanceOp) int {
-	c1 := compareByScore(op1.to, op1.from)
-	c2 := compareByScore(op2.to, op2.from)
-	if c1 != c2 {
-		return cmp.Compare(c1, c2)
-	}
-	return compareByScore(op1.to, op2.to)
-}
-
-func canConvergeByRebalanceReplica(existingStores map[string]*candidate, targets []*candidate, allStores *storemap.StoresWithStats) bool {
-	overfullThreshold := int64(math.Ceil(aboveMeanReplicaCountThreshold(allStores.ReplicaCount.Mean)))
-	// The existing store is too far above the mean.
-	aboveMean := false
-	for _, source := range existingStores {
-		if source.usage.ReplicaCount > overfullThreshold {
-			return true
-		}
-		aboveMean = aboveMean || float64(source.usage.ReplicaCount) > allStores.ReplicaCount.Mean
-	}
-
-	// One existing store is above the mean, but not too far; but there is at least one other store that is too far below the mean.
-	if aboveMean {
-		underfullThreshold := int64(math.Floor(belowMeanReplicaCountThreshold(allStores.ReplicaCount.Mean)))
-		for _, c := range targets {
-			if c.usage.ReplicaCount < underfullThreshold {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func canConvergeByRebalanceLease(choice *rebalanceChoice, mean float64) bool {
@@ -1249,6 +1222,7 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 	candidateStores := make(map[string]*candidate, len(storesWithStats.Usages))
 	var otherReplicaStores []*candidate
 	replicasByZone := make(map[string]int)
+	rangeID := rd.GetRangeId()
 	for _, su := range storesWithStats.Usages {
 		nhid := su.GetNode().GetNhid()
 		store := &candidate{
@@ -1257,6 +1231,7 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 			fullDisk:              isDiskFull(su),
 			replicaCountMeanLevel: replicaCountMeanLevel(storesWithStats, su),
 			replicaCount:          su.ReplicaCount,
+			rendezvousScore:       rendezvousScore(rangeID, nhid),
 		}
 		candidateStores[nhid] = store
 		replicasByZone[su.GetNode().GetZone()] = 0
@@ -1419,14 +1394,17 @@ func (rq *Queue) findReplicaForRemoval(rd *rfpb.RangeDescriptor, replicaStateMap
 	}
 
 	storesWithStats := rq.storeMap.GetStoresWithStatsFromIDs(nhids)
-
+	rangeID := rd.GetRangeId()
 	var candidates []*candidate
 	for _, su := range storesWithStats.Usages {
+		nhid := su.GetNode().GetNhid()
 		candidates = append(candidates, &candidate{
+			nhid:                  nhid,
 			usage:                 su,
 			replicaCount:          su.GetReplicaCount(),
 			replicaCountMeanLevel: replicaCountMeanLevel(storesWithStats, su),
 			fullDisk:              isDiskFull(su),
+			rendezvousScore:       rendezvousScore(rangeID, nhid),
 		})
 	}
 
@@ -1720,6 +1698,22 @@ type candidate struct {
 	replicaCount          int64
 	leaseCount            int64
 	leaseCountMeanLevel   meanLevel
+	// Tie-breaker in compareByScore. Zero when no rangeID is available.
+	rendezvousScore uint64
+}
+
+// rendezvousScore is a deterministic tie-breaker hash over (rangeID, nhid).
+func rendezvousScore(rangeID uint64, nhid string) uint64 {
+	// FNV-1a 64 is fast enough, doesn't add any deps, and 64 bits is enough for
+	// breaking ties. The fixed-width rangeID prefix avoids ambiguity between
+	// e.g. (12, "3-foo") and (123, "-foo"), and FNV's spec-defined seed makes
+	// the score reproducible across processes.
+	h := fnv.New64a()
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], rangeID)
+	h.Write(buf[:])
+	h.Write([]byte(nhid))
+	return h.Sum64()
 }
 
 func (c *candidate) String() string {
@@ -1775,7 +1769,9 @@ func compareByScore(a *candidate, b *candidate) int {
 	} else if a.leaseCount > b.leaseCount {
 		return -int(math.Ceil(leaseCountDiff / float64(a.leaseCount) * 10))
 	}
-	return 0
+
+	// Rendezvous hash tie-breaker, -1, 0, or 1
+	return cmp.Compare(a.rendezvousScore, b.rendezvousScore)
 }
 
 func compareByScoreAndID(a *candidate, b *candidate) int {

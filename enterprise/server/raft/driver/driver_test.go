@@ -1630,9 +1630,11 @@ func TestRebalanceReplica(t *testing.T) {
 		},
 		{
 			// 3 zones with balanced distribution (1-1-1). No zone
-			// rebalance is triggered. Normal rebalancing still applies
-			// since source (nhid-2) is above mean and target (nhid-5)
-			// is below mean.
+			// rebalance is triggered. Normal rebalancing still applies:
+			// source is picked from {nhid-2, nhid-3} (both above mean,
+			// tied) and target from {nhid-4, nhid-5} (both below mean,
+			// tied); the rendezvous tie-breaker resolves to nhid-3 and
+			// nhid-4 respectively.
 			desc: "3-zones-balanced-normal-rebalance",
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 2,
@@ -1682,8 +1684,8 @@ func TestRebalanceReplica(t *testing.T) {
 				},
 			},
 			expected: &rebalanceOp{
-				from: &candidate{nhid: "nhid-2"},
-				to:   &candidate{nhid: "nhid-5"},
+				from: &candidate{nhid: "nhid-3"},
+				to:   &candidate{nhid: "nhid-4"},
 			},
 		},
 		{
