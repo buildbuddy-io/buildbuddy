@@ -195,11 +195,11 @@ type Execution struct {
 
 	// Snapshot save stats reported after the executions is marked as completed.
 	// Zero for non-firecracker runners.
-	SnapshotSavedLocally      bool
-	SnapshotSavedRemotely     bool
-	SnapshotIsDiff            bool
-	SnapshotSizeBytes         int64 `gorm:"codec:T64,ZSTD(1)"`
-	SnapshotPauseDurationUsec int64 `gorm:"codec:T64,ZSTD(1)"`
+	SnapshotSavedLocally  bool
+	SnapshotSavedRemotely bool
+	SnapshotIsDiff        bool
+	SnapshotSizeBytes     int64 `gorm:"codec:T64,ZSTD(1)"`
+	PauseDurationUsec     int64 `gorm:"codec:T64,ZSTD(1)"`
 
 	Stage int64 `gorm:"codec:T64,ZSTD(1)"`
 
@@ -396,7 +396,7 @@ func (e *Execution) AdditionalFields() []string {
 		"SnapshotSavedRemotely",
 		"SnapshotIsDiff",
 		"SnapshotSizeBytes",
-		"SnapshotPauseDurationUsec",
+		"PauseDurationUsec",
 		"ExecutorHostname",
 		"Experiments",
 		"ClientIP",

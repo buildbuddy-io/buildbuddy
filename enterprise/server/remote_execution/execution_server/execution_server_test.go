@@ -1689,7 +1689,7 @@ func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flush
 		assert.True(t, got.GetSnapshotSavedRemotely(), "snapshot_saved_remotely")
 		assert.True(t, got.GetSnapshotIsDiff(), "snapshot_is_diff")
 		assert.Equal(t, int64(12345), got.GetSnapshotSizeBytes())
-		assert.Equal(t, int64(67890), got.GetSnapshotPauseDurationUsec())
+		assert.Equal(t, int64(67890), got.GetPauseDurationUsec())
 	} else {
 		// Legacy path: the OLAP flush already ran on the first COMPLETED, so
 		// the second COMPLETED is dropped server-side and its snapshot
@@ -1698,7 +1698,7 @@ func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flush
 		assert.False(t, got.GetSnapshotSavedRemotely(), "snapshot_saved_remotely should be unset on legacy path")
 		assert.False(t, got.GetSnapshotIsDiff(), "snapshot_is_diff should be unset on legacy path")
 		assert.Zero(t, got.GetSnapshotSizeBytes(), "snapshot_size_bytes should be unset on legacy path")
-		assert.Zero(t, got.GetSnapshotPauseDurationUsec(), "snapshot_pause_duration_usec should be unset on legacy path")
+		assert.Zero(t, got.GetPauseDurationUsec(), "pause_duration_usec should be unset on legacy path")
 	}
 
 	// Action cache should hold the result from the first COMPLETED only.

@@ -384,7 +384,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		SnapshotSavedRemotely:              in.GetSnapshotSavedRemotely(),
 		SnapshotIsDiff:                     in.GetSnapshotIsDiff(),
 		SnapshotSizeBytes:                  in.GetSnapshotSizeBytes(),
-		SnapshotPauseDurationUsec:          in.GetSnapshotPauseDurationUsec(),
+		PauseDurationUsec:                  in.GetPauseDurationUsec(),
 		Stage:                              in.GetStage(),
 		FileDownloadCount:                  in.GetFileDownloadCount(),
 		FileDownloadSizeBytes:              in.GetFileDownloadSizeBytes(),

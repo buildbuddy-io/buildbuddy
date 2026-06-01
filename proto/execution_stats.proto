@@ -181,8 +181,8 @@ message ExecutionAuxiliaryMetadata {
 }
 
 message PostCompletionStats {
-  // Wall-clock time spent in Container.Pause, in microseconds. Includes
-  // snapshot creation, chunk uploads, and VM teardown.
+  // Wall-clock time spent in Container.Pause. For VMs, this includes snapshot
+  // creation, chunk uploads, and VM teardown.
   int64 pause_duration_usec = 1;
 
   // Firecracker-specific post-execution stats. Nil for non-firecracker runners.

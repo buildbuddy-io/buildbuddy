@@ -474,7 +474,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			// Stats only present on a follow-up COMPLETED carrying
 			// PostCompletionStats (e.g. firecracker snapshot save stats).
 			if postStats := auxMeta.GetPostCompletionStats(); postStats != nil {
-				executionProto.SnapshotPauseDurationUsec = postStats.GetPauseDurationUsec()
+				executionProto.PauseDurationUsec = postStats.GetPauseDurationUsec()
 				if fc := postStats.GetFirecrackerPostExecStats(); fc != nil {
 					executionProto.SnapshotSavedLocally = fc.GetSnapshotSavedLocally()
 					executionProto.SnapshotSavedRemotely = fc.GetSnapshotSavedRemotely()
@@ -1430,7 +1430,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		flushExecutionsOnEOF = fp.Boolean(ctx, "remote_execution.flush_executions_after_cleanup", false)
 	}
 
-	firstCompletedSeen := false
+	firstCompletedHandled := false
 	for {
 		op, err := stream.Recv()
 		if err == io.EOF {
@@ -1485,7 +1485,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		// cacheExecuteResponse, action/cmd fetch) are skipped to avoid
 		// double-caching, double-counting usage, or emitting duplicate
 		// metrics.
-		isPostCompletionUpdate := stage == repb.ExecutionStage_COMPLETED && firstCompletedSeen
+		isPostCompletionUpdate := stage == repb.ExecutionStage_COMPLETED && firstCompletedHandled
 
 		var auxMeta *espb.ExecutionAuxiliaryMetadata
 		var properties *platform.Properties
@@ -1530,6 +1530,8 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			}
 		}
 		if !isPostCompletionUpdate {
+			// There's no need to notify the client (bazel) of updates after the
+			// execution has completed.
 			data, err := proto.Marshal(op)
 			if err != nil {
 				return status.InternalErrorf("Failed to marshal Operation: %s", err)
@@ -1568,7 +1570,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				return err
 			}
-			firstCompletedSeen = true
+			firstCompletedHandled = true
 
 			if response != nil && !isPostCompletionUpdate {
 				// TODO(vanja) should this be done when the executor got a
