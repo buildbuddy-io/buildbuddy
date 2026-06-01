@@ -1642,11 +1642,13 @@ func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flush
 	// TryRecycle -> Pause has run for a firecracker runner.
 	secondAuxAny, err := anypb.New(&espb.ExecutionAuxiliaryMetadata{
 		PostCompletionStats: &espb.PostCompletionStats{
-			SnapshotSavedLocally:  true,
-			SnapshotSavedRemotely: true,
-			SnapshotIsDiff:        true,
-			SnapshotSizeBytes:     12345,
-			PauseDurationUsec:     67890,
+			PauseDurationUsec: 67890,
+			FirecrackerPostExecStats: &espb.FirecrackerPostExecStats{
+				SnapshotSavedLocally:  true,
+				SnapshotSavedRemotely: true,
+				SnapshotIsDiff:        true,
+				SnapshotSizeBytes:     12345,
+			},
 		},
 	})
 	require.NoError(t, err)

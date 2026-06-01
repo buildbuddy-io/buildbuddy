@@ -474,11 +474,13 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			// Stats only present on a follow-up COMPLETED carrying
 			// PostCompletionStats (e.g. firecracker snapshot save stats).
 			if postStats := auxMeta.GetPostCompletionStats(); postStats != nil {
-				executionProto.SnapshotSavedLocally = postStats.GetSnapshotSavedLocally()
-				executionProto.SnapshotSavedRemotely = postStats.GetSnapshotSavedRemotely()
-				executionProto.SnapshotIsDiff = postStats.GetSnapshotIsDiff()
-				executionProto.SnapshotSizeBytes = postStats.GetSnapshotSizeBytes()
 				executionProto.SnapshotPauseDurationUsec = postStats.GetPauseDurationUsec()
+				if fc := postStats.GetFirecrackerPostExecStats(); fc != nil {
+					executionProto.SnapshotSavedLocally = fc.GetSnapshotSavedLocally()
+					executionProto.SnapshotSavedRemotely = fc.GetSnapshotSavedRemotely()
+					executionProto.SnapshotIsDiff = fc.GetSnapshotIsDiff()
+					executionProto.SnapshotSizeBytes = fc.GetSnapshotSizeBytes()
+				}
 			}
 
 			request := auxMeta.GetExecuteRequest()

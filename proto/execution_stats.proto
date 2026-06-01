@@ -181,6 +181,15 @@ message ExecutionAuxiliaryMetadata {
 }
 
 message PostCompletionStats {
+  // Wall-clock time spent in Container.Pause, in microseconds. Includes
+  // snapshot creation, chunk uploads, and VM teardown.
+  int64 pause_duration_usec = 1;
+
+  // Firecracker-specific post-execution stats. Nil for non-firecracker runners.
+  FirecrackerPostExecStats firecracker_post_exec_stats = 2;
+}
+
+message FirecrackerPostExecStats {
   // Whether the snapshot was actually saved to the local cache. This is the
   // resolved value after Pause, not the prediction reported in VMMetadata
   // before Pause runs.
@@ -196,10 +205,6 @@ message PostCompletionStats {
   // this counts only the modified chunks (i.e. the bytes that materially
   // changed since the base snapshot).
   int64 snapshot_size_bytes = 4;
-
-  // Wall-clock time spent in Container.Pause, in microseconds. Includes
-  // snapshot creation, chunk uploads, and VM teardown.
-  int64 pause_duration_usec = 5;
 }
 
 message RunnerMetadata {
