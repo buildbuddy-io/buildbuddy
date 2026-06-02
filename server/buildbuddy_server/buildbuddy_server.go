@@ -243,9 +243,6 @@ func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.Searc
 	if searcher == nil {
 		return nil, fmt.Errorf("No searcher was configured")
 	}
-	if req.Query == nil {
-		return nil, fmt.Errorf("A query must be provided")
-	}
 	return searcher.QueryInvocations(ctx, req)
 }
 
