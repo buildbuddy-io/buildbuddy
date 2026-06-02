@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -73,9 +74,13 @@ func githubSource(path string) ([]byte, int, error) {
 	if err != nil {
 		return nil, 400, err
 	}
-	return []byte(`{
+	encoded, err := json.Marshal(map[string]string{
 		"integrity": "",
-		"strip_prefix": "` + repo + `-` + tag + `",
-		"url": "https://github.com/` + owner + `/` + repo + `/archive/` + tag + `.zip"
-	}`), 200, nil
+		"strip_prefix": repo + "-" + tag,
+		"url": "https://github.com/" + owner + "/" + repo + "/archive/" + tag + ".zip",
+	})
+	if err != nil {
+		return nil, 400, err
+	}
+	return encoded, 200, nil
 }
