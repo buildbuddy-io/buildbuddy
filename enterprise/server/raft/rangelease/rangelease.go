@@ -136,7 +136,7 @@ func (l *Lease) GetRangeID() uint64 {
 }
 
 func (l *Lease) verifyLease(ctx context.Context, rl *rfpb.RangeLeaseRecord) (returnedErr error) {
-	ctx, span := tracing.StartSpan(ctx)
+	ctx, span := tracing.StartNamedSpan(ctx, "rangelease.Lease.verifyLease")
 	defer func() {
 		tracing.RecordErrorToSpan(span, returnedErr)
 		span.End()
