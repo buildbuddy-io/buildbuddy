@@ -22,6 +22,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/hostid"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -31,10 +32,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
+	dto "github.com/prometheus/client_model/go"
 )
 
 var (
@@ -151,7 +154,6 @@ func streamHeartbeats(ctx context.Context, client cppb.CacheProxyRegistryClient,
 	defer cleanup()
 	log.Infof("Successfully registered Cache Proxy %q with the app", node.GetProxyId())
 
-	req := &cppb.RegisterCacheProxyRequest{Node: node}
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
 	for {
@@ -163,11 +165,80 @@ func streamHeartbeats(ctx context.Context, client cppb.CacheProxyRegistryClient,
 			stream.CloseAndRecv()
 			return nil
 		case <-ticker.C:
+			req := &cppb.RegisterCacheProxyRequest{Node: node, Statistics: collectStatistics()}
 			if err := sendHeartbeat(stream, req); err != nil {
 				return err
 			}
 		}
 	}
+}
+
+// collectStatistics reads the proxy's cumulative AC/CAS read and write
+// counters out of the in-process Prometheus registry. Reads are partitioned
+// by the hit/miss label; writes are reported as totals since there's no
+// meaningful hit/miss distinction on the write side.
+func collectStatistics() *cppb.Statistics {
+	stats := &cppb.Statistics{}
+	stats.AcReadHits, stats.AcReadMisses = sumByHitMiss(metrics.ActionCacheProxiedReadRequests)
+	stats.AcReadHitBytes, stats.AcReadMissBytes = sumByHitMiss(metrics.ActionCacheProxiedReadBytes)
+	stats.CasReadHits, stats.CasReadMisses = sumByHitMiss(metrics.ByteStreamProxiedReadRequests)
+	stats.CasReadHitBytes, stats.CasReadMissBytes = sumByHitMiss(metrics.ByteStreamProxiedReadBytes)
+	stats.AcWrites = sumAll(metrics.ActionCacheProxiedWriteRequests)
+	stats.AcWriteBytes = sumAll(metrics.ActionCacheProxiedWriteBytes)
+	stats.CasWrites = sumAll(metrics.ByteStreamProxiedWriteRequests)
+	stats.CasWriteBytes = sumAll(metrics.ByteStreamProxiedWriteBytes)
+	return stats
+}
+
+// sumAll collects every series from a CounterVec and totals their values
+// without partitioning by any label.
+func sumAll(cv *prometheus.CounterVec) int64 {
+	ch := make(chan prometheus.Metric, 64)
+	go func() {
+		defer close(ch)
+		cv.Collect(ch)
+	}()
+	var total float64
+	for m := range ch {
+		dm := &dto.Metric{}
+		if err := m.Write(dm); err != nil {
+			continue
+		}
+		total += dm.GetCounter().GetValue()
+	}
+	return int64(total)
+}
+
+// sumByHitMiss collects every series from a CounterVec and totals their
+// values into (hits, misses) based on the CacheHitMissStatus label.
+func sumByHitMiss(cv *prometheus.CounterVec) (int64, int64) {
+	ch := make(chan prometheus.Metric, 64)
+	go func() {
+		defer close(ch)
+		cv.Collect(ch)
+	}()
+	var hits, misses float64
+	for m := range ch {
+		dm := &dto.Metric{}
+		if err := m.Write(dm); err != nil {
+			continue
+		}
+		var hitMiss string
+		for _, lp := range dm.GetLabel() {
+			if lp.GetName() == metrics.CacheHitMissStatus {
+				hitMiss = lp.GetValue()
+				break
+			}
+		}
+		v := dm.GetCounter().GetValue()
+		switch hitMiss {
+		case metrics.HitStatusLabel:
+			hits += v
+		case metrics.MissStatusLabel:
+			misses += v
+		}
+	}
+	return int64(hits), int64(misses)
 }
 
 func openStream(ctx context.Context, client cppb.CacheProxyRegistryClient, node *cppb.CacheProxyNode) (cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, func(), error) {
@@ -195,7 +266,7 @@ func openStream(ctx context.Context, client cppb.CacheProxyRegistryClient, node 
 	if err != nil {
 		return nil, nil, fail(err)
 	}
-	if err := sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node}); err != nil {
+	if err := sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node, Statistics: collectStatistics()}); err != nil {
 		return nil, nil, fail(err)
 	}
 	setupTimer.Stop()

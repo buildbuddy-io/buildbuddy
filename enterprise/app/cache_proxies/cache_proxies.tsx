@@ -85,6 +85,7 @@ class CacheProxiesList extends React.Component<CacheProxiesListProps> {
                 key={proxy.node.proxyId}
                 node={proxy.node as cache_proxy.CacheProxyNode}
                 lastCheckInTime={proxy.lastCheckInTime}
+                statistics={proxy.statistics}
               />
             )
         )}
