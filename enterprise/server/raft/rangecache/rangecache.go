@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
@@ -17,42 +17,27 @@ import (
 )
 
 // RangeCache is a synchronous map from ranges to their descriptors.
+//
+// Descriptors are stored behind atomic pointers so SetPreferredReplica can
+// swap in a new descriptor without holding the cache-wide write lock. The
+// stored *rfpb.RangeDescriptor is treated as immutable; mutators must clone,
+// modify, then Store a new pointer.
 type RangeCache struct {
 	rangeMu sync.RWMutex
 
-	// Keep a rangemap that maps from ranges to descriptors.
-	rangeMap *rangemap.RangeMap[*lockingRangeDescriptor]
+	rangeMap *rangemap.RangeMap[*atomic.Pointer[rfpb.RangeDescriptor]]
 }
 
 func New() *RangeCache {
 	return &RangeCache{
-		rangeMu:  sync.RWMutex{},
-		rangeMap: rangemap.New[*lockingRangeDescriptor](),
+		rangeMap: rangemap.New[*atomic.Pointer[rfpb.RangeDescriptor]](),
 	}
 }
 
-// A lockingRangeDescriptor pointer is stored in the rangeMap to prevent
-// data races when mutating the order of replicas elsewhere.
-type lockingRangeDescriptor struct {
-	mu sync.Mutex
-	rd *rfpb.RangeDescriptor
-}
-
-func newLockingRangeDescriptor(rd *rfpb.RangeDescriptor) *lockingRangeDescriptor {
-	return &lockingRangeDescriptor{
-		mu: sync.Mutex{},
-		rd: rd,
-	}
-}
-func (lr *lockingRangeDescriptor) Get() *rfpb.RangeDescriptor {
-	lr.mu.Lock()
-	defer lr.mu.Unlock()
-	return lr.rd
-}
-func (lr *lockingRangeDescriptor) Update(rd *rfpb.RangeDescriptor) {
-	lr.mu.Lock()
-	defer lr.mu.Unlock()
-	lr.rd = rd
+func newAtomicDescriptor(rd *rfpb.RangeDescriptor) *atomic.Pointer[rfpb.RangeDescriptor] {
+	p := &atomic.Pointer[rfpb.RangeDescriptor]{}
+	p.Store(rd)
+	return p
 }
 
 func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
@@ -66,27 +51,21 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 
 	r := rc.rangeMap.Get(start, end)
 	if r == nil {
-		checkFn := func(r *lockingRangeDescriptor) bool {
-			v := r.Get()
-			return v.GetGeneration() < newDescriptor.GetGeneration()
+		checkFn := func(p *atomic.Pointer[rfpb.RangeDescriptor]) bool {
+			return p.Load().GetGeneration() < newDescriptor.GetGeneration()
 		}
-		added, err := rc.rangeMap.AddAndRemoveOverlapping(start, end, newLockingRangeDescriptor(newDescriptor), checkFn)
+		added, err := rc.rangeMap.AddAndRemoveOverlapping(start, end, newAtomicDescriptor(newDescriptor), checkFn)
 		if added {
 			log.Debugf("Adding new range: %d [%q, %q)", newDescriptor.GetRangeId(), start, end)
 		} else {
 			log.Debugf("Ignoring rangeDescriptor %+v, because current has same or later generation", newDescriptor)
 		}
 		return err
-	} else {
-		lr := r.Val
-		if lr == nil {
-			return status.FailedPreconditionError("Val was nil")
-		}
-		v := lr.Get()
-		if newDescriptor.GetGeneration() > v.GetGeneration() {
-			lr.Update(newDescriptor)
-			log.Debugf("Updated rangelease generation: [%q, %q) (%d -> %d)", start, end, v.GetGeneration(), newDescriptor.GetGeneration())
-		}
+	}
+	v := r.Val.Load()
+	if newDescriptor.GetGeneration() > v.GetGeneration() {
+		r.Val.Store(newDescriptor)
+		log.Debugf("Updated rangelease generation: [%q, %q) (%d -> %d)", start, end, v.GetGeneration(), newDescriptor.GetGeneration())
 	}
 	return nil
 }
@@ -118,14 +97,7 @@ func (rc *RangeCache) SetPreferredReplica(ctx context.Context, rep *rfpb.Replica
 		return
 	}
 
-	lr := r.Val
-	if lr == nil {
-		err := fmt.Errorf("locking range descriptor value for range [%q, %q) is nil", r.Start, r.End)
-		log.Error(err.Error())
-		tracing.RecordErrorToSpan(spn, err)
-		return
-	}
-	rd := lr.Get()
+	rd := r.Val.Load()
 	newDescriptor := rd.CloneVT()
 
 	leadReplicaIndex := -1
@@ -144,7 +116,7 @@ func (rc *RangeCache) SetPreferredReplica(ctx context.Context, rep *rfpb.Replica
 	}
 	newDescriptor.Replicas[0], newDescriptor.Replicas[leadReplicaIndex] = newDescriptor.Replicas[leadReplicaIndex], newDescriptor.Replicas[0]
 
-	lr.Update(newDescriptor)
+	r.Val.Store(newDescriptor)
 
 	replica_ids := make([]int64, 0, len(newDescriptor.GetReplicas()))
 	for _, repl := range newDescriptor.GetReplicas() {
@@ -168,7 +140,7 @@ func (rc *RangeCache) Get(key []byte) *rfpb.RangeDescriptor {
 
 	raftRangeCacheLookupCounter[found].Inc()
 	if found {
-		return lr.Get()
+		return lr.Load()
 	}
 	return nil
 }
