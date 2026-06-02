@@ -6,6 +6,7 @@ load("@rules_img//img:image.bzl", "image_index", "image_manifest")
 load("@rules_img//img:layer.bzl", "image_layer", "layer_from_tar")
 load("@rules_img//img:load.bzl", "image_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//images:common.bzl", "APP_PACKAGE_ROOT")
 load("//rules:utils.bzl", "runfiles_directory")
 
 # gazelle:default_visibility //enterprise:__subpackages__,@buildbuddy_internal//:__subpackages__
@@ -171,8 +172,6 @@ container_image(
     visibility = ["//visibility:public"],
 )
 
-PACKAGE_ROOT = "app"
-
 image_layer(
     name = "symlink_layer",
     annotations = {
@@ -190,7 +189,7 @@ image_layer(
 
 image_layer(
     name = "binary_layer",
-    srcs = {PACKAGE_ROOT + "/buildbuddy": ":buildbuddy"},
+    srcs = {APP_PACKAGE_ROOT + "/buildbuddy": ":buildbuddy"},
     annotations = {
         "org.opencontainers.image.title": "Enterprise BuildBuddy Server",
         "org.opencontainers.image.description": (
@@ -213,7 +212,7 @@ pkg_tar(
         ":runfiles",
     ],
     include_runfiles = True,
-    package_dir = PACKAGE_ROOT,
+    package_dir = APP_PACKAGE_ROOT,
     portable_mtime = False,
     remap_paths = {
         ".runfiles/": "%s.runfiles/" % BINARY_NAME,
@@ -250,7 +249,7 @@ image_manifest(
     base = "//images/distroless/base-nossl:manifest",
     entrypoint = [
         "/%s/%s" % (
-            PACKAGE_ROOT,
+            APP_PACKAGE_ROOT,
             BINARY_NAME,
         ),
     ],
@@ -268,7 +267,7 @@ pkg_tar(
         ":config_files",
     ],
     include_runfiles = True,
-    package_dir = PACKAGE_ROOT,
+    package_dir = APP_PACKAGE_ROOT,
     remap_paths = {
         ".runfiles/%s/enterprise" % runfiles_directory(): "",
     },
@@ -279,7 +278,7 @@ pkg_tar(
     name = "config_symlink_tar",
     mode = "0755",
     symlinks = {
-        "config.yaml": "%s/config/buildbuddy.local.yaml" % PACKAGE_ROOT,
+        "config.yaml": "%s/config/buildbuddy.local.yaml" % APP_PACKAGE_ROOT,
     },
     tags = ["manual"],
 )
