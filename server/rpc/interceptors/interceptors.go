@@ -92,7 +92,7 @@ func contextReplacingUnaryClientInterceptor(ctxFn func(ctx context.Context) cont
 func AddAuthToContext(env environment.Env, ctx context.Context) context.Context {
 	// Don't save the trace context so that this isn't a parent of the calls
 	// that use the returned context.
-	_, span := tracing.StartSpan(ctx)
+	_, span := tracing.StartNamedSpan(ctx, "interceptors.AddAuthToContext")
 	defer span.End()
 	ctx = env.GetAuthenticator().AuthenticatedGRPCContext(ctx)
 	if c, err := claims.ClaimsFromContext(ctx); err == nil {
