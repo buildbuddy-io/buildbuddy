@@ -175,7 +175,7 @@ container_image(
 image_layer(
     name = "symlink_layer",
     annotations = {
-        "org.opencontainers.image.title": "`/buildbuddy` -> `/tmp`",
+        "org.opencontainers.image.title": "`/buildbuddy` to `/tmp`",
         "org.opencontainers.image.description": (
             "Contains a symlink from `/buildbuddy` to `/tmp`."
         ),
