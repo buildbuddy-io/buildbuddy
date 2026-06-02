@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -219,6 +220,7 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 		grpc.UnaryInterceptor(interceptors.TracedUnaryServerInterceptor("grpc_server.MetricsInterceptor", Metrics().UnaryServerInterceptor())),
 		experimental.BufferPool(mem.DefaultBufferPool()),
 		grpc.MaxRecvMsgSize(MaxRecvMsgSizeBytes()),
+		grpc.NumStreamWorkers(uint32(runtime.GOMAXPROCS(0))),
 		KeepaliveEnforcementPolicy(),
 	}
 	for _, h := range config.ExtraStatsHandlers {

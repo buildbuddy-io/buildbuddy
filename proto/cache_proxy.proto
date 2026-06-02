@@ -37,12 +37,38 @@ message CacheProxyNode {
 
   // Time when this cache proxy process started.
   google.protobuf.Timestamp start_time = 7;
+
+  // Optional set of key-value labels identifying this cache proxy. Set
+  // operationally (e.g. region, canary, environment) and surfaced on the
+  // deployment view.
+  map<string, string> labels = 8;
+}
+
+// Statistics about this cache proxy's performance. Cumulative over the
+// lifetime of this cache proxy.
+message Statistics {
+  // Read statistics — broken out by hit/miss.
+  int64 ac_read_hits = 1;
+  int64 ac_read_misses = 2;
+  int64 ac_read_hit_bytes = 3;
+  int64 ac_read_miss_bytes = 4;
+  int64 cas_read_hits = 5;
+  int64 cas_read_misses = 6;
+  int64 cas_read_hit_bytes = 7;
+  int64 cas_read_miss_bytes = 8;
+
+  // Write statistics.
+  int64 ac_writes = 9;
+  int64 ac_write_bytes = 10;
+  int64 cas_writes = 11;
+  int64 cas_write_bytes = 12;
 }
 
 // RegisterCacheProxyRequest is sent on the client-side stream from the proxy
 // to the server, both initially and as a periodic heartbeat.
 message RegisterCacheProxyRequest {
   CacheProxyNode node = 1;
+  Statistics statistics = 2;
 }
 
 // RegisterCacheProxyResponse is returned by the server once the proxy closes
@@ -64,6 +90,9 @@ message GetCacheProxiesResponse {
 
     // Last time this cache proxy checked in with the server.
     google.protobuf.Timestamp last_check_in_time = 2;
+
+    // Statistics about this cache proxy's performance.
+    Statistics statistics = 3;
   }
 }
 
@@ -73,6 +102,7 @@ message RegisteredCacheProxy {
   string group_id = 2;
   acl.ACL acl = 3;
   google.protobuf.Timestamp last_ping_time = 4;
+  Statistics statistics = 5;
 }
 
 // CacheProxyRegistry runs on the main BuildBuddy app and tracks the set of

@@ -124,6 +124,18 @@ actions:
     steps:
       - run: |
           echo "SUCCESS!"
+  - name: Code review
+    container_image: ubuntu-22.04
+    triggers:
+      pull_request:
+        branches:
+          - "*"
+    user: buildbuddy
+    steps:
+      - run: |
+          enterprise/tools/agents/setup-gh.sh
+          enterprise/tools/agents/claude/setup.sh
+          bazel run //enterprise/tools/agent_review --config=linux-workflows
 
 plugins:
   - path: cli/plugins/go-deps

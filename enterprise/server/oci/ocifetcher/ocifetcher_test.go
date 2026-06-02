@@ -1117,7 +1117,8 @@ func TestServerBypassRegistry(t *testing.T) {
 		// Verify registry was hit
 		require.Greater(t, counter.Snapshot()[http.MethodGet+" /v2/test-image/manifests/"+digest], 0)
 
-		// Second fetch by digest - should serve from cache
+		// Second fetch by digest - auth was already cached from the first fetch,
+		// so no HEAD request is needed; served directly from cache.
 		counter.Reset()
 		resp, err = server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
 			Ref: imageName + "@" + digest,
@@ -1125,7 +1126,6 @@ func TestServerBypassRegistry(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expectedManifest, resp.GetManifest())
 
-		// Verify no registry requests were made (served from cache)
 		assertRequests(t, counter, map[string]int{})
 	})
 
@@ -1607,4 +1607,47 @@ func TestFetchBlobSingleflightDifferentCredentials(t *testing.T) {
 		// attempt calls it before the blob GET fails).
 		http.MethodHead + " " + blobPath: 3,
 	})
+}
+
+// TestPrivateImageManifestCacheRequiresCredentials confirms that a cached
+// manifest is not served to a caller with missing or wrong registry creds.
+func TestPrivateImageManifestCacheRequiresCredentials(t *testing.T) {
+	registryCreds := &testregistry.BasicAuthCreds{Username: "good", Password: "secret"}
+	validRequestCreds := &rgpb.Credentials{Username: "good", Password: "secret"}
+	wrongRequestCreds := &rgpb.Credentials{Username: "good", Password: "wrong"}
+
+	for _, ac := range []struct {
+		name  string
+		creds *rgpb.Credentials
+	}{
+		{name: "NoCredentials", creds: nil},
+		{name: "WrongCredentials", creds: wrongRequestCreds},
+	} {
+		t.Run(ac.name, func(t *testing.T) {
+			reg, counter := setupRegistry(t, registryCreds, nil)
+			imageName, img := reg.PushNamedImage(t, "private-image", registryCreds)
+			digest, _, _ := imageMetadata(t, img)
+			ref := imageName + "@" + digest
+			manifestHead := http.MethodHead + " /v2/private-image/manifests/" + digest
+
+			server := newTestServer(t)
+
+			_, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
+				Ref:         ref,
+				Credentials: validRequestCreds,
+			})
+			require.NoError(t, err)
+
+			counter.Reset()
+			_, err = server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
+				Ref:         ref,
+				Credentials: ac.creds,
+			})
+			require.True(t, status.IsUnauthenticatedError(err), "expected Unauthenticated, got: %v", err)
+			assertRequests(t, counter, map[string]int{
+				http.MethodGet + " /v2/": 2,
+				manifestHead:             2,
+			})
+		})
+	}
 }

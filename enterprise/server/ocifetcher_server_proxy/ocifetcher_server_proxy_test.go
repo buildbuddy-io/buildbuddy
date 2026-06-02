@@ -3,6 +3,7 @@ package ocifetcher_server_proxy
 import (
 	"context"
 	"io"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -837,4 +839,57 @@ func collectBlobData(t *testing.T, stream ofpb.OCIFetcher_FetchBlobClient) []byt
 		data = append(data, resp.GetData()...)
 	}
 	return data
+}
+
+// TestPrivateImageManifestCacheRequiresCredentials confirms the cached
+// manifest is not served through the proxy to a caller without valid creds.
+func TestPrivateImageManifestCacheRequiresCredentials(t *testing.T) {
+	registryCreds := &testregistry.BasicAuthCreds{Username: "good", Password: "secret"}
+	validRequestCreds := &rgpb.Credentials{Username: "good", Password: "secret"}
+	wrongRequestCreds := &rgpb.Credentials{Username: "good", Password: "wrong"}
+
+	for _, ac := range []struct {
+		name  string
+		creds *rgpb.Credentials
+	}{
+		{name: "NoCredentials", creds: nil},
+		{name: "WrongCredentials", creds: wrongRequestCreds},
+	} {
+		t.Run(ac.name, func(t *testing.T) {
+			ctx := context.Background()
+			counter := testhttp.NewRequestCounter()
+			reg := testregistry.Run(t, testregistry.Opts{
+				Creds: registryCreds,
+				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+					counter.Inc(r)
+					return true
+				},
+			})
+			imageName, img := reg.PushNamedImage(t, "private-image", registryCreds)
+			digest, _, _ := imageMetadata(t, img)
+			ref := imageName + "@" + digest
+			manifestHead := http.MethodHead + " /v2/private-image/manifests/" + digest
+
+			_, bsClient, acClient := setupCacheEnv(t)
+			upstream := runOCIFetcherServer(ctx, t, bsClient, acClient)
+			proxyClient := runOCIFetcherProxy(ctx, t, upstream)
+
+			_, err := proxyClient.FetchManifest(ctx, &ofpb.FetchManifestRequest{
+				Ref:         ref,
+				Credentials: validRequestCreds,
+			})
+			require.NoError(t, err)
+
+			counter.Reset()
+			_, err = proxyClient.FetchManifest(ctx, &ofpb.FetchManifestRequest{
+				Ref:         ref,
+				Credentials: ac.creds,
+			})
+			require.True(t, status.IsUnauthenticatedError(err), "expected Unauthenticated, got: %v", err)
+			require.Empty(t, cmp.Diff(map[string]int{
+				http.MethodGet + " /v2/": 2,
+				manifestHead:             2,
+			}, counter.Snapshot()))
+		})
+	}
 }

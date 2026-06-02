@@ -16,6 +16,7 @@ interface HeatmapProps {
   selectionCallback?: (s?: HeatmapSelection) => void;
   zoomCallback?: (s?: HeatmapSelection) => void;
   selectedData?: HeatmapSelection;
+  logScale?: boolean;
 }
 
 interface ResizableHeatmapProps extends HeatmapProps {
@@ -45,7 +46,9 @@ export type HeatmapSelection = {
 };
 
 const CHART_MARGINS = {
-  top: 1,
+  // The heatmap defines its own top margin so that the topmost scale
+  // label can flow into it.
+  top: 17,
   right: 1,
   bottom: 39,
   left: 89,
@@ -62,8 +65,11 @@ const ZOOM_BUTTON_ATTRIBUTES = {
 const MINIMUM_DURATION_FOR_DAY_LABELS_MICROS = 1e6 * 60 * 60 * 49;
 
 // This is a magic number that states there will only be one axis label for
-// every N pixels of rendered axis length (currently 100).
-const TICK_LABEL_SPACING_MAGIC_NUMBER = 100;
+// every N pixels of rendered X axis length.
+const X_AXIS_TICK_LABEL_SPACING_MAGIC_NUMBER = 100;
+// This is a magic number that states there will only be one axis label for
+// every N pixels of rendered Y axis length.
+const Y_AXIS_TICK_LABEL_SPACING_MAGIC_NUMBER = 50;
 // This is a discretized dump of the 'Purples' and 'Greens' scales
 // from d3-scale-chromatic, starting arbitrarily from .25 because it looked
 // nice.  The scale is great but the package itself is heavy.  The
@@ -116,12 +122,22 @@ type SelectionData = {
   selectionYEnd: number;
 };
 
+function isPowerOfTen(v: number): boolean {
+  return Number.isInteger(Math.log10(v));
+}
+
 class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, State> {
   state: State = {};
   svgRef: React.RefObject<SVGSVGElement> = React.createRef();
   chartGroupRef: React.RefObject<SVGGElement> = React.createRef();
+  // The x scale is just a boring linear scale.
   xScaleBand: ScaleBand<number> = scaleBand();
-  yScaleBand: ScaleBand<number> = scaleBand();
+  // The y axis is either linear or log scale.  In log mode, if a bucket is smaller
+  // than a power of ten, its height will be taller or shorter than other buckets.
+  // d3 scales don't quite handle this in a way that plays nice with our rendering
+  // needs, afaict.
+  yScaleTops: number[] = [];
+  yScaleHeights: number[] = [];
   mouseMoveListener = (e: MouseEvent) => this.onMouseMove(e);
 
   // These ordered pairs indicate which cell was first clicked on by the user.
@@ -137,6 +153,55 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
     return Math.max(this.props.heatmapData.bucketBracket.length - 1, 1);
   }
 
+  // Computes this.yScaleTops / this.yScaleHeights (in pixels) for the
+  // given chart height.
+  // With a linear scale, this simply divides the height evenly between buckets.
+  // With a log scale, each bucket's height is proportional to
+  // log(end) - log(start) so that every decade gets equal vertical space.
+  private computeYAxisGeometry(chartHeight: number) {
+    const bracket = this.props.heatmapData.bucketBracket;
+    const numRows = this.numHeatmapRows();
+    const weights: number[] = [];
+    for (let i = 0; i < numRows; i++) {
+      const start = +bracket[i];
+      const end = +bracket[i + 1];
+      if (!this.props.logScale || start <= 0 || end <= 0) {
+        // Linear buckets are spaced evenly, and in the off chance
+        // that we got a bucket with a negative value while trying to
+        // show a log scale (technically undefined), we just give it
+        // the same height as a full decade.
+        weights.push(1);
+      } else {
+        weights.push(Math.log10(end) - Math.log10(start));
+      }
+    }
+    const totalWeight = weights.reduce((a, b) => a + b, 0) || 1;
+
+    const heights: number[] = weights.map((w) => (w / totalWeight) * chartHeight);
+    const tops: number[] = new Array(numRows);
+    let heightSoFar = 0;
+    for (let i = 0; i < numRows; i++) {
+      tops[i] = chartHeight - heightSoFar - heights[i];
+      heightSoFar += heights[i];
+    }
+    this.yScaleTops = tops;
+    this.yScaleHeights = heights;
+  }
+
+  // Returns the metric bucket index containing the given y pixel coordinate
+  // (measured from the top of the chart area), or undefined if the value
+  // falls out of the actual heatmap area.
+  private metricIndexFromYPixel(yPixel: number): number | undefined {
+    const numRows = this.yScaleHeights.length;
+    for (let i = 0; i < numRows; i++) {
+      if (yPixel >= this.yScaleTops[i] && yPixel < this.yScaleTops[i] + this.yScaleHeights[i]) {
+        return i;
+      }
+    }
+    // Didn't fit in a bucket range: pixel is not inside the heatmap area.
+    return undefined;
+  }
+
   private computeBucket(x: number, y: number): SelectedCellData | undefined {
     if (!this.svgRef.current || !this.chartGroupRef.current) {
       return undefined;
@@ -150,9 +215,11 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
 
     const { top, left } = this.svgRef.current.getBoundingClientRect();
     const mouseX = x - left - CHART_MARGINS.left - this.xScaleBand.step() / 2;
-    const mouseY = y - top - CHART_MARGINS.top - this.yScaleBand.step() / 2;
     const stepX = Math.round(mouseX / this.xScaleBand.step());
-    const stepY = this.yScaleBand.domain().length - Math.round(mouseY / this.yScaleBand.step()) - 1;
+    const stepY = this.metricIndexFromYPixel(y - top - CHART_MARGINS.top);
+    if (stepY == undefined) {
+      return undefined;
+    }
 
     const timestamp = this.props.heatmapData.timestampBracket[stepX];
     const metric = this.props.heatmapData.bucketBracket[stepY];
@@ -364,22 +431,25 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
     }
 
     const aScreenX = this.xScaleBand(+selectionToDraw[0].timestamp);
-    const aScreenY = this.yScaleBand(+selectionToDraw[0].metric);
     const bScreenX = this.xScaleBand(+selectionToDraw[1].timestamp);
-    const bScreenY = this.yScaleBand(+selectionToDraw[1].metric);
 
-    if (aScreenX === undefined || aScreenY === undefined || bScreenX === undefined || bScreenY === undefined) {
+    // Placating typescript, these /should/ always be defined.
+    if (aScreenX === undefined || bScreenX === undefined) {
       return undefined;
     }
 
-    const top = Math.min(aScreenY, bScreenY) + CHART_MARGINS.top;
-    const height = Math.max(aScreenY, bScreenY) + CHART_MARGINS.top + this.yScaleBand.step() - top;
-    const left = Math.min(aScreenX, bScreenX) + CHART_MARGINS.left;
-    const width = Math.max(aScreenX, bScreenX) + CHART_MARGINS.left + this.xScaleBand.step() - left;
     const aTimestampIndex = selectionToDraw[0].timestampBucketIndex;
     const aMetricIndex = selectionToDraw[0].metricBucketIndex;
     const bTimestampIndex = selectionToDraw[1].timestampBucketIndex;
     const bMetricIndex = selectionToDraw[1].metricBucketIndex;
+
+    const yStartIndex = Math.min(aMetricIndex, bMetricIndex);
+    const yEndIndex = Math.max(aMetricIndex, bMetricIndex);
+    const top = this.yScaleTops[yEndIndex] + CHART_MARGINS.top;
+    const bottom = this.yScaleTops[yStartIndex] + this.yScaleHeights[yStartIndex] + CHART_MARGINS.top;
+    const height = bottom - top;
+    const left = Math.min(aScreenX, bScreenX) + CHART_MARGINS.left;
+    const width = Math.max(aScreenX, bScreenX) + CHART_MARGINS.left + this.xScaleBand.step() - left;
 
     return {
       x: left,
@@ -388,8 +458,8 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
       height,
       selectionXStart: Math.min(aTimestampIndex, bTimestampIndex),
       selectionXEnd: Math.max(aTimestampIndex, bTimestampIndex),
-      selectionYStart: Math.min(aMetricIndex, bMetricIndex),
-      selectionYEnd: Math.max(aMetricIndex, bMetricIndex),
+      selectionYStart: yStartIndex,
+      selectionYEnd: yEndIndex,
     };
   }
 
@@ -432,7 +502,7 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
     const labelType = heatmapTimespan > MINIMUM_DURATION_FOR_DAY_LABELS_MICROS ? "day" : "hour";
 
     const numColumns = this.props.heatmapData.column.length || 1;
-    const labelSpacing = Math.ceil(numColumns / Math.min(numColumns, width / TICK_LABEL_SPACING_MAGIC_NUMBER));
+    const labelSpacing = Math.ceil(numColumns / Math.min(numColumns, width / X_AXIS_TICK_LABEL_SPACING_MAGIC_NUMBER));
     let lastLabelDistance = labelSpacing;
 
     return (
@@ -466,19 +536,41 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
       return null;
     }
     const numRows = this.numHeatmapRows();
-    const yTickMod = Math.ceil(numRows / Math.min(numRows, height / TICK_LABEL_SPACING_MAGIC_NUMBER));
+    const bracket = this.props.heatmapData.bucketBracket;
+    // Label tick marks no closer than Y_AXIS_TICK_LABEL_SPACING_MAGIC_NUMBER
+    // pixels apart. On a log scale spanning at least one decade, we
+    // additionally restrict labels to powers of 10 because it makes the scale
+    // easier to read than labeling a random sub-decade interval.
+    let lastLabelY = Infinity;
+    const decadeLabels = this.props.logScale && bracket.filter((v) => isPowerOfTen(+v)).length > 1;
+
+    // For b buckets, there are b+1 boundary values.
+    const yPositionForTick = (i: number) =>
+      i < numRows ? this.yScaleTops[i] + this.yScaleHeights[i] : this.yScaleTops[numRows - 1];
 
     return (
       <g
         color="#666"
         transform={`translate(${CHART_MARGINS.left}, ${this.props.height - CHART_MARGINS.bottom - height})`}>
         <line stroke="#666" x1="0" y1="0" x2="0" y2={height}></line>
-        {this.yScaleBand.domain().map((v, i) => {
+        {bracket.slice(0, numRows + 1).map((v, i) => {
+          const tickY = yPositionForTick(i);
+          let label: string | null = null;
+          // Don't label this axis tick if:
+          //   - we're in log mode, spanning multiple decades, AND this tick isn't a power of ten.
+          //   - we're too close to the last y axis tick that we labeled.
+          if (
+            (!decadeLabels || isPowerOfTen(+v)) &&
+            (lastLabelY - tickY >= Y_AXIS_TICK_LABEL_SPACING_MAGIC_NUMBER || lastLabelY === Infinity)
+          ) {
+            label = this.renderYBucketValue(+v);
+            lastLabelY = tickY;
+          }
           return (
-            <g transform={`translate(0, ${height - this.yScaleBand.bandwidth() * (numRows - 1 - i)})`}>
-              {(numRows - 1 - i) % yTickMod == 0 && (
+            <g transform={`translate(0, ${tickY})`}>
+              {label !== null && (
                 <text fill="#666" x="-8" y="3" fontSize="12" textAnchor="end">
-                  {this.renderYBucketValue(v)}
+                  {label}
                 </text>
               )}
               <line stroke="#666" x1="0" y1="0" x2="-4" y2="0"></line>
@@ -524,13 +616,9 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
     const height = this.props.height - CHART_MARGINS.top - CHART_MARGINS.bottom;
 
     const xDomain = this.props.heatmapData.timestampBracket.slice(0, -1).map((v) => +v);
-    const yDomain = this.props.heatmapData.bucketBracket
-      .slice(0, -1)
-      .map((v) => +v)
-      .reverse();
 
     this.xScaleBand = scaleBand<number>().range([0, width]).domain(xDomain);
-    this.yScaleBand = scaleBand<number>().range([0, height]).domain(yDomain);
+    this.computeYAxisGeometry(height);
 
     let min = 0;
     let max = 0;
@@ -566,9 +654,9 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
                         +value <= 0 ? null : (
                           <rect
                             x={this.xScaleBand(+column.timestampUsec) || 0}
-                            y={this.yScaleBand(+this.props.heatmapData.bucketBracket[yIndex]) || 0}
+                            y={this.yScaleTops[yIndex] ?? 0}
                             width={this.xScaleBand.bandwidth() || 0}
-                            height={this.yScaleBand.bandwidth() || 0}
+                            height={this.yScaleHeights[yIndex] ?? 0}
                             fill={this.getCellColor(xIndex, yIndex, +value, interpolator, selection)}></rect>
                         )
                       )}
@@ -607,7 +695,7 @@ export const HeatmapComponent = (p: HeatmapProps) => {
 
   return (
     <div ref={ref}>
-      <HeatmapComponentInternal width={Math.max(width || 0, 400)} height={275} {...p}></HeatmapComponentInternal>
+      <HeatmapComponentInternal width={Math.max(width || 0, 400)} height={291} {...p}></HeatmapComponentInternal>
     </div>
   );
 };

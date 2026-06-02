@@ -13,11 +13,13 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"io/fs"
 	"maps"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -1934,9 +1936,13 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) (int64,
 	}
 	defer os.RemoveAll(tempUnpackDir)
 
-	// Track all operations using [fsync.Root] so that once we're done unpacking
-	// the layer we can ensure it gets persisted to disk (to avoid corruption).
-	root := fsync.NewRoot(tempUnpackDir, nil)
+	// Resolve layer paths through [fsync.Root] so symlinks created by the archive
+	// cannot redirect later writes outside the unpack directory.
+	root, err := fsync.NewRoot(tempUnpackDir, nil)
+	if err != nil {
+		return 0, status.UnavailableErrorf("open layer unpack dir: %s", err)
+	}
+	defer root.Close()
 
 	counter := &ioutil.Counter{}
 	tr := tar.NewReader(io.TeeReader(rc, counter))
@@ -1949,12 +1955,11 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) (int64,
 			return 0, status.UnavailableErrorf("download and extract layer tarball: %s", err)
 		}
 
-		if slices.Contains(strings.Split(header.Name, string(os.PathSeparator)), "..") {
+		file, err := localLayerPath(header.Name)
+		if err != nil {
 			return 0, status.InvalidArgumentErrorf("invalid tar header: name %q is invalid", header.Name)
 		}
 
-		// filepath.Join applies filepath.Clean to all arguments
-		file := filepath.Join(tempUnpackDir, header.Name)
 		base := filepath.Base(file)
 		dir := filepath.Dir(file)
 
@@ -1963,7 +1968,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) (int64,
 			header.Typeflag == tar.TypeSymlink ||
 			header.Typeflag == tar.TypeLink {
 			// Ensure that parent dir exists
-			if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+			if err := root.MkdirAll(dir, os.ModePerm); err != nil {
 				return 0, status.UnavailableErrorf("create directory: %s", err)
 			}
 		} else {
@@ -1993,22 +1998,33 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) (int64,
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := root.MkdirAll(file, os.FileMode(header.Mode), header.Uid, header.Gid); err != nil {
+			mode := header.FileInfo().Mode()
+			if err := root.MkdirAll(file, mode.Perm()); err != nil {
 				return 0, status.UnavailableErrorf("create directory: %s", err)
 			}
+			if err := root.Chown(file, header.Uid, header.Gid); err != nil {
+				return 0, status.UnavailableErrorf("chown directory: %s", err)
+			}
+			if err := root.Chmod(file, mode); err != nil {
+				return 0, status.UnavailableErrorf("chmod directory: %s", err)
+			}
 		case tar.TypeReg:
-			if err := root.CreateFile(file, os.FileMode(header.Mode), tr, header.Uid, header.Gid); err != nil {
+			mode := header.FileInfo().Mode()
+			if err := root.CreateFile(file, mode, tr, header.Uid, header.Gid); err != nil {
 				return 0, status.UnavailableErrorf("create file: %s", err)
 			}
 		case tar.TypeSymlink:
 			// Symlink's target is only evaluated at runtime, inside the container context.
 			// So it's safe to have the symlink targeting paths outside unpackdir.
-			if err := root.Symlink(header.Linkname, file, header.Uid, header.Gid); err != nil {
+			if err := root.Symlink(header.Linkname, file); err != nil {
 				return 0, status.UnavailableErrorf("create symlink: %s", err)
 			}
+			if err := root.Lchown(file, header.Uid, header.Gid); err != nil {
+				return 0, status.UnavailableErrorf("lchown symlink: %s", err)
+			}
 		case tar.TypeLink:
-			target := filepath.Join(tempUnpackDir, header.Linkname)
-			if !strings.HasPrefix(target, tempUnpackDir) {
+			target, err := localLayerPath(header.Linkname)
+			if err != nil {
 				return 0, status.InvalidArgumentErrorf("invalid tar header: link name %q is invalid", header.Linkname)
 			}
 			// Note that this will call linkat(2) without AT_SYMLINK_FOLLOW,
@@ -2039,6 +2055,23 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) (int64,
 	}
 
 	return counter.Count(), nil
+}
+
+func localLayerPath(name string) (string, error) {
+	if name == "" {
+		return "", errors.New("empty path")
+	}
+	// OCI layer paths are POSIX-style paths rooted at the image filesystem root.
+	// Normalize them to relative os.Root paths; os.Root still enforces that
+	// later extraction operations cannot escape through symlinks or "..".
+	name = strings.TrimLeft(path.Clean(name), "/")
+	if name == "" {
+		return ".", nil
+	}
+	if !fs.ValidPath(name) {
+		return "", fmt.Errorf("invalid fs path %q", name)
+	}
+	return filepath.Localize(name)
 }
 
 // Statusz returns statusz page contents for the image store.

@@ -130,7 +130,7 @@ func (h *Liveness) BlockingGetCurrentNodeLiveness(ctx context.Context) (*rfpb.Ra
 }
 
 func (h *Liveness) BlockingValidateNodeLiveness(ctx context.Context, nl *rfpb.RangeLeaseRecord_NodeLiveness) (returnedErr error) {
-	ctx, span := tracing.StartSpan(ctx)
+	ctx, span := tracing.StartNamedSpan(ctx, "nodeliveness.Liveness.BlockingValidateNodeLiveness")
 	defer func() {
 		tracing.RecordErrorToSpan(span, returnedErr)
 		span.End()
@@ -149,7 +149,7 @@ func (h *Liveness) BlockingValidateNodeLiveness(ctx context.Context, nl *rfpb.Ra
 }
 
 func (h *Liveness) verifyLease(ctx context.Context, l *rfpb.NodeLivenessRecord) (retErr error) {
-	_, span := tracing.StartSpan(ctx)
+	_, span := tracing.StartNamedSpan(ctx, "nodeliveness.Liveness.verifyLease")
 	defer func() {
 		tracing.RecordErrorToSpan(span, retErr)
 		span.End()
@@ -184,7 +184,7 @@ func (h *Liveness) setLastLivenessRecord(nlr *rfpb.NodeLivenessRecord) {
 }
 
 func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (returnedRecord *rfpb.NodeLivenessRecord, returnedErr error) {
-	ctx, span := tracing.StartSpan(ctx)
+	ctx, span := tracing.StartNamedSpan(ctx, "nodeliveness.Liveness.ensureValidLease")
 	defer func() {
 		tracing.RecordErrorToSpan(span, returnedErr)
 		span.End()
@@ -240,7 +240,7 @@ func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (ret
 }
 
 func (h *Liveness) sendCasRequest(ctx context.Context, expectedValue, newVal []byte) (retKV *rfpb.KV, retErr error) {
-	ctx, span := tracing.StartSpan(ctx)
+	ctx, span := tracing.StartNamedSpan(ctx, "nodeliveness.Liveness.sendCasRequest")
 	defer func() {
 		tracing.RecordErrorToSpan(span, retErr)
 		span.End()
@@ -268,13 +268,8 @@ func (h *Liveness) sendCasRequest(ctx context.Context, expectedValue, newVal []b
 	return nil, err
 }
 
-func (h *Liveness) clearLease() error {
-	h.setLastLivenessRecord(nil)
-	return nil
-}
-
 func (h *Liveness) renewLease(ctx context.Context) (returnedErr error) {
-	ctx, span := tracing.StartSpan(ctx)
+	ctx, span := tracing.StartNamedSpan(ctx, "nodeliveness.Liveness.renewLease")
 	defer func() {
 		tracing.RecordErrorToSpan(span, returnedErr)
 		span.End()

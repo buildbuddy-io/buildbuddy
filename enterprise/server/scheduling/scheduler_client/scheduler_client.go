@@ -47,6 +47,12 @@ const (
 	// itself controls how long the executor will backoff after requesting
 	// more work, so this timeout is only used on the initial call.
 	idleExecutorMoreWorkTimeout = 5 * time.Second
+
+	// Limits on the labels reported to the scheduler. Registration fails if a
+	// key or value is longer than maxLabelLen, or if there are more than
+	// maxLabels labels.
+	maxLabels   = 20
+	maxLabelLen = 50
 )
 
 // Options provide overrides for executor registration properties.
@@ -87,9 +93,20 @@ func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator int
 	if err != nil {
 		return nil, err
 	}
+	if len(*labels) > maxLabels {
+		return nil, status.InvalidArgumentErrorf("too many executor labels: %d (max %d)", len(*labels), maxLabels)
+	}
 	trimmedLabels := make(map[string]string, len(*labels))
 	for k, v := range *labels {
-		trimmedLabels[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		key := strings.TrimSpace(k)
+		val := strings.TrimSpace(v)
+		if len(key) > maxLabelLen {
+			return nil, status.InvalidArgumentErrorf("executor label key %q is too long: %d chars (max %d)", key, len(key), maxLabelLen)
+		}
+		if len(val) > maxLabelLen {
+			return nil, status.InvalidArgumentErrorf("executor label value %q is too long: %d chars (max %d)", val, len(val), maxLabelLen)
+		}
+		trimmedLabels[key] = val
 	}
 	return &scpb.ExecutionNode{
 		Host: hostname,
