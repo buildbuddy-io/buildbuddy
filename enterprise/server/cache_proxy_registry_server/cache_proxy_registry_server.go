@@ -166,7 +166,7 @@ func (s *CacheProxyRegistryServer) RegisterAndStreamHeartbeat(stream cppb.CacheP
 				log.CtxInfof(ctx, "Rejecting cache proxy heartbeat from group %q: missing proxy_id", groupID)
 				return status.InvalidArgumentError("registration request missing proxy_id")
 			}
-			if err := s.insertOrUpdateProxy(ctx, groupID, node); err != nil {
+			if err := s.insertOrUpdateProxy(ctx, groupID, node, req.GetStatistics()); err != nil {
 				log.CtxInfof(ctx, "Closing cache proxy registration stream for proxy %q (group %q): could not store registration: %s", node.GetProxyId(), groupID, err)
 				return err
 			}
@@ -184,7 +184,7 @@ func (s *CacheProxyRegistryServer) RegisterAndStreamHeartbeat(stream cppb.CacheP
 	}
 }
 
-func (s *CacheProxyRegistryServer) insertOrUpdateProxy(ctx context.Context, groupID string, node *cppb.CacheProxyNode) error {
+func (s *CacheProxyRegistryServer) insertOrUpdateProxy(ctx context.Context, groupID string, node *cppb.CacheProxyNode, stats *cppb.Statistics) error {
 	acl := perms.ToACLProto(nil /*=userID*/, groupID, perms.GROUP_WRITE|perms.GROUP_READ)
 
 	r := &cppb.RegisteredCacheProxy{
@@ -192,6 +192,7 @@ func (s *CacheProxyRegistryServer) insertOrUpdateProxy(ctx context.Context, grou
 		GroupId:      groupID,
 		Acl:          acl,
 		LastPingTime: timestamppb.Now(),
+		Statistics:   stats,
 	}
 	b, err := proto.Marshal(r)
 	if err != nil {
@@ -246,6 +247,7 @@ func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cpp
 		proxies = append(proxies, &cppb.GetCacheProxiesResponse_CacheProxy{
 			Node:            reg.GetRegistration(),
 			LastCheckInTime: reg.GetLastPingTime(),
+			Statistics:      reg.GetStatistics(),
 		})
 	}
 

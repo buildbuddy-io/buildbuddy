@@ -10,11 +10,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -182,4 +184,34 @@ func TestStreamHeartbeats_UnreachableTarget(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("streamHeartbeats blocked on an unreachable target — retry loop will never progress")
 	}
+}
+
+func TestSumByHitMiss(t *testing.T) {
+	cv := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "test_sum_by_hit_miss",
+	}, []string{metrics.CacheHitMissStatus, "other"})
+
+	// Two "hit" series across different "other" labels — these should be
+	// summed together.
+	cv.WithLabelValues(metrics.HitStatusLabel, "a").Add(3)
+	cv.WithLabelValues(metrics.HitStatusLabel, "b").Add(4)
+	// One "miss" series.
+	cv.WithLabelValues(metrics.MissStatusLabel, "a").Add(10)
+	// A series with a status value the helper doesn't recognize — must be
+	// ignored, not double-counted into either bucket.
+	cv.WithLabelValues("unknown", "a").Add(99)
+
+	hits, misses := sumByHitMiss(cv)
+	assert.Equal(t, int64(7), hits)
+	assert.Equal(t, int64(10), misses)
+}
+
+func TestSumByHitMiss_Empty(t *testing.T) {
+	cv := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "test_sum_by_hit_miss_empty",
+	}, []string{metrics.CacheHitMissStatus})
+
+	hits, misses := sumByHitMiss(cv)
+	assert.Equal(t, int64(0), hits)
+	assert.Equal(t, int64(0), misses)
 }

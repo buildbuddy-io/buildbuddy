@@ -36,3 +36,116 @@
 .cache-proxies-page .empty-state {
   margin-top: 32px;
 }
+
+.cache-proxies-page .cache-proxy-stat-rings {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 80px;
+  margin-top: 12px;
+}
+
+.cache-proxies-page .cache-proxy-stat-ring {
+  flex: 1 1 0;
+  min-width: 121px;
+}
+
+.cache-proxies-page .cache-proxy-stat-ring-title {
+  font-weight: 700;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.cache-proxies-page .cache-proxy-stat-ring-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.cache-proxies-page .cache-proxy-stat-ring-container {
+  height: 72px;
+  width: 72px;
+  flex-shrink: 0;
+}
+
+.cache-proxies-page .cache-proxy-stat-ring-labels {
+  font-size: 14px;
+  align-self: stretch;
+}
+
+.cache-proxies-page .cache-proxy-stat-ring-rate {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  text-align: center;
+}
+
+.cache-proxies-page .cache-proxy-stat-ring-labels .cache-chart-label {
+  justify-content: flex-start;
+}
+
+.cache-proxies-page .cache-proxy-stats-divider {
+  height: 1px;
+  background: var(--color-border-muted);
+  margin: 16px 4px 8px 0;
+}
+
+.cache-proxies-page .cache-proxy-stats-heading {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 4px 0;
+}
+
+.cache-proxies-page .cache-proxy-stat-rings + .cache-proxy-stat-rings {
+  margin-top: 24px;
+}
+
+/*
+ * Ring-label primitives. These are intentionally page-scoped duplicates of
+ * .cache-chart-label / .color-swatch / .cache-stat from app/invocation/invocation.css,
+ * so this page doesn't silently break if the invocation scorecard styles move.
+ */
+
+.cache-proxies-page .cache-chart-label {
+  display: flex;
+  white-space: nowrap;
+}
+
+.cache-proxies-page .color-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  margin-right: 8px;
+  margin-top: 3px;
+  display: block;
+  background-color: var(--color-bg-hover);
+}
+
+/*
+ * Per-series swatch colors. Must come after .color-swatch above, since they
+ * share the same specificity (.cache-proxies-page .foo-color-swatch) and the
+ * generic rule's background-color would otherwise win on source order.
+ */
+
+.cache-proxies-page .cache-hit-color-swatch {
+  background-color: var(--color-green-500);
+}
+
+.cache-proxies-page .cache-miss-color-swatch {
+  background-color: var(--color-status-error);
+}
+
+.cache-proxies-page .cache-read-color-swatch {
+  background-color: var(--color-light-blue-500);
+}
+
+.cache-proxies-page .cache-write-color-swatch {
+  background-color: var(--color-indigo-500);
+}
+
+.cache-proxies-page .cache-stat {
+  font-weight: 600;
+}
