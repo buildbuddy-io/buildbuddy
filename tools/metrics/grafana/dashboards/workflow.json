@@ -335,6 +335,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
+      "description": "The number of Firecracker execution errors, labeled by reason.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -344,7 +345,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Minutes",
+            "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
@@ -395,7 +396,7 @@
         "x": 12,
         "y": 8
       },
-      "id": 6,
+      "id": 30,
       "options": {
         "legend": {
           "calcs": [],
@@ -405,25 +406,21 @@
         },
         "tooltip": {
           "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
+          "mode": "single",
+          "sort": "none"
         }
       },
       "pluginVersion": "11.6.2",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
           "editorMode": "code",
-          "expr": "histogram_quantile(\n\t  0.95,\n\t  sum by(le, stage) (\n\t     rate(buildbuddy_firecracker_stage_duration_usec_bucket{region=~\"$region\", job=~\"executor-workflows.*\"}[10m])\n\t    )\n) / 1e6 / 60",
+          "expr": "sum by (reason, job)(increase(buildbuddy_firecracker_execution_error_count{job=~\"executor-workflows.*\", region=~\"$region\"}[5m]))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Workflow Stage P95 Duration",
+      "title": "Execution errors",
       "type": "timeseries"
     },
     {
@@ -551,18 +548,56 @@
         "type": "prometheus",
         "uid": "vm"
       },
-      "description": "After a copy-on-write rootfs file has been used, the ratio of dirty/total chunks.",
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Minutes",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
             }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
           }
         },
         "overrides": []
@@ -573,41 +608,18 @@
         "x": 12,
         "y": 16
       },
-      "id": 8,
+      "id": 6,
       "options": {
-        "calculate": false,
-        "cellGap": 1,
-        "color": {
-          "exponent": 0.5,
-          "fill": "dark-orange",
-          "min": 0,
-          "mode": "scheme",
-          "reverse": false,
-          "scale": "exponential",
-          "scheme": "Oranges",
-          "steps": 64
-        },
-        "exemplars": {
-          "color": "rgba(255,0,255,0.7)"
-        },
-        "filterValues": {
-          "le": 1e-09
-        },
         "legend": {
-          "show": true
-        },
-        "rowsFrame": {
-          "layout": "auto"
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "single",
-          "showColorScale": false,
-          "yHistogram": false
-        },
-        "yAxis": {
-          "axisPlacement": "left",
-          "decimals": 2,
-          "reverse": false
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
         }
       },
       "pluginVersion": "11.6.2",
@@ -618,15 +630,14 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket{region=~\"$region\", file_name=\"rootfs\", job=~\"executor-workflows.*\"}[5m])) by (le)",
-          "format": "heatmap",
-          "legendFormat": "{{le}}",
+          "expr": "histogram_quantile(\n\t  0.95,\n\t  sum by(le, stage) (\n\t     rate(buildbuddy_firecracker_stage_duration_usec_bucket{region=~\"$region\", job=~\"executor-workflows.*\"}[10m])\n\t    )\n) / 1e6 / 60",
+          "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Rootfs Dirty Chunk Ratio",
-      "type": "heatmap"
+      "title": "Workflow Stage P95 Duration",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -754,59 +765,19 @@
         "type": "prometheus",
         "uid": "vm"
       },
-      "description": "The number of uncompressed snapshot bytes written to the local cache. This will be 0 if the artifact was already cached.",
+      "description": "After a copy-on-write rootfs file has been used, the ratio of dirty/total chunks.",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
           "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
             },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
             }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "decgbytes"
+          }
         },
         "overrides": []
       },
@@ -816,32 +787,60 @@
         "x": 12,
         "y": 24
       },
-      "id": 22,
+      "id": 8,
       "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "color": {
+          "exponent": 0.5,
+          "fill": "dark-orange",
+          "min": 0,
+          "mode": "scheme",
+          "reverse": false,
+          "scale": "exponential",
+          "scheme": "Oranges",
+          "steps": 64
+        },
+        "exemplars": {
+          "color": "rgba(255,0,255,0.7)"
+        },
+        "filterValues": {
+          "le": 1e-09
+        },
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+          "show": true
+        },
+        "rowsFrame": {
+          "layout": "auto"
         },
         "tooltip": {
-          "hideZeros": false,
           "mode": "single",
-          "sort": "none"
+          "showColorScale": false,
+          "yHistogram": false
+        },
+        "yAxis": {
+          "axisPlacement": "left",
+          "decimals": 2,
+          "reverse": false
         }
       },
       "pluginVersion": "11.6.2",
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_remote_execution_file_cache_added_file_size_bytes_sum{region=~\"$region\", job=~\"executor-workflows.*\"}[5m])) / 1000000000",
-          "legendFormat": "__auto",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_dirty_chunk_ratio_bucket{region=~\"$region\", file_name=\"rootfs\", job=~\"executor-workflows.*\"}[5m])) by (le)",
+          "format": "heatmap",
+          "legendFormat": "{{le}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Local snapshot bytes written",
-      "type": "timeseries"
+      "title": "Rootfs Dirty Chunk Ratio",
+      "type": "heatmap"
     },
     {
       "datasource": {
@@ -929,6 +928,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
+      "description": "The number of uncompressed snapshot bytes written to the local cache. This will be 0 if the artifact was already cached.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -980,7 +980,7 @@
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "decgbytes"
         },
         "overrides": []
       },
@@ -990,7 +990,7 @@
         "x": 12,
         "y": 32
       },
-      "id": 18,
+      "id": 22,
       "options": {
         "legend": {
           "calcs": [],
@@ -1000,26 +1000,21 @@
         },
         "tooltip": {
           "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
+          "mode": "single",
+          "sort": "none"
         }
       },
       "pluginVersion": "11.6.2",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
           "editorMode": "code",
-          "expr": "sum by (pod_name) (buildbuddy_firecracker_cow_snapshot_memory_mapped_bytes{region=~\"$region\", job=~\"executor-workflows.*\"})",
-          "instant": false,
+          "expr": "sum(increase(buildbuddy_remote_execution_file_cache_added_file_size_bytes_sum{region=~\"$region\", job=~\"executor-workflows.*\"}[5m])) / 1000000000",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Memory-mapped bytes (current)",
+      "title": "Local snapshot bytes written",
       "type": "timeseries"
     },
     {
@@ -1176,7 +1171,7 @@
               }
             ]
           },
-          "unit": "µs"
+          "unit": "bytes"
         },
         "overrides": []
       },
@@ -1186,7 +1181,7 @@
         "x": 12,
         "y": 40
       },
-      "id": 23,
+      "id": 18,
       "options": {
         "legend": {
           "calcs": [],
@@ -1196,21 +1191,26 @@
         },
         "tooltip": {
           "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
+          "mode": "multi",
+          "sort": "desc"
         }
       },
       "pluginVersion": "11.6.2",
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "editorMode": "code",
-          "expr": " histogram_quantile(0.95, \n    sum by(le, op) (\n      rate(buildbuddy_remote_execution_file_cache_op_latency_usec_bucket{region=~\"$region\", job=~\"executor-workflows.*\"}[5m])\n    )\n  )",
+          "expr": "sum by (pod_name) (buildbuddy_firecracker_cow_snapshot_memory_mapped_bytes{region=~\"$region\", job=~\"executor-workflows.*\"})",
+          "instant": false,
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "File cache operation latency",
+      "title": "Memory-mapped bytes (current)",
       "type": "timeseries"
     },
     {
@@ -1387,7 +1387,8 @@
                 "value": 80
               }
             ]
-          }
+          },
+          "unit": "µs"
         },
         "overrides": []
       },
@@ -1397,7 +1398,7 @@
         "x": 12,
         "y": 48
       },
-      "id": 19,
+      "id": 23,
       "options": {
         "legend": {
           "calcs": [],
@@ -1414,19 +1415,14 @@
       "pluginVersion": "11.6.2",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
           "editorMode": "code",
-          "expr": "histogram_quantile(\n\t  0.95,\n\t  sum by(le) (\n\t     rate(buildbuddy_firecracker_exec_dial_duration_usec_bucket{region=~\"$region\"}[3m])\n\t    )\n) / 1e6",
-          "instant": false,
+          "expr": " histogram_quantile(0.95, \n    sum by(le, op) (\n      rate(buildbuddy_remote_execution_file_cache_op_latency_usec_bucket{region=~\"$region\", job=~\"executor-workflows.*\"}[5m])\n    )\n  )",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Dial VM Exec Server Duration (Sec) ",
+      "title": "File cache operation latency",
       "type": "timeseries"
     },
     {
@@ -1515,18 +1511,56 @@
         "type": "prometheus",
         "uid": "vm"
       },
-      "description": "The count represents the number of workflows where X% of snapshot chunks were fetched from the remote cache. Filter by `file_name` for more granularity between `memory` and `rootfs` snapshots.",
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
             }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
           }
         },
         "overrides": []
@@ -1537,40 +1571,18 @@
         "x": 12,
         "y": 56
       },
-      "id": 16,
+      "id": 19,
       "options": {
-        "calculate": false,
-        "cellGap": 1,
-        "color": {
-          "exponent": 0.5,
-          "fill": "dark-orange",
-          "mode": "scheme",
-          "reverse": false,
-          "scale": "exponential",
-          "scheme": "Oranges",
-          "steps": 64
-        },
-        "exemplars": {
-          "color": "rgba(255,0,255,0.7)"
-        },
-        "filterValues": {
-          "le": 1e-09
-        },
         "legend": {
-          "show": true
-        },
-        "rowsFrame": {
-          "layout": "auto"
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
-          "showColorScale": false,
-          "yHistogram": false
-        },
-        "yAxis": {
-          "axisPlacement": "left",
-          "decimals": 2,
-          "reverse": false
+          "sort": "none"
         }
       },
       "pluginVersion": "11.6.2",
@@ -1581,15 +1593,15 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{region=~\"$region\", job=~\"executor-workflows.*\", chunk_source=\"remote_cache\"}[5m])) by (le)",
-          "format": "heatmap",
-          "legendFormat": "{{le}}",
+          "expr": "histogram_quantile(\n\t  0.95,\n\t  sum by(le) (\n\t     rate(buildbuddy_firecracker_exec_dial_duration_usec_bucket{region=~\"$region\"}[3m])\n\t    )\n) / 1e6",
+          "instant": false,
+          "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "% of Chunks Fetched from Remote Cache",
-      "type": "heatmap"
+      "title": "Dial VM Exec Server Duration (Sec) ",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -1720,7 +1732,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
-      "description": "The count represents the number of workflows where X% of snapshot chunks were fetched from the local filecache. Filter by `file_name` for more granularity between `memory` and `rootfs` snapshots.",
+      "description": "The count represents the number of workflows where X% of snapshot chunks were fetched from the remote cache. Filter by `file_name` for more granularity between `memory` and `rootfs` snapshots.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1742,7 +1754,7 @@
         "x": 12,
         "y": 64
       },
-      "id": 15,
+      "id": 16,
       "options": {
         "calculate": false,
         "cellGap": 1,
@@ -1786,14 +1798,14 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{region=~\"$region\",  job=~\"executor-workflows.*\", chunk_source=\"local_filecache\"}[5m])) by (le) ",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{region=~\"$region\", job=~\"executor-workflows.*\", chunk_source=\"remote_cache\"}[5m])) by (le)",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "% of Chunks Fetched from Local Filecache",
+      "title": "% of Chunks Fetched from Remote Cache",
       "type": "heatmap"
     },
     {
@@ -1888,6 +1900,87 @@
       ],
       "title": "Snapshot Save Workloads",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "description": "The count represents the number of workflows where X% of snapshot chunks were fetched from the local filecache. Filter by `file_name` for more granularity between `memory` and `rootfs` snapshots.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 72
+      },
+      "id": 15,
+      "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "color": {
+          "exponent": 0.5,
+          "fill": "dark-orange",
+          "mode": "scheme",
+          "reverse": false,
+          "scale": "exponential",
+          "scheme": "Oranges",
+          "steps": 64
+        },
+        "exemplars": {
+          "color": "rgba(255,0,255,0.7)"
+        },
+        "filterValues": {
+          "le": 1e-09
+        },
+        "legend": {
+          "show": true
+        },
+        "rowsFrame": {
+          "layout": "auto"
+        },
+        "tooltip": {
+          "mode": "single",
+          "showColorScale": false,
+          "yHistogram": false
+        },
+        "yAxis": {
+          "axisPlacement": "left",
+          "decimals": 2,
+          "reverse": false
+        }
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(buildbuddy_firecracker_cow_snapshot_chunk_source_ratio_bucket{region=~\"$region\",  job=~\"executor-workflows.*\", chunk_source=\"local_filecache\"}[5m])) by (le) ",
+          "format": "heatmap",
+          "legendFormat": "{{le}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "% of Chunks Fetched from Local Filecache",
+      "type": "heatmap"
     }
   ],
   "preload": false,
