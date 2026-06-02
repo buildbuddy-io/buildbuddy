@@ -39,7 +39,7 @@ func parseGithubRequest(path string) (string, string, string, string, error) {
 		[]string{repo, owner, version, tag},
 		func(s string) bool { return !githubPathPartRegex.MatchString(s) },
 	) {
-		return "","","","",fmt.Errorf("Invalid path: %s", path)
+		return "", "", "", "", fmt.Errorf("Invalid path: %s", path)
 	}
 	return repo, owner, version, tag, nil
 }
@@ -75,9 +75,9 @@ func githubSource(path string) ([]byte, int, error) {
 		return nil, 400, err
 	}
 	encoded, err := json.Marshal(map[string]string{
-		"integrity": "",
+		"integrity":    "",
 		"strip_prefix": repo + "-" + tag,
-		"url": "https://github.com/" + owner + "/" + repo + "/archive/" + tag + ".zip",
+		"url":          "https://github.com/" + owner + "/" + repo + "/archive/" + tag + ".zip",
 	})
 	if err != nil {
 		return nil, 400, err
