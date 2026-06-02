@@ -56,16 +56,13 @@ func (lr *lockingRangeDescriptor) Update(rd *rfpb.RangeDescriptor) {
 }
 
 func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
-	rc.rangeMu.Lock()
-	defer rc.rangeMu.Unlock()
-
-	metrics.RaftRangeCacheLookups.With(prometheus.Labels{
-		metrics.RaftRangeCacheEventTypeLabel: "update",
-	}).Inc()
-
+	metrics.RaftRangeCacheLookups.WithLabelValues("update").Inc()
 	start := rangeDescriptor.GetStart()
 	end := rangeDescriptor.GetEnd()
 	newDescriptor := rangeDescriptor.CloneVT()
+
+	rc.rangeMu.Lock()
+	defer rc.rangeMu.Unlock()
 
 	r := rc.rangeMap.Get(start, end)
 	if r == nil {
@@ -156,28 +153,26 @@ func (rc *RangeCache) SetPreferredReplica(ctx context.Context, rep *rfpb.Replica
 	spn.SetAttributes(replicaIDAttr)
 }
 
+var raftRangeCacheLookupCouter = map[bool]prometheus.Counter{
+	true:  metrics.RaftRangeCacheLookups.With(prometheus.Labels{metrics.RaftRangeCacheEventTypeLabel: "hit"}),
+	false: metrics.RaftRangeCacheLookups.With(prometheus.Labels{metrics.RaftRangeCacheEventTypeLabel: "miss"}),
+}
+
 // Get returns a RangeDescriptor that includes the given key within its range.
 func (rc *RangeCache) Get(key []byte) *rfpb.RangeDescriptor {
 	rc.rangeMu.RLock()
-	defer rc.rangeMu.RUnlock()
-
 	lr, found := rc.rangeMap.Lookup(key)
+	rc.rangeMu.RUnlock()
 
-	var rd *rfpb.RangeDescriptor
-	label := "miss"
-
+	raftRangeCacheLookupCouter[found].Inc()
 	if found {
-		rd = lr.Get()
-		label = "hit"
+		return lr.Get()
 	}
-
-	metrics.RaftRangeCacheLookups.With(prometheus.Labels{
-		metrics.RaftRangeCacheEventTypeLabel: label,
-	}).Inc()
-
-	return rd
+	return nil
 }
 
 func (rc *RangeCache) String() string {
+	rc.rangeMu.RLock()
+	defer rc.rangeMu.RUnlock()
 	return rc.rangeMap.String()
 }
