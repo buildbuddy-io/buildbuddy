@@ -65,8 +65,11 @@ const ZOOM_BUTTON_ATTRIBUTES = {
 const MINIMUM_DURATION_FOR_DAY_LABELS_MICROS = 1e6 * 60 * 60 * 49;
 
 // This is a magic number that states there will only be one axis label for
-// every N pixels of rendered axis length (currently 100).
-const TICK_LABEL_SPACING_MAGIC_NUMBER = 100;
+// every N pixels of rendered X axis length.
+const X_AXIS_TICK_LABEL_SPACING_MAGIC_NUMBER = 100;
+// This is a magic number that states there will only be one axis label for
+// every N pixels of rendered Y axis length.
+const Y_AXIS_TICK_LABEL_SPACING_MAGIC_NUMBER = 50;
 // This is a discretized dump of the 'Purples' and 'Greens' scales
 // from d3-scale-chromatic, starting arbitrarily from .25 because it looked
 // nice.  The scale is great but the package itself is heavy.  The
@@ -499,7 +502,7 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
     const labelType = heatmapTimespan > MINIMUM_DURATION_FOR_DAY_LABELS_MICROS ? "day" : "hour";
 
     const numColumns = this.props.heatmapData.column.length || 1;
-    const labelSpacing = Math.ceil(numColumns / Math.min(numColumns, width / TICK_LABEL_SPACING_MAGIC_NUMBER));
+    const labelSpacing = Math.ceil(numColumns / Math.min(numColumns, width / X_AXIS_TICK_LABEL_SPACING_MAGIC_NUMBER));
     let lastLabelDistance = labelSpacing;
 
     return (
@@ -534,7 +537,7 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
     }
     const numRows = this.numHeatmapRows();
     const bracket = this.props.heatmapData.bucketBracket;
-    // Label tick marks no closer than roughly TICK_LABEL_SPACING_MAGIC_NUMBER
+    // Label tick marks no closer than Y_AXIS_TICK_LABEL_SPACING_MAGIC_NUMBER
     // pixels apart. On a log scale spanning at least one decade, we
     // additionally restrict labels to powers of 10 because it makes the scale
     // easier to read than labeling a random sub-decade interval.
@@ -558,7 +561,7 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
           //   - we're too close to the last y axis tick that we labeled.
           if (
             (!decadeLabels || isPowerOfTen(+v)) &&
-            (lastLabelY - tickY >= TICK_LABEL_SPACING_MAGIC_NUMBER || lastLabelY === Infinity)
+            (lastLabelY - tickY >= Y_AXIS_TICK_LABEL_SPACING_MAGIC_NUMBER || lastLabelY === Infinity)
           ) {
             label = this.renderYBucketValue(+v);
             lastLabelY = tickY;
