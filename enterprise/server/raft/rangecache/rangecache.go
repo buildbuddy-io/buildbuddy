@@ -155,7 +155,7 @@ func (rc *RangeCache) SetPreferredReplica(ctx context.Context, rep *rfpb.Replica
 	}
 }
 
-var raftRangeCacheLookupCouter = map[bool]prometheus.Counter{
+var raftRangeCacheLookupCounter = map[bool]prometheus.Counter{
 	true:  metrics.RaftRangeCacheLookups.With(prometheus.Labels{metrics.RaftRangeCacheEventTypeLabel: "hit"}),
 	false: metrics.RaftRangeCacheLookups.With(prometheus.Labels{metrics.RaftRangeCacheEventTypeLabel: "miss"}),
 }
@@ -166,7 +166,7 @@ func (rc *RangeCache) Get(key []byte) *rfpb.RangeDescriptor {
 	lr, found := rc.rangeMap.Lookup(key)
 	rc.rangeMu.RUnlock()
 
-	raftRangeCacheLookupCouter[found].Inc()
+	raftRangeCacheLookupCounter[found].Inc()
 	if found {
 		return lr.Get()
 	}
