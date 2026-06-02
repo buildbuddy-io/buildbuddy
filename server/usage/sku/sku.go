@@ -96,3 +96,28 @@ const (
 	SelfHostedFalse         LabelValue = "false"
 	SelfHostedTrue          LabelValue = "true"
 )
+
+// UnitFor returns the unit of measurement for the given SKU (e.g. "count",
+// "bytes", "nanos", "gb_nanos"). Returns "" for SKUs with no registered unit.
+func UnitFor(s SKU) string {
+	switch s {
+	case BuildEventsBESCount,
+		RemoteCacheACHits,
+		RemoteCacheCASHits:
+		return "count"
+	case RemoteCacheCASDownloadedBytes,
+		RemoteCacheCASUploadedBytes,
+		LocalSnapshotSavedBytes,
+		RemoteSnapshotSavedBytes:
+		return "bytes"
+	case RemoteCacheACCachedExecDurationNanos,
+		RemoteExecutionExecuteWorkerDurationNanos,
+		RemoteExecutionExecuteWorkerCPUNanos,
+		RemoteExecutionExecuteComputeNanos,
+		RemoteExecutionExecuteBurstableComputeNanos:
+		return "nanos"
+	case RemoteExecutionExecuteWorkerMemoryGBNanos:
+		return "gb_nanos"
+	}
+	return ""
+}
