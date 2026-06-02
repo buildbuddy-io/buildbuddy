@@ -14,12 +14,13 @@ genrule(
         """,
     }),
     stamp = 1,
+    tags = ["manual"],
 )
 
 go_library(
     name = "version",
     srcs = ["version.go"],
-    embedsrcs = ["version.txt"],
+    embedsrcs = ["version.txt"],  # keep
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/version",
 )
 

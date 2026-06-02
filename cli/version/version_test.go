@@ -8,5 +8,6 @@ import (
 )
 
 func TestEmbeddedVersion(t *testing.T) {
-	require.Contains(t, version.String(), "unknown")
+	v := version.String()
+	require.Regexp(t, `^(unknown|\d+\.\d+\.\d+)$`, v)
 }
