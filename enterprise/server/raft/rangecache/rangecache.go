@@ -102,8 +102,9 @@ func (rc *RangeCache) UpdateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 // replica is not included in the range descriptor's replica list.
 func (rc *RangeCache) SetPreferredReplica(ctx context.Context, rep *rfpb.ReplicaDescriptor, rng *rfpb.RangeDescriptor) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
-	rangeIDAttr := attribute.Int64("range_id", int64(rep.GetRangeId()))
-	spn.SetAttributes(rangeIDAttr)
+	if spn.IsRecording() {
+		spn.SetAttributes(attribute.Int64("range_id", int64(rep.GetRangeId())))
+	}
 	defer spn.End()
 
 	rc.rangeMu.RLock()
@@ -145,12 +146,13 @@ func (rc *RangeCache) SetPreferredReplica(ctx context.Context, rep *rfpb.Replica
 
 	lr.Update(newDescriptor)
 
-	replica_ids := []int64{}
+	replica_ids := make([]int64, 0, len(newDescriptor.GetReplicas()))
 	for _, repl := range newDescriptor.GetReplicas() {
 		replica_ids = append(replica_ids, int64(repl.GetReplicaId()))
 	}
-	replicaIDAttr := attribute.Int64Slice("replicas", replica_ids)
-	spn.SetAttributes(replicaIDAttr)
+	if spn.IsRecording() {
+		spn.SetAttributes(attribute.Int64Slice("replicas", replica_ids))
+	}
 }
 
 var raftRangeCacheLookupCouter = map[bool]prometheus.Counter{
