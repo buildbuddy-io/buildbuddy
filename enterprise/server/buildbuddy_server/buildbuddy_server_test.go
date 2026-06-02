@@ -142,9 +142,9 @@ func TestCreateGroup(t *testing.T) {
 
 func TestCreateGroup_StatusRestrictions(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		status      grpb.Group_GroupStatus
-		shouldAllow bool
+		name    string
+		status  grpb.Group_GroupStatus
+		allowed bool
 	}{
 		{"FreeTier", grpb.Group_FREE_TIER_GROUP_STATUS, false},
 		{"Blocked", grpb.Group_BLOCKED_GROUP_STATUS, false},
@@ -200,7 +200,7 @@ func TestCreateGroup_StatusRestrictions(t *testing.T) {
 				Name:          "test",
 				UrlIdentifier: "test",
 			})
-			if tc.shouldAllow {
+			if tc.allowed {
 				require.NoError(t, err)
 			} else {
 				require.Error(t, err)
@@ -412,16 +412,16 @@ func TestInvocationArtifactDownloads(t *testing.T) {
 	// Set up pebble cache in testenv with multiple partitions:
 	// - anon (for unauthorized users)
 	// - default (for authorized users)
-	// - nondefault-part1 (org-specific partition; encryption is enabled)
-	// - nondefault-part2 (org-specific partition; encryption is not enabled)
+	// - part1 (org-specific partition; encryption is enabled)
+	// - part2 (org-specific partition; encryption is not enabled)
 	// Use local key provider / testonly key provider. Do not try to use real
 	// GCS / AWS.
 	//
 	// Create orgs with different cache setups:
-	// - GR1 (slug: "default-org"): default partition; cache encryption disabled
-	// - GR2 (slug: "default-encrypted-org"): default partition; cache encryption enabled
-	// - GR3 (slug: "nondefault-part1-encrypted-org"): nondefault-part1 partition; cache encryption enabled
-	// - GR4 (slug: "nondefault-part2-unencrypted-org"): nondefault-part2 partition; cache encryption disabled
+	// - Group GR1: default cache partition; cache encryption disabled
+	// - Group GR2: default cache partition; cache encryption enabled
+	// - Group GR3: part1 cache partition; cache encryption enabled
+	// - Group GR4: part2 cache partition; cache encryption disabled
 	//
 	// Create fake invocations using build_event_publisher:
 	// - One ANON invocation
@@ -430,113 +430,133 @@ func TestInvocationArtifactDownloads(t *testing.T) {
 	//   - One public invocation
 	//
 	// Each invocation should attach three File artifacts, referenced via the
-	// BES stream:
+	// BES stream (using SHA256 digest function / empty instance name):
 	// - One File artifact that successfully gets uploaded to cache and blobstore
-	//   File contents: "${invocation_id}_cache_and_blobstore"
+	//   File contents: "${invocation_id}_persisted_true_cached_true.txt"
 	// - One File artifact that gets uploaded to cache, but not blobstore
 	//   (simulate this by deleting it from blobstore after publishing the invocation):
-	//   File contents: "${invocation_id}_cache_only"
-	// - One File artifact that was uploaded to blobstore but expired from blobstore
+	//   File contents: "${invocation_id}_persisted_false_cached_true.txt"
+	// - One File artifact that was uploaded to blobstore but expired from cache
 	//   (simulate this by calling DeleteFile on the cache, assuming this works for pebble.
 	//   if not, just don't ever upload it, and write it to blobstore manually)
-	// Just use SHA256 digest function and instance_name="". Do not compress
-	// artifacts.
+	//   File contents: "${invocation_id}_persisted_true_cached_false.txt"
 	//
-	// Then, test /file/download access. Test ALL combinations of the following
-	// dimensions:
+	// Then, we test /file/download access. Baseline auth paths exercise
+	// cache-only and blobstore-only artifacts (GCS in production). Cases that
+	// specifically vary cache partition and encryption settings only use the
+	// cache-only artifact. A small separate section covers artifacts that are
+	// present in both blobstore and cache.
 	//
 	// 1. Artifact owner group ID
-	// 2. Invocation artifact digest (should test ALL artifacts as described above).
-	// 3. Authenticated user's group ID:
+	// 2. Invocation artifact digest.
+	// 3. Reader group and reader auxiliary groups:
 	//   For group-owned (authenticated) invocations:
-	//     a. Authenticated group ID matches artifact group ID
-	//     b. Authenticated group ID does not match artifact group ID but user's
-	//        allowed groups list contains the artifact group ID
-	//     c. Authenticated user does not have the artifact group ID in their allowed groups
+	//     a. Reader group matches the invocation owner group
+	//     b. Reader group is a representative non-owner group, but reader
+	//        auxiliary groups contain the invocation owner group
+	//     c. Reader group is a representative non-owner group, and the user
+	//        does not have access to the invocation owner group
 	//     d. User is unauthenticated (anonymous)
 	//   For ANON invocations:
-	//     a. User is authenticated
+	//     a. User is authenticated in each representative reader group
 	//     b. User is unauthenticated
 
 	ctx := context.Background()
 	flags.Set(t, "cache_stats_finalization_delay", time.Millisecond)
 
-	const (
-		cacheAndBlobstoreStorage = "cache_and_blobstore"
-		cacheOnlyStorage         = "cache_only"
-		gcsOnlyStorage           = "gcs_only"
-	)
-
 	type testInvocationOwner struct {
-		name      string
+		slug      string
 		groupID   string
 		apiKey    string
 		userID    string
 		encrypted bool
-		partition string
 		isAnon    bool
 	}
 	type testInvocationArtifact struct {
 		name          string
-		storage       string
+		persisted     bool
+		cached        bool
 		contents      []byte
 		bytestreamURL string
 		cacheResource *rspb.ResourceName
 		blobPath      string
 	}
-	type testInvocation struct {
-		name      string
+	type invocation struct {
 		id        string
 		owner     testInvocationOwner
 		public    bool
 		artifacts []*testInvocationArtifact
 	}
-	type testInvocationViewer struct {
-		name                     string
-		apiKey                   string
-		groupID                  string
-		shouldAllow              bool
-		hasInvocationGroupAccess bool
-		partition                string
-		cacheEncryptionEnabled   bool
+	type artifactPersistence struct {
+		persisted bool
+		cached    bool
 	}
-	type skippedDownloadTestCase struct {
-		invocationOwner string
-		visibility      string
-		accessVia       string
-		artifactStorage string
+	type testDownload struct {
+		owner     string
+		public    bool
+		reader    string
+		readerAux string
+		persisted bool
+		cached    bool
+		allowed   bool
+	}
+	type testDownloadKey struct {
+		owner     string
+		public    bool
+		reader    string
+		readerAux string
+		persisted bool
+		cached    bool
 	}
 
 	te := enterprise_testenv.New(t)
+
+	// Set up invocation owner groups with different cache partition and cache
+	// encryption settings.
 	groupOwners := []testInvocationOwner{
-		{name: "default-org", groupID: "GR1", apiKey: "APIKEY_GR1", userID: "US1"},
-		{name: "default-encrypted-org", groupID: "GR2", apiKey: "APIKEY_GR2", userID: "US2", encrypted: true},
-		{name: "nondefault-part1-encrypted-org", groupID: "GR3", apiKey: "APIKEY_GR3", userID: "US3", encrypted: true, partition: "nondefault-part1"},
-		{name: "nondefault-part2-unencrypted-org", groupID: "GR4", apiKey: "APIKEY_GR4", userID: "US4", partition: "nondefault-part2"},
+		{slug: "d", groupID: "GR1", apiKey: "APIKEY_DEFAULT_ORG", userID: "US_DEFAULT_ORG"},
+		{slug: "d-enc", groupID: "GR2", apiKey: "APIKEY_DEFAULT_ENCRYPTED_ORG", userID: "US_DEFAULT_ENCRYPTED_ORG", encrypted: true},
+		{slug: "p1-enc", groupID: "GR3", apiKey: "APIKEY_PART1_ENCRYPTED_ORG", userID: "US_PART1_ENCRYPTED_ORG", encrypted: true},
+		{slug: "p2-noenc", groupID: "GR4", apiKey: "APIKEY_PART2_UNENCRYPTED_ORG", userID: "US_PART2_UNENCRYPTED_ORG"},
 	}
-	anonOwner := testInvocationOwner{name: "ANON", groupID: interfaces.AuthAnonymousUser, partition: "anon", isAnon: true}
-	partitionID := func(owner testInvocationOwner) string {
-		if owner.partition != "" {
-			return owner.partition
-		}
-		return pebble_cache.DefaultPartitionID
+	anonOwner := testInvocationOwner{slug: "ANON", groupID: interfaces.AuthAnonymousUser, isAnon: true}
+	outsider := testInvocationOwner{slug: "d-outsider", groupID: "GR5", apiKey: "APIKEY_OUTSIDE_DEFAULT_ORG", userID: "US_OUTSIDE_DEFAULT_ORG"}
+	readers := append([]testInvocationOwner{}, groupOwners...)
+	readers = append(readers, outsider)
+	readersBySlug := map[string]testInvocationOwner{}
+	for _, reader := range readers {
+		readersBySlug[reader.slug] = reader
 	}
 
 	testUsers := map[string]interfaces.UserInfo{}
-	allowedAPIKeys := map[string]string{}
+	// Create an owner user whose authenticated group is the owner group.
 	for _, owner := range groupOwners {
 		ownerUser := testauth.User(owner.userID, owner.groupID)
 		ownerUser.CacheEncryptionEnabled = owner.encrypted
 		testUsers[owner.apiKey] = ownerUser
-
-		allowedAPIKey := "APIKEY_ALLOWED_" + owner.groupID
-		allowedUser := testauth.User("US_ALLOWED_"+owner.groupID, "GR_ALLOWED_"+owner.groupID)
-		allowedUser.AllowedGroups = append(allowedUser.AllowedGroups, owner.groupID)
-		testUsers[allowedAPIKey] = allowedUser
-		allowedAPIKeys[owner.groupID] = allowedAPIKey
 	}
-	outsiderAPIKey := "APIKEY_OUTSIDER"
-	testUsers[outsiderAPIKey] = testauth.User("US_OUTSIDER", "GR_OUTSIDER")
+	// Create an authenticated user with default cache settings that has no
+	// access to any owner group.
+	testUsers[outsider.apiKey] = testauth.User(outsider.userID, outsider.groupID)
+
+	// Map reader auxiliary group ID -> reader group ID -> API key for a user
+	// whose reader group differs from the owner group but whose auxiliary
+	// groups contain the owner group.
+	readerAuxAPIKeys := map[string]map[string]string{}
+	for _, owner := range groupOwners {
+		readerAuxAPIKeys[owner.groupID] = map[string]string{}
+		for _, reader := range readers {
+			if reader.groupID == owner.groupID {
+				continue
+			}
+			apiKey := fmt.Sprintf("APIKEY_READER_%s_AUX_%s", reader.groupID, owner.groupID)
+			user := testauth.User("US_READER_"+reader.groupID+"_AUX_"+owner.groupID, reader.groupID)
+			user.CacheEncryptionEnabled = reader.encrypted
+			user.AllowedGroups = append(user.AllowedGroups, owner.groupID)
+			testUsers[apiKey] = user
+			readerAuxAPIKeys[owner.groupID][reader.groupID] = apiKey
+		}
+	}
 
 	auth := testauth.NewTestAuthenticator(t, testUsers)
 	te.SetAuthenticator(auth)
@@ -544,10 +564,11 @@ func TestInvocationArtifactDownloads(t *testing.T) {
 	for _, owner := range groupOwners {
 		require.NoError(t, te.GetDBHandle().NewQuery(ctx, "create_test_group").Create(&tables.Group{
 			GroupID:       owner.groupID,
-			URLIdentifier: owner.name,
+			URLIdentifier: owner.slug,
 		}))
 	}
 
+	// Set up encryption + enable for orgs that should have it enabled.
 	testencryption.Setup(t, te)
 	for _, owner := range groupOwners {
 		if !owner.encrypted {
@@ -557,19 +578,20 @@ func TestInvocationArtifactDownloads(t *testing.T) {
 		testencryption.EnableForAuthenticatedGroup(t, authCtx, te)
 	}
 
+	// Set up partitioned pebble cache
 	partitionSizeBytes := int64(1_000_000_000)
 	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
 		RootDirectory: testfs.MakeTempDir(t),
 		Partitions: []disk.Partition{
 			{ID: "anon", MaxSizeBytes: partitionSizeBytes},
 			{ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: partitionSizeBytes},
-			{ID: "nondefault-part1", MaxSizeBytes: partitionSizeBytes},
-			{ID: "nondefault-part2", MaxSizeBytes: partitionSizeBytes},
+			{ID: "part1", MaxSizeBytes: partitionSizeBytes},
+			{ID: "part2", MaxSizeBytes: partitionSizeBytes},
 		},
 		PartitionMappings: []disk.PartitionMapping{
 			{GroupID: interfaces.AuthAnonymousUser, PartitionID: "anon"},
-			{GroupID: "GR3", PartitionID: "nondefault-part1"},
-			{GroupID: "GR4", PartitionID: "nondefault-part2"},
+			{GroupID: "GR3", PartitionID: "part1"},
+			{GroupID: "GR4", PartitionID: "part2"},
 		},
 	})
 	require.NoError(t, err)
@@ -584,12 +606,14 @@ func TestInvocationArtifactDownloads(t *testing.T) {
 	te.SetGRPCServer(gs.GetServer())
 	testcache.RegisterServers(t, te)
 
+	// Set up BES service
 	handler := build_event_handler.NewBuildEventHandler(te)
 	te.SetBuildEventHandler(handler)
 	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(te, false /*=synchronous*/)
 	require.NoError(t, err)
 	pepb.RegisterPublishBuildEventServer(te.GetGRPCServer(), buildEventServer)
 
+	// Set up cache services
 	require.NoError(t, gs.Start())
 	conn, err := grpc_client.DialSimpleWithoutPooling(fmt.Sprintf("grpc://localhost:%d", grpcPort))
 	require.NoError(t, err)
@@ -601,9 +625,14 @@ func TestInvocationArtifactDownloads(t *testing.T) {
 	baseURL := testhttp.StartServer(t, mux)
 
 	digestFunction := repb.DigestFunction_SHA256
-	artifactStorages := []string{cacheAndBlobstoreStorage, cacheOnlyStorage, gcsOnlyStorage}
-	newArtifact := func(invocationID, storage string) *testInvocationArtifact {
-		contents := []byte(invocationID + "_" + storage)
+	artifactLocations := []artifactPersistence{
+		{persisted: true, cached: true},
+		{persisted: false, cached: true},
+		{persisted: true, cached: false},
+	}
+	newArtifact := func(invocationID string, location artifactPersistence) *testInvocationArtifact {
+		name := fmt.Sprintf("persisted_%t_cached_%t.txt", location.persisted, location.cached)
+		contents := []byte(invocationID + "_" + name)
 		d, err := digest.Compute(bytes.NewReader(contents), digestFunction)
 		require.NoError(t, err)
 		rn := digest.NewCASResourceName(d, "", digestFunction)
@@ -611,8 +640,9 @@ func TestInvocationArtifactDownloads(t *testing.T) {
 		u, err := url.Parse(bytestreamURL)
 		require.NoError(t, err)
 		return &testInvocationArtifact{
-			name:          storage + ".txt",
-			storage:       storage,
+			name:          name,
+			persisted:     location.persisted,
+			cached:        location.cached,
 			contents:      contents,
 			bytestreamURL: bytestreamURL,
 			cacheResource: rn.ToProto(),
@@ -625,20 +655,15 @@ func TestInvocationArtifactDownloads(t *testing.T) {
 		}
 		return auth.AuthContextFromAPIKey(ctx, owner.apiKey)
 	}
-	publishInvocation := func(owner testInvocationOwner, public bool) *testInvocation {
-		visibility := "private"
-		if public {
-			visibility = "public"
-		}
+	publishInvocation := func(owner testInvocationOwner, public bool) *invocation {
 		invocationID := uuid.NewString()
-		invocation := &testInvocation{
-			name:   owner.name + "-" + visibility,
+		invocation := &invocation{
 			id:     invocationID,
 			owner:  owner,
 			public: public || owner.isAnon,
 		}
-		for _, storage := range artifactStorages {
-			invocation.artifacts = append(invocation.artifacts, newArtifact(invocationID, storage))
+		for _, location := range artifactLocations {
+			invocation.artifacts = append(invocation.artifacts, newArtifact(invocationID, location))
 		}
 		for _, artifact := range invocation.artifacts {
 			require.NoError(t, te.GetCache().Set(ownerContext(owner), artifact.cacheResource, artifact.contents))
@@ -665,7 +690,7 @@ func TestInvocationArtifactDownloads(t *testing.T) {
 		return invocation
 	}
 
-	invocations := []*testInvocation{publishInvocation(anonOwner, true)}
+	invocations := []*invocation{publishInvocation(anonOwner, true)}
 	for _, owner := range groupOwners {
 		invocations = append(invocations, publishInvocation(owner, false))
 		invocations = append(invocations, publishInvocation(owner, true))
@@ -683,49 +708,20 @@ func TestInvocationArtifactDownloads(t *testing.T) {
 			}
 		}
 		return true
-	}, 5*time.Second, 10*time.Millisecond)
+	}, 15*time.Second, 10*time.Millisecond)
 
 	for _, invocation := range invocations {
 		for _, artifact := range invocation.artifacts {
-			switch artifact.storage {
-			case cacheOnlyStorage:
+			if !artifact.persisted {
 				require.NoError(t, te.GetBlobstore().DeleteBlob(ctx, artifact.blobPath))
-			case gcsOnlyStorage:
+			}
+			if !artifact.cached {
 				require.NoError(t, te.GetCache().Delete(ownerContext(invocation.owner), artifact.cacheResource))
 			}
 		}
 	}
 
-	viewers := func(invocation *testInvocation) []testInvocationViewer {
-		if invocation.owner.isAnon {
-			return []testInvocationViewer{
-				{name: "authenticated", apiKey: outsiderAPIKey, groupID: "GR_OUTSIDER", shouldAllow: true, partition: pebble_cache.DefaultPartitionID},
-				{name: "unauthenticated", shouldAllow: true},
-			}
-		}
-		return []testInvocationViewer{
-			{
-				name:                     "same_group",
-				apiKey:                   invocation.owner.apiKey,
-				groupID:                  invocation.owner.groupID,
-				shouldAllow:              true,
-				hasInvocationGroupAccess: true,
-				partition:                partitionID(invocation.owner),
-				cacheEncryptionEnabled:   invocation.owner.encrypted,
-			},
-			{
-				name:                     "allowed_group",
-				apiKey:                   allowedAPIKeys[invocation.owner.groupID],
-				groupID:                  "GR_ALLOWED_" + invocation.owner.groupID,
-				shouldAllow:              true,
-				hasInvocationGroupAccess: true,
-				partition:                pebble_cache.DefaultPartitionID,
-			},
-			{name: "outside_group", apiKey: outsiderAPIKey, groupID: "GR_OUTSIDER", shouldAllow: invocation.public, partition: pebble_cache.DefaultPartitionID},
-			{name: "anonymous", shouldAllow: invocation.public},
-		}
-	}
-	download := func(apiKey string, invocation *testInvocation, artifact *testInvocationArtifact) (int, []byte) {
+	download := func(apiKey string, invocation *invocation, artifact *testInvocationArtifact) (int, []byte) {
 		q := url.Values{}
 		q.Set("invocation_id", invocation.id)
 		q.Set("bytestream_url", artifact.bytestreamURL)
@@ -742,140 +738,328 @@ func TestInvocationArtifactDownloads(t *testing.T) {
 		require.NoError(t, err)
 		return rsp.StatusCode, body
 	}
-	skippedTestCases := []skippedDownloadTestCase{
+
+	// Test matrix. Rows that vary cache partition or encryption settings use
+	// the cache-only artifact; a smaller number of representative cases cover
+	// blobstore auth behavior.
+	testDownloads := []testDownload{
+		// ANON invocations are public, so authenticated readers in any reader
+		// group, as well as unauthenticated readers, should be allowed.
+		{owner: "ANON", reader: "d", cached: true, allowed: true},
+		{owner: "ANON", reader: "d-enc", cached: true, allowed: true},
+		{owner: "ANON", reader: "p1-enc", cached: true, allowed: true},
+		{owner: "ANON", reader: "p2-noenc", cached: true, allowed: true},
+		{owner: "ANON", reader: "d-outsider", cached: true, allowed: true},
+		{owner: "ANON", reader: "", cached: true, allowed: true},
+		{owner: "ANON", reader: "", persisted: true, allowed: true},
+
+		// Private invocations owned by the org in the default cache partition
+		// with encryption disabled should allow the owner reader group and
+		// readers with the owner group as a reader auxiliary group, but deny
+		// unrelated reader groups and unauthenticated readers.
+		{owner: "d", reader: "d", cached: true, allowed: true},
+		{owner: "d", reader: "d", persisted: true, allowed: true},
+		{owner: "d", reader: "d-enc", readerAux: "d", cached: true, allowed: true},
+		{owner: "d", reader: "p1-enc", readerAux: "d", cached: true, allowed: true},
+		{owner: "d", reader: "p2-noenc", readerAux: "d", cached: true, allowed: true},
+		{owner: "d", reader: "d-outsider", readerAux: "d", cached: true, allowed: true},
+		{owner: "d", reader: "d-outsider", readerAux: "d", persisted: true, allowed: true},
+		{owner: "d", reader: "d-enc", cached: true, allowed: false},
+		{owner: "d", reader: "p1-enc", cached: true, allowed: false},
+		{owner: "d", reader: "p2-noenc", cached: true, allowed: false},
+		{owner: "d", reader: "d-outsider", cached: true, allowed: false},
+		{owner: "d", reader: "d-outsider", persisted: true, allowed: false},
+		{owner: "d", reader: "", cached: true, allowed: false},
+		{owner: "d", reader: "", persisted: true, allowed: false},
+
+		// Public invocations owned by the org in the default cache partition
+		// with encryption disabled should allow every reader, including
+		// unrelated reader groups and unauthenticated readers.
+		{owner: "d", public: true, reader: "d", cached: true, allowed: true},
+		{owner: "d", public: true, reader: "d", persisted: true, allowed: true},
+		{owner: "d", public: true, reader: "d-enc", readerAux: "d", cached: true, allowed: true},
+		{owner: "d", public: true, reader: "p1-enc", readerAux: "d", cached: true, allowed: true},
+		{owner: "d", public: true, reader: "p2-noenc", readerAux: "d", cached: true, allowed: true},
+		{owner: "d", public: true, reader: "d-enc", cached: true, allowed: true},
+		{owner: "d", public: true, reader: "p1-enc", cached: true, allowed: true},
+		{owner: "d", public: true, reader: "p2-noenc", cached: true, allowed: true},
+		{owner: "d", public: true, reader: "", cached: true, allowed: true},
+		{owner: "d", public: true, reader: "", persisted: true, allowed: true},
+
+		// Private invocations owned by the org in the default cache partition
+		// with encryption enabled should enforce the same owner group access
+		// rule.
+		{owner: "d-enc", reader: "d-enc", cached: true, allowed: true},
+		{owner: "d-enc", reader: "d", readerAux: "d-enc", cached: true, allowed: true},
+		{owner: "d-enc", reader: "p1-enc", readerAux: "d-enc", cached: true, allowed: true},
+		{owner: "d-enc", reader: "p2-noenc", readerAux: "d-enc", cached: true, allowed: true},
+		{owner: "d-enc", reader: "d-outsider", readerAux: "d-enc", cached: true, allowed: true},
+		{owner: "d-enc", reader: "d", cached: true, allowed: false},
+		{owner: "d-enc", reader: "p1-enc", cached: true, allowed: false},
+		{owner: "d-enc", reader: "p2-noenc", cached: true, allowed: false},
+		{owner: "d-enc", reader: "d-outsider", cached: true, allowed: false},
+		{owner: "d-enc", reader: "", cached: true, allowed: false},
+
+		// Public invocations owned by the org in the default cache partition
+		// with encryption enabled should allow every reader.
+		// These rows isolate public cache-only access with default partition
+		// encryption enabled.
+		{owner: "d-enc", public: true, reader: "d-enc", cached: true, allowed: true},
+		{owner: "d-enc", public: true, reader: "d", readerAux: "d-enc", cached: true, allowed: true},
+		{owner: "d-enc", public: true, reader: "p1-enc", readerAux: "d-enc", cached: true, allowed: true},
+		{owner: "d-enc", public: true, reader: "p2-noenc", readerAux: "d-enc", cached: true, allowed: true},
+		{owner: "d-enc", public: true, reader: "d-outsider", readerAux: "d-enc", cached: true, allowed: true},
+		{owner: "d-enc", public: true, reader: "d", cached: true, allowed: true},
+		{owner: "d-enc", public: true, reader: "p1-enc", cached: true, allowed: true},
+		{owner: "d-enc", public: true, reader: "p2-noenc", cached: true, allowed: true},
+		{owner: "d-enc", public: true, reader: "d-outsider", cached: true, allowed: true},
+		{owner: "d-enc", public: true, reader: "", cached: true, allowed: true},
+
+		// Private invocations owned by the org in the part1 cache partition
+		// with encryption enabled should enforce the owner group access rule.
+		{owner: "p1-enc", reader: "p1-enc", cached: true, allowed: true},
+		{owner: "p1-enc", reader: "d", readerAux: "p1-enc", cached: true, allowed: true},
+		{owner: "p1-enc", reader: "d-enc", readerAux: "p1-enc", cached: true, allowed: true},
+		{owner: "p1-enc", reader: "p2-noenc", readerAux: "p1-enc", cached: true, allowed: true},
+		{owner: "p1-enc", reader: "d-outsider", readerAux: "p1-enc", cached: true, allowed: true},
+		{owner: "p1-enc", reader: "d", cached: true, allowed: false},
+		{owner: "p1-enc", reader: "d-enc", cached: true, allowed: false},
+		{owner: "p1-enc", reader: "p2-noenc", cached: true, allowed: false},
+		{owner: "p1-enc", reader: "d-outsider", cached: true, allowed: false},
+		{owner: "p1-enc", reader: "", cached: true, allowed: false},
+
+		// Public invocations owned by the org in the part1 cache partition
+		// with encryption enabled should allow every reader. These rows isolate
+		// public cache-only access with encrypted part1 cache storage.
+		{owner: "p1-enc", public: true, reader: "p1-enc", cached: true, allowed: true},
+		{owner: "p1-enc", public: true, reader: "d", readerAux: "p1-enc", cached: true, allowed: true},
+		{owner: "p1-enc", public: true, reader: "d-enc", readerAux: "p1-enc", cached: true, allowed: true},
+		{owner: "p1-enc", public: true, reader: "p2-noenc", readerAux: "p1-enc", cached: true, allowed: true},
+		{owner: "p1-enc", public: true, reader: "d-outsider", readerAux: "p1-enc", cached: true, allowed: true},
+		{owner: "p1-enc", public: true, reader: "d", cached: true, allowed: true},
+		{owner: "p1-enc", public: true, reader: "d-enc", cached: true, allowed: true},
+		{owner: "p1-enc", public: true, reader: "p2-noenc", cached: true, allowed: true},
+		{owner: "p1-enc", public: true, reader: "d-outsider", cached: true, allowed: true},
+		{owner: "p1-enc", public: true, reader: "", cached: true, allowed: true},
+
+		// Private invocations owned by the org in the part2 cache partition
+		// with encryption disabled should enforce the owner group access rule.
+		{owner: "p2-noenc", reader: "p2-noenc", cached: true, allowed: true},
+		{owner: "p2-noenc", reader: "d", readerAux: "p2-noenc", cached: true, allowed: true},
+		{owner: "p2-noenc", reader: "d-enc", readerAux: "p2-noenc", cached: true, allowed: true},
+		{owner: "p2-noenc", reader: "p1-enc", readerAux: "p2-noenc", cached: true, allowed: true},
+		{owner: "p2-noenc", reader: "d-outsider", readerAux: "p2-noenc", cached: true, allowed: true},
+		{owner: "p2-noenc", reader: "d", cached: true, allowed: false},
+		{owner: "p2-noenc", reader: "d-enc", cached: true, allowed: false},
+		{owner: "p2-noenc", reader: "p1-enc", cached: true, allowed: false},
+		{owner: "p2-noenc", reader: "d-outsider", cached: true, allowed: false},
+		{owner: "p2-noenc", reader: "", cached: true, allowed: false},
+
+		// Public invocations owned by the org in the part2 cache partition with
+		// encryption disabled should allow every reader. These rows isolate
+		// public cache-only access with unencrypted part2 cache storage.
+		{owner: "p2-noenc", public: true, reader: "p2-noenc", cached: true, allowed: true},
+		{owner: "p2-noenc", public: true, reader: "d", readerAux: "p2-noenc", cached: true, allowed: true},
+		{owner: "p2-noenc", public: true, reader: "d-enc", readerAux: "p2-noenc", cached: true, allowed: true},
+		{owner: "p2-noenc", public: true, reader: "p1-enc", readerAux: "p2-noenc", cached: true, allowed: true},
+		{owner: "p2-noenc", public: true, reader: "d-outsider", readerAux: "p2-noenc", cached: true, allowed: true},
+		{owner: "p2-noenc", public: true, reader: "d", cached: true, allowed: true},
+		{owner: "p2-noenc", public: true, reader: "d-enc", cached: true, allowed: true},
+		{owner: "p2-noenc", public: true, reader: "p1-enc", cached: true, allowed: true},
+		{owner: "p2-noenc", public: true, reader: "d-outsider", cached: true, allowed: true},
+		{owner: "p2-noenc", public: true, reader: "", cached: true, allowed: true},
+
+		// Artifacts present in both blobstore and cache should be downloadable
+		// through representative private owner and public anonymous access.
+		{owner: "d", reader: "d", persisted: true, cached: true, allowed: true},
+		{owner: "d", public: true, reader: "", persisted: true, cached: true, allowed: true},
+	}
+
+	// Define skipped test cases that currently fail their expected behavior
+	// assertions. Remove entries as the implementation catches up to the table.
+	skippedTestCases := []testDownloadKey{
 		// TODO: ANON invocation artifacts should be accessible by authenticated
 		// users. Currently, these have to be viewed in incognito, which is kind
 		// of inconvenient.
-		{invocationOwner: "ANON", visibility: "public", accessVia: "authenticated", artifactStorage: cacheOnlyStorage},
+		{owner: "ANON", reader: "d", cached: true},
+		{owner: "ANON", reader: "d-enc", cached: true},
+		{owner: "ANON", reader: "p1-enc", cached: true},
+		{owner: "ANON", reader: "p2-noenc", cached: true},
+		{owner: "ANON", reader: "d-outsider", cached: true},
 
-		// TODO: if the authenticated user doesn't have the invocation owner
-		// group ID as their selected group ID, but they have access to the owner
-		// group via allowed_groups, they should still be able to view CAS artifacts
-		// from the invocation. Currently this only works if the authenticated group
-		// ID and invocation owner group ID resolve to the same cache partition and
-		// compatible cache encryption config. We should make it work even when the
-		// selected group uses a different cache partition or encryption config.
-		{invocationOwner: "default-encrypted-org", visibility: "private", accessVia: "allowed_group", artifactStorage: cacheOnlyStorage},
-		{invocationOwner: "default-encrypted-org", visibility: "public", accessVia: "allowed_group", artifactStorage: cacheOnlyStorage},
-		{invocationOwner: "nondefault-part1-encrypted-org", visibility: "private", accessVia: "allowed_group", artifactStorage: cacheOnlyStorage},
-		{invocationOwner: "nondefault-part1-encrypted-org", visibility: "public", accessVia: "allowed_group", artifactStorage: cacheOnlyStorage},
-		{invocationOwner: "nondefault-part2-unencrypted-org", visibility: "private", accessVia: "allowed_group", artifactStorage: cacheOnlyStorage},
-		{invocationOwner: "nondefault-part2-unencrypted-org", visibility: "public", accessVia: "allowed_group", artifactStorage: cacheOnlyStorage},
+		// TODO: if the reader doesn't have the invocation owner group ID as
+		// their reader group ID, but they have access to the owner group via
+		// reader auxiliary groups, they should still be able to view CAS
+		// artifacts from the invocation. Currently this only works if the reader
+		// group ID and invocation owner group ID have the same cache partition
+		// and cache encryption status (enabled/disabled). We should make it work
+		// even when they use different cache partitions or
+		// different cache encryption settings.
+		{owner: "d", reader: "d-enc", readerAux: "d", cached: true},
+		{owner: "d", reader: "p1-enc", readerAux: "d", cached: true},
+		{owner: "d", reader: "p2-noenc", readerAux: "d", cached: true},
+		{owner: "d", public: true, reader: "d-enc", readerAux: "d", cached: true},
+		{owner: "d", public: true, reader: "p1-enc", readerAux: "d", cached: true},
+		{owner: "d", public: true, reader: "p2-noenc", readerAux: "d", cached: true},
+		{owner: "d-enc", reader: "d", readerAux: "d-enc", cached: true},
+		{owner: "d-enc", reader: "p1-enc", readerAux: "d-enc", cached: true},
+		{owner: "d-enc", reader: "p2-noenc", readerAux: "d-enc", cached: true},
+		{owner: "d-enc", reader: "d-outsider", readerAux: "d-enc", cached: true},
+		{owner: "d-enc", public: true, reader: "d", readerAux: "d-enc", cached: true},
+		{owner: "d-enc", public: true, reader: "p1-enc", readerAux: "d-enc", cached: true},
+		{owner: "d-enc", public: true, reader: "p2-noenc", readerAux: "d-enc", cached: true},
+		{owner: "d-enc", public: true, reader: "d-outsider", readerAux: "d-enc", cached: true},
+		{owner: "p1-enc", reader: "d", readerAux: "p1-enc", cached: true},
+		{owner: "p1-enc", reader: "d-enc", readerAux: "p1-enc", cached: true},
+		{owner: "p1-enc", reader: "p2-noenc", readerAux: "p1-enc", cached: true},
+		{owner: "p1-enc", reader: "d-outsider", readerAux: "p1-enc", cached: true},
+		{owner: "p1-enc", public: true, reader: "d", readerAux: "p1-enc", cached: true},
+		{owner: "p1-enc", public: true, reader: "d-enc", readerAux: "p1-enc", cached: true},
+		{owner: "p1-enc", public: true, reader: "p2-noenc", readerAux: "p1-enc", cached: true},
+		{owner: "p1-enc", public: true, reader: "d-outsider", readerAux: "p1-enc", cached: true},
+		{owner: "p2-noenc", reader: "d", readerAux: "p2-noenc", cached: true},
+		{owner: "p2-noenc", reader: "d-enc", readerAux: "p2-noenc", cached: true},
+		{owner: "p2-noenc", reader: "p1-enc", readerAux: "p2-noenc", cached: true},
+		{owner: "p2-noenc", reader: "d-outsider", readerAux: "p2-noenc", cached: true},
+		{owner: "p2-noenc", public: true, reader: "d", readerAux: "p2-noenc", cached: true},
+		{owner: "p2-noenc", public: true, reader: "d-enc", readerAux: "p2-noenc", cached: true},
+		{owner: "p2-noenc", public: true, reader: "p1-enc", readerAux: "p2-noenc", cached: true},
+		{owner: "p2-noenc", public: true, reader: "d-outsider", readerAux: "p2-noenc", cached: true},
+
+		// TODO: private invocation artifacts should return 403 when the
+		// authenticated user does not have access to the invocation owner group.
+		// Same partition, unencrypted cache cases currently succeed if the
+		// authenticated user knows the artifact digest.
+		{owner: "d", reader: "d-outsider", cached: true},
 
 		// TODO: for public invocations, if an invocation artifact is only
 		// present in the CAS (i.e. we failed to store it to blobstore), check
-		// whether it is a "persistable" artifact (i.e. one that *would* have
-		// been written to blobstore), and if so, grant access to it.
-		{invocationOwner: "default-org", visibility: "public", accessVia: "anonymous", artifactStorage: cacheOnlyStorage},
-		{invocationOwner: "default-encrypted-org", visibility: "public", accessVia: "anonymous", artifactStorage: cacheOnlyStorage},
-		{invocationOwner: "nondefault-part1-encrypted-org", visibility: "public", accessVia: "anonymous", artifactStorage: cacheOnlyStorage},
-		{invocationOwner: "nondefault-part2-unencrypted-org", visibility: "public", accessVia: "anonymous", artifactStorage: cacheOnlyStorage},
-		{invocationOwner: "default-encrypted-org", visibility: "public", accessVia: "outside_group", artifactStorage: cacheOnlyStorage},
-		{invocationOwner: "nondefault-part1-encrypted-org", visibility: "public", accessVia: "outside_group", artifactStorage: cacheOnlyStorage},
-		{invocationOwner: "nondefault-part2-unencrypted-org", visibility: "public", accessVia: "outside_group", artifactStorage: cacheOnlyStorage},
-	}
-	shouldSkipDownload := func(download skippedDownloadTestCase) bool {
-		return slices.Contains(skippedTestCases, download)
-	}
-	isCacheBackedArtifact := func(artifact *testInvocationArtifact) bool {
-		return artifact.storage == cacheAndBlobstoreStorage || artifact.storage == cacheOnlyStorage
-	}
-	includeDownloadCase := func(invocation *testInvocation, artifact *testInvocationArtifact, viewer testInvocationViewer) bool {
-		// Include every public invocation case in the matrix.
-		if invocation.public {
-			return true
-		}
-
-		// Include non cache backed artifacts because their behavior does not depend
-		// on cache partition sharing.
-		if !isCacheBackedArtifact(artifact) {
-			return true
-		}
-
-		// Include anonymous private access because it exercises invocation ACLs,
-		// not shared cache partition behavior.
-		if viewer.apiKey == "" {
-			return true
-		}
-
-		// Include direct and allowed_groups access because those cases should be
-		// authorized through the invocation owner group.
-		if viewer.hasInvocationGroupAccess {
-			return true
-		}
-
-		// Omit private cache backed cases where the viewer does not have invocation
-		// group access but shares the invocation owner's unencrypted cache partition;
-		// those exercise the "knowledge of hash" cache model rather than invocation
-		// artifact access.
-		if partitionID(invocation.owner) == viewer.partition &&
-			!invocation.owner.encrypted &&
-			!viewer.cacheEncryptionEnabled {
-			return false
-		}
-
-		return true
+		// whether it is a persistable artifact (i.e. one that would have been
+		// written to blobstore), and if so, grant access to it.
+		{owner: "d", public: true, reader: "", cached: true},
+		{owner: "d-enc", public: true, reader: "", cached: true},
+		{owner: "p1-enc", public: true, reader: "", cached: true},
+		{owner: "p2-noenc", public: true, reader: "", cached: true},
+		{owner: "d", public: true, reader: "d-enc", cached: true},
+		{owner: "d", public: true, reader: "p1-enc", cached: true},
+		{owner: "d", public: true, reader: "p2-noenc", cached: true},
+		{owner: "d-enc", public: true, reader: "d", cached: true},
+		{owner: "d-enc", public: true, reader: "p1-enc", cached: true},
+		{owner: "d-enc", public: true, reader: "p2-noenc", cached: true},
+		{owner: "d-enc", public: true, reader: "d-outsider", cached: true},
+		{owner: "p1-enc", public: true, reader: "d", cached: true},
+		{owner: "p1-enc", public: true, reader: "d-enc", cached: true},
+		{owner: "p1-enc", public: true, reader: "p2-noenc", cached: true},
+		{owner: "p1-enc", public: true, reader: "d-outsider", cached: true},
+		{owner: "p2-noenc", public: true, reader: "d", cached: true},
+		{owner: "p2-noenc", public: true, reader: "d-enc", cached: true},
+		{owner: "p2-noenc", public: true, reader: "p1-enc", cached: true},
+		{owner: "p2-noenc", public: true, reader: "d-outsider", cached: true},
 	}
 
-	for _, invocation := range invocations {
-		visibility := "private"
-		if invocation.public {
-			visibility = "public"
+	publicForDownload := func(testDownload testDownload) bool {
+		return testDownload.owner == anonOwner.slug || testDownload.public
+	}
+	groupIDForSlug := func(slug string) string {
+		if slug == "" {
+			return ""
 		}
-		for _, artifact := range invocation.artifacts {
-			for _, viewer := range viewers(invocation) {
-				if !includeDownloadCase(invocation, artifact, viewer) {
-					continue
-				}
-				testName := fmt.Sprintf(
-					"Invocation=%s,%s/ArtifactStorage=%s/ArtifactAccessedVia=%s",
-					invocation.owner.name,
-					visibility,
-					artifact.storage,
-					viewer.name,
-				)
-				t.Run(testName, func(t *testing.T) {
-					downloadSpec := skippedDownloadTestCase{
-						invocationOwner: invocation.owner.name,
-						visibility:      visibility,
-						accessVia:       viewer.name,
-						artifactStorage: artifact.storage,
-					}
-					if shouldSkipDownload(downloadSpec) {
-						t.Skipf("skipping currently failing characterization case: %+v", downloadSpec)
-					}
-					statusCode, body := download(viewer.apiKey, invocation, artifact)
-					if !viewer.shouldAllow {
-						if viewer.groupID == "" && !invocation.public {
-							// TODO: return 403 instead of 500 for anonymous access to
-							// private invocation artifacts.
-							require.Contains(
-								t,
-								[]int{http.StatusForbidden, http.StatusInternalServerError},
-								statusCode,
-							)
-							return
-						}
-						require.Equal(
-							t,
-							http.StatusForbidden,
-							statusCode,
-						)
-						return
-					}
-					require.Equal(
-						t,
-						http.StatusOK,
-						statusCode,
-					)
-					require.Equal(
-						t,
-						artifact.contents,
-						body,
-					)
-				})
+		group, ok := readersBySlug[slug]
+		require.True(t, ok, "download test references unknown group slug")
+		return group.groupID
+	}
+	keyForTestDownload := func(testDownload testDownload) testDownloadKey {
+		return testDownloadKey{
+			owner:     testDownload.owner,
+			public:    publicForDownload(testDownload),
+			reader:    testDownload.reader,
+			readerAux: testDownload.readerAux,
+			persisted: testDownload.persisted,
+			cached:    testDownload.cached,
+		}
+	}
+	normalizeTestDownloadKey := func(key testDownloadKey) testDownloadKey {
+		if key.owner == anonOwner.slug {
+			key.public = true
+		}
+		return key
+	}
+	for i := range skippedTestCases {
+		skippedTestCases[i] = normalizeTestDownloadKey(skippedTestCases[i])
+	}
+	shouldSkip := func(testDownload testDownload) bool {
+		key := keyForTestDownload(testDownload)
+		return slices.Contains(skippedTestCases, key)
+	}
+	getInvocationForDownload := func(testDownload testDownload) *invocation {
+		public := publicForDownload(testDownload)
+		for _, invocation := range invocations {
+			if invocation.owner.slug == testDownload.owner && invocation.public == public {
+				return invocation
 			}
 		}
+		return nil
+	}
+	getArtifactForDownload := func(invocation *invocation, testDownload testDownload) *testInvocationArtifact {
+		for _, artifact := range invocation.artifacts {
+			if artifact.persisted == testDownload.persisted && artifact.cached == testDownload.cached {
+				return artifact
+			}
+		}
+		return nil
+	}
+	apiKeyForDownload := func(testDownload testDownload, invocation *invocation) string {
+		if testDownload.reader == "" {
+			return ""
+		}
+		readerGID := groupIDForSlug(testDownload.reader)
+		if testDownload.readerAux != "" {
+			readerAuxGID := groupIDForSlug(testDownload.readerAux)
+			require.Equal(t, invocation.owner.groupID, readerAuxGID, "download test reader auxiliary group must be invocation owner")
+			return readerAuxAPIKeys[readerAuxGID][readerGID]
+		}
+		if readerGID == invocation.owner.groupID {
+			return invocation.owner.apiKey
+		}
+		reader, ok := readersBySlug[testDownload.reader]
+		require.True(t, ok, "download test references unknown reader")
+		return reader.apiKey
+	}
+
+	for _, testDownload := range testDownloads {
+		public := publicForDownload(testDownload)
+		name := fmt.Sprintf(
+			"Invocation:Owner=%s,Public=%t/Artifact:Persisted=%t,Cached=%t/Reader=%s,ReaderAux=%s",
+			testDownload.owner,
+			public,
+			testDownload.persisted,
+			testDownload.cached,
+			testDownload.reader,
+			testDownload.readerAux,
+		)
+		t.Run(name, func(t *testing.T) {
+			if shouldSkip(testDownload) {
+				t.Skipf("skipping currently failing characterization case: %+v", keyForTestDownload(testDownload))
+			}
+			invocation := getInvocationForDownload(testDownload)
+			require.NotNil(t, invocation, "download test references unknown invocation")
+			artifact := getArtifactForDownload(invocation, testDownload)
+			require.NotNil(t, artifact, "download test references unknown artifact")
+
+			statusCode, body := download(apiKeyForDownload(testDownload, invocation), invocation, artifact)
+			if !testDownload.allowed {
+				if testDownload.reader == "" && !invocation.public {
+					// TODO: return 403 instead of 500 for anonymous access to
+					// private invocation artifacts.
+					require.Contains(t, []int{http.StatusForbidden, http.StatusInternalServerError}, statusCode)
+					return
+				}
+				require.Equal(t, http.StatusForbidden, statusCode)
+				return
+			}
+			require.Equal(t, http.StatusOK, statusCode)
+			require.Equal(t, artifact.contents, body)
+		})
 	}
 }
 
@@ -885,6 +1069,7 @@ func buildStartedEvent(apiKey string) *bespb.BuildEvent {
 		options += fmt.Sprintf(" --remote_header='%s=%s'", authutil.APIKeyHeader, apiKey)
 	}
 	return &bespb.BuildEvent{
+		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}}},
 		Payload: &bespb.BuildEvent_Started{
 			Started: &bespb.BuildStarted{OptionsDescription: options},
 		},
@@ -893,6 +1078,7 @@ func buildStartedEvent(apiKey string) *bespb.BuildEvent {
 
 func buildMetadataEvent() *bespb.BuildEvent {
 	return &bespb.BuildEvent{
+		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildMetadata{BuildMetadata: &bespb.BuildEventId_BuildMetadataId{}}},
 		Payload: &bespb.BuildEvent_BuildMetadata{
 			BuildMetadata: &bespb.BuildMetadata{
 				Metadata: map[string]string{"VISIBILITY": "PUBLIC"},
@@ -903,6 +1089,7 @@ func buildMetadataEvent() *bespb.BuildEvent {
 
 func buildToolLogsEvent(logs []*bespb.File) *bespb.BuildEvent {
 	return &bespb.BuildEvent{
+		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildToolLogs{BuildToolLogs: &bespb.BuildEventId_BuildToolLogsId{}}},
 		Payload: &bespb.BuildEvent_BuildToolLogs{
 			BuildToolLogs: &bespb.BuildToolLogs{Log: logs},
 		},
@@ -911,7 +1098,7 @@ func buildToolLogsEvent(logs []*bespb.File) *bespb.BuildEvent {
 
 func buildFinishedEvent() *bespb.BuildEvent {
 	return &bespb.BuildEvent{
-		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildFinished{}},
+		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
 		Payload: &bespb.BuildEvent_Finished{
 			Finished: &bespb.BuildFinished{ExitCode: &bespb.BuildFinished_ExitCode{}},
 		},
