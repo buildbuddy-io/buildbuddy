@@ -41,6 +41,7 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
+        "//server/testutil/testhttp",
         "//server/util/claims",
         "//server/util/status",
         "//server/util/testing/flags",
