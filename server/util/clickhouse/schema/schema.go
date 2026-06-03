@@ -286,8 +286,8 @@ type Execution struct {
 	CommandSnippet string `gorm:"codec:ZSTD(1)"`
 
 	// Container image
-	ContainerImageRef            string
-	ContainerImageDiskUsageBytes int64
+	ContainerImageRef            string `gorm:"codec:ZSTD(1)"`
+	ContainerImageDiskUsageBytes int64  `gorm:"codec:T64,ZSTD(1)"`
 
 	// Fields from Invocations
 	User             string `gorm:"codec:ZSTD(1)"`
