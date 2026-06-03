@@ -3072,7 +3072,7 @@ message StoredExecution {
   bool snapshot_is_diff = 85;
   // Uncompressed bytes written by the snapshot save. For diff snapshots,
   // counts only modified chunks.
-  int64 snapshot_size_bytes = 86;
+  int64 snapshot_saved_bytes = 86;
   // Wall-clock duration of Container.Pause.
   int64 pause_duration_usec = 87;
 }

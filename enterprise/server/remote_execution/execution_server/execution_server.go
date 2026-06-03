@@ -373,6 +373,23 @@ func trimStatus(statusMessage string) string {
 	return statusMessage
 }
 
+// updateExecutionPostCompletion adds a StoredExecution to the collector with
+// just the post completion stats. This relies on the collector merging this
+// data with the existing execution data when flushing to Clickhouse.
+func (s *ExecutionServer) updateExecutionPostCompletion(ctx context.Context, executionID string, stats *espb.PostCompletionStats) error {
+	fcStats := stats.GetFirecrackerPostExecStats()
+	execution := &repb.StoredExecution{
+		ExecutionId:           executionID, // necessary for the collector's merging.
+		UpdatedAtUsec:         time.Now().UnixMicro(),
+		PauseDurationUsec:     stats.GetPauseDurationUsec(),
+		SnapshotSavedLocally:  fcStats.GetSnapshotSavedLocally(),
+		SnapshotSavedRemotely: fcStats.GetSnapshotSavedRemotely(),
+		SnapshotIsDiff:        fcStats.GetSnapshotIsDiff(),
+		SnapshotSavedBytes:    fcStats.GetSnapshotSavedBytes(),
+	}
+	return s.executionCollector.UpdateInProgressExecution(ctx, execution)
+}
+
 func (s *ExecutionServer) updateExecution(ctx context.Context, executionID string, stage repb.ExecutionStage_Value, executeResponse *repb.ExecuteResponse, auxMeta *espb.ExecutionAuxiliaryMetadata, properties *platform.Properties, action *repb.Action, cmd *repb.Command) error {
 	ctx, cancel := background.ExtendContextForFinalization(ctx, updateExecutionTimeout)
 	defer cancel()
@@ -464,23 +481,8 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.PredictedMemoryBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedMemoryBytes()
 				executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
 				executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
-				// Guarded so a second COMPLETED carrying only PostCompletionStats
-				// doesn't flip SelfHosted to true via the nil-default branch and
-				// clobber the merged StoredExecution.
 				executionProto.SelfHosted = schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID()
 				executionProto.EffectivePool = schedulingMeta.GetPool()
-			}
-
-			// Stats only present on a follow-up COMPLETED carrying
-			// PostCompletionStats (e.g. firecracker snapshot save stats).
-			if postStats := auxMeta.GetPostCompletionStats(); postStats != nil {
-				executionProto.PauseDurationUsec = postStats.GetPauseDurationUsec()
-				if fc := postStats.GetFirecrackerPostExecStats(); fc != nil {
-					executionProto.SnapshotSavedLocally = fc.GetSnapshotSavedLocally()
-					executionProto.SnapshotSavedRemotely = fc.GetSnapshotSavedRemotely()
-					executionProto.SnapshotIsDiff = fc.GetSnapshotIsDiff()
-					executionProto.SnapshotSizeBytes = fc.GetSnapshotSizeBytes()
-				}
 			}
 
 			request := auxMeta.GetExecuteRequest()
@@ -1426,8 +1428,12 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	defer deletePendingExecutionOnce()
 
 	flushExecutionsOnEOF := false
-	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
-		flushExecutionsOnEOF = fp.Boolean(ctx, "remote_execution.flush_executions_after_cleanup", false)
+	if *writeExecutionProgressStateToRedis {
+		// It only makes sense to flush on EOF if we're appending updates in
+		// Redis.
+		if fp := s.env.GetExperimentFlagProvider(); fp != nil {
+			flushExecutionsOnEOF = fp.Boolean(ctx, "remote_execution.flush_executions_after_cleanup", false)
+		}
 	}
 
 	firstCompletedHandled := false
@@ -1445,6 +1451,31 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		}
 
 		response := operation.ExtractExecuteResponse(op)
+		if firstCompletedHandled {
+			if flushExecutionsOnEOF && operation.ExtractStage(op) == repb.ExecutionStage_COMPLETED {
+				stats := new(espb.PostCompletionStats)
+				ok, err := rexec.FindFirstAuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), stats)
+				if err != nil {
+					log.CtxWarningf(ctx, "Failed to parse PostCompletionStats: %s", err)
+				} else if !ok {
+					// PostCompletionStats should always be present in a second
+					// COMPLETED event.
+					log.CtxInfof(ctx, "Failed to find PostCompletionStats")
+				} else if err := s.updateExecutionPostCompletion(ctx, taskID, stats); err != nil {
+					log.CtxErrorf(ctx, "PublishOperation: error updating PostCompletionStats: %s", err)
+				}
+			}
+			// Always skip the rest after we successfully handled the first
+			// COMPLETED event and it already:
+			// - cached the action result
+			// - marked the task as completed
+			// - sent the result over pubsub (to bazel)
+			// - updated the execution in Redis with all data available at completion time
+			// - cached the execution result
+			// None of these need post exec stats.
+			continue
+		}
+
 		trimmedResponse := response.CloneVT()
 		if trimmedMetadata := trimmedResponse.GetResult().GetExecutionMetadata(); trimmedMetadata != nil {
 			// Auxiliary metadata shouldn't be sent to bazel or saved in
@@ -1475,18 +1506,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 
 		log.CtxDebugf(ctx, "PublishOperation: stage: %s", stage)
 
-		// A second stage=COMPLETED Operation on the same stream is treated
-		// as a post-completion stats update (currently used by the executor
-		// to deliver firecracker snapshot save stats from runner
-		// recycling). updateExecution still runs on both — it just picks
-		// up the additional snapshot fields from the second Operation's
-		// auxiliary metadata. The side effects of the first COMPLETED
-		// (action-cache write, markTaskComplete, recordResponseMetrics,
-		// cacheExecuteResponse, action/cmd fetch) are skipped to avoid
-		// double-caching, double-counting usage, or emitting duplicate
-		// metrics.
-		isPostCompletionUpdate := stage == repb.ExecutionStage_COMPLETED && firstCompletedHandled
-
 		var auxMeta *espb.ExecutionAuxiliaryMetadata
 		var properties *platform.Properties
 		var action *repb.Action
@@ -1511,35 +1530,30 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				return status.InternalErrorf("Failed to parse platform properties: %s", err)
 			}
-			if !isPostCompletionUpdate {
-				// Keep this close to, but before the cacheActionResult call: Since any action that can merge into this one
-				// may specify skip_cache_lookup, we need to ensure that the result is not visible in the cache before the
-				// action is merged. At the same time, we don't want the window between the calls to be too large to avoid
-				// reducing the effectiveness of merging.
-				deletePendingExecutionOnce()
-				actionRN := digest.NewACResourceName(actionCASRN.GetDigest(), actionCASRN.GetInstanceName(), actionCASRN.GetDigestFunction())
-				if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
-					return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
-				}
-				if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties, flushExecutionsOnEOF); err != nil {
-					// Errors updating the router or recording usage are non-fatal.
-					log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
-				}
+			// Keep this close to, but before the cacheActionResult call: Since any action that can merge into this one
+			// may specify skip_cache_lookup, we need to ensure that the result is not visible in the cache before the
+			// action is merged. At the same time, we don't want the window between the calls to be too large to avoid
+			// reducing the effectiveness of merging.
+			deletePendingExecutionOnce()
+			actionRN := digest.NewACResourceName(actionCASRN.GetDigest(), actionCASRN.GetInstanceName(), actionCASRN.GetDigestFunction())
+			if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
+				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
+			}
+			if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties, flushExecutionsOnEOF); err != nil {
+				// Errors updating the router or recording usage are non-fatal.
+				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
+			}
 
-				recordResponseMetrics(response, auxMeta, s.getGroupIDForMetrics(ctx))
-			}
+			recordResponseMetrics(response, auxMeta, s.getGroupIDForMetrics(ctx))
 		}
-		if !isPostCompletionUpdate {
-			// There's no need to notify the client (bazel) of updates after the
-			// execution has completed.
-			data, err := proto.Marshal(op)
-			if err != nil {
-				return status.InternalErrorf("Failed to marshal Operation: %s", err)
-			}
-			if err := s.streamPubSub.Publish(ctx, s.pubSubChannelForExecutionID(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
-				log.CtxWarningf(ctx, "Error publishing task on stream pubsub: %s", err)
-				return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
-			}
+
+		data, err := proto.Marshal(op)
+		if err != nil {
+			return status.InternalErrorf("Failed to marshal Operation: %s", err)
+		}
+		if err := s.streamPubSub.Publish(ctx, s.pubSubChannelForExecutionID(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
+			log.CtxWarningf(ctx, "Error publishing task on stream pubsub: %s", err)
+			return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
 		}
 
 		if stage == repb.ExecutionStage_COMPLETED {
@@ -1547,14 +1561,14 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				mu.Lock()
 				defer mu.Unlock()
 
-				if flushExecutionsOnEOF || !isPostCompletionUpdate {
+				if flushExecutionsOnEOF {
 					// Only update the execution in Redis on the first COMPLETED update, or if we're flushing on EOF.
 					if err := s.updateExecution(ctx, taskID, stage, response, auxMeta, properties, action, cmd); err != nil {
 						log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
 						return status.WrapErrorf(err, "failed to update execution %q", taskID)
 					}
 				}
-				if !flushExecutionsOnEOF && !isPostCompletionUpdate {
+				if !flushExecutionsOnEOF {
 					// Legacy path: usage was already recorded in
 					// markTaskComplete from the live ExecuteResponse on the
 					// first COMPLETED, so we only need to flush the OLAP
@@ -1572,7 +1586,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			}
 			firstCompletedHandled = true
 
-			if response != nil && !isPostCompletionUpdate {
+			if response != nil {
 				// TODO(vanja) should this be done when the executor got a
 				// cache hit?
 				if err := s.cacheExecuteResponse(ctx, taskID, response); err != nil {
