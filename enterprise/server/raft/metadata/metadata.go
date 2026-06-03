@@ -371,7 +371,7 @@ func (rc *Server) fileMetadataKey(fr *sgpb.FileRecord) ([]byte, error) {
 }
 
 func (rc *Server) fileRecordsToKeyMetas(fileRecords []*sgpb.FileRecord) ([]*sender.KeyMeta, error) {
-	var keys []*sender.KeyMeta
+	keys := make([]*sender.KeyMeta, 0, len(fileRecords))
 	for _, fileRecord := range fileRecords {
 		fileMetadataKey, err := rc.fileMetadataKey(fileRecord)
 		if err != nil {
@@ -704,7 +704,7 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 }
 
 func (rc *Server) setOperationsToKeyMetas(setOperations []*mdpb.SetRequest_SetOperation) ([]*sender.KeyMeta, error) {
-	var keys []*sender.KeyMeta
+	keys := make([]*sender.KeyMeta, 0, len(setOperations))
 	for _, setOperation := range setOperations {
 		fileMetadataKey, err := rc.fileMetadataKey(setOperation.GetFileMetadata().GetFileRecord())
 		if err != nil {
