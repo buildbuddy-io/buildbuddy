@@ -81,20 +81,11 @@ type blobFetchResult struct {
 	contentLength int64
 }
 
-type blobRequest struct {
-	blobRef        gcrname.Reference
-	digestRef      gcrname.Digest
-	repo           gcrname.Repository
-	hash           gcr.Hash
-	creds          *rgpb.Credentials
-	bypassRegistry bool
-}
-
-type manifestRequest struct {
-	imageRef       gcrname.Reference
-	repo           gcrname.Repository
-	creds          *rgpb.Credentials
-	bypassRegistry bool
+type blobDigestRef struct {
+	ref    gcrname.Reference
+	digest gcrname.Digest
+	repo   gcrname.Repository
+	hash   gcr.Hash
 }
 
 type blobMeta struct {
@@ -176,20 +167,26 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	if err := validateBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
 		return err
 	}
-	blobReq, err := parseBlobDigestRef(req.GetRef(), req.GetCredentials(), req.GetBypassRegistry(), "blob reference must be a digest reference, got %q")
+	blobRef, err := parseBlobDigestRef(req.GetRef(), "blob reference must be a digest reference, got %q")
 	if err != nil {
 		return err
 	}
 
-	if blobReq.bypassRegistry {
-		return s.fetchBlobFromCacheOnly(ctx, stream, blobReq)
+	if req.GetBypassRegistry() {
+		return s.fetchBlobFromCacheOnly(ctx, stream, blobRef)
 	}
-	if err := s.fetchBlobFromCache(ctx, stream, blobReq); err == nil {
+	err = s.fetchBlobFromCache(ctx, stream, blobRef)
+	if err == nil {
 		return nil
-	} else if err := handleBlobCacheStreamError(ctx, err); err != nil {
+	}
+	if !status.IsNotFoundError(err) {
+		// It is possible this error occurred while writing to the stream.
+		// Since we do not know the state of the stream, it is not safe
+		// to write bytes to the stream past this point.
+		log.CtxWarningf(ctx, "Error fetching blob from cache: %s", err)
 		return err
 	}
-	return s.fetchBlobWithSingleflight(ctx, stream, blobReq)
+	return s.fetchBlobWithSingleflight(ctx, stream, blobRef, req.GetCredentials())
 }
 
 func recordFetchBlobMetrics(role string, err error, duration time.Duration) {
@@ -218,19 +215,19 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 	if err := validateBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
 		return nil, err
 	}
-	blobReq, err := parseBlobDigestRef(req.GetRef(), req.GetCredentials(), req.GetBypassRegistry(), "blob reference must be a digest reference (e.g., repo@sha256:...), got %q")
+	blobRef, err := parseBlobDigestRef(req.GetRef(), "blob reference must be a digest reference (e.g., repo@sha256:...), got %q")
 	if err != nil {
 		return nil, err
 	}
-	if resp, err := s.fetchBlobMetadataFromCache(ctx, blobReq); err == nil {
+	if resp, err := s.fetchBlobMetadataFromCache(ctx, blobRef); err == nil {
 		return resp, nil
 	} else if !status.IsNotFoundError(err) {
 		log.CtxWarningf(ctx, "Error fetching blob metadata from cache: %s", err)
 	}
-	if blobReq.bypassRegistry {
-		return nil, status.NotFoundErrorf("bypassing registry, but blob metadata for %q not found in cache", blobReq.blobRef)
+	if req.GetBypassRegistry() {
+		return nil, status.NotFoundErrorf("bypassing registry, but blob metadata for %q not found in cache", blobRef.ref)
 	}
-	return s.fetchBlobMetadataFromRemote(ctx, blobReq)
+	return s.fetchBlobMetadataFromRemote(ctx, blobRef, req.GetCredentials())
 }
 
 // FetchManifest returns an OCI manifest from the action cache if present,
@@ -245,23 +242,23 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 	if err := validateBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
 		return nil, err
 	}
-	manifestReq, err := parseManifestRef(req.GetRef(), req.GetCredentials(), req.GetBypassRegistry())
+	imageRef, err := parseManifestRef(req.GetRef())
 	if err != nil {
 		return nil, err
 	}
-	hash, err := s.resolveManifestDigest(ctx, manifestReq)
+	hash, err := s.resolveManifestDigest(ctx, imageRef, req.GetCredentials(), req.GetBypassRegistry())
 	if err != nil {
 		return nil, err
 	}
-	if resp, err := s.fetchManifestFromCache(ctx, manifestReq, hash); err == nil {
+	if resp, err := s.fetchManifestFromCache(ctx, imageRef, hash); err == nil {
 		return resp, nil
 	} else if !status.IsNotFoundError(err) {
 		log.CtxWarningf(ctx, "Error fetching manifest from cache: %s", err)
 	}
-	if manifestReq.bypassRegistry {
-		return nil, status.NotFoundErrorf("bypassing registry, but manifest for %q not found in cache", manifestReq.imageRef)
+	if req.GetBypassRegistry() {
+		return nil, status.NotFoundErrorf("bypassing registry, but manifest for %q not found in cache", imageRef)
 	}
-	return s.fetchManifestFromRemoteAndCache(ctx, manifestReq, hash)
+	return s.fetchManifestFromRemoteWriteToCache(ctx, imageRef, hash, req.GetCredentials())
 }
 
 // FetchManifestMetadata fetches metadata (digest, size, media type) for an OCI manifest
@@ -276,14 +273,14 @@ func (s *ociFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.
 	if err := validateUnsupportedBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
 		return nil, err
 	}
-	manifestReq, err := parseManifestRef(req.GetRef(), req.GetCredentials(), req.GetBypassRegistry())
+	imageRef, err := parseManifestRef(req.GetRef())
 	if err != nil {
 		return nil, err
 	}
-	return s.fetchManifestMetadataFromRemote(ctx, manifestReq)
+	return s.fetchManifestMetadataFromRemote(ctx, imageRef, req.GetCredentials())
 }
 
-func parseBlobDigestRef(ref string, creds *rgpb.Credentials, bypassRegistry bool, digestRequiredMsg string) (*blobRequest, error) {
+func parseBlobDigestRef(ref string, digestRequiredMsg string) (*blobDigestRef, error) {
 	blobRef, err := gcrname.ParseReference(ref)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid blob reference %q: %s", ref, err)
@@ -296,83 +293,71 @@ func parseBlobDigestRef(ref string, creds *rgpb.Credentials, bypassRegistry bool
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
 	}
-	return &blobRequest{
-		blobRef:        blobRef,
-		digestRef:      digestRef,
-		repo:           digestRef.Context(),
-		hash:           hash,
-		creds:          creds,
-		bypassRegistry: bypassRegistry,
+	return &blobDigestRef{
+		ref:    blobRef,
+		digest: digestRef,
+		repo:   digestRef.Context(),
+		hash:   hash,
 	}, nil
 }
 
-func parseManifestRef(ref string, creds *rgpb.Credentials, bypassRegistry bool) (*manifestRequest, error) {
+func parseManifestRef(ref string) (gcrname.Reference, error) {
 	imageRef, err := gcrname.ParseReference(ref)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", ref, err)
 	}
-	return &manifestRequest{
-		imageRef:       imageRef,
-		repo:           imageRef.Context(),
-		creds:          creds,
-		bypassRegistry: bypassRegistry,
-	}, nil
+	return imageRef, nil
 }
 
-func (s *ociFetcherServer) fetchBlobFromCacheOnly(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, req *blobRequest) error {
-	if err := s.fetchBlobFromCache(ctx, stream, req); err == nil {
+func (s *ociFetcherServer) fetchBlobFromCacheOnly(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, ref *blobDigestRef) error {
+	err := s.fetchBlobFromCache(ctx, stream, ref)
+	if err == nil {
 		return nil
-	} else if !status.IsNotFoundError(err) {
-		return handleBlobCacheStreamError(ctx, err)
 	}
-	return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", req.blobRef)
+	if !status.IsNotFoundError(err) {
+		// It is possible this error occurred while writing to the stream.
+		// Since we do not know the state of the stream, it is not safe
+		// to write bytes to the stream past this point.
+		log.CtxWarningf(ctx, "Error fetching blob from cache: %s", err)
+		return err
+	}
+	return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", ref.ref)
 }
 
-func (s *ociFetcherServer) fetchBlobWithSingleflight(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, req *blobRequest) error {
+func (s *ociFetcherServer) fetchBlobWithSingleflight(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, ref *blobDigestRef, creds *rgpb.Credentials) error {
 	start := time.Now()
-	key := ocicache.NewBlobFetchKey(req.repo, req.hash, req.creds)
+	key := ocicache.NewBlobFetchKey(ref.repo, ref.hash, creds)
 	isLeader := false
 	result, _, err := s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (blobFetchResult, error) {
 		isLeader = true
-		return s.fetchBlobSingleflightLeader(ctx, stream, req)
+		return s.fetchBlobSingleflightLeader(ctx, stream, ref, creds)
 	})
 
 	if isLeader {
 		recordFetchBlobMetrics(metrics.OCIFetcherRoleLeader, err, time.Since(start))
 		return err
 	}
-	return s.fetchBlobSingleflightWaiter(ctx, stream, req, result, err, start)
+	return s.fetchBlobSingleflightWaiter(ctx, stream, ref, result, err, start)
 }
 
-func (s *ociFetcherServer) fetchBlobSingleflightLeader(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, req *blobRequest) (blobFetchResult, error) {
-	contentLength, err := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, req.digestRef, req.repo, req.hash, req.creds, stream)
+func (s *ociFetcherServer) fetchBlobSingleflightLeader(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, ref *blobDigestRef, creds *rgpb.Credentials) (blobFetchResult, error) {
+	contentLength, err := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, ref.digest, ref.repo, ref.hash, creds, stream)
 	return blobFetchResult{contentLength: contentLength}, err
 }
 
-func (s *ociFetcherServer) fetchBlobSingleflightWaiter(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, req *blobRequest, result blobFetchResult, leaderErr error, start time.Time) error {
+func (s *ociFetcherServer) fetchBlobSingleflightWaiter(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, ref *blobDigestRef, result blobFetchResult, leaderErr error, start time.Time) error {
 	if leaderErr != nil {
 		recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, leaderErr, time.Since(start))
 		return leaderErr
 	}
 	w := &grpcStreamWriter{stream: stream}
-	err := ocicache.FetchBlobFromCache(ctx, w, s.bsClient, req.hash, result.contentLength)
+	err := ocicache.FetchBlobFromCache(ctx, w, s.bsClient, ref.hash, result.contentLength)
 	recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
 	return err
 }
 
-func handleBlobCacheStreamError(ctx context.Context, err error) error {
-	if status.IsNotFoundError(err) {
-		return nil
-	}
-	// It is possible this error occurred while writing to the stream.
-	// Since we do not know the state of the stream, it is not safe
-	// to write bytes to the stream past this point.
-	log.CtxWarningf(ctx, "Error fetching blob from cache: %s", err)
-	return err
-}
-
-func (s *ociFetcherServer) fetchBlobMetadataFromCache(ctx context.Context, req *blobRequest) (*ofpb.FetchBlobMetadataResponse, error) {
-	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, req.repo, req.hash)
+func (s *ociFetcherServer) fetchBlobMetadataFromCache(ctx context.Context, ref *blobDigestRef) (*ofpb.FetchBlobMetadataResponse, error) {
+	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, ref.repo, ref.hash)
 	if err != nil {
 		return nil, err
 	}
@@ -382,9 +367,9 @@ func (s *ociFetcherServer) fetchBlobMetadataFromCache(ctx context.Context, req *
 	}, nil
 }
 
-func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, req *blobRequest) (*ofpb.FetchBlobMetadataResponse, error) {
-	meta, err := withPullerRetry(ctx, s, req.blobRef, req.creds, func(puller *remote.Puller) (*blobMeta, error) {
-		layer, err := puller.Layer(ctx, req.digestRef)
+func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, ref *blobDigestRef, creds *rgpb.Credentials) (*ofpb.FetchBlobMetadataResponse, error) {
+	meta, err := withPullerRetry(ctx, s, ref.ref, creds, func(puller *remote.Puller) (*blobMeta, error) {
+		layer, err := puller.Layer(ctx, ref.digest)
 		if err != nil {
 			return nil, err
 		}
@@ -407,28 +392,28 @@ func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, req 
 	}, nil
 }
 
-func (s *ociFetcherServer) resolveManifestDigest(ctx context.Context, req *manifestRequest) (gcr.Hash, error) {
-	if digestRef, ok := req.imageRef.(gcrname.Digest); ok {
+func (s *ociFetcherServer) resolveManifestDigest(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials, bypassRegistry bool) (gcr.Hash, error) {
+	if digestRef, ok := imageRef.(gcrname.Digest); ok {
 		hash, err := gcr.NewHash(digestRef.DigestStr())
 		if err != nil {
 			return gcr.Hash{}, status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
 		}
-		if !req.bypassRegistry {
-			if err := s.proveManifestAccess(ctx, req.imageRef, req.creds); err != nil {
+		if !bypassRegistry {
+			if err := s.proveManifestAccess(ctx, imageRef, creds); err != nil {
 				return gcr.Hash{}, err
 			}
 		}
 		return hash, nil
 	}
-	if req.bypassRegistry {
-		return gcr.Hash{}, status.NotFoundErrorf("bypassing registry, but cannot resolve tag ref %q from cache", req.imageRef)
+	if bypassRegistry {
+		return gcr.Hash{}, status.NotFoundErrorf("bypassing registry, but cannot resolve tag ref %q from cache", imageRef)
 	}
-	return s.resolveTagToDigest(ctx, req)
+	return s.resolveTagToDigest(ctx, imageRef, creds)
 }
 
-func (s *ociFetcherServer) resolveTagToDigest(ctx context.Context, req *manifestRequest) (gcr.Hash, error) {
-	desc, err := withPullerRetry(ctx, s, req.imageRef, req.creds, func(puller *remote.Puller) (*gcr.Descriptor, error) {
-		return puller.Head(ctx, req.imageRef)
+func (s *ociFetcherServer) resolveTagToDigest(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (gcr.Hash, error) {
+	desc, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*gcr.Descriptor, error) {
+		return puller.Head(ctx, imageRef)
 	})
 	if err != nil {
 		return gcr.Hash{}, err
@@ -440,8 +425,8 @@ func (s *ociFetcherServer) resolveTagToDigest(ctx context.Context, req *manifest
 	return hash, nil
 }
 
-func (s *ociFetcherServer) fetchManifestFromCache(ctx context.Context, req *manifestRequest, hash gcr.Hash) (*ofpb.FetchManifestResponse, error) {
-	cached, err := ocicache.FetchManifestFromAC(ctx, s.acClient, req.repo, hash, req.imageRef)
+func (s *ociFetcherServer) fetchManifestFromCache(ctx context.Context, imageRef gcrname.Reference, hash gcr.Hash) (*ofpb.FetchManifestResponse, error) {
+	cached, err := ocicache.FetchManifestFromAC(ctx, s.acClient, imageRef.Context(), hash, imageRef)
 	if err != nil {
 		return nil, err
 	}
@@ -453,14 +438,14 @@ func (s *ociFetcherServer) fetchManifestFromCache(ctx context.Context, req *mani
 	}, nil
 }
 
-func (s *ociFetcherServer) fetchManifestFromRemoteAndCache(ctx context.Context, req *manifestRequest, hash gcr.Hash) (*ofpb.FetchManifestResponse, error) {
-	remoteDesc, err := withPullerRetry(ctx, s, req.imageRef, req.creds, func(puller *remote.Puller) (*remote.Descriptor, error) {
-		return puller.Get(ctx, req.imageRef)
+func (s *ociFetcherServer) fetchManifestFromRemoteWriteToCache(ctx context.Context, imageRef gcrname.Reference, hash gcr.Hash, creds *rgpb.Credentials) (*ofpb.FetchManifestResponse, error) {
+	remoteDesc, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*remote.Descriptor, error) {
+		return puller.Get(ctx, imageRef)
 	})
 	if err != nil {
 		return nil, err
 	}
-	if err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, s.acClient, req.repo, hash, string(remoteDesc.MediaType), req.imageRef); err != nil {
+	if err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, s.acClient, imageRef.Context(), hash, string(remoteDesc.MediaType), imageRef); err != nil {
 		log.CtxWarningf(ctx, "Error writing manifest to cache: %s", err)
 	}
 	return &ofpb.FetchManifestResponse{
@@ -471,9 +456,9 @@ func (s *ociFetcherServer) fetchManifestFromRemoteAndCache(ctx context.Context, 
 	}, nil
 }
 
-func (s *ociFetcherServer) fetchManifestMetadataFromRemote(ctx context.Context, req *manifestRequest) (*ofpb.FetchManifestMetadataResponse, error) {
-	desc, err := withPullerRetry(ctx, s, req.imageRef, req.creds, func(puller *remote.Puller) (*gcr.Descriptor, error) {
-		return puller.Head(ctx, req.imageRef)
+func (s *ociFetcherServer) fetchManifestMetadataFromRemote(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (*ofpb.FetchManifestMetadataResponse, error) {
+	desc, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*gcr.Descriptor, error) {
+		return puller.Head(ctx, imageRef)
 	})
 	if err != nil {
 		return nil, err
@@ -552,13 +537,13 @@ func (s *ociFetcherServer) proveManifestAccess(ctx context.Context, imageRef gcr
 
 // fetchBlobFromCache attempts to fetch a blob from the cache and streams it directly to the gRPC response.
 // Returns nil if successful, NotFoundError if not in cache, or another error on failure.
-func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, req *blobRequest) error {
-	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, req.repo, req.hash)
+func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, ref *blobDigestRef) error {
+	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, ref.repo, ref.hash)
 	if err != nil {
 		return err
 	}
 	w := &grpcStreamWriter{stream: stream}
-	return ocicache.FetchBlobFromCache(ctx, w, s.bsClient, req.hash, metadata.GetContentLength())
+	return ocicache.FetchBlobFromCache(ctx, w, s.bsClient, ref.hash, metadata.GetContentLength())
 }
 
 // fetchBlobFromRemoteWriteToCacheAndResponse fetches a blob from the upstream
