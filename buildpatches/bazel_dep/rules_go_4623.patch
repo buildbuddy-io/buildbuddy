@@ -1,0 +1,53 @@
+diff --git a/MODULE.bazel b/MODULE.bazel
+index 83965b6e9b..b517e412d5 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -7,7 +7,7 @@ module(
+ # The custom repo_name is used to prevent our bazel_features polyfill for WORKSPACE builds from
+ # conflicting with the real bazel_features repo.
+ bazel_dep(name = "bazel_features", version = "1.36.0", repo_name = "io_bazel_rules_go_bazel_features")
+-bazel_dep(name = "bazel_skylib", version = "1.2.0")
++bazel_dep(name = "bazel_skylib", version = "1.8.1")
+ bazel_dep(name = "platforms", version = "1.1.0")
+ bazel_dep(name = "rules_proto", version = "7.0.2")
+ bazel_dep(name = "protobuf", version = "29.0", repo_name = "com_google_protobuf")
+diff --git a/go/private/BUILD.bazel b/go/private/BUILD.bazel
+index abe5c36575..0bf46bf85b 100644
+--- a/go/private/BUILD.bazel
++++ b/go/private/BUILD.bazel
+@@ -165,6 +165,7 @@ bzl_library(
+ bool_setting(
+     name = "bootstrap_nogo",
+     build_setting_default = False,
++    scope = "universal",
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -174,6 +175,7 @@ bool_setting(
+ bool_setting(
+     name = "request_nogo",
+     build_setting_default = True,
++    scope = "universal",
+     visibility = ["//visibility:public"],
+ )
+
+diff --git a/go/private/repositories.bzl b/go/private/repositories.bzl
+index eb2e7f8ae2..865c41fdc9 100644
+--- a/go/private/repositories.bzl
++++ b/go/private/repositories.bzl
+@@ -51,12 +51,11 @@ def go_rules_dependencies(force = False):
+     wrapper(
+         http_archive,
+         name = "bazel_skylib",
+-        # 1.6.1, latest as of 2024-05-20
+         urls = [
+-            "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.6.1/bazel-skylib-1.6.1.tar.gz",
+-            "https://github.com/bazelbuild/bazel-skylib/releases/download/1.6.1/bazel-skylib-1.6.1.tar.gz",
++            "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.8.1/bazel-skylib-1.8.1.tar.gz",
++            "https://github.com/bazelbuild/bazel-skylib/releases/download/1.8.1/bazel-skylib-1.8.1.tar.gz",
+         ],
+-        sha256 = "9f38886a40548c6e96c106b752f242130ee11aaa068a56ba7e56f4511f33e4f2",
++        sha256 = "51b5105a760b353773f904d2bbc5e664d0987fbaf22265164de65d43e910d8ac",
+         strip_prefix = "",
+     )
+ 
