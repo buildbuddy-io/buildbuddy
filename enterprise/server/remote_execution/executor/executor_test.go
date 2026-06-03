@@ -331,7 +331,7 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 					SnapshotSavedLocally:  true,
 					SnapshotSavedRemotely: true,
 					SnapshotIsDiff:        true,
-					SnapshotSizeBytes:     12345,
+					SnapshotSavedBytes:    12345,
 				},
 			},
 		},
@@ -401,25 +401,13 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 				return
 			}
 
-			first, err := rexec.UnpackOperation(ops[0])
-			require.NoError(t, err)
 			followUp, err := rexec.UnpackOperation(ops[1])
 			require.NoError(t, err)
-			auxMeta := &espb.ExecutionAuxiliaryMetadata{}
-			ok, err := rexec.FindFirstAuxiliaryMetadata(followUp.ExecuteResponse.GetResult().GetExecutionMetadata(), auxMeta)
+			gotStats := &espb.PostCompletionStats{}
+			ok, err := rexec.FindFirstAuxiliaryMetadata(followUp.ExecuteResponse.GetResult().GetExecutionMetadata(), gotStats)
 			require.NoError(t, err)
-			require.True(t, ok, "follow-up COMPLETED should carry ExecutionAuxiliaryMetadata")
-			require.Empty(t, cmp.Diff(
-				tc.postCompletionStats,
-				auxMeta.GetPostCompletionStats(),
-				protocmp.Transform(),
-			))
-			require.Empty(t, cmp.Diff(
-				first.ExecuteResponse,
-				followUp.ExecuteResponse,
-				protocmp.Transform(),
-				protocmp.IgnoreFields(&espb.ExecutionAuxiliaryMetadata{}, "post_completion_stats"),
-			), "follow-up should carry the same ExecuteResponse as the first COMPLETED (modulo PostCompletionStats)")
+			require.True(t, ok, "follow-up COMPLETED should carry PostCompletionStats")
+			require.Empty(t, cmp.Diff(tc.postCompletionStats, gotStats, protocmp.Transform()))
 		})
 	}
 }

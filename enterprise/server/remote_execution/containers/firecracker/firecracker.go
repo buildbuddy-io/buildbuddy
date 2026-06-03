@@ -3102,7 +3102,7 @@ func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context, i
 
 		log.CtxDebugf(ctx, "For chunked %s snapshot, %d MB (%d chunks) were dirty%s", name, dirtyBytes/(1024*1024), dirtyChunkCount, chunkSrcLog.String())
 	}
-	c.postCompletionStats.FirecrackerPostExecStats.SnapshotSizeBytes = totalSnapshotBytes
+	c.postCompletionStats.FirecrackerPostExecStats.SnapshotSavedBytes = totalSnapshotBytes
 	return nil
 }
 

@@ -305,7 +305,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	actionMetrics.Isolation = r.GetIsolationType()
 	reuseRunner := false
 	var cmdResult *interfaces.CommandResult
-	var publishedCompletedResponse *repb.ExecuteResponse
+	firstCompletedPublished := false
 	defer func() {
 		// Respect the DoNotRecycle bit set by the container implementation,
 		// since specific implementations will have better knowledge about the
@@ -319,17 +319,22 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		s.runnerPool.TryRecycle(ctx, r, reuseRunner)
 
 		// Recycling can produce observability data that wasn't available at
-		// COMPLETED publish time.
-		if stats := r.PostCompletionStats(); stats != nil && publishedCompletedResponse != nil {
-			// Add post-completion stats to auxMetadata. This requires replacing
-			// the previosly marshalled auxMedata.
-			auxMetadata.PostCompletionStats = stats
-			if err := replaceAuxiliaryMetadata(publishedCompletedResponse.GetResult().GetExecutionMetadata(), auxMetadata); err != nil {
-				log.CtxWarningf(ctx, "Failed to replace ExecutionAuxiliaryMetadata: %s", err)
-			} else if err := opStateChangeFn(repb.ExecutionStage_COMPLETED, publishedCompletedResponse); err != nil {
-				// Don't call finishWithErrFn here since the task is already
-				// COMPLETED, and we don't want to change the task's final
-				// status.
+		// COMPLETED publish time. Publish a follow-up stage=COMPLETED Operation
+		// whose auxiliary_metadata carries just the PostCompletionStats.
+		if stats := r.PostCompletionStats(); stats != nil && firstCompletedPublished {
+			statsAny, err := anypb.New(stats)
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to marshal PostCompletionStats: %s", err)
+				return
+			}
+			rsp := &repb.ExecuteResponse{
+				Result: &repb.ActionResult{
+					ExecutionMetadata: &repb.ExecutedActionMetadata{
+						AuxiliaryMetadata: []*anypb.Any{statsAny},
+					},
+				},
+			}
+			if err := opStateChangeFn(repb.ExecutionStage_COMPLETED, rsp); err != nil {
 				log.CtxWarningf(ctx, "Failed to publish post-completion stats: %s", err)
 			}
 		}
@@ -536,7 +541,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		}
 		return finishWithErrFn(status.WrapError(err, "publish execute response"))
 	}
-	publishedCompletedResponse = executeResponse
+	firstCompletedPublished = true
 	if cmdResult.Error == nil {
 		log.CtxDebugf(ctx, "Task finished cleanly.")
 		reuseRunner = true
@@ -548,24 +553,6 @@ func appendAuxiliaryMetadata(md *repb.ExecutedActionMetadata, message proto.Mess
 	a, err := anypb.New(message)
 	if err != nil {
 		return status.InternalErrorf("marshal message type %T to Any: %s", message, err)
-	}
-	md.AuxiliaryMetadata = append(md.AuxiliaryMetadata, a)
-	return nil
-}
-
-// replaceAuxiliaryMetadata replaces the first auxiliary metadata entry of
-// the same type as message with a freshly-marshaled Any, or appends one if
-// no entry of that type is present.
-func replaceAuxiliaryMetadata(md *repb.ExecutedActionMetadata, message proto.Message) error {
-	a, err := anypb.New(message)
-	if err != nil {
-		return status.InternalErrorf("marshal message type %T to Any: %s", message, err)
-	}
-	for i, existing := range md.GetAuxiliaryMetadata() {
-		if existing.GetTypeUrl() == a.GetTypeUrl() {
-			md.AuxiliaryMetadata[i] = a
-			return nil
-		}
 	}
 	md.AuxiliaryMetadata = append(md.AuxiliaryMetadata, a)
 	return nil
