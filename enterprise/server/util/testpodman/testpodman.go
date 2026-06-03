@@ -29,11 +29,10 @@ func install() error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	// We haven't installed podman. First check that the execution image we're
-	// using doesn't have podman installed already, otherwise it may conflict
-	// with the one we're trying to install.
-	if path, err := exec.LookPath("podman"); err == nil {
-		return fmt.Errorf("install podman: %s already installed in runner", path)
+	// We haven't installed podman through this helper, but the execution image
+	// may already provide it.
+	if _, err := exec.LookPath("podman"); err == nil {
+		return nil
 	}
 
 	podmanArchiveAbspath, err := runfiles.Rlocation(podmanArchiveRlocationpath)

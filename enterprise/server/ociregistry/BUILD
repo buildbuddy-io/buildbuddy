@@ -31,6 +31,10 @@ go_library(
     ],
 )
 
+# Tell gazelle to make each file a separate test target,
+# so the OCI client integration test can keep separate runner properties.
+# gazelle:go_test file
+
 go_test(
     name = "ociregistry_test",
     timeout = "short",
@@ -42,7 +46,6 @@ go_test(
         "//server/interfaces",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
-        "//server/testutil/testhttp",
         "//server/testutil/testport",
         "//server/util/random",
         "//server/util/testing/flags",
@@ -51,10 +54,10 @@ go_test(
 )
 
 go_test(
-    name = "oci_client_integration_test",
+    name = "ociregistry_client_test",
     size = "large",
     timeout = "moderate",
-    srcs = ["oci_client_integration_test.go"],
+    srcs = ["ociregistry_client_test.go"],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
         "test.init-dockerd": "true",
