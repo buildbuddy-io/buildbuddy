@@ -52,7 +52,7 @@ jobs:
           git commit -m "Bumping OSS and Executor to ${{ github.event.release.tag_name }}" -a
 
       - name: Push changes
-        uses: ad-m/github-push-action@40bf560936a8022e68a3c00e7d2abefaf01305a6 # v0.6.0
+        uses: ad-m/github-push-action@881a6320fdb16eb5318c5054f31c218aec2b324c # v1.3.0
         with:
           directory: buildbuddy-helm
           repository: buildbuddy-io/buildbuddy-helm
@@ -93,7 +93,7 @@ jobs:
           git commit -m "Bumping Enterprise to ${{ github.event.release.tag_name }}" -a
 
       - name: Push changes
-        uses: ad-m/github-push-action@40bf560936a8022e68a3c00e7d2abefaf01305a6 # v0.6.0
+        uses: ad-m/github-push-action@881a6320fdb16eb5318c5054f31c218aec2b324c # v1.3.0
         with:
           directory: buildbuddy-helm
           repository: buildbuddy-io/buildbuddy-helm
@@ -129,7 +129,7 @@ jobs:
           git commit -m "Bumping Cache Proxy to ${{ github.event.release.tag_name }}" -a
 
       - name: Push changes
-        uses: ad-m/github-push-action@40bf560936a8022e68a3c00e7d2abefaf01305a6 # v0.6.0
+        uses: ad-m/github-push-action@881a6320fdb16eb5318c5054f31c218aec2b324c # v1.3.0
         with:
           directory: buildbuddy-helm
           repository: buildbuddy-io/buildbuddy-helm

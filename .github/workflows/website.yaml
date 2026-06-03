@@ -34,7 +34,7 @@ jobs:
           touch .nojekyll
 
       - name: Deploy Website 🚀
-        uses: JamesIves/github-pages-deploy-action@3dbacc7e69578703f91f077118b3475862cb09b8 # 4.1.0
+        uses: JamesIves/github-pages-deploy-action@d92aa235d04922e8f08b40ce78cc5442fcfbfa2f # v4.8.0
         with:
           branch: gh-pages
           folder: website/build
