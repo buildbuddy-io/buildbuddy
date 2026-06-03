@@ -142,16 +142,6 @@ func (s *InvocationSearchService) IndexInvocation(ctx context.Context, invocatio
 	return nil
 }
 
-func (s *InvocationSearchService) checkPreconditions(req *inpb.SearchInvocationRequest) error {
-	if req.Query == nil {
-		return status.InvalidArgumentError("The query field is required")
-	}
-	if req.Query.Host == "" && req.Query.User == "" && req.Query.CommitSha == "" && req.Query.RepoUrl == "" && req.Query.GroupId == "" {
-		return status.InvalidArgumentError("At least one search atom must be set")
-	}
-	return nil
-}
-
 // TODO(tylerw): move this to a common place -- we'll use it a bunch.
 func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
 	o := query_builder.OrClauses{}
@@ -249,9 +239,6 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 		}
 	}
 
-	if err := s.checkPreconditions(req); err != nil {
-		return "", nil, err
-	}
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return "", nil, err
@@ -578,6 +565,25 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 		req.Sort = defaultSortParams()
 	} else if req.Sort.SortField == inpb.InvocationSort_UNKNOWN_SORT_FIELD {
 		req.Sort.SortField = defaultSortParams().SortField
+	}
+
+	// Default the query group_id to the authenticated group ID.
+	if req.GetQuery().GetGroupId() == "" {
+		req = req.CloneVT()
+		if req.Query == nil {
+			req.Query = &inpb.InvocationQuery{}
+		}
+		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+		// Note: the two cases below should not happen in practice because
+		// capabilities_filter requires that the user is authenticated and that
+		// they are a member of a group.
+		if err != nil {
+			return nil, status.InternalErrorf("user is unexpectedly unauthenticated: %v", err)
+		}
+		if u.GetGroupID() == "" {
+			return nil, status.InternalError("user is unexpectedly missing group ID")
+		}
+		req.Query.GroupId = u.GetGroupID()
 	}
 
 	var invocations []*inpb.Invocation

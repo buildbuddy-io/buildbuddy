@@ -1529,6 +1529,366 @@ func TestPublishOperation_PeriodicFlushDoesNotClobberCompletedRow(t *testing.T) 
 	_, _ = stream.CloseAndRecv()
 }
 
+// TestPublishOperation_SecondCompletedCarriesSnapshotStats verifies that a
+// second stage=COMPLETED Operation sent on the same PublishOperation stream,
+// carrying a PostCompletionStats entry in auxiliary_metadata, is handled
+// correctly under both experiment values.
+//
+// Under flush_executions_after_cleanup=true (the path this PR exists to
+// enable), the snapshot fields get merged into the recorded
+// StoredExecution. The first COMPLETED's other fields survive the merge
+// (proto.Merge semantics).
+//
+// Under flush_executions_after_cleanup=false (legacy path), the OLAP flush
+// already ran on the first COMPLETED, so the second COMPLETED is dropped
+// server-side and the snapshot fields don't appear in the recorded row.
+//
+// In both modes the action result must not be re-cached and usage must be
+// recorded exactly once.
+func TestPublishOperation_SecondCompletedCarriesSnapshotStats(t *testing.T) {
+	for _, flushAfterCleanup := range []bool{false, true} {
+		name := "FlushOnComplete"
+		if flushAfterCleanup {
+			name = "FlushAfterCleanup"
+		}
+		t.Run(name, func(t *testing.T) {
+			testPublishOperationSecondCompletedCarriesSnapshotStats(t, flushAfterCleanup)
+		})
+	}
+}
+
+func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flushAfterCleanup bool) {
+	ctx := context.Background()
+	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+	env, conn, _ := setupEnv(t)
+	if flushAfterCleanup {
+		configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
+	}
+	client := repb.NewExecutionClient(conn)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
+
+	const instanceName = "test-instance"
+	const invocationID = "93383cc1-5d6c-4ad1-a321-8ee87c2f6816"
+
+	clientCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: invocationID,
+		TargetId:         "//some:test",
+		ActionMnemonic:   "TestRunner",
+	})
+	require.NoError(t, err)
+
+	arn := uploadAction(clientCtx, t, env, instanceName, repb.DigestFunction_SHA256, &repb.Action{
+		Timeout: &durationpb.Duration{Seconds: 10},
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "pool", Value: "test-pool"},
+				{Name: "workload-isolation-type", Value: "firecracker"},
+				{Name: "EstimatedComputeUnits", Value: "2.5"},
+			},
+		},
+	})
+	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+	require.NoError(t, executionClient.CloseSend())
+	op, err := executionClient.Recv()
+	require.NoError(t, err)
+	taskID := op.GetName()
+
+	executorCtx := metadata.AppendToOutgoingContext(clientCtx, usageutil.ClientHeaderName, "executor")
+	executorCtx = metadata.AppendToOutgoingContext(executorCtx, "x-buildbuddy-executor-region", "test-region")
+
+	queuedTime := time.Unix(100, 0)
+	workerStartTime := queuedTime.Add(1 * time.Second)
+	workerEndTime := workerStartTime.Add(5 * time.Second)
+	aux := &espb.ExecutionAuxiliaryMetadata{
+		PlatformOverrides: &repb.Platform{},
+		IsolationType:     "firecracker",
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			ExecutorGroupId: sharedPoolGroupID,
+			Pool:            "test-pool",
+		},
+	}
+	auxAny, err := anypb.New(aux)
+	require.NoError(t, err)
+
+	stream, err := client.PublishOperation(executorCtx)
+	require.NoError(t, err)
+
+	// First COMPLETED: full ExecuteResponse with the normal aux metadata.
+	firstOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+		Result: &repb.ActionResult{
+			ExecutionMetadata: &repb.ExecutedActionMetadata{
+				QueuedTimestamp:          tspb.New(queuedTime),
+				WorkerStartTimestamp:     tspb.New(workerStartTime),
+				WorkerCompletedTimestamp: tspb.New(workerEndTime),
+				AuxiliaryMetadata:        []*anypb.Any{auxAny},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(firstOp))
+
+	// Second COMPLETED: a minimal ExecuteResponse whose auxiliary_metadata
+	// contains a single PostCompletionStats entry. This is what the executor
+	// sends after TryRecycle -> Pause has run for a firecracker runner.
+	secondAuxAny, err := anypb.New(&espb.PostCompletionStats{
+		PauseDurationUsec: 67890,
+		FirecrackerPostExecStats: &espb.FirecrackerPostExecStats{
+			SnapshotSavedLocally:  true,
+			SnapshotSavedRemotely: true,
+			SnapshotIsDiff:        true,
+			SnapshotSavedBytes:    12345,
+		},
+	})
+	require.NoError(t, err)
+	secondOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+		Result: &repb.ActionResult{
+			ExecutionMetadata: &repb.ExecutedActionMetadata{
+				AuxiliaryMetadata: []*anypb.Any{secondAuxAny},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(secondOp))
+	_, err = stream.CloseAndRecv()
+	require.NoError(t, err)
+
+	// Drain /Execute so the test doesn't leak goroutines.
+	for {
+		_, err := executionClient.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+	}
+
+	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(collectedExecutions), "expected exactly one flushed execution row")
+
+	got := collectedExecutions[0]
+	// First-COMPLETED fields survived the merge.
+	assert.Equal(t, taskID, got.GetExecutionId())
+	assert.Equal(t, "//some:test", got.GetTargetLabel())
+	assert.Equal(t, workerStartTime.UnixMicro(), got.GetWorkerStartTimestampUsec())
+	assert.Equal(t, workerEndTime.UnixMicro(), got.GetWorkerCompletedTimestampUsec())
+	if flushAfterCleanup {
+		// Second-COMPLETED snapshot stats were merged in.
+		assert.True(t, got.GetSnapshotSavedLocally(), "snapshot_saved_locally")
+		assert.True(t, got.GetSnapshotSavedRemotely(), "snapshot_saved_remotely")
+		assert.True(t, got.GetSnapshotIsDiff(), "snapshot_is_diff")
+		assert.Equal(t, int64(12345), got.GetSnapshotSavedBytes())
+		assert.Equal(t, int64(67890), got.GetPauseDurationUsec())
+	} else {
+		// Legacy path: the OLAP flush already ran on the first COMPLETED, so
+		// the second COMPLETED is dropped server-side and its snapshot
+		// fields don't make it to the recorded row.
+		assert.False(t, got.GetSnapshotSavedLocally(), "snapshot_saved_locally should be unset on legacy path")
+		assert.False(t, got.GetSnapshotSavedRemotely(), "snapshot_saved_remotely should be unset on legacy path")
+		assert.False(t, got.GetSnapshotIsDiff(), "snapshot_is_diff should be unset on legacy path")
+		assert.Zero(t, got.GetSnapshotSavedBytes(), "snapshot_saved_bytes should be unset on legacy path")
+		assert.Zero(t, got.GetPauseDurationUsec(), "pause_duration_usec should be unset on legacy path")
+	}
+
+	// Action cache should hold the result from the first COMPLETED only.
+	// The sparse second COMPLETED must not have triggered another cache write.
+	arn.ToProto().CacheType = rspb.CacheType_AC
+	arnAC, err := arn.CheckAC()
+	require.NoError(t, err)
+	_, err = cachetools.GetActionResult(ctx, env.GetActionCacheClient(), arnAC)
+	require.NoError(t, err, "action result should be in cache from first COMPLETED")
+
+	// Usage should be incremented exactly once (5s of Linux execution
+	// duration), not double-counted by the second COMPLETED.
+	ut := env.GetUsageTracker().(*testusage.Tracker)
+	var foundExecutorUsage *testusage.Total
+	for _, u := range ut.Totals() {
+		if u.Labels.Client == "executor" {
+			foundExecutorUsage = &u
+			break
+		}
+	}
+	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
+	assert.Equal(t, (5 * time.Second).Microseconds(), foundExecutorUsage.Counts.LinuxExecutionDurationUsec)
+}
+
+// TestPublishOperation_RetryStreamWithOnlyPostCompletionStats simulates the
+// executor retrying the PublishOperation RPC and sending only the
+// post-completion stats COMPLETED on the retry stream (the first regular
+// COMPLETED was already delivered on a prior stream). The server must still
+// treat the lone op as a post-completion update rather than as a fresh first
+// COMPLETED — otherwise it would clobber the cached action result with a
+// sparse one, double-count usage, and emit a duplicate StoredExecution row.
+func TestPublishOperation_RetryStreamWithOnlyPostCompletionStats(t *testing.T) {
+	for _, flushAfterCleanup := range []bool{false, true} {
+		name := "FlushOnComplete"
+		if flushAfterCleanup {
+			name = "FlushAfterCleanup"
+		}
+		t.Run(name, func(t *testing.T) {
+			testPublishOperationRetryStreamWithOnlyPostCompletionStats(t, flushAfterCleanup)
+		})
+	}
+}
+
+func testPublishOperationRetryStreamWithOnlyPostCompletionStats(t *testing.T, flushAfterCleanup bool) {
+	ctx := context.Background()
+	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+	env, conn, _ := setupEnv(t)
+	if flushAfterCleanup {
+		configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
+	}
+	client := repb.NewExecutionClient(conn)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
+
+	const instanceName = "test-instance"
+	const invocationID = "93383cc1-5d6c-4ad1-a321-8ee87c2f6816"
+
+	clientCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: invocationID,
+		TargetId:         "//some:test",
+		ActionMnemonic:   "TestRunner",
+	})
+	require.NoError(t, err)
+
+	arn := uploadAction(clientCtx, t, env, instanceName, repb.DigestFunction_SHA256, &repb.Action{
+		Timeout: &durationpb.Duration{Seconds: 10},
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "pool", Value: "test-pool"},
+				{Name: "workload-isolation-type", Value: "firecracker"},
+				{Name: "EstimatedComputeUnits", Value: "2.5"},
+			},
+		},
+	})
+	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+	require.NoError(t, executionClient.CloseSend())
+	op, err := executionClient.Recv()
+	require.NoError(t, err)
+	taskID := op.GetName()
+
+	executorCtx := metadata.AppendToOutgoingContext(clientCtx, usageutil.ClientHeaderName, "executor")
+	executorCtx = metadata.AppendToOutgoingContext(executorCtx, "x-buildbuddy-executor-region", "test-region")
+
+	queuedTime := time.Unix(100, 0)
+	workerStartTime := queuedTime.Add(1 * time.Second)
+	workerEndTime := workerStartTime.Add(5 * time.Second)
+	aux := &espb.ExecutionAuxiliaryMetadata{
+		PlatformOverrides: &repb.Platform{},
+		IsolationType:     "firecracker",
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			ExecutorGroupId: sharedPoolGroupID,
+			Pool:            "test-pool",
+		},
+	}
+	auxAny, err := anypb.New(aux)
+	require.NoError(t, err)
+
+	// Stream 1: regular first COMPLETED, then close cleanly.
+	stream1, err := client.PublishOperation(executorCtx)
+	require.NoError(t, err)
+	firstOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+		Result: &repb.ActionResult{
+			ExecutionMetadata: &repb.ExecutedActionMetadata{
+				QueuedTimestamp:          tspb.New(queuedTime),
+				WorkerStartTimestamp:     tspb.New(workerStartTime),
+				WorkerCompletedTimestamp: tspb.New(workerEndTime),
+				AuxiliaryMetadata:        []*anypb.Any{auxAny},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, stream1.Send(firstOp))
+	_, err = stream1.CloseAndRecv()
+	require.NoError(t, err)
+
+	// Stream 2 (retry): only a post-completion stats COMPLETED. This is what
+	// the executor sends if it has to reopen the PublishOperation RPC after
+	// the first COMPLETED was already delivered.
+	stream2, err := client.PublishOperation(executorCtx)
+	require.NoError(t, err)
+	postCompletionAny, err := anypb.New(&espb.PostCompletionStats{
+		PauseDurationUsec: 67890,
+		FirecrackerPostExecStats: &espb.FirecrackerPostExecStats{
+			SnapshotSavedLocally:  true,
+			SnapshotSavedRemotely: true,
+			SnapshotIsDiff:        true,
+			SnapshotSavedBytes:    12345,
+		},
+	})
+	require.NoError(t, err)
+	postCompletionOp, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()), &repb.ExecuteResponse{
+		Result: &repb.ActionResult{
+			ExecutionMetadata: &repb.ExecutedActionMetadata{
+				AuxiliaryMetadata: []*anypb.Any{postCompletionAny},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, stream2.Send(postCompletionOp))
+	_, err = stream2.CloseAndRecv()
+	require.NoError(t, err)
+
+	// Drain /Execute so the test doesn't leak goroutines.
+	for {
+		_, err := executionClient.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+	}
+
+	// Exactly one execution row, with the first-COMPLETED fields intact.
+	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(collectedExecutions), "expected exactly one flushed execution row")
+	got := collectedExecutions[0]
+	assert.Equal(t, taskID, got.GetExecutionId())
+	assert.Equal(t, "//some:test", got.GetTargetLabel())
+	assert.Equal(t, workerStartTime.UnixMicro(), got.GetWorkerStartTimestampUsec())
+	assert.Equal(t, workerEndTime.UnixMicro(), got.GetWorkerCompletedTimestampUsec())
+
+	// Action cache must still hold the result from the first COMPLETED, not
+	// the sparse one from the retry stream.
+	arn.ToProto().CacheType = rspb.CacheType_AC
+	arnAC, err := arn.CheckAC()
+	require.NoError(t, err)
+	cachedAR, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), arnAC)
+	require.NoError(t, err, "action result should still be in cache from first COMPLETED")
+	require.NotNil(t, cachedAR.GetExecutionMetadata())
+	assert.Equal(t, workerStartTime.UnixMicro(), cachedAR.GetExecutionMetadata().GetWorkerStartTimestamp().AsTime().UnixMicro(),
+		"action cache should not have been clobbered by the retry stream's sparse response")
+
+	// Usage incremented exactly once.
+	ut := env.GetUsageTracker().(*testusage.Tracker)
+	var foundExecutorUsage *testusage.Total
+	for _, u := range ut.Totals() {
+		if u.Labels.Client == "executor" {
+			foundExecutorUsage = &u
+			break
+		}
+	}
+	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
+	assert.Equal(t, (5 * time.Second).Microseconds(), foundExecutorUsage.Counts.LinuxExecutionDurationUsec)
+}
+
 func TestMarkFailed(t *testing.T) {
 	env, _, _ := setupEnv(t)
 	ctx := context.Background()

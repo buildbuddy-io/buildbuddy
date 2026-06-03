@@ -278,6 +278,13 @@ type Execution struct {
 	RequestedTimeoutUsec int64 `gorm:"codec:T64,ZSTD(1)"`
 	EffectiveTimeoutUsec int64 `gorm:"codec:T64,ZSTD(1)"`
 
+	// Snapshot save stats reported after the executions is marked as completed.
+	SnapshotSavedLocally  bool
+	SnapshotSavedRemotely bool
+	SnapshotIsDiff        bool
+	SnapshotSavedBytes    int64 `gorm:"codec:T64,ZSTD(1)"`
+	PauseDurationUsec     int64 `gorm:"codec:T64,ZSTD(1)"`
+
 	Experiments []string `gorm:"type:Array(LowCardinality(String))"`
 
 	// Long string fields
@@ -384,6 +391,11 @@ func (e *Execution) AdditionalFields() []string {
 		"SelfHosted",
 		"OS",
 		"Arch",
+		"SnapshotSavedLocally",
+		"SnapshotSavedRemotely",
+		"SnapshotIsDiff",
+		"SnapshotSavedBytes",
+		"PauseDurationUsec",
 		"ExecutorHostname",
 		"Experiments",
 		"ClientIP",

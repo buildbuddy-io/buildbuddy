@@ -373,6 +373,27 @@ func trimStatus(statusMessage string) string {
 	return statusMessage
 }
 
+// updateExecutionPostCompletion adds a StoredExecution to the collector with
+// just the post completion stats. This relies on the collector merging this
+// data with the existing execution data when flushing to Clickhouse.
+func (s *ExecutionServer) updateExecutionPostCompletion(ctx context.Context, executionID string, stats *espb.PostCompletionStats) error {
+	fcStats := stats.GetFirecrackerPostExecStats()
+	execution := &repb.StoredExecution{
+		ExecutionId: executionID, // necessary for the collector's merging.
+		// Stage must be COMPLETED, otherwise mergeExecutionUpdates drops this
+		// event as "execution progress appears to restart" after the first
+		// COMPLETED.
+		Stage:                 int64(repb.ExecutionStage_COMPLETED),
+		UpdatedAtUsec:         time.Now().UnixMicro(),
+		PauseDurationUsec:     stats.GetPauseDurationUsec(),
+		SnapshotSavedLocally:  fcStats.GetSnapshotSavedLocally(),
+		SnapshotSavedRemotely: fcStats.GetSnapshotSavedRemotely(),
+		SnapshotIsDiff:        fcStats.GetSnapshotIsDiff(),
+		SnapshotSavedBytes:    fcStats.GetSnapshotSavedBytes(),
+	}
+	return s.executionCollector.UpdateInProgressExecution(ctx, execution)
+}
+
 func (s *ExecutionServer) updateExecution(ctx context.Context, executionID string, stage repb.ExecutionStage_Value, executeResponse *repb.ExecuteResponse, auxMeta *espb.ExecutionAuxiliaryMetadata, properties *platform.Properties, action *repb.Action, cmd *repb.Command) error {
 	ctx, cancel := background.ExtendContextForFinalization(ctx, updateExecutionTimeout)
 	defer cancel()
@@ -456,16 +477,15 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.Arch = properties.Arch
 			}
 
-			schedulingMeta := auxMeta.GetSchedulingMetadata()
-			executionProto.EstimatedFreeDiskBytes = schedulingMeta.GetTaskSize().GetEstimatedFreeDiskBytes()
-			executionProto.PreviousMeasuredMemoryBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMemoryBytes()
-			executionProto.PreviousMeasuredMilliCpu = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMilliCpu()
-			executionProto.PreviousMeasuredFreeDiskBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedFreeDiskBytes()
-			executionProto.PredictedMemoryBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedMemoryBytes()
-			executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
-			executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
-			executionProto.SelfHosted = schedulingMeta == nil || (schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID())
-			if schedulingMeta != nil {
+			if schedulingMeta := auxMeta.GetSchedulingMetadata(); schedulingMeta != nil {
+				executionProto.EstimatedFreeDiskBytes = schedulingMeta.GetTaskSize().GetEstimatedFreeDiskBytes()
+				executionProto.PreviousMeasuredMemoryBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMemoryBytes()
+				executionProto.PreviousMeasuredMilliCpu = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMilliCpu()
+				executionProto.PreviousMeasuredFreeDiskBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedFreeDiskBytes()
+				executionProto.PredictedMemoryBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedMemoryBytes()
+				executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
+				executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
+				executionProto.SelfHosted = schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID()
 				executionProto.EffectivePool = schedulingMeta.GetPool()
 			}
 
@@ -1412,8 +1432,12 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	defer deletePendingExecutionOnce()
 
 	flushExecutionsOnEOF := false
-	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
-		flushExecutionsOnEOF = fp.Boolean(ctx, "remote_execution.flush_executions_after_cleanup", false)
+	if *writeExecutionProgressStateToRedis {
+		// It only makes sense to flush on EOF if we're appending updates in
+		// Redis.
+		if fp := s.env.GetExperimentFlagProvider(); fp != nil {
+			flushExecutionsOnEOF = fp.Boolean(ctx, "remote_execution.flush_executions_after_cleanup", false)
+		}
 	}
 
 	for {
@@ -1430,6 +1454,33 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		}
 
 		response := operation.ExtractExecuteResponse(op)
+		currentStage := operation.ExtractStage(op)
+		if currentStage == repb.ExecutionStage_COMPLETED {
+			stats := new(espb.PostCompletionStats)
+			ok, err := rexec.FindFirstAuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), stats)
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to parse PostCompletionStats: %s", err)
+			} else if ok {
+				if flushExecutionsOnEOF {
+					if err := s.updateExecutionPostCompletion(ctx, taskID, stats); err != nil {
+						log.CtxErrorf(ctx, "PublishOperation: error updating PostCompletionStats: %s", err)
+					}
+				}
+				// Always skip the rest when we get PostCompletionStats. This
+				// means that a previous COMPLETED message already should have
+				// arrived and done all of the following:
+				// - cached the action result
+				// - marked the task as completed
+				// - sent the result over pubsub (eventually to bazel)
+				// - updated the execution in Redis with all data available at completion time
+				// - cached the execution result
+				// None of these need post exec stats. Even if we haven't
+				// received a previous COMPLETED message and we haven't done the
+				// above, we can't do them with just PostCompletionStats.
+				continue
+			}
+		}
+
 		trimmedResponse := response.CloneVT()
 		if trimmedMetadata := trimmedResponse.GetResult().GetExecutionMetadata(); trimmedMetadata != nil {
 			// Auxiliary metadata shouldn't be sent to bazel or saved in
@@ -1450,7 +1501,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		mu.Lock()
 		lastOp = op
 		taskID = op.GetName()
-		stage = operation.ExtractStage(op)
+		stage = currentStage
 		if taskID != "" {
 			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, taskID)
 		} else {

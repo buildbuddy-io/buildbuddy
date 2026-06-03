@@ -194,11 +194,18 @@ func TestGetStatHeatmap_LogScale(t *testing.T) {
 	require.False(t, rsp.GetMetricHadNegativeValues())
 
 	// Every invocation should be counted exactly once across all buckets.
-	var total int64
+	var valueCount int64
 	for _, col := range rsp.GetColumn() {
 		for _, v := range col.GetValue() {
-			total += v
+			valueCount += v
 		}
 	}
-	require.Equal(t, int64(len(durations)), total)
+	var totalCount int64
+	for _, col := range rsp.GetColumn() {
+		for _, t := range col.GetTotal() {
+			totalCount += t
+		}
+	}
+	require.Equal(t, int64(len(durations)), valueCount)
+	require.Equal(t, int64(5555), totalCount)
 }

@@ -30,9 +30,13 @@ ts_library(
     name = "cache_proxy_card",
     srcs = ["cache_proxy_card.tsx"],
     deps = [
+        "//:node_modules/@types/long",
         "//:node_modules/@types/react",
+        "//:node_modules/long",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
+        "//:node_modules/recharts",
+        "//:node_modules/tslib",
         "//app/format",
         "//proto:cache_proxy_ts_proto",
         "//proto:timestamp_ts_proto",

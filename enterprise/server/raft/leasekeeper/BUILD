@@ -18,6 +18,7 @@ go_library(
         "//server/metrics",
         "//server/util/alert",
         "//server/util/boundedstack",
+        "//server/util/lib/set",
         "//server/util/log",
         "//server/util/status",
         "@com_github_lni_dragonboat_v4//:dragonboat",

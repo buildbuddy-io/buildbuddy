@@ -12,7 +12,6 @@ go_library(
         "//server/util/authutil",
         "//server/util/flag",
         "//server/util/status",
-        "//server/util/tracing",
         "@com_github_golang_jwt_jwt_v4//:jwt",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@org_golang_google_grpc//metadata",

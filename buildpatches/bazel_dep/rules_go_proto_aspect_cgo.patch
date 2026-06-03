@@ -1,0 +1,15 @@
+diff --git a/proto/def.bzl b/proto/def.bzl
+index 8b6156a4b8..d2e93a6ad4 100644
+--- a/proto/def.bzl
++++ b/proto/def.bzl
+@@ -100,7 +100,9 @@ _go_proto_aspect = aspect(
+         "deps",
+         "embed",
+     ],
+-    toolchains = [GO_TOOLCHAIN],
++    attrs = CGO_ATTRS,
++    fragments = CGO_FRAGMENTS,
++    toolchains = [GO_TOOLCHAIN] + CGO_TOOLCHAINS,
+ )
+ 
+ def _proto_library_to_source(_go, attr, source, merge):

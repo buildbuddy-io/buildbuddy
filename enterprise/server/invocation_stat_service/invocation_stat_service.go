@@ -985,7 +985,7 @@ func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table s
 	}
 
 	pbq := fmt.Sprintf(`
-	  SELECT toInt64(timestamp) as timestamp, toInt64(bucket) as bucket, 0 as v FROM (
+	  SELECT toInt64(timestamp) as timestamp, toInt64(bucket) as bucket, 0 as v, 0 as t FROM (
 			SELECT arrayElement(%s, number + 1) AS timestamp FROM numbers(%d)) AS a
 		CROSS JOIN (
 			SELECT arrayElement(%s, number + 1) AS bucket FROM numbers(%d)) AS b
@@ -1048,18 +1048,19 @@ func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, r
 		return nil, nil
 	}
 	qStr := fmt.Sprintf(`
-		SELECT timestamp, groupArray(v) AS value FROM (
-			SELECT timestamp, bucket, CAST(SUM(v) AS Int64) AS v FROM (
+		SELECT timestamp, groupArray(v) AS value, groupArray(t) AS total FROM (
+			SELECT timestamp, bucket, CAST(SUM(v) AS Int64) AS v, CAST(SUM(t) AS Int64) AS t FROM (
 				%s UNION ALL
 				SELECT
 					roundDown(updated_at_usec, CAST(%s AS Array(Int64))) AS timestamp,
 					roundDown(%s, CAST(%s AS Array(Int64))) AS bucket,
-					count(*) AS v
+					count(*) AS v,
+					sum(%s) AS t
 					FROM "%s" %s
 					GROUP BY timestamp, bucket)
 			GROUP BY timestamp, bucket ORDER BY timestamp, bucket)
 		GROUP BY timestamp ORDER BY timestamp`,
-		qi.PlaceholderBucketQuery, qi.TimestampArrayStr, metric, qi.MetricArrayStr, table, whereClauseStr)
+		qi.PlaceholderBucketQuery, qi.TimestampArrayStr, metric, qi.MetricArrayStr, metric, table, whereClauseStr)
 
 	return &QueryAndBuckets{
 			TimestampBuckets:        qi.TimestampBuckets,
@@ -1103,11 +1104,13 @@ func (i *InvocationStatService) GetStatHeatmap(ctx context.Context, req *stpb.Ge
 	type stat struct {
 		Timestamp int64
 		Value     []int64 `gorm:"type:int64[]"`
+		Total     []int64 `gorm:"type:int64[]"`
 	}
 	err = db.ScanEach(rq, func(ctx context.Context, stat *stat) error {
 		column := &stpb.HeatmapColumn{
 			TimestampUsec: stat.Timestamp,
 			Value:         stat.Value,
+			Total:         stat.Total,
 		}
 		rsp.Column = append(rsp.Column, column)
 		return nil

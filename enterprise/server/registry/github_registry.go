@@ -1,9 +1,15 @@
 package registry
 
 import (
+	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/seq"
 )
+
+var githubPathPartRegex = regexp.MustCompile(`^[A-Za-z0-9._!%'"()<>-]*$`)
 
 func handleGitHub(path string) ([]byte, int, error) {
 	urlParts := strings.Split(path, "/")
@@ -17,7 +23,7 @@ func handleGitHub(path string) ([]byte, int, error) {
 	return nil, 404, nil
 }
 
-func parseGithubRequest(path string) (string, string, string, string) {
+func parseGithubRequest(path string) (string, string, string, string, error) {
 	urlParts := strings.Split(path, "/")
 	repo := urlParts[2]
 	version := urlParts[3]
@@ -29,11 +35,20 @@ func parseGithubRequest(path string) (string, string, string, string) {
 	if len(parts) == 2 {
 		owner = parts[1]
 	}
-	return repo, owner, version, tag
+	if seq.Any(
+		[]string{repo, owner, version, tag},
+		func(s string) bool { return !githubPathPartRegex.MatchString(s) },
+	) {
+		return "", "", "", "", fmt.Errorf("Invalid path: %s", path)
+	}
+	return repo, owner, version, tag, nil
 }
 
 func githubModule(path string) ([]byte, int, error) {
-	repo, owner, version, tag := parseGithubRequest(path)
+	repo, owner, version, tag, err := parseGithubRequest(path)
+	if err != nil {
+		return nil, 400, err
+	}
 	moduleRegex := regexp.MustCompile(`(?s)module\(.*?\)`)
 	body, status, err := request("https://raw.githubusercontent.com/" + owner + "/" + repo + "/" + tag + "/MODULE.bazel")
 	if err != nil {
@@ -55,10 +70,17 @@ func githubModule(path string) ([]byte, int, error) {
 }
 
 func githubSource(path string) ([]byte, int, error) {
-	repo, owner, _, tag := parseGithubRequest(path)
-	return []byte(`{
-		"integrity": "",
-		"strip_prefix": "` + repo + `-` + tag + `",
-		"url": "https://github.com/` + owner + `/` + repo + `/archive/` + tag + `.zip"
-	}`), 200, nil
+	repo, owner, _, tag, err := parseGithubRequest(path)
+	if err != nil {
+		return nil, 400, err
+	}
+	encoded, err := json.Marshal(map[string]string{
+		"integrity":    "",
+		"strip_prefix": repo + "-" + tag,
+		"url":          "https://github.com/" + owner + "/" + repo + "/archive/" + tag + ".zip",
+	})
+	if err != nil {
+		return nil, 400, err
+	}
+	return encoded, 200, nil
 }

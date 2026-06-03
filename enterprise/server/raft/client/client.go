@@ -84,7 +84,7 @@ func NewAPIClient(env environment.Env, name string, registry IRegistry) *APIClie
 }
 
 func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient rfspb.ApiClient, returnedErr error) {
-	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	ctx, spn := tracing.StartNamedSpan(ctx, "client.APIClient.getClient") // nolint:SA4006
 	defer func() {
 		tracing.RecordErrorToSpan(spn, returnedErr)
 		spn.End()
@@ -128,7 +128,7 @@ func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, erro
 }
 
 func (c *APIClient) GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescriptor) (returnedClient rfspb.ApiClient, returnedErr error) {
-	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	ctx, spn := tracing.StartNamedSpan(ctx, "client.APIClient.GetForReplica") // nolint:SA4006
 	defer func() {
 		tracing.RecordErrorToSpan(spn, returnedErr)
 		spn.End()
@@ -140,10 +140,11 @@ func (c *APIClient) GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescripto
 	return c.getClient(ctx, addr)
 }
 
-func (c *APIClient) haveReadyConnections(ctx context.Context, peer string) bool {
+func (c *APIClient) haveReadyConnections(peer string) bool {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if client, ok := c.clients[peer]; ok {
+	client, ok := c.clients[peer]
+	c.mu.Unlock()
+	if ok {
 		_, err := client.GetReadyConnection()
 		return err == nil
 	}
@@ -155,7 +156,7 @@ func (c *APIClient) HaveReadyConnections(ctx context.Context, rd *rfpb.ReplicaDe
 	if err != nil {
 		return false, status.WrapError(err, "failed to resolve GRPC address")
 	}
-	return c.haveReadyConnections(ctx, addr), nil
+	return c.haveReadyConnections(addr), nil
 }
 
 func singleOpTimeout(ctx context.Context, maxSingleOpTimeout time.Duration) time.Duration {
@@ -305,13 +306,13 @@ func (s *Session) maybeRefresh() {
 }
 
 func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, rangeID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	_, spn := tracing.StartSpan(ctx) // nolint:SA4006
-	spn.SetName("SyncProposeLocal: locker.Lock")
-	attr := attribute.Int64("range_id", int64(rangeID))
-	spn.SetAttributes(attr)
+	_, spn := tracing.StartNamedSpan(ctx, "SyncProposeLocal: locker.Lock") // nolint:SA4006
+	if spn.IsRecording() {
+		spn.SetAttributes(attribute.Int64("range_id", int64(rangeID)))
+	}
 	// At most one SyncProposeLocal can be run for the same replica per session.
 	start := s.clock.Now()
-	unlockFn := s.locker.Lock(fmt.Sprintf("%d", rangeID))
+	unlockFn := s.locker.Lock(strconv.Itoa(int(rangeID)))
 	spn.End()
 	defer func() {
 		unlockFn()
@@ -320,8 +321,7 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 		}).Observe(float64(s.clock.Since(start).Milliseconds()))
 	}()
 
-	_, spn = tracing.StartSpan(ctx) // nolint:SA4006
-	spn.SetName("SyncProposeLocal: set session")
+	_, spn = tracing.StartNamedSpan(ctx, "SyncProposeLocal: set session") // nolint:SA4006
 	s.mu.Lock()
 	// Refreshes the session if necessary
 	s.maybeRefresh()
@@ -339,8 +339,7 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 	var raftResponse dbsm.Result
 
 	err = RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) (returnedErr error) {
-		ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
-		spn.SetName("nodehost.SyncPropose")
+		ctx, spn := tracing.StartNamedSpan(ctx, "nodehost.SyncPropose") // nolint:SA4006
 		fnStart := s.clock.Now()
 		defer func() {
 			tracing.RecordErrorToSpan(spn, returnedErr)
