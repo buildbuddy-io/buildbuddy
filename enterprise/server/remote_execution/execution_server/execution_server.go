@@ -1460,7 +1460,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				} else if !ok {
 					// PostCompletionStats should always be present in a second
 					// COMPLETED event.
-					log.CtxInfof(ctx, "Failed to find PostCompletionStats")
+					log.CtxWarningf(ctx, "Failed to find PostCompletionStats")
 				} else if err := s.updateExecutionPostCompletion(ctx, taskID, stats); err != nil {
 					log.CtxErrorf(ctx, "PublishOperation: error updating PostCompletionStats: %s", err)
 				}
@@ -1469,7 +1469,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			// COMPLETED event and it already:
 			// - cached the action result
 			// - marked the task as completed
-			// - sent the result over pubsub (to bazel)
+			// - sent the result over pubsub (eventually to bazel)
 			// - updated the execution in Redis with all data available at completion time
 			// - cached the execution result
 			// None of these need post exec stats.
@@ -1546,7 +1546,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 
 			recordResponseMetrics(response, auxMeta, s.getGroupIDForMetrics(ctx))
 		}
-
 		data, err := proto.Marshal(op)
 		if err != nil {
 			return status.InternalErrorf("Failed to marshal Operation: %s", err)
