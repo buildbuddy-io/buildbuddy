@@ -3,6 +3,7 @@ package leasekeeper
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strconv"
 	"sync"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/boundedstack"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/lni/dragonboat/v4"
@@ -70,8 +72,8 @@ type LeaseKeeper struct {
 
 	mu      sync.Mutex
 	leases  map[rangeID]*leaseAgent
-	leaders map[rangeID]bool
-	open    map[rangeID]bool
+	leaders set.Set[rangeID]
+	open    set.Set[rangeID]
 
 	eg       *errgroup.Group
 	egCtx    context.Context
@@ -95,8 +97,8 @@ func New(nodeHost *dragonboat.NodeHost, log log.Logger, liveness *nodeliveness.L
 		listener:            listener,
 		broadcast:           broadcast,
 		leases:              make(map[rangeID]*leaseAgent),
-		leaders:             make(map[rangeID]bool),
-		open:                make(map[rangeID]bool),
+		leaders:             make(set.Set[rangeID]),
+		open:                make(set.Set[rangeID]),
 		leaderUpdates:       listener.AddLeaderChangeListener(listenerID),
 		nodeUnloaded:        listener.AddNodeUnloadedListener(listenerID),
 		nodeLivenessUpdates: liveness.AddListener(),
@@ -297,8 +299,12 @@ func (lk *LeaseKeeper) watchLeases() {
 			}
 
 			lk.mu.Lock()
-			open := lk.open[rangeID]
-			lk.leaders[rangeID] = leader
+			open := lk.open.Contains(rangeID)
+			if leader {
+				lk.leaders.Add(rangeID)
+			} else {
+				lk.leaders.Remove(rangeID)
+			}
 			la := lk.leases[rangeID]
 			lk.mu.Unlock()
 
@@ -330,15 +336,12 @@ func (lk *LeaseKeeper) watchLeases() {
 			return
 		case <-lk.nodeLivenessUpdates:
 			lk.mu.Lock()
-			leases := make(map[rangeID]*leaseAgent, len(lk.leases))
-			for rangeID, la := range lk.leases {
-				leases[rangeID] = la
-			}
+			leases := maps.Clone(lk.leases)
 			lk.mu.Unlock()
 			for rangeID, la := range leases {
 				action := Drop
 				lk.mu.Lock()
-				if lk.open[rangeID] && lk.leaders[rangeID] {
+				if lk.open.Contains(rangeID) && lk.leaders.Contains(rangeID) {
 					action = Acquire
 				}
 				lk.mu.Unlock()
@@ -369,12 +372,7 @@ func (lk *LeaseKeeper) watchLeases() {
 }
 
 func (lk *LeaseKeeper) isStopped() bool {
-	select {
-	case <-lk.egCtx.Done():
-		return true
-	default:
-		return false
-	}
+	return lk.egCtx.Err() != nil
 }
 
 func (lk *LeaseKeeper) loadOrStoreNewLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replica) *leaseAgent {
@@ -413,8 +411,8 @@ func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	// for newly added ranges, check if this node is the leader and trigger
 	// lease acquisition here.
 	lk.mu.Lock()
-	lk.open[rangeID] = true
-	leader := lk.leaders[rangeID]
+	lk.open.Add(rangeID)
+	leader := lk.leaders.Contains(rangeID)
 	lk.mu.Unlock()
 
 	action := Drop
@@ -441,7 +439,7 @@ func (lk *LeaseKeeper) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica)
 	rangeID := rangeID(rd.GetRangeId())
 
 	lk.mu.Lock()
-	lk.open[rangeID] = false
+	lk.open.Remove(rangeID)
 	la := lk.leases[rangeID]
 	lk.mu.Unlock()
 
@@ -483,8 +481,8 @@ func (lk *LeaseKeeper) HaveLease(ctx context.Context, rid uint64) bool {
 	valid := la.l.Valid(ctx)
 
 	lk.mu.Lock()
-	leader := lk.leaders[rangeID]
-	open := lk.open[rangeID]
+	leader := lk.leaders.Contains(rangeID)
+	open := lk.open.Contains(rangeID)
 	lk.mu.Unlock()
 
 	shouldHaveLease := leader && open
