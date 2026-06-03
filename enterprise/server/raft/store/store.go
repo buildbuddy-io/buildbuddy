@@ -839,8 +839,8 @@ func (s *Store) Statusz(ctx context.Context) string {
 	} else if len(sysKeys) == 0 {
 		buf.WriteString("no system keys found\n")
 	} else {
-		for key, value := range sysKeys {
-			buf.WriteString(fmt.Sprintf("\t%q: %d\n", key, value))
+		for _, key := range slices.Sorted(maps.Keys(sysKeys)) {
+			buf.WriteString(fmt.Sprintf("\t%q: %d\n", key, sysKeys[key]))
 		}
 	}
 	buf.WriteString("</pre>")
