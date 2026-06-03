@@ -47,7 +47,9 @@ Schema:
 }
 
 Rules:
-- Include a comment entry for every finding that mentions a file path, even if the line number is approximate — use the nearest relevant line you can infer from context.
+- Include a comment entry for every unique finding that mentions a file path, even if the line number is approximate — use the nearest relevant line you can infer from context.
+  Avoid including redundant comments; instead of making the same comment on every line where a particular issue occurs,
+  you can say things like "(same comment applies to ...)" or "... (here and below)."
 - Findings with no file reference at all go into "summary".
 - File paths must be relative (no leading slash, no absolute paths).
 - Remove any footnote-style numeric references such as "(#1)" or "(#2)" from comment bodies and the summary — GitHub interprets these as issue/PR links.
