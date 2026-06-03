@@ -2085,6 +2085,9 @@ func (c *FirecrackerContainer) ImageSizeBytes(ctx context.Context) (int64, error
 		}
 		return 0, err
 	}
+	// This is the logical size of the prepared ext4 container filesystem image.
+	// It may include free-space padding, and snapshot-resumed VMs may return 0
+	// when the container filesystem image is not present.
 	return info.Size(), nil
 }
 

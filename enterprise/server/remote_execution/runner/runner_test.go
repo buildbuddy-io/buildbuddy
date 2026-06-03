@@ -158,11 +158,13 @@ func (*fakeFirecrackerContainer) Stats(context.Context) (*repb.UsageStats, error
 // fakeImageSizingContainer is a bare container that also reports an image size.
 type fakeImageSizingContainer struct {
 	container.CommandContainer
-	imageSize    int64
-	imageSizeErr error
+	imageSize      int64
+	imageSizeErr   error
+	imageSizeCalls int
 }
 
 func (c *fakeImageSizingContainer) ImageSizeBytes(ctx context.Context) (int64, error) {
+	c.imageSizeCalls++
 	return c.imageSize, c.imageSizeErr
 }
 
@@ -1273,6 +1275,38 @@ func TestContainerImageInfo_WithImageSizer(t *testing.T) {
 	// Bare runner normalizes container-image to "".
 	assert.Equal(t, "", ref)
 	assert.Equal(t, expectedSize, sizeBytes)
+}
+
+func TestContainerImageInfo_CachesImageSize(t *testing.T) {
+	env := newTestEnv(t)
+	const expectedSize int64 = 6_000_000_000
+	pool := newRunnerPool(t, env, &RunnerPoolOptions{
+		PoolOptions: &PoolOptions{
+			ContainerProvider: &ImageSizingContainerProvider{ImageSize: expectedSize},
+		},
+		MaxRunnerCount:            unlimited,
+		MaxRunnerDiskSizeBytes:    unlimited,
+		MaxRunnerMemoryUsageBytes: unlimited,
+	})
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+
+	task := newTask()
+	r, err := pool.Get(ctx, task)
+	require.NoError(t, err)
+
+	ref, sizeBytes, err := r.(*taskRunner).ContainerImageInfo(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "", ref)
+	assert.Equal(t, expectedSize, sizeBytes)
+
+	imageSizingContainer := r.(*taskRunner).Container.Delegate.(*fakeImageSizingContainer)
+	imageSizingContainer.imageSize = 1
+
+	ref, sizeBytes, err = r.(*taskRunner).ContainerImageInfo(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "", ref)
+	assert.Equal(t, expectedSize, sizeBytes)
+	assert.Equal(t, 1, imageSizingContainer.imageSizeCalls)
 }
 
 func TestContainerImageInfo_ImageSizeError(t *testing.T) {

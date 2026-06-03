@@ -1165,7 +1165,7 @@ type Runner interface {
 	GetIsolationType() string
 
 	// ContainerImageInfo returns the container image ref used for the
-	// execution, and its estimated on-disk size in bytes.
+	// execution, and its runtime-specific estimated disk usage in bytes.
 	// Should be called after PrepareForTask.
 	ContainerImageInfo(ctx context.Context) (ref string, sizeBytes int64, err error)
 }

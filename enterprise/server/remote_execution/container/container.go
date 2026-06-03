@@ -467,8 +467,12 @@ type CommandContainer interface {
 	// pooled runners.
 	Stats(ctx context.Context) (*repb.UsageStats, error)
 
-	// ImageSizeBytes returns the estimated on-disk size of the pulled
-	// container image in bytes. Should be called after PullImage.
+	// ImageSizeBytes returns the estimated disk usage of the prepared container
+	// image in bytes. Should be called after PrepareForTask.
+	//
+	// The exact meaning is runtime-specific: OCI uses the sum of estimated layer
+	// disk usage, Docker and Podman use image inspect size, and Firecracker uses
+	// the logical size of the prepared container filesystem image when present.
 	// Returns 0 if unknown or not applicable.
 	ImageSizeBytes(ctx context.Context) (int64, error)
 }
