@@ -84,7 +84,7 @@ func NewAPIClient(env environment.Env, name string, registry IRegistry) *APIClie
 }
 
 func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient rfspb.ApiClient, returnedErr error) {
-	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	ctx, spn := tracing.StartNamedSpan(ctx, "client.APIClient.getClient") // nolint:SA4006
 	defer func() {
 		tracing.RecordErrorToSpan(spn, returnedErr)
 		spn.End()
@@ -128,7 +128,7 @@ func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, erro
 }
 
 func (c *APIClient) GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescriptor) (returnedClient rfspb.ApiClient, returnedErr error) {
-	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	ctx, spn := tracing.StartNamedSpan(ctx, "client.APIClient.GetForReplica") // nolint:SA4006
 	defer func() {
 		tracing.RecordErrorToSpan(spn, returnedErr)
 		spn.End()
@@ -140,10 +140,11 @@ func (c *APIClient) GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescripto
 	return c.getClient(ctx, addr)
 }
 
-func (c *APIClient) haveReadyConnections(ctx context.Context, peer string) bool {
+func (c *APIClient) haveReadyConnections(peer string) bool {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if client, ok := c.clients[peer]; ok {
+	client, ok := c.clients[peer]
+	c.mu.Unlock()
+	if ok {
 		_, err := client.GetReadyConnection()
 		return err == nil
 	}
@@ -155,7 +156,7 @@ func (c *APIClient) HaveReadyConnections(ctx context.Context, rd *rfpb.ReplicaDe
 	if err != nil {
 		return false, status.WrapError(err, "failed to resolve GRPC address")
 	}
-	return c.haveReadyConnections(ctx, addr), nil
+	return c.haveReadyConnections(addr), nil
 }
 
 func singleOpTimeout(ctx context.Context, maxSingleOpTimeout time.Duration) time.Duration {
