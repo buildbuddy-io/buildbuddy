@@ -138,6 +138,55 @@ func TestCOW_Basic(t *testing.T) {
 	testStore(t, s, "" /*=path*/)
 }
 
+func TestCOW_ChunkFinalizer(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	dataDir := testfs.MakeTempDir(t)
+	const chunkSizeBytes = 4
+	cow, err := copy_on_write.NewCOWStore(ctx, env, "test", nil, copy_on_write.COWOptions{
+		ChunkSizeBytes: chunkSizeBytes,
+		TotalSizeBytes: chunkSizeBytes * 3,
+		DataDir:        dataDir,
+	})
+	require.NoError(t, err)
+	defer cow.Close()
+
+	expected := map[int64][]byte{
+		0: {1, 2, 3, 4},
+		4: {5, 6, 0, 0},
+	}
+	finalized := make([]copy_on_write.FinalizedChunk, 0)
+	export, err := cow.PrepareForSnapshotExport(2, func(chunk copy_on_write.FinalizedChunk) error {
+		finalized = append(finalized, chunk)
+		require.True(t, chunk.Dirty)
+		actual, err := os.ReadFile(chunk.Path)
+		require.NoError(t, err)
+		require.Equal(t, expected[chunk.Offset], actual)
+		expectedDigest, err := digest.Compute(bytes.NewReader(expected[chunk.Offset]), repb.DigestFunction_BLAKE3)
+		require.NoError(t, err)
+		require.Equal(t, expectedDigest, chunk.Digest)
+		return nil
+	})
+	require.NoError(t, err)
+
+	_, err = cow.WriteAt([]byte{1, 2}, 0)
+	require.NoError(t, err)
+	require.Empty(t, finalized)
+
+	_, err = cow.WriteAt([]byte{3, 4}, 2)
+	require.NoError(t, err)
+	require.Empty(t, finalized)
+
+	_, err = cow.WriteAt([]byte{5, 6}, 4)
+	require.NoError(t, err)
+	require.Len(t, finalized, 1)
+	require.Equal(t, int64(0), finalized[0].Offset)
+
+	export.Finish()
+	require.Len(t, finalized, 2)
+	require.Equal(t, int64(4), finalized[1].Offset)
+}
+
 func TestCOW_Concurrency(t *testing.T) {
 	const chunkSizeBytes = 1024 * 512
 	const fileSizeBytes = chunkSizeBytes * 20

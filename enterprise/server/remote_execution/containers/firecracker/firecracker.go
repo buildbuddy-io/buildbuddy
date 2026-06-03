@@ -1,6 +1,7 @@
 package firecracker
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -2998,24 +2999,48 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		return err
 	}
 
+	var finishSnapshotExport, stopSnapshotExport func()
 	if shouldSaveSnapshot {
 		// If an older snapshot is present -- nuke it since we're writing a new one.
 		if err := c.cleanupOldSnapshots(ctx, snapDetails); err != nil {
 			return err
 		}
 
+		// When exporting the snapshot directly to a COWStore, configure the
+		// store for sequential snapshot writes. If saving locally, also cache
+		// chunks as writes move past them so cacheCOW can avoid rereading them.
+		if *exportSnapshotToCOW && c.memoryStore != nil {
+			var err error
+			finishSnapshotExport, stopSnapshotExport, err = c.prepareSnapshotExport(ctx, snapDetails.saveLocalSnapshot)
+			if err != nil {
+				return err
+			}
+		}
+
 		if err := c.createSnapshot(ctx, snapDetails); err != nil {
+			if stopSnapshotExport != nil {
+				stopSnapshotExport()
+			}
 			return err
+		}
+		if finishSnapshotExport != nil {
+			finishSnapshotExport()
 		}
 	}
 
 	// Stop the VM, UFFD page fault handler, and VBD servers to ensure nothing
 	// is modifying the snapshot files as we save them
 	if err := c.stopMachine(ctx); err != nil {
+		if stopSnapshotExport != nil {
+			stopSnapshotExport()
+		}
 		return err
 	}
 	if c.uffdHandler != nil {
 		if err := c.uffdHandler.Stop(); err != nil {
+			if stopSnapshotExport != nil {
+				stopSnapshotExport()
+			}
 			return status.WrapError(err, "stop uffd handler")
 		}
 		c.uffdHandler = nil
@@ -3023,6 +3048,9 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	// Note: If the unmount fails, we will retry in `c.Remove`.
 	if err := c.unmountAllVBDs(ctx, false /*fromRemove*/); err != nil {
+		if stopSnapshotExport != nil {
+			stopSnapshotExport()
+		}
 		return status.WrapError(err, "unmount vbds")
 	}
 
@@ -3292,7 +3320,6 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 				DataDir:            memChunkDir,
 				RemoteInstanceName: c.snapshotKeySet.GetBranchKey().GetInstanceName(),
 				RemoteEnabled:      c.supportsRemoteSnapshots,
-				MaxMmappedChunks:   c.snapshotWriteMaxMmappedChunks(),
 			})
 			if err != nil {
 				return nil, status.WrapError(err, "create memory COWStore")
@@ -3341,16 +3368,6 @@ func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetai
 		metrics.Stage: "create_snapshot",
 	}).Dec()
 
-	if *exportSnapshotToCOW && c.memoryStore != nil && snapshotDetails.snapshotType == diffSnapshotType {
-		// By default, mmapped chunks are managed by the executor-wide shared LRU.
-		//
-		// When exporting the diff snapshot, we should limit the number of chunks mmapped at a time.
-		// Snapshots are exported sequentially, so we don't want recently touched chunks to stay mmapped longer than necessary.
-		if err := c.memoryStore.LimitMmappedChunks(c.snapshotWriteMaxMmappedChunks()); err != nil {
-			return status.WrapError(err, "set limited LRU for diff snapshot export")
-		}
-	}
-
 	machineStart := time.Now()
 	snapshotTypeOpt := func(params *operations.CreateSnapshotParams) {
 		params.Body.SnapshotType = snapshotDetails.snapshotType
@@ -3362,6 +3379,41 @@ func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetai
 
 	log.CtxDebugf(ctx, "VMM CreateSnapshot %s took %s", snapshotDetails.snapshotType, time.Since(machineStart))
 	return nil
+}
+
+// prepareSnapshotExport configures the memory store for sequential Firecracker
+// snapshot export writes. If cacheLocally is true, written chunks are also
+// cached locally as writes move past them, avoiding a second full read in the
+// normal cacheCOW path.
+func (c *FirecrackerContainer) prepareSnapshotExport(ctx context.Context, cacheLocally bool) (finish func(), stop func(), err error) {
+	var finalizer copy_on_write.ChunkFinalizer
+	if cacheLocally {
+		fileCache := c.env.GetFileCache()
+		if fileCache != nil {
+			emptyData := make([]byte, cowChunkSizeBytes())
+			allZerosDigest, err := digest.Compute(bytes.NewReader(emptyData), repb.DigestFunction_BLAKE3)
+			if err != nil {
+				log.CtxWarningf(ctx, "Eager chunk cache: failed to compute all-zeros digest: %s", err)
+			} else {
+				remoteInstanceName := c.snapshotKeySet.GetBranchKey().GetInstanceName()
+				finalizer = func(chunk copy_on_write.FinalizedChunk) error {
+					if chunk.Digest.GetHash() == allZerosDigest.GetHash() {
+						return nil
+					}
+					if _, err := snaputil.Cache(ctx, fileCache, nil /*byteStreamClient*/, false /*cacheRemotely*/, true /*cacheLocally*/, chunk.Digest, remoteInstanceName, chunk.Path, memoryChunkDirName); err != nil {
+						return status.WrapError(err, "cache locally")
+					}
+					return nil
+				}
+			}
+		}
+	}
+
+	export, err := c.memoryStore.PrepareForSnapshotExport(c.snapshotWriteMaxMmappedChunks(), finalizer)
+	if err != nil {
+		return nil, nil, status.WrapError(err, "prepare memory store for snapshot export")
+	}
+	return export.Finish, export.Stop, nil
 }
 
 func (c *FirecrackerContainer) cleanupOldSnapshots(ctx context.Context, snapshotDetails *snapshotDetails) error {

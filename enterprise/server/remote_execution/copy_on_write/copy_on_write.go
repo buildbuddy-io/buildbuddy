@@ -1,6 +1,7 @@
 package copy_on_write
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -85,6 +86,39 @@ type usageSummary struct {
 	totalDuration time.Duration
 }
 
+// FinalizedChunk contains metadata for a chunk that was finalized after being
+// written.
+type FinalizedChunk struct {
+	Offset int64
+	Path   string
+	Digest *repb.Digest
+	Dirty  bool
+}
+
+type ChunkFinalizer func(FinalizedChunk) error
+
+// PreparedSnapshotExport represents COWStore state configured for sequential
+// snapshot export writes.
+type PreparedSnapshotExport struct {
+	store *COWStore
+	once  sync.Once
+}
+
+// Finish finalizes the last written chunk and restores normal write behavior.
+func (e *PreparedSnapshotExport) Finish() {
+	e.once.Do(func() {
+		e.store.finalizeLastWrittenChunk()
+		e.store.setChunkFinalizer(nil)
+	})
+}
+
+// Stop restores normal write behavior without finalizing the last written chunk.
+func (e *PreparedSnapshotExport) Stop() {
+	e.once.Do(func() {
+		e.store.setChunkFinalizer(nil)
+	})
+}
+
 // COWStore To enable copy-on-write support for a file, it can be split into
 // chunks of equal size. Just before a chunk is first written to, the chunk is first
 // copied, and the write is then applied to the copy.
@@ -160,6 +194,13 @@ type COWStore struct {
 
 	// LRU used to limit the number of chunks that can be mmapped at once.
 	mmapLRU *MmapLRU
+
+	// Optional best-effort callback used by sequential writers to process a
+	// chunk once writes move on to another chunk.
+	chunkFinalizer ChunkFinalizer
+	finalizeMu     sync.Mutex
+	lastWriteChunk int64
+	haveLastWrite  bool
 }
 
 type COWOptions struct {
@@ -452,6 +493,8 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 	c.eagerFetchNextChunks(chunkOffset)
 
 	for len(p) > 0 {
+		c.finalizePreviousWrittenChunk(chunkOffset)
+
 		// On each iteration, write to one chunk, first copying the readonly
 		// chunk if needed.
 		if err := c.copyChunkIfNotDirty(chunkOffset); err != nil {
@@ -470,6 +513,9 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 			return n, err
 		}
 		p = p[writeSize:]
+
+		c.markLastWrittenChunk(chunkOffset)
+
 		chunkOffset += c.chunkSizeBytes
 	}
 	metrics.COWBytesWritten.With(prometheus.Labels{
@@ -491,7 +537,7 @@ func (c *COWStore) writeToChunk(p []byte, writeRelativeOffset int64, chunkStartO
 	chunk := c.chunks[chunkStartOffset]
 	c.storeLock.RUnlock()
 
-	n, err := chunk.WriteAt(p[:writeSize], writeRelativeOffset)
+	n, err := chunk.writeAt(p[:writeSize], writeRelativeOffset, c.hasChunkFinalizer())
 	if err != nil {
 		return n, err
 	}
@@ -632,6 +678,124 @@ func (s *COWStore) LimitMmappedChunks(maxMmappedChunks int64) error {
 	s.mmapLRU = lru
 	s.eagerFetchStack = nil
 	return nil
+}
+
+// PrepareForSnapshotExport configures the store for sequential snapshot export
+// writes. It limits mmapped chunks and installs an optional best-effort callback
+// that is called when writes move from one chunk to another. The callback
+// receives a digest computed from the mapped chunk before it is unmapped,
+// avoiding a later reread.
+func (s *COWStore) PrepareForSnapshotExport(maxMmappedChunks int64, finalizer ChunkFinalizer) (*PreparedSnapshotExport, error) {
+	if err := s.LimitMmappedChunks(maxMmappedChunks); err != nil {
+		return nil, err
+	}
+	s.setChunkFinalizer(finalizer)
+	return &PreparedSnapshotExport{store: s}, nil
+}
+
+func (s *COWStore) setChunkFinalizer(finalizer ChunkFinalizer) {
+	s.finalizeMu.Lock()
+	var offset int64
+	shouldUnmapLastWrite := finalizer == nil && s.haveLastWrite
+	if shouldUnmapLastWrite {
+		offset = s.lastWriteChunk
+	}
+	s.chunkFinalizer = finalizer
+	if finalizer == nil {
+		s.haveLastWrite = false
+	}
+	s.finalizeMu.Unlock()
+
+	if shouldUnmapLastWrite {
+		s.unmapWrittenChunk(offset)
+	}
+}
+
+// finalizeLastWrittenChunk finalizes the most recently written chunk, if any.
+// This should be called after a sequential writer is done, since there is no
+// subsequent write to trigger finalization of the last chunk.
+func (s *COWStore) finalizeLastWrittenChunk() {
+	s.finalizeMu.Lock()
+	if s.chunkFinalizer == nil || !s.haveLastWrite {
+		s.finalizeMu.Unlock()
+		return
+	}
+	offset := s.lastWriteChunk
+	finalizer := s.chunkFinalizer
+	s.haveLastWrite = false
+	s.finalizeMu.Unlock()
+
+	s.finalizeWrittenChunk(offset, finalizer)
+}
+
+func (s *COWStore) finalizePreviousWrittenChunk(currentChunkOffset int64) {
+	s.finalizeMu.Lock()
+	if s.chunkFinalizer == nil || !s.haveLastWrite || s.lastWriteChunk == currentChunkOffset {
+		s.finalizeMu.Unlock()
+		return
+	}
+	offset := s.lastWriteChunk
+	finalizer := s.chunkFinalizer
+	s.haveLastWrite = false
+	s.finalizeMu.Unlock()
+
+	s.finalizeWrittenChunk(offset, finalizer)
+}
+
+func (s *COWStore) markLastWrittenChunk(offset int64) {
+	s.finalizeMu.Lock()
+	defer s.finalizeMu.Unlock()
+	if s.chunkFinalizer == nil {
+		return
+	}
+	s.lastWriteChunk = offset
+	s.haveLastWrite = true
+}
+
+func (s *COWStore) hasChunkFinalizer() bool {
+	s.finalizeMu.Lock()
+	defer s.finalizeMu.Unlock()
+	return s.chunkFinalizer != nil
+}
+
+func (s *COWStore) unmapWrittenChunk(offset int64) {
+	chunkUnlockFn := s.chunkLock.Lock(fmt.Sprintf("%d", offset))
+	defer chunkUnlockFn()
+
+	s.storeLock.RLock()
+	chunk := s.chunks[offset]
+	s.storeLock.RUnlock()
+	if chunk == nil {
+		return
+	}
+	if err := chunk.Unmap(); err != nil {
+		log.CtxWarningf(s.ctx, "Failed to unmap COW chunk %d for %s: %s", offset, s.name, err)
+	}
+}
+
+func (s *COWStore) finalizeWrittenChunk(offset int64, finalizer ChunkFinalizer) {
+	chunkUnlockFn := s.chunkLock.Lock(fmt.Sprintf("%d", offset))
+	defer chunkUnlockFn()
+
+	s.storeLock.RLock()
+	chunk := s.chunks[offset]
+	dirty := s.dirty[offset]
+	s.storeLock.RUnlock()
+	if chunk == nil {
+		return
+	}
+
+	finalizedChunk, err := chunk.finalizeWrite(dirty)
+	if err != nil {
+		log.CtxWarningf(s.ctx, "Failed to finalize COW chunk %d for %s: %s", offset, s.name, err)
+		return
+	}
+	if err := finalizer(finalizedChunk); err != nil {
+		log.CtxWarningf(s.ctx, "COW chunk finalizer failed for chunk %d of %s: %s", offset, s.name, err)
+	}
+	if err := chunk.Unmap(); err != nil {
+		log.CtxWarningf(s.ctx, "Failed to unmap finalized COW chunk %d for %s: %s", offset, s.name, err)
+	}
 }
 
 // Resize resizes the COWStore to the given size, effectively right-padding the
@@ -1083,6 +1247,7 @@ type Mmap struct {
 	source     snaputil.ChunkSource
 	fetched    bool
 	closed     bool
+	pinned     bool
 	lazyDigest *repb.Digest
 }
 
@@ -1264,6 +1429,10 @@ func (m *Mmap) ReadAt(p []byte, off int64) (n int, err error) {
 }
 
 func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
+	return m.writeAt(p, off, false /*pin*/)
+}
+
+func (m *Mmap) writeAt(p []byte, off int64, pin bool) (n int, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.initMap(); err != nil {
@@ -1274,6 +1443,9 @@ func (m *Mmap) WriteAt(p []byte, off int64) (n int, err error) {
 	}
 	m.lazyDigest = nil
 	copy(m.data[int(off):int(off)+len(p)], p)
+	if pin {
+		m.pinned = true
+	}
 	return len(p), nil
 }
 
@@ -1284,6 +1456,32 @@ func (m *Mmap) Sync() error {
 		return nil
 	}
 	return unix.Msync(m.data, unix.MS_SYNC)
+}
+
+func (m *Mmap) finalizeWrite(dirty bool) (FinalizedChunk, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if err := m.initMap(); err != nil {
+		return FinalizedChunk{}, err
+	}
+	if m.data == nil {
+		return FinalizedChunk{}, status.InternalError("mapped chunk has no data")
+	}
+	if err := unix.Msync(m.data, unix.MS_SYNC); err != nil {
+		return FinalizedChunk{}, err
+	}
+	d, err := digest.Compute(bytes.NewReader(m.data), repb.DigestFunction_BLAKE3)
+	if err != nil {
+		return FinalizedChunk{}, err
+	}
+	m.lazyDigest = d
+	return FinalizedChunk{
+		Offset: m.Offset,
+		Path:   m.path(),
+		Digest: d,
+		Dirty:  dirty,
+	}, nil
 }
 
 // Unmap unmaps the chunk without marking it closed.
@@ -1307,6 +1505,7 @@ func (m *Mmap) Unmap() error {
 
 // Note: caller is expected to hold the lock.
 func (m *Mmap) unmap() (unmapped bool, err error) {
+	m.pinned = false
 	if m.data == nil {
 		return false, nil
 	}
@@ -1515,6 +1714,9 @@ func (ml *MmapLRU) processEviction(m *Mmap) {
 	if lruContains {
 		// m was re-mapped by another goroutine before we could process this
 		// eviction - don't unmap.
+		return
+	}
+	if m.pinned {
 		return
 	}
 
