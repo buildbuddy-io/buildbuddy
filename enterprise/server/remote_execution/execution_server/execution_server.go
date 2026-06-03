@@ -379,7 +379,11 @@ func trimStatus(statusMessage string) string {
 func (s *ExecutionServer) updateExecutionPostCompletion(ctx context.Context, executionID string, stats *espb.PostCompletionStats) error {
 	fcStats := stats.GetFirecrackerPostExecStats()
 	execution := &repb.StoredExecution{
-		ExecutionId:           executionID, // necessary for the collector's merging.
+		ExecutionId: executionID, // necessary for the collector's merging.
+		// Stage must be COMPLETED, otherwise mergeExecutionUpdates drops this
+		// event as "execution progress appears to restart" after the first
+		// COMPLETED.
+		Stage:                 int64(repb.ExecutionStage_COMPLETED),
 		UpdatedAtUsec:         time.Now().UnixMicro(),
 		PauseDurationUsec:     stats.GetPauseDurationUsec(),
 		SnapshotSavedLocally:  fcStats.GetSnapshotSavedLocally(),
