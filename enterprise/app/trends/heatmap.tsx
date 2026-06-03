@@ -13,6 +13,7 @@ interface HeatmapProps {
   valueFormatter: (value: number) => string;
   metricBucketName: string;
   metricBucketFormatter: (value: number) => string;
+  totalFormatter: (value: number) => string | null;
   selectionCallback?: (s?: HeatmapSelection) => void;
   zoomCallback?: (s?: HeatmapSelection) => void;
   selectedData?: HeatmapSelection;
@@ -37,6 +38,7 @@ type SelectedCellData = {
   metric: number;
   metricBucketIndex: number;
   value: number;
+  total: number;
 };
 
 export type HeatmapSelection = {
@@ -237,6 +239,7 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
       metric: +metric,
       metricBucketIndex: stepY,
       value: +column.value[stepY],
+      total: +column.total[stepY],
     };
   }
 
@@ -267,6 +270,7 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
       this.renderYBucketValue(+data.metric) +
       " - " +
       this.renderYBucketValue(+this.props.heatmapData.bucketBracket[data.metricBucketIndex + 1]);
+    const total = this.props.totalFormatter(+data.total);
 
     return (
       <div className="trend-chart-hover">
@@ -278,6 +282,7 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
           {this.props.metricBucketName}: {metricBucket}
         </div>
         <div className="trend-chart-hover-value">{this.props.valueFormatter(data.value)}</div>
+        {total != null && <div className="trend-chart-hover-value">Total: {total}</div>}
       </div>
     );
   }
@@ -338,6 +343,7 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
         metric: lowMetric,
         metricBucketIndex: lowMetricIndex,
         value: +this.props.heatmapData.column[lowDateIndex].value[lowMetricIndex],
+        total: +this.props.heatmapData.column[lowDateIndex].total[lowMetricIndex],
       },
       {
         timestamp: highDate,
@@ -345,6 +351,7 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
         metric: highMetric,
         metricBucketIndex: highMetricIndex,
         value: +this.props.heatmapData.column[highDateIndex].value[highMetricIndex],
+        total: +this.props.heatmapData.column[lowDateIndex].total[lowMetricIndex],
       },
     ];
   }
