@@ -329,7 +329,6 @@ common:release-shared --define=release=true
 common:release-shared --strip=always
 common:release-shared --@rules_img//img/settings:compress=gzip
 common:release-shared --@rules_img//img/settings:compression_level=9
-# common:release-shared --@rules_img//img/settings:estargz=enabled
 
 # Configuration used for Linux releases
 common:release --config=release-shared
