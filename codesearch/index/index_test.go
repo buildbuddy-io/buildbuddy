@@ -600,6 +600,89 @@ func TestMergeActuallyMerges(t *testing.T) {
 	assert.Equal(t, expectedBytes, plBytes)
 }
 
+func TestSparseNgramFrequenciesArePersisted(t *testing.T) {
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.SparseNgramField, "content", true),
+		},
+	)
+	doc := docSchema.MustMakeDocument(
+		map[string][]byte{
+			"id":      []byte("1"),
+			"content": []byte("abc abc abc"),
+		},
+	)
+
+	w, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+	require.NoError(t, w.AddDocument(doc))
+	require.NoError(t, w.Flush())
+
+	plBytes, closer, err := db.Get([]byte("testns:gra:abc:content"))
+	require.NoError(t, err)
+	defer closer.Close()
+
+	pl, err := posting.Unmarshal(plBytes)
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1}, pl.ToArray())
+	assert.Equal(t, uint32(3), pl.Frequency(1))
+}
+
+func TestSparseNgramFrequenciesAcrossMultipleDocs(t *testing.T) {
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.SparseNgramField, "content", true),
+		},
+	)
+
+	// Index three docs with different per-doc frequencies for the same ngram.
+	// This also exercises the pebble merger path, since each AddDocument's
+	// posting list is merged into the on-disk value.
+	docs := []struct {
+		id      string
+		content string
+		wantTF  uint32
+	}{
+		{"1", "abc", 1},
+		{"2", "abc abc abc", 3},
+		{"3", "abc abc abc abc abc", 5},
+	}
+	w, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+	for _, d := range docs {
+		require.NoError(t, w.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
+			"id":      []byte(d.id),
+			"content": []byte(d.content),
+		})))
+	}
+	require.NoError(t, w.Flush())
+
+	plBytes, closer, err := db.Get([]byte("testns:gra:abc:content"))
+	require.NoError(t, err)
+	defer closer.Close()
+
+	pl, err := posting.Unmarshal(plBytes)
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1, 2, 3}, pl.ToArray())
+	for i, d := range docs {
+		docID := uint64(i + 1)
+		assert.Equal(t, d.wantTF, pl.Frequency(docID), "docID=%d (%s)", docID, d.id)
+	}
+
+	// Round-trip through UnmarshalReadOnly too, which is the path the query
+	// engine takes against pebble-owned memory.
+	roList, err := posting.UnmarshalReadOnly(plBytes)
+	require.NoError(t, err)
+	for i, d := range docs {
+		docID := uint64(i + 1)
+		assert.Equal(t, d.wantTF, roList.Frequency(docID), "readonly docID=%d (%s)", docID, d.id)
+	}
+}
+
 func printDB(t testing.TB, db *pebble.DB) {
 	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{0},
@@ -867,6 +950,89 @@ func TestDBFormatCompactDeletes(t *testing.T) {
 	assert.Equal(t, []uint64{1<<32 | 1}, plOneContent.ToArray())
 
 	assert.False(t, iter.Next()) // End of data.
+}
+
+// TestCompactDeletesPreservesFrequencies checks that CompactDeletes removes
+// deleted docs from a shared posting list while preserving the surviving docs'
+// term frequencies (rather than collapsing them to 1). Three docs share the
+// ngram "abc" and two are deleted, so the survivor is recovered from the middle
+// of the counted list across multiple deletions.
+func TestCompactDeletesPreservesFrequencies(t *testing.T) {
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.SparseNgramField, "content", true),
+		},
+	)
+	// All three docs contain ngram "abc" with distinct (>1) frequencies, so the
+	// "abc" posting list is stored in counted form: {doc1: 3, doc2: 5, doc3: 7}.
+	docs := []struct {
+		id      string
+		content string
+		wantTF  uint32
+	}{
+		{"1", "abc abc abc", 3},
+		{"2", "abc abc abc abc abc", 5},
+		{"3", "abc abc abc abc abc abc abc", 7},
+	}
+	w, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+	for _, d := range docs {
+		require.NoError(t, w.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
+			"id":      []byte(d.id),
+			"content": []byte(d.content),
+		})))
+	}
+	require.NoError(t, w.Flush())
+
+	const abcKey = "testns:gra:abc:content"
+
+	// Capture doc3's (the survivor's) docID and confirm pre-delete frequencies.
+	doc3ID := func() uint64 {
+		plBytes, closer, err := db.Get([]byte(abcKey))
+		require.NoError(t, err)
+		defer closer.Close()
+		pl, err := posting.Unmarshal(plBytes)
+		require.NoError(t, err)
+		ids := pl.ToArray()
+		require.Len(t, ids, 3)
+		for i, d := range docs {
+			assert.Equal(t, d.wantTF, pl.Frequency(ids[i]))
+		}
+		return ids[2]
+	}()
+
+	// Delete doc1 and doc2 (adds their docIDs to the deletes list; posting lists
+	// still contain them until compaction).
+	doc1 := docSchema.MustMakeDocument(map[string][]byte{"id": []byte("1")})
+	doc2 := docSchema.MustMakeDocument(map[string][]byte{"id": []byte("2")})
+	w, err = NewWriter(db, "testns")
+	require.NoError(t, err)
+	require.NoError(t, w.DeleteDocumentByMatchField(doc1.Field("id")))
+	require.NoError(t, w.DeleteDocumentByMatchField(doc2.Field("id")))
+	require.NoError(t, w.Flush())
+
+	// Compact: unmarshals the "abc" posting list into a MergeList and removes
+	// both deleted docs in one RemoveAll pass, which must preserve doc3's TF.
+	w, err = NewWriter(db, "testns")
+	require.NoError(t, err)
+	require.NoError(t, w.CompactDeletes())
+	require.NoError(t, w.Flush())
+
+	plBytes, closer, err := db.Get([]byte(abcKey))
+	require.NoError(t, err)
+	defer closer.Close()
+
+	pl, err := posting.Unmarshal(plBytes)
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{doc3ID}, pl.ToArray(), "doc1 and doc2 should be compacted out")
+	assert.Equal(t, uint32(7), pl.Frequency(doc3ID), "survivor must keep its term frequency after compaction")
+
+	// Also assert via the no-copy read path the query engine uses.
+	roList, err := posting.UnmarshalReadOnly(plBytes)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(7), roList.Frequency(doc3ID))
 }
 
 // WRITE:
