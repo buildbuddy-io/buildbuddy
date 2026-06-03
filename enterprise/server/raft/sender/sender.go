@@ -211,11 +211,11 @@ func (s *Sender) LookupRangeDescriptorsForPartition(ctx context.Context, partiti
 func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCache bool) (returnedRD *rfpb.RangeDescriptor, returnedErr error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer func() {
-		replica_ids := make([]int64, 0, len(returnedRD.GetReplicas()))
-		for _, repl := range returnedRD.GetReplicas() {
-			replica_ids = append(replica_ids, int64(repl.GetReplicaId()))
-		}
 		if spn.IsRecording() {
+			replica_ids := make([]int64, 0, len(returnedRD.GetReplicas()))
+			for _, repl := range returnedRD.GetReplicas() {
+				replica_ids = append(replica_ids, int64(repl.GetReplicaId()))
+			}
 			spn.SetAttributes(
 				attribute.Int64Slice("replicas", replica_ids),
 				attribute.Int("gen", int(returnedRD.GetGeneration())),
