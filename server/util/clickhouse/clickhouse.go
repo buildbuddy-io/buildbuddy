@@ -459,6 +459,11 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		PersistentWorkerKey:                in.GetPersistentWorkerKey(),
 		RequestedPool:                      in.GetRequestedPool(),
 		EffectivePool:                      in.GetEffectivePool(),
+		SnapshotSavedLocally:               in.GetSnapshotSavedLocally(),
+		SnapshotSavedRemotely:              in.GetSnapshotSavedRemotely(),
+		SnapshotIsDiff:                     in.GetSnapshotIsDiff(),
+		SnapshotSavedBytes:                 in.GetSnapshotSavedBytes(),
+		PauseDurationUsec:                  in.GetPauseDurationUsec(),
 	}
 
 	if err := FillExecutionResourceFieldsFromExecutionID(out, in.GetExecutionId()); err != nil {
