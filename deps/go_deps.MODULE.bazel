@@ -81,7 +81,6 @@ go_deps.module_override(
     patches = ["@com_github_buildbuddy_io_buildbuddy//buildpatches:go-grpc-channelz.patch"],
     path = "github.com/rantav/go-grpc-channelz",
 )
-
 # Go repos with custom directives
 go_deps.gazelle_override(
     directives = [
