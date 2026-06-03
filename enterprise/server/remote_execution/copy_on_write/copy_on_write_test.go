@@ -138,6 +138,49 @@ func TestCOW_Basic(t *testing.T) {
 	testStore(t, s, "" /*=path*/)
 }
 
+func TestCOW_ChunkFinalizer(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	dataDir := testfs.MakeTempDir(t)
+	const chunkSizeBytes = 4
+	cow, err := copy_on_write.NewCOWStore(ctx, env, "test", nil, copy_on_write.COWOptions{
+		ChunkSizeBytes: chunkSizeBytes,
+		TotalSizeBytes: chunkSizeBytes * 3,
+		DataDir:        dataDir,
+	})
+	require.NoError(t, err)
+	defer cow.Close()
+
+	var mu sync.Mutex
+	var chunksFinalized []int64
+	cow.PrepareForSequentialExport(2, func(chunk *copy_on_write.Mmap) error {
+		mu.Lock()
+		chunksFinalized = append(chunksFinalized, chunk.Offset)
+		mu.Unlock()
+		return nil
+	})
+
+	// Write to the same chunk multiple times.
+	_, err = cow.WriteAt([]byte{1, 2}, 0)
+	require.NoError(t, err)
+	_, err = cow.WriteAt([]byte{3, 4}, 2)
+	require.NoError(t, err)
+
+	// Write to a different chunk. Skip one chunk.
+	_, err = cow.WriteAt([]byte{5, 6}, 8)
+	require.NoError(t, err)
+
+	require.NoError(t, cow.Finalize())
+
+	require.ElementsMatch(t, []int64{0, 8}, chunksFinalized)
+	require.True(t, cow.Finalized())
+
+	for _, c := range cow.SortedChunks() {
+		// All chunks should be unmapped
+		require.Empty(t, c.Data())
+	}
+}
+
 func TestCOW_Concurrency(t *testing.T) {
 	const chunkSizeBytes = 1024 * 512
 	const fileSizeBytes = chunkSizeBytes * 20

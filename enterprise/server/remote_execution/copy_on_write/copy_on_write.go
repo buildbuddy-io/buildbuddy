@@ -85,6 +85,11 @@ type usageSummary struct {
 	totalDuration time.Duration
 }
 
+// ChunkFinalizer is a function that should be called on a chunk after no more data
+// will be written to it. This is useful for sequential access patterns where we
+// can guarantee chunks previously written will not be touched again, and can be finalized.
+type ChunkFinalizer func(*Mmap) error
+
 // COWStore To enable copy-on-write support for a file, it can be split into
 // chunks of equal size. Just before a chunk is first written to, the chunk is first
 // copied, and the write is then applied to the copy.
@@ -160,6 +165,20 @@ type COWStore struct {
 
 	// LRU used to limit the number of chunks that can be mmapped at once.
 	mmapLRU *MmapLRU
+
+	// Optional callback used by sequential writers to process a chunk once
+	// writes move on to another chunk.
+	//
+	// This should never be set for a COWStore that is being used by a guest and will
+	// have non-sequential access patterns.
+	chunkFinalizer ChunkFinalizer
+	// The offset of the last chunk that was written to.
+	lastChunkWritten int64
+	finalizeErrGroup *errgroup.Group
+	finalizeEgCtx    context.Context
+	finalizerCh      chan *Mmap
+	// Whether all chunks in the store have been finalized.
+	finalized bool
 }
 
 type COWOptions struct {
@@ -452,6 +471,12 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 	c.eagerFetchNextChunks(chunkOffset)
 
 	for len(p) > 0 {
+		if c.chunkFinalizer != nil && c.lastChunkWritten != chunkOffset {
+			if err := c.finalizeChunk(c.lastChunkWritten); err != nil {
+				return 0, status.WrapErrorf(err, "failed to finalize chunk %d", c.lastChunkWritten)
+			}
+		}
+
 		// On each iteration, write to one chunk, first copying the readonly
 		// chunk if needed.
 		if err := c.copyChunkIfNotDirty(chunkOffset); err != nil {
@@ -469,6 +494,7 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 		if err != nil {
 			return n, err
 		}
+		c.lastChunkWritten = chunkOffset
 		p = p[writeSize:]
 		chunkOffset += c.chunkSizeBytes
 	}
@@ -631,6 +657,116 @@ func (s *COWStore) LimitMmappedChunks(maxMmappedChunks int64) error {
 	}
 	s.mmapLRU = lru
 	s.eagerFetchStack = nil
+	return nil
+}
+
+func (s *COWStore) PrepareForSequentialExport(maxFinalizeConcurrency int, finalizer ChunkFinalizer) {
+	// During sequential export, we only need to fetch chunks that are being written to.
+	// Eager fetching chunks may be wasteful, so just disable it.
+	s.quitOnce.Do(func() { close(s.quitChan) })
+	s.eagerFetchEg.Wait()
+	s.eagerFetchStack = nil
+
+	// When sequentially exporting, we manually manage unmaps. Disable eviction.
+	s.mmapLRU = nil
+	for _, chunk := range s.chunks {
+		chunk.lru = nil
+	}
+
+	eg, egCtx := errgroup.WithContext(s.ctx)
+	s.finalizeErrGroup = eg
+	s.finalizeEgCtx = egCtx
+	s.finalizerCh = make(chan *Mmap)
+	s.chunkFinalizer = finalizer
+
+	for range maxFinalizeConcurrency {
+		eg.Go(s.processFinalizerQueue)
+	}
+}
+
+func (s *COWStore) processFinalizerQueue() error {
+	for chunk := range s.finalizerCh {
+		// If one chunk failed to finalize, unmap the rest of the chunks.
+		if s.finalizeEgCtx.Err() != nil {
+			chunk.Unmap()
+			continue
+		}
+
+		// Call the chunk finalizer on each chunk, then unmap the chunk.
+		err := s.chunkFinalizer(chunk)
+		chunk.Unmap()
+		if err != nil {
+			log.CtxErrorf(s.ctx, "failed to finalize chunk at offset %d: %s", chunk.Offset, err)
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *COWStore) finalizeLastWrittenChunk() error {
+	if s.chunkFinalizer == nil {
+		return nil
+	}
+	return s.finalizeChunk(s.lastChunkWritten)
+}
+
+func (s *COWStore) finalizeChunk(chunkOffset int64) error {
+	s.storeLock.RLock()
+	chunk := s.chunks[chunkOffset]
+	s.storeLock.RUnlock()
+	if chunk == nil {
+		return nil
+	}
+
+	if err := chunk.finalizeWrite(); err != nil {
+		return err
+	}
+
+	select {
+	// If another chunk failed to finalize, unmap and return the error.
+	case <-s.finalizeEgCtx.Done():
+		chunk.Unmap()
+		return s.finalizeEgCtx.Err()
+	// Add the chunk to the queue to be finalized.
+	case s.finalizerCh <- chunk:
+		return nil
+	}
+}
+
+// Finish finalizes the last written chunk, closes the finalizer queue, and
+// waits for all in-flight finalizer workers to complete. It returns the first
+// error from any finalizer, if any.
+func (s *COWStore) Finalize() error {
+	if s.finalized || s.chunkFinalizer == nil {
+		return nil
+	}
+
+	if s.finalizeEgCtx.Err() != nil {
+		return s.finalizeEgCtx.Err()
+	}
+
+	// After the last write, there is no subsequent write to trigger finalization of the last chunk.
+	// Finalize it here.
+	if err := s.finalizeLastWrittenChunk(); err != nil {
+		return err
+	}
+
+	close(s.finalizerCh)
+
+	// Wait for all in-flight finalizer workers to complete.
+	if err := s.finalizeErrGroup.Wait(); err != nil {
+		return err
+	}
+
+	// Unmap all chunks.
+	for _, chunk := range s.chunks {
+		if err := chunk.Unmap(); err != nil {
+			log.CtxWarningf(s.ctx, "failed to unmap chunk at offset %d: %s", chunk.Offset, err)
+		}
+	}
+
+	s.chunkFinalizer = nil
+	s.finalized = true
 	return nil
 }
 
@@ -856,6 +992,10 @@ func (c *COWStore) EmitUsageMetrics(stage string) {
 	c.chunkOperationToUsageSummary = make(map[string]usageSummary, 0)
 
 	log.CtxDebug(c.ctx, logStr.String())
+}
+
+func (c *COWStore) Finalized() bool {
+	return c.finalized
 }
 
 // ConvertFileToCOW reads a file sequentially, splitting it into fixed size,
@@ -1286,6 +1426,20 @@ func (m *Mmap) Sync() error {
 	return unix.Msync(m.data, unix.MS_SYNC)
 }
 
+// finalizeWrite prepares a chunk for finalization by setting the final digest and syncing the data to disk.
+func (m *Mmap) finalizeWrite() error {
+	_, err := m.Digest()
+	if err != nil {
+		return err
+	}
+
+	if err := m.Sync(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // Unmap unmaps the chunk without marking it closed.
 // It returns nil if the chunk is already unmapped.
 func (m *Mmap) Unmap() error {
@@ -1379,6 +1533,12 @@ func (m *Mmap) Digest() (*repb.Digest, error) {
 	}
 	m.SetDigest(d)
 	return d, nil
+}
+
+func (m *Mmap) Data() []byte {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.data
 }
 
 // MmapLRU limits the number of Mmap instances that can be mapped in memory at
