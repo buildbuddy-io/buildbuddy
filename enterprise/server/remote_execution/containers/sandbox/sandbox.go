@@ -348,3 +348,4 @@ func (c *sandbox) Unpause(ctx context.Context) error                          { 
 func (c *sandbox) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	return nil, nil
 }
+func (c *sandbox) ImageSizeBytes(ctx context.Context) (int64, error) { return 0, nil }

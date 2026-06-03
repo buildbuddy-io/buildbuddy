@@ -2073,6 +2073,24 @@ func (c *FirecrackerContainer) IsolationType() string {
 	return "firecracker"
 }
 
+func (c *FirecrackerContainer) ImageSizeBytes(ctx context.Context) (int64, error) {
+	if !c.pulled {
+		return 0, nil
+	}
+	imagePath := filepath.Join(c.getChroot(), containerFSName)
+	info, err := os.Stat(imagePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	// This is the logical size of the prepared ext4 container filesystem image.
+	// It may include free-space padding, and snapshot-resumed VMs may return 0
+	// when the container filesystem image is not present.
+	return info.Size(), nil
+}
+
 // Run the given command within the container and remove the container after
 // it is done executing.
 //
