@@ -126,7 +126,9 @@ func (s *Sender) GetMetaRangeDescriptor() *rfpb.RangeDescriptor {
 // returned.
 func (s *Sender) fetchRangeDescriptorsFromMetaRange(ctx context.Context, keysToFetch [][]byte) (returnedRDs []*rfpb.RangeDescriptor, returnedErr error) {
 	ctx, spn := tracing.StartSpan(ctx)
-	spn.SetAttributes(attribute.Int("num_keys", len(keysToFetch)))
+	if spn.IsRecording() {
+		spn.SetAttributes(attribute.Int("num_keys", len(keysToFetch)))
+	}
 	defer func() {
 		tracing.RecordErrorToSpan(spn, returnedErr)
 		spn.End()
@@ -213,12 +215,14 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCach
 		for _, repl := range returnedRD.GetReplicas() {
 			replica_ids = append(replica_ids, int64(repl.GetReplicaId()))
 		}
-		spn.SetAttributes(
-			attribute.Int64Slice("replicas", replica_ids),
-			attribute.Int("gen", int(returnedRD.GetGeneration())),
-			attribute.String("key", string(key)),
-			attribute.Int("range_id", int(returnedRD.GetRangeId())),
-		)
+		if spn.IsRecording() {
+			spn.SetAttributes(
+				attribute.Int64Slice("replicas", replica_ids),
+				attribute.Int("gen", int(returnedRD.GetGeneration())),
+				attribute.String("key", string(key)),
+				attribute.Int("range_id", int(returnedRD.GetRangeId())),
+			)
+		}
 		tracing.RecordErrorToSpan(spn, returnedErr)
 		spn.End()
 	}()
@@ -305,11 +309,8 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 
 // tryReplica tries the fn on the replica and returns whether to try a different replica
 func (s *Sender) tryReplica(ctx context.Context, rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor, fn runFunc, makeHeaderFn header.MakeFunc) (bool, error) {
-	select {
-	case <-ctx.Done():
-		return false, ctx.Err()
-	default:
-		// continue for loop
+	if err := ctx.Err(); err != nil {
+		return false, err
 	}
 	client, err := s.apiClient.GetForReplica(ctx, replica)
 	if err != nil {
@@ -320,14 +321,15 @@ func (s *Sender) tryReplica(ctx context.Context, rd *rfpb.RangeDescriptor, repli
 	}
 	header := makeHeaderFn(rd, replica)
 
-	fnCtx, spn := tracing.StartSpan(ctx)
-	spn.SetName("tryReplica: fn")
-	spn.SetAttributes(
-		attribute.Int64("range_id", int64(replica.GetRangeId())),
-		attribute.Int64("replica_id", int64(replica.GetReplicaId())),
-		attribute.String("nhid", replica.GetNhid()),
-		attribute.String("consistency_mode", header.GetConsistencyMode().String()),
-	)
+	fnCtx, spn := tracing.StartNamedSpan(ctx, "tryReplica: fn")
+	if spn.IsRecording() {
+		spn.SetAttributes(
+			attribute.Int64("range_id", int64(replica.GetRangeId())),
+			attribute.Int64("replica_id", int64(replica.GetReplicaId())),
+			attribute.String("nhid", replica.GetNhid()),
+			attribute.String("consistency_mode", header.GetConsistencyMode().String()),
+		)
+	}
 
 	err = fn(fnCtx, client, header)
 	tracing.RecordErrorToSpan(spn, err)
@@ -355,25 +357,22 @@ func (s *Sender) tryReplica(ctx context.Context, rd *rfpb.RangeDescriptor, repli
 
 func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc, makeHeaderFn header.MakeFunc) (replicaIdx int, returnedErr error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
-	attr := attribute.Int64("range_id", int64(rd.GetRangeId()))
-	spn.SetAttributes(attr)
+	if spn.IsRecording() {
+		spn.SetAttributes(attribute.Int64("range_id", int64(rd.GetRangeId())))
+	}
 	defer spn.End()
 
 	logs := []string{}
 	defer func() {
-		// TODO(vanja) figure out why errors aren't recorded properly in the, so
-		// we can remove this.
-		if returnedErr != nil {
-			spn.SetAttributes(attribute.String("error_string", returnedErr.Error()))
-		}
 		tracing.RecordErrorToSpan(spn, returnedErr)
 		if returnedErr != nil {
 			if len(logs) > 0 {
 				log.CtxDebugf(ctx, "failed to TryReplicas: %s. Detailed logs: %s", returnedErr, strings.Join(logs, "\n"))
 			}
 		}
-		replicaIdxAttr := attribute.Int("replica_idx", replicaIdx)
-		spn.SetAttributes(replicaIdxAttr)
+		if spn.IsRecording() {
+			spn.SetAttributes(attribute.Int("replica_idx", replicaIdx))
+		}
 	}()
 
 	for i, replica := range rd.GetReplicas() {
@@ -489,7 +488,7 @@ type rangeKeys struct {
 }
 
 func (s *Sender) partitionKeysByRange(ctx context.Context, keys []*KeyMeta, skipRangeCache bool) (map[uint64]*rangeKeys, error) {
-	ctx, span := tracing.StartSpan(ctx)
+	ctx, span := tracing.StartNamedSpan(ctx, "sender.Sender.partitionKeysByRange")
 	defer span.End()
 
 	// First pass: check the range cache for all keys and collect
@@ -550,7 +549,7 @@ type runMultiKeyFunc func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header
 // RunMultiKey returns a combined slice of the values returned from successful
 // fn calls.
 func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKeyFunc, mods ...Option) ([]any, error) {
-	ctx, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartNamedSpan(ctx, "sender.Sender.RunMultiKey")
 	defer spn.End()
 	opts := defaultOptions()
 	for _, mod := range mods {
