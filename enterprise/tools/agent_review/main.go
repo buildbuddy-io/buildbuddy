@@ -53,7 +53,7 @@ Rules:
 - File paths must be relative (no leading slash, no absolute paths).
 - Remove any footnote-style numeric references such as "(#1)" or "(#2)" from comment bodies and the summary — GitHub interprets these as issue/PR links.
 - Omit comments that only praise, affirm, or acknowledge a change without raising an actionable concern or suggesting an improvement (e.g. "good cleanup", "no callers found — safe to remove", "looks correct").
-- Do not begin a comment body with a title or subject phrase. If the body starts with a short summary label followed by a colon, drop everything up to and including that colon and start with the substantive text.
+- Avoid "introductory" or summary phrases with labels or categorizations like "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead.". Just write the comment directly, like "strings.Split allocates. Use strings.SplitSeq instead."
 - Output ONLY the JSON object. No other text before or after it.
 
 REVIEW:
