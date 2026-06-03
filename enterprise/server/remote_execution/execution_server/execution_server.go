@@ -1440,7 +1440,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		}
 	}
 
-	firstCompletedHandled := false
 	for {
 		op, err := stream.Recv()
 		if err == io.EOF {
@@ -1455,29 +1454,31 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		}
 
 		response := operation.ExtractExecuteResponse(op)
-		if firstCompletedHandled {
-			if flushExecutionsOnEOF && operation.ExtractStage(op) == repb.ExecutionStage_COMPLETED {
-				stats := new(espb.PostCompletionStats)
-				ok, err := rexec.FindFirstAuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), stats)
-				if err != nil {
-					log.CtxWarningf(ctx, "Failed to parse PostCompletionStats: %s", err)
-				} else if !ok {
-					// PostCompletionStats should always be present in a second
-					// COMPLETED event.
-					log.CtxWarningf(ctx, "Failed to find PostCompletionStats")
-				} else if err := s.updateExecutionPostCompletion(ctx, taskID, stats); err != nil {
-					log.CtxErrorf(ctx, "PublishOperation: error updating PostCompletionStats: %s", err)
+		currentStage := operation.ExtractStage(op)
+		if currentStage == repb.ExecutionStage_COMPLETED {
+			stats := new(espb.PostCompletionStats)
+			ok, err := rexec.FindFirstAuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), stats)
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to parse PostCompletionStats: %s", err)
+			} else if ok {
+				if flushExecutionsOnEOF {
+					if err := s.updateExecutionPostCompletion(ctx, taskID, stats); err != nil {
+						log.CtxErrorf(ctx, "PublishOperation: error updating PostCompletionStats: %s", err)
+					}
 				}
+				// Always skip the rest when we get PostCompletionStats. This
+				// means that a previous COMPLETED message already should have
+				// arrived and done all of the following:
+				// - cached the action result
+				// - marked the task as completed
+				// - sent the result over pubsub (eventually to bazel)
+				// - updated the execution in Redis with all data available at completion time
+				// - cached the execution result
+				// None of these need post exec stats. Even if we haven't
+				// received a previous COMPLETED message and we haven't done the
+				// above, we can't do them with just PostCompletionStats.
+				continue
 			}
-			// Always skip the rest after we successfully handled the first
-			// COMPLETED event and it already:
-			// - cached the action result
-			// - marked the task as completed
-			// - sent the result over pubsub (eventually to bazel)
-			// - updated the execution in Redis with all data available at completion time
-			// - cached the execution result
-			// None of these need post exec stats.
-			continue
 		}
 
 		trimmedResponse := response.CloneVT()
@@ -1500,7 +1501,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		mu.Lock()
 		lastOp = op
 		taskID = op.GetName()
-		stage = operation.ExtractStage(op)
+		stage = currentStage
 		if taskID != "" {
 			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, taskID)
 		} else {
@@ -1578,7 +1579,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				return err
 			}
-			firstCompletedHandled = true
 
 			if response != nil {
 				// TODO(vanja) should this be done when the executor got a
