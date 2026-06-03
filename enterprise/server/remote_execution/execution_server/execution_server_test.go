@@ -1531,7 +1531,7 @@ func TestPublishOperation_PeriodicFlushDoesNotClobberCompletedRow(t *testing.T) 
 
 // TestPublishOperation_SecondCompletedCarriesSnapshotStats verifies that a
 // second stage=COMPLETED Operation sent on the same PublishOperation stream,
-// carrying only PostCompletionStats in auxiliary_metadata, is handled
+// carrying a PostCompletionStats entry in auxiliary_metadata, is handled
 // correctly under both experiment values.
 //
 // Under flush_executions_after_cleanup=true (the path this PR exists to
@@ -1541,8 +1541,7 @@ func TestPublishOperation_PeriodicFlushDoesNotClobberCompletedRow(t *testing.T) 
 //
 // Under flush_executions_after_cleanup=false (legacy path), the OLAP flush
 // already ran on the first COMPLETED, so the second COMPLETED is dropped
-// server-side — updateExecution and pubsub publish are skipped, and the
-// snapshot fields don't appear in the recorded row.
+// server-side and the snapshot fields don't appear in the recorded row.
 //
 // In both modes the action result must not be re-cached and usage must be
 // recorded exactly once.
@@ -1637,18 +1636,16 @@ func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flush
 	require.NoError(t, err)
 	require.NoError(t, stream.Send(firstOp))
 
-	// Second COMPLETED: an ExecutionAuxiliaryMetadata whose only populated
-	// field is PostCompletionStats. This is what the executor sends after
-	// TryRecycle -> Pause has run for a firecracker runner.
-	secondAuxAny, err := anypb.New(&espb.ExecutionAuxiliaryMetadata{
-		PostCompletionStats: &espb.PostCompletionStats{
-			PauseDurationUsec: 67890,
-			FirecrackerPostExecStats: &espb.FirecrackerPostExecStats{
-				SnapshotSavedLocally:  true,
-				SnapshotSavedRemotely: true,
-				SnapshotIsDiff:        true,
-				SnapshotSavedBytes:    12345,
-			},
+	// Second COMPLETED: a minimal ExecuteResponse whose auxiliary_metadata
+	// contains a single PostCompletionStats entry. This is what the executor
+	// sends after TryRecycle -> Pause has run for a firecracker runner.
+	secondAuxAny, err := anypb.New(&espb.PostCompletionStats{
+		PauseDurationUsec: 67890,
+		FirecrackerPostExecStats: &espb.FirecrackerPostExecStats{
+			SnapshotSavedLocally:  true,
+			SnapshotSavedRemotely: true,
+			SnapshotIsDiff:        true,
+			SnapshotSavedBytes:    12345,
 		},
 	})
 	require.NoError(t, err)
