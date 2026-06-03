@@ -1,6 +1,6 @@
 bazel_dep(name = "rules_img", version = "0.3.9")
-
 bazel_dep(name = "rules_img_tool", version = "0.3.9")
+
 register_toolchains("@rules_img_tool//toolchain:all")
 
 bazel_dep(name = "rules_distroless", version = "0.6.2")
