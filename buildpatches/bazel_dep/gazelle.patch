@@ -10,14 +10,14 @@ diff --git a/cmd/gazelle/BUILD.bazel b/cmd/gazelle/BUILD.bazel
  gazelle_binary(
      name = "gazelle",
      languages = DEFAULT_LANGUAGES,
-diff --git a/cmd/gazelle/gazelle.go b/cmd/gazelle/gazelle.go
+diff --git a/cmd/gazelle/main.go b/cmd/gazelle/main.go
 --- a/cmd/gazelle/main.go
 +++ b/cmd/gazelle/main.go
 @@ -56,6 +56,10 @@ func (cmd command) String() string {
  }
  
  func main() {
-+        Run()
++	Run()
 +}
 +
 +func Run() {
@@ -34,33 +34,3 @@ diff --git a/internal/module/BUILD.bazel b/internal/module/BUILD.bazel
 -    visibility = ["//:__subpackages__"],
 +    visibility = ["//visibility:public"],
      deps = [
-diff --git a/internal/gazelle_binary.bzl b/internal/gazelle_binary.bzl
---- a/internal/gazelle_binary.bzl
-+++ b/internal/gazelle_binary.bzl
-@@ -15,3 +15,9 @@ load(
-     "go_context",
-     "new_go_info",
- )
-+load(
-+    "@io_bazel_rules_go//go/private:context.bzl",
-+    "CGO_ATTRS",
-+    "CGO_FRAGMENTS",
-+    "CGO_TOOLCHAINS",
-+)
-@@ -100,13 +106,14 @@ _gazelle_binary_kwargs = {
-             allow_empty = False,
-         ),
-         "_go_context_data": attr.label(default = "@io_bazel_rules_go//:go_context_data"),
-         # _stdlib is needed for rules_go versions before v0.23.0. After that,
-         # _go_context_data includes a dependency on stdlib.
-         "_stdlib": attr.label(default = "@io_bazel_rules_go//:stdlib"),
-         "_srcs": attr.label(
-             default = "//cmd/gazelle:gazelle_lib",
-         ),
--    },
-+    } | CGO_ATTRS,
-+    "fragments": CGO_FRAGMENTS,
-     "executable": True,
--    "toolchains": ["@io_bazel_rules_go//go:toolchain"],
-+    "toolchains": ["@io_bazel_rules_go//go:toolchain"] + CGO_TOOLCHAINS,
- }

@@ -52,8 +52,8 @@ bazel_integration_test(
     bazel_binaries = bazel_binaries,
     bazel_version = "8.4.2",
     env = {
-        "QA_TARBALL_URL": "https://github.com/bazel-contrib/bazel-gazelle/archive/refs/tags/v0.47.0.tar.gz",
-        "QA_STRIP_PREFIX": "bazel-gazelle-0.47.0",
+        "QA_TARBALL_URL": "https://github.com/bazel-contrib/bazel-gazelle/archive/refs/tags/v0.51.3.tar.gz",
+        "QA_STRIP_PREFIX": "bazel-gazelle-0.51.3",
         "QA_BAZEL_COMMAND": "test //...",
         "QA_EXTRA_BAZEL_FLAGS": "-- -//internal:bazel_test -//cmd/gazelle:gazelle_test -//docs/... -//tests/bzl_deps/...",
     },
