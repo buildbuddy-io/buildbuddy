@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MetadataService server</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+  <h1>MetaCache &amp; Raft</h1>
+  <div class="subtitle">BuildBuddy's metadata service, explained</div>
+  <input type="search" class="search-box" placeholder="Filter pages…" />
+
+  <div class="nav-section">Start here</div>
+  <a class="nav-link" href="index.html">Overview &amp; architecture</a>
+  <a class="nav-link" href="walkthroughs.html">End-to-end walkthroughs</a>
+
+  <div class="nav-section">The cache layer</div>
+  <a class="nav-link" href="metacache.html">MetaCache (metacache.go)</a>
+  <a class="nav-link" href="metadata-service.html">MetadataService server</a>
+  <a class="nav-link" href="protos.html">Proto definitions</a>
+
+  <div class="nav-section">The raft layer</div>
+  <a class="nav-link" href="store-replica.html">Store &amp; Replica</a>
+  <a class="nav-link" href="routing.html">Routing (sender, registry)</a>
+  <a class="nav-link" href="leases.html">Leases &amp; node liveness</a>
+  <a class="nav-link" href="transactions.html">Multi-range transactions</a>
+
+  <div class="nav-section">Cluster management</div>
+  <a class="nav-link" href="cluster-mgmt.html">Bringup, driver &amp; splits</a>
+
+  <div class="nav-section">Reference</div>
+  <a class="nav-link" href="glossary.html">Glossary</a>
+</aside>
+
+<main class="main">
+<div class="breadcrumb"><a href="index.html">Home</a> · Cache layer · MetadataService server</div>
+<h1 class="page-title">MetadataService server</h1>
+<p class="page-lede">
+  <code>metadata.Server</code> is the process-level wrapper. It exposes the public <code>MetadataService</code>
+  gRPC and owns the raft <code>Store</code>, the cluster bringup driver, and an asynchronous access-time-update
+  pipeline.
+</p>
+
+<div class="callout">
+  <div class="callout-title">File</div>
+  <code>enterprise/server/raft/metadata/metadata.go</code> (839 lines).
+  Lives in its own gRPC binary (<code>enterprise/server/cmd/metadata_server/main.go</code>).
+</div>
+
+<h2 id="server">The Server struct</h2>
+
+<p>
+  <code>metadata.Server</code> owns:
+</p>
+<ul>
+<li>A <code>store.Store</code> — the raft node on this machine (NodeHost + replicas + leasekeeper + driver + …).</li>
+<li>A <code>bringup.ClusterStarter</code> — handles initial cluster formation via gossip.</li>
+<li>A <code>gossip.Manager</code> — serf discovery for peers.</li>
+<li>An async access-time-update pipeline (<code>accesses chan *accessTimeUpdate</code>).</li>
+<li>A <code>filestore.Store</code> — for encoding pebble keys and the storage union (inline / on-disk / GCS).</li>
+</ul>
+
+<h2 id="construction">Construction</h2>
+
+<p>
+  Two layers:
+</p>
+<ol>
+<li><strong><code>NewFromFlags</code></strong> (<span class="fileref">metadata.go:128-226</span>) — flag-driven entry point. Enforces a default partition (<code>constants.DefaultPartitionID = "default"</code>), creates a <code>gossip.New(nhid)</code> and an optional GCS-backed file storer, assembles a <code>config.ServerConfig</code>.</li>
+<li><strong><code>New</code></strong> (<span class="fileref">:236-300</span>) — calls <code>store.New</code> (which starts dragonboat NodeHost, opens pebble, starts leasekeeper); calls <code>bringup.New(...)</code> and <code>clusterStarter.InitializeClusters()</code>; spawns <code>processAccessTimeUpdates</code> for batched atime maintenance.</li>
+</ol>
+
+<p>
+  <code>Server.Check</code> (<span class="fileref">:321-346</span>) is the health-check. Not-ready until cluster bootstrap is done, the store is alive, and <code>s.store.ReplicasInitDone()</code> returns true.
+</p>
+
+<h2 id="api">The four gRPC methods</h2>
+
+<p>Every method follows the same uniform shape:</p>
+<ol>
+<li><strong>Authorize</strong>: each <code>FileRecord.Isolation.GroupId</code> must match the caller's group.</li>
+<li><strong>Translate</strong>: FileRecord → pebble key via <code>fileStorer.PebbleKey(...).Bytes(filestore.Version6)</code>.</li>
+<li><strong>Wrap</strong> into <code>[]*sender.KeyMeta</code> (key + caller-supplied metadata).</li>
+<li><strong>Fan out</strong> via <code>Sender.RunMultiKey</code> — shards by destination range, runs in parallel.</li>
+<li><strong>Combine</strong> partial responses; for reads, queue atime updates.</li>
+</ol>
+
+<h3 id="get">Get <span class="pill read">read</span></h3>
+
+<div class="code-header"><span><span class="fileref">metadata.go:527-610</span></span></div>
+<pre><code>rsps, err := rc.sender().RunMultiKey(ctx, keys, <span class="kw">func</span>(ctx, c, h, keys) (any, error) {
+    batch := rbuilder.NewBatchBuilder()
+    <span class="kw">for</span> _, k := <span class="kw">range</span> keys {
+        batch.Add(&amp;rfpb.GetRequest{Key: k.Key})
+    }
+    batchProto, err := batch.ToProto()
+    rsp, err := c.SyncRead(ctx, &amp;rfpb.SyncReadRequest{Header: h, Batch: batchProto})
+    <span class="cmt">// Per-key: extract GetResponse(i), populate res.found[fr], queue atime update.</span>
+}, sender.WithConsistencyMode(rfpb.Header_RANGELEASE))</code></pre>
+
+<p>
+  Note <code>Header_RANGELEASE</code>: the replica holding the range lease can answer locally without going through
+  ReadIndex. For each found record, an <code>atimeUpdateData</code> is queued containing the key, returned atime,
+  and any GCS metadata pointer.
+</p>
+
+<h3 id="find">Find <span class="pill read">read</span></h3>
+
+<p>
+  Same as Get but returns only "present? + atime + gcsMetadata", not full payload. Used by the cache layer for
+  negative-cache checks and atime refreshes.
+</p>
+
+<h3 id="set">Set <span class="pill write">write</span></h3>
+
+<div class="code-header"><span><span class="fileref">metadata.go:718-768</span></span></div>
+<pre><code>_, err = rc.sender().RunMultiKey(ctx, keys, <span class="kw">func</span>(ctx, c, h, keys) (any, error) {
+    batch := rbuilder.NewBatchBuilder()
+    <span class="kw">for</span> _, k := <span class="kw">range</span> keys {
+        setOp := k.Meta.(*mdpb.SetRequest_SetOperation)
+        fm := setOp.GetFileMetadata()
+        fm.LastAccessUsec = rc.clock.Now().UnixMicro()
+        batch.Add(&amp;rfpb.SetRequest{Key: k.Key, FileMetadata: fm})
+    }
+    rsp, err := c.SyncPropose(ctx, &amp;rfpb.SyncProposeRequest{Header: h, Batch: batchProto})
+}, sender.WithConsistencyMode(rfpb.Header_RANGELEASE))</code></pre>
+
+<p>
+  Writes use <code>SyncPropose</code> (full Raft round-trip). <code>RANGELEASE</code> mode is still used because
+  the leader checks the lease before accepting the proposal — preventing accepted writes from a former leader
+  after partition heal.
+</p>
+
+<h3 id="delete">Delete <span class="pill admin">admin</span></h3>
+
+<p>
+  Same shape as Set but uses <code>rfpb.DeleteRequest{Key, MatchAtime: deleteOp.GetMatchAtime()}</code>. The
+  optional <code>MatchAtime</code> is the optimistic-concurrency primitive used by the eviction path.
+</p>
+
+<h2 id="atime">The atime pipeline</h2>
+
+<p>
+  Every successful read produces atime data. Updating atime on every read would be punitive; instead, the server
+  batches them.
+</p>
+
+<ol class="steps">
+<li><strong><code>sendAccessTimeUpdate</code></strong> non-blocking-sends to a buffered channel (<code>atimeBufferSize</code>, default 100k). Buffer full → log and drop.</li>
+<li><strong><code>processAccessTimeUpdates</code></strong> (background goroutine, spawned in <code>New</code>) batches up to <code>atimeWriteBatchSize</code> (default 100) or <code>atimeFlushPeriod</code> (10s).</li>
+<li>For GCS-backed entries: <strong>first</strong> call <code>fileStorer.UpdateBlobAtime</code> to bump the GCS custom-time (so the bucket lifecycle policy won't delete the underlying blob), <strong>then</strong> propose the atime bump on raft.</li>
+<li>The sharded <code>SyncPropose</code> issues <code>UpdateAtimeRequest</code>s in a batch via <code>Sender.RunMultiKey</code>.</li>
+</ol>
+
+<div class="callout warn">
+<div class="callout-title">Order matters here</div>
+GCS custom-time bump <em>before</em> raft atime update. If we did it the other way, an eviction sweep could observe the new atime, decide "this is recent, don't delete", but the GCS object would silently TTL out. This way, the worst case is just an unnecessary GCS custom-time bump for a row that was about to be evicted anyway.
+</div>
+
+<h2 id="keys">Key construction</h2>
+
+<p>
+  <code>fileMetadataKey</code> (<span class="fileref">:365-371</span>) defers to <code>filestore.PebbleKey(fr)</code>
+  and serializes with <code>filestore.Version6</code>. The key embeds isolation (group_id + remote_instance_name),
+  the digest, and the partition.
+</p>
+
+<p>
+  The <strong>partition prefix</strong> matters because ranges are partitioned by <code>PT&lt;partition_name&gt;/&lt;hex&gt;</code>
+  — different partitions live in different range groups.
+</p>
+
+<p>The global keyspace layout is in <code>constants/constants.go</code>:</p>
+
+<pre><code>\x01..\x02   local      — per-replica state, never replicated
+\x02..\x03   meta range — range descriptors; never split
+\x03..\x04   system     — non-RD system data
+\x04..       normal     — splittable user keys
+</code></pre>
+
+<p>The meta range covers <code>[\x02, \x04)</code> (so meta + system are co-located and unsplittable).</p>
+
+<h2 id="locality">Sender's locality optimization</h2>
+
+<p>
+  The MetadataService server doesn't itself have a "skip the network if I'm the leader" shortcut. The optimization
+  happens one layer down in <code>Sender.run</code> / <code>Sender.RunMultiKey</code>:
+</p>
+<ol>
+<li><code>tryReplicas</code> picks the <em>preferred</em> replica first — the one that last successfully served the request (typically the leaseholder).</li>
+<li>If that replica is on the local NodeHost, the gRPC call is over a loopback connection — ultra-low latency.</li>
+<li>The real locality bonus is the consistency mode: <code>RANGELEASE</code> means the leaseholder serves reads from local Pebble without a Raft round-trip.</li>
+</ol>
+
+<p>
+  For meta-range descriptor lookups, the bypass is stronger still: <code>Sender.GetMetaRangeDescriptor()</code>
+  reads from the in-process <code>rangeCache</code> seeded by gossip's <code>MetaRangeTag</code> events.
+</p>
+
+<h2 id="inline">Inline data vs. pointer-to-blob</h2>
+
+<p>
+  The metadata server <strong>does not know or care</strong>. The unit it operates on is <code>sgpb.FileMetadata</code>,
+  which contains a <code>StorageMetadata</code> union (Inline / Pebble / GCS / FileMetadata). What "Set" stores is
+  exactly what was provided by the client.
+</p>
+
+<p>The only place the metadata server peeks inside <code>StorageMetadata</code> is <code>maybeUpdateGCSAtime</code> (<span class="fileref">:422-435</span>) — bumping the GCS custom time on atime updates. On Delete, the responsibility for cleaning up the underlying object is <em>not</em> in the metadata server — the eviction path in <a href="cluster-mgmt.html#usagetracker">usagetracker</a> dispatches GCS deletions via a separate worker pool.</p>
+
+<h2 id="binary">The metadata_server binary</h2>
+
+<p>
+  <code>enterprise/server/cmd/metadata_server/main.go</code> is a standalone binary that runs <em>one</em>
+  <code>metadata.Server</code>. A production deployment runs N of these (typically 3 or 5) with overlapping
+  partition ownership; they form one logical metadata cluster via gossip + raft.
+</p>
+
+<p>Each instance:</p>
+<ul>
+<li>Joins serf gossip with the configured seed addresses.</li>
+<li>Either bootstraps the initial meta range (if elected by <a href="cluster-mgmt.html#bringup">bringup</a>) or rejoins existing shards from on-disk state.</li>
+<li>Registers <code>MetadataService</code> on its gRPC server.</li>
+<li>Optionally registers the <code>raft.service.Api</code> gRPC server too (for peer-to-peer routing).</li>
+</ul>
+
+<h2 id="locality-summary">Summary: a Get request's locality story</h2>
+
+<div class="seq">
+<pre><code>cache client (in app server)            metadata.Server                       sender               leaseholder
+            │                                  │                                  │                       │
+   Get([N file_records]) ───gRPC──────▶       │                                  │                       │
+                                       │  authorize, build keys           │                       │
+                                       │  RunMultiKey(keys, fn, RANGELEASE) ▶│                       │
+                                       │                                  │  partitionKeysByRange  │
+                                       │                                  │   (groups by range)    │
+                                       │                                  │  for each range:       │
+                                       │                                  │  ──── SyncRead ─────▶ │
+                                       │                                  │                       │  LeasedRange check
+                                       │                                  │                       │  client.SyncReadLocal
+                                       │                                  │                       │  (Header_RANGELEASE -&gt; StaleRead)
+                                       │                                  │                       │  Replica.Lookup -&gt; Pebble Get
+                                       │                                  │                       │
+                                       │                                  │ ◀── BatchCmdResponse ─│
+                                       │  combine, queue atime updates    │                       │
+   ◀── GetResponse({file_metadatas}) ──│                                  │                       │
+</code></pre>
+</div>
+
+<div class="page-footer">
+  <div>← <a href="metacache.html">MetaCache</a></div>
+  <div class="next-prev">
+    <a href="protos.html">Proto reference →</a>
+  </div>
+</div>
+</main>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

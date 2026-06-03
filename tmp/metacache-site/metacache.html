@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MetaCache — metacache.go</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+  <h1>MetaCache &amp; Raft</h1>
+  <div class="subtitle">BuildBuddy's metadata service, explained</div>
+  <input type="search" class="search-box" placeholder="Filter pages…" />
+
+  <div class="nav-section">Start here</div>
+  <a class="nav-link" href="index.html">Overview &amp; architecture</a>
+  <a class="nav-link" href="walkthroughs.html">End-to-end walkthroughs</a>
+
+  <div class="nav-section">The cache layer</div>
+  <a class="nav-link" href="metacache.html">MetaCache (metacache.go)</a>
+  <a class="nav-link" href="metadata-service.html">MetadataService server</a>
+  <a class="nav-link" href="protos.html">Proto definitions</a>
+
+  <div class="nav-section">The raft layer</div>
+  <a class="nav-link" href="store-replica.html">Store &amp; Replica</a>
+  <a class="nav-link" href="routing.html">Routing (sender, registry)</a>
+  <a class="nav-link" href="leases.html">Leases &amp; node liveness</a>
+  <a class="nav-link" href="transactions.html">Multi-range transactions</a>
+
+  <div class="nav-section">Cluster management</div>
+  <a class="nav-link" href="cluster-mgmt.html">Bringup, driver &amp; splits</a>
+
+  <div class="nav-section">Reference</div>
+  <a class="nav-link" href="glossary.html">Glossary</a>
+</aside>
+
+<main class="main">
+<div class="breadcrumb"><a href="index.html">Home</a> · Cache layer · MetaCache</div>
+<h1 class="page-title">MetaCache <span class="pill proto">interfaces.Cache</span></h1>
+<p class="page-lede">
+  <code>metacache.Cache</code> is a thin, mostly stateless adapter. It receives Bazel-cache-shaped requests
+  (digests, instance names, compressor preferences) and turns each one into <strong>one metadata RPC</strong>
+  to the raft cluster plus, when the blob isn't small enough to inline, <strong>one blob I/O</strong> to GCS.
+  All the durability and consensus complexity is somewhere else.
+</p>
+
+<div class="callout">
+  <div class="callout-title">File</div>
+  <code>enterprise/server/backends/metacache/metacache.go</code> (867 lines).
+  Tests at <code>metacache_test.go</code>.
+</div>
+
+<h2 id="why-split">Why split metadata from bytes?</h2>
+<p>Two reasons drive the split:</p>
+<ol>
+  <li><strong>Eviction by GCS lifecycle.</strong> Each GCS object is written with a <code>customTime</code> equal
+  to "now." The bucket's lifecycle policy deletes objects with <code>DaysSinceCustomTime &gt; N</code>. The
+  metadata record stores the same <code>last_custom_time_usec</code> so a read can detect "this object is
+  about to vanish" <em>before</em> hitting GCS.</li>
+  <li><strong>Cost optimization for small files.</strong> Objects below <code>MaxInlineFileSizeBytes</code>
+  (default <strong>1 024 bytes</strong>) skip GCS entirely and ride along in the metadata record's
+  <code>StorageMetadata.InlineMetadata</code>. This is most CAS entries in practice.</li>
+</ol>
+
+<h2 id="construction">Construction &amp; configuration</h2>
+<p>
+  Registered via <code>cache.meta_cache.*</code> flags, dispatched to <code>cache_config.MetaCacheConfig</code>.
+  If <code>MetadataBackend</code> is empty, <code>Register</code> short-circuits and does nothing.
+</p>
+
+<div class="code-header">
+  <span><span class="fileref">metacache.go:64-84</span> — Options struct</span>
+</div>
+<pre><code><span class="kw">type</span> <span class="typ">Options</span> <span class="kw">struct</span> {
+    Name            <span class="typ">string</span>
+    Clock           <span class="typ">clockwork.Clock</span>
+    MetadataClient  <span class="typ">mdspb.MetadataServiceClient</span>
+    FileStorer      <span class="typ">filestore.Store</span>
+
+    PartitionMappings []disk.PartitionMapping
+
+    MinBytesAutoZstdCompression <span class="typ">int64</span>      <span class="cmt">// default 100</span>
+    MaxInlineFileSizeBytes      <span class="typ">int64</span>      <span class="cmt">// default 1024</span>
+    MaxWriteGoroutines          <span class="typ">int</span>        <span class="cmt">// default 10</span>
+
+    MetadataBackend <span class="typ">string</span>                  <span class="cmt">// grpc target of the raft cluster</span>
+
+    GCSBucket, GCSCredentials, GCSProjectID, GCSAppName <span class="typ">string</span>
+    GCSTTLDays      <span class="typ">int64</span>
+}</code></pre>
+
+<p>
+  In <code>New</code> (<span class="fileref">metacache.go:160-203</span>) the GCS-backed <code>filestore.Store</code>
+  is constructed with <strong>GCS-level compression disabled</strong> (metacache does its own zstd, so doubling
+  up would just burn CPU). It then calls <code>SetBucketCustomTimeTTL(ctx, opts.GCSTTLDays)</code> and
+  <em>refuses to start</em> if that fails — the TTL is load-bearing.
+</p>
+
+<div class="callout warn">
+  <div class="callout-title">GCS TTL is load-bearing</div>
+  Metacache pre-checks <code>ObjectIsPastTTL</code> with a 1-hour safety buffer (<code>gcsutil.go</code>) on
+  every read. The buffer covers the gap between GCS lifecycle marking and actual deletion, which run as
+  decoupled jobs.
+</div>
+
+<h2 id="cache-api">The Cache interface, method by method</h2>
+
+<table>
+  <thead><tr><th>Method</th><th>What it does</th><th>Talks to</th></tr></thead>
+  <tbody>
+    <tr><td><code>Contains</code> <span class="pill read">read</span></td><td>Delegates to <code>FindMissing</code>; returns true iff missing list is empty.</td><td>MetadataService only</td></tr>
+    <tr><td><code>FindMissing</code> <span class="pill read">read</span></td><td>Builds N <code>FileRecord</code>s, one <code>Find</code> RPC, filters where <code>present=false</code>.</td><td>MetadataService only</td></tr>
+    <tr><td><code>Metadata</code> <span class="pill read">read</span></td><td>Single <code>Get</code> RPC, returns size + atime + mtime. Empty <code>FileRecord</code> = NotFound (see "subtleties").</td><td>MetadataService only</td></tr>
+    <tr><td><code>Get</code> <span class="pill read">read</span></td><td>Convenience: <code>Reader</code> → <code>io.Copy</code> into buffer capped at 4 MiB.</td><td>MetadataService + (GCS if &gt;inline)</td></tr>
+    <tr><td><code>GetMulti</code> <span class="pill read">read</span></td><td>Batch <code>Get</code> RPC then per-item reads <em>serially</em>; <code>NotFound</code> per item is silent.</td><td>MetadataService + GCS as needed</td></tr>
+    <tr><td><code>Reader</code> <span class="pill read">read</span></td><td>Streaming read; see <a href="#read-path">read path</a>.</td><td>Both</td></tr>
+    <tr><td><code>Set</code> <span class="pill write">write</span></td><td>Single write with immediate metadata commit.</td><td>Both (or just metadata, if inline)</td></tr>
+    <tr><td><code>SetMulti</code> <span class="pill write">write</span></td><td>Parallel writes (errgroup, <code>MaxWriteGoroutines</code>), <strong>one</strong> metadata batch RPC at the end.</td><td>Both, batched metadata</td></tr>
+    <tr><td><code>Writer</code> <span class="pill write">write</span></td><td>Streaming write; see <a href="#write-path">write path</a>.</td><td>Both</td></tr>
+    <tr><td><code>Delete</code> <span class="pill admin">admin</span></td><td>Metadata-only delete via <code>MatchAtime=0</code>. <strong>Does not delete the GCS blob</strong>; TTL reaps it.</td><td>MetadataService only</td></tr>
+  </tbody>
+</table>
+
+<h2 id="write-path">Write path, end-to-end</h2>
+<p>Let's trace a single <code>Set(ctx, r, data)</code> all the way through:</p>
+
+<ol class="steps">
+  <li><strong><code>Set</code></strong> at <span class="fileref">metacache.go:640-653</span> calls <code>writerWithImmediateCommit(ctx, r, len(data))</code>, writes, commits, closes. Defers <code>Close</code> <em>before</em> <code>Commit</code> on purpose — the GCS wrapper's <code>Close()</code> only cancels a context, not the upload.</li>
+  <li><strong><code>writerWithImmediateCommit</code></strong> (<span class="fileref">:438</span>) installs a <code>writeMetadataFn</code> that calls <code>setMetadatas(ctx, md)</code> the moment the bytes have committed.</li>
+  <li><strong><code>writer</code></strong> (<span class="fileref">:452</span>) is where the compression decision happens:
+    <pre><code>shouldCompress := r.GetCompressor() == repb.Compressor_IDENTITY &amp;&amp;
+                  sizeHint &gt;= c.opts.MinBytesAutoZstdCompression
+<span class="kw">if</span> shouldCompress {
+    r = &amp;rspb.ResourceName{ ..., Compressor: repb.Compressor_ZSTD }
+}
+fileRecord, _ := c.makeFileRecord(ctx, r)</code></pre>
+    Then <code>newWrappedWriter</code> picks the storage backend.
+  </li>
+  <li><strong><code>writerForRecord</code></strong> (<span class="fileref">:377-387</span>) — the inline-vs-blob switch on <em>size hint</em>:
+    <pre><code><span class="kw">if</span> sizeHint &lt; c.opts.MaxInlineFileSizeBytes {
+    <span class="kw">return</span> c.opts.FileStorer.InlineWriter(ctx, sizeHint), <span class="kw">nil</span>
+}
+<span class="kw">return</span> c.opts.FileStorer.BlobWriter(ctx, fileRecord)</code></pre>
+    Inline returns a <code>bytes.Buffer</code>-backed <code>MetadataWriteCloser</code>; blob returns a GCS <code>CommittedMetadataWriteCloser</code>.
+  </li>
+  <li><strong><code>newWrappedWriter</code></strong> (<span class="fileref">:389-431</span>) wraps with <code>ioutil.NewCustomCommitWriteCloser</code> and installs the commit function that assembles the <code>FileMetadata</code> after bytes are committed:
+    <pre><code>cwc.SetCommitFn(<span class="kw">func</span>(bytesWritten <span class="typ">int64</span>) <span class="typ">error</span> {
+    now := c.opts.Clock.Now().UnixMicro()
+    md := &amp;sgpb.FileMetadata{
+        FileRecord:         fileRecord,
+        StorageMetadata:    wcm.Metadata(),     <span class="cmt">// inline bytes OR gcs blobName+customTime</span>
+        EncryptionMetadata: encryptionMetadata,
+        StoredSizeBytes:    bytesWritten,
+        LastAccessUsec:     now,
+        LastModifyUsec:     now,
+    }
+    <span class="kw">if</span> bytesWritten == 0 { <span class="kw">return</span> status.UnavailableError(<span class="str">"zero-length writes are not allowed"</span>) }
+    <span class="kw">return</span> fn(md)  <span class="cmt">// the caller-supplied writeMetadataFn</span>
+})</code></pre>
+    If encryption is enabled, the writer chain gets wrapped in the crypter's encryptor here too.
+  </li>
+  <li><strong>zstd wrap</strong> (if <code>shouldCompress</code>) via <code>compression.NewZstdCompressingWriteCommiter</code>, drawing 4 MiB buffers from <code>c.bufferPool</code>. Each 4 MiB chunk is compressed independently.</li>
+  <li><strong>Caller writes bytes</strong> → flows through compression → encryption → inline buffer or GCS streaming writer.</li>
+  <li><strong>Caller calls <code>Commit()</code></strong>: compression flushes (records compression-ratio metric), encryption flushes, GCS conditional writer commits. For inline this is a no-op.</li>
+  <li><strong>After inner commit succeeds</strong>, the wrapper's <code>CommitFn</code> runs: builds the <code>FileMetadata</code>, calls <code>setMetadatas</code>.</li>
+  <li><strong><code>setMetadatas</code></strong> issues one <code>MetadataService.Set</code> gRPC. From here onward we're in the <a href="metadata-service.html">MetadataService page</a>.</li>
+</ol>
+
+<div class="callout warn">
+  <div class="callout-title">Two-phase, but not atomic</div>
+  The order is strictly (1) bytes, then (2) metadata. There is no transaction:
+  <ul>
+    <li>Bytes succeed + metadata fails → blob orphaned, eventually reaped by TTL.</li>
+    <li>Metadata exists but blob missing → next read detects via <code>handleMetadataMismatch</code> and conditionally deletes the metadata.</li>
+  </ul>
+</div>
+
+<h2 id="read-path">Read path, end-to-end</h2>
+
+<p>
+  <code>Reader(ctx, r, offset, limit)</code> (<span class="fileref">:796</span>) does the obvious: one <code>Get</code> RPC,
+  then open the backend reader from the returned <code>StorageMetadata</code>. The internal <code>reader</code>
+  (<span class="fileref">:705-793</span>) is where the matrix-of-cases lives.
+</p>
+
+<div class="cols-2">
+<div>
+<h4>Decisions made in reader()</h4>
+<ol>
+  <li>Zero-length guard (<code>stored_size_bytes == 0</code> → NotFound).</li>
+  <li>GCS TTL pre-check (<code>ObjectIsPastTTL</code> with 1h buffer → NotFound).</li>
+  <li>Reject compressed passthrough with offset/limit.</li>
+  <li>If encrypted but encryption now disabled → NotFound.</li>
+  <li>Decide <code>rawStorage = (cached==IDENTITY &amp;&amp; !decrypt)</code>; if true, push offset/limit to the backend.</li>
+  <li>Open backend reader (inline or GCS). NotFound → <code>handleMetadataMismatch</code>.</li>
+  <li>Wrap with decryptor, then decompressor, then offset skip, then limit.</li>
+  <li>If cached IDENTITY but client wants ZSTD, compress on read.</li>
+</ol>
+</div>
+<div>
+<h4>The 4-case compression matrix</h4>
+<table>
+<tr><th>cached</th><th>requested</th><th>behavior</th></tr>
+<tr><td>IDENTITY</td><td>IDENTITY</td><td>passthrough; offset/limit at backend</td></tr>
+<tr><td>ZSTD</td><td>ZSTD</td><td>passthrough; offset/limit rejected</td></tr>
+<tr><td>ZSTD</td><td>IDENTITY</td><td>decompress on read</td></tr>
+<tr><td>IDENTITY</td><td>ZSTD</td><td>compress on read</td></tr>
+</table>
+</div>
+</div>
+
+<h2 id="gcs">GCS interactions</h2>
+
+<p>
+  Object keys are constructed by <code>filestore.blobKey</code> (<span class="fileref">filestore.go:684-707</span>):
+</p>
+<pre><code><span class="cmt">// {appName}/{partitionPrefix+partitionID}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}</span>
+<span class="cmt">// e.g.  buildbuddy-app-0/PART_default/GR123/cas/abcd/abcd12345…</span>
+<span class="kw">if</span> r.GetEncryption().GetKeyId() != <span class="str">""</span> {
+    hash += <span class="str">"_"</span> + r.GetEncryption().GetKeyId()
+}</code></pre>
+
+<p>
+  Then <code>BlobWriter</code> (<span class="fileref">filestore.go:866-900</span>) <strong>appends a random salt</strong>
+  to the blobName: <code>blobName + "-" + random.RandomString(5)</code>. So two writes of the same digest produce
+  two distinct GCS objects. The metadata service's row authoritatively says which one is current; stale ones get
+  TTL'd. <code>customTime = now</code> is set on every write; the GCS lifecycle rule uses
+  <code>DaysSinceCustomTime</code>.
+</p>
+
+<p>
+  Note: <strong><code>metacache.Delete</code> only deletes the metadata.</strong> GCS object cleanup is delegated
+  to the bucket lifecycle policy.
+</p>
+
+<h2 id="filestore">filestore.Store interactions</h2>
+
+<p>
+  The metacache only ever uses four <code>filestore.Store</code> methods. That's the entire abstraction:
+</p>
+
+<table>
+<thead><tr><th>Method</th><th>Used in</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>InlineReader</code></td><td><code>readerForStorage</code></td><td>Wraps <code>bytes.NewReader(im.Data[off:][:lim])</code> in NopCloser.</td></tr>
+<tr><td><code>BlobReader</code></td><td><code>readerForStorage</code></td><td>GCS streaming reader, byte-range capable.</td></tr>
+<tr><td><code>InlineWriter</code></td><td><code>writerForRecord</code></td><td><code>bytes.Buffer</code>-backed; <code>Metadata()</code> at commit returns an <code>InlineMetadata{Data,CreatedAtNsec}</code>.</td></tr>
+<tr><td><code>BlobWriter</code></td><td><code>writerForRecord</code></td><td>GCS conditional writer with salted name, <code>customTime=now</code>.</td></tr>
+</tbody>
+</table>
+
+<h2 id="config">Configuration</h2>
+
+<table>
+<thead><tr><th>Field</th><th>Default</th><th>What it controls</th></tr></thead>
+<tbody>
+<tr><td><code>MaxInlineFileSizeBytes</code></td><td>1024</td><td>Inline-vs-blob threshold.</td></tr>
+<tr><td><code>MinBytesAutoZstdCompression</code></td><td>100</td><td>Auto-zstd kicks in at this size. Below it, zstd inflates.</td></tr>
+<tr><td><code>MaxWriteGoroutines</code></td><td>10</td><td>Parallelism for <code>SetMulti</code>.</td></tr>
+<tr><td><code>MetadataBackend</code></td><td><em>required</em></td><td>gRPC target of the raft metadata cluster.</td></tr>
+<tr><td><code>GCSBucket</code></td><td><em>none</em></td><td>If empty, all writes must inline; <code>BlobWriter</code> errors otherwise.</td></tr>
+<tr><td><code>GCSTTLDays</code></td><td><em>required if GCS</em></td><td>Set via <code>SetBucketCustomTimeTTL</code>; failure prevents startup.</td></tr>
+<tr><td><code>PartitionMappings</code></td><td><em>none</em></td><td><code>[(GroupID, Prefix, PartitionID)]</code> tuples for routing.</td></tr>
+</tbody>
+</table>
+
+<h2 id="subtleties">Notable subtleties</h2>
+
+<details><summary>"Empty FileMetadata = NotFound" sentinel</summary>
+<p>
+  <code>MetadataService.Get</code> doesn't have an explicit NotFound — it returns an empty <code>FileMetadata</code>
+  proto in the slot. Proto round-trip turns "nil" into a non-nil zero struct, so the metacache checks
+  <code>md.GetFileRecord() == nil</code> (see <span class="fileref">:819-826</span>). Fragile: if the metadata service
+  ever sets <code>FileRecord</code> to a zero-but-non-nil proto, this would misdetect.
+</p>
+</details>
+
+<details><summary>handleMetadataMismatch — the dangling-pointer cleanup</summary>
+<p>
+  When the backend reader returns NotFound on a GCS blob, <code>handleMetadataMismatch</code>
+  (<span class="fileref">:339-365</span>) calls <code>deleteFileAndMetadata</code> with
+  <code>match_atime = md.LastAccessUsec</code> as an optimistic-concurrency guard. If another writer wrote a
+  fresher record concurrently, the delete fails with <code>FailedPrecondition</code> and the new record is left
+  alone. For <em>inline</em> records, mismatch is impossible-by-construction; the code logs "Impossible metadata
+  mismatch: something is broken."
+</p>
+</details>
+
+<details><summary>SetMulti's mutex-shared mds slice</summary>
+<p>
+  Each parallel writer's commit fn appends to a shared <code>mds []*FileMetadata</code> under a mutex. After
+  <code>eg.Wait()</code>, <strong>one</strong> <code>setMetadatas(ctx, mds...)</code> call ships all the metadata in
+  a single RPC. Trades a small amount of latency (wait for slowest write) for a huge reduction in RPC count.
+  See <span class="fileref">:655-691</span>.
+</p>
+</details>
+
+<details><summary>GCS write race tolerance</summary>
+<p>
+  Despite the random salt, <code>gcsMetadataWriter.Commit</code> swallows <code>AlreadyExists</code> and
+  <code>ResourceExhausted</code> ("too many writes to this object"). Both mean "some valid write of equivalent
+  bytes happened" — treating as success is safe (<span class="fileref">filestore.go:830-847</span>).
+</p>
+</details>
+
+<details><summary>Inline reads serve the same bytes over and over</summary>
+<p>
+  Each <code>InlineReader</code> call gets fresh bytes from the metadata service. For a hot inline blob, the
+  metadata service eats the load. There is no local-side caching.
+</p>
+</details>
+
+<details><summary>GetMulti's silent skip on NotFound</summary>
+<p>
+  Per-item <code>NotFound</code>/<code>os.IsNotExist</code> → silent <code>continue</code> (the digest just won't
+  appear in the result map). Other errors abort the entire <code>GetMulti</code>.
+</p>
+</details>
+
+<details><summary>Compressor field copying is fragile</summary>
+<p>
+  When auto-zstd engages, the <code>writer</code> manually copies <code>ResourceName</code> fields to set
+  <code>Compressor: ZSTD</code>. If a new field is added to <code>ResourceName</code>, it has to be added here too.
+  See <span class="fileref">:466-472</span>.
+</p>
+</details>
+
+<h2 id="concurrency">Concurrency notes</h2>
+<ul>
+  <li><strong>Goroutines:</strong> only <code>SetMulti</code> spawns goroutines (errgroup with <code>SetLimit(MaxWriteGoroutines)</code>). <code>GetMulti</code> is sequential — a potential optimization opportunity.</li>
+  <li><strong>Locks:</strong> the only mutex is local to <code>SetMulti</code>, protecting the shared <code>mds</code> slice.</li>
+  <li><strong>Connection pooling:</strong> the metadata gRPC client is dialed with pool size 2 (<code>grpc_client.DialInternalWithPoolSize(env, opts.MetadataBackend, 2)</code>).</li>
+  <li><strong>Buffer pool:</strong> a single <code>bytebufferpool.VariableSizePool(4MB)</code> is shared across all concurrent reads/writes; safe for concurrent use.</li>
+  <li><strong>Tracing &amp; metrics:</strong> every public method uses a <code>defer recordMetrics(...)</code> with start time; both <code>CacheMethodHandledTotal</code> and <code>CacheMethodHandlingUsec</code> are emitted, labeled by status.</li>
+</ul>
+
+<h2 id="cheatsheet">File:line index</h2>
+<table>
+<thead><tr><th>Symbol</th><th>Location</th></tr></thead>
+<tbody>
+<tr><td>Flag registration</td><td><span class="fileref">metacache.go:43-45</span></td></tr>
+<tr><td>Options struct</td><td><span class="fileref">:64-84</span></td></tr>
+<tr><td>Cache struct</td><td><span class="fileref">:86-90</span></td></tr>
+<tr><td><code>Register</code></td><td><span class="fileref">:94-112</span></td></tr>
+<tr><td><code>New</code> (GCS wiring + TTL gate)</td><td><span class="fileref">:160-203</span></td></tr>
+<tr><td><code>makeFileRecord</code></td><td><span class="fileref">:233-266</span></td></tr>
+<tr><td><code>lookupMetadatas</code> / <code>setMetadatas</code></td><td><span class="fileref">:304-337</span></td></tr>
+<tr><td><code>handleMetadataMismatch</code></td><td><span class="fileref">:339-365</span></td></tr>
+<tr><td><code>readerForStorage</code></td><td><span class="fileref">:367-376</span></td></tr>
+<tr><td><code>writerForRecord</code></td><td><span class="fileref">:377-387</span></td></tr>
+<tr><td><code>newWrappedWriter</code></td><td><span class="fileref">:389-431</span></td></tr>
+<tr><td><code>writer</code></td><td><span class="fileref">:452-493</span></td></tr>
+<tr><td><code>Get</code> / <code>GetMulti</code></td><td><span class="fileref">:566-638</span></td></tr>
+<tr><td><code>Set</code> / <code>SetMulti</code></td><td><span class="fileref">:640-691</span></td></tr>
+<tr><td><code>reader</code> (internal)</td><td><span class="fileref">:705-793</span></td></tr>
+<tr><td><code>Reader</code> (public)</td><td><span class="fileref">:796-831</span></td></tr>
+</tbody>
+</table>
+
+<div class="page-footer">
+  <div>← <a href="index.html">Overview</a></div>
+  <div class="next-prev">
+    <a href="metadata-service.html">MetadataService server →</a>
+  </div>
+</div>
+</main>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

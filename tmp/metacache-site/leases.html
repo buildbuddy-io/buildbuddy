@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Range leases &amp; node liveness</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+  <h1>MetaCache &amp; Raft</h1>
+  <div class="subtitle">BuildBuddy's metadata service, explained</div>
+  <input type="search" class="search-box" placeholder="Filter pages…" />
+
+  <div class="nav-section">Start here</div>
+  <a class="nav-link" href="index.html">Overview &amp; architecture</a>
+  <a class="nav-link" href="walkthroughs.html">End-to-end walkthroughs</a>
+
+  <div class="nav-section">The cache layer</div>
+  <a class="nav-link" href="metacache.html">MetaCache (metacache.go)</a>
+  <a class="nav-link" href="metadata-service.html">MetadataService server</a>
+  <a class="nav-link" href="protos.html">Proto definitions</a>
+
+  <div class="nav-section">The raft layer</div>
+  <a class="nav-link" href="store-replica.html">Store &amp; Replica</a>
+  <a class="nav-link" href="routing.html">Routing (sender, registry)</a>
+  <a class="nav-link" href="leases.html">Leases &amp; node liveness</a>
+  <a class="nav-link" href="transactions.html">Multi-range transactions</a>
+
+  <div class="nav-section">Cluster management</div>
+  <a class="nav-link" href="cluster-mgmt.html">Bringup, driver &amp; splits</a>
+
+  <div class="nav-section">Reference</div>
+  <a class="nav-link" href="glossary.html">Glossary</a>
+</aside>
+
+<main class="main">
+<div class="breadcrumb"><a href="index.html">Home</a> · Raft layer · Leases</div>
+<h1 class="page-title">Range leases &amp; node liveness</h1>
+<p class="page-lede">
+  A range lease is "I am the authoritative leaseholder for this range right now." It is what lets one
+  replica serve linearizable reads without going through Raft consensus on every read. BuildBuddy
+  implements range leases on top of a separate <strong>node-liveness epoch</strong> — one renewal per
+  node covers all of its range leases.
+</p>
+
+<h2 id="why">Why leases exist on top of Raft</h2>
+
+<p>
+  Raft alone is enough for correctness: every read could go through <code>ReadIndex</code>, which confirms
+  leadership before serving. But that's a round-trip per read. A range lease is a longer-term commitment —
+  "no other replica can become leader and apply newer writes until this lease expires" — that lets the
+  leaseholder serve reads from its local Pebble state without a Raft round-trip.
+</p>
+
+<p>The lease is also the authority for:</p>
+<ul>
+<li>Proposing membership changes (add / remove / split) for the range.</li>
+<li>Driving driver-managed work (only the leaseholder evaluates driver actions for its ranges).</li>
+<li>Issuing range-descriptor updates without an external coordinator.</li>
+</ul>
+
+<h2 id="components">Three components, three responsibilities</h2>
+
+<div class="cols-2">
+<div>
+<h4>nodeliveness</h4>
+<p><strong>One record per node.</strong> A short-lived lease on <code>(SystemPrefix, nhid)</code> in the meta range. Renewed every ~5s with a 9s TTL. <strong>Every</strong> range lease this node holds is invalidated when this node's liveness epoch advances.</p>
+</div>
+<div>
+<h4>rangelease</h4>
+<p><strong>One lease per range.</strong> Stored at <code>LocalRangeLeaseKey</code> in the range's own raft group. For normal ranges, anchored to a node-liveness epoch (no separate renewal). For the meta range, anchored to a wall-clock expiration (breaks the circular dependency).</p>
+</div>
+</div>
+<div class="cols-2">
+<div>
+<h4>leasekeeper</h4>
+<p><strong>One agent per range, per store.</strong> Subscribes to dragonboat leader-change events and liveness-epoch events; acquires / drops the rangelease accordingly. Bounded-stack-of-1 collapses thrashing leader flips.</p>
+</div>
+<div>
+<h4>Put together</h4>
+<p>The leasekeeper sees "I'm now the raft leader for range R" → queues "acquire lease R." The acquire CASes <code>LocalRangeLeaseKey</code> with a record anchored to the current liveness epoch. As long as liveness is renewed, the range lease stays valid — no per-range renewal needed.</p>
+</div>
+</div>
+
+<h2 id="nodeliveness">Node liveness</h2>
+
+<div class="code-header"><span><span class="fileref">nodeliveness/nodeliveness.go</span></span></div>
+<pre><code><span class="kw">type</span> <span class="typ">Liveness</span> <span class="kw">struct</span> {
+    sender        sender.ISender
+    nhid          []<span class="typ">byte</span>
+    clock         *serf.LamportClock
+    leaseDuration time.Duration   <span class="cmt">// default 9s</span>
+    gracePeriod   time.Duration   <span class="cmt">// default 4s</span>
+
+    mu                 sync.RWMutex
+    lastLivenessRecord *rfpb.NodeLivenessRecord
+    livenessListeners  []chan&lt;- *rfpb.NodeLivenessRecord
+}</code></pre>
+
+<h3 id="renewal">Renewal — a CAS in the meta range</h3>
+
+<div class="code-header"><span><span class="fileref">nodeliveness.go:276</span> — renewLease</span></div>
+<pre><code>leaseKey := keys.MakeKey(constants.SystemPrefix, h.nhid)
+casRequest := rbuilder.NewBatchBuilder().Add(&amp;rfpb.CASRequest{
+    Kv:            &amp;rfpb.KV{Key: leaseKey, Value: newVal},
+    ExpectedValue: expectedValue,   <span class="cmt">// previous record</span>
+}).ToProto()
+rsp, err := h.sender.SyncPropose(ctx, leaseKey, casRequest)</code></pre>
+
+<p>
+  The CAS goes through <code>Sender.SyncPropose</code> — a normal raft write on the meta range. The leaseholder's
+  epoch derives from the local <code>serf.LamportClock</code>, which advances monotonically even on failure
+  (we <code>Witness</code> other leases' epochs to stay ahead of them).
+</p>
+
+<p>Three outcomes:</p>
+<ul>
+<li><strong>CAS succeeds</strong> → set local record, schedule next renewal at <code>expiration - gracePeriod</code> (≈5s into a 9s lease).</li>
+<li><strong>CAS fails</strong> with <code>FailedPrecondition + CASErrorMessage</code> → another node won. Unmarshal whatever IS at the key, update local record (so next CAS has the right ExpectedValue), bump our Lamport clock past that epoch.</li>
+<li><strong>Other error</strong> → propagate.</li>
+</ul>
+
+<h3 id="keepalive">Background renewal loop</h3>
+
+<p>
+  <code>keepLeaseAlive</code> (<span class="fileref">:327</span>) is started exactly once via <code>sync.Once</code>
+  after the first successful acquire. Sleeps for <code>timeUntilLeaseRenewal</code>, then forces a renewal.
+  Stops only on context cancel.
+</p>
+
+<h3 id="validate">Validating other people's range leases</h3>
+
+<p>
+  When a replica reads a <code>RangeLeaseRecord.NodeLiveness{nhid, epoch}</code>, it asks the local liveness
+  module: "is this still valid?" via <code>BlockingValidateNodeLiveness</code>:
+</p>
+<ol>
+<li><code>nhid</code> matches our nhid (we're supposed to be the leaseholder).</li>
+<li>We currently have a valid local liveness lease (renew if not).</li>
+<li>The range lease's <code>epoch</code> equals our current epoch — if not, this range lease was issued under an old liveness lease and is no longer valid.</li>
+</ol>
+
+<div class="callout fact">
+<div class="callout-title">Why this is a clever idea</div>
+When a node loses its liveness lease (network partition longer than 9s), <em>every</em> range lease it holds becomes instantly invalid cluster-wide. No need to renew thousands of range leases individually. This is the same trick CockroachDB uses ("node liveness epoch").
+</div>
+
+<h2 id="rangelease">Range lease</h2>
+
+<p>
+  <code>rangelease.Lease</code> represents one range's lease. It is acquired by the raft leader of that range
+  via a CAS write of <code>LocalRangeLeaseKey</code> through the range's <em>own</em> raft group.
+</p>
+
+<h3 id="two-types">Two flavors of lease record</h3>
+
+<div class="code-header"><span><span class="fileref">rangelease.go:202-231</span> — assembleLeaseRequest</span></div>
+<pre><code><span class="kw">if</span> l.rangeID == constants.MetaRangeID {
+    <span class="cmt">// Meta range: wall-clock expiration to break the dependency loop</span>
+    <span class="cmt">// (range lease → node liveness → meta range → range lease …)</span>
+    leaseRecord.Value = &amp;rfpb.RangeLeaseRecord_ReplicaExpiration_{
+        ReplicaExpiration: &amp;rfpb.RangeLeaseRecord_ReplicaExpiration{
+            Nhid:       []<span class="typ">byte</span>(l.nodeHost.ID()),
+            Expiration: time.Now().Add(l.leaseDuration).UnixNano(),
+        },
+    }
+} <span class="kw">else</span> {
+    <span class="cmt">// Normal range: anchored to the current node-liveness epoch</span>
+    nl, err := l.liveness.BlockingGetCurrentNodeLiveness(ctx)
+    leaseRecord.Value = &amp;rfpb.RangeLeaseRecord_NodeLiveness_{ NodeLiveness: nl }
+}</code></pre>
+
+<h3 id="acquire">Acquisition — sendCasRequest</h3>
+
+<pre><code>casRequest, _ := rbuilder.NewBatchBuilder().Add(&amp;rfpb.CASRequest{
+    Kv:            &amp;rfpb.KV{Key: leaseKey, Value: newVal},
+    ExpectedValue: expectedValue,
+}).ToProto()
+rsp, err := l.session.SyncProposeLocal(ctx, l.nodeHost, l.replica.RangeID(), casRequest)</code></pre>
+
+<p>
+  The CAS is proposed through the range's <em>own</em> dragonboat shard — so only the raft leader can succeed.
+  If the CAS fails with <code>CASErrorMessage</code>, the current lease is read out of the response and stored
+  locally so the next attempt uses the right <code>ExpectedValue</code> (and the local Lamport clock can be
+  witnessed at the new epoch).
+</p>
+
+<h3 id="verify">Verification</h3>
+<p><code>verifyLease</code> (<span class="fileref">:138</span>) does three things:</p>
+<ol>
+<li>Lease record matches what's currently applied on the replica's state machine.</li>
+<li>For node-liveness leases: validate against current liveness epoch.</li>
+<li>For time-based leases: check expiration.</li>
+</ol>
+
+<h3 id="renewal-loops">Renewal loops</h3>
+<p>
+  Time-based leases (meta range only) need a periodic renewal goroutine — <code>keepLeaseAlive</code>
+  (<span class="fileref">:354-372</span>) sleeps <code>(expiration - now) - gracePeriod</code> and re-renews.
+  Node-liveness leases need no per-range renewal — they're transitively renewed every time the node-liveness
+  record is.
+</p>
+
+<h2 id="leasekeeper">Leasekeeper — the dispatcher</h2>
+
+<p>
+  One <code>LeaseKeeper</code> per <code>Store</code> manages all of its range-leases. Subscribes to:
+</p>
+<ul>
+<li><code>listener.AddLeaderChangeListener</code> — raft leader changes from dragonboat.</li>
+<li><code>listener.AddNodeUnloadedListener</code> — dragonboat replica torn down.</li>
+<li><code>liveness.AddListener</code> — this node's liveness epoch changed.</li>
+</ul>
+
+<h3 id="agent">Per-range agent</h3>
+
+<div class="code-header"><span><span class="fileref">leasekeeper.go:128-142</span> — leaseAgent</span></div>
+<pre><code><span class="kw">type</span> <span class="typ">leaseAgent</span> <span class="kw">struct</span> {
+    l       *rangelease.Lease
+    updates *boundedstack.BoundedStack    <span class="cmt">// capacity 1: only latest instruction wins</span>
+    ...
+}
+
+<span class="kw">func</span> (la *leaseAgent) runloop() {
+    <span class="kw">for</span> {
+        instruction, err := la.updates.Recv(la.ctx)
+        <span class="kw">if</span> err != <span class="kw">nil</span> { <span class="kw">return</span> }
+        la.doSingleInstruction(la.ctx, instruction)
+    }
+}</code></pre>
+
+<div class="callout tip">
+<div class="callout-title">Why bounded-stack-of-1?</div>
+Rapid leader flapping (e.g. during a network blip) would otherwise queue up many "acquire" + "drop" instructions. With capacity 1, only the latest matters, and the agent doesn't pointlessly process stale ones.
+</div>
+
+<h3 id="watchleases">watchLeases — the dispatch loop</h3>
+
+<table>
+<thead><tr><th>Event</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td>Raft leader changed for shard R → I am now the local leader, range is open</td><td>Queue "acquire" for R</td></tr>
+<tr><td>Raft leader changed: I am no longer the leader (or range was closed)</td><td>Queue "drop" for R</td></tr>
+<tr><td>This node's liveness epoch changed</td><td>Queue acquire/drop for every range we know about (every node-liveness-anchored lease is now invalid and must be re-issued)</td></tr>
+<tr><td>Replica torn down by dragonboat</td><td>Stop the agent for that range</td></tr>
+</tbody>
+</table>
+
+<h3 id="add-remove">AddRange / RemoveRange</h3>
+
+<p>
+  <code>Store.AddRange</code> calls <code>leasekeeper.AddRange</code> whenever a new replica is opened (e.g.
+  after <code>Open</code>, or after <code>StartShard</code>). The keeper either creates or loads the agent,
+  marks the range "open", and queues an instruction synchronized with the cached leader status — covering the
+  race where dragonboat's leader-elected callback fired <em>before</em> the range was added.
+</p>
+
+<h3 id="self-healing">Self-healing HaveLease</h3>
+
+<p>
+  <code>HaveLease(ctx, rangeID)</code> (<span class="fileref">:474-509</span>) doesn't just return whether the
+  lease is valid — it also <em>queues a corrective instruction</em> if it observes "we should have the lease
+  but don't" or "we shouldn't have it but do." This is a self-healing watchdog called from many code paths.
+</p>
+
+<h2 id="timing">Timing knobs</h2>
+
+<table>
+<thead><tr><th>Constant</th><th>Default</th><th>Where</th></tr></thead>
+<tbody>
+<tr><td>Lease duration (node liveness)</td><td>9s</td><td><code>nodeliveness.go:25</code></td></tr>
+<tr><td>Grace period</td><td>4s</td><td><code>nodeliveness.go:31</code></td></tr>
+<tr><td>Lease duration (rangelease, time-based)</td><td>9s</td><td><code>rangelease.go:28</code></td></tr>
+<tr><td>Renewal cadence</td><td>~5s (expiration - grace)</td><td>derived</td></tr>
+</tbody>
+</table>
+
+<p>9s lease + 4s grace means we get ~2 renewal attempts before expiry — survives one or two dropped packets.</p>
+
+<h2 id="end-to-end">Putting it all together</h2>
+
+<div class="seq">
+<pre><code>             dragonboat raft        leasekeeper          leaseAgent         rangelease         nodeliveness            meta range
+                  │                       │                  │                  │                    │                       │
+                  │ (leader elected R) ──▶│                  │                  │                    │                       │
+                  │                       │ queueInstruction(R, Acquire) ─────▶│                    │                       │
+                  │                       │                  │ doSingleInstruction(Acquire)         │                       │
+                  │                       │                  │ ───────────────▶ Lease()              │                       │
+                  │                       │                  │                  │ get current epoch ▶│                       │
+                  │                       │                  │                  │ ◀─── {epoch=N} ────│                       │
+                  │                       │                  │                  │ CAS(LocalRangeLeaseKey, NodeLiveness{N, nhid})
+                  │                       │                  │                  │ ────────────── via R's raft group ─────────▶│
+                  │                       │                  │                  │ ◀── ok ────────────────────────────────────│
+                  │                       │ ◀ broadcast(EventRangeLeaseAcquired)│                    │                       │
+                  │
+   ... every 5s:                                                                  ┌─ keepLeaseAlive ─┐
+                                                                                  │ renew liveness   │
+                                                                                  │  CAS in meta range
+                                                                                  └──────────────────┘
+</code></pre>
+</div>
+
+<p>
+  When the node dies, the renewal stops; after 9s the liveness epoch is considered expired by other nodes;
+  any replica trying to verify our range lease's epoch will fail; some other raft leader (re-elected by dragonboat)
+  will CAS in a new lease record at the next epoch.
+</p>
+
+<h2 id="dropping">Dropping a lease cleanly</h2>
+
+<p>
+  <code>dropLease</code> (<span class="fileref">rangelease.go:118-132</span>) CASes the lease key to empty.
+  Used in two places:
+</p>
+<ul>
+<li><code>LeaseKeeper.RemoveRange</code> — when a replica is torn down (e.g. moved to another node).</li>
+<li><code>Store.dropLeadershipForShutdown</code> — during graceful shutdown, after leadership has been transferred.</li>
+</ul>
+
+<div class="page-footer">
+  <div>← <a href="routing.html">Routing</a></div>
+  <div class="next-prev">
+    <a href="transactions.html">Multi-range transactions →</a>
+  </div>
+</div>
+</main>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

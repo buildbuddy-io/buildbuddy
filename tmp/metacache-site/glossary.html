@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Glossary</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+  <h1>MetaCache &amp; Raft</h1>
+  <div class="subtitle">BuildBuddy's metadata service, explained</div>
+  <input type="search" class="search-box" placeholder="Filter pages…" />
+
+  <div class="nav-section">Start here</div>
+  <a class="nav-link" href="index.html">Overview &amp; architecture</a>
+  <a class="nav-link" href="walkthroughs.html">End-to-end walkthroughs</a>
+
+  <div class="nav-section">The cache layer</div>
+  <a class="nav-link" href="metacache.html">MetaCache (metacache.go)</a>
+  <a class="nav-link" href="metadata-service.html">MetadataService server</a>
+  <a class="nav-link" href="protos.html">Proto definitions</a>
+
+  <div class="nav-section">The raft layer</div>
+  <a class="nav-link" href="store-replica.html">Store &amp; Replica</a>
+  <a class="nav-link" href="routing.html">Routing (sender, registry)</a>
+  <a class="nav-link" href="leases.html">Leases &amp; node liveness</a>
+  <a class="nav-link" href="transactions.html">Multi-range transactions</a>
+
+  <div class="nav-section">Cluster management</div>
+  <a class="nav-link" href="cluster-mgmt.html">Bringup, driver &amp; splits</a>
+
+  <div class="nav-section">Reference</div>
+  <a class="nav-link" href="glossary.html">Glossary</a>
+</aside>
+
+<main class="main">
+<div class="breadcrumb"><a href="index.html">Home</a> · Glossary</div>
+<h1 class="page-title">Glossary</h1>
+<p class="page-lede">Alphabetical reference for every term that appears in the documentation.</p>
+
+<input type="search" id="gloss-search" class="search-box" style="max-width:400px;margin-bottom:20px" placeholder="Filter glossary…" />
+
+<table id="gloss">
+<thead><tr><th>Term</th><th>Definition</th></tr></thead>
+<tbody>
+
+<tr><td><strong>APIClient</strong></td><td>Connection pool of <code>raft.service.Api</code> gRPC clients keyed by peer address. Translates an NHID to a usable gRPC stub via the Registry. <a href="routing.html#apiclient">→</a></td></tr>
+
+<tr><td><strong>AutoBringupEvent</strong></td><td>Gossip query name used by the bringup coordinator to discover other seed nodes during initial cluster formation. Replies carry <code>{nhid, grpcAddress}</code>. <a href="cluster-mgmt.html#gossip">→</a></td></tr>
+
+<tr><td><strong>BatchCmdRequest</strong></td><td>Universal envelope for all reads, writes, admin ops and txn control directed at one range. Carries a <code>Header</code>, a <code>union[]</code> of <code>RequestUnion</code>s, optional <code>transaction_id</code>, optional <code>finalize_operation</code>, optional <code>post_commit_hooks</code>, optional <code>session</code>. <a href="protos.html">→</a></td></tr>
+
+<tr><td><strong>Bringup</strong></td><td>The initial cluster formation process. Uses gossip <code>AutoBringupEvent</code> queries to discover peers; the elected coordinator creates the meta range and the first partition's shards once all expected seed nodes have replied. <a href="cluster-mgmt.html">→</a></td></tr>
+
+<tr><td><strong>CAS (compare-and-set)</strong></td><td>A <code>RequestUnion</code> type. Used pervasively for range-lease acquisition, node-liveness renewal, range-descriptor updates, etc. The CAS is replicated through Raft like any other write.</td></tr>
+
+<tr><td><strong>CAS (cache)</strong></td><td>Content Addressable Storage — Bazel's CAS, the blob storage half of the Remote Execution API. Cache type <code>CAS</code> in <code>resource.ResourceName</code>. (Contrast: <code>AC</code> = Action Cache.)</td></tr>
+
+<tr><td><strong>Consistency mode</strong></td><td>Three modes carried in the request <code>Header</code>: <code>LINEARIZABLE</code> (full ReadIndex), <code>RANGELEASE</code> (lease-holder serves locally), <code>STALE</code> (any replica, no checks). <a href="store-replica.html#consistency">→</a></td></tr>
+
+<tr><td><strong>customTime</strong></td><td>A per-object timestamp on GCS objects, set at write time. The bucket's <code>DaysSinceCustomTime</code> lifecycle rule uses it to decide deletion. Bumped on atime updates to keep hot objects alive.</td></tr>
+
+<tr><td><strong>Dragonboat</strong></td><td>External Go library (<code>github.com/lni/dragonboat/v4</code>) providing multi-group Raft: leader election, log replication, snapshotting, membership changes, multiplexed transport. BuildBuddy builds range leases, transactions, and placement on top. <a href="store-replica.html#dragonboat">→</a></td></tr>
+
+<tr><td><strong>Driver</strong></td><td>Per-store priority-queued background scheduler. Detects under/over-replication, dead replicas, oversized ranges; schedules adds/removes/splits/lease transfers. <a href="cluster-mgmt.html#driver">→</a></td></tr>
+
+<tr><td><strong>EventRangeUsageUpdated</strong></td><td>In-process event published by a Replica when its estimated disk-usage changes. Consumed by <code>checkIfReplicasNeedSplitting</code> (triggers split) and <code>updateStoreUsageTag</code> (re-gossips store usage).</td></tr>
+
+<tr><td><strong>FileMetadata</strong></td><td>The value stored at each metadata key. Holds <code>FileRecord</code>, <code>StorageMetadata</code>, encryption metadata, <code>stored_size_bytes</code>, <code>last_access_usec</code>, <code>last_modify_usec</code>. <a href="protos.html">→</a></td></tr>
+
+<tr><td><strong>FileRecord</strong></td><td>The canonical identifier for a stored blob: <code>{Isolation, Digest, Compressor, Encryption, DigestFunction}</code>. The pebble key is derived from this.</td></tr>
+
+<tr><td><strong>FileStorer</strong></td><td>The <code>filestore.Store</code> interface that wraps reading/writing blob bytes. Metacache uses only 4 methods: <code>InlineReader</code>, <code>BlobReader</code>, <code>InlineWriter</code>, <code>BlobWriter</code>.</td></tr>
+
+<tr><td><strong>Generation</strong></td><td>Monotonic uint64 on every <code>RangeDescriptor</code>, bumped on every change. Carried in request <code>Header</code>; if the replica's local generation doesn't match, returns <code>RangeNotCurrentMsg</code> and the sender re-fetches from the meta range.</td></tr>
+
+<tr><td><strong>Gossip</strong></td><td>Hashicorp serf-based eventually-consistent state distribution. Used for: meta-range descriptor propagation, store-usage tags, NHID→address discovery, bringup coordination, per-partition usage updates.</td></tr>
+
+<tr><td><strong>handleMetadataMismatch</strong></td><td>Metacache function that issues a conditional <code>DeleteRequest{MatchAtime}</code> when a GCS read returns NotFound despite the metadata existing. Cleans up dangling pointers.</td></tr>
+
+<tr><td><strong>Header</strong></td><td>Per-request envelope inside <code>BatchCmdRequest</code>: <code>{Replica, RangeId, Generation, ConsistencyMode, Session?, SkipGenerationCheck}</code>. Used by the receiving replica for routing and fencing.</td></tr>
+
+<tr><td><strong>Header builders</strong></td><td>Factory functions in <code>raft/header/header.go</code> for various validation strictness: <code>MakeLinearizableWithRangeValidation</code>, <code>MakeLinearizableWithLeaseValidationOnly</code>, <code>MakeLinearizableWithoutRangeValidation</code>.</td></tr>
+
+<tr><td><strong>Idempotency session</strong></td><td>A <code>Session{Id, Index}</code> attached to each <code>BatchCmdRequest</code>. The replica's state machine caches the response in <code>SessionPrefix+id</code>; replays at the same index return the cached response without re-executing.</td></tr>
+
+<tr><td><strong>Inline data</strong></td><td>Small blobs (default ≤ 1024 bytes) stored inside the <code>FileMetadata.StorageMetadata.InlineMetadata.Data</code> field, never sent to GCS.</td></tr>
+
+<tr><td><strong>IOnDiskStateMachine</strong></td><td>Dragonboat interface (<code>statemachine.IOnDiskStateMachine</code>) implemented by <code>Replica</code>. Methods: <code>Open</code>, <code>Update</code>, <code>Lookup</code>, <code>Sync</code>, <code>PrepareSnapshot</code>, <code>SaveSnapshot</code>, <code>RecoverFromSnapshot</code>, <code>Close</code>.</td></tr>
+
+<tr><td><strong>Isolation</strong></td><td>Sub-message of <code>FileRecord</code> namespacing a record: <code>{cache_type, remote_instance_name, partition_id, group_id}</code>.</td></tr>
+
+<tr><td><strong>Leasekeeper</strong></td><td>Per-Store. Manages one <code>leaseAgent</code> per range; reacts to dragonboat leader-change events and node-liveness epoch changes to acquire/drop range leases. <a href="leases.html#leasekeeper">→</a></td></tr>
+
+<tr><td><strong>LeasedRange</strong></td><td>The Store-side validation function called by every <code>SyncPropose</code> and <code>SyncRead</code>. Checks: range hosted here? lease held? generation matches? Returns sentinel <code>OutOfRange</code> errors that the sender uses to decide whether to retry the same replica, try a different one, or refresh the cache.</td></tr>
+
+<tr><td><strong>LINEARIZABLE</strong></td><td>Consistency mode using dragonboat <code>ReadIndex</code> — leader confirms it's still leader before serving. Strongest guarantee; one network round-trip.</td></tr>
+
+<tr><td><strong>LockMappedRange</strong></td><td>Flag on <code>BatchCmdRequest</code> that, during PrepareTransaction, locks the entire range against new writes. Used during split prepare so writes to the second half can't sneak in before the descriptor change commits.</td></tr>
+
+<tr><td><strong>MatchAtime</strong></td><td>Optimistic-concurrency primitive on <code>DeleteRequest</code>. Only deletes if the row's atime matches. Used by the eviction sampler and by <code>handleMetadataMismatch</code> for orphan cleanup.</td></tr>
+
+<tr><td><strong>Meta range</strong></td><td>Range with <code>range_id = 1</code>. Stores every other range's descriptor at <code>\x02 || rd.end</code>. Bootstrap-critical; never split; uses a time-based lease (not node-liveness) to break circular dependency.</td></tr>
+
+<tr><td><strong>MetadataService</strong></td><td>Public gRPC service (Get / Set / Find / Delete) exposed by every metadata server. Backed by raft. <a href="metadata-service.html">→</a></td></tr>
+
+<tr><td><strong>MetaRangeTag</strong></td><td>Gossip user-event name carrying the meta range's descriptor. Re-published by any store hosting the meta range; consumed by all stores' rangecache.</td></tr>
+
+<tr><td><strong>NHID (NodeHost ID)</strong></td><td>Dragonboat's stable identifier for a node. Used everywhere addresses are resolved.</td></tr>
+
+<tr><td><strong>Node liveness</strong></td><td>One short-lived lease record per node, stored in the meta range at <code>SystemPrefix || nhid</code>. Renewed every ~5s with a 9s TTL via CAS. Every range lease this node holds is invalidated when the liveness epoch advances. <a href="leases.html#nodeliveness">→</a></td></tr>
+
+<tr><td><strong>NodeRegistry</strong></td><td>Dragonboat interface (<code>raftio.INodeRegistry</code>) mapping <code>(rangeID, replicaID)</code> to a peer address. BuildBuddy provides a gossip-backed implementation. <a href="routing.html#registry">→</a></td></tr>
+
+<tr><td><strong>NodeHost</strong></td><td>Dragonboat's per-process handle. One per node. Owns transport, log database, runs all raft state machines.</td></tr>
+
+<tr><td><strong>OutOfRangeError</strong></td><td>Sentinel error class used by the sender for retry decisions. Subtypes (string-matched on message prefix): <code>RangeNotFoundMsg</code>, <code>RangeNotLeasedMsg</code>, <code>RangeLeaseInvalidMsg</code>, <code>RangeNotCurrentMsg</code>.</td></tr>
+
+<tr><td><strong>Partition</strong></td><td>Logical grouping of cache entries by group_id + remote-instance prefix. Each partition has its own range set, its own usage tracker, its own eviction LRU.</td></tr>
+
+<tr><td><strong>PartitionDescriptor</strong></td><td>Per-partition metadata stored in the meta range at <code>SystemPrefix + "partition-"</code>. Carries state (INITIALIZING / INITIALIZED), first range ID, etc.</td></tr>
+
+<tr><td><strong>Pebble</strong></td><td>CockroachDB's LSM key-value store. One DB per Store node, multiplexed across all (range, replica) pairs via byte-prefix scoping.</td></tr>
+
+<tr><td><strong>PostCommitHook</strong></td><td>Side-effect attached to a <code>BatchCmdRequest</code>. Two types: <code>SnapshotClusterHook</code> (request a fresh snapshot for this shard) and <code>StartShardHook</code> (start a new dragonboat shard — used during split prepare).</td></tr>
+
+<tr><td><strong>PREPARE / COMMIT / ROLLBACK</strong></td><td>The three phases of a 2PC transaction. <code>FinalizeOperation</code> on the batch selects which phase. <a href="transactions.html">→</a></td></tr>
+
+<tr><td><strong>Range</strong></td><td>Contiguous <code>[start, end)</code> byte interval in the global keyspace, served by one dragonboat shard with N replicas. Identified by <code>range_id</code> (uint64). Bounds change via splits (and theoretically merges, though not in current code).</td></tr>
+
+<tr><td><strong>Range lease</strong></td><td>One per range. Stored at <code>LocalRangeLeaseKey</code> in the range's own raft group. Acquired by the raft leader via CAS. Anchored to a node-liveness epoch (normal ranges) or a wall-clock expiration (meta range only). <a href="leases.html">→</a></td></tr>
+
+<tr><td><strong>RangeCache</strong></td><td>Local in-process map from key-range to <code>RangeDescriptor</code>. Used by the sender to avoid hitting the meta range on every operation. Replaced only on higher-generation updates.</td></tr>
+
+<tr><td><strong>RangeDescriptor</strong></td><td>Proto describing a range: <code>{start, end, range_id, replicas[], generation, staging[], removed[], deleted}</code>. Stored both locally on every replica and globally in the meta range at <code>RangeMetaKey(end)</code>.</td></tr>
+
+<tr><td><strong>RangeMetaKey(key)</strong></td><td>Helper that prepends <code>\x02</code> to a key, producing the corresponding meta-range entry key. So a range with end <code>X</code> is stored at meta-range key <code>\x02X</code>.</td></tr>
+
+<tr><td><strong>ReadIndex</strong></td><td>Dragonboat's protocol for linearizable reads: leader commits a no-op to confirm leadership, then serves the read from local state. Used for <code>LINEARIZABLE</code> consistency.</td></tr>
+
+<tr><td><strong>Registry</strong></td><td>See <strong>NodeRegistry</strong>.</td></tr>
+
+<tr><td><strong>Replica</strong></td><td>One member of a range's raft group on one node. Identified by <code>(range_id, replica_id)</code>. Has a Go <code>*replica.Replica</code> implementing dragonboat's <code>IOnDiskStateMachine</code>. <a href="store-replica.html#replica">→</a></td></tr>
+
+<tr><td><strong>RequestUnion</strong></td><td>Oneof inside <code>BatchCmdRequest.union[]</code>. Each entry is one operation (DirectWrite, CAS, Get, Set, ScanRequest, etc.). One batch can contain multiple, applied atomically.</td></tr>
+
+<tr><td><strong>Salt</strong></td><td>5-char random suffix appended to GCS blob names by <code>filestore.BlobWriter</code>. Two writes of the same digest produce two distinct GCS objects. The metadata pointer authoritatively says which is current.</td></tr>
+
+<tr><td><strong>Sender</strong></td><td>Client-side request router. Looks up the responsible range, tries replicas in preference order, retries on stale routing. <a href="routing.html">→</a></td></tr>
+
+<tr><td><strong>Serf</strong></td><td>Hashicorp's gossip implementation. Used by BuildBuddy for cluster membership + the various gossip channels.</td></tr>
+
+<tr><td><strong>Session</strong> (client)</td><td>Per-traffic-class object (<code>client.Session</code>) holding an ID + monotonic index. Attached to each <code>SyncPropose</code> for idempotency. Stored in the state machine; periodically GC'd by <code>deleteSessionWorker</code>.</td></tr>
+
+<tr><td><strong>Shard</strong></td><td>Dragonboat's term for what BuildBuddy calls a range. The dragonboat <code>ShardID</code> is the same uint64 as the BuildBuddy <code>range_id</code>.</td></tr>
+
+<tr><td><strong>Staging</strong></td><td>A list on <code>RangeDescriptor</code>: replicas being added but not yet voters. The driver moves them from <code>Staging</code> to <code>Replicas</code> after the new replica catches up to the leader's applied index. <a href="cluster-mgmt.html#add-replica">→</a></td></tr>
+
+<tr><td><strong>STALE</strong></td><td>Consistency mode: any replica with the range loaded answers from local state, no checks. Used for diagnostics and prefetching.</td></tr>
+
+<tr><td><strong>StorageMetadata</strong></td><td>Discriminated union inside <code>FileMetadata</code>. Variants: <code>InlineMetadata</code> (≤ 1 KiB; bytes embedded), <code>GCSMetadata</code> (blob name + custom-time), <code>PebbleMetadata</code> + <code>FileMetadata</code> (used by other backends, not metacache).</td></tr>
+
+<tr><td><strong>Store</strong></td><td>Per-process orchestrator. Owns the dragonboat NodeHost, the local Pebble DB, every Replica, the LeaseKeeper, the Driver, the txn coordinator, the UsageTracker. <a href="store-replica.html">→</a></td></tr>
+
+<tr><td><strong>StoreMap</strong></td><td>Cluster-wide view of every node's load, capacity, aliveness. Consumed by the driver (not by routing). Updated by gossip member events + live aliveness checks.</td></tr>
+
+<tr><td><strong>StoreUsageTag</strong></td><td>Gossip member tag carrying a base64-encoded <code>StoreUsage</code> proto (replica count, lease count, disk, QPS, ready bit).</td></tr>
+
+<tr><td><strong>SyncPropose</strong></td><td>The "write" RPC. Goes through dragonboat consensus on the target range. Available on the public <code>raft.service.Api</code> service.</td></tr>
+
+<tr><td><strong>SyncRead</strong></td><td>The "read" RPC. Behavior depends on consistency mode in the header: ReadIndex / lease / stale.</td></tr>
+
+<tr><td><strong>TxnRecord</strong></td><td>Durable record of an in-flight transaction, stored in the meta range. Drives crash recovery — any node holding the meta-range lease can replay PREPARED records' finalizes. <a href="transactions.html">→</a></td></tr>
+
+<tr><td><strong>UnsplittableMaxByte</strong></td><td>Constant <code>\x04</code>. The splitter refuses to split keys below this byte. Effectively reserves <code>[\x01, \x04)</code> for system / meta / local key space.</td></tr>
+
+<tr><td><strong>UsageTracker</strong></td><td>Per-Store. Tracks local + global per-partition disk usage. Drives eviction (4 worker goroutines per partition). Cross-cluster aggregation via gossip <code>NodePartitionUsageEvent</code>. <a href="cluster-mgmt.html#usagetracker">→</a></td></tr>
+
+</tbody>
+</table>
+
+<script>
+document.getElementById('gloss-search').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  document.querySelectorAll('#gloss tbody tr').forEach((tr) => {
+    tr.style.display = !q || tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+});
+</script>
+
+<div class="page-footer">
+  <div>← <a href="walkthroughs.html">Walkthroughs</a></div>
+  <div class="next-prev">
+    <a href="index.html">Back to overview</a>
+  </div>
+</div>
+</main>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

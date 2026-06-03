@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>End-to-end walkthroughs</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+  <h1>MetaCache &amp; Raft</h1>
+  <div class="subtitle">BuildBuddy's metadata service, explained</div>
+  <input type="search" class="search-box" placeholder="Filter pages…" />
+
+  <div class="nav-section">Start here</div>
+  <a class="nav-link" href="index.html">Overview &amp; architecture</a>
+  <a class="nav-link" href="walkthroughs.html">End-to-end walkthroughs</a>
+
+  <div class="nav-section">The cache layer</div>
+  <a class="nav-link" href="metacache.html">MetaCache (metacache.go)</a>
+  <a class="nav-link" href="metadata-service.html">MetadataService server</a>
+  <a class="nav-link" href="protos.html">Proto definitions</a>
+
+  <div class="nav-section">The raft layer</div>
+  <a class="nav-link" href="store-replica.html">Store &amp; Replica</a>
+  <a class="nav-link" href="routing.html">Routing (sender, registry)</a>
+  <a class="nav-link" href="leases.html">Leases &amp; node liveness</a>
+  <a class="nav-link" href="transactions.html">Multi-range transactions</a>
+
+  <div class="nav-section">Cluster management</div>
+  <a class="nav-link" href="cluster-mgmt.html">Bringup, driver &amp; splits</a>
+
+  <div class="nav-section">Reference</div>
+  <a class="nav-link" href="glossary.html">Glossary</a>
+</aside>
+
+<main class="main">
+<div class="breadcrumb"><a href="index.html">Home</a> · End-to-end walkthroughs</div>
+<h1 class="page-title">End-to-end walkthroughs</h1>
+<p class="page-lede">
+  Concrete traces of representative requests, from the network edge all the way down to a Pebble commit (or
+  GCS PUT), and back up. Switch between scenarios with the tabs.
+</p>
+
+<div class="tabs">
+  <button class="tab active">CAS write (2 MiB blob)</button>
+  <button class="tab">CAS write (200 byte blob)</button>
+  <button class="tab">CAS read (cache hit)</button>
+  <button class="tab">FindMissing batch</button>
+  <button class="tab">Stale routing recovery</button>
+</div>
+
+<!-- ===== CAS WRITE BIG ===== -->
+<div class="tab-panel active">
+<h2>Scenario A — Bazel uploads a 2 MiB CAS blob</h2>
+<p>The classic case: large enough to go to GCS, with auto-zstd.</p>
+
+<ol class="steps">
+<li><strong>Bazel</strong> calls <code>ByteStream.Write</code> with the blob bytes against the app server.</li>
+<li><strong>app server / cache server</strong> receives the streaming request. <code>env.GetCache()</code> returns the registered <code>metacache.Cache</code>. The cache's <code>Writer(ctx, resourceName)</code> is called.</li>
+<li><strong><code>metacache.Cache.Writer</code></strong> → <code>writerWithImmediateCommit</code> → <code>writer</code>:
+  <ul>
+  <li>The size hint (digest size, ~2 MiB) is &gt; <code>MaxInlineFileSizeBytes</code> (1024) → <strong>blob path</strong>.</li>
+  <li>The size hint is also ≥ <code>MinBytesAutoZstdCompression</code> (100) → <strong>zstd-compress</strong>.</li>
+  <li>The ResourceName is rebuilt with <code>Compressor: ZSTD</code> so the FileRecord records the on-disk compression.</li>
+  </ul>
+</li>
+<li><strong><code>writerForRecord</code></strong> returns <code>filestore.BlobWriter(ctx, fileRecord)</code>. Inside:
+  <ul>
+  <li>blobName = <code>{appName}/PART_default/GR123/cas/abcd/abcd123…</code> + random 5-char salt.</li>
+  <li><code>gcs.ConditionalWriter(ctx, blobName, overwrite=true, customTime=now, estimatedSize=size/5)</code>.</li>
+  </ul>
+</li>
+<li><strong>Optional encryption wrap</strong> if the group has encryption enabled (<code>encryptionEnabled</code> checks <code>authutil.EncryptionEnabled</code> + <code>env.GetCrypter()</code>).</li>
+<li><strong>zstd wrap</strong>: <code>compression.NewZstdCompressingWriteCommiter</code> with 4 MiB buffer from the shared pool.</li>
+<li><strong>Bazel's bytes</strong> flow: client → ByteStream → write chain → zstd encoder → (optional encryptor) → GCS streaming writer.</li>
+<li><strong><code>wc.Commit()</code></strong> propagates down: zstd flushes (records compression-ratio metric), encryptor flushes, GCS conditional writer commits the object.</li>
+<li><strong>Commit callback fires</strong>: builds the <code>FileMetadata</code>:
+<pre><code>md := &amp;sgpb.FileMetadata{
+    FileRecord: fileRecord,
+    StorageMetadata: &amp;sgpb.StorageMetadata{
+        GcsMetadata: &amp;sgpb.StorageMetadata_GCSMetadata{
+            BlobName: <span class="str">"…cas/abcd/abcd…-XK4z2"</span>,
+            LastCustomTimeUsec: now,
+        },
+    },
+    StoredSizeBytes: bytesWritten,  <span class="cmt">// ~600 KiB after zstd</span>
+    LastAccessUsec: now,
+    LastModifyUsec: now,
+}</code></pre>
+</li>
+<li><strong><code>setMetadatas(ctx, md)</code></strong> → <code>MetadataService.Set</code> gRPC over the configured backend address.</li>
+<li><strong>metadata.Server.Set</strong>:
+  <ul>
+  <li>Authorize the group_id.</li>
+  <li>Compute pebble key via <code>fileStorer.PebbleKey(fr).Bytes(Version6)</code>.</li>
+  <li><code>Sender.RunMultiKey(keys, fn, RANGELEASE)</code> with one key.</li>
+  </ul>
+</li>
+<li><strong><code>Sender.partitionKeysByRange</code></strong>:
+  <ul>
+  <li>RangeCache lookup for key → typically a hit (range descriptor cached from prior traffic / gossip).</li>
+  <li>One bucket, one key.</li>
+  </ul>
+</li>
+<li><strong><code>tryReplicas(rd, fn)</code></strong>:
+  <ul>
+  <li>Tries <code>rd.Replicas[0]</code> (the preferred replica = leaseholder from last successful call).</li>
+  <li><code>apiClient.GetForReplica(replica)</code> → <code>registry.ResolveGRPC(nhid)</code> → cached gRPC pool.</li>
+  <li>Build header with <code>RANGELEASE</code> + this range's <code>generation</code>.</li>
+  <li>Issue <code>SyncPropose(SyncProposeRequest{Header, Batch})</code>.</li>
+  </ul>
+</li>
+<li><strong>Remote Store.SyncPropose</strong>:
+  <ul>
+  <li><code>LeasedRange(ctx, header)</code>: replica present? lease held? generation matches? <strong>yes/yes/yes</strong>.</li>
+  <li>Pick the right session (regular write session), call <code>session.SyncProposeLocal(ctx, nodeHost, rangeID, batch)</code>.</li>
+  </ul>
+</li>
+<li><strong>Dragonboat consensus</strong>:
+  <ul>
+  <li>Leader appends entry to local raft log, replicates to followers, waits for quorum acks, commits.</li>
+  <li>On every voter, dragonboat calls <code>Replica.Update(entries)</code>.</li>
+  </ul>
+</li>
+<li><strong>Replica.singleUpdate</strong>:
+  <ul>
+  <li>Decode <code>BatchCmdRequest</code>; check idempotency session (first time, no cached response).</li>
+  <li>Validate <code>Header.Generation</code> against current range descriptor.</li>
+  <li>Iterate <code>RequestUnion</code>s: one <code>SetRequest</code> → <code>handlePropose → set</code>:
+    <ul>
+    <li><code>filestore.PebbleKey.Validate</code> the key.</li>
+    <li><code>proto.Marshal</code> the <code>FileMetadata</code>.</li>
+    <li><code>wb.Set(key, value, pebble.NoSync)</code> — written into the indexed pebble batch.</li>
+    </ul>
+  </li>
+  <li><code>commitIndexBatch(wb, entry.Index)</code> — atomically writes <code>LastAppliedIndexKey = entry.Index</code> into the same batch and <code>wb.Commit(pebble.NoSync)</code>.</li>
+  <li>Marshal <code>BatchCmdResponse</code> into <code>entry.Result.Data</code>.</li>
+  </ul>
+</li>
+<li><strong>Dragonboat Sync</strong> (in the background, between batches): <code>db.LogData(nil, pebble.Sync)</code> — fsyncs the WAL.</li>
+<li><strong>Response unwinds</strong>: <code>SyncProposeLocal</code> returns → <code>Store.SyncPropose</code> returns → gRPC response → <code>Sender.run</code> returns → <code>metadata.Server.Set</code> returns <code>SetResponse{}</code> → <code>metacache.setMetadatas</code> returns nil → <code>Commit()</code> returns success → ByteStream returns success to Bazel.</li>
+</ol>
+
+<div class="callout fact">
+<div class="callout-title">Failure modes</div>
+<ul>
+<li><strong>GCS write fails</strong> → <code>Commit()</code> returns error; no metadata written; no orphan.</li>
+<li><strong>GCS succeeds, metadata fails</strong> → blob is orphaned in GCS; TTL'd out after <code>GCSTTLDays</code>.</li>
+<li><strong>Lease holder dies mid-write</strong> → <code>Sender</code> retries on next replica; once a new lease is established, the write completes.</li>
+<li><strong>Same blob written twice concurrently</strong> → two distinct GCS objects (different salts); metadata's last write wins; the loser's blob is orphaned.</li>
+</ul>
+</div>
+</div>
+
+<!-- ===== CAS WRITE SMALL ===== -->
+<div class="tab-panel">
+<h2>Scenario B — Bazel uploads a 200 byte CAS blob</h2>
+<p>Below the 1024-byte inline threshold and below the 100-byte zstd threshold. Smallest path.</p>
+
+<ol class="steps">
+<li><strong>Same start</strong>: Bazel → ByteStream.Write → metacache.Cache.Writer.</li>
+<li><strong><code>writer</code></strong>:
+  <ul>
+  <li>Size hint 200 &gt; 100 → <em>would</em> compress, BUT size hint &lt; 1024 → inline.</li>
+  <li>Actually compression happens before the writer is picked; for inline below-threshold writes, compressed bytes would still go inline. In this case the configured <code>MinBytesAutoZstdCompression</code> default is 100 so it DOES compress; but if your record is &lt; 100 bytes it stays IDENTITY.</li>
+  </ul>
+</li>
+<li><strong><code>writerForRecord</code></strong>: sizeHint 200 &lt; 1024 → returns <code>filestore.InlineWriter(ctx, 200)</code>, a <code>bytes.Buffer</code>-backed writer.</li>
+<li><strong>Write bytes</strong>: flow through zstd → into bytes.Buffer.</li>
+<li><strong><code>Commit()</code></strong>: nothing to flush externally; the wrapper's <code>CommitFn</code> fires:
+<pre><code>md := &amp;sgpb.FileMetadata{
+    FileRecord: fileRecord,
+    StorageMetadata: &amp;sgpb.StorageMetadata{
+        InlineMetadata: &amp;sgpb.StorageMetadata_InlineMetadata{
+            Data: bytesBuffer.Bytes(),       <span class="cmt">// the (compressed) bytes themselves</span>
+            CreatedAtNsec: writtenAt.UnixNano(),
+        },
+    },
+    StoredSizeBytes: 80,    <span class="cmt">// ~80 bytes after zstd</span>
+    LastAccessUsec: now,
+    LastModifyUsec: now,
+}</code></pre>
+</li>
+<li><strong>setMetadatas</strong> → MetadataService.Set → Sender → SyncPropose → Replica.Update.</li>
+<li><strong>The bytes ride along inside the FileMetadata record</strong>, written as a single pebble KV by the replica. <strong>No GCS write happens at all.</strong></li>
+</ol>
+
+<div class="callout tip">
+<div class="callout-title">Why this matters</div>
+Most CAS entries are small (file digests, AC entries). Inlining means thousands of writes/sec can complete with just a single raft consensus round and zero GCS operations. The metadata cluster carries the data.
+</div>
+</div>
+
+<!-- ===== CAS READ ===== -->
+<div class="tab-panel">
+<h2>Scenario C — Bazel reads a CAS blob</h2>
+
+<ol class="steps">
+<li><strong>Bazel</strong> calls <code>ByteStream.Read</code>.</li>
+<li><strong>app server</strong> → <code>metacache.Cache.Reader(ctx, r, 0, 0)</code>.</li>
+<li><strong>Reader</strong>:
+  <ul>
+  <li><code>makeFileRecord</code> for the resource.</li>
+  <li><code>lookupMetadatas</code> → MetadataService.Get → Sender.RunMultiKey → SyncRead(RANGELEASE).</li>
+  <li>Leaseholder serves from local pebble without a raft round-trip (RANGELEASE consistency).</li>
+  </ul>
+</li>
+<li><strong>internal reader(md, ...)</strong>:
+  <ul>
+  <li>Zero-length guard.</li>
+  <li>If GCS: <code>ObjectIsPastTTL</code> pre-check with 1h buffer.</li>
+  <li>If encrypted but encryption disabled now → NotFound.</li>
+  <li>Decide <code>rawStorage</code>: if cached is IDENTITY and no decryption needed, push offset/limit to the backend.</li>
+  </ul>
+</li>
+<li><strong>open backend reader</strong>:
+  <ul>
+  <li>For inline: <code>bytes.NewReader(im.Data[off:][:lim])</code>.</li>
+  <li>For GCS: streaming reader with byte-range request.</li>
+  </ul>
+</li>
+<li><strong>Wrap chain</strong>: decryptor (if encrypted) → decompressor (if cached ZSTD, requested IDENTITY) → offset skip → limit. If client wants ZSTD and cached is IDENTITY, compress on read instead.</li>
+<li><strong>Stream back to Bazel</strong>; <code>io.Copy</code> through the chain.</li>
+<li><strong>Atime update</strong>: metadata.Server.Get queued an <code>atimeUpdateData</code>; background <code>processAccessTimeUpdates</code> will batch and propose <code>UpdateAtimeRequest</code> later (and bump GCS custom-time first if applicable).</li>
+</ol>
+
+<div class="callout warn">
+<div class="callout-title">If the GCS blob is gone</div>
+The backend reader returns <code>NotFound</code>. <code>handleMetadataMismatch</code> issues a conditional <code>DeleteRequest{MatchAtime: md.LastAccessUsec}</code> to clean up the metadata. If a concurrent writer wrote a fresher record, the delete fails with <code>FailedPrecondition</code> and the new record stays.
+</div>
+</div>
+
+<!-- ===== FIND MISSING ===== -->
+<div class="tab-panel">
+<h2>Scenario D — Bazel calls FindMissingBlobs with 500 digests</h2>
+<p>The bulk existence-check path. Pure metadata; no GCS at all.</p>
+
+<ol class="steps">
+<li><strong>Bazel</strong> → <code>ContentAddressableStorage.FindMissingBlobs(digests[])</code>.</li>
+<li><strong>app server</strong> → <code>metacache.Cache.FindMissing(resources)</code>.</li>
+<li><strong>FindMissing</strong>:
+  <ul>
+  <li>Build 500 FileRecords.</li>
+  <li>Single <code>MetadataService.Find</code> RPC.</li>
+  </ul>
+</li>
+<li><strong>metadata.Server.Find</strong> → <code>Sender.RunMultiKey(keys=500, fn, RANGELEASE)</code>.</li>
+<li><strong>Sender.partitionKeysByRange</strong>:
+  <ul>
+  <li>For each key, rangecache lookup. With a steady-state cache, mostly hits.</li>
+  <li>Misses (e.g. after a split) → batched into one meta-range scan.</li>
+  <li>Group keys by range_id. Say 500 keys span 5 ranges → 5 buckets.</li>
+  </ul>
+</li>
+<li><strong>Fan out</strong>: errgroup of 5 goroutines, each issuing one <code>SyncRead(FindRequest×N)</code> against the leaseholder of its range.</li>
+<li><strong>Per range</strong>: leader's Replica processes the batch in <code>handleRead</code>; each <code>FindRequest</code> becomes a pebble <code>Get</code>; result is a <code>FindOperationResponse{present, last_access_usec}</code>.</li>
+<li><strong>Combine</strong>: <code>metadata.Server.Find</code> merges the 5 partial responses into one ordered <code>FindResponse</code> matching the request's slot order.</li>
+<li><strong>metacache.FindMissing</strong> filters where <code>present=false</code>, returns the missing digests.</li>
+<li><strong>app server</strong> returns to Bazel.</li>
+</ol>
+
+<p>
+  500 digests, 5 ranges, 5 parallel <code>SyncRead</code> RPCs, no GCS touches, no raft writes. The atime
+  updates feed the asynchronous pipeline for later batching.
+</p>
+</div>
+
+<!-- ===== STALE ROUTING ===== -->
+<div class="tab-panel">
+<h2>Scenario E — Sender hits a stale range descriptor</h2>
+<p>A range just split. Sender's cached descriptor points at the old (pre-split) range.</p>
+
+<ol class="steps">
+<li><strong>Sender.run</strong> for some key K. Rangecache hit on the <strong>stale</strong> descriptor RD<sub>old</sub> (covered <code>[A, Z)</code>, but the actual current state is <code>[A, M)</code> and <code>[M, Z)</code>, with K in <code>[M, Z)</code>).</li>
+<li><strong>tryReplicas(RD<sub>old</sub>, fn)</strong>:
+  <ul>
+  <li>Tries replica 0. The receiving Store's <code>LeasedRange</code> validates <code>header.RangeId == 1234</code> and <code>header.Generation == 7</code>. But the local descriptor on that node has generation 8 now (post-split). <strong>Mismatch</strong>. Returns <code>RangeNotCurrentMsg</code>.</li>
+  </ul>
+</li>
+<li><strong>Sender.tryReplica</strong> recognizes <code>RangeNotCurrentMsg</code>: this is a generation mismatch, no point trying other replicas (they all have the same generation). Bails the whole <code>tryReplicas</code> loop.</li>
+<li><strong>Sender.run loop</strong>: <code>err</code> is an <code>OutOfRangeError</code>. Sets <code>skipRangeCache = true</code>; retries.</li>
+<li><strong>Next iteration</strong>:
+  <ul>
+  <li><code>LookupRangeDescriptor(ctx, key, skipCache=true)</code>.</li>
+  <li>Bypasses cache; calls <code>fetchRangeDescriptorsFromMetaRange([key])</code>.</li>
+  <li>Meta range scan returns the <strong>fresh</strong> RD<sub>new2</sub> (covering <code>[M, Z)</code>, generation 1).</li>
+  <li><code>rangeCache.UpdateRange(RD<sub>new2</sub>)</code> — since <code>generation</code> is from a different range_id this is a separate entry, replacing the stale <code>[A, Z)</code> entry via <code>AddAndRemoveOverlapping</code>.</li>
+  </ul>
+</li>
+<li><strong>tryReplicas(RD<sub>new2</sub>, fn)</strong>: now correct. Tries replica 0; success.</li>
+<li><strong>SetPreferredReplica</strong>: replica 0 was already preferred; no reorder.</li>
+<li><strong>Result returned</strong>.</li>
+</ol>
+
+<div class="callout fact">
+<div class="callout-title">Self-healing</div>
+The first stale request pays the cost (one wasted RPC + one meta-range scan). Subsequent requests see the fresh descriptor in cache. The cache is never invalidated explicitly — it just gets bypassed for one operation, and the fresh descriptor's generation makes it the new entry.
+</div>
+
+<h3>Cascading variants</h3>
+<ul>
+<li><strong>Multi-key (<code>RunMultiKey</code>)</strong>: <code>partitionKeysByRange</code> detects two keys mapping to the same <code>range_id</code> returning non-equal RDs and retries the whole partitioning. Each retry refetches missing descriptors.</li>
+<li><strong>Lease just transferred</strong>: receiver returns <code>RangeNotLeasedMsg</code> instead. <code>tryReplica</code> returns <code>true</code> (continue to next replica) rather than bailing. After a few replicas the new leaseholder is found and promoted via <code>SetPreferredReplica</code>.</li>
+<li><strong>Node restarted, lost liveness epoch</strong>: any replica that was holding a range lease keyed to the old epoch returns <code>RangeLeaseInvalidMsg</code> → continue to next replica. The replica that gets elected raft leader by dragonboat will acquire a fresh lease with the new epoch on its next leasekeeper tick.</li>
+</ul>
+</div>
+
+<div class="page-footer">
+  <div>← <a href="index.html">Home</a></div>
+  <div class="next-prev">
+    <a href="glossary.html">Glossary →</a>
+  </div>
+</div>
+</main>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

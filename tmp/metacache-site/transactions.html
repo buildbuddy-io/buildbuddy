@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Multi-range transactions</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+  <h1>MetaCache &amp; Raft</h1>
+  <div class="subtitle">BuildBuddy's metadata service, explained</div>
+  <input type="search" class="search-box" placeholder="Filter pages…" />
+
+  <div class="nav-section">Start here</div>
+  <a class="nav-link" href="index.html">Overview &amp; architecture</a>
+  <a class="nav-link" href="walkthroughs.html">End-to-end walkthroughs</a>
+
+  <div class="nav-section">The cache layer</div>
+  <a class="nav-link" href="metacache.html">MetaCache (metacache.go)</a>
+  <a class="nav-link" href="metadata-service.html">MetadataService server</a>
+  <a class="nav-link" href="protos.html">Proto definitions</a>
+
+  <div class="nav-section">The raft layer</div>
+  <a class="nav-link" href="store-replica.html">Store &amp; Replica</a>
+  <a class="nav-link" href="routing.html">Routing (sender, registry)</a>
+  <a class="nav-link" href="leases.html">Leases &amp; node liveness</a>
+  <a class="nav-link" href="transactions.html">Multi-range transactions</a>
+
+  <div class="nav-section">Cluster management</div>
+  <a class="nav-link" href="cluster-mgmt.html">Bringup, driver &amp; splits</a>
+
+  <div class="nav-section">Reference</div>
+  <a class="nav-link" href="glossary.html">Glossary</a>
+</aside>
+
+<main class="main">
+<div class="breadcrumb"><a href="index.html">Home</a> · Raft layer · Transactions</div>
+<h1 class="page-title">Multi-range transactions (2PC)</h1>
+<p class="page-lede">
+  Each raft group is independent — there's no cross-group consensus. When an operation must atomically modify
+  multiple ranges (chiefly splits, replica adds/removes, range-descriptor edits), BuildBuddy uses a
+  <strong>two-phase commit</strong> protocol coordinated by a <code>txn.Coordinator</code>, with a durable
+  <code>TxnRecord</code> in the meta range so crashes don't leave partial state.
+</p>
+
+<div class="callout">
+<div class="callout-title">File</div>
+<code>enterprise/server/raft/txn/txn.go</code> (355 lines).
+</div>
+
+<h2 id="what">What needs a transaction</h2>
+<p>Anything that touches two or more raft groups atomically:</p>
+<ul>
+<li><strong>Range split</strong>: left range descriptor + right range new descriptor + meta range catalog entry.</li>
+<li><strong>Replica add</strong>: this range's descriptor (staging entry) + meta range copy of the descriptor.</li>
+<li><strong>Replica remove</strong>: same — local descriptor + meta range.</li>
+<li><strong>Admin descriptor updates</strong>: local + meta.</li>
+</ul>
+
+<p>Anything that touches one raft group is a normal <code>SyncPropose</code>, no txn needed.</p>
+
+<h2 id="shape">The shape of a transaction</h2>
+
+<p>
+  A <code>TxnRequest</code> is <code>{transaction_id, statements[]}</code>; each statement is
+  <code>{range, raw_batch, hooks[], range_validation_required}</code>. Each statement targets exactly one range.
+  See <a href="protos.html">protos</a> for the full shape.
+</p>
+
+<div class="code-header"><span><span class="fileref">txn/txn.go</span> — Coordinator</span></div>
+<pre><code><span class="kw">type</span> <span class="typ">Coordinator</span> <span class="kw">struct</span> {
+    store     IStore
+    apiClient *client.APIClient
+    clock     clockwork.Clock
+}
+
+<span class="kw">type</span> <span class="typ">IStore</span> <span class="kw">interface</span> {
+    HasReplicaAndIsLeader(rangeID <span class="typ">uint64</span>) <span class="typ">bool</span>
+    Sender() *sender.Sender
+}</code></pre>
+
+<h2 id="happy-path">The happy path — RunTxn</h2>
+
+<ol class="steps">
+<li><strong>Build the proto</strong>: generate a UUID <code>transaction_id</code>, assemble statements, wrap in a <code>TxnRecord{TxnRequest, TxnState: PENDING, CreatedAtUsec: now}</code>.</li>
+<li><strong>WriteTxnRecord</strong>: durably write the <code>TxnRecord</code> to the meta range as a <code>DirectWriteRequest</code> at <code>MakeKey(TxnRecordPrefix, transactionID)</code>. Proposed via normal <code>Sender.SyncPropose</code>.
+<div class="callout fact">
+<div class="callout-title">If we crash now</div>
+The cleanup loop (<code>processTxnRecords</code>) will see the PENDING record and roll back any prepared statements.
+</div>
+</li>
+<li><strong>Validate</strong>: no two statements target the same range (each range can only have one parked batch per transaction).</li>
+<li><strong>PREPARE phase</strong>: for each statement, run with <code>transaction_id</code> set. Replicas:
+<ul>
+<li>See the <code>transaction_id</code>.</li>
+<li>Validate ranges/leases.</li>
+<li>Write the batch into a per-transaction "prepared" log on disk (<code>LocalTransactionPrefix + txid</code>).</li>
+<li>Do NOT yet apply the effects.</li>
+</ul>
+<div class="callout warn">
+<div class="callout-title"><code>prepareError</code> is sticky</div>
+We do not abort on the first error; we still try to prepare the remaining statements so that even on partial failure we have a clear picture of what to roll back.
+</div>
+</li>
+<li><strong>Decide outcome</strong>:
+<pre><code>operation := rfpb.FinalizeOperation_ROLLBACK
+<span class="kw">if</span> prepareError == <span class="kw">nil</span> {
+    operation = rfpb.FinalizeOperation_COMMIT
+}
+txnRecord.Op = operation
+txnRecord.TxnState = rfpb.TxnRecord_PREPARED
+<span class="kw">if</span> err = tc.WriteTxnRecord(ctx, txnRecord); err != <span class="kw">nil</span> {
+    <span class="kw">return</span> status.WrapErrorf(err, <span class="str">"failed to write txn record"</span>)
+}</code></pre>
+Writing the PREPARED record <strong>commits the decision durably</strong>. After this point, even a coordinator crash leads to the same outcome — the cleanup loop sees <code>state=PREPARED</code> and replays the finalize.
+</li>
+<li><strong>FINALIZE phase</strong>: for each statement, send a no-op batch with <code>TransactionID=txid, FinalizeOperation=COMMIT|ROLLBACK</code>. The replica un-parks the prepared batch and applies (commit) or discards (rollback). <code>NotFound</code> during ROLLBACK is benign (statement never prepared).</li>
+<li><strong>Delete the transaction record</strong>. Return <code>prepareError</code> if any.</li>
+</ol>
+
+<h2 id="dispatch">How each statement is dispatched — Coordinator.run</h2>
+
+<p>
+  Because the coordinator already has a <code>RangeDescriptor</code>, it bypasses the meta-range lookup and
+  uses <code>SyncProposeWithRangeDescriptor</code> directly:
+</p>
+
+<div class="code-header"><span><span class="fileref">txn.go:186</span></span></div>
+<pre><code><span class="kw">var</span> headerFn header.MakeFunc
+<span class="kw">if</span> stmt.GetRangeValidationRequired() {
+    headerFn = header.MakeLinearizableWithLeaseValidationOnly
+} <span class="kw">else</span> {
+    headerFn = header.MakeLinearizableWithoutRangeValidation
+}
+retrier := retry.DefaultWithContext(ctx)
+<span class="kw">for</span> retrier.Next() {
+    syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, stmt.GetRange(), batch, headerFn)
+    <span class="kw">if</span> err == <span class="kw">nil</span> {
+        rsp := rbuilder.NewBatchResponseFromProto(syncRsp.GetBatch())
+        <span class="kw">if</span> err := rsp.AnyError(); err != <span class="kw">nil</span> { <span class="kw">return</span> err }
+        <span class="kw">return</span> <span class="kw">nil</span>
+    }
+    <span class="kw">if</span> !status.IsOutOfRangeError(err) &amp;&amp; !isConflictKeyError(err) { <span class="kw">return</span> err }
+    lastError = err
+}</code></pre>
+
+<div class="callout">
+<div class="callout-title">Header variants matter</div>
+During transactional operations the range's generation can change between the coordinator's snapshot and the replica's application — strict generation matching would always fail. So either skip generation check entirely (new ranges) or only verify the lease.
+</div>
+
+<h2 id="recovery">Crash recovery — processTxnRecords</h2>
+
+<p>
+  A background loop runs every <code>txnCleanupPeriod=15s</code> on <strong>whichever node currently holds
+  the meta range lease</strong>:
+</p>
+
+<div class="code-header"><span><span class="fileref">txn.go:250</span></span></div>
+<pre><code><span class="kw">func</span> (tc *Coordinator) processTxnRecords(ctx context.Context) {
+    <span class="kw">if</span> !tc.store.HasReplicaAndIsLeader(constants.MetaRangeID) {
+        <span class="kw">return</span>
+    }
+    txnRecords, err := tc.FetchTxnRecords(ctx, <span class="kw">false</span> <span class="cmt">/*=includeLive*/</span>)
+    ...
+}</code></pre>
+
+<p>
+  <code>FetchTxnRecords</code> scans <code>TxnRecordPrefix..end</code>, filters out records younger than
+  <code>txnLivenessThreshold=10s</code> (so we don't race a live coordinator), returns the rest.
+</p>
+
+<p><code>ProcessTxnRecord</code>:</p>
+<ul>
+<li><code>state == PENDING</code> → roll back every statement (some may not have prepared; <code>NotFound</code> is OK).</li>
+<li><code>state == PREPARED</code> → replay the recorded <code>Op</code> (commit or rollback) on every statement.</li>
+<li>Finally delete the record.</li>
+</ul>
+
+<p>
+  This is a <strong>saga-style recovery</strong>: the durable record is the source of truth, so any node can
+  drive cleanup forward if the original coordinator died.
+</p>
+
+<h2 id="why-2pc">Why 2PC and not a single multi-key write?</h2>
+
+<p>
+  Each raft group is independent — there's no cross-group consensus. The PREPARE phase parks the batches in
+  their respective groups; the PREPARED record in the meta range is the global commit point; the FINALIZE phase
+  is just bookkeeping that re-derives its outcome from the durable record.
+</p>
+
+<p>
+  This pattern means we can build atomic multi-range splits/merges while keeping each individual raft group
+  simple (it only ever needs to coordinate with itself).
+</p>
+
+<h2 id="state-machine">Visualizing transaction states</h2>
+
+<div class="seq">
+<pre><code>
+                  coordinator.RunTxn
+
+   ┌─ WriteTxnRecord(PENDING) ──── written to meta range
+   │                                      │
+   │   crash here ──▶ recovery: rollback all (some may not have prepared)
+   │                                      │
+   ▼
+   PREPARE statement 1, statement 2, ... (parallel ok)
+   │   any failure  ──▶ prepareError != nil
+   │                                      │
+   ▼
+   WriteTxnRecord(PREPARED, Op=COMMIT|ROLLBACK) ─── written to meta range
+   │
+   │   crash here ──▶ recovery: replay the recorded Op
+   │                                      │
+   ▼
+   FINALIZE statement 1, statement 2, ...
+   │
+   ▼
+   DeleteTxnRecord
+</code></pre>
+</div>
+
+<h2 id="replica-state">What happens on the replica side</h2>
+
+<p>The replica's <code>singleUpdate</code> branches when it sees a <code>transaction_id</code>:</p>
+
+<ul>
+<li><strong><code>PrepareTransaction</code></strong> (<span class="fileref">replica.go:463</span>) — write batch into <code>prepared[txid]</code>, acquire locks on touched keys, persist a <code>LocalTransactionPrefix+txid</code> record for crash recovery.</li>
+<li><strong><code>CommitTransaction</code></strong> (<span class="fileref">:482</span>) — replay the cached batch, delete the txn record.</li>
+<li><strong><code>RollbackTransaction</code></strong> (<span class="fileref">:505</span>) — drop the batch, release locks, delete the txn record.</li>
+</ul>
+
+<p>
+  Key-level locks (<code>lockedKeys</code>) and the special <code>mappedRangeLockingTXID</code> (which locks the
+  entire range) implement isolation. <code>LockMappedRange</code> in the batch (set on split prepares) locks the
+  whole range against any writes — so the split can rewrite the descriptor without losing intervening writes.
+</p>
+
+<h2 id="example">Example: a split transaction</h2>
+
+<p>
+  A split (covered in detail on the <a href="cluster-mgmt.html#splits">cluster management page</a>) is the
+  canonical example. <code>BuildTxnForRangeSplit</code> produces three statements:
+</p>
+
+<table>
+<thead><tr><th>Statement</th><th>Range</th><th>Batch</th><th>Hooks</th><th>RangeValidationRequired</th></tr></thead>
+<tbody>
+<tr><td>Left</td><td>Existing range</td><td>CAS-update LocalRangeKey (shrunk End, Gen+1), <strong>LockMappedRange=true</strong></td><td>PREPARE: StartShardHook(new range)<br>COMMIT: SnapshotClusterHook</td><td>true</td></tr>
+<tr><td>Right</td><td>New range</td><td>DirectWrite LocalRangeKey (new descriptor)</td><td>COMMIT: SnapshotClusterHook</td><td>false</td></tr>
+<tr><td>Meta</td><td>Meta range (ID 1)</td><td>Two CAS ops: insert new descriptor at <code>RangeMetaKey(NewRight.End)</code>, update at <code>RangeMetaKey(Left.End)</code></td><td>—</td><td>false</td></tr>
+</tbody>
+</table>
+
+<p>
+  The PREPARE-time <code>StartShardHook</code> is what makes the new range actually exist on all members before
+  the commit — by the time the commit applies, the new dragonboat shard is up and the new range descriptor it
+  refers to actually has somewhere to live.
+</p>
+
+<div class="page-footer">
+  <div>← <a href="leases.html">Leases</a></div>
+  <div class="next-prev">
+    <a href="cluster-mgmt.html">Cluster management →</a>
+  </div>
+</div>
+</main>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

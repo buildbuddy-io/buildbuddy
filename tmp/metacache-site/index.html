@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MetaCache &amp; Raft — Overview</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+  <h1>MetaCache &amp; Raft</h1>
+  <div class="subtitle">BuildBuddy's metadata service, explained</div>
+  <input type="search" class="search-box" placeholder="Filter pages…" />
+
+  <div class="nav-section">Start here</div>
+  <a class="nav-link" href="index.html">Overview &amp; architecture</a>
+  <a class="nav-link" href="walkthroughs.html">End-to-end walkthroughs</a>
+
+  <div class="nav-section">The cache layer</div>
+  <a class="nav-link" href="metacache.html">MetaCache (metacache.go)</a>
+  <a class="nav-link" href="metadata-service.html">MetadataService server</a>
+  <a class="nav-link" href="protos.html">Proto definitions</a>
+
+  <div class="nav-section">The raft layer</div>
+  <a class="nav-link" href="store-replica.html">Store &amp; Replica</a>
+  <a class="nav-link" href="routing.html">Routing (sender, registry)</a>
+  <a class="nav-link" href="leases.html">Leases &amp; node liveness</a>
+  <a class="nav-link" href="transactions.html">Multi-range transactions</a>
+
+  <div class="nav-section">Cluster management</div>
+  <a class="nav-link" href="cluster-mgmt.html">Bringup, driver &amp; splits</a>
+
+  <div class="nav-section">Reference</div>
+  <a class="nav-link" href="glossary.html">Glossary</a>
+</aside>
+
+<main class="main">
+<div class="breadcrumb">Home</div>
+<h1 class="page-title">MetaCache &amp; the Raft Metadata Service</h1>
+<p class="page-lede">
+  A guided, deep tour of <code>enterprise/server/backends/metacache/metacache.go</code> and
+  the multi-Raft cluster behind it (<code>enterprise/server/raft/*</code>). Aimed at engineers
+  who know Raft at the textbook level and want to understand how BuildBuddy actually wires it
+  together with dragonboat, gossip, range leases, and an LSM store.
+</p>
+
+<h2 id="big-idea">The big idea, in one paragraph</h2>
+<p>
+  The BuildBuddy cache splits each blob into <strong>metadata</strong> (a small <code>FileMetadata</code> proto:
+  digest, partition, isolation, where the bytes live, last-access time, size) and <strong>data</strong> (the actual
+  bytes). The metadata lives in a strongly-consistent, replicated, sharded key&dash;value store implemented
+  on top of <strong>dragonboat</strong> (multi-group Raft), and the data lives in cheap blob storage (GCS) or
+  inline inside the metadata record itself when small. <code>metacache.Cache</code> is the thin glue that
+  presents this to the rest of the system as a normal <code>interfaces.Cache</code>.
+</p>
+
+<div class="callout fact">
+  <div class="callout-title">Why this design</div>
+  Bytes are big and write-once; eviction by GCS object-lifetime is cheap. Metadata is small and
+  needs to be strongly consistent (existence, atime, encryption keys). Keeping the metadata in
+  Raft lets the cluster answer "does this CAS digest exist?" linearizably without ever touching
+  GCS, and lets eviction be coordinated across thousands of stores at the metadata layer.
+</div>
+
+<h2 id="diagram">Architecture at a glance</h2>
+<p>
+  Hover any component for a one-paragraph description; click to jump into its dedicated page.
+</p>
+
+<div class="diagram">
+  <svg viewBox="0 0 900 540" width="900" height="540" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arr" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L9,3 L0,6 z" fill="#7c9cff"/>
+      </marker>
+      <marker id="arrDim" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L9,3 L0,6 z" fill="#6b7387"/>
+      </marker>
+    </defs>
+
+    <!-- Layer labels -->
+    <text x="20" y="40" fill="#9aa3b8" font-size="11" font-family="JetBrains Mono">CLIENT</text>
+    <text x="20" y="135" fill="#9aa3b8" font-size="11" font-family="JetBrains Mono">CACHE LAYER</text>
+    <text x="20" y="240" fill="#9aa3b8" font-size="11" font-family="JetBrains Mono">RAFT FRONT-END</text>
+    <text x="20" y="345" fill="#9aa3b8" font-size="11" font-family="JetBrains Mono">RAFT NODE</text>
+    <text x="20" y="500" fill="#9aa3b8" font-size="11" font-family="JetBrains Mono">DURABLE STORAGE</text>
+
+    <!-- CLIENT -->
+    <g class="arch-node" data-key="cache-client" data-href="walkthroughs.html">
+      <rect x="340" y="20" width="220" height="44" rx="6" fill="#1d2230" stroke="#3a4258"/>
+      <text x="450" y="48" fill="#e4e8f1" font-size="14" text-anchor="middle">Bazel / Cache client</text>
+    </g>
+
+    <!-- CACHE LAYER -->
+    <g class="arch-node" data-key="metacache" data-href="metacache.html">
+      <rect x="60" y="115" width="320" height="64" rx="6" fill="#1d2230" stroke="#7c9cff"/>
+      <text x="220" y="140" fill="#e4e8f1" font-size="14" text-anchor="middle" font-weight="600">metacache.Cache</text>
+      <text x="220" y="160" fill="#9aa3b8" font-size="11" text-anchor="middle">metacache.go — interfaces.Cache impl</text>
+    </g>
+    <g class="arch-node" data-key="gcs" data-href="metacache.html#gcs">
+      <rect x="700" y="115" width="160" height="64" rx="6" fill="#1d2230" stroke="#5cd5b0"/>
+      <text x="780" y="140" fill="#e4e8f1" font-size="14" text-anchor="middle" font-weight="600">GCS bucket</text>
+      <text x="780" y="160" fill="#9aa3b8" font-size="11" text-anchor="middle">blob bytes + TTL</text>
+    </g>
+
+    <!-- RAFT FRONT END -->
+    <g class="arch-node" data-key="metadata-svc" data-href="metadata-service.html">
+      <rect x="60" y="220" width="320" height="64" rx="6" fill="#1d2230" stroke="#3a4258"/>
+      <text x="220" y="245" fill="#e4e8f1" font-size="14" text-anchor="middle" font-weight="600">MetadataService (gRPC)</text>
+      <text x="220" y="265" fill="#9aa3b8" font-size="11" text-anchor="middle">raft/metadata/metadata.go</text>
+    </g>
+    <g class="arch-node" data-key="sender" data-href="routing.html">
+      <rect x="430" y="220" width="220" height="64" rx="6" fill="#1d2230" stroke="#3a4258"/>
+      <text x="540" y="245" fill="#e4e8f1" font-size="14" text-anchor="middle" font-weight="600">Sender</text>
+      <text x="540" y="265" fill="#9aa3b8" font-size="11" text-anchor="middle">raft/sender — routes per key</text>
+    </g>
+    <g class="arch-node" data-key="registry" data-href="routing.html#registry">
+      <rect x="690" y="220" width="170" height="64" rx="6" fill="#1d2230" stroke="#3a4258"/>
+      <text x="775" y="245" fill="#e4e8f1" font-size="14" text-anchor="middle" font-weight="600">Registry</text>
+      <text x="775" y="265" fill="#9aa3b8" font-size="11" text-anchor="middle">NHID→addr (gossip)</text>
+    </g>
+
+    <!-- RAFT NODE -->
+    <g class="arch-node" data-key="store" data-href="store-replica.html">
+      <rect x="60" y="325" width="240" height="140" rx="6" fill="#1d2230" stroke="#f0a868"/>
+      <text x="180" y="350" fill="#e4e8f1" font-size="14" text-anchor="middle" font-weight="600">Store</text>
+      <text x="180" y="368" fill="#9aa3b8" font-size="11" text-anchor="middle">raft/store/store.go</text>
+      <text x="180" y="395" fill="#c3e88d" font-size="10" text-anchor="middle">+ LeaseKeeper</text>
+      <text x="180" y="410" fill="#c3e88d" font-size="10" text-anchor="middle">+ Driver</text>
+      <text x="180" y="425" fill="#c3e88d" font-size="10" text-anchor="middle">+ Txn coordinator</text>
+      <text x="180" y="440" fill="#c3e88d" font-size="10" text-anchor="middle">+ Usage tracker</text>
+      <text x="180" y="455" fill="#c3e88d" font-size="10" text-anchor="middle">+ Node liveness</text>
+    </g>
+    <g class="arch-node" data-key="replica" data-href="store-replica.html#replica">
+      <rect x="320" y="325" width="240" height="64" rx="6" fill="#1d2230" stroke="#f0a868"/>
+      <text x="440" y="350" fill="#e4e8f1" font-size="14" text-anchor="middle" font-weight="600">Replica × N</text>
+      <text x="440" y="370" fill="#9aa3b8" font-size="11" text-anchor="middle">IOnDiskStateMachine per shard</text>
+    </g>
+    <g class="arch-node" data-key="dragonboat" data-href="store-replica.html#dragonboat">
+      <rect x="320" y="400" width="240" height="64" rx="6" fill="#1d2230" stroke="#e576a8"/>
+      <text x="440" y="425" fill="#e4e8f1" font-size="14" text-anchor="middle" font-weight="600">dragonboat NodeHost</text>
+      <text x="440" y="445" fill="#9aa3b8" font-size="11" text-anchor="middle">lni/dragonboat/v4 — multi-Raft</text>
+    </g>
+    <g class="arch-node" data-key="gossip" data-href="cluster-mgmt.html#gossip">
+      <rect x="580" y="325" width="280" height="140" rx="6" fill="#1d2230" stroke="#3a4258"/>
+      <text x="720" y="350" fill="#e4e8f1" font-size="14" text-anchor="middle" font-weight="600">Serf gossip</text>
+      <text x="720" y="368" fill="#9aa3b8" font-size="11" text-anchor="middle">hashicorp/serf</text>
+      <text x="720" y="395" fill="#82aaff" font-size="10" text-anchor="middle">MetaRangeTag · meta-range desc.</text>
+      <text x="720" y="410" fill="#82aaff" font-size="10" text-anchor="middle">StoreUsageTag · per-node load</text>
+      <text x="720" y="425" fill="#82aaff" font-size="10" text-anchor="middle">RegistryUpdate · address gossip</text>
+      <text x="720" y="440" fill="#82aaff" font-size="10" text-anchor="middle">AutoBringup · bootstrap quorum</text>
+      <text x="720" y="455" fill="#82aaff" font-size="10" text-anchor="middle">NodePartitionUsage · GC view</text>
+    </g>
+
+    <!-- DURABLE STORAGE -->
+    <g class="arch-node" data-key="pebble" data-href="store-replica.html#pebble">
+      <rect x="320" y="490" width="240" height="40" rx="6" fill="#1d2230" stroke="#5cd5b0"/>
+      <text x="440" y="515" fill="#e4e8f1" font-size="13" text-anchor="middle">PebbleDB (single per node)</text>
+    </g>
+
+    <!-- ARROWS -->
+    <!-- client -> metacache (read/write) -->
+    <line x1="450" y1="64" x2="280" y2="115" stroke="#7c9cff" stroke-width="1.5" marker-end="url(#arr)"/>
+
+    <!-- metacache -> metadata service (rpc) -->
+    <line x1="220" y1="179" x2="220" y2="220" stroke="#7c9cff" stroke-width="1.5" marker-end="url(#arr)"/>
+    <text x="232" y="203" fill="#9aa3b8" font-size="10">gRPC: Get/Set/Find/Delete</text>
+
+    <!-- metacache -> GCS (bytes) -->
+    <line x1="380" y1="147" x2="700" y2="147" stroke="#5cd5b0" stroke-width="1.5" marker-end="url(#arr)"/>
+    <text x="450" y="140" fill="#9aa3b8" font-size="10">bytes (when ≥1 KiB)</text>
+
+    <!-- metadata service -> sender -->
+    <line x1="380" y1="252" x2="430" y2="252" stroke="#7c9cff" stroke-width="1.5" marker-end="url(#arr)"/>
+
+    <!-- sender -> registry -->
+    <line x1="650" y1="252" x2="690" y2="252" stroke="#7c9cff" stroke-width="1.5" marker-end="url(#arr)"/>
+
+    <!-- sender -> store (raft api on peer) -->
+    <line x1="540" y1="284" x2="180" y2="325" stroke="#7c9cff" stroke-width="1.5" marker-end="url(#arr)"/>
+    <text x="320" y="305" fill="#9aa3b8" font-size="10">raft.Api SyncPropose / SyncRead</text>
+
+    <!-- store -> replica -->
+    <line x1="300" y1="370" x2="320" y2="357" stroke="#f0a868" stroke-width="1.5" marker-end="url(#arr)"/>
+    <!-- replica -> dragonboat -->
+    <line x1="440" y1="389" x2="440" y2="400" stroke="#f0a868" stroke-width="1.5" marker-end="url(#arr)"/>
+    <!-- replica -> pebble -->
+    <line x1="440" y1="464" x2="440" y2="490" stroke="#5cd5b0" stroke-width="1.5" marker-end="url(#arr)"/>
+    <!-- store -> gossip -->
+    <line x1="300" y1="395" x2="580" y2="395" stroke="#6b7387" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrDim)"/>
+    <!-- registry -> gossip -->
+    <line x1="775" y1="284" x2="775" y2="325" stroke="#6b7387" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrDim)"/>
+  </svg>
+</div>
+
+<div id="arch-detail" class="callout" style="display:none"></div>
+
+<h2 id="layers">The layers, top-down</h2>
+
+<div class="toc-grid">
+  <a class="toc-card" href="metacache.html">
+    <h3>1 · MetaCache</h3>
+    <p>The <code>interfaces.Cache</code> implementation. Wraps an <code>mdspb.MetadataServiceClient</code> + a blob store. Handles compression, inlining, encryption, atime.</p>
+  </a>
+  <a class="toc-card" href="metadata-service.html">
+    <h3>2 · MetadataService</h3>
+    <p>Public gRPC server inside the raft node. Authorizes, computes pebble keys, fans out via the <code>Sender</code>.</p>
+  </a>
+  <a class="toc-card" href="routing.html">
+    <h3>3 · Sender / Registry</h3>
+    <p>Range-aware request router. Caches range descriptors, retries on stale routing, finds gRPC addresses via gossip.</p>
+  </a>
+  <a class="toc-card" href="store-replica.html">
+    <h3>4 · Store + Replica</h3>
+    <p>The dragonboat integration. <code>Store</code> hosts the <code>NodeHost</code>; <code>Replica</code> implements <code>IOnDiskStateMachine</code> per (range, replica).</p>
+  </a>
+  <a class="toc-card" href="leases.html">
+    <h3>5 · Range leases &amp; node liveness</h3>
+    <p>Epoch-based leases let the lease-holder serve linearizable reads without quorum. Anchored to a per-node liveness record.</p>
+  </a>
+  <a class="toc-card" href="transactions.html">
+    <h3>6 · Multi-range 2PC</h3>
+    <p>Splits, replica adds, descriptor edits need atomic updates across multiple raft groups. A durable <code>TxnRecord</code> in the meta range drives crash recovery.</p>
+  </a>
+  <a class="toc-card" href="cluster-mgmt.html">
+    <h3>7 · Bringup, driver &amp; splits</h3>
+    <p>How a cluster bootstraps via gossip, how the driver rebalances, how a range splits without dropping writes.</p>
+  </a>
+  <a class="toc-card" href="walkthroughs.html">
+    <h3>End-to-end walkthroughs</h3>
+    <p>Trace a Bazel CAS write all the way down to a Pebble commit, and back up.</p>
+  </a>
+  <a class="toc-card" href="protos.html">
+    <h3>Proto reference</h3>
+    <p>Every message that appears anywhere in this story, with field-by-field commentary.</p>
+  </a>
+  <a class="toc-card" href="glossary.html">
+    <h3>Glossary</h3>
+    <p>One-line definitions for every term: NHID, range, range lease, generation, staging, prepared batch, MatchAtime, &hellip;</p>
+  </a>
+</div>
+
+<h2 id="cheatsheet">Reading cheatsheet</h2>
+
+<table>
+  <thead><tr><th>Term</th><th>Means</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Range</strong></td><td>A contiguous <code>[start, end)</code> byte interval in the global keyspace, served by one dragonboat raft group with N replicas. Every range has a unique <code>range_id</code> (the dragonboat ShardID) and a <code>generation</code> bumped on every descriptor change.</td></tr>
+    <tr><td><strong>Replica</strong></td><td>One member of a range's raft group on one node. Identified by <code>(range_id, replica_id)</code>. Has a Go <code>*replica.Replica</code> object that implements dragonboat's <code>IOnDiskStateMachine</code>.</td></tr>
+    <tr><td><strong>NodeHost / NHID</strong></td><td>The dragonboat process-level handle and its stable ID. One <code>NodeHost</code> per node hosts every replica that lives on that node.</td></tr>
+    <tr><td><strong>Meta range</strong></td><td>Range with <code>range_id=1</code>; stores every other range's descriptor at key <code>\x02 || rd.end</code>. Bootstrap-critical; never split; uses a time-based lease (not node-liveness) to break circular dependency.</td></tr>
+    <tr><td><strong>Range lease</strong></td><td>The right to serve <code>RANGELEASE</code>-consistency reads locally without a Raft round-trip, and to propose membership changes for the range. Acquired by CAS on a local lease key; anchored to the holder's node-liveness epoch.</td></tr>
+    <tr><td><strong>Sender</strong></td><td>The thing that turns "do this batch on key K" into "find the right range, find a willing replica, do the RPC, retry if stale." Lives client-side in every node that issues raft traffic.</td></tr>
+    <tr><td><strong>Driver</strong></td><td>Per-node background process that scans local leased replicas and enqueues actions (split, add replica, remove dead replica, transfer lease) based on cluster-wide load.</td></tr>
+    <tr><td><strong>StorageMetadata</strong></td><td>Discriminated union inside a <code>FileMetadata</code> saying where the bytes live: <code>InlineMetadata</code> (≤ ~1 KiB, bytes embedded), <code>GCSMetadata</code> (object name + custom-time), or <code>PebbleMetadata</code>/<code>FileMetadata</code> (used by other backends, not by metacache).</td></tr>
+  </tbody>
+</table>
+
+<div class="page-footer">
+  <div>BuildBuddy MetaCache &amp; Raft documentation.</div>
+  <div class="next-prev">
+    <a href="walkthroughs.html">End-to-end walkthroughs →</a>
+  </div>
+</div>
+</main>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

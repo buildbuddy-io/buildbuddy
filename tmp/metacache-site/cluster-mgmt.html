@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bringup, driver, splits &amp; usage</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+  <h1>MetaCache &amp; Raft</h1>
+  <div class="subtitle">BuildBuddy's metadata service, explained</div>
+  <input type="search" class="search-box" placeholder="Filter pages…" />
+
+  <div class="nav-section">Start here</div>
+  <a class="nav-link" href="index.html">Overview &amp; architecture</a>
+  <a class="nav-link" href="walkthroughs.html">End-to-end walkthroughs</a>
+
+  <div class="nav-section">The cache layer</div>
+  <a class="nav-link" href="metacache.html">MetaCache (metacache.go)</a>
+  <a class="nav-link" href="metadata-service.html">MetadataService server</a>
+  <a class="nav-link" href="protos.html">Proto definitions</a>
+
+  <div class="nav-section">The raft layer</div>
+  <a class="nav-link" href="store-replica.html">Store &amp; Replica</a>
+  <a class="nav-link" href="routing.html">Routing (sender, registry)</a>
+  <a class="nav-link" href="leases.html">Leases &amp; node liveness</a>
+  <a class="nav-link" href="transactions.html">Multi-range transactions</a>
+
+  <div class="nav-section">Cluster management</div>
+  <a class="nav-link" href="cluster-mgmt.html">Bringup, driver &amp; splits</a>
+
+  <div class="nav-section">Reference</div>
+  <a class="nav-link" href="glossary.html">Glossary</a>
+</aside>
+
+<main class="main">
+<div class="breadcrumb"><a href="index.html">Home</a> · Cluster management</div>
+<h1 class="page-title">Bringup, driver, splits &amp; usage</h1>
+<p class="page-lede">
+  How a fresh cluster bootstraps, how the placement driver keeps things balanced, how a range splits without
+  downtime, and how partition usage is tracked across the fleet.
+</p>
+
+<div class="tabs">
+  <button class="tab active">Bringup</button>
+  <button class="tab">Driver</button>
+  <button class="tab">Splits</button>
+  <button class="tab">Replica moves</button>
+  <button class="tab">Usage tracker</button>
+  <button class="tab">Gossip</button>
+</div>
+
+<!-- ===== BRINGUP ===== -->
+<div class="tab-panel active">
+<h2>Bringup — initial cluster formation</h2>
+<p><span class="fileref">enterprise/server/raft/bringup/bringup.go</span> (612 lines).</p>
+
+<p>There is <strong>no static config file</strong> of cluster members. The cluster forms via serf gossip, seeded by a flag-driven <code>JoinList</code>.</p>
+
+<ol class="steps">
+<li><strong><code>NewFromFlags</code></strong> creates a <code>gossip.New(nhid)</code> with the configured raft-seed pod hostnames as the join list.</li>
+<li><strong><code>bringup.New(grpcAddr, gossipMan, store, partitions)</code></strong> constructs a <code>ClusterStarter</code>. Only nodes whose own listen address matches one of the join-list entries register as gossip listeners eligible for auto-bringup:
+<pre><code><span class="kw">for</span> _, joinAddr := <span class="kw">range</span> cs.join {
+    <span class="kw">if</span> inJoinList, err := cs.matchesListenAddress(joinAddr); err == <span class="kw">nil</span> &amp;&amp; inJoinList {
+        gossipMan.AddListener(cs)
+        <span class="kw">break</span>
+    }
+}</code></pre>
+This makes the "bringup quorum" the join-list nodes.
+</li>
+<li><strong><code>InitializeClusters</code></strong> decides whether to bootstrap:
+<ul>
+<li>If <code>store.ConfiguredClusters() &gt; 0</code> (pebble has previous replicas), skip bootstrap; <code>store.Start</code> rejoins them automatically.</li>
+<li>Otherwise, if this node matches the <em>first</em> join-list entry (the elected bringup coordinator), kick off a goroutine that periodically calls <code>attemptQueryAndBringupOnce</code>.</li>
+</ul>
+</li>
+<li><strong><code>attemptQueryAndBringupOnce</code></strong> issues a serf <code>Query</code> named <code>AutoBringupEvent</code>. Every node listening replies with <code>{nhid, grpcAddress}</code>. The coordinator collects responses until <code>len(bootstrapInfo) == len(cs.join)</code> — heard from every seed node — then:
+<ul>
+<li><code>InitializeShardsForMetaRange(ctx, session, store, bootstrapInfo)</code> — bootstraps the single meta range with <code>rangeID = MetaRangeID = 1</code>.</li>
+<li><code>InitializeShardsForPartition(ctx, store, bootstrapInfo, defaultPartition)</code> — creates the first partition's shards.</li>
+</ul>
+</li>
+</ol>
+
+<h3>Meta-range initialization</h3>
+<p>
+  <code>InitializeShardsForMetaRange</code> sorts NHIDs deterministically, assigns sequential replica IDs,
+  issues <code>apiClient.StartShard</code> in parallel against every node (dragonboat needs the same
+  <code>InitialMember</code> map on every node for leader election to converge), then proposes one batch that:
+</p>
+<ul>
+<li>Writes <code>LocalRangeKey</code> → range descriptor (per-replica local key).</li>
+<li>Writes <code>ClusterSetupTimeKey</code>.</li>
+<li>Writes <code>RangeMetaKey(rd.End)</code> → the meta range's own descriptor (so the meta range contains its own descriptor at the key <code>\x02 + UnsplittableMaxByte</code>).</li>
+<li>Increments <code>LastRangeIDKey</code> so the next range gets ID 2.</li>
+<li>Increments <code>LastReplicaIDKeyPrefix + "1"</code> by <code>len(replicas)</code>.</li>
+</ul>
+
+<h3>Default partition initialization</h3>
+<p>
+  <code>InitializeShardsForPartition</code> (<span class="fileref">bringup.go:463-612</span>):
+</p>
+<ol>
+<li><code>evenlyDividePartitionIntoRanges</code> chops the 32-byte hex digest space <code>[0, 2^256)</code> into <code>partition.NumRanges</code> equal-width ranges, each keyed by <code>PT&lt;partition_id&gt;/&lt;hex&gt;</code>.</li>
+<li>Reserves new range IDs via <code>store.ReserveRangeIDs(n)</code> (an Increment on <code>LastRangeIDKey</code>).</li>
+<li>Writes a <code>PartitionDescriptor</code> (state <code>INITIALIZING</code>) to the meta range first. Makes the operation crash-recoverable.</li>
+<li>For each new range, calls <code>MakeBootstrapInfo</code> + <code>startShard</code> in parallel via errgroup.</li>
+<li>Builds a single transaction (<code>store.TxnCoordinator().RunTxn</code>) that atomically writes the local range key + cluster-setup time on every new shard, increments the last-replica-id counter for each new range, and CAS-flips the partition descriptor to <code>INITIALIZED</code>.</li>
+</ol>
+
+<h3>Join existing vs bootstrap new</h3>
+<table>
+<thead><tr><th>Scenario</th><th>What happens</th></tr></thead>
+<tbody>
+<tr><td>Existing pebble has replicas (<code>ConfiguredClusters() &gt; 0</code>)</td><td>Bringup skipped. <code>store.Start</code> iterates <code>NodeHostInfo.LogInfo</code> and calls <code>StartOnDiskReplica</code> for each, which rejoins the existing raft membership.</td></tr>
+<tr><td>Fresh pebble, this is the elected bringup coordinator</td><td>Wait for all join-list nodes via gossip <code>AutoBringupEvent</code>; then bootstrap meta range + default partition.</td></tr>
+<tr><td>Fresh pebble, this is NOT the coordinator</td><td>Listen for incoming <code>StartShard</code> RPCs from the coordinator.</td></tr>
+</tbody>
+</table>
+</div>
+
+<!-- ===== DRIVER ===== -->
+<div class="tab-panel">
+<h2 id="driver">Driver — the placement engine</h2>
+<p><span class="fileref">enterprise/server/raft/driver/driver.go</span> (1 683 lines).</p>
+
+<p>
+  The driver is a <strong>priority-queued background scheduler</strong> running on every store. It is fed two
+  kinds of tasks: <code>RangeTaskType</code> (per <code>rangeID</code>) and <code>PartitionTaskType</code>
+  (per <code>partitionID</code>).
+</p>
+
+<h3>Actions, ranked by priority</h3>
+<table>
+<thead><tr><th>Action</th><th>Priority</th><th>When</th></tr></thead>
+<tbody>
+<tr><td><code>DriverInitializePartition</code></td><td>800</td><td>A configured partition has no shards yet</td></tr>
+<tr><td><code>DriverReplaceDeadReplica</code></td><td>700</td><td>Replica's host is dead and we're at min replication</td></tr>
+<tr><td><code>DriverAddReplica</code></td><td>600</td><td>Below <code>minReplicasPerRange</code> (default 3)</td></tr>
+<tr><td><code>DriverFinishReplicaRemoval</code></td><td>500</td><td>Leftover pebble data from a previously-removed replica</td></tr>
+<tr><td><code>DriverRemoveDeadReplica</code></td><td>400</td><td>Dead replica beyond min replication</td></tr>
+<tr><td><code>DriverRemoveReplica</code></td><td>300</td><td>Above min replication, healthy</td></tr>
+<tr><td><code>DriverSplitRange</code></td><td>200</td><td>Range size ≥ <code>target_range_size_bytes</code> (default 100MB)</td></tr>
+<tr><td><code>DriverRebalanceReplica</code></td><td>0</td><td>Source is above-mean, dest is below-mean</td></tr>
+<tr><td><code>DriverRebalanceLease</code></td><td>0</td><td>Co-located replica with much lower lease count</td></tr>
+</tbody>
+</table>
+
+<p>Health-critical actions preempt rebalancing.</p>
+
+<h3>What fills the queue</h3>
+<ul>
+<li><strong><code>Store.scanReplicas</code></strong> — periodic ticker enumerates leased replicas; for each, <code>driverQueue.MaybeAddRangeTask</code>.</li>
+<li><strong><code>Store.checkIfReplicasNeedSplitting</code></strong> — listens on <code>EventRangeUsageUpdated</code>; when a leased range crosses a size watermark, immediately enqueues (faster than waiting for the next scan).</li>
+<li><strong><code>Store.ProcessPartitions</code></strong> — meta-range leader periodically checks for partitions needing bringup.</li>
+<li><strong>After <code>applyChange</code> succeeds</strong>: task is re-enqueued with <code>RequeueCheckOtherActions</code> so subsequent imbalances get re-evaluated.</li>
+</ul>
+
+<h3>Retry &amp; thrash avoidance</h3>
+<ul>
+<li><code>attemptRecord</code> stores <code>(action, attempts, nextAttemptTime)</code>.</li>
+<li>On <code>RequeueRetry</code>: <code>nextAttemptTime = now + 1s * 2^attempts</code> (exponential backoff).</li>
+<li>After <code>maxRetry=10</code> attempts, drop the task; next periodic scan re-enqueues from scratch if still needed.</li>
+<li><code>process</code> compares the <em>current</em> needed action to the previously-attempted one; if same action is still needed but inside backoff window, do nothing.</li>
+<li>Queue capped at <code>maxSize=1000</code>; when overflowed, lowest-priority item is dropped.</li>
+</ul>
+
+<h3>Decision logic — computeActionForRangeTask</h3>
+<p>Runs only if the local node holds the lease for the range. Order of conditionals = order of decisions:</p>
+<ol>
+<li>If <code>rd.GetDeleted()</code> → noop.</li>
+<li>If <code>len(rd.Removed) &gt; 0</code> → tentatively set <code>FinishReplicaRemoval</code>; continue.</li>
+<li><code>curReplicas &lt; minReplicas</code> OR <code>len(rd.Staging) &gt; 0</code> → <code>AddReplica</code>; priority boosted by <code>(desiredQuorum - curReplicas)</code>.</li>
+<li>If <code>numLiveReplicas &lt; quorum</code> → only <code>FinishReplicaRemoval</code> is safe (can't change membership without quorum).</li>
+<li>If <code>curReplicas &lt;= minReplicas &amp;&amp; numDeadReplicas &gt; 0</code> → <code>ReplaceDeadReplica</code>.</li>
+<li>If <code>numDeadReplicas &gt; 0</code> (over-replicated) → <code>RemoveDeadReplica</code>.</li>
+<li>If <code>curReplicas &gt; minReplicas</code> → <code>RemoveReplica</code>.</li>
+<li>Meta range → noop (never auto-rebalance).</li>
+<li>If cluster healthy and split enabled → check size:
+<pre><code>jitter := (rand.Float64()*2 - 1) * jitterFactor * float64(targetRangeSizeBytes)
+threshold := float64(targetRangeSizeBytes) + jitter
+<span class="kw">if</span> usage.GetEstimatedDiskBytesUsed() &gt;= threshold {
+    action = DriverSplitRange
+}</code></pre>
+Jitter prevents thundering-herd splits across replicas.
+</li>
+<li>Cluster-healthy rebalance: <code>findRebalanceReplicaOp</code> looks for above-mean source store, below-mean destination.</li>
+<li>Lease rebalance: <code>findRebalanceLeaseOp</code> — first checks <code>storeMap.CheckLeaseRebalancePrecondition</code> (all stores Available &amp; Ready; cluster stable for 5min; ranges-without-leases below threshold).</li>
+</ol>
+
+<h3>Executing changes — applyChange</h3>
+<p>A <code>change</code> is a tuple of optional ops:</p>
+<pre><code><span class="kw">type</span> <span class="typ">change</span> <span class="kw">struct</span> {
+    addOp                *rfpb.AddReplicaRequest
+    removeOp             *rfpb.RemoveReplicaRequest
+    removeDataOp         *removeDataOp
+    splitOp              *rfpb.SplitRangeRequest
+    transferLeadershipOp *rfpb.TransferLeadershipRequest
+}</code></pre>
+<p>
+  Applied in fixed order: <strong>split → add → remove → removeData → transferLeadership</strong>. For
+  <code>ReplaceDeadReplica</code> the driver builds <code>{addOp, removeOp}</code>; add succeeds first so the
+  cluster still has quorum, then the remove can drop a now-redundant dead replica.
+</p>
+</div>
+
+<!-- ===== SPLITS ===== -->
+<div class="tab-panel">
+<h2 id="splits">Range splits — end to end</h2>
+
+<p>
+  A split takes one range and turns it into two — the original ("left") covers the first half, the new
+  ("right") gets the second half. The data is <strong>not moved</strong>; both ranges live on the same set of
+  stores initially. Migration happens later if/when the driver rebalances replicas of the right range.
+</p>
+
+<h3>Trigger</h3>
+<p>Two sources, both feeding <code>driverQueue.MaybeAddRangeTask</code>:</p>
+<ul>
+<li><code>Store.checkIfReplicasNeedSplitting</code>: <code>RangeUsageEvent</code> with <code>estimatedDiskBytes ≥ (1-jitter) * targetRangeSizeBytes</code>.</li>
+<li>Periodic <code>Store.scanReplicas</code>.</li>
+</ul>
+
+<h3>Decision</h3>
+<p>Driver returns <code>DriverSplitRange</code> only when: this node holds the lease, cluster is healthy (<code>AllStoresAvailableAndReady</code>), split enabled, size threshold met.</p>
+
+<h3>Execution — Store.SplitRange</h3>
+
+<ol class="steps">
+<li><strong>Pre-flight</strong>: assert we have the lease (<code>HaveLease</code>); validate the descriptor against the meta range (catches a stale local view).</li>
+<li><strong>Reserve IDs</strong>: <code>ReserveRangeID</code> for <code>newRangeID</code> (Increment on <code>LastRangeIDKey</code>); <code>reserveReplicaIDs(ctx, newRangeID, len(replicas))</code>.</li>
+<li><strong>Find split point</strong>: <code>SyncReadLocalBatch</code> with <code>FindSplitPointRequest</code> against the local leader. <code>Replica.findSplitPoint</code> iterates pebble between <code>[rd.Start, rd.End)</code>, computes total size, picks the rowkey closest to 50% byte point subject to constraints (&gt;2 rows on each side, between 20% and 80% of size, respects <code>canSplitKeys</code>).</li>
+<li><strong>Build the transaction</strong> — <code>BuildTxnForRangeSplit</code> constructs three statements (atomic across three ranges):
+  <details><summary>Left statement (existing range)</summary>
+  <ul>
+  <li>CAS-update <code>LocalRangeKey</code> with shrunk <code>End=splitKey, Generation+1</code>.</li>
+  <li><strong><code>LockMappedRange=true</code></strong> — during prepare, leader rejects writes to the second half (no lost writes).</li>
+  <li>Post-commit hooks:
+    <ul>
+    <li>On <strong>PREPARE</strong>: <code>StartShardHook{NewRangeID, InitialMember}</code> — every replica spawns a new dragonboat raft group for the right range on the same node.</li>
+    <li>On <strong>COMMIT</strong>: <code>SnapshotClusterHook</code> — take a local snapshot to compact the now-shrunk left log.</li>
+    </ul>
+  </li>
+  </ul>
+  </details>
+  <details><summary>Right statement (new range)</summary>
+  Direct-write a <code>LocalRangeKey</code> with the new descriptor on the new range's raft group. Post-commit <code>SnapshotClusterHook</code>.
+  </details>
+  <details><summary>Meta statement (meta range)</summary>
+  Two CAS ops — insert the right descriptor at <code>RangeMetaKey(NewRight.End)</code>, update the left descriptor at its new <code>RangeMetaKey(Left.End)</code>. Validates atomically that no one else changed the descriptors.
+  </details>
+</li>
+<li><strong>Run the transaction</strong>: <code>txnCoordinator.RunTxn(ctx, splitRangeTxn.TxnBuilder)</code>.
+The 2PC protocol persists a <code>TxnRecord</code> in the meta range so a crashed coordinator can resume — see <a href="transactions.html">Transactions</a>.</li>
+</ol>
+
+<h3>Online?</h3>
+<p>
+  <strong>Yes, with a brief lock window.</strong> During PREPARE the left range's leader stops accepting writes
+  to the right half (<code>LockMappedRange=true</code>). Once COMMIT applies, writes to the right half are
+  addressed to the new range. The lock window is on the order of the txn duration (tens of milliseconds in
+  steady state). <strong>Reads keep working throughout</strong> because they go through the lease.
+</p>
+
+<div class="callout fact">
+<div class="callout-title">Zero data movement at split time</div>
+The pebble bytes don't move — both ranges share the same store-local pebble instance, just with different <code>[start, end)</code> bounds. A split is cheap on the local node; the only network cost is the txn coordination and starting a new dragonboat group (which immediately gets a snapshot of the relevant subspace).
+</div>
+</div>
+
+<!-- ===== REPLICA MOVES ===== -->
+<div class="tab-panel">
+<h2 id="replica-moves">Replica moves (add + remove)</h2>
+
+<p>Two flavors:</p>
+<ul>
+<li><strong>Rebalance</strong>: move replica from store A to store B (both healthy).</li>
+<li><strong>Replace dead</strong>: same shape, but the "from" replica is on a dead store and can't gracefully transfer state.</li>
+</ul>
+
+<p>Driver constructs the change in <code>rebalanceReplica</code>:</p>
+<pre><code><span class="kw">return</span> &amp;change{
+    addOp: &amp;rfpb.AddReplicaRequest{ Range: rd, Node: op.to.usage.GetNode() },
+    removeOp: &amp;rfpb.RemoveReplicaRequest{ Range: rd, ReplicaId: replicaID },
+}</code></pre>
+
+<p><code>applyChange</code> runs add → remove (so quorum isn't broken).</p>
+
+<h3 id="add-replica">AddReplica</h3>
+
+<p>Multi-step state machine, recoverable on retry from raft membership + the staging-replicas list:</p>
+
+<ol class="steps">
+<li><strong>Validate</strong>: non-empty replicas, target node not already a member, no overlapping range on target. Confirms the local lease and validates the supplied range descriptor against the meta range.</li>
+<li><strong>Reserve replica ID + add to Staging</strong>. <code>reserveReplicaIDs(ctx, rangeID, 1)</code> increments the per-range last-replica counter; <code>addStagingReplicaToRangeDescriptor</code> writes the new replica into <code>rd.Staging</code> (NOT yet a voter). Both local + meta-range descriptors updated atomically.</li>
+<li><strong>Add as non-voter</strong>: get <code>ConfigChangeID</code>, then <code>nodeHost.SyncRequestAddNonVoting(ctx, rangeID, newReplicaID, nhid, configChangeID)</code>. Non-voter receives state but doesn't count toward quorum — safe during catch-up.</li>
+<li><strong>Wait and promote to voter</strong>:
+<ul>
+<li><code>getLocalLastAppliedIndex</code> of the current leader.</li>
+<li><code>apiClient.Get(node.GrpcAddr).StartShard(...)</code> on the new node with <code>Join=true, IsNonVoting=true, LastAppliedIndex=...</code>. The remote <code>StartShard</code> calls <code>nodeHost.StartOnDiskReplica</code> and then blocks via <code>waitForReplicaToCatchUp</code> until applied index ≥ <code>LastAppliedIndex</code>.</li>
+<li><code>nodeHost.SyncRequestAddReplica(...)</code> to promote non-voter to voter.</li>
+</ul>
+</li>
+<li><strong>Move from Staging to Replicas</strong>: <code>addReplicaToRangeDescriptor</code>; updates local + meta descriptor.</li>
+</ol>
+
+<h3 id="remove-replica">RemoveReplica</h3>
+
+<ol class="steps">
+<li>Lease check; <strong>cannot remove the local leader</strong> (driver works around this by first transferring leadership).</li>
+<li><code>markReplicaForRemovalFromRangeDescriptor</code>: moves the replica from <code>rd.Replicas</code> into <code>rd.Removed</code>. The data is <em>not yet</em> deleted — this is the "tombstone" so a subsequent <code>DriverFinishReplicaRemoval</code> can clean up.</li>
+<li><code>syncRequestDeleteReplica(ctx, rangeID, replicaID)</code>: config-change to remove from dragonboat membership.</li>
+</ol>
+
+<h3 id="finish-removal">FinishReplicaRemoval — data wipe</h3>
+
+<p>Driver constructs <code>change{removeDataOp:...}</code>; <code>applyChange</code> contacts the <em>removed</em> node:</p>
+<pre><code>c, _ := rq.apiClient.GetForReplica(ctx, op.replDesc)
+_, err = c.RemoveData(ctx, &amp;rfpb.RemoveDataRequest{
+    ReplicaId: op.replDesc.GetReplicaId(),
+    Range:     op.rd,
+})</code></pre>
+<p>This deletes pebble data for that range and removes the replica from <code>rd.Removed</code>. (Driver checks <code>storeMap.DivideByStatus</code> first; only fires when the dead node is reachable. If truly dead, the data is orphaned and reclaimed by a janitor on next restart.)</p>
+
+<h3 id="why-staging">Why staging exists</h3>
+<p>If <code>AddReplica</code> crashes between "non-voter added" and "promoted to voter", the next attempt sees a staging entry and a matching non-voter in raft membership, and resumes promotion rather than reserving a new replica ID.</p>
+
+<h3 id="transfer-leadership">TransferLeadership</h3>
+<p>Trivial: <code>s.nodeHost.RequestLeaderTransfer(rangeID, targetReplicaID)</code>. Driver invokes for <code>DriverRebalanceLease</code> and (implicitly) before removing the local-leader replica. After transfer, the dragonboat leader-change event fires; both old and new leaders' leasekeepers react.</p>
+</div>
+
+<!-- ===== USAGE TRACKER ===== -->
+<div class="tab-panel">
+<h2 id="usagetracker">Usage tracker &amp; eviction</h2>
+<p><span class="fileref">enterprise/server/raft/usagetracker/usagetracker.go</span> (922 lines).</p>
+
+<p>
+  Tracks per-partition disk usage with <strong>two views</strong>:
+</p>
+<ol>
+<li><strong>Local</strong> (<code>partitionUsage.sizeBytes</code>): bytes this store consumes for keys in this partition. Sourced from <code>db.EstimateDiskUsage(start, end)</code> (pebble built-in), refreshed every 10s.</li>
+<li><strong>Global</strong> (<code>partitionUsage.nodes</code>): every other store's most-recent reported size for this partition. Aggregated by <code>GlobalSizeBytes()</code> as a sum.</li>
+</ol>
+
+<h3>Global propagation</h3>
+
+<p>Via serf gossip user-events:</p>
+<ul>
+<li><code>broadcastLoop</code> runs two timers: a check every 15s, and an "always broadcast" idle timer after 5 minutes of silence.</li>
+<li><code>broadcast(force)</code>: skip if no partition's size changed by &gt;100MB (the gossip delta threshold). Else marshal <code>NodePartitionUsage</code> proto, send <code>NodePartitionUsageEvent</code>.</li>
+<li>Receivers' <code>OnEvent</code> updates <code>byPartition[id].nodes[nhid].sizeBytes</code> and feeds the per-partition <code>approxlru.LRU</code>.</li>
+</ul>
+
+<h3>Eviction pipeline</h3>
+
+<p>Each partition runs four goroutines:</p>
+<ol>
+<li><strong><code>startSampleGenerator</code></strong>: forward-scans pebble in random-key order, yielding samples (key + atime + size + storage_metadata) into <code>pu.samples</code> channel. Refreshes the iterator every 5 minutes.</li>
+<li><strong><code>processEviction</code></strong>: pulls samples that <code>approxlru</code> decided to evict, batches up to <code>evictionBatchSize</code>, sends <code>DeleteRequest{Key, MatchAtime}</code> batches via <code>sender.RunMultiKey</code>.</li>
+<li><strong><code>processGCSDeletions</code></strong>: for evicted entries whose storage was GCS, calls <code>fileStorer.DeleteStoredBlob</code>.</li>
+<li><strong><code>updateLocalSizeBytes</code></strong>: as above.</li>
+</ol>
+
+<p>
+  The <code>approxlru.LRU</code> is constructed with <code>MaxSizeBytes = 0.90 * partition.MaxSizeBytes</code>,
+  so eviction kicks in at 90% full. Rate-limited (<code>evictionRateLimit=300/sec</code>).
+</p>
+
+<div class="callout fact">
+<div class="callout-title">MatchAtime is the safety mechanism</div>
+The eviction sampler observes a row's atime; <code>DeleteRequest{Key, MatchAtime}</code> only deletes if that atime hasn't changed. If anyone touched the row between sample and delete (atime updates flow through the metadata service's atime pipeline), the delete fails with <code>FailedPrecondition</code> and the row survives.
+</div>
+</div>
+
+<!-- ===== GOSSIP ===== -->
+<div class="tab-panel">
+<h2 id="gossip">Gossip channels</h2>
+<p>BuildBuddy uses Hashicorp serf for cluster-wide eventually-consistent state. Channels in use:</p>
+
+<table>
+<thead><tr><th>Constant</th><th>Purpose</th><th>Producer</th><th>Consumer</th></tr></thead>
+<tbody>
+<tr><td><code>MetaRangeTag</code> (user-event)</td><td>Meta range descriptor</td><td>Any store hosting the meta range</td><td>All stores' rangecache; bootstrap-critical</td></tr>
+<tr><td><code>StoreUsageTag</code> (member tag)</td><td>Per-node load (replica/lease count, disk, QPS)</td><td>Every store, via <code>updateStoreUsageTag</code></td><td>StoreMap; consumed by the driver</td></tr>
+<tr><td><code>RegistryUpdateEvent</code></td><td>NHID → (raft addr, grpc addr) update</td><td>Local registry on AddNode</td><td>All registries; merged into local StaticRegistry</td></tr>
+<tr><td><code>RegistryQueryEvent</code> (query)</td><td>"Who is this NHID?"</td><td>Registry on miss</td><td>Peers; first response wins</td></tr>
+<tr><td><code>AutoBringupEvent</code> (query)</td><td>"Who's here?" during bootstrap</td><td>Bringup coordinator</td><td>All listeners reply with NHID + grpc addr</td></tr>
+<tr><td><code>NodePartitionUsageEvent</code></td><td>Per-node per-partition usage</td><td>UsageTracker</td><td>All UsageTrackers; feeds global view</td></tr>
+<tr><td><code>PlacementDriverQueryEvent</code></td><td>Reserved (driver coordination)</td><td>—</td><td>—</td></tr>
+</tbody>
+</table>
+
+<h3>Why gossip + meta range together?</h3>
+<p>
+  The meta range is the <strong>durable source of truth</strong> for range descriptors and partition descriptors.
+  Gossip is the <strong>cache-warming channel</strong>. Without gossip, every node would have to ReadIndex the
+  meta range on every cache miss; with gossip, range descriptors arrive at every node within seconds of being
+  written.
+</p>
+
+<p>
+  Critically: <strong>gossip is allowed to be wrong; the meta range is not</strong>. If gossip lies, the worst
+  outcome is a wasted RPC attempt that gets <code>OutOfRange</code> from the wrong-generation replica, and
+  the sender re-fetches from the meta range.
+</p>
+</div>
+
+<div class="page-footer">
+  <div>← <a href="transactions.html">Transactions</a></div>
+  <div class="next-prev">
+    <a href="walkthroughs.html">End-to-end walkthroughs →</a>
+  </div>
+</div>
+</main>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

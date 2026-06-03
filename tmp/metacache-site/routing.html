@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Routing — sender, client, registry</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+  <h1>MetaCache &amp; Raft</h1>
+  <div class="subtitle">BuildBuddy's metadata service, explained</div>
+  <input type="search" class="search-box" placeholder="Filter pages…" />
+
+  <div class="nav-section">Start here</div>
+  <a class="nav-link" href="index.html">Overview &amp; architecture</a>
+  <a class="nav-link" href="walkthroughs.html">End-to-end walkthroughs</a>
+
+  <div class="nav-section">The cache layer</div>
+  <a class="nav-link" href="metacache.html">MetaCache (metacache.go)</a>
+  <a class="nav-link" href="metadata-service.html">MetadataService server</a>
+  <a class="nav-link" href="protos.html">Proto definitions</a>
+
+  <div class="nav-section">The raft layer</div>
+  <a class="nav-link" href="store-replica.html">Store &amp; Replica</a>
+  <a class="nav-link" href="routing.html">Routing (sender, registry)</a>
+  <a class="nav-link" href="leases.html">Leases &amp; node liveness</a>
+  <a class="nav-link" href="transactions.html">Multi-range transactions</a>
+
+  <div class="nav-section">Cluster management</div>
+  <a class="nav-link" href="cluster-mgmt.html">Bringup, driver &amp; splits</a>
+
+  <div class="nav-section">Reference</div>
+  <a class="nav-link" href="glossary.html">Glossary</a>
+</aside>
+
+<main class="main">
+<div class="breadcrumb"><a href="index.html">Home</a> · Raft layer · Routing</div>
+<h1 class="page-title">Routing — finding the right range &amp; replica</h1>
+<p class="page-lede">
+  The system is multi-group raft: every key range is its own dragonboat cluster. A request keyed by some
+  byte-string must (a) discover which range owns the key, (b) discover where that range's replicas live,
+  (c) try them in preference order, and (d) handle stale routing information when ranges have split or moved.
+</p>
+
+<h2 id="components">The cast of components</h2>
+
+<table>
+<thead><tr><th>Component</th><th>File</th><th>Role</th></tr></thead>
+<tbody>
+<tr><td><strong>Sender</strong></td><td><code>raft/sender/sender.go</code></td><td>Client-side router. Caches descriptors, retries on errors, partitions multi-key calls by range.</td></tr>
+<tr><td><strong>RangeCache</strong></td><td><code>raft/rangecache/</code></td><td>Local in-memory cache: <code>[start, end)</code> → <code>RangeDescriptor</code>.</td></tr>
+<tr><td><strong>APIClient</strong></td><td><code>raft/client/client.go</code></td><td>Connection pool of <code>raft.service.Api</code> gRPC clients keyed by peer address.</td></tr>
+<tr><td><strong>Registry</strong></td><td><code>raft/registry/registry.go</code></td><td>NHID → (raft addr, grpc addr). Gossip-backed; also implements dragonboat's <code>INodeRegistry</code>.</td></tr>
+<tr><td><strong>RBuilder</strong></td><td><code>raft/rbuilder/rbuilder.go</code></td><td>Fluent builder for <code>BatchCmdRequest</code> envelopes.</td></tr>
+<tr><td><strong>Storemap</strong></td><td><code>raft/storemap/storemap.go</code></td><td>Per-store stats (load, capacity, aliveness). Consumed by the driver, NOT by the routing path.</td></tr>
+</tbody>
+</table>
+
+<h2 id="sender">Sender — the request router</h2>
+
+<p>
+  The <code>Sender</code> is the single client-side entry point for "do this batch on key K." It hides
+  multi-group raft from callers and presents a uniform interface.
+</p>
+
+<div class="code-header"><span><span class="fileref">sender/sender.go:29-47</span></span></div>
+<pre><code><span class="kw">type</span> <span class="typ">ISender</span> <span class="kw">interface</span> {
+    SyncPropose(ctx, key, batch) (*BatchCmdResponse, error)
+    SyncRead(ctx, key, batch, mods...) (*BatchCmdResponse, error)
+}
+
+<span class="kw">type</span> <span class="typ">Sender</span> <span class="kw">struct</span> {
+    rangeCache *rangecache.RangeCache  <span class="cmt">// local cache: key range -&gt; RangeDescriptor</span>
+    apiClient  *client.APIClient       <span class="cmt">// pooled gRPC connections to peers</span>
+}</code></pre>
+
+<h3 id="lookup">Finding the range for a key</h3>
+
+<ol class="steps">
+<li><strong>Cache lookup.</strong> <code>Sender.LookupRangeDescriptor(ctx, key, skipCache)</code> first tries <code>s.rangeCache.Get(key)</code>. The rangecache uses an interval tree to find the unique range whose <code>[start, end)</code> contains the key.</li>
+<li><strong>On miss</strong> (or <code>skipCache</code>), call <code>fetchRangeDescriptorsFromMetaRange(ctx, [][]byte{key})</code>. This executes a <code>ScanRequest</code> on the meta range using <code>RangeMetaKey(key) = \x02 || key</code> with <code>SEEKGT_SCAN_TYPE</code>, limit 1 — "find the descriptor whose meta-key is smallest &gt;= my key's meta-key." Verifies the returned descriptor actually contains <code>key</code> (<code>rangemap.Range.Contains</code>).</li>
+<li><strong>Cache the result</strong> via <code>rangeCache.UpdateRange</code>. Update only if <code>newGeneration &gt; existingGeneration</code>.</li>
+</ol>
+
+<p>
+  The meta range itself is discovered via gossip. <code>Sender.GetMetaRangeDescriptor()</code> just reads
+  the rangecache, which is seeded by the <code>MetaRangeTag</code> serf user-event published by every node
+  hosting the meta range.
+</p>
+
+<h3 id="try-replicas">Trying replicas in preference order</h3>
+
+<p>
+  <code>tryReplicas</code> iterates <code>rd.Replicas</code> (then <code>rd.Staging</code>) and runs the supplied
+  closure against each. The interesting bit is the error classification:
+</p>
+
+<div class="code-header"><span><span class="fileref">sender.go:307-355</span> — tryReplica error handling</span></div>
+<pre><code><span class="kw">if</span> status.IsOutOfRangeError(err) {
+    <span class="kw">switch</span> m := status.Message(err); {
+    <span class="kw">case</span> strings.HasPrefix(m, constants.RangeNotCurrentMsg):
+        <span class="cmt">// Range descriptor itself is stale; no replica can help. Bail.</span>
+        <span class="kw">return</span> <span class="kw">false</span>, status.OutOfRangeErrorf(...)
+    <span class="kw">case</span> strings.HasPrefix(m, constants.RangeNotLeasedMsg),
+         strings.HasPrefix(m, constants.RangeLeaseInvalidMsg),
+         strings.HasPrefix(m, constants.RangeNotFoundMsg):
+        <span class="cmt">// This replica is wrong; try the next one.</span>
+        <span class="kw">return</span> <span class="kw">true</span>, status.WrapErrorf(...)
+    }
+}
+<span class="kw">if</span> status.IsUnavailableError(err) {
+    <span class="kw">return</span> <span class="kw">true</span>, ...   <span class="cmt">// network problem - try another replica</span>
+}</code></pre>
+
+<p>
+  On success, the index of the winning replica is returned so the caller can call
+  <code>rangeCache.SetPreferredReplica</code> — promoting that replica to index 0 in the cached
+  <code>rd.Replicas</code> so future calls hit the leaseholder first.
+</p>
+
+<h3 id="run">The main retry loop</h3>
+
+<div class="code-header"><span><span class="fileref">sender.go:443</span> — Sender.run</span></div>
+<pre><code>retrier := retry.DefaultWithContext(ctx)
+skipRangeCache := <span class="kw">false</span>
+<span class="kw">for</span> retrier.Next() {
+    rd, err := s.LookupRangeDescriptor(ctx, key, skipRangeCache)
+    <span class="kw">if</span> err != <span class="kw">nil</span> { ...; continue }
+    i, err := s.tryReplicas(ctx, rd, fn, opts.ConsistencyMode)
+    <span class="kw">if</span> err == <span class="kw">nil</span> {
+        <span class="kw">if</span> i != 0 {
+            s.rangeCache.SetPreferredReplica(ctx, rd.Replicas[i], rd)
+        }
+        <span class="kw">return</span> <span class="kw">nil</span>
+    }
+    skipRangeCache = <span class="kw">true</span>   <span class="cmt">// next iteration goes back to the meta range</span>
+    <span class="kw">if</span> !status.IsOutOfRangeError(err) &amp;&amp; !isConflictKeyError(err) {
+        <span class="kw">return</span> err
+    }
+    lastError = err
+}</code></pre>
+
+<p>
+  Once we see an <code>OutOfRange</code> or <code>ConflictKey</code> error, <code>skipRangeCache = true</code>
+  forces a fresh meta-range lookup on the next iteration — that's how stale routing self-heals.
+</p>
+
+<h3 id="multi-key">Multi-key fan-out</h3>
+
+<p>
+  <code>RunMultiKey</code> (<span class="fileref">sender.go:552</span>) takes N keys and runs one closure per
+  destination range, in parallel:
+</p>
+
+<ol class="steps">
+  <li><strong><code>partitionKeysByRange</code></strong>: cache lookup for each; batch-fetch misses with a single meta-range scan; group by <code>range_id</code>. Detects mid-flight changes (two RDs for the same <code>range_id</code> after a split) and retries the partitioning.</li>
+  <li><strong>Fan out via errgroup</strong> with <code>SetLimit(100)</code>; each goroutine runs <code>tryReplicas</code>.</li>
+  <li><strong>Per-range outcome</strong>: success → collect response; <code>OutOfRange</code> → re-queue those keys, retry with fresh cache; other error → abort.</li>
+</ol>
+
+<h2 id="apiclient">APIClient — gRPC connection pool</h2>
+
+<div class="code-header"><span><span class="fileref">client/client.go:64-84</span></span></div>
+<pre><code><span class="kw">type</span> <span class="typ">APIClient</span> <span class="kw">struct</span> {
+    env      environment.Env
+    mu       sync.Mutex
+    clients  <span class="kw">map</span>[<span class="typ">string</span>]*grpc_client.ClientConnPool  <span class="cmt">// peer addr -&gt; pool</span>
+    registry IRegistry                                  <span class="cmt">// for nhid -&gt; addr translation</span>
+}
+
+<span class="kw">func</span> (c *APIClient) GetForReplica(ctx, rd) (rfspb.ApiClient, error) {
+    addr, err := c.registry.ResolveGRPC(ctx, rd.GetNhid())
+    <span class="kw">if</span> err != <span class="kw">nil</span> { <span class="kw">return</span> <span class="kw">nil</span>, err }
+    <span class="kw">return</span> c.getClient(ctx, addr)
+}</code></pre>
+
+<p>
+  When dialing, addresses get a kube-aware prefix:
+</p>
+
+<pre><code>target := <span class="str">"grpc://"</span> + peer
+<span class="kw">if</span> kuberesolver.RunningInKubernetes() {
+    target = <span class="str">"kube:///"</span> + peer   <span class="cmt">// instant pod-IP updates on rollout</span>
+}
+conn, err := grpc_client.DialSimple(target, grpc.WithConnectParams(...))</code></pre>
+
+<p>
+  Without <code>kube:///</code>, dragonboat-style sticky connections plus pod restarts would cause minute-long
+  stalls when an IP changed.
+</p>
+
+<h3 id="local-helpers">Server-side local helpers</h3>
+
+<p>
+  The same file also has the server-side helpers that <code>Store</code> uses to talk to its own dragonboat:
+</p>
+
+<ul>
+  <li><strong><code>Session</code></strong> (<span class="fileref">:255</span>) — a refreshing session ID + monotonic index appended to each batch so the state machine can dedupe replayed proposals.</li>
+  <li><strong><code>Session.SyncProposeLocal</code></strong> (<span class="fileref">:307</span>) — per-rangeID mutex, marshals the batch, calls <code>nodehost.SyncPropose</code>.</li>
+  <li><strong><code>SyncReadLocal</code></strong> (<span class="fileref">:383</span>) — branches on consistency mode: <code>LINEARIZABLE</code> does <code>ReadIndex</code> + <code>ReadLocalNode</code>; <code>RANGELEASE</code> and <code>STALE</code> go through <code>StaleRead</code>.</li>
+  <li><strong><code>RunNodehostFn</code></strong> (<span class="fileref">:220</span>) — common per-attempt timeout + dragonboat-temp-error retry wrapper. Maps dragonboat errors to gRPC status codes:
+  <pre><code><span class="kw">if</span> dragonboat.IsTempError(err) { <span class="kw">return</span> status.WithCode(err, codes.Unavailable) }
+<span class="kw">if</span> errors.Is(err, dragonboat.ErrCanceled) { <span class="kw">return</span> status.WithCode(err, codes.Canceled) }
+<span class="kw">return</span> status.WithCode(err, codes.Internal)</code></pre>
+  </li>
+</ul>
+
+<h2 id="registry">Registry — NHID → address</h2>
+
+<p>The registry tracks two distinct mappings:</p>
+<ol>
+<li><strong><code>(rangeID, replicaID) → nhid</code></strong> — for dragonboat's transport layer.</li>
+<li><strong><code>nhid → {raftAddr, grpcAddr}</code></strong> — for both dragonboat and the application's gRPC client.</li>
+</ol>
+
+<h3 id="static">StaticRegistry</h3>
+<p>In-memory map. Satisfies dragonboat's <code>raftio.INodeRegistry</code> interface: <code>Add</code>, <code>Remove</code>, <code>RemoveShard</code>, <code>Resolve(rangeID, replicaID) → (addr, connectionKey, error)</code>. Plus app-facing <code>ResolveGRPC(nhid)</code>, <code>AddNode(nhid, raftAddr, grpcAddr)</code>, <code>ListNodes()</code>.</p>
+
+<p>The <code>streamConnections</code> flag controls multiplexing — when &gt;1, <code>getConnectionKey</code> returns <code>"addr-partitionID"</code> so dragonboat opens that many physical TCP connections per peer for snake-shaped raft traffic.</p>
+
+<h3 id="dynamic">DynamicNodeRegistry — gossip-backed</h3>
+
+<p>Production wrapper around <code>StaticRegistry</code>. Two gossip channels:</p>
+
+<div class="cols-2">
+<div>
+<h4>Push (broadcast)</h4>
+<p>
+  When local <code>AddNode</code> happens, gossip a <code>RegistryPushRequest{nhid, raft, grpc}</code>
+  user-event. All listeners' <code>handleEvent</code> ingests into their local StaticRegistry.
+</p>
+</div>
+<div>
+<h4>Pull (query/response)</h4>
+<p>
+  On <code>ResolveGRPC</code>/<code>Lookup</code> miss, issue a gossip <code>RegistryQueryEvent</code>.
+  Peers' <code>handleQuery</code> look it up; first response wins; caller adds to local StaticRegistry.
+</p>
+</div>
+</div>
+
+<div class="callout fact">
+<div class="callout-title">Why not gossip the (rangeID, replicaID) mapping too?</div>
+<code>DynamicNodeRegistry.Add</code> deliberately does <em>not</em> gossip per-replica mappings because dragonboat calls this very frequently (every shard membership change for every shard). Instead, the mapping is reconstructed on demand via gossip query and then cached. This keeps gossip traffic O(nodes) rather than O(replicas).
+</div>
+
+<h3 id="k8s">Optional Kubernetes pod watcher</h3>
+
+<p>
+  If a <code>PodWatcherManager</code> is set, raft addresses that look like pod FQDNs are watched via the K8s API.
+  When a pod's IP changes, <code>resolvedRaftAddrs</code> is updated and <code>Resolve()</code> returns the new IP —
+  which dragonboat uses as a new connection key, triggering a reconnect. This is the IP-tracking sister to the
+  <code>kube:///</code> gRPC resolver in <code>client.go</code>.
+</p>
+
+<h2 id="rangecache">RangeCache — local descriptor cache</h2>
+
+<p>
+  An interval tree (<code>rangemap.RangeMap</code>) keyed by <code>[start, end)</code>. Each entry wraps a
+  <code>*RangeDescriptor</code> in its own mutex so the replica list can be reordered (for preferred-replica
+  promotion) without holding the map-level lock.
+</p>
+
+<h3>How it's populated</h3>
+<ol>
+<li><strong>Gossip seeding for the meta range.</strong> <code>Store.setMetaRangeBuf</code> is called from gossip events. After parsing the descriptor, calls <code>sender.UpdateRange(new)</code>. This is how the chicken-and-egg meta-range bootstrap works.</li>
+<li><strong>Cache misses fetched from the meta range.</strong> <code>LookupRangeDescriptor</code> and <code>partitionKeysByRange</code> call <code>rangeCache.UpdateRange</code>.</li>
+<li><strong>Preferred-replica promotion.</strong> <code>SetPreferredReplica</code> reorders the cached replica list after a successful call.</li>
+</ol>
+
+<h3>How it's invalidated</h3>
+<p>
+  No TTL. Updates only happen if <code>newGeneration &gt; existingGeneration</code>. Splits/merges that change
+  range bounds use <code>AddAndRemoveOverlapping</code> which atomically replaces older-generation entries.
+</p>
+<p>
+  <strong>Implicit invalidation via stale-range errors</strong>: when <code>Sender.run</code> sees <code>OutOfRange</code>,
+  it sets <code>skipRangeCache = true</code> and re-fetches. The fresh descriptor's higher generation will
+  replace the stale entry on the next <code>UpdateRange</code>.
+</p>
+
+<h2 id="rbuilder">RBuilder — request builder</h2>
+
+<p>
+  A fluent builder for <code>BatchCmdRequest</code>. The <code>BatchCmdRequest</code> is the universal envelope
+  for everything (reads, writes, admin, txn control).
+</p>
+
+<div class="code-header"><span><span class="fileref">rbuilder/rbuilder.go:40</span> — BatchBuilder.Add</span></div>
+<pre><code><span class="kw">type</span> <span class="typ">BatchBuilder</span> <span class="kw">struct</span> {
+    cmd *rfpb.BatchCmdRequest
+    err error
+}
+
+<span class="cmt">// Type-switches on the proto type and wraps in RequestUnion.</span>
+<span class="kw">func</span> (b *BatchBuilder) Add(req <span class="kw">interface</span>{}) *BatchBuilder { ... }</code></pre>
+
+<p>Other features:</p>
+<ul>
+<li><code>SetTransactionID(txid)</code> — marks the batch as part of a 2PC; replica parks the batch until COMMIT or ROLLBACK.</li>
+<li><code>SetFinalizeOperation(op)</code> — turns the batch into the second 2PC phase.</li>
+<li><code>SetHeader(h)</code> / <code>SetSession(s)</code> — routing + idempotency.</li>
+<li><code>SetLockMappedRange(lock)</code> — for split prepare (locks the whole left range against new writes).</li>
+<li><code>AddPostCommitHook(SnapshotClusterHook | StartShardHook)</code> — side-effects after the entry applies.</li>
+</ul>
+
+<p>The corresponding <code>BatchResponse</code> has typed getters per slot, plus an <code>AnyError()</code> that checks per-op statuses (because batch-level success and per-op success are distinct).</p>
+
+<h2 id="storemap">Storemap — driver's view of the cluster</h2>
+
+<p>
+  <strong>Not used by routing.</strong> <code>StoreMap</code> is the cluster-wide view of every node's load,
+  capacity, and aliveness, used by the driver (<a href="cluster-mgmt.html#driver">covered separately</a>) to
+  decide where to place new replicas and where to move leases. Mentioned here because it lives alongside the
+  routing infrastructure.
+</p>
+
+<p>
+  Two mechanisms keep it fresh: (a) gossip member events update each node's <code>StoreUsage</code> tag;
+  (b) every read does a live <code>gossipManager.Members()</code> query so aliveness is fresh. Status state
+  machine: <code>Available</code> / <code>Suspect</code> (alive but recently recovered) / <code>Unknown</code>
+  (down &lt;5m) / <code>Dead</code> (down ≥5m).
+</p>
+
+<h2 id="header">Header builders</h2>
+
+<p>Three factory functions construct <code>rfpb.Header</code>s for various validation strictness:</p>
+
+<table>
+<thead><tr><th>Function</th><th>Validation</th><th>Used for</th></tr></thead>
+<tbody>
+<tr><td><code>MakeLinearizableWithRangeValidation</code></td><td>Linearizable + generation check</td><td>Default reads/writes</td></tr>
+<tr><td><code>MakeLinearizableWithLeaseValidationOnly</code></td><td>Linearizable + lease check, skip generation</td><td>Transactional ops where the generation may have legitimately changed</td></tr>
+<tr><td><code>MakeLinearizableWithoutRangeValidation</code></td><td>Linearizable; skip both</td><td>Brand-new ranges that haven't propagated descriptors yet</td></tr>
+</tbody>
+</table>
+
+<h2 id="put-together">All together: a single SyncRead</h2>
+
+<div class="seq">
+<pre><code>cache client                       sender                  rangecache       apiClient        registry             remote Store
+     │                              │                          │                │               │                       │
+     │ SyncRead(key, batch) ───────▶│                          │                │               │                       │
+     │                              │ Get(key) ────────────────▶│               │                │                      │
+     │                              │ ◀──── rd (cached) ───────│                │                │                      │
+     │                              │ tryReplicas(rd, fn)      │                │                │                      │
+     │                              │   GetForReplica(rep) ────┼──────────────▶ │                │                      │
+     │                              │                          │   ResolveGRPC(nhid) ──────────▶│                       │
+     │                              │                          │                │  ◀── addr ────│                       │
+     │                              │   ◀───── ApiClient ──────┼────────────────│                                       │
+     │                              │   fn(client, header) ─── SyncRead RPC ──────────────────────────────────────▶│
+     │                              │                          │                │                                       │  LeasedRange
+     │                              │                          │                │                                       │  (range? lease? gen?)
+     │                              │                          │                │                                       │  SyncReadLocal
+     │                              │                          │                │                                       │  Replica.Lookup
+     │                              │   ◀──────────────────── BatchCmdResponse ────────────────────────────────────│
+     │  ◀──── response ─────────────│                          │                │                │                       │
+</code></pre>
+</div>
+
+<p>
+  If <code>tryReplicas</code> picks replica index 2 because index 0 returned <code>RangeNotLeasedMsg</code>,
+  the sender calls <code>SetPreferredReplica(rd.Replicas[2], rd)</code> so the next call goes there first.
+  Over a few requests the cache converges to the actual leaseholder for every range.
+</p>
+
+<div class="page-footer">
+  <div>← <a href="store-replica.html">Store &amp; Replica</a></div>
+  <div class="next-prev">
+    <a href="leases.html">Leases &amp; node liveness →</a>
+  </div>
+</div>
+</main>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

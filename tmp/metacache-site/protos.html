@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Proto definitions</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+  <h1>MetaCache &amp; Raft</h1>
+  <div class="subtitle">BuildBuddy's metadata service, explained</div>
+  <input type="search" class="search-box" placeholder="Filter pages…" />
+
+  <div class="nav-section">Start here</div>
+  <a class="nav-link" href="index.html">Overview &amp; architecture</a>
+  <a class="nav-link" href="walkthroughs.html">End-to-end walkthroughs</a>
+
+  <div class="nav-section">The cache layer</div>
+  <a class="nav-link" href="metacache.html">MetaCache (metacache.go)</a>
+  <a class="nav-link" href="metadata-service.html">MetadataService server</a>
+  <a class="nav-link" href="protos.html">Proto definitions</a>
+
+  <div class="nav-section">The raft layer</div>
+  <a class="nav-link" href="store-replica.html">Store &amp; Replica</a>
+  <a class="nav-link" href="routing.html">Routing (sender, registry)</a>
+  <a class="nav-link" href="leases.html">Leases &amp; node liveness</a>
+  <a class="nav-link" href="transactions.html">Multi-range transactions</a>
+
+  <div class="nav-section">Cluster management</div>
+  <a class="nav-link" href="cluster-mgmt.html">Bringup, driver &amp; splits</a>
+
+  <div class="nav-section">Reference</div>
+  <a class="nav-link" href="glossary.html">Glossary</a>
+</aside>
+
+<main class="main">
+<div class="breadcrumb"><a href="index.html">Home</a> · Cache layer · Proto reference</div>
+<h1 class="page-title">Proto reference</h1>
+<p class="page-lede">
+  Every proto that appears anywhere in this stack. Tabs select by file. Each message is annotated.
+</p>
+
+<div class="tabs">
+  <button class="tab active">resource.proto</button>
+  <button class="tab">storage.proto</button>
+  <button class="tab">metadata.proto</button>
+  <button class="tab">metadata_service.proto</button>
+  <button class="tab">raft.proto</button>
+  <button class="tab">raft_service.proto</button>
+</div>
+
+<div class="tab-panel active">
+<h2>resource.proto <span class="pill proto">public</span></h2>
+<p>The user-facing identifier for any cache blob. Comes "in the door" from a Bazel client.</p>
+<div class="code-header"><span>proto/resource.proto</span></div>
+<pre><code><span class="kw">message</span> <span class="typ">ResourceName</span> {
+  build.bazel.remote.execution.v2.Digest digest = 1;
+  <span class="typ">string</span> instance_name = 2;
+  build.bazel.remote.execution.v2.Compressor.Value compressor = 3;
+  CacheType cache_type = 4;   <span class="cmt">// AC (action cache) or CAS (content addressable storage)</span>
+  build.bazel.remote.execution.v2.DigestFunction.Value digest_function = 5;
+}
+
+<span class="kw">enum</span> CacheType { UNKNOWN_CACHE_TYPE = 0; AC = 1; CAS = 2; }</code></pre>
+
+<p>Used everywhere in <code>metacache.go</code> — <code>Get</code>, <code>Set</code>, <code>Contains</code>, <code>Reader</code>, <code>Writer</code> all take a <code>*rspb.ResourceName</code>. The metacache translates it to a <code>FileRecord</code> (next tab) via <code>makeFileRecord</code>.</p>
+</div>
+
+<div class="tab-panel">
+<h2>storage.proto <span class="pill proto">internal</span></h2>
+<p>The persisted, internal form. <code>FileRecord</code> is the key, <code>FileMetadata</code> is the value, and <code>StorageMetadata</code> is the discriminated union telling the system where the bytes live.</p>
+
+<div class="code-header"><span>Isolation — namespacing for a record</span></div>
+<pre><code><span class="kw">message</span> <span class="typ">Isolation</span> {
+  resource.CacheType cache_type = 1;
+  <span class="typ">string</span> remote_instance_name = 2;
+  <span class="typ">string</span> partition_id = 3;
+  <span class="typ">string</span> group_id = 4;
+}</code></pre>
+
+<div class="code-header"><span>FileRecord — the canonical key</span></div>
+<pre><code><span class="kw">message</span> <span class="typ">FileRecord</span> {
+  Isolation isolation = 1;
+  build.bazel.remote.execution.v2.Digest digest = 2;
+  build.bazel.remote.execution.v2.Compressor.Value compressor = 3;
+  Encryption encryption = 4;
+  build.bazel.remote.execution.v2.DigestFunction.Value digest_function = 5;
+}</code></pre>
+
+<div class="code-header"><span>StorageMetadata — the discriminated union</span></div>
+<pre><code><span class="kw">message</span> <span class="typ">StorageMetadata</span> {
+  <span class="kw">message</span> FileMetadata    { <span class="typ">string</span> filename = 1; }
+  <span class="kw">message</span> PebbleMetadata  { <span class="typ">bytes</span> key = 1; <span class="typ">int64</span> chunks = 2; }
+  <span class="kw">message</span> InlineMetadata  { <span class="typ">bytes</span> data = 1; <span class="typ">int64</span> created_at_nsec = 2; }
+  <span class="kw">message</span> GCSMetadata     { <span class="typ">string</span> blob_name = 1; <span class="typ">int64</span> last_custom_time_usec = 2; }
+  FileMetadata    file_metadata    = 1;
+  PebbleMetadata  pebble_metadata  = 2;
+  InlineMetadata  inline_metadata  = 3;
+  GCSMetadata     gcs_metadata     = 5;
+}</code></pre>
+
+<p>The metacache only uses <code>InlineMetadata</code> and <code>GCSMetadata</code>. The other two variants are used by other cache backends (PebbleCache, file-based caches) which do not currently route through the raft metadata service.</p>
+
+<div class="code-header"><span>FileMetadata — the value at each key</span></div>
+<pre><code><span class="kw">message</span> <span class="typ">FileMetadata</span> {
+  FileRecord file_record = 1;
+  StorageMetadata storage_metadata = 2;
+  EncryptionMetadata encryption_metadata = 6;
+  <span class="typ">int64</span> stored_size_bytes = 3;       <span class="cmt">// what was actually written</span>
+  <span class="typ">int64</span> last_access_usec = 4;        <span class="cmt">// atime; bumped by reads via UpdateAtimeRequest</span>
+  <span class="typ">int64</span> last_modify_usec = 5;
+}</code></pre>
+
+<div class="code-header"><span>PartitionMetadata — global per-partition usage counters</span></div>
+<pre><code><span class="kw">message</span> <span class="typ">PartitionMetadata</span> {
+  <span class="typ">int64</span> size_bytes = 1;
+  <span class="typ">int64</span> cas_count = 2;
+  <span class="typ">int64</span> ac_count = 3;
+  <span class="typ">int64</span> total_count = 4;
+  <span class="typ">string</span> partition_id = 5;
+}</code></pre>
+</div>
+
+<div class="tab-panel">
+<h2>metadata.proto <span class="pill proto">public RPC types</span></h2>
+<p>Tiny — wrappers for the four operations.</p>
+
+<div class="code-header"><span>Get / Set / Delete / Find request &amp; response types</span></div>
+<pre><code><span class="kw">message</span> <span class="typ">GetRequest</span>    { <span class="kw">repeated</span> storage.FileRecord file_records = 1; }
+<span class="kw">message</span> <span class="typ">GetResponse</span>   { <span class="kw">repeated</span> storage.FileMetadata file_metadatas = 1; }
+
+<span class="kw">message</span> <span class="typ">SetRequest</span> {
+  <span class="kw">message</span> SetOperation { storage.FileMetadata file_metadata = 1; }
+  <span class="kw">repeated</span> SetOperation set_operations = 1;
+}
+<span class="kw">message</span> <span class="typ">SetResponse</span> {}
+
+<span class="kw">message</span> <span class="typ">DeleteRequest</span> {
+  <span class="kw">message</span> DeleteOperation {
+    storage.FileRecord file_record = 1;
+    <span class="typ">int64</span> match_atime = 2;     <span class="cmt">// optimistic CAS: only delete if atime matches</span>
+  }
+  <span class="kw">repeated</span> DeleteOperation delete_operations = 1;
+}
+<span class="kw">message</span> <span class="typ">DeleteResponse</span> {}
+
+<span class="kw">message</span> <span class="typ">FindRequest</span>  { <span class="kw">repeated</span> storage.FileRecord file_records = 1; }
+<span class="kw">message</span> <span class="typ">FindResponse</span> {
+  <span class="kw">message</span> FindOperationResponse {
+    <span class="typ">bool</span> present = 1;
+    <span class="typ">int64</span> last_access_usec = 2;
+  }
+  <span class="kw">repeated</span> FindOperationResponse find_responses = 1;
+}</code></pre>
+
+<div class="callout tip">
+<div class="callout-title">match_atime is a quiet superpower</div>
+The optional <code>match_atime</code> on each <code>DeleteOperation</code> is what lets eviction be safely concurrent with reads/writes. The eviction sampler observes a row's atime; if anyone touches the row before the delete arrives, the conditional fails and the row stays. Used by the usagetracker eviction pipeline and by <code>metacache.handleMetadataMismatch</code> for orphan cleanup.
+</div>
+</div>
+
+<div class="tab-panel">
+<h2>metadata_service.proto <span class="pill proto">public gRPC</span></h2>
+<p>The entire public service. Only four methods.</p>
+
+<div class="code-header"><span>proto/metadata_service.proto</span></div>
+<pre><code><span class="kw">service</span> MetadataService {
+  <span class="kw">rpc</span> Get(metadata.GetRequest)       <span class="kw">returns</span> (metadata.GetResponse);
+  <span class="kw">rpc</span> Set(metadata.SetRequest)       <span class="kw">returns</span> (metadata.SetResponse);
+  <span class="kw">rpc</span> Delete(metadata.DeleteRequest) <span class="kw">returns</span> (metadata.DeleteResponse);
+  <span class="kw">rpc</span> Find(metadata.FindRequest)     <span class="kw">returns</span> (metadata.FindResponse);
+}</code></pre>
+
+<p>
+  A <code>metadata_server</code> binary (<code>enterprise/server/cmd/metadata_server/main.go</code>) registers
+  this server. Clients are the various <code>metacache.Cache</code> instances elsewhere in the fleet.
+</p>
+</div>
+
+<div class="tab-panel">
+<h2>raft.proto <span class="pill proto">internal</span></h2>
+<p>734 lines, four conceptual sub-sections. This is what flows over dragonboat as state-machine commands.</p>
+
+<h3>1 · Storage &amp; wire</h3>
+<pre><code><span class="kw">message</span> <span class="typ">KV</span> { <span class="typ">bytes</span> key = 1; <span class="typ">bytes</span> value = 2; }
+
+<span class="kw">message</span> <span class="typ">RequestUnion</span> {
+  <span class="kw">oneof</span> value {
+    DirectWriteRequest  direct_write = 1;
+    DirectReadRequest   direct_read  = 2;
+    DirectDeleteRequest direct_delete= 15;
+    IncrementRequest    increment    = 3;
+    ScanRequest         scan         = 4;
+    CASRequest          cas          = 5;
+    FindSplitPointRequest  find_split_point = 14;
+    DeleteSessionsRequest  delete_sessions  = 16;
+    FetchRangesRequest     fetch_ranges     = 17;
+    GetRequest    get    = 7;
+    SetRequest    set    = 8;
+    DeleteRequest delete = 9;
+    FindRequest   find   = 10;
+    UpdateAtimeRequest update_atime = 11;
+  }
+}
+
+<span class="kw">message</span> <span class="typ">BatchCmdRequest</span> {
+  Header header = 1;
+  <span class="kw">repeated</span> RequestUnion union = 2;
+  <span class="kw">optional</span> <span class="typ">bytes</span> transaction_id = 3;
+  <span class="kw">optional</span> FinalizeOperation finalize_operation = 4;
+  <span class="kw">repeated</span> PostCommitHook post_commit_hooks = 5;
+  <span class="kw">optional</span> Session session = 6;
+  <span class="typ">bool</span> lock_mapped_range = 7;
+}</code></pre>
+
+<p>One <code>BatchCmdRequest</code> = one raft log entry. Multiple ops in <code>union</code> apply atomically to the underlying Pebble batch.</p>
+
+<h3>2 · Headers &amp; descriptors</h3>
+<pre><code><span class="kw">message</span> <span class="typ">Header</span> {
+  ReplicaDescriptor replica = 1;
+  <span class="typ">uint64</span> range_id = 2;
+  <span class="typ">uint64</span> generation = 3;
+  <span class="kw">enum</span> ConsistencyMode { LINEARIZABLE = 0; STALE = 1; RANGELEASE = 2; }
+  ConsistencyMode consistency_mode = 4;
+  <span class="kw">optional</span> Session session = 5;
+  <span class="typ">bool</span> skip_generation_check = 6;
+}
+
+<span class="kw">message</span> <span class="typ">RangeDescriptor</span> {
+  <span class="typ">bytes</span> start = 1; <span class="typ">bytes</span> end = 2;
+  <span class="typ">uint64</span> range_id = 3;
+  <span class="kw">repeated</span> ReplicaDescriptor replicas = 4;
+  <span class="typ">uint64</span> generation = 5;
+  <span class="kw">optional</span> <span class="typ">uint64</span> last_added_replica_id = 6;
+  <span class="kw">optional</span> <span class="typ">int64</span>  last_replica_added_at_usec = 7;
+  <span class="kw">repeated</span> ReplicaDescriptor removed = 8;
+  <span class="kw">repeated</span> ReplicaDescriptor staging = 9;
+  <span class="typ">bool</span> deleted = 10;
+}
+
+<span class="kw">message</span> <span class="typ">ReplicaDescriptor</span> {
+  <span class="typ">uint64</span> range_id = 1; <span class="typ">uint64</span> replica_id = 2;
+  <span class="kw">optional</span> <span class="typ">string</span> nhid = 3;
+}
+
+<span class="kw">message</span> <span class="typ">NodeDescriptor</span> {
+  <span class="typ">string</span> nhid = 1;
+  <span class="typ">string</span> raft_address = 2;
+  <span class="typ">string</span> grpc_address = 3;
+  <span class="typ">string</span> zone = 4;
+}</code></pre>
+
+<h3>3 · Leases</h3>
+<pre><code><span class="kw">message</span> <span class="typ">RangeLeaseRecord</span> {
+  <span class="kw">message</span> NodeLiveness      { <span class="typ">int64</span> epoch = 1; <span class="typ">bytes</span> nhid = 2; }
+  <span class="kw">message</span> ReplicaExpiration { <span class="typ">int64</span> expiration = 1; <span class="typ">bytes</span> nhid = 2; }
+  <span class="kw">oneof</span> value {
+    NodeLiveness      node_liveness      = 1;  <span class="cmt">// normal ranges: anchored to node liveness epoch</span>
+    ReplicaExpiration replica_expiration = 2;  <span class="cmt">// meta range only: wall-clock</span>
+  }
+}</code></pre>
+
+<h3>4 · Transactions</h3>
+<pre><code><span class="kw">message</span> <span class="typ">TxnRequest</span> {
+  <span class="kw">optional</span> <span class="typ">bytes</span> transaction_id = 1;
+  <span class="kw">message</span> Statement {
+    BatchCmdRequest raw_batch = 2;
+    RangeDescriptor range = 3;
+    <span class="kw">repeated</span> TransactionHook hooks = 4;
+    <span class="typ">bool</span> range_validation_required = 5;
+  }
+  <span class="kw">repeated</span> Statement statements = 2;
+}
+
+<span class="kw">message</span> <span class="typ">TxnRecord</span> {
+  TxnRequest txnRequest = 1;
+  <span class="kw">enum</span> TxnState { UNKNOWN_STATE = 0; PENDING = 1; PREPARED = 2; COMPLETED = 3; }
+  TxnState txn_state = 2;
+  <span class="typ">int64</span> created_at_usec = 3;
+  FinalizeOperation op = 5;
+}
+
+<span class="kw">message</span> <span class="typ">Session</span> {
+  <span class="typ">bytes</span> id = 1;
+  <span class="typ">uint64</span> index = 2;
+  <span class="typ">int64</span> created_at_usec = 5;
+  <span class="kw">optional</span> <span class="typ">bytes</span> rsp_data = 4;
+  <span class="kw">optional</span> <span class="typ">uint64</span> entry_index = 6;
+}</code></pre>
+
+<p>Sessions provide idempotency: the same <code>SyncPropose</code> retried after a leader change won't be applied twice — the replica's state machine sees the matching <code>(id, index)</code> and returns the cached response.</p>
+</div>
+
+<div class="tab-panel">
+<h2>raft_service.proto <span class="pill proto">internal gRPC</span></h2>
+<p>The internal mesh API between Store nodes. <strong>Not</strong> what clients hit.</p>
+
+<div class="code-header"><span>proto/raft_service.proto — service Api</span></div>
+<pre><code><span class="kw">service</span> Api {
+  <span class="cmt">// Raft meta-API.</span>
+  <span class="kw">rpc</span> StartShard(raft.StartShardRequest)         <span class="kw">returns</span> (raft.StartShardResponse);
+  <span class="kw">rpc</span> RemoveData(raft.RemoveDataRequest)         <span class="kw">returns</span> (raft.RemoveDataResponse);
+  <span class="kw">rpc</span> AddReplica(raft.AddReplicaRequest)         <span class="kw">returns</span> (raft.AddReplicaResponse);
+  <span class="kw">rpc</span> RemoveReplica(raft.RemoveReplicaRequest)   <span class="kw">returns</span> (raft.RemoveReplicaResponse);
+  <span class="kw">rpc</span> TransferLeadership(TransferLeadershipRequest)
+                                              <span class="kw">returns</span> (TransferLeadershipResponse);
+
+  <span class="cmt">// Workhorse API.</span>
+  <span class="kw">rpc</span> SyncPropose(SyncProposeRequest) <span class="kw">returns</span> (SyncProposeResponse);
+  <span class="kw">rpc</span> SyncRead(SyncReadRequest)       <span class="kw">returns</span> (SyncReadResponse);
+
+  <span class="cmt">// Registry &amp; debug.</span>
+  <span class="kw">rpc</span> GetRegistry(GetRegistryRequest)         <span class="kw">returns</span> (GetRegistryResponse);
+  <span class="kw">rpc</span> GetRangeDebugInfo(...)                  <span class="kw">returns</span> (...);
+  <span class="kw">rpc</span> AdminUpdateDescriptor(...)              <span class="kw">returns</span> (...);
+  <span class="kw">rpc</span> CheckRangeOverlaps(...)                 <span class="kw">returns</span> (...);
+}</code></pre>
+
+<p><code>SyncPropose</code> (write) and <code>SyncRead</code> (linearizable read) are the workhorses; everything else manages cluster membership and shape.</p>
+</div>
+
+<div class="page-footer">
+  <div>← <a href="metadata-service.html">MetadataService</a></div>
+  <div class="next-prev">
+    <a href="store-replica.html">Store &amp; Replica →</a>
+  </div>
+</div>
+</main>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

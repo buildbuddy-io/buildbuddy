@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Store &amp; Replica — dragonboat integration</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+  <h1>MetaCache &amp; Raft</h1>
+  <div class="subtitle">BuildBuddy's metadata service, explained</div>
+  <input type="search" class="search-box" placeholder="Filter pages…" />
+
+  <div class="nav-section">Start here</div>
+  <a class="nav-link" href="index.html">Overview &amp; architecture</a>
+  <a class="nav-link" href="walkthroughs.html">End-to-end walkthroughs</a>
+
+  <div class="nav-section">The cache layer</div>
+  <a class="nav-link" href="metacache.html">MetaCache (metacache.go)</a>
+  <a class="nav-link" href="metadata-service.html">MetadataService server</a>
+  <a class="nav-link" href="protos.html">Proto definitions</a>
+
+  <div class="nav-section">The raft layer</div>
+  <a class="nav-link" href="store-replica.html">Store &amp; Replica</a>
+  <a class="nav-link" href="routing.html">Routing (sender, registry)</a>
+  <a class="nav-link" href="leases.html">Leases &amp; node liveness</a>
+  <a class="nav-link" href="transactions.html">Multi-range transactions</a>
+
+  <div class="nav-section">Cluster management</div>
+  <a class="nav-link" href="cluster-mgmt.html">Bringup, driver &amp; splits</a>
+
+  <div class="nav-section">Reference</div>
+  <a class="nav-link" href="glossary.html">Glossary</a>
+</aside>
+
+<main class="main">
+<div class="breadcrumb"><a href="index.html">Home</a> · Raft layer · Store &amp; Replica</div>
+<h1 class="page-title">Store &amp; Replica</h1>
+<p class="page-lede">
+  The dragonboat integration. <code>Store</code> is the per-node orchestrator that owns the
+  <code>NodeHost</code>, the Pebble DB, and every supporting component. <code>Replica</code> is
+  the dragonboat <code>IOnDiskStateMachine</code> implementation that turns committed raft entries
+  into Pebble writes.
+</p>
+
+<div class="callout">
+  <div class="callout-title">Files</div>
+  <code>enterprise/server/raft/store/store.go</code> (4 226 lines, the biggest file in the system).<br>
+  <code>enterprise/server/raft/replica/replica.go</code> (2 058 lines).<br>
+  Plus small support files: <code>listener.go</code>, <code>events.go</code>, <code>constants.go</code>, <code>keys.go</code>, <code>header.go</code>, <code>config.go</code>, <code>logger.go</code>.
+</div>
+
+<h2 id="dragonboat">What dragonboat gives us</h2>
+
+<p>
+  Dragonboat (<a href="https://github.com/lni/dragonboat">github.com/lni/dragonboat</a>, v4) is a Go library
+  for <strong>Multi-Group Raft</strong>: many independent raft state machines hosted in one process, sharing
+  a transport and log database. BuildBuddy uses dragonboat's:
+</p>
+<ul>
+  <li><strong><code>NodeHost</code></strong> — one per process. Runs the transport, hosts all raft state machines, sets up the log DB.</li>
+  <li><strong><code>statemachine.IOnDiskStateMachine</code></strong> interface — the user-provided state machine. BuildBuddy's <code>Replica</code> implements it directly.</li>
+  <li><strong><code>raftio.INodeRegistry</code></strong> — pluggable address resolver. BuildBuddy supplies a gossip-backed one (the <a href="routing.html#registry">Registry</a>).</li>
+  <li><strong><code>RaftEventListener</code> + <code>SystemEventListener</code></strong> — observe leader changes, node ready, snapshot events. BuildBuddy's <code>RaftListener</code> adapts them to in-process channels.</li>
+  <li><strong>Snapshotting machinery</strong> — dragonboat decides when to snapshot; the state machine provides the bytes.</li>
+  <li><strong>Membership operations</strong> — <code>SyncRequestAddReplica</code>, <code>SyncRequestAddNonVoting</code>, <code>SyncRequestDeleteReplica</code>, <code>RequestLeaderTransfer</code>, <code>StartOnDiskReplica</code>.</li>
+  <li><strong>Read/write API</strong> — <code>SyncPropose</code>, <code>SyncRead</code> (ReadIndex), <code>StaleRead</code>.</li>
+</ul>
+
+<p><strong>What it does <em>not</em> give us</strong> (BuildBuddy builds on top): range descriptors, range leases, multi-range transactions, placement decisions, idempotency sessions, address discovery.</p>
+
+<h2 id="store">The Store struct</h2>
+<p>One <code>Store</code> per node. Its job is to host every replica that lives on the node and orchestrate everything else.</p>
+
+<div class="code-header"><span><span class="fileref">store.go:100-171</span> — Store struct, key fields</span></div>
+<pre><code><span class="kw">type</span> <span class="typ">Store</span> <span class="kw">struct</span> {
+    env       environment.Env
+    rootDir   <span class="typ">string</span>
+    grpcAddr  <span class="typ">string</span>
+    partitions []disk.Partition
+
+    nodeHost      *dragonboat.NodeHost      <span class="cmt">// THE dragonboat handle</span>
+    gossipManager interfaces.GossipService
+    sender        *sender.Sender
+    registry      registry.NodeRegistry
+    grpcServer    *grpc.Server
+    apiClient     *client.APIClient
+    liveness      *nodeliveness.Liveness
+
+    <span class="cmt">// Sessions for different traffic classes (so eviction can't starve writes)</span>
+    session              *client.Session
+    txnSession           *client.Session
+    evictionSession      *client.Session
+    shardStarterSession  *client.Session
+
+    db     pebble.IPebbleDB    <span class="cmt">// single instance, multiplexed</span>
+    leaser pebble.Leaser
+
+    rangeMu    sync.RWMutex
+    openRanges <span class="kw">map</span>[<span class="typ">uint64</span>]*rfpb.RangeDescriptor
+    rangeMap   *rangemap.RangeMap[*rfpb.RangeDescriptor]
+
+    leaseKeeper *leasekeeper.LeaseKeeper
+    replicas    sync.Map  <span class="cmt">// rangeID -&gt; *replica.Replica</span>
+
+    events         <span class="kw">chan</span> events.Event       <span class="cmt">// from replicas + leasekeeper</span>
+    eventListeners <span class="kw">map</span>[<span class="typ">string</span>]<span class="kw">chan</span>&lt;- events.Event
+
+    usages         *usagetracker.Tracker
+    driverQueue    *driver.Queue
+    txnCoordinator *txn.Coordinator
+    replicaJanitor *janitor
+
+    maxSingleOpTimeout time.Duration
+}</code></pre>
+
+<details><summary>Field tour</summary>
+<ul>
+<li><strong><code>nodeHost</code></strong>: the dragonboat handle. Created in <code>New()</code> via <code>dragonboat.NewNodeHost(nhc)</code>.</li>
+<li><strong><code>gossipManager</code></strong>: serf-based discovery. Used for meta-range descriptor propagation, per-node usage tags, and bringup coordination.</li>
+<li><strong><code>sender</code></strong>: client-side request router. See <a href="routing.html">Routing</a>.</li>
+<li><strong><code>registry</code></strong>: gossip-backed <code>INodeRegistry</code> that translates <code>(rangeID, replicaID) → NHID → (raftAddr, grpcAddr)</code>.</li>
+<li><strong><code>apiClient</code></strong>: pooled gRPC connections to peers; calls <code>raft.service.Api</code>.</li>
+<li><strong><code>liveness</code></strong>: epoch-based node-liveness; renewed in meta-range. Anchors range leases. See <a href="leases.html">Leases</a>.</li>
+<li><strong>Sessions</strong>: four distinct <code>client.Session</code>s separate traffic classes so eviction RPCs don't starve user writes.</li>
+<li><strong><code>db</code></strong>: one Pebble DB at <code>&lt;rootDir&gt;/raft_store/</code> shared by every replica on this node.</li>
+<li><strong><code>openRanges</code> + <code>rangeMap</code></strong>: two views of "what ranges are on this node." Map by ID; interval tree by <code>[start, end)</code>.</li>
+<li><strong><code>leaseKeeper</code></strong>: per-range lease management.</li>
+<li><strong><code>replicas sync.Map</code></strong>: <code>rangeID → *replica.Replica</code>.</li>
+<li><strong><code>events</code></strong>: fan-in channel for range-level events; <code>handleEvents</code> dispatches.</li>
+<li><strong><code>driverQueue</code></strong>: the placement driver's priority queue.</li>
+<li><strong><code>txnCoordinator</code></strong>: 2PC for multi-range ops.</li>
+</ul>
+</details>
+
+<h3 id="lifecycle">Lifecycle</h3>
+
+<ol class="steps">
+  <li><strong><code>New(env, cfg, opts...)</code></strong> at <span class="fileref">store.go:281-488</span>. Builds the listener, the registry holder, then <code>dragonboat.NewNodeHost(nhc)</code>. Opens Pebble. Constructs leasekeeper, usagetracker, txn coordinator, driverQueue. Starts the gRPC server. Critically: <strong>re-opens every previously-known replica</strong> by iterating <code>nodeHost.GetNodeHostInfo().LogInfo</code> and calling <code>StartOnDiskReplica</code> for each, up to <code>numReplicaStarter=50</code> in parallel.</li>
+  <li><strong><code>Start()</code></strong> at <span class="fileref">:886-935</span>. Kicks off long-running goroutines: <code>handleEvents</code>, <code>acquireNodeLiveness</code>, <code>checkIfReplicasNeedSplitting</code>, <code>updateStoreUsageTag</code>, <code>refreshMetrics</code>, <code>scanReplicas</code>, <code>setupPartitions</code>, plus optional <code>driverQueue</code> and <code>txnCoordinator</code>.</li>
+  <li><strong><code>Stop(ctx)</code></strong> at <span class="fileref">:945-1008</span>. Carefully ordered: stop driver → <code>dropLeadershipForShutdown</code> (transfer leadership of every shard we lead, 8s budget) → stop liveness <em>before</em> leasekeeper → stop the rest → wait 5s so this node can still vote in successor elections → <code>nodeHost.Close()</code> → flush + close Pebble.</li>
+</ol>
+
+<h3 id="nodehost">NodeHost configuration</h3>
+
+<div class="code-header"><span><span class="fileref">store.go:193-212</span> — getNodehostConfig</span></div>
+<pre><code><span class="kw">func</span> getNodehostConfig(cfg *raftConfig.ServerConfig, rl *listener.RaftListener, nrf dbConfig.NodeRegistryFactory) dbConfig.NodeHostConfig {
+    logDBConfig := raftConfig.GetLogDBConfig(cfg.LogDBConfigType)
+    logDBConfig.KVLRUCacheSize = *dragonboatBlockCacheSizeBytes
+    <span class="kw">return</span> dbConfig.NodeHostConfig{
+        DeploymentID:   cfg.DeploymentID,
+        NodeHostID:     cfg.NHID,
+        WALDir:         filepath.Join(cfg.RootDir, <span class="str">"wal"</span>),
+        NodeHostDir:    filepath.Join(cfg.RootDir, <span class="str">"nodehost"</span>),
+        RTTMillisecond: constants.RTTMillisecond,        <span class="cmt">// 10ms</span>
+        RaftAddress:    cfg.RaftAddr,
+        Expert: dbConfig.ExpertConfig{
+            NodeRegistryFactory: nrf,
+            LogDB:               logDBConfig,
+        },
+        RaftEventListener:   rl,
+        SystemEventListener: rl,
+        EnableMetrics:       <span class="kw">true</span>,
+    }
+}</code></pre>
+
+<p>Per-shard config (<span class="fileref">config/config.go:54</span>) is supplied on every <code>StartOnDiskReplica</code>:</p>
+
+<pre><code>dbConfig.Config{
+    ReplicaID:               replicaID,
+    ShardID:                 rangeID,    <span class="cmt">// dragonboat ShardID == BuildBuddy rangeID</span>
+    WaitReady:               true,
+    PreVote:                 true,
+    ElectionRTT:             20,   <span class="cmt">// 20 * RTT = 200ms</span>
+    HeartbeatRTT:            2,    <span class="cmt">//  2 * RTT =  20ms</span>
+    CheckQuorum:             true,
+    SnapshotEntries:         50000,
+    CompactionOverhead:      500,
+    OrderedConfigChange:     true,
+    SnapshotCompressionType: dbConfig.Snappy,
+    EntryCompressionType:    dbConfig.Snappy,
+}</code></pre>
+
+<h2 id="replica">Replica: implementing IOnDiskStateMachine</h2>
+
+<p>
+  <code>*replica.Replica</code> implements dragonboat's <code>statemachine.IOnDiskStateMachine</code>. There's one
+  Replica per <code>(rangeID, replicaID)</code> hosted by this node. Dragonboat calls it; the Replica reads/writes
+  Pebble.
+</p>
+
+<table>
+<thead><tr><th>Method</th><th>What it does</th><th>Location</th></tr></thead>
+<tbody>
+<tr><td><code>Open(stopc)</code></td><td>Called once at startup. Reads <code>LocalRangeKey</code>, <code>LocalRangeLeaseKey</code>, prepared txn entries, <code>LastAppliedIndexKey</code> from Pebble. Returns the last-applied index so dragonboat knows where to resume.</td><td><span class="fileref">replica.go:658</span></td></tr>
+<tr><td><code>Update(entries)</code></td><td>Apply a batch of committed raft entries. Per-entry: decode <code>BatchCmdRequest</code>, check idempotency session, validate header, execute each <code>RequestUnion</code> against an indexed Pebble batch, commit atomically with <code>LastAppliedIndex</code>. <code>pebble.NoSync</code> — durability via raft + Sync().</td><td><span class="fileref">:1566</span></td></tr>
+<tr><td><code>Lookup(query)</code></td><td>Linearizable read. Dragonboat calls only after ReadIndex confirms leadership. Decodes <code>BatchCmdRequest</code>, runs each read op, returns proto-encoded <code>BatchCmdResponse</code>.</td><td><span class="fileref">:1618</span></td></tr>
+<tr><td><code>Sync()</code></td><td><code>db.LogData(nil, pebble.Sync)</code>. Forces WAL fsync — makes the <code>NoSync</code> Update commits durable.</td><td><span class="fileref">:1680</span></td></tr>
+<tr><td><code>PrepareSnapshot()</code></td><td>Takes a Pebble snapshot (cheap MVCC ref). Returns opaque interface for <code>SaveSnapshot</code>.</td><td><span class="fileref">:1702</span></td></tr>
+<tr><td><code>SaveSnapshot(snap, w, quit)</code></td><td>Streams all KVs to <code>w</code> in a portable format: <code>varint(len) + proto.Marshal(KV)</code>. Two sections: local-prefix-stripped local state, then replicated <code>[start, end)</code> data.</td><td><span class="fileref">:1921</span></td></tr>
+<tr><td><code>RecoverFromSnapshot(r, quit)</code></td><td><code>clearReplica(db)</code> (delete everything under this replica's prefix), stream KVs back in 1 GiB batches, reload in-memory state.</td><td><span class="fileref">:1960</span></td></tr>
+<tr><td><code>Close()</code></td><td>Cancel bg context, remove range from store, stop QPS counters. May not always be called (process crash).</td><td><span class="fileref">:2009</span></td></tr>
+</tbody>
+</table>
+
+<h3 id="commands">Commands the state machine understands</h3>
+<p>The dispatch is in <code>handlePropose</code> (writes) and <code>handleRead</code> (reads). Listed here so you can match them against the <a href="protos.html">proto definitions</a>:</p>
+
+<div class="cols-2">
+<div>
+<h4>Writes (handlePropose, <span class="fileref">:1190</span>)</h4>
+<table>
+<tr><td><code>DirectWriteRequest</code></td><td><code>directWrite</code></td></tr>
+<tr><td><code>DirectDeleteRequest</code></td><td><code>directDelete</code></td></tr>
+<tr><td><code>IncrementRequest</code></td><td><code>increment</code></td></tr>
+<tr><td><code>CASRequest</code></td><td><code>cas</code></td></tr>
+<tr><td><code>SetRequest</code></td><td><code>set</code></td></tr>
+<tr><td><code>DeleteRequest</code></td><td><code>delete</code></td></tr>
+<tr><td><code>UpdateAtimeRequest</code></td><td><code>updateAtime</code></td></tr>
+<tr><td><code>DeleteSessionsRequest</code></td><td><code>deleteSessions</code></td></tr>
+</table>
+</div>
+<div>
+<h4>Reads (handleRead, <span class="fileref">:1254</span>)</h4>
+<table>
+<tr><td><code>DirectReadRequest</code></td><td><code>directRead</code></td></tr>
+<tr><td><code>ScanRequest</code></td><td><code>scan</code> (SEEKLT/GE/GT, limit)</td></tr>
+<tr><td><code>GetRequest</code></td><td><code>get</code></td></tr>
+<tr><td><code>FindRequest</code></td><td><code>find</code></td></tr>
+<tr><td><code>FindSplitPointRequest</code></td><td><code>findSplitPoint</code></td></tr>
+<tr><td><code>FetchRangesRequest</code></td><td><code>fetchRanges</code></td></tr>
+</table>
+</div>
+</div>
+
+<p>
+  In addition, a <code>BatchCmdRequest</code> can be a <strong>transaction control</strong> entry (Prepare / Commit / Rollback) selected by <code>transaction_id</code> and <code>finalize_operation</code> — see <a href="transactions.html">Transactions</a>. It can also carry <strong>post-commit hooks</strong>: <code>SnapshotClusterHook</code> (request a fresh snapshot) or <code>StartShardHook</code> (start a new dragonboat shard — used during splits).
+</p>
+
+<h2 id="pebble">Pebble layout</h2>
+
+<p>
+  One <code>*pebble.IPebbleDB</code> at <code>&lt;rootDir&gt;/raft_store/</code> is shared by every replica on the
+  node. Keys are organized into <strong>prefix tiers</strong>:
+</p>
+
+<pre><code>\x01..\x02   "local" prefix    — per-replica state, NEVER replicated; replicaID-scoped
+\x02..\x03   meta range        — range descriptors; lives only on cluster 1 (MetaRangeID=1)
+\x03..\x04   system            — non-RD system data (last IDs, txn records, partitions, sessions)
+\x04..       normal data       — splittable user data keyspace</code></pre>
+
+<p>
+  <code>UnsplittableMaxByte = \x04</code>. The splitter refuses split keys below it (see <code>canSplitKeys</code>).
+</p>
+
+<h3>Replica scoping via prefix</h3>
+<p>
+  When the Replica writes a "local" key, it transparently prepends its replica-specific prefix:
+</p>
+<pre><code><span class="kw">func</span> LocalKeyPrefix(rangeID, replicaID <span class="typ">uint64</span>) <span class="typ">[]byte</span> {
+    name := getName(rangeID, replicaID)           <span class="cmt">// "c%dn%d"</span>
+    prefixString := fmt.Sprintf(<span class="str">"%s-"</span>, name)
+    <span class="kw">return</span> append(constants.LocalPrefix, []<span class="typ">byte</span>(prefixString)...)
+}</code></pre>
+
+<p>So a local key on replica <code>c5n2</code> is actually stored at <code>\x01c5n2-&lt;key&gt;</code>. This is how multiple replicas of multiple shards share one Pebble DB without colliding.</p>
+
+<h3 id="keys">Well-known keys</h3>
+
+<div class="cols-2">
+<div>
+<h4>System keys (replicated via meta range)</h4>
+<ul>
+<li><code>LastReplicaIDKeyPrefix</code> — per-range last replica ID counter</li>
+<li><code>LastRangeIDKey</code> — cluster-wide last range ID counter</li>
+<li><code>TxnRecordPrefix</code> — durable 2PC records</li>
+<li><code>SessionPrefix</code> — idempotency sessions</li>
+<li><code>PartitionPrefix</code> — partition descriptors</li>
+</ul>
+</div>
+<div>
+<h4>Local keys (per-replica)</h4>
+<ul>
+<li><code>ClusterSetupTimeKey</code></li>
+<li><code>LocalRangeKey</code> — this replica's range descriptor</li>
+<li><code>LocalRangeLeaseKey</code> — current lease record</li>
+<li><code>LocalRangeSetupTimeKey</code></li>
+<li><code>LastAppliedIndexKey</code></li>
+<li><code>LocalTransactionPrefix</code> — prepared txn payloads</li>
+</ul>
+</div>
+</div>
+
+<h2 id="ranges">Ranges &amp; sharding</h2>
+
+<p>
+  A <strong>range</strong> is a contiguous <code>[start, end)</code> byte interval served by one dragonboat shard
+  (one raft group with N replicas). Every range has:
+</p>
+<ul>
+  <li><code>RangeId</code> (uint64 — also dragonboat's <code>ShardID</code>)</li>
+  <li><code>Generation</code> — monotonic, bumped on every descriptor change; used for fencing</li>
+  <li><code>Replicas</code> (voters), <code>Staging</code> (being added), <code>Removed</code> (being removed) lists</li>
+  <li><code>Start</code> / <code>End</code> byte slices</li>
+</ul>
+
+<p>The descriptor is stored in <strong>two places</strong>:</p>
+<ol>
+  <li><strong>Locally</strong> on each replica at <code>LocalRangeKey</code>.</li>
+  <li><strong>In the meta range</strong> at <code>keys.RangeMetaKey(end) = \x02 || end</code>.</li>
+</ol>
+<p>This dual storage is why every descriptor change requires a multi-range transaction (local + meta).</p>
+
+<h2 id="consistency">Read consistency modes</h2>
+
+<div class="cols-2">
+<div>
+<h4><code>LINEARIZABLE</code></h4>
+<p>Full dragonboat <code>ReadIndex</code>: leader confirms it's still leader before serving. Plus a range-lease check on top.</p>
+</div>
+<div>
+<h4><code>RANGELEASE</code></h4>
+<p>Lease-holder reads from local Pebble without a Raft round-trip. The lease itself guarantees no newer leader could have applied newer writes.</p>
+</div>
+</div>
+<div class="cols-2">
+<div>
+<h4><code>STALE</code></h4>
+<p>Skip both checks. Any replica with the range loaded answers from local state. Used for diagnostics and prefetching.</p>
+</div>
+<div>
+<h4>Implementation</h4>
+<p><code>Store.SyncRead</code> calls <code>LeasedRange</code> first (range-lease check) then delegates to <code>client.SyncReadLocal</code>, which branches on consistency mode to either <code>nodeHost.SyncRead</code> (ReadIndex) or <code>nodeHost.StaleRead</code>.</p>
+</div>
+</div>
+
+<h2 id="listener">The RaftListener</h2>
+
+<p>
+  Adapter from dragonboat's <code>IRaftEventListener</code> + <code>ISystemEventListener</code> callbacks
+  to in-process Go channels. Three event types are actively re-published:
+</p>
+
+<table>
+<thead><tr><th>Event</th><th>Consumer</th></tr></thead>
+<tbody>
+<tr><td><code>LeaderUpdated</code></td><td><a href="leases.html">LeaseKeeper</a> (one subscription per shard)</td></tr>
+<tr><td><code>NodeReady</code></td><td><code>replicaInitStatusWaiter</code> — knows when each (shard, replica) has loaded</td></tr>
+<tr><td><code>NodeUnloaded</code></td><td>LeaseKeeper — stops the per-range agent</td></tr>
+</tbody>
+</table>
+
+<p>Channel sizes are flag-controlled (10 000 / 10 000 / 1 000). Overflow drops are tracked by the <code>RaftListenerEventsDropped</code> Prometheus counter.</p>
+
+<h2 id="events">Application events</h2>
+
+<p>A tiny in-process pub/sub for range-level events (distinct from dragonboat events):</p>
+<table>
+<tr><td><code>EventRangeUsageUpdated</code></td><td>Replica's disk-bytes/QPS estimate updated. Publisher: <code>Replica.notifyListenersOfUsage</code>. Consumers: <code>checkIfReplicasNeedSplitting</code>, <code>updateStoreUsageTag</code>.</td></tr>
+<tr><td><code>EventRangeLeaseAcquired</code></td><td>Publisher: leasekeeper. Consumer: <code>updateStoreUsageTag</code>.</td></tr>
+<tr><td><code>EventRangeLeaseDropped</code></td><td>Same as above.</td></tr>
+</table>
+
+<h2 id="store-api">Store's API surface</h2>
+
+<details><summary>Lifecycle / introspection</summary>
+<ul>
+<li><code>New(env, cfg, opts...) (*Store, error)</code> — <span class="fileref">:281</span></li>
+<li><code>Start() error</code> — <span class="fileref">:886</span></li>
+<li><code>Stop(ctx) error</code> — <span class="fileref">:945</span></li>
+<li><code>NHID() string</code>, <code>NodeHost()</code>, <code>NodeDescriptor()</code>, <code>ConfiguredClusters()</code></li>
+<li><code>Statusz(ctx) string</code> — admin /statusz section</li>
+<li><code>Usage() *rfpb.StoreUsage</code> — published to gossip</li>
+</ul>
+</details>
+
+<details><summary>Range / replica accessors</summary>
+<ul>
+<li><code>GetRange(rangeID) *RangeDescriptor</code></li>
+<li><code>GetReplica(rangeID) (*Replica, error)</code></li>
+<li><code>HasReplicaAndIsLeader(rangeID) bool</code></li>
+<li><code>HaveLease(ctx, rangeID) bool</code></li>
+<li><code>LeasedRange(ctx, header) (*Replica, error)</code> — combined "is this my range?" check used by <code>SyncPropose</code>/<code>SyncRead</code></li>
+<li><code>GetMembership(ctx, rangeID)</code> — passes through to dragonboat</li>
+<li><code>GetReplicaStates(ctx, rd) map[uint64]constants.ReplicaState</code> (Current / Behind)</li>
+</ul>
+</details>
+
+<details><summary>gRPC handlers (rfspb.ApiServer)</summary>
+<ul>
+<li><code>SyncPropose(ctx, *SyncProposeRequest)</code> — write path — <span class="fileref">:1861</span></li>
+<li><code>SyncRead(ctx, *SyncReadRequest)</code> — linearizable/RangeLease/Stale read — <span class="fileref">:1901</span></li>
+<li><code>StartShard(ctx, *StartShardRequest)</code> — calls <code>nodeHost.StartOnDiskReplica</code></li>
+<li><code>RemoveData</code>, <code>RemoveReplica</code>, <code>AddReplica</code>, <code>SplitRange</code>, <code>TransferLeadership</code></li>
+<li><code>CheckRangeOverlaps</code>, <code>GetRangeDebugInfo</code>, <code>GetRegistry</code>, <code>AdminUpdateDescriptor</code></li>
+</ul>
+</details>
+
+<details><summary>Range-descriptor mutation helpers (used by driver / splits)</summary>
+<ul>
+<li><code>UpdateRangeDescriptor(ctx, old, new)</code> — meta range uses single SyncPropose, others use a multi-range txn (local + meta).</li>
+<li><code>BuildTxnForRangeSplit(left, newRangeID, splitKey, replicaIDs)</code></li>
+<li><code>ReserveRangeID</code> / <code>ReserveRangeIDs</code> — Increment on <code>LastRangeIDKey</code></li>
+<li><code>addStagingReplicaToRangeDescriptor</code>, <code>addReplicaToRangeDescriptor</code>, <code>markReplicaForRemovalFromRangeDescriptor</code>, <code>removeReplicaFromRangeDescriptor</code></li>
+</ul>
+</details>
+
+<h2 id="design-notes">Cross-cutting design notes</h2>
+
+<ul>
+<li><strong>Single Pebble per node</strong>, replica-scoped via key prefix. One LSM/WAL/block-cache for all shards on a node; <code>\x01c&lt;rid&gt;n&lt;rep&gt;-</code> namespacing for local state. Replicated data above <code>\x04</code> is <em>not</em> namespaced and is split based on range boundaries.</li>
+<li><strong>Two-tier durability.</strong> <code>Update</code> commits to Pebble with <code>pebble.NoSync</code>; <code>Sync()</code> (called by dragonboat between batches) does <code>db.LogData(nil, pebble.Sync)</code>. The raft log itself is durable in dragonboat's own logdb.</li>
+<li><strong>Idempotency via sessions.</strong> Every <code>BatchCmdRequest</code> may carry <code>Session{Id, Index}</code>. <code>singleUpdate</code> stores the response in <code>SessionPrefix+id</code> and returns the cached response if the entry is re-applied at the same index — important for <code>SyncProposeLocal</code> retries during leader changes.</li>
+<li><strong>Lease record is replicated state.</strong> Unlike many systems where the lease is leader-memory-only, BuildBuddy writes the <code>RangeLeaseRecord</code> into the replicated state machine via CAS. Every voter knows the current lease holder.</li>
+<li><strong>Generation as a fence.</strong> Every range descriptor change bumps generation. Headers carry the expected generation; the replica refuses requests at the wrong generation with <code>RangeNotCurrentMsg</code>, forcing the sender to re-resolve via the meta range.</li>
+<li><strong>Snapshot format is portable.</strong> Not Pebble's native checkpoint or sstable bundle. Manual streaming of length-prefixed proto KVs, with local prefixes stripped so the receiver can re-prefix with its own replicaID.</li>
+</ul>
+
+<div class="page-footer">
+  <div>← <a href="metadata-service.html">MetadataService</a></div>
+  <div class="next-prev">
+    <a href="routing.html">Routing (sender, registry) →</a>
+  </div>
+</div>
+</main>
+</div>
+<script src="script.js"></script>
+</body>
+</html>
