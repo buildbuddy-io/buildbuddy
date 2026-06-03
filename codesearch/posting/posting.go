@@ -12,8 +12,13 @@ import (
 // countedListMagic is the prefix that identifies a posting list whose
 // serialized bytes carry per-doc term frequencies in addition to the doc IDs.
 // "CSTF" stands for CodeSearch Term Frequency; the trailing byte is the format
-// version. Roaring bitmaps begin with their own cookie (0x3B30 / 0x3B31), so
-// this 5-byte sequence cannot be mistaken for a plain roaring payload.
+// version. A roaring64 payload begins with an 8-byte little-endian count of the
+// distinct high-32-bit key groups it holds. Our doc IDs are
+// (generation<<32 | docIndex), so a posting list spans only a handful of
+// generations and that leading count is a small integer — its low byte is tiny
+// and the upper bytes are zero, so the first 5 bytes can never spell the ASCII
+// sequence "CSTF" (0x43 0x53 0x54 0x46). This magic therefore cannot be
+// mistaken for a plain roaring payload.
 //
 // Layout (uvarint is encoding/binary.Uvarint):
 //
@@ -78,13 +83,6 @@ func (w *roaringWrapper) Frequency(id uint64) uint32 {
 		return 1
 	}
 	return 0
-}
-
-// cloneBytes returns a fresh copy of b.
-func cloneBytes(b []byte) []byte {
-	out := make([]byte, len(b))
-	copy(out, b)
-	return out
 }
 
 // copyInto copies src into buf, failing if buf lacks the capacity.
@@ -419,7 +417,7 @@ func (l *BuilderList) Marshal() ([]byte, error) {
 	if err := l.ensureSerialized(); err != nil {
 		return nil, err
 	}
-	return cloneBytes(l.serialized), nil
+	return bytes.Clone(l.serialized), nil
 }
 
 // termFreqs stores per-position term frequencies for MergeList. It keeps the
@@ -577,6 +575,40 @@ func (l *MergeList) Remove(id uint64) {
 	l.serialized = nil
 }
 
+// RemoveAll deletes every doc ID in dels from the list in one pass, preserving
+// the frequencies of survivors. This is the bulk path used by delete
+// compaction: it costs O(cardinality) per call regardless of how many IDs dels
+// holds, rather than a per-ID search-and-shift. An all-ones list (no stored
+// frequencies) reduces to a single roaring AndNot.
+func (l *MergeList) RemoveAll(dels ReadOnlyList) {
+	if l.docs.len() == 0 || dels.GetCardinality() == 0 {
+		return
+	}
+	delBM := readOnlyListToRoaring(dels)
+
+	if !l.freqs.materialized {
+		// No per-doc frequencies to preserve: a plain set difference suffices.
+		bm := l.docs.roaring()
+		bm.AndNot(delBM)
+		l.docs.setSorted(bm.ToArray())
+		l.serialized = nil
+		return
+	}
+
+	// Counted list: walk the postings once, keeping survivors and their
+	// frequencies. delBM.Contains is ~O(1), so cost is independent of |dels|.
+	ids := l.docs.array()
+	keepIDs := make([]uint64, 0, len(ids))
+	keepFreqs := make([]uint32, 0, len(ids))
+	for i, id := range ids {
+		if !delBM.Contains(id) {
+			keepIDs = append(keepIDs, id)
+			keepFreqs = append(keepFreqs, l.freqs.at(i))
+		}
+	}
+	l.setFromSorted(keepIDs, keepFreqs)
+}
+
 func (l *MergeList) ensureSerialized() error {
 	if l.serialized != nil {
 		return nil
@@ -630,7 +662,7 @@ func (l *MergeList) Marshal() ([]byte, error) {
 	if err := l.ensureSerialized(); err != nil {
 		return nil, err
 	}
-	return cloneBytes(l.serialized), nil
+	return bytes.Clone(l.serialized), nil
 }
 
 // frequenciesInOrder returns the per-doc frequencies of l in the same order as
@@ -694,7 +726,7 @@ func (w *countedReadOnlyList) MarshalInto(buf []byte) error {
 }
 
 func (w *countedReadOnlyList) Marshal() ([]byte, error) {
-	return cloneBytes(w.serialized), nil
+	return bytes.Clone(w.serialized), nil
 }
 
 func NewReadOnlyList(ids ...uint64) ReadOnlyList {

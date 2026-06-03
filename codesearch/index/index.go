@@ -374,11 +374,6 @@ func (w *Writer) CompactDeletes() error {
 	}
 	defer iter.Close()
 
-	// Snapshot the deleted IDs once so we can walk them per posting list
-	// without re-decoding. Calling pl.Remove(id) preserves the term frequency
-	// for surviving docs.
-	deletedIDs := delPl.ToArray()
-
 	changeCount := 0
 	delCount := 0
 	for iter.First(); iter.Valid(); iter.Next() {
@@ -387,9 +382,10 @@ func (w *Writer) CompactDeletes() error {
 			return err
 		}
 		beforeCard := pl.GetCardinality()
-		for _, id := range deletedIDs {
-			pl.Remove(id)
-		}
+		// RemoveAll is a single O(cardinality) pass per posting list that
+		// preserves survivors' term frequencies, rather than a search-and-shift
+		// per deleted ID.
+		pl.RemoveAll(delPl)
 
 		if pl.GetCardinality() == 0 {
 			w.batch.Delete(iter.Key(), nil)
@@ -588,8 +584,7 @@ func (w *Writer) Flush() error {
 	writePLs := func(key []byte, pl posting.ReadOnlyList, field, ngram string) error {
 		mu.Lock()
 		defer mu.Unlock()
-		w.updatePostingList(key, pl, field, ngram, w.batch.MergeDeferred)
-		return nil
+		return w.updatePostingList(key, pl, field, ngram, w.batch.MergeDeferred)
 	}
 
 	fieldNames := slices.Sorted(maps.Keys(w.fieldPostingLists))

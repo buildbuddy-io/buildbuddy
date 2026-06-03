@@ -952,6 +952,89 @@ func TestDBFormatCompactDeletes(t *testing.T) {
 	assert.False(t, iter.Next()) // End of data.
 }
 
+// TestCompactDeletesPreservesFrequencies checks that CompactDeletes removes
+// deleted docs from a shared posting list while preserving the surviving docs'
+// term frequencies (rather than collapsing them to 1). Three docs share the
+// ngram "abc" and two are deleted, so the survivor is recovered from the middle
+// of the counted list across multiple deletions.
+func TestCompactDeletesPreservesFrequencies(t *testing.T) {
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.SparseNgramField, "content", true),
+		},
+	)
+	// All three docs contain ngram "abc" with distinct (>1) frequencies, so the
+	// "abc" posting list is stored in counted form: {doc1: 3, doc2: 5, doc3: 7}.
+	docs := []struct {
+		id      string
+		content string
+		wantTF  uint32
+	}{
+		{"1", "abc abc abc", 3},
+		{"2", "abc abc abc abc abc", 5},
+		{"3", "abc abc abc abc abc abc abc", 7},
+	}
+	w, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+	for _, d := range docs {
+		require.NoError(t, w.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
+			"id":      []byte(d.id),
+			"content": []byte(d.content),
+		})))
+	}
+	require.NoError(t, w.Flush())
+
+	const abcKey = "testns:gra:abc:content"
+
+	// Capture doc3's (the survivor's) docID and confirm pre-delete frequencies.
+	doc3ID := func() uint64 {
+		plBytes, closer, err := db.Get([]byte(abcKey))
+		require.NoError(t, err)
+		defer closer.Close()
+		pl, err := posting.Unmarshal(plBytes)
+		require.NoError(t, err)
+		ids := pl.ToArray()
+		require.Len(t, ids, 3)
+		for i, d := range docs {
+			assert.Equal(t, d.wantTF, pl.Frequency(ids[i]))
+		}
+		return ids[2]
+	}()
+
+	// Delete doc1 and doc2 (adds their docIDs to the deletes list; posting lists
+	// still contain them until compaction).
+	doc1 := docSchema.MustMakeDocument(map[string][]byte{"id": []byte("1")})
+	doc2 := docSchema.MustMakeDocument(map[string][]byte{"id": []byte("2")})
+	w, err = NewWriter(db, "testns")
+	require.NoError(t, err)
+	require.NoError(t, w.DeleteDocumentByMatchField(doc1.Field("id")))
+	require.NoError(t, w.DeleteDocumentByMatchField(doc2.Field("id")))
+	require.NoError(t, w.Flush())
+
+	// Compact: unmarshals the "abc" posting list into a MergeList and removes
+	// both deleted docs in one RemoveAll pass, which must preserve doc3's TF.
+	w, err = NewWriter(db, "testns")
+	require.NoError(t, err)
+	require.NoError(t, w.CompactDeletes())
+	require.NoError(t, w.Flush())
+
+	plBytes, closer, err := db.Get([]byte(abcKey))
+	require.NoError(t, err)
+	defer closer.Close()
+
+	pl, err := posting.Unmarshal(plBytes)
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{doc3ID}, pl.ToArray(), "doc1 and doc2 should be compacted out")
+	assert.Equal(t, uint32(7), pl.Frequency(doc3ID), "survivor must keep its term frequency after compaction")
+
+	// Also assert via the no-copy read path the query engine uses.
+	roList, err := posting.UnmarshalReadOnly(plBytes)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(7), roList.Frequency(doc3ID))
+}
+
 // WRITE:
 // Test new index size is ~equal~ to old index size?
 // Benchmark index performance?

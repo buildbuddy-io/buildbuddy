@@ -314,6 +314,61 @@ func TestMergeListRemove(t *testing.T) {
 	assert.Equal(t, []uint64{3, 5}, pl.ToArray())
 }
 
+func TestMergeListRemoveAllAllOnes(t *testing.T) {
+	// All-TF=1 list takes the bulk roaring-AndNot path (no stored frequencies).
+	pl := posting.NewMergeList()
+	pl.Or(posting.NewBuilderList(1, 2, 3, 4, 5))
+
+	pl.RemoveAll(posting.NewList(2, 4, 99)) // 99 is absent
+
+	assert.Equal(t, []uint64{1, 3, 5}, pl.ToArray())
+	assert.Equal(t, uint32(1), pl.Frequency(1))
+	assert.Equal(t, uint32(1), pl.Frequency(5))
+	assert.Equal(t, uint32(0), pl.Frequency(2))
+}
+
+func TestMergeListRemoveAllPreservesFrequencies(t *testing.T) {
+	// Counted list takes the single-pass survivor-rebuild path.
+	src := posting.NewBuilderList()
+	src.AddWithFrequency(1, 2)
+	src.AddWithFrequency(2, 1)
+	src.AddWithFrequency(3, 7)
+	src.AddWithFrequency(4, 1)
+	src.AddWithFrequency(5, 4)
+	pl := posting.NewMergeList()
+	pl.Or(src)
+
+	// Remove a TF=1 doc (2) and a TF>1 doc (3) in one bulk call.
+	pl.RemoveAll(posting.NewList(2, 3))
+
+	assert.Equal(t, []uint64{1, 4, 5}, pl.ToArray())
+	assert.Equal(t, uint32(2), pl.Frequency(1))
+	assert.Equal(t, uint32(1), pl.Frequency(4))
+	assert.Equal(t, uint32(4), pl.Frequency(5))
+	assert.Equal(t, uint32(0), pl.Frequency(2))
+	assert.Equal(t, uint32(0), pl.Frequency(3))
+
+	// Survivors' frequencies round-trip through the serialized form.
+	buf, err := pl.Marshal()
+	require.NoError(t, err)
+	pl2, err := posting.Unmarshal(buf)
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1, 4, 5}, pl2.ToArray())
+	assert.Equal(t, uint32(4), pl2.Frequency(5))
+}
+
+func TestMergeListRemoveAllEdgeCases(t *testing.T) {
+	pl := posting.NewMergeList()
+	pl.Or(posting.NewBuilderList(1, 2, 3))
+
+	pl.RemoveAll(posting.NewList()) // empty deletes: no-op
+	assert.Equal(t, []uint64{1, 2, 3}, pl.ToArray())
+
+	pl.RemoveAll(posting.NewList(1, 2, 3)) // remove everything
+	assert.Empty(t, pl.ToArray())
+	assert.Equal(t, uint64(0), pl.GetCardinality())
+}
+
 func TestBuilderListClearThenReuse(t *testing.T) {
 	pl := posting.NewBuilderList(1, 2, 3)
 	pl.Clear()
@@ -492,6 +547,53 @@ func BenchmarkListQuery(b *testing.B) {
 			}
 			delA := delPls.ToArray()
 			for _, id := range delA {
+				pl.Remove(id)
+			}
+		}
+	})
+}
+
+// BenchmarkMergeListDeleteCompaction models the per-posting-list work in
+// CompactDeletes: unmarshal a counted list and drop ~10% of its docs. RemoveAll
+// is one O(cardinality) pass; the old per-ID loop does a binary search plus an
+// O(n) slice shift per deleted ID, which dominates for large lists. The
+// per-iteration Unmarshal (which CompactDeletes also does) is excluded from the
+// timer so the two arms compare only the removal strategy.
+func BenchmarkMergeListDeleteCompaction(b *testing.B) {
+	const n = 100_000
+	base := posting.NewBuilderList()
+	delIDs := make([]uint64, 0, n/10)
+	for i := uint64(0); i < n; i++ {
+		freq := uint32(1)
+		if i%50 == 0 { // sparse TF>1 outliers, so the list is counted
+			freq = 3
+		}
+		base.AddWithFrequency(i, freq)
+		if i%10 == 0 {
+			delIDs = append(delIDs, i)
+		}
+	}
+	buf, err := base.Marshal()
+	require.NoError(b, err)
+	dels := posting.NewList(delIDs...)
+
+	b.Run("RemoveAll", func(b *testing.B) {
+		for b.Loop() {
+			b.StopTimer()
+			pl, err := posting.Unmarshal(buf)
+			require.NoError(b, err)
+			b.StartTimer()
+			pl.RemoveAll(dels)
+		}
+	})
+
+	b.Run("PerIDRemoveLoop", func(b *testing.B) {
+		for b.Loop() {
+			b.StopTimer()
+			pl, err := posting.Unmarshal(buf)
+			require.NoError(b, err)
+			b.StartTimer()
+			for _, id := range delIDs {
 				pl.Remove(id)
 			}
 		}
