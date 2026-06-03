@@ -198,7 +198,7 @@ type Execution struct {
 	SnapshotSavedLocally  bool
 	SnapshotSavedRemotely bool
 	SnapshotIsDiff        bool
-	SnapshotSizeBytes     int64 `gorm:"codec:T64,ZSTD(1)"`
+	SnapshotSavedBytes    int64 `gorm:"codec:T64,ZSTD(1)"`
 	PauseDurationUsec     int64 `gorm:"codec:T64,ZSTD(1)"`
 
 	Stage int64 `gorm:"codec:T64,ZSTD(1)"`
@@ -395,7 +395,7 @@ func (e *Execution) AdditionalFields() []string {
 		"SnapshotSavedLocally",
 		"SnapshotSavedRemotely",
 		"SnapshotIsDiff",
-		"SnapshotSizeBytes",
+		"SnapshotSavedBytes",
 		"PauseDurationUsec",
 		"ExecutorHostname",
 		"Experiments",

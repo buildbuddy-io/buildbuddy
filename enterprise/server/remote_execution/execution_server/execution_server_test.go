@@ -1647,7 +1647,7 @@ func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flush
 				SnapshotSavedLocally:  true,
 				SnapshotSavedRemotely: true,
 				SnapshotIsDiff:        true,
-				SnapshotSizeBytes:     12345,
+				SnapshotSavedBytes:    12345,
 			},
 		},
 	})
@@ -1688,7 +1688,7 @@ func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flush
 		assert.True(t, got.GetSnapshotSavedLocally(), "snapshot_saved_locally")
 		assert.True(t, got.GetSnapshotSavedRemotely(), "snapshot_saved_remotely")
 		assert.True(t, got.GetSnapshotIsDiff(), "snapshot_is_diff")
-		assert.Equal(t, int64(12345), got.GetSnapshotSizeBytes())
+		assert.Equal(t, int64(12345), got.GetSnapshotSavedBytes())
 		assert.Equal(t, int64(67890), got.GetPauseDurationUsec())
 	} else {
 		// Legacy path: the OLAP flush already ran on the first COMPLETED, so
@@ -1697,7 +1697,7 @@ func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flush
 		assert.False(t, got.GetSnapshotSavedLocally(), "snapshot_saved_locally should be unset on legacy path")
 		assert.False(t, got.GetSnapshotSavedRemotely(), "snapshot_saved_remotely should be unset on legacy path")
 		assert.False(t, got.GetSnapshotIsDiff(), "snapshot_is_diff should be unset on legacy path")
-		assert.Zero(t, got.GetSnapshotSizeBytes(), "snapshot_size_bytes should be unset on legacy path")
+		assert.Zero(t, got.GetSnapshotSavedBytes(), "snapshot_saved_bytes should be unset on legacy path")
 		assert.Zero(t, got.GetPauseDurationUsec(), "pause_duration_usec should be unset on legacy path")
 	}
 
