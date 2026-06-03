@@ -193,14 +193,6 @@ type Execution struct {
 	OS         string `gorm:"type:LowCardinality(String)"`
 	Arch       string `gorm:"type:LowCardinality(String)"`
 
-	// Snapshot save stats reported after the executions is marked as completed.
-	// Zero for non-firecracker runners.
-	SnapshotSavedLocally  bool
-	SnapshotSavedRemotely bool
-	SnapshotIsDiff        bool
-	SnapshotSavedBytes    int64 `gorm:"codec:T64,ZSTD(1)"`
-	PauseDurationUsec     int64 `gorm:"codec:T64,ZSTD(1)"`
-
 	Stage int64 `gorm:"codec:T64,ZSTD(1)"`
 
 	// RequestMetadata
@@ -285,6 +277,13 @@ type Execution struct {
 
 	RequestedTimeoutUsec int64 `gorm:"codec:T64,ZSTD(1)"`
 	EffectiveTimeoutUsec int64 `gorm:"codec:T64,ZSTD(1)"`
+
+	// Snapshot save stats reported after the executions is marked as completed.
+	SnapshotSavedLocally  bool
+	SnapshotSavedRemotely bool
+	SnapshotIsDiff        bool
+	SnapshotSavedBytes    int64 `gorm:"codec:T64,ZSTD(1)"`
+	PauseDurationUsec     int64 `gorm:"codec:T64,ZSTD(1)"`
 
 	Experiments []string `gorm:"type:Array(LowCardinality(String))"`
 

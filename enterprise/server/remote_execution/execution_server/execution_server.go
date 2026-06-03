@@ -1561,20 +1561,11 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				mu.Lock()
 				defer mu.Unlock()
 
-				if flushExecutionsOnEOF {
-					// Only update the execution in Redis on the first COMPLETED update, or if we're flushing on EOF.
-					if err := s.updateExecution(ctx, taskID, stage, response, auxMeta, properties, action, cmd); err != nil {
-						log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
-						return status.WrapErrorf(err, "failed to update execution %q", taskID)
-					}
+				if err := s.updateExecution(ctx, taskID, stage, response, auxMeta, properties, action, cmd); err != nil {
+					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
+					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
 				if !flushExecutionsOnEOF {
-					// Legacy path: usage was already recorded in
-					// markTaskComplete from the live ExecuteResponse on the
-					// first COMPLETED, so we only need to flush the OLAP
-					// row here. A post-completion update has nothing new to
-					// flush (Redis was cleaned up by the first call) and
-					// must not trigger an extra flush.
 					if _, err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
 						log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
 					}
