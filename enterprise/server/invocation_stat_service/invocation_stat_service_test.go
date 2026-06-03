@@ -207,5 +207,5 @@ func TestGetStatHeatmap_LogScale(t *testing.T) {
 		}
 	}
 	require.Equal(t, int64(len(durations)), valueCount)
-	require.Equal(t, 5555, totalCount)
+	require.Equal(t, int64(5555), totalCount)
 }
