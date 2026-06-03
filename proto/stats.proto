@@ -242,6 +242,7 @@ message GetStatHeatmapRequest {
 message HeatmapColumn {
   int64 timestamp_usec = 1;
   repeated int64 value = 2;
+  repeated int64 total = 3;
 }
 
 message GetStatHeatmapResponse {
