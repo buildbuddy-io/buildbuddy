@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//:deps.bzl", "PODMAN_VERSION")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -30,6 +31,10 @@ go_library(
     ],
 )
 
+# Tell gazelle to make each file a separate test target,
+# so the OCI client integration test can keep separate runner properties.
+# gazelle:go_test file
+
 go_test(
     name = "ociregistry_test",
     timeout = "short",
@@ -44,6 +49,33 @@ go_test(
         "//server/testutil/testport",
         "//server/util/random",
         "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
+go_test(
+    name = "ociregistry_client_test",
+    size = "large",
+    timeout = "moderate",
+    srcs = ["ociregistry_client_test.go"],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.EstimatedComputeUnits": "4",
+        "test.EstimatedFreeDiskBytes": "10GB",
+        "test.recycle-runner": "true",
+        "test.runner-recycling-key": "podman-static@" + PODMAN_VERSION,
+    },
+    tags = ["docker"],
+    target_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    deps = [
+        "//enterprise/server/testutil/testregistry",
+        "//enterprise/server/util/testpodman",
+        "//server/testutil/testhttp",
+        "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
     ],
 )
