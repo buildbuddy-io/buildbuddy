@@ -175,7 +175,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	if req.GetBypassRegistry() {
 		return s.fetchBlobFromCacheOnly(ctx, stream, blobRef)
 	}
-	err = s.fetchBlobFromCache(ctx, stream, blobRef)
+	err = s.fetchBlobFromCacheWithMetadata(ctx, stream, blobRef)
 	if err == nil {
 		return nil
 	}
@@ -310,7 +310,7 @@ func parseManifestRef(ref string) (gcrname.Reference, error) {
 }
 
 func (s *ociFetcherServer) fetchBlobFromCacheOnly(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, ref *blobDigestRef) error {
-	err := s.fetchBlobFromCache(ctx, stream, ref)
+	err := s.fetchBlobFromCacheWithMetadata(ctx, stream, ref)
 	if err == nil {
 		return nil
 	}
@@ -338,16 +338,11 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 		recordFetchBlobMetrics(metrics.OCIFetcherRoleLeader, err, time.Since(start))
 		return err
 	}
-	return s.fetchBlobFromCacheAfterDedupedRemoteFetch(ctx, stream, ref, result, err, start)
-}
-
-func (s *ociFetcherServer) fetchBlobFromCacheAfterDedupedRemoteFetch(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, ref *blobDigestRef, result blobFetchResult, remoteErr error, start time.Time) error {
-	if remoteErr != nil {
-		recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, remoteErr, time.Since(start))
-		return remoteErr
+	if err != nil {
+		recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
+		return err
 	}
-	w := &grpcStreamWriter{stream: stream}
-	err := ocicache.FetchBlobFromCache(ctx, w, s.bsClient, ref.hash, result.contentLength)
+	err = s.fetchBlobFromCache(ctx, stream, ref, result.contentLength)
 	recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
 	return err
 }
@@ -531,15 +526,19 @@ func (s *ociFetcherServer) proveManifestAccess(ctx context.Context, imageRef gcr
 	return nil
 }
 
-// fetchBlobFromCache attempts to fetch a blob from the cache and streams it directly to the gRPC response.
+// fetchBlobFromCacheWithMetadata attempts to fetch a blob from the cache and streams it directly to the gRPC response.
 // Returns nil if successful, NotFoundError if not in cache, or another error on failure.
-func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, ref *blobDigestRef) error {
+func (s *ociFetcherServer) fetchBlobFromCacheWithMetadata(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, ref *blobDigestRef) error {
 	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, ref.repo, ref.hash)
 	if err != nil {
 		return err
 	}
+	return s.fetchBlobFromCache(ctx, stream, ref, metadata.GetContentLength())
+}
+
+func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, ref *blobDigestRef, contentLength int64) error {
 	w := &grpcStreamWriter{stream: stream}
-	return ocicache.FetchBlobFromCache(ctx, w, s.bsClient, ref.hash, metadata.GetContentLength())
+	return ocicache.FetchBlobFromCache(ctx, w, s.bsClient, ref.hash, contentLength)
 }
 
 // fetchBlobFromRemoteWriteToCacheAndResponse fetches a blob from the upstream
