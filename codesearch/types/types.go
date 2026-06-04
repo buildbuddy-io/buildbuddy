@@ -66,6 +66,7 @@ type DocumentMatch interface {
 	Docid() uint64
 	FieldNames() []string
 	Posting(fieldName string) Posting
+	FieldLength(fieldName string) uint32
 }
 
 type Tokenizer interface {
@@ -114,7 +115,8 @@ type IndexReader interface {
 
 type Scorer interface {
 	Skip() bool
-	Score(docMatch DocumentMatch) float64
+	UpperBoundScore(docMatch DocumentMatch) float64
+	Score(docMatch DocumentMatch, doc Document) float64
 }
 
 type HighlightedRegion interface {

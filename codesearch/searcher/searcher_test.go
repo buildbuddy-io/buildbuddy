@@ -50,15 +50,35 @@ var sampleData = []struct {
 
 type constantScorer struct{}
 
-func (s constantScorer) Skip() bool                                 { return false }
-func (s constantScorer) Score(docMatch types.DocumentMatch) float64 { return 0.1 }
-
-type explicitScorer struct {
-	scores map[uint64]float64
+func (s constantScorer) Skip() bool { return false }
+func (s constantScorer) UpperBoundScore(docMatch types.DocumentMatch) float64 {
+	return 0.1
+}
+func (s constantScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 {
+	return 0.1
 }
 
-func (s explicitScorer) Skip() bool { return false }
-func (s explicitScorer) Score(docMatch types.DocumentMatch) float64 {
+type explicitScorer struct {
+	upperBounds map[uint64]float64
+	scores      map[uint64]float64
+	exactCalls  int
+}
+
+func (s *explicitScorer) Skip() bool { return false }
+func (s *explicitScorer) UpperBoundScore(docMatch types.DocumentMatch) float64 {
+	if score, ok := s.upperBounds[docMatch.Docid()]; ok {
+		return score
+	}
+	if s.upperBounds != nil {
+		return 1.0
+	}
+	if score, ok := s.scores[docMatch.Docid()]; ok {
+		return score
+	}
+	return 0.0
+}
+func (s *explicitScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 {
+	s.exactCalls++
 	if score, ok := s.scores[docMatch.Docid()]; ok {
 		return score
 	}
@@ -121,7 +141,7 @@ func TestSearcherZeroScoresDropped(t *testing.T) {
 	db := createSampleIndex(t)
 	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
 
-	scorer := explicitScorer{
+	scorer := &explicitScorer{
 		scores: map[uint64]float64{
 			1: 1.0,
 			4: 0.5,
@@ -135,4 +155,28 @@ func TestSearcherZeroScoresDropped(t *testing.T) {
 	assert.Equal(t, "one", string(docs[0].Field("ident").Contents()))
 	assert.Equal(t, "four", string(docs[1].Field("ident").Contents()))
 	assert.Equal(t, "eight", string(docs[2].Field("ident").Contents()))
+}
+
+func TestSearcherStopsWhenUpperBoundsCannotEnterTopK(t *testing.T) {
+	ctx := context.Background()
+	db := createSampleIndex(t)
+	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
+
+	scorer := &explicitScorer{
+		upperBounds: map[uint64]float64{
+			1: 100.0,
+			2: 90.0,
+		},
+		scores: map[uint64]float64{
+			1: 100.0,
+			2: 90.0,
+		},
+	}
+	docs, err := s.Search(sQuery{"(:all)", scorer}, 2, 0)
+	require.NoError(t, err)
+	require.Equal(t, 2, len(docs))
+
+	assert.Equal(t, "one", string(docs[0].Field("ident").Contents()))
+	assert.Equal(t, "two", string(docs[1].Field("ident").Contents()))
+	assert.Equal(t, 2, scorer.exactCalls)
 }

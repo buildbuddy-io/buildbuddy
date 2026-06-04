@@ -51,6 +51,13 @@ func docWithIDAndText(t *testing.T, id uint64, text string) types.Document {
 	)
 }
 
+func requireFieldLengths(t testing.TB, value []byte, want map[string]uint32) {
+	t.Helper()
+	got, err := unmarshalFieldLengths(value)
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+}
+
 func extractFieldMatches(tb testing.TB, r types.IndexReader, docMatches []types.DocumentMatch) map[string][]uint64 {
 	tb.Helper()
 	m := make(map[string][]uint64)
@@ -726,6 +733,33 @@ func TestRawQueryDocumentMatchesIncludeFrequencies(t *testing.T) {
 	assert.Equal(t, map[string]uint32{"1": 1, "2": 3}, got)
 }
 
+func TestRawQueryDocumentMatchesIncludeFieldLengths(t *testing.T) {
+	ctx := context.Background()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.KeywordField, "content", true),
+		},
+	)
+
+	w, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+	require.NoError(t, w.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
+		"id":      []byte("1"),
+		"content": []byte("one two two"),
+	})))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testns", docSchema)
+	matches, err := r.RawQuery(`(:eq content two)`)
+	require.NoError(t, err)
+	require.Len(t, matches, 1)
+
+	assert.Equal(t, uint32(1), matches[0].FieldLength("id"))
+	assert.Equal(t, uint32(3), matches[0].FieldLength("content"))
+}
+
 func printDB(t testing.TB, db *pebble.DB) {
 	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{0},
@@ -822,6 +856,14 @@ func TestDBFormatAddOnly(t *testing.T) {
 	plTwoContent, err := posting.Unmarshal(iter.Value())
 	require.NoError(t, err)
 	assert.Equal(t, []uint64{2}, plTwoContent.ToArray())
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:sta:1:_field_lengths", string(iter.Key()))
+	requireFieldLengths(t, iter.Value(), map[string]uint32{"id": 1, "content": 1})
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:sta:2:_field_lengths", string(iter.Key()))
+	requireFieldLengths(t, iter.Value(), map[string]uint32{"id": 1, "content": 1})
 
 	assert.False(t, iter.Next()) // End of data.
 }
@@ -929,6 +971,14 @@ func TestDBFormatUpdate(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []uint64{2}, plTwoContent.ToArray())
 
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:sta:2:_field_lengths", string(iter.Key()))
+	requireFieldLengths(t, iter.Value(), map[string]uint32{"id": 1, "content": 1})
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:sta:4294967297:_field_lengths", string(iter.Key()))
+	requireFieldLengths(t, iter.Value(), map[string]uint32{"id": 1, "content": 1})
+
 	assert.False(t, iter.Next()) // End of data.
 
 }
@@ -991,6 +1041,10 @@ func TestDBFormatCompactDeletes(t *testing.T) {
 	plOneContent, err := posting.Unmarshal(iter.Value())
 	require.NoError(t, err)
 	assert.Equal(t, []uint64{1<<32 | 1}, plOneContent.ToArray())
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:sta:4294967297:_field_lengths", string(iter.Key()))
+	requireFieldLengths(t, iter.Value(), map[string]uint32{"id": 1, "text": 1})
 
 	assert.False(t, iter.Next()) // End of data.
 }

@@ -19,6 +19,10 @@ const (
 	DOC_BYTES_READ
 	DOC_KEYS_SCANNED
 
+	FIELD_STATS_BYTES_READ
+	FIELD_STATS_KEYS_READ
+	FIELD_STATS_READ_DURATION
+
 	QUERY_PARSE_DURATION
 
 	POSTING_LIST_QUERY_DURATION
@@ -44,6 +48,12 @@ func (l label) String() string {
 		return "DOC_BYTES_READ"
 	case DOC_KEYS_SCANNED:
 		return "DOC_KEYS_SCANNED"
+	case FIELD_STATS_BYTES_READ:
+		return "FIELD_STATS_BYTES_READ"
+	case FIELD_STATS_KEYS_READ:
+		return "FIELD_STATS_KEYS_READ"
+	case FIELD_STATS_READ_DURATION:
+		return "FIELD_STATS_READ_DURATION"
 	case QUERY_PARSE_DURATION:
 		return "QUERY_PARSE_DURATION"
 	case POSTING_LIST_QUERY_DURATION:
@@ -137,6 +147,10 @@ func (t *Tracker) PrettyPrint() {
 	if t.Get(DOC_KEYS_SCANNED) > 0 {
 		docMB := float64(t.Get(DOC_BYTES_READ)) / 1e6
 		log.Printf("Read %d stored-field keys [%2.2f MB]", t.Get(DOC_KEYS_SCANNED), docMB)
+	}
+	if t.Get(FIELD_STATS_KEYS_READ) > 0 {
+		statsMB := float64(t.Get(FIELD_STATS_BYTES_READ)) / 1e6
+		log.Printf("Read %d field-stats keys in %s [%2.2f MB]", t.Get(FIELD_STATS_KEYS_READ), time.Duration(t.Get(FIELD_STATS_READ_DURATION)), statsMB)
 	}
 	if t.Get(REMOVE_DELETED_DOCS_COUNT) > 0 {
 		log.Printf("Filtered %d deleted docs in %s", t.Get(REMOVE_DELETED_DOCS_COUNT), time.Duration(t.Get(REMOVE_DELETED_DOCS_DURATION)))

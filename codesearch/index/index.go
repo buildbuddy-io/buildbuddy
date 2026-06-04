@@ -34,6 +34,8 @@ const (
 	generationKey       = "__generation__"
 )
 
+const fieldStatsPointLookupThreshold = 1024
+
 type postingLists map[string]*posting.BuilderList
 
 // Writer is not thread-safe. A single instance should not be used concurrently.
@@ -132,6 +134,9 @@ const (
 	// docid.
 	docField indexKeyType = "doc"
 
+	// Per-document field stats are stored under `docStatsField`.
+	docStatsField indexKeyType = "sta"
+
 	// Any searchable grams, of any length, are stored under `ngram` field.
 	ngramField indexKeyType = "gra"
 
@@ -142,6 +147,8 @@ const (
 	// <namespace>:<key_type>:<contents>:<field_name>:<segment_id>
 	keySeparator = ":"
 )
+
+const fieldLengthsField = "_field_lengths"
 
 type key struct {
 	namespace string
@@ -196,7 +203,7 @@ func (k *key) FromBytes(b []byte) error {
 }
 
 func (k *key) DocID() uint64 {
-	if k.keyType != docField && k.keyType != deleteField {
+	if k.keyType != docField && k.keyType != docStatsField && k.keyType != deleteField {
 		return 0
 	}
 	d, err := strconv.ParseUint(string(k.data), 10, 64)
@@ -216,6 +223,10 @@ func (w *Writer) storedFieldKey(docID uint64, field string) []byte {
 	return fmt.Appendf(nil, "%s:doc:%d:%s", w.namespace, docID, field)
 }
 
+func (w *Writer) docStatsKey(docID uint64) []byte {
+	return fmt.Appendf(nil, "%s:sta:%d:%s", w.namespace, docID, fieldLengthsField)
+}
+
 func (w *Writer) postingListKey(ngram string, field string) []byte {
 	// Example: gr12345:gra:foo:content:1234-asdad-123132-asdasd-123
 	return postingListKey(w.namespace, ngram, field)
@@ -223,6 +234,73 @@ func (w *Writer) postingListKey(ngram string, field string) []byte {
 
 func postingListKey(namespace, ngram, field string) []byte {
 	return fmt.Appendf(nil, "%s:gra:%s:%s", namespace, ngram, field)
+}
+
+func marshalFieldLengths(fieldLengths map[string]uint32) []byte {
+	fieldNames := slices.Sorted(maps.Keys(fieldLengths))
+	buf := make([]byte, 0, len(fieldNames)*8)
+	buf = binary.AppendUvarint(buf, uint64(len(fieldNames)))
+	for _, fieldName := range fieldNames {
+		buf = binary.AppendUvarint(buf, uint64(len(fieldName)))
+		buf = append(buf, fieldName...)
+		buf = binary.AppendUvarint(buf, uint64(fieldLengths[fieldName]))
+	}
+	return buf
+}
+
+func unmarshalFieldLengths(buf []byte) (map[string]uint32, error) {
+	pos := 0
+	readUvarint := func() (uint64, error) {
+		n, bytesRead := binary.Uvarint(buf[pos:])
+		if bytesRead <= 0 {
+			return 0, status.InternalError("error parsing field lengths")
+		}
+		pos += bytesRead
+		return n, nil
+	}
+
+	fieldCount, err := readUvarint()
+	if err != nil {
+		return nil, err
+	}
+	fieldLengths := make(map[string]uint32, int(fieldCount))
+	for i := uint64(0); i < fieldCount; i++ {
+		fieldNameLen, err := readUvarint()
+		if err != nil {
+			return nil, err
+		}
+		if fieldNameLen > uint64(len(buf)-pos) {
+			return nil, status.InternalError("error parsing field length field name")
+		}
+		fieldName := string(buf[pos : pos+int(fieldNameLen)])
+		pos += int(fieldNameLen)
+		fieldLength, err := readUvarint()
+		if err != nil {
+			return nil, err
+		}
+		if fieldLength > uint64(^uint32(0)) {
+			return nil, status.InternalErrorf("field length overflows uint32: %d", fieldLength)
+		}
+		fieldLengths[fieldName] = uint32(fieldLength)
+	}
+	if pos != len(buf) {
+		return nil, status.InternalError("error parsing field lengths: trailing bytes")
+	}
+	return fieldLengths, nil
+}
+
+func uint32Saturating(n uint64) uint32 {
+	if n > uint64(^uint32(0)) {
+		return ^uint32(0)
+	}
+	return uint32(n)
+}
+
+func uint32SaturatingFromInt64(n int64) uint32 {
+	if n <= 0 {
+		return 0
+	}
+	return uint32Saturating(uint64(n))
 }
 
 func (w *Writer) lookupDocId(matchField types.Field) (uint64, error) {
@@ -285,6 +363,9 @@ func (w *Writer) DeleteDocument(docID uint64) error {
 	fieldsStart := w.storedFieldKey(docID, "")
 	fieldsEnd := w.storedFieldKey(docID, "\xff")
 	if err := w.batch.DeleteRange(fieldsStart, fieldsEnd, nil); err != nil {
+		return err
+	}
+	if err := w.batch.Delete(w.docStatsKey(docID), nil); err != nil {
 		return err
 	}
 	w.deletes.Add(docID)
@@ -468,7 +549,9 @@ func (w *Writer) AddDocument(doc types.Document) error {
 	s.pebbleBatchSets++
 	s.pebbleBatchSetBytes += int64(len(idKey) + 8)
 
-	for _, fieldName := range doc.Fields() {
+	fieldNames := doc.Fields()
+	fieldLengths := make(map[string]uint32, len(fieldNames))
+	for _, fieldName := range fieldNames {
 		field := doc.Field(fieldName)
 		s.fields++
 
@@ -504,7 +587,9 @@ func (w *Writer) AddDocument(doc types.Document) error {
 			s.postingMutationDur += profiler.Since(t)
 			s.tokens++
 		})
-		indexprofile.RecordTermFrequencyStats(field.Name(), tokenizer.TermFrequencyStats())
+		tfStats := tokenizer.TermFrequencyStats()
+		fieldLengths[field.Name()] = uint32SaturatingFromInt64(tfStats.Occurrences)
+		indexprofile.RecordTermFrequencyStats(field.Name(), tfStats)
 
 		if field.Schema().Stored() {
 			storedFieldKey := w.storedFieldKey(docID, field.Name())
@@ -518,6 +603,14 @@ func (w *Writer) AddDocument(doc types.Document) error {
 			s.pebbleBatchSetBytes += int64(len(storedFieldKey) + len(field.Contents()))
 		}
 	}
+	docStatsKey := w.docStatsKey(docID)
+	docStatsValue := marshalFieldLengths(fieldLengths)
+	t = profiler.Now()
+	w.batch.Set(docStatsKey, docStatsValue, nil)
+	d := profiler.Since(t)
+	s.pebbleBatchSetDur += d
+	s.pebbleBatchSets++
+	s.pebbleBatchSetBytes += int64(len(docStatsKey) + len(docStatsValue))
 	if w.batch.Len() >= batchFlushSizeBytes {
 		if err := w.flushBatch(); err != nil {
 			return err
@@ -636,6 +729,10 @@ func (r *Reader) storedFieldKey(docID uint64, field string) []byte {
 	return fmt.Appendf(nil, "%s:doc:%d:%s", r.namespace, docID, field)
 }
 
+func (r *Reader) docStatsKey(docID uint64) []byte {
+	return fmt.Appendf(nil, "%s:sta:%d:%s", r.namespace, docID, fieldLengthsField)
+}
+
 func (r *Reader) allDocIDs() (posting.FieldMap, error) {
 	iter, err := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: r.storedFieldKey(0, types.DocIDField),
@@ -685,6 +782,9 @@ func (r *Reader) recordIterStats(iter *pebble.Iterator, kt indexKeyType) {
 	case ngramField:
 		tracker.Add(performance.INDEX_BYTES_READ, int64(iStats.KeyBytes+iStats.ValueBytes))
 		tracker.Add(performance.INDEX_KEYS_SCANNED, int64(iStats.PointCount))
+	case docStatsField:
+		tracker.Add(performance.FIELD_STATS_BYTES_READ, int64(iStats.KeyBytes+iStats.ValueBytes))
+		tracker.Add(performance.FIELD_STATS_KEYS_READ, int64(iStats.PointCount))
 	default:
 		break
 	}
@@ -730,6 +830,80 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
 		fields[k.field] = r.schema.Field(k.field).MakeField(fieldVal)
 	}
 	return fields, nil
+}
+
+func (r *Reader) getFieldLengths(docID uint64) (map[string]uint32, error) {
+	key := r.docStatsKey(docID)
+	fieldLengthsBytes, closer, err := r.db.Get(key)
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return map[string]uint32{}, nil
+		}
+		return nil, err
+	}
+	defer closer.Close()
+	if tracker := performance.TrackerFromContext(r.ctx); tracker != nil {
+		tracker.Add(performance.FIELD_STATS_KEYS_READ, 1)
+		tracker.Add(performance.FIELD_STATS_BYTES_READ, int64(len(key)+len(fieldLengthsBytes)))
+	}
+	return unmarshalFieldLengths(fieldLengthsBytes)
+}
+
+func (r *Reader) populateFieldLengths(docMatches map[uint64]*docMatch) error {
+	if len(docMatches) == 0 {
+		return nil
+	}
+	start := time.Now()
+	defer func() {
+		if tracker := performance.TrackerFromContext(r.ctx); tracker != nil {
+			tracker.Add(performance.FIELD_STATS_READ_DURATION, int64(time.Since(start)))
+		}
+	}()
+
+	if len(docMatches) < fieldStatsPointLookupThreshold {
+		for docID, docMatch := range docMatches {
+			fieldLengths, err := r.getFieldLengths(docID)
+			if err != nil {
+				return err
+			}
+			docMatch.fieldLengths = fieldLengths
+		}
+		return nil
+	}
+
+	iter, err := r.db.NewIter(&pebble.IterOptions{
+		LowerBound: fmt.Appendf(nil, "%s:sta:", r.namespace),
+		UpperBound: fmt.Appendf(nil, "%s:sta:\xff", r.namespace),
+	})
+	if err != nil {
+		return err
+	}
+	defer iter.Close()
+	defer func() {
+		r.recordIterStats(iter, docStatsField)
+	}()
+
+	k := key{}
+	remaining := len(docMatches)
+	for iter.First(); iter.Valid() && remaining > 0; iter.Next() {
+		if err := k.FromBytes(iter.Key()); err != nil {
+			return err
+		}
+		if k.keyType != docStatsField {
+			return status.FailedPreconditionErrorf("key %q not doc stats field!", iter.Key())
+		}
+		docMatch, ok := docMatches[k.DocID()]
+		if !ok {
+			continue
+		}
+		fieldLengths, err := unmarshalFieldLengths(iter.Value())
+		if err != nil {
+			return err
+		}
+		docMatch.fieldLengths = fieldLengths
+		remaining--
+	}
+	return nil
 }
 
 // TODO(jdelfino): We can't know if the document exists or not until we fetch the fields, but we
@@ -904,6 +1078,7 @@ func (r *Reader) removeDeletedDocIDs(results posting.FieldMap) error {
 type docMatch struct {
 	docid           uint64
 	matchedPostings map[string]types.Posting
+	fieldLengths    map[string]uint32
 }
 
 type matchPosting struct {
@@ -927,6 +1102,10 @@ func (dm *docMatch) Docid() uint64 {
 }
 func (dm *docMatch) Posting(fieldName string) types.Posting {
 	return dm.matchedPostings[fieldName]
+}
+
+func (dm *docMatch) FieldLength(fieldName string) uint32 {
+	return dm.fieldLengths[fieldName]
 }
 
 type lazyDoc struct {
@@ -1070,6 +1249,9 @@ func (r *Reader) RawQuery(squery string) ([]types.DocumentMatch, error) {
 				frequency: pl.Frequency(docid),
 			}
 		}
+	}
+	if err := r.populateFieldLengths(docMatches); err != nil {
+		return nil, err
 	}
 
 	// Convert to interface (ugh).
