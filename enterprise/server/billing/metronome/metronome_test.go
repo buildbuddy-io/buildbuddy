@@ -36,8 +36,8 @@ func TestIngestEvents(t *testing.T) {
 
 	periodStart := time.Date(2026, 5, 15, 12, 34, 0, 0, time.UTC)
 	events := []metronome.UsageEvent{
-		{GroupID: "GR1", PeriodStart: periodStart, SKU: sku.BuildEventsBESCount, Count: 1, Unit: "count"},
-		{GroupID: "GR1", PeriodStart: periodStart, SKU: sku.RemoteCacheCASDownloadedBytes, Count: 2_000_000_000, Unit: "bytes",
+		{GroupID: "GR1", PeriodStart: periodStart, SKU: sku.BuildEventsBESCount, Count: 1},
+		{GroupID: "GR1", PeriodStart: periodStart, SKU: sku.RemoteCacheCASDownloadedBytes, Count: 2_000_000_000,
 			Labels: map[sku.LabelName]sku.LabelValue{sku.Origin: sku.OriginExternal, sku.Client: sku.ClientBazel}},
 	}
 	c, err := metronome.NewClient(nil, nil)
@@ -76,7 +76,7 @@ func TestIngestEventsBatching(t *testing.T) {
 	for i := range events {
 		events[i] = metronome.UsageEvent{
 			GroupID: "GR1", PeriodStart: time.Unix(int64(i*60), 0).UTC(),
-			SKU: sku.BuildEventsBESCount, Count: 1, Unit: "count",
+			SKU: sku.BuildEventsBESCount, Count: 1,
 		}
 	}
 	c, err := metronome.NewClient(nil, nil)
@@ -106,7 +106,7 @@ func TestIngestRetriesTransientFailures(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NoError(t, c.ReportUsage(t.Context(), []metronome.UsageEvent{{
-		GroupID: "GR1", PeriodStart: time.Now(), SKU: sku.BuildEventsBESCount, Count: 1, Unit: "count",
+		GroupID: "GR1", PeriodStart: time.Now(), SKU: sku.BuildEventsBESCount, Count: 1,
 	}}))
 	assert.EqualValues(t, 3, atomic.LoadInt32(&attempts))
 }
@@ -128,7 +128,7 @@ func TestIngestDoesNotRetryClientErrors(t *testing.T) {
 	})
 	require.NoError(t, err)
 	err = c.ReportUsage(t.Context(), []metronome.UsageEvent{{
-		GroupID: "GR1", PeriodStart: time.Now(), SKU: sku.BuildEventsBESCount, Count: 1, Unit: "count",
+		GroupID: "GR1", PeriodStart: time.Now(), SKU: sku.BuildEventsBESCount, Count: 1,
 	}})
 	require.Error(t, err)
 	assert.True(t, status.IsInvalidArgumentError(err))
@@ -154,11 +154,11 @@ func TestTransactionIDDeterministic(t *testing.T) {
 	c, err := metronome.NewClient(nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, c.ReportUsage(t.Context(), []metronome.UsageEvent{{
-		GroupID: "GR1", PeriodStart: periodStart, SKU: sku.RemoteCacheCASHits, Count: 1, Unit: "count",
+		GroupID: "GR1", PeriodStart: periodStart, SKU: sku.RemoteCacheCASHits, Count: 1,
 		Labels: map[sku.LabelName]sku.LabelValue{sku.Origin: sku.OriginExternal, sku.Client: sku.ClientBazel},
 	}}))
 	require.NoError(t, c.ReportUsage(t.Context(), []metronome.UsageEvent{{
-		GroupID: "GR1", PeriodStart: periodStart, SKU: sku.RemoteCacheCASHits, Count: 999, Unit: "count",
+		GroupID: "GR1", PeriodStart: periodStart, SKU: sku.RemoteCacheCASHits, Count: 999,
 		Labels: map[sku.LabelName]sku.LabelValue{sku.Client: sku.ClientBazel, sku.Origin: sku.OriginExternal},
 	}}))
 	require.Len(t, gotEvents, 2)

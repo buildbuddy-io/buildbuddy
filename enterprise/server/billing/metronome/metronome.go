@@ -50,7 +50,6 @@ type UsageEvent struct {
 	SKU         sku.SKU
 	Labels      map[sku.LabelName]sku.LabelValue
 	Count       int64
-	Unit        string
 }
 
 // MetronomeEvent is the JSON payload Metronome's /v1/ingest endpoint expects.
@@ -134,7 +133,6 @@ func encodeEvent(e UsageEvent) (*MetronomeEvent, error) {
 		"group_id": e.GroupID,
 		"sku":      e.SKU.String(),
 		"count":    strconv.FormatInt(e.Count, 10),
-		"unit":     e.Unit,
 	}
 	for k, v := range e.Labels {
 		properties[k] = v
