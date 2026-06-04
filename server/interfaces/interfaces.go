@@ -1163,6 +1163,12 @@ type Runner interface {
 	// GetIsolationType returns the runner's effective isolation type as a
 	// string, such as "none" or "podman".
 	GetIsolationType() string
+
+	// PostCompletionStats returns observability data produced after Run has
+	// finished. These should be reported to the execution server after the
+	// COMPLETED Operation has already been streamed back. Nil for runners that
+	// don't expose any such stats.
+	PostCompletionStats() *espb.PostCompletionStats
 }
 
 type CacheRoutingService interface {

@@ -95,6 +95,7 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	iprpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -1467,19 +1468,23 @@ func DownloadInputsNoop(ctx context.Context, ioStats *repb.IOStats) error {
 // test.
 type testRunnerPool struct {
 	interfaces.RunnerPool
-	runInterceptor     RunInterceptor
-	recycleInterceptor RecycleInterceptor
+	runInterceptor      RunInterceptor
+	recycleInterceptor  RecycleInterceptor
+	postCompletionStats *espb.PostCompletionStats
 }
 
 type TestRunnerOverrides struct {
 	RunInterceptor     RunInterceptor
 	RecycleInterceptor RecycleInterceptor
+	// PostCompletionStats, if not nil, is returned from the test runner's
+	// PostCompletionStats() method.
+	PostCompletionStats *espb.PostCompletionStats
 }
 
 func NewTestRunnerPool(t testing.TB, env environment.Env, cacheRoot string, opts TestRunnerOverrides) interfaces.RunnerPool {
 	realPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{})
 	require.NoError(t, err)
-	return &testRunnerPool{realPool, opts.RunInterceptor, opts.RecycleInterceptor}
+	return &testRunnerPool{realPool, opts.RunInterceptor, opts.RecycleInterceptor, opts.PostCompletionStats}
 }
 
 func (p *testRunnerPool) Get(ctx context.Context, task *repb.ScheduledTask) (interfaces.Runner, error) {
@@ -1487,7 +1492,7 @@ func (p *testRunnerPool) Get(ctx context.Context, task *repb.ScheduledTask) (int
 	if err != nil {
 		return nil, err
 	}
-	return &testRunner{realRunner, p.runInterceptor}, nil
+	return &testRunner{realRunner, p.runInterceptor, p.postCompletionStats}, nil
 }
 
 func (p *testRunnerPool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedCleanly bool) {
@@ -1502,7 +1507,8 @@ func (p *testRunnerPool) TryRecycle(ctx context.Context, r interfaces.Runner, fi
 // testRunner is a Runner implementation that allows mocking out its methods.
 type testRunner struct {
 	interfaces.Runner
-	run RunInterceptor
+	run                 RunInterceptor
+	postCompletionStats *espb.PostCompletionStats
 }
 
 func (r *testRunner) Run(ctx context.Context, ioStats *repb.IOStats) *interfaces.CommandResult {
@@ -1510,6 +1516,13 @@ func (r *testRunner) Run(ctx context.Context, ioStats *repb.IOStats) *interfaces
 		return r.Runner.Run(ctx, ioStats)
 	}
 	return r.run(ctx, r.Runner.Run)
+}
+
+func (r *testRunner) PostCompletionStats() *espb.PostCompletionStats {
+	if r.postCompletionStats != nil {
+		return r.postCompletionStats
+	}
+	return r.Runner.PostCompletionStats()
 }
 
 type FakeTaskSizer struct {

@@ -53,6 +53,7 @@ go_library(
         "//enterprise/server/util/vfs_server",
         "//enterprise/server/util/vsock",
         "//enterprise/vmsupport:bundle",
+        "//proto:execution_stats_go_proto",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",

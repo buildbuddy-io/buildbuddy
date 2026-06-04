@@ -651,18 +651,6 @@ type streamLike interface {
 	Send(*longrunningpb.Operation) error
 }
 
-// A streamLike that returns a background context and ignores all packets sent
-// to it, used for waiting on pending executions in the background.
-type dummyStream struct{}
-
-func (s dummyStream) Context() context.Context {
-	return context.Background()
-}
-
-func (s dummyStream) Send(*longrunningpb.Operation) error {
-	return nil
-}
-
 func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer) error {
 	return s.execute(req, stream)
 }
