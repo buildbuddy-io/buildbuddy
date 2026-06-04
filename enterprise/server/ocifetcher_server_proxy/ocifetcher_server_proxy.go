@@ -76,46 +76,60 @@ func (s *OCIFetcherServerProxy) FetchBlobMetadata(ctx context.Context, req *ofpb
 func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
 
-	blobRef, err := gcrname.ParseReference(req.GetRef())
+	digestRef, hash, err := parseBlobDigestRef(req.GetRef())
 	if err != nil {
-		return status.InvalidArgumentErrorf("invalid blob reference %q: %s", req.GetRef(), err)
+		return err
+	}
+
+	size, err := s.fetchBlobSizeFromUpstream(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if err := fetchBlobFromLocalBS(ctx, s.localBSClient, hash, size, &grpcStreamWriter{stream: stream}); err == nil {
+		return nil // local cache hit
+	} else if !status.IsNotFoundError(err) && !status.IsFailedPreconditionError(err) {
+		return err
+	}
+
+	return s.dedupedFetchBlob(ctx, stream, digestRef, hash, size, req)
+}
+
+func parseBlobDigestRef(ref string) (gcrname.Digest, gcr.Hash, error) {
+	blobRef, err := gcrname.ParseReference(ref)
+	if err != nil {
+		return gcrname.Digest{}, gcr.Hash{}, status.InvalidArgumentErrorf("invalid blob reference %q: %s", ref, err)
 	}
 	digestRef, ok := blobRef.(gcrname.Digest)
 	if !ok {
-		return status.InvalidArgumentErrorf("blob reference must be a digest reference, got %q", req.GetRef())
+		return gcrname.Digest{}, gcr.Hash{}, status.InvalidArgumentErrorf("blob reference must be a digest reference, got %q", ref)
 	}
 	hash, err := gcr.NewHash(digestRef.DigestStr())
 	if err != nil {
-		return status.InvalidArgumentErrorf("invalid blob digest in reference %q: %s", req.GetRef(), err)
+		return gcrname.Digest{}, gcr.Hash{}, status.InvalidArgumentErrorf("invalid blob digest in reference %q: %s", ref, err)
 	}
+	return digestRef, hash, nil
+}
 
+func (s *OCIFetcherServerProxy) fetchBlobSizeFromUpstream(ctx context.Context, req *ofpb.FetchBlobRequest) (int64, error) {
 	metaResp, err := s.remote.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
 		Ref:            req.GetRef(),
 		Credentials:    req.GetCredentials(),
 		BypassRegistry: req.GetBypassRegistry(),
 	})
 	if err != nil {
-		return err
+		return 0, err
 	}
-	size := metaResp.GetSize()
+	return metaResp.GetSize(), nil
+}
 
-	// Fast path: serve from local BS cache.
-	err = fetchBlobFromLocalBS(ctx, s.localBSClient, hash, size, &grpcStreamWriter{stream: stream})
-	if err == nil {
-		return nil // local cache hit
-	}
-	// Also check FailedPrecondition: cachetools.GetBlob wraps NotFound
-	// cache misses as FailedPrecondition via MissingDigestError.
-	if !status.IsNotFoundError(err) && !status.IsFailedPreconditionError(err) {
-		return err
-	}
-
+func (s *OCIFetcherServerProxy) dedupedFetchBlob(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef gcrname.Digest, hash gcr.Hash, size int64, req *ofpb.FetchBlobRequest) error {
 	// Deduplicate concurrent upstream fetches for the same blob+creds.
 	// The leader fetches from upstream and writes to local BSS.
 	// After the singleflight completes, all callers stream from local BSS.
 	key := ocicache.NewBlobFetchKey(digestRef.Context(), hash, req.GetCredentials())
 	isLeader := false
-	_, _, err = s.fetchGroup.Do(ctx, key, func(ctx context.Context) (struct{}, error) {
+	_, _, err := s.fetchGroup.Do(ctx, key, func(ctx context.Context) (struct{}, error) {
 		isLeader = true
 		return struct{}{}, s.fetchBlobFromUpstreamToLocalBS(ctx, req, hash, size)
 	})
