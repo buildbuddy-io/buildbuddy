@@ -246,19 +246,17 @@ func (s *ociFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.
 	return s.fetchManifestMetadataFromRemote(ctx, imageRef, req.GetCredentials())
 }
 
-func recordFetchBlobMetrics(role string, err error, duration time.Duration) {
-	statusLabel := metrics.OCIFetcherStatusOK
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err) {
-			statusLabel = metrics.OCIFetcherStatusTimeout
-		} else if errors.Is(err, context.Canceled) || status.IsCanceledError(err) {
-			statusLabel = metrics.OCIFetcherStatusCanceled
-		} else {
-			statusLabel = metrics.OCIFetcherStatusError
-		}
+// validateBypassRegistry checks if bypass_registry is enabled and if so,
+// verifies the caller has server admin permissions. Returns an error if
+// bypass_registry is true but the caller is not a server admin.
+func validateBypassRegistry(ctx context.Context, bypassRegistry bool) error {
+	if !bypassRegistry {
+		return nil
 	}
-	metrics.OCIFetcherRequestCount.WithLabelValues(metrics.OCIFetcherMethodFetchBlob, role, statusLabel).Inc()
-	metrics.OCIFetcherRequestDurationUsec.WithLabelValues(metrics.OCIFetcherMethodFetchBlob, role).Observe(float64(duration.Microseconds()))
+	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		return status.PermissionDeniedErrorf("not authorized to bypass registry: %s", err)
+	}
+	return nil
 }
 
 func parseBlobDigestRef(ref string, digestRequiredMsg string) (gcrname.Digest, gcr.Hash, error) {
@@ -277,14 +275,6 @@ func parseBlobDigestRef(ref string, digestRequiredMsg string) (gcrname.Digest, g
 	return digestRef, hash, nil
 }
 
-func parseManifestRef(ref string) (gcrname.Reference, error) {
-	imageRef, err := gcrname.ParseReference(ref)
-	if err != nil {
-		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", ref, err)
-	}
-	return imageRef, nil
-}
-
 func (s *ociFetcherServer) fetchBlobFromCacheOnly(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef gcrname.Digest, hash gcr.Hash) error {
 	err := s.fetchBlobFromCacheWithMetadata(ctx, stream, digestRef, hash)
 	if err == nil {
@@ -298,6 +288,21 @@ func (s *ociFetcherServer) fetchBlobFromCacheOnly(ctx context.Context, stream of
 		return err
 	}
 	return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", digestRef)
+}
+
+// fetchBlobFromCacheWithMetadata attempts to fetch a blob from the cache and streams it directly to the gRPC response.
+// Returns nil if successful, NotFoundError if not in cache, or another error on failure.
+func (s *ociFetcherServer) fetchBlobFromCacheWithMetadata(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef gcrname.Digest, hash gcr.Hash) error {
+	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, digestRef.Context(), hash)
+	if err != nil {
+		return err
+	}
+	return s.fetchBlobFromCache(ctx, stream, hash, metadata.GetContentLength())
+}
+
+func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, hash gcr.Hash, contentLength int64) error {
+	w := &grpcStreamWriter{stream: stream}
+	return ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, contentLength)
 }
 
 func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef gcrname.Digest, hash gcr.Hash, creds *rgpb.Credentials) error {
@@ -323,194 +328,19 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 	return err
 }
 
-func (s *ociFetcherServer) fetchBlobMetadataFromCache(ctx context.Context, digestRef gcrname.Digest, hash gcr.Hash) (*ofpb.FetchBlobMetadataResponse, error) {
-	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, digestRef.Context(), hash)
+func recordFetchBlobMetrics(role string, err error, duration time.Duration) {
+	statusLabel := metrics.OCIFetcherStatusOK
 	if err != nil {
-		return nil, err
-	}
-	return &ofpb.FetchBlobMetadataResponse{
-		Size:      metadata.GetContentLength(),
-		MediaType: metadata.GetContentType(),
-	}, nil
-}
-
-func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, digestRef gcrname.Digest, creds *rgpb.Credentials) (*ofpb.FetchBlobMetadataResponse, error) {
-	return withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (*ofpb.FetchBlobMetadataResponse, error) {
-		layer, err := puller.Layer(ctx, digestRef)
-		if err != nil {
-			return nil, err
+		if errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err) {
+			statusLabel = metrics.OCIFetcherStatusTimeout
+		} else if errors.Is(err, context.Canceled) || status.IsCanceledError(err) {
+			statusLabel = metrics.OCIFetcherStatusCanceled
+		} else {
+			statusLabel = metrics.OCIFetcherStatusError
 		}
-		size, err := layer.Size()
-		if err != nil {
-			return nil, err
-		}
-		mediaType, err := layer.MediaType()
-		if err != nil {
-			return nil, err
-		}
-		return &ofpb.FetchBlobMetadataResponse{
-			Size:      size,
-			MediaType: string(mediaType),
-		}, nil
-	})
-}
-
-func (s *ociFetcherServer) resolveManifestDigest(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials, bypassRegistry bool) (gcr.Hash, error) {
-	if digestRef, ok := imageRef.(gcrname.Digest); ok {
-		hash, err := gcr.NewHash(digestRef.DigestStr())
-		if err != nil {
-			return gcr.Hash{}, status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
-		}
-		if !bypassRegistry {
-			if err := s.proveManifestAccess(ctx, imageRef, creds); err != nil {
-				return gcr.Hash{}, err
-			}
-		}
-		return hash, nil
 	}
-	if bypassRegistry {
-		return gcr.Hash{}, status.NotFoundErrorf("bypassing registry, but cannot resolve tag ref %q from cache", imageRef)
-	}
-	return s.resolveTagToDigest(ctx, imageRef, creds)
-}
-
-func (s *ociFetcherServer) resolveTagToDigest(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (gcr.Hash, error) {
-	desc, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*gcr.Descriptor, error) {
-		return puller.Head(ctx, imageRef)
-	})
-	if err != nil {
-		return gcr.Hash{}, err
-	}
-	hash, err := gcr.NewHash(desc.Digest.String())
-	if err != nil {
-		return gcr.Hash{}, status.InvalidArgumentErrorf("invalid resolved digest %q: %s", desc.Digest.String(), err)
-	}
-	return hash, nil
-}
-
-func (s *ociFetcherServer) fetchManifestFromCache(ctx context.Context, imageRef gcrname.Reference, hash gcr.Hash) (*ofpb.FetchManifestResponse, error) {
-	cached, err := ocicache.FetchManifestFromAC(ctx, s.acClient, imageRef.Context(), hash, imageRef)
-	if err != nil {
-		return nil, err
-	}
-	return &ofpb.FetchManifestResponse{
-		Digest:    hash.String(),
-		Size:      int64(len(cached.GetRaw())),
-		MediaType: cached.GetContentType(),
-		Manifest:  cached.GetRaw(),
-	}, nil
-}
-
-func (s *ociFetcherServer) fetchManifestFromRemoteWriteToCache(ctx context.Context, imageRef gcrname.Reference, hash gcr.Hash, creds *rgpb.Credentials) (*ofpb.FetchManifestResponse, error) {
-	remoteDesc, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*remote.Descriptor, error) {
-		return puller.Get(ctx, imageRef)
-	})
-	if err != nil {
-		return nil, err
-	}
-	if err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, s.acClient, imageRef.Context(), hash, string(remoteDesc.MediaType), imageRef); err != nil {
-		log.CtxWarningf(ctx, "Error writing manifest to cache: %s", err)
-	}
-	return &ofpb.FetchManifestResponse{
-		Digest:    remoteDesc.Digest.String(),
-		Size:      remoteDesc.Size,
-		MediaType: string(remoteDesc.MediaType),
-		Manifest:  remoteDesc.Manifest,
-	}, nil
-}
-
-func (s *ociFetcherServer) fetchManifestMetadataFromRemote(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (*ofpb.FetchManifestMetadataResponse, error) {
-	desc, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*gcr.Descriptor, error) {
-		return puller.Head(ctx, imageRef)
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &ofpb.FetchManifestMetadataResponse{
-		Digest:    desc.Digest.String(),
-		Size:      desc.Size,
-		MediaType: string(desc.MediaType),
-	}, nil
-}
-
-func (s *ociFetcherServer) getRemoteOpts(ctx context.Context, creds *rgpb.Credentials) []remote.Option {
-	opts := []remote.Option{remote.WithContext(ctx)}
-
-	if creds != nil && creds.GetUsername() != "" && creds.GetPassword() != "" {
-		opts = append(opts, remote.WithAuth(&authn.Basic{
-			Username: creds.GetUsername(),
-			Password: creds.GetPassword(),
-		}))
-	}
-
-	tr := httpclient.New(s.allowedPrivateIPs, "oci_fetcher").Transport
-
-	if len(s.mirrors) > 0 {
-		opts = append(opts, remote.WithTransport(NewMirrorTransport(tr, s.mirrors)))
-	} else {
-		opts = append(opts, remote.WithTransport(tr))
-	}
-
-	return opts
-}
-
-func (s *ociFetcherServer) getOrCreatePuller(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (*remote.Puller, error) {
-	key := pullerKey(imageRef, creds)
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	entry, ok := s.pullerLRU.Get(key)
-
-	if ok {
-		return entry.puller, nil
-	}
-
-	remoteOpts := s.getRemoteOpts(ctx, creds)
-	puller, err := remote.NewPuller(remoteOpts...)
-	if err != nil {
-		return nil, status.InternalErrorf("error creating puller: %s", err)
-	}
-	s.pullerLRU.Add(key, &pullerLRUEntry{puller: puller})
-
-	return puller, nil
-}
-
-func (s *ociFetcherServer) evictPuller(imageRef gcrname.Reference, creds *rgpb.Credentials) {
-	key := pullerKey(imageRef, creds)
-	s.mu.Lock()
-	s.pullerLRU.Remove(key)
-	s.mu.Unlock()
-}
-
-// proveManifestAccess checks that the caller's credentials allow accessing
-// the given manifest ref in the remote registry.
-func (s *ociFetcherServer) proveManifestAccess(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) error {
-	key := manifestCacheKey(imageRef, creds)
-	if s.manifestCache.Contains(key) {
-		return nil
-	}
-	if _, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*gcr.Descriptor, error) {
-		return puller.Head(ctx, imageRef)
-	}); err != nil {
-		return err
-	}
-	s.manifestCache.Add(key, struct{}{})
-	return nil
-}
-
-// fetchBlobFromCacheWithMetadata attempts to fetch a blob from the cache and streams it directly to the gRPC response.
-// Returns nil if successful, NotFoundError if not in cache, or another error on failure.
-func (s *ociFetcherServer) fetchBlobFromCacheWithMetadata(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef gcrname.Digest, hash gcr.Hash) error {
-	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, digestRef.Context(), hash)
-	if err != nil {
-		return err
-	}
-	return s.fetchBlobFromCache(ctx, stream, hash, metadata.GetContentLength())
-}
-
-func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, hash gcr.Hash, contentLength int64) error {
-	w := &grpcStreamWriter{stream: stream}
-	return ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, contentLength)
+	metrics.OCIFetcherRequestCount.WithLabelValues(metrics.OCIFetcherMethodFetchBlob, role, statusLabel).Inc()
+	metrics.OCIFetcherRequestDurationUsec.WithLabelValues(metrics.OCIFetcherMethodFetchBlob, role).Observe(float64(duration.Microseconds()))
 }
 
 // fetchBlobFromRemoteWriteToCacheAndResponse fetches a blob from the upstream
@@ -591,6 +421,201 @@ func (s *ociFetcherServer) streamBlob(rc io.Reader, stream ofpb.OCIFetcher_Fetch
 	}
 }
 
+func (s *ociFetcherServer) fetchBlobMetadataFromCache(ctx context.Context, digestRef gcrname.Digest, hash gcr.Hash) (*ofpb.FetchBlobMetadataResponse, error) {
+	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, digestRef.Context(), hash)
+	if err != nil {
+		return nil, err
+	}
+	return &ofpb.FetchBlobMetadataResponse{
+		Size:      metadata.GetContentLength(),
+		MediaType: metadata.GetContentType(),
+	}, nil
+}
+
+func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, digestRef gcrname.Digest, creds *rgpb.Credentials) (*ofpb.FetchBlobMetadataResponse, error) {
+	return withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (*ofpb.FetchBlobMetadataResponse, error) {
+		layer, err := puller.Layer(ctx, digestRef)
+		if err != nil {
+			return nil, err
+		}
+		size, err := layer.Size()
+		if err != nil {
+			return nil, err
+		}
+		mediaType, err := layer.MediaType()
+		if err != nil {
+			return nil, err
+		}
+		return &ofpb.FetchBlobMetadataResponse{
+			Size:      size,
+			MediaType: string(mediaType),
+		}, nil
+	})
+}
+
+func parseManifestRef(ref string) (gcrname.Reference, error) {
+	imageRef, err := gcrname.ParseReference(ref)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid image reference %q: %s", ref, err)
+	}
+	return imageRef, nil
+}
+
+func (s *ociFetcherServer) resolveManifestDigest(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials, bypassRegistry bool) (gcr.Hash, error) {
+	if digestRef, ok := imageRef.(gcrname.Digest); ok {
+		hash, err := gcr.NewHash(digestRef.DigestStr())
+		if err != nil {
+			return gcr.Hash{}, status.InvalidArgumentErrorf("invalid digest format %q: %s", digestRef.DigestStr(), err)
+		}
+		if !bypassRegistry {
+			if err := s.proveManifestAccess(ctx, imageRef, creds); err != nil {
+				return gcr.Hash{}, err
+			}
+		}
+		return hash, nil
+	}
+	if bypassRegistry {
+		return gcr.Hash{}, status.NotFoundErrorf("bypassing registry, but cannot resolve tag ref %q from cache", imageRef)
+	}
+	return s.resolveTagToDigest(ctx, imageRef, creds)
+}
+
+// proveManifestAccess checks that the caller's credentials allow accessing
+// the given manifest ref in the remote registry.
+func (s *ociFetcherServer) proveManifestAccess(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) error {
+	key := manifestCacheKey(imageRef, creds)
+	if s.manifestCache.Contains(key) {
+		return nil
+	}
+	if _, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*gcr.Descriptor, error) {
+		return puller.Head(ctx, imageRef)
+	}); err != nil {
+		return err
+	}
+	s.manifestCache.Add(key, struct{}{})
+	return nil
+}
+
+func (s *ociFetcherServer) resolveTagToDigest(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (gcr.Hash, error) {
+	desc, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*gcr.Descriptor, error) {
+		return puller.Head(ctx, imageRef)
+	})
+	if err != nil {
+		return gcr.Hash{}, err
+	}
+	hash, err := gcr.NewHash(desc.Digest.String())
+	if err != nil {
+		return gcr.Hash{}, status.InvalidArgumentErrorf("invalid resolved digest %q: %s", desc.Digest.String(), err)
+	}
+	return hash, nil
+}
+
+func (s *ociFetcherServer) fetchManifestFromCache(ctx context.Context, imageRef gcrname.Reference, hash gcr.Hash) (*ofpb.FetchManifestResponse, error) {
+	cached, err := ocicache.FetchManifestFromAC(ctx, s.acClient, imageRef.Context(), hash, imageRef)
+	if err != nil {
+		return nil, err
+	}
+	return &ofpb.FetchManifestResponse{
+		Digest:    hash.String(),
+		Size:      int64(len(cached.GetRaw())),
+		MediaType: cached.GetContentType(),
+		Manifest:  cached.GetRaw(),
+	}, nil
+}
+
+func (s *ociFetcherServer) fetchManifestFromRemoteWriteToCache(ctx context.Context, imageRef gcrname.Reference, hash gcr.Hash, creds *rgpb.Credentials) (*ofpb.FetchManifestResponse, error) {
+	remoteDesc, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*remote.Descriptor, error) {
+		return puller.Get(ctx, imageRef)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, s.acClient, imageRef.Context(), hash, string(remoteDesc.MediaType), imageRef); err != nil {
+		log.CtxWarningf(ctx, "Error writing manifest to cache: %s", err)
+	}
+	return &ofpb.FetchManifestResponse{
+		Digest:    remoteDesc.Digest.String(),
+		Size:      remoteDesc.Size,
+		MediaType: string(remoteDesc.MediaType),
+		Manifest:  remoteDesc.Manifest,
+	}, nil
+}
+
+// validateUnsupportedBypassRegistry is used by FetchManifestMetadata which does not support
+// bypass_registry at all (it always needs registry access for credential validation).
+func validateUnsupportedBypassRegistry(ctx context.Context, bypassRegistry bool) error {
+	if !bypassRegistry {
+		return nil
+	}
+	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+		return status.PermissionDeniedErrorf("authorize bypass_registry: %s", err)
+	}
+	return status.NotFoundError("bypass_registry is not yet supported")
+}
+
+func (s *ociFetcherServer) fetchManifestMetadataFromRemote(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (*ofpb.FetchManifestMetadataResponse, error) {
+	desc, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*gcr.Descriptor, error) {
+		return puller.Head(ctx, imageRef)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &ofpb.FetchManifestMetadataResponse{
+		Digest:    desc.Digest.String(),
+		Size:      desc.Size,
+		MediaType: string(desc.MediaType),
+	}, nil
+}
+
+func (s *ociFetcherServer) getRemoteOpts(ctx context.Context, creds *rgpb.Credentials) []remote.Option {
+	opts := []remote.Option{remote.WithContext(ctx)}
+
+	if creds != nil && creds.GetUsername() != "" && creds.GetPassword() != "" {
+		opts = append(opts, remote.WithAuth(&authn.Basic{
+			Username: creds.GetUsername(),
+			Password: creds.GetPassword(),
+		}))
+	}
+
+	tr := httpclient.New(s.allowedPrivateIPs, "oci_fetcher").Transport
+
+	if len(s.mirrors) > 0 {
+		opts = append(opts, remote.WithTransport(NewMirrorTransport(tr, s.mirrors)))
+	} else {
+		opts = append(opts, remote.WithTransport(tr))
+	}
+
+	return opts
+}
+
+func (s *ociFetcherServer) getOrCreatePuller(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (*remote.Puller, error) {
+	key := pullerKey(imageRef, creds)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry, ok := s.pullerLRU.Get(key)
+
+	if ok {
+		return entry.puller, nil
+	}
+
+	remoteOpts := s.getRemoteOpts(ctx, creds)
+	puller, err := remote.NewPuller(remoteOpts...)
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
+	s.pullerLRU.Add(key, &pullerLRUEntry{puller: puller})
+
+	return puller, nil
+}
+
+func (s *ociFetcherServer) evictPuller(imageRef gcrname.Reference, creds *rgpb.Credentials) {
+	key := pullerKey(imageRef, creds)
+	s.mu.Lock()
+	s.pullerLRU.Remove(key)
+	s.mu.Unlock()
+}
+
 func manifestCacheKey(ref gcrname.Reference, creds *rgpb.Credentials) string {
 	if creds == nil {
 		return hash.Strings(ref.String(), "", "")
@@ -659,31 +684,6 @@ func withPullerRetry[T any](
 	}
 
 	return result, nil
-}
-
-// validateBypassRegistry checks if bypass_registry is enabled and if so,
-// verifies the caller has server admin permissions. Returns an error if
-// bypass_registry is true but the caller is not a server admin.
-func validateBypassRegistry(ctx context.Context, bypassRegistry bool) error {
-	if !bypassRegistry {
-		return nil
-	}
-	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
-		return status.PermissionDeniedErrorf("not authorized to bypass registry: %s", err)
-	}
-	return nil
-}
-
-// validateUnsupportedBypassRegistry is used by FetchManifestMetadata which does not support
-// bypass_registry at all (it always needs registry access for credential validation).
-func validateUnsupportedBypassRegistry(ctx context.Context, bypassRegistry bool) error {
-	if !bypassRegistry {
-		return nil
-	}
-	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
-		return status.PermissionDeniedErrorf("authorize bypass_registry: %s", err)
-	}
-	return status.NotFoundError("bypass_registry is not yet supported")
 }
 
 type grpcStreamWriter struct {
