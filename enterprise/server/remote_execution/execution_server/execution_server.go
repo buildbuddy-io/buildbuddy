@@ -915,7 +915,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		executionTask.Experiments = append(executionTask.Experiments, "executor.download_inputs_chunked")
 	}
 
-	if efp != nil && chunking.Enabled(ctx, efp) && efp.Boolean(ctx, "remote_execution.publish_post_completion_stats", false) {
+	if efp != nil && efp.Boolean(ctx, "remote_execution.publish_post_completion_stats", false) {
 		executionTask.Experiments = append(executionTask.Experiments, "remote_execution.publish_post_completion_stats")
 	}
 
