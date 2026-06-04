@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
@@ -107,10 +106,6 @@ func (s *Executor) Warmup() {
 		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, executor_auth.APIKey())
 	}
 	s.runnerPool.Warmup(ctx)
-}
-
-func timevalDuration(tv syscall.Timeval) time.Duration {
-	return time.Duration(tv.Sec)*time.Second + time.Duration(tv.Usec)*time.Microsecond
 }
 
 type executionTimeouts struct {
@@ -321,21 +316,23 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		// Recycling can produce observability data that wasn't available at
 		// COMPLETED publish time. Publish a follow-up stage=COMPLETED Operation
 		// whose auxiliary_metadata carries just the PostCompletionStats.
-		if stats := r.PostCompletionStats(); stats != nil && firstCompletedPublished {
-			statsAny, err := anypb.New(stats)
-			if err != nil {
-				log.CtxWarningf(ctx, "Failed to marshal PostCompletionStats: %s", err)
-				return
-			}
-			rsp := &repb.ExecuteResponse{
-				Result: &repb.ActionResult{
-					ExecutionMetadata: &repb.ExecutedActionMetadata{
-						AuxiliaryMetadata: []*anypb.Any{statsAny},
+		if slices.Contains(task.GetExperiments(), "remote_execution.publish_post_completion_stats") {
+			if stats := r.PostCompletionStats(); stats != nil && firstCompletedPublished {
+				statsAny, err := anypb.New(stats)
+				if err != nil {
+					log.CtxWarningf(ctx, "Failed to marshal PostCompletionStats: %s", err)
+					return
+				}
+				rsp := &repb.ExecuteResponse{
+					Result: &repb.ActionResult{
+						ExecutionMetadata: &repb.ExecutedActionMetadata{
+							AuxiliaryMetadata: []*anypb.Any{statsAny},
+						},
 					},
-				},
-			}
-			if err := opStateChangeFn(repb.ExecutionStage_COMPLETED, rsp); err != nil {
-				log.CtxWarningf(ctx, "Failed to publish post-completion stats: %s", err)
+				}
+				if err := opStateChangeFn(repb.ExecutionStage_COMPLETED, rsp); err != nil {
+					log.CtxWarningf(ctx, "Failed to publish post-completion stats: %s", err)
+				}
 			}
 		}
 	}()
