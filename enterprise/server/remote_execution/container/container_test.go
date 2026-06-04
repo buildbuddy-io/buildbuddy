@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -418,6 +419,95 @@ func TestUsageStats_Timeseries(t *testing.T) {
 	}, timestamps, "timestamps")
 	assert.Equal(t, []int64{0, 7000, 9500}, cpuSamples, "cpu samples")
 	assert.Equal(t, []int64{0, 500, 400}, memKBSamples, "memory kb samples")
+}
+
+// fakePausableContainer is a FakeContainer whose Pause sleeps for a
+// configurable duration so tests can assert on TracedCommandContainer's
+// pause timing.
+type fakePausableContainer struct {
+	FakeContainer
+	pauseDelay time.Duration
+}
+
+func (c *fakePausableContainer) Pause(ctx context.Context) error {
+	if c.pauseDelay > 0 {
+		time.Sleep(c.pauseDelay)
+	}
+	return nil
+}
+
+// fakeFirecrackerLikeContainer is a FakeContainer that exposes
+// PostCompletionStats with non-pause-duration fields, simulating what
+// firecracker reports. TracedCommandContainer should preserve those
+// fields and overwrite only PauseDurationUsec.
+type fakeFirecrackerLikeContainer struct {
+	fakePausableContainer
+	stats *espb.PostCompletionStats
+}
+
+func (c *fakeFirecrackerLikeContainer) PostCompletionStats() *espb.PostCompletionStats {
+	return c.stats
+}
+
+func TestTracedCommandContainer_PostCompletionStats_TimesPause(t *testing.T) {
+	delegate := &fakePausableContainer{pauseDelay: 10 * time.Millisecond}
+	tc := container.NewTracedCommandContainer(delegate)
+
+	require.NoError(t, tc.Pause(context.Background()))
+
+	stats := tc.PostCompletionStats()
+	require.NotNil(t, stats)
+	assert.GreaterOrEqual(t, stats.GetPauseDurationUsec(), (10 * time.Millisecond).Microseconds(),
+		"pause duration should reflect time spent in Pause")
+	assert.Nil(t, stats.GetFirecrackerPostExecStats(),
+		"delegate without PostCompletionStats should yield no firecracker stats")
+}
+
+func TestTracedCommandContainer_PostCompletionStats_PreservesDelegateStats(t *testing.T) {
+	delegateStats := &espb.PostCompletionStats{
+		// A stale duration on the delegate's stats; TracedCommandContainer
+		// should overwrite it with the measured value.
+		PauseDurationUsec: 999999,
+		FirecrackerPostExecStats: &espb.FirecrackerPostExecStats{
+			SnapshotSavedLocally: true,
+			SnapshotSavedBytes:   4242,
+		},
+	}
+	delegate := &fakeFirecrackerLikeContainer{
+		fakePausableContainer: fakePausableContainer{pauseDelay: 10 * time.Millisecond},
+		stats:                 delegateStats,
+	}
+	tc := container.NewTracedCommandContainer(delegate)
+
+	require.NoError(t, tc.Pause(context.Background()))
+
+	stats := tc.PostCompletionStats()
+	require.NotNil(t, stats)
+	assert.GreaterOrEqual(t, stats.GetPauseDurationUsec(), (10 * time.Millisecond).Microseconds(),
+		"pause duration should reflect measured time, not the delegate's stale value")
+	require.NotNil(t, stats.GetFirecrackerPostExecStats(), "delegate's firecracker stats should be preserved")
+	assert.True(t, stats.GetFirecrackerPostExecStats().GetSnapshotSavedLocally())
+	assert.Equal(t, int64(4242), stats.GetFirecrackerPostExecStats().GetSnapshotSavedBytes())
+}
+
+func TestTracedCommandContainer_PostCompletionStats_ResetOnRunAndExec(t *testing.T) {
+	delegate := &fakePausableContainer{pauseDelay: 10 * time.Millisecond}
+	tc := container.NewTracedCommandContainer(delegate)
+
+	require.NoError(t, tc.Pause(context.Background()))
+	require.GreaterOrEqual(t, tc.PostCompletionStats().GetPauseDurationUsec(), (10 * time.Millisecond).Microseconds())
+
+	// Run resets the pause duration so the next pause doesn't inherit the
+	// previous value.
+	tc.Run(context.Background(), &repb.Command{}, "", oci.Credentials{})
+	assert.Zero(t, tc.PostCompletionStats().GetPauseDurationUsec(), "Run should reset pause duration")
+
+	require.NoError(t, tc.Pause(context.Background()))
+	require.GreaterOrEqual(t, tc.PostCompletionStats().GetPauseDurationUsec(), (10 * time.Millisecond).Microseconds())
+
+	// Exec also resets.
+	tc.Exec(context.Background(), &repb.Command{}, &interfaces.Stdio{})
+	assert.Zero(t, tc.PostCompletionStats().GetPauseDurationUsec(), "Exec should reset pause duration")
 }
 
 func makePSI(someTotal, fullTotal int64) *repb.PSI {

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -42,8 +44,10 @@ import (
 
 type mockExecutionServer struct {
 	repb.UnimplementedExecutionServer
-	operations []*longrunningpb.Operation
-	finished   chan struct{}
+	mu              sync.Mutex
+	operations      []*longrunningpb.Operation
+	finished        chan struct{}
+	completedSignal sync.Once
 }
 
 func (s *mockExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer) error {
@@ -60,12 +64,31 @@ func (s *mockExecutionServer) PublishOperation(stream repb.Execution_PublishOper
 		if err != nil {
 			return err
 		}
+		s.mu.Lock()
 		s.operations = append(s.operations, op)
+		s.mu.Unlock()
 		stage := operation.ExtractStage(op)
 		if stage == repb.ExecutionStage_COMPLETED {
-			close(s.finished)
+			s.completedSignal.Do(func() { close(s.finished) })
 		}
 	}
+}
+
+// getOperations returns a snapshot of received operations under the mutex.
+// Callers should use this rather than reading s.operations directly to avoid
+// races with the gRPC handler goroutine that appends to the slice.
+func (s *mockExecutionServer) getOperations() []*longrunningpb.Operation {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.operations)
+}
+
+func operationsStageCounts(ops []*longrunningpb.Operation) map[repb.ExecutionStage_Value]int {
+	stages := make(map[repb.ExecutionStage_Value]int)
+	for _, op := range ops {
+		stages[operation.ExtractStage(op)]++
+	}
+	return stages
 }
 
 type mockPublisher struct {
@@ -225,17 +248,14 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 				require.Equal(t, 0, mockCounter.countFinishedCleanly)
 			}
 
-			operationStageCount := make(map[repb.ExecutionStage_Value]int, len(mockServer.operations))
-			for _, op := range mockServer.operations {
-				stage := operation.ExtractStage(op)
-				operationStageCount[stage]++
-			}
+			ops := mockServer.getOperations()
+			operationStageCount := operationsStageCounts(ops)
 
-			require.GreaterOrEqual(t, len(mockServer.operations), 3)
+			require.GreaterOrEqual(t, len(ops), 3)
 			require.GreaterOrEqual(t, operationStageCount[repb.ExecutionStage_EXECUTING], 1)
 			require.Equal(t, 1, operationStageCount[repb.ExecutionStage_COMPLETED])
 
-			completedOp := mockServer.operations[len(mockServer.operations)-1]
+			completedOp := ops[len(ops)-1]
 			require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
 
 			unpackedCompletedOp, err := rexec.UnpackOperation(completedOp)
@@ -287,15 +307,134 @@ func TestExecuteTaskAndStreamResults_CacheHit(t *testing.T) {
 	// No runner should've been created.
 	require.Equal(t, 0, mockCounter.countRecycled)
 
-	operationStageCount := make(map[repb.ExecutionStage_Value]int, len(mockServer.operations))
-	for _, op := range mockServer.operations {
-		stage := operation.ExtractStage(op)
-		operationStageCount[stage]++
-	}
+	ops := mockServer.getOperations()
 
-	require.GreaterOrEqual(t, len(mockServer.operations), 1)
-	completedOp := mockServer.operations[len(mockServer.operations)-1]
+	require.GreaterOrEqual(t, len(ops), 1)
+	completedOp := ops[len(ops)-1]
 	require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
+}
+
+// TestExecuteTaskAndStreamResults_PostCompletionStats verifies that the
+// executor sends a follow-up stage=COMPLETED Operation carrying
+// PostCompletionStats after TryRecycle runs, when the runner exposes such
+// stats and the task opts in via the publish_post_completion_stats
+// experiment.
+func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
+	for _, tc := range []struct {
+		name                string
+		postCompletionStats *espb.PostCompletionStats
+		experimentEnabled   bool
+		expectFollowUp      bool
+	}{
+		{
+			name: "WithStats",
+			postCompletionStats: &espb.PostCompletionStats{
+				PauseDurationUsec: 67890,
+				FirecrackerPostExecStats: &espb.FirecrackerPostExecStats{
+					SnapshotSavedLocally:  true,
+					SnapshotSavedRemotely: true,
+					SnapshotIsDiff:        true,
+					SnapshotSavedBytes:    12345,
+				},
+			},
+			experimentEnabled: true,
+			expectFollowUp:    true,
+		},
+		{
+			// Empty stats from the runner (e.g. non-firecracker containers
+			// without any container-specific stats to report) should still
+			// produce a follow-up when the experiment is enabled.
+			name:                "EmptyStats",
+			postCompletionStats: &espb.PostCompletionStats{},
+			experimentEnabled:   true,
+			expectFollowUp:      true,
+		},
+		{
+			name: "ExperimentOff",
+			postCompletionStats: &espb.PostCompletionStats{
+				PauseDurationUsec: 67890,
+				FirecrackerPostExecStats: &espb.FirecrackerPostExecStats{
+					SnapshotSavedLocally: true,
+					SnapshotSavedBytes:   12345,
+				},
+			},
+			experimentEnabled: false,
+			expectFollowUp:    false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := enterprise_testenv.New(t)
+			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+			clock := clockwork.NewFakeClock()
+			env.SetClock(clock)
+
+			_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
+			testcache.Setup(t, env, lis)
+			mockServer := &mockExecutionServer{finished: make(chan struct{})}
+			repb.RegisterExecutionServer(env.GetGRPCServer(), mockServer)
+			go runServer()
+
+			cacheRoot := testfs.MakeTempDir(t)
+			runnerPool := rbetest.NewTestRunnerPool(t, env, cacheRoot, rbetest.TestRunnerOverrides{
+				RunInterceptor:      rbetest.RunNoop(),
+				PostCompletionStats: tc.postCompletionStats,
+			})
+			exec, err := executor.NewExecutor(env, "executor-id", "host-id", "hostname", runnerPool)
+			require.NoError(t, err)
+
+			conn, err := testenv.LocalGRPCConn(context.Background(), lis)
+			require.NoError(t, err)
+			t.Cleanup(func() { conn.Close() })
+			execClient := repb.NewExecutionClient(conn)
+
+			task := getTask()
+			if tc.experimentEnabled {
+				task.ExecutionTask.Experiments = []string{"remote_execution.publish_post_completion_stats"}
+			}
+			publisher, err := operation.Publish(ctx, execClient, task.ExecutionTask.ExecutionId)
+			require.NoError(t, err)
+
+			retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
+			require.NoError(t, err)
+			require.False(t, retry)
+			<-mockServer.finished
+
+			completedOps := func() []*longrunningpb.Operation {
+				ops := []*longrunningpb.Operation{}
+				for _, op := range mockServer.getOperations() {
+					if operation.ExtractStage(op) == repb.ExecutionStage_COMPLETED {
+						ops = append(ops, op)
+					}
+				}
+				return ops
+			}
+
+			expectedCount := 1
+			if tc.expectFollowUp {
+				expectedCount = 2
+			}
+			require.Eventually(t, func() bool {
+				return len(completedOps()) >= expectedCount
+			}, 5*time.Second, 10*time.Millisecond, "expected %d COMPLETED ops", expectedCount)
+			// Give a brief moment to verify no additional ops sneak in.
+			time.Sleep(50 * time.Millisecond)
+
+			ops := completedOps()
+			require.Equal(t, expectedCount, len(ops))
+			if !tc.expectFollowUp {
+				return
+			}
+
+			followUp, err := rexec.UnpackOperation(ops[1])
+			require.NoError(t, err)
+			gotStats := &espb.PostCompletionStats{}
+			ok, err := rexec.FindFirstAuxiliaryMetadata(followUp.ExecuteResponse.GetResult().GetExecutionMetadata(), gotStats)
+			require.NoError(t, err)
+			require.True(t, ok, "follow-up COMPLETED should carry PostCompletionStats")
+			require.Empty(t, cmp.Diff(tc.postCompletionStats, gotStats, protocmp.Transform()))
+		})
+	}
 }
 
 func TestExecuteTaskAndStreamResults_PublishFailures(t *testing.T) {
@@ -373,13 +512,9 @@ func TestExecuteTaskAndStreamResults_InternalInputDownloadTimeout(t *testing.T) 
 	// We should still recycle the runner if we timed out downloading inputs -
 	// this is a recoverable error.
 	require.Equal(t, 1, mockCounter.countRecycled)
-	operationStageCount := make(map[repb.ExecutionStage_Value]int, len(mockServer.operations))
-	for _, op := range mockServer.operations {
-		stage := operation.ExtractStage(op)
-		operationStageCount[stage]++
-	}
-	require.GreaterOrEqual(t, len(mockServer.operations), 1)
-	completedOp := mockServer.operations[len(mockServer.operations)-1]
+	ops := mockServer.getOperations()
+	require.GreaterOrEqual(t, len(ops), 1)
+	completedOp := ops[len(ops)-1]
 	require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
 	// We should still report the input fetch completed timestamp if fetching
 	// inputs fails.
@@ -474,13 +609,9 @@ func TestExecuteTaskAndStreamResults_MissingInput(t *testing.T) {
 			<-mockServer.finished
 			// We should still recycle the runner if inputs are missing.
 			require.Equal(t, 1, mockCounter.countRecycled)
-			operationStageCount := make(map[repb.ExecutionStage_Value]int, len(mockServer.operations))
-			for _, op := range mockServer.operations {
-				stage := operation.ExtractStage(op)
-				operationStageCount[stage]++
-			}
-			require.GreaterOrEqual(t, len(mockServer.operations), 1)
-			completedOp := mockServer.operations[len(mockServer.operations)-1]
+			ops := mockServer.getOperations()
+			require.GreaterOrEqual(t, len(ops), 1)
+			completedOp := ops[len(ops)-1]
 			require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
 			// We should still report the input fetch completed timestamp if fetching
 			// inputs fails.
@@ -531,7 +662,8 @@ func TestExecuteTaskAndStreamResults_Timeout(t *testing.T) {
 			require.False(t, retry)
 
 			<-mockServer.finished
-			completedOp := mockServer.operations[len(mockServer.operations)-1]
+			ops := mockServer.getOperations()
+			completedOp := ops[len(ops)-1]
 			require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
 
 			rsp, err := rexec.UnpackOperation(completedOp)

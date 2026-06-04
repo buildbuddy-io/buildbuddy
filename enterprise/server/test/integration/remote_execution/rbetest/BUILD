@@ -48,6 +48,7 @@ go_library(
         "//proto:buildbuddy_service_go_proto",
         "//proto:capability_go_proto",
         "//proto:context_go_proto",
+        "//proto:execution_stats_go_proto",
         "//proto:iprules_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_execution_go_proto",

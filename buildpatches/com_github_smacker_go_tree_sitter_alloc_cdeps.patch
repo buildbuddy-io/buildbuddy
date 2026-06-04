@@ -1,0 +1,131 @@
+diff --git a/BUILD.bazel b/BUILD.bazel
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -1,9 +1,19 @@
++load("@rules_cc//cc:cc_library.bzl", "cc_library")
+ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+ 
++cc_library(
++    name = "alloc",
++    srcs = ["alloc.c"],
++    hdrs = [
++        "alloc.h",
++        "api.h",
++    ],
++    visibility = ["//visibility:public"],
++)
++
+ go_library(
+     name = "go-tree-sitter",
+     srcs = [
+-        "alloc.c",
+         "alloc.h",
+         "api.h",
+         "array.h",
+@@ -52,6 +62,7 @@ go_library(
+         "wasm_store.c",
+         "wasm_store.h",
+     ],
++    cdeps = [":alloc"],
+     cgo = True,
+     importpath = "github.com/smacker/go-tree-sitter",
+     visibility = ["//visibility:public"],
+diff --git a/bash/BUILD.bazel b/bash/BUILD.bazel
+--- a/bash/BUILD.bazel
++++ b/bash/BUILD.bazel
+@@ -8,6 +8,7 @@ go_library(
+         "parser.h",
+         "scanner.c",
+     ],
++    cdeps = ["//:alloc"],
+     cgo = True,
+     importpath = "github.com/smacker/go-tree-sitter/bash",
+     visibility = ["//visibility:public"],
+diff --git a/cpp/BUILD.bazel b/cpp/BUILD.bazel
+--- a/cpp/BUILD.bazel
++++ b/cpp/BUILD.bazel
+@@ -8,6 +8,7 @@ go_library(
+         "parser.h",
+         "scanner.c",
+     ],
++    cdeps = ["//:alloc"],
+     cgo = True,
+     importpath = "github.com/smacker/go-tree-sitter/cpp",
+     visibility = ["//visibility:public"],
+diff --git a/csharp/BUILD.bazel b/csharp/BUILD.bazel
+--- a/csharp/BUILD.bazel
++++ b/csharp/BUILD.bazel
+@@ -8,6 +8,7 @@ go_library(
+         "parser.h",
+         "scanner.c",
+     ],
++    cdeps = ["//:alloc"],
+     cgo = True,
+     copts = ["-Wno-trigraphs"],
+     importpath = "github.com/smacker/go-tree-sitter/csharp",
+diff --git a/html/BUILD.bazel b/html/BUILD.bazel
+--- a/html/BUILD.bazel
++++ b/html/BUILD.bazel
+@@ -9,6 +9,7 @@ go_library(
+         "scanner.c",
+         "tag.h",
+     ],
++    cdeps = ["//:alloc"],
+     cgo = True,
+     importpath = "github.com/smacker/go-tree-sitter/html",
+     visibility = ["//visibility:public"],
+diff --git a/kotlin/BUILD.bazel b/kotlin/BUILD.bazel
+--- a/kotlin/BUILD.bazel
++++ b/kotlin/BUILD.bazel
+@@ -8,6 +8,7 @@ go_library(
+         "parser.h",
+         "scanner.c",
+     ],
++    cdeps = ["//:alloc"],
+     cgo = True,
+     importpath = "github.com/smacker/go-tree-sitter/kotlin",
+     visibility = ["//visibility:public"],
+diff --git a/python/BUILD.bazel b/python/BUILD.bazel
+--- a/python/BUILD.bazel
++++ b/python/BUILD.bazel
+@@ -8,6 +8,7 @@ go_library(
+         "parser.h",
+         "scanner.c",
+     ],
++    cdeps = ["//:alloc"],
+     cgo = True,
+     importpath = "github.com/smacker/go-tree-sitter/python",
+     visibility = ["//visibility:public"],
+diff --git a/ruby/BUILD.bazel b/ruby/BUILD.bazel
+--- a/ruby/BUILD.bazel
++++ b/ruby/BUILD.bazel
+@@ -8,6 +8,7 @@ go_library(
+         "parser.h",
+         "scanner.c",
+     ],
++    cdeps = ["//:alloc"],
+     cgo = True,
+     importpath = "github.com/smacker/go-tree-sitter/ruby",
+     visibility = ["//visibility:public"],
+diff --git a/rust/BUILD.bazel b/rust/BUILD.bazel
+--- a/rust/BUILD.bazel
++++ b/rust/BUILD.bazel
+@@ -8,6 +8,7 @@ go_library(
+         "parser.h",
+         "scanner.c",
+     ],
++    cdeps = ["//:alloc"],
+     cgo = True,
+     importpath = "github.com/smacker/go-tree-sitter/rust",
+     visibility = ["//visibility:public"],
+diff --git a/scala/BUILD.bazel b/scala/BUILD.bazel
+--- a/scala/BUILD.bazel
++++ b/scala/BUILD.bazel
+@@ -9,6 +9,7 @@ go_library(
+         "scanner.c",
+         "stack.h",
+     ],
++    cdeps = ["//:alloc"],
+     cgo = True,
+     importpath = "github.com/smacker/go-tree-sitter/scala",
+     visibility = ["//visibility:public"],
