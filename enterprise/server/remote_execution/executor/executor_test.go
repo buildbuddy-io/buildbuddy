@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -79,7 +80,15 @@ func (s *mockExecutionServer) PublishOperation(stream repb.Execution_PublishOper
 func (s *mockExecutionServer) getOperations() []*longrunningpb.Operation {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]*longrunningpb.Operation(nil), s.operations...)
+	return slices.Clone(s.operations)
+}
+
+func operationsStageCounts(ops []*longrunningpb.Operation) map[repb.ExecutionStage_Value]int {
+	stages := make(map[repb.ExecutionStage_Value]int)
+	for _, op := range ops {
+		stages[operation.ExtractStage(op)]++
+	}
+	return stages
 }
 
 type mockPublisher struct {
@@ -240,11 +249,7 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 			}
 
 			ops := mockServer.getOperations()
-			operationStageCount := make(map[repb.ExecutionStage_Value]int, len(ops))
-			for _, op := range ops {
-				stage := operation.ExtractStage(op)
-				operationStageCount[stage]++
-			}
+			operationStageCount := operationsStageCounts(ops)
 
 			require.GreaterOrEqual(t, len(ops), 3)
 			require.GreaterOrEqual(t, operationStageCount[repb.ExecutionStage_EXECUTING], 1)
@@ -303,11 +308,6 @@ func TestExecuteTaskAndStreamResults_CacheHit(t *testing.T) {
 	require.Equal(t, 0, mockCounter.countRecycled)
 
 	ops := mockServer.getOperations()
-	operationStageCount := make(map[repb.ExecutionStage_Value]int, len(ops))
-	for _, op := range ops {
-		stage := operation.ExtractStage(op)
-		operationStageCount[stage]++
-	}
 
 	require.GreaterOrEqual(t, len(ops), 1)
 	completedOp := ops[len(ops)-1]
@@ -488,11 +488,6 @@ func TestExecuteTaskAndStreamResults_InternalInputDownloadTimeout(t *testing.T) 
 	// this is a recoverable error.
 	require.Equal(t, 1, mockCounter.countRecycled)
 	ops := mockServer.getOperations()
-	operationStageCount := make(map[repb.ExecutionStage_Value]int, len(ops))
-	for _, op := range ops {
-		stage := operation.ExtractStage(op)
-		operationStageCount[stage]++
-	}
 	require.GreaterOrEqual(t, len(ops), 1)
 	completedOp := ops[len(ops)-1]
 	require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
@@ -590,11 +585,6 @@ func TestExecuteTaskAndStreamResults_MissingInput(t *testing.T) {
 			// We should still recycle the runner if inputs are missing.
 			require.Equal(t, 1, mockCounter.countRecycled)
 			ops := mockServer.getOperations()
-			operationStageCount := make(map[repb.ExecutionStage_Value]int, len(ops))
-			for _, op := range ops {
-				stage := operation.ExtractStage(op)
-				operationStageCount[stage]++
-			}
 			require.GreaterOrEqual(t, len(ops), 1)
 			completedOp := ops[len(ops)-1]
 			require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
