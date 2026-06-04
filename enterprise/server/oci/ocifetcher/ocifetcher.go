@@ -154,9 +154,20 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	}
 
 	if req.GetBypassRegistry() {
-		return s.fetchBlobFromCacheOnly(ctx, stream, digestRef, hash)
+		err := s.fetchBlobFromCacheWithMetadataLookup(ctx, stream, digestRef, hash)
+		if err == nil {
+			return nil
+		}
+		if !status.IsNotFoundError(err) {
+			// It is possible this error occurred while writing to the stream.
+			// Since we do not know the state of the stream, it is not safe
+			// to write bytes to the stream past this point.
+			log.CtxWarningf(ctx, "Error fetching blob from cache: %s", err)
+			return err
+		}
+		return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", digestRef)
 	}
-	err = s.fetchBlobFromCacheWithMetadata(ctx, stream, digestRef, hash)
+	err = s.fetchBlobFromCacheWithMetadataLookup(ctx, stream, digestRef, hash)
 	if err == nil {
 		return nil
 	}
@@ -275,24 +286,9 @@ func parseBlobDigestRef(ref string, digestRequiredMsg string) (gcrname.Digest, g
 	return digestRef, hash, nil
 }
 
-func (s *ociFetcherServer) fetchBlobFromCacheOnly(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef gcrname.Digest, hash gcr.Hash) error {
-	err := s.fetchBlobFromCacheWithMetadata(ctx, stream, digestRef, hash)
-	if err == nil {
-		return nil
-	}
-	if !status.IsNotFoundError(err) {
-		// It is possible this error occurred while writing to the stream.
-		// Since we do not know the state of the stream, it is not safe
-		// to write bytes to the stream past this point.
-		log.CtxWarningf(ctx, "Error fetching blob from cache: %s", err)
-		return err
-	}
-	return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", digestRef)
-}
-
-// fetchBlobFromCacheWithMetadata attempts to fetch a blob from the cache and streams it directly to the gRPC response.
+// fetchBlobFromCacheWithMetadataLookup attempts to fetch a blob from the cache and streams it directly to the gRPC response.
 // Returns nil if successful, NotFoundError if not in cache, or another error on failure.
-func (s *ociFetcherServer) fetchBlobFromCacheWithMetadata(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef gcrname.Digest, hash gcr.Hash) error {
+func (s *ociFetcherServer) fetchBlobFromCacheWithMetadataLookup(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef gcrname.Digest, hash gcr.Hash) error {
 	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, digestRef.Context(), hash)
 	if err != nil {
 		return err
