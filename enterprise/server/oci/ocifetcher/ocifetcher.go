@@ -71,19 +71,7 @@ type ociFetcherServer struct {
 	// blobFetchGroup deduplicates concurrent blob fetch requests.
 	// Only one request fetches from upstream and writes to cache;
 	// other requests wait and then read from cache.
-	blobFetchGroup singleflight.Group[ocicache.BlobFetchKey, blobFetchResult]
-}
-
-// blobFetchResult holds metadata from the singleflight leader's
-// registry fetch so that waiters can stream from cache without
-// a separate action cache lookup for blob metadata.
-type blobFetchResult struct {
-	contentLength int64
-}
-
-type blobMeta struct {
-	size      int64
-	mediaType string
+	blobFetchGroup singleflight.Group[ocicache.BlobFetchKey, int64]
 }
 
 // NewServer constructs an OCIFetcherServer that
@@ -317,10 +305,9 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 	repo := digestRef.Context()
 	key := ocicache.NewBlobFetchKey(repo, hash, creds)
 	isLeader := false
-	result, _, err := s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (blobFetchResult, error) {
+	contentLength, _, err := s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (int64, error) {
 		isLeader = true
-		contentLength, err := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, creds, stream)
-		return blobFetchResult{contentLength: contentLength}, err
+		return s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, creds, stream)
 	})
 
 	if isLeader {
@@ -331,7 +318,7 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 		recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
 		return err
 	}
-	err = s.fetchBlobFromCache(ctx, stream, hash, result.contentLength)
+	err = s.fetchBlobFromCache(ctx, stream, hash, contentLength)
 	recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
 	return err
 }
@@ -348,7 +335,7 @@ func (s *ociFetcherServer) fetchBlobMetadataFromCache(ctx context.Context, diges
 }
 
 func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, digestRef gcrname.Digest, creds *rgpb.Credentials) (*ofpb.FetchBlobMetadataResponse, error) {
-	meta, err := withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (*blobMeta, error) {
+	return withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (*ofpb.FetchBlobMetadataResponse, error) {
 		layer, err := puller.Layer(ctx, digestRef)
 		if err != nil {
 			return nil, err
@@ -361,15 +348,11 @@ func (s *ociFetcherServer) fetchBlobMetadataFromRemote(ctx context.Context, dige
 		if err != nil {
 			return nil, err
 		}
-		return &blobMeta{size: size, mediaType: string(mediaType)}, nil
+		return &ofpb.FetchBlobMetadataResponse{
+			Size:      size,
+			MediaType: string(mediaType),
+		}, nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return &ofpb.FetchBlobMetadataResponse{
-		Size:      meta.size,
-		MediaType: meta.mediaType,
-	}, nil
 }
 
 func (s *ociFetcherServer) resolveManifestDigest(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials, bypassRegistry bool) (gcr.Hash, error) {
