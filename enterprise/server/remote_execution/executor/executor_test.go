@@ -341,10 +341,13 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 			expectFollowUp:    true,
 		},
 		{
-			name:                "WithoutStats",
-			postCompletionStats: nil,
+			// Empty stats from the runner (e.g. non-firecracker containers
+			// without any container-specific stats to report) should still
+			// produce a follow-up when the experiment is enabled.
+			name:                "EmptyStats",
+			postCompletionStats: &espb.PostCompletionStats{},
 			experimentEnabled:   true,
-			expectFollowUp:      false,
+			expectFollowUp:      true,
 		},
 		{
 			name: "ExperimentOff",
