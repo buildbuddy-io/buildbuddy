@@ -59,8 +59,7 @@ type Document interface {
 
 type Posting interface {
 	Docid() uint64
-	Positions() []uint64
-	Merge(Posting)
+	Frequency() uint32
 }
 
 type DocumentMatch interface {
@@ -115,7 +114,7 @@ type IndexReader interface {
 
 type Scorer interface {
 	Skip() bool
-	Score(docMatch DocumentMatch, doc Document) float64
+	Score(docMatch DocumentMatch) float64
 }
 
 type HighlightedRegion interface {

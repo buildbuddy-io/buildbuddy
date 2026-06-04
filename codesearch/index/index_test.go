@@ -683,6 +683,49 @@ func TestSparseNgramFrequenciesAcrossMultipleDocs(t *testing.T) {
 	}
 }
 
+func TestRawQueryDocumentMatchesIncludeFrequencies(t *testing.T) {
+	ctx := context.Background()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.SparseNgramField, "content", true),
+		},
+	)
+
+	docs := []struct {
+		id      string
+		content string
+		wantTF  uint32
+	}{
+		{"1", "abc", 1},
+		{"2", "abc abc abc", 3},
+	}
+	w, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+	for _, d := range docs {
+		require.NoError(t, w.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
+			"id":      []byte(d.id),
+			"content": []byte(d.content),
+		})))
+	}
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testns", docSchema)
+	matches, err := r.RawQuery(`(:eq content abc)`)
+	require.NoError(t, err)
+
+	got := make(map[string]uint32)
+	for _, match := range matches {
+		storedDoc := r.GetStoredDocument(match.Docid())
+		id := string(storedDoc.Field("id").Contents())
+		posting := match.Posting("content")
+		require.NotNil(t, posting)
+		got[id] = posting.Frequency()
+	}
+	assert.Equal(t, map[string]uint32{"1": 1, "2": 3}, got)
+}
+
 func printDB(t testing.TB, db *pebble.DB) {
 	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{0},

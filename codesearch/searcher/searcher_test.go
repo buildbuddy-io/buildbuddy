@@ -50,16 +50,16 @@ var sampleData = []struct {
 
 type constantScorer struct{}
 
-func (s constantScorer) Skip() bool                                                     { return false }
-func (s constantScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 { return 0.1 }
+func (s constantScorer) Skip() bool                                 { return false }
+func (s constantScorer) Score(docMatch types.DocumentMatch) float64 { return 0.1 }
 
 type explicitScorer struct {
-	scores map[string]float64
+	scores map[uint64]float64
 }
 
 func (s explicitScorer) Skip() bool { return false }
-func (s explicitScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 {
-	if score, ok := s.scores[string(doc.Field("ident").Contents())]; ok {
+func (s explicitScorer) Score(docMatch types.DocumentMatch) float64 {
+	if score, ok := s.scores[docMatch.Docid()]; ok {
 		return score
 	}
 	return 0.0
@@ -122,10 +122,10 @@ func TestSearcherZeroScoresDropped(t *testing.T) {
 	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
 
 	scorer := explicitScorer{
-		scores: map[string]float64{
-			"one":   1.0,
-			"four":  0.5,
-			"eight": 0.00001,
+		scores: map[uint64]float64{
+			1: 1.0,
+			4: 0.5,
+			8: 0.00001,
 		},
 	}
 	docs, err := s.Search(sQuery{"(:all)", scorer}, 100, 0)

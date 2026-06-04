@@ -299,6 +299,37 @@ func TestMergeListOr(t *testing.T) {
 	assert.Equal(t, []uint64{1, 2, 3}, pl.ToArray())
 }
 
+func TestMergeListAddPreservesFrequencies(t *testing.T) {
+	src := posting.NewBuilderList()
+	src.AddWithFrequency(2, 7)
+	pl := posting.NewMergeList()
+	pl.Or(src)
+
+	pl.Add(1)
+	pl.Add(3)
+
+	assert.Equal(t, []uint64{1, 2, 3}, pl.ToArray())
+	assert.Equal(t, uint32(1), pl.Frequency(1))
+	assert.Equal(t, uint32(7), pl.Frequency(2))
+	assert.Equal(t, uint32(1), pl.Frequency(3))
+}
+
+func TestMergeListAndPreservesFrequencies(t *testing.T) {
+	src := posting.NewBuilderList()
+	src.AddWithFrequency(1, 2)
+	src.AddWithFrequency(2, 3)
+	src.AddWithFrequency(3, 4)
+	pl := posting.NewMergeList()
+	pl.Or(src)
+
+	pl.And(posting.NewList(2, 3, 5))
+
+	assert.Equal(t, []uint64{2, 3}, pl.ToArray())
+	assert.Equal(t, uint32(3), pl.Frequency(2))
+	assert.Equal(t, uint32(4), pl.Frequency(3))
+	assert.Equal(t, uint32(0), pl.Frequency(1))
+}
+
 func TestMergeListRemove(t *testing.T) {
 	pl := posting.NewMergeList()
 	pl.Or(posting.NewBuilderList(1, 2, 3))
@@ -451,6 +482,28 @@ func TestFieldMapAnd(t *testing.T) {
 
 	assert.Equal(t, []uint64{2}, fm["test"].ToArray())
 	assert.Equal(t, []uint64{2}, fm["test2"].ToArray())
+}
+
+func TestFieldMapAndPreservesFieldFrequencies(t *testing.T) {
+	content := posting.NewBuilderList()
+	content.AddWithFrequency(1, 2)
+	content.AddWithFrequency(2, 3)
+
+	filename := posting.NewBuilderList()
+	filename.AddWithFrequency(2, 5)
+	filename.AddWithFrequency(3, 7)
+
+	fm := posting.NewFieldMap()
+	fm.OrField("content", content)
+	fm2 := posting.NewFieldMap()
+	fm2.OrField("filename", filename)
+
+	fm.And(fm2)
+
+	assert.Equal(t, []uint64{2}, fm["content"].ToArray())
+	assert.Equal(t, uint32(3), fm["content"].Frequency(2))
+	assert.Equal(t, []uint64{2}, fm["filename"].ToArray())
+	assert.Equal(t, uint32(5), fm["filename"].Frequency(2))
 }
 
 func BenchmarkListSerializationPosting(b *testing.B) {

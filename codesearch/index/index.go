@@ -906,6 +906,19 @@ type docMatch struct {
 	matchedPostings map[string]types.Posting
 }
 
+type matchPosting struct {
+	docid     uint64
+	frequency uint32
+}
+
+func (p matchPosting) Docid() uint64 {
+	return p.docid
+}
+
+func (p matchPosting) Frequency() uint32 {
+	return p.frequency
+}
+
 func (dm *docMatch) FieldNames() []string {
 	return slices.Collect(maps.Keys(dm.matchedPostings))
 }
@@ -1052,7 +1065,10 @@ func (r *Reader) RawQuery(squery string) ([]types.DocumentMatch, error) {
 				}
 			}
 			docMatch := docMatches[docid]
-			docMatch.matchedPostings[field] = nil // TODO(tylerw): fill in.
+			docMatch.matchedPostings[field] = matchPosting{
+				docid:     docid,
+				frequency: pl.Frequency(docid),
+			}
 		}
 	}
 
