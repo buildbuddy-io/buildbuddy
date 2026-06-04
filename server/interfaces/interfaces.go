@@ -1662,10 +1662,19 @@ type ClientIdentity struct {
 }
 
 const (
-	ClientIdentityExecutor       = "executor"
-	ClientIdentityApp            = "app"
-	ClientIdentityWorkflow       = "workflow"
-	ClientIdentityCacheProxy     = "cache-proxy"
+	ClientIdentityExecutor   = "executor"
+	ClientIdentityApp        = "app"
+	ClientIdentityWorkflow   = "workflow"
+	ClientIdentityCacheProxy = "cache-proxy"
+
+	// ClientIdentityGRPCProxy identifies the gRPC forwarding proxy
+	// (server/util/grpc_forward), which proxies unknown RPCs to a backend and
+	// supplies the original client's IP address in the x-buildbuddy-client-ip
+	// header so that the forwarding target can enforce IP rules against the
+	// real client IP rather than the proxy's IP. Values in the
+	// x-buildbuddy-client-ip header should only be trusted if the request is
+	// authenticated with this client identity.
+	ClientIdentityGRPCProxy      = "grpc-proxy"
 	ClientIdentityInternalOrigin = "internal"
 )
 
