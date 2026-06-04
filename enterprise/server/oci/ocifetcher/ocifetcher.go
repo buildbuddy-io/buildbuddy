@@ -70,7 +70,8 @@ type ociFetcherServer struct {
 
 	// blobFetchGroup deduplicates concurrent blob fetch requests.
 	// Only one request fetches from upstream and writes to cache;
-	// other requests wait and then read from cache.
+	// other requests wait and then read from cache using the returned
+	// content length.
 	blobFetchGroup singleflight.Group[ocicache.BlobFetchKey, int64]
 }
 
