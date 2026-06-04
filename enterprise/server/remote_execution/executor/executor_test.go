@@ -317,11 +317,14 @@ func TestExecuteTaskAndStreamResults_CacheHit(t *testing.T) {
 // TestExecuteTaskAndStreamResults_PostCompletionStats verifies that the
 // executor sends a follow-up stage=COMPLETED Operation carrying
 // PostCompletionStats after TryRecycle runs, when the runner exposes such
-// stats.
+// stats and the task opts in via the publish_post_completion_stats
+// experiment.
 func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 	for _, tc := range []struct {
 		name                string
 		postCompletionStats *espb.PostCompletionStats
+		experimentEnabled   bool
+		expectFollowUp      bool
 	}{
 		{
 			name: "WithStats",
@@ -334,10 +337,26 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 					SnapshotSavedBytes:    12345,
 				},
 			},
+			experimentEnabled: true,
+			expectFollowUp:    true,
 		},
 		{
 			name:                "WithoutStats",
 			postCompletionStats: nil,
+			experimentEnabled:   true,
+			expectFollowUp:      false,
+		},
+		{
+			name: "ExperimentOff",
+			postCompletionStats: &espb.PostCompletionStats{
+				PauseDurationUsec: 67890,
+				FirecrackerPostExecStats: &espb.FirecrackerPostExecStats{
+					SnapshotSavedLocally: true,
+					SnapshotSavedBytes:   12345,
+				},
+			},
+			experimentEnabled: false,
+			expectFollowUp:    false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -367,6 +386,9 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 			execClient := repb.NewExecutionClient(conn)
 
 			task := getTask()
+			if tc.experimentEnabled {
+				task.ExecutionTask.Experiments = []string{"remote_execution.publish_post_completion_stats"}
+			}
 			publisher, err := operation.Publish(ctx, execClient, task.ExecutionTask.ExecutionId)
 			require.NoError(t, err)
 
@@ -386,7 +408,7 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 			}
 
 			expectedCount := 1
-			if tc.postCompletionStats != nil {
+			if tc.expectFollowUp {
 				expectedCount = 2
 			}
 			require.Eventually(t, func() bool {
@@ -397,7 +419,7 @@ func TestExecuteTaskAndStreamResults_PostCompletionStats(t *testing.T) {
 
 			ops := completedOps()
 			require.Equal(t, expectedCount, len(ops))
-			if tc.postCompletionStats == nil {
+			if !tc.expectFollowUp {
 				return
 			}
 
