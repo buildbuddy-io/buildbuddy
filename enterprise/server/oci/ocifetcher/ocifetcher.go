@@ -170,21 +170,6 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	return s.dedupedFetchBlob(ctx, stream, digestRef, hash, req.GetCredentials())
 }
 
-func recordFetchBlobMetrics(role string, err error, duration time.Duration) {
-	statusLabel := metrics.OCIFetcherStatusOK
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err) {
-			statusLabel = metrics.OCIFetcherStatusTimeout
-		} else if errors.Is(err, context.Canceled) || status.IsCanceledError(err) {
-			statusLabel = metrics.OCIFetcherStatusCanceled
-		} else {
-			statusLabel = metrics.OCIFetcherStatusError
-		}
-	}
-	metrics.OCIFetcherRequestCount.WithLabelValues(metrics.OCIFetcherMethodFetchBlob, role, statusLabel).Inc()
-	metrics.OCIFetcherRequestDurationUsec.WithLabelValues(metrics.OCIFetcherMethodFetchBlob, role).Observe(float64(duration.Microseconds()))
-}
-
 // FetchBlobMetadata returns OCI blob metadata (size, media type).
 // It will first read this metadata from the action cache, falling back
 // to the upstream remote registry.
@@ -259,6 +244,21 @@ func (s *ociFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.
 		return nil, err
 	}
 	return s.fetchManifestMetadataFromRemote(ctx, imageRef, req.GetCredentials())
+}
+
+func recordFetchBlobMetrics(role string, err error, duration time.Duration) {
+	statusLabel := metrics.OCIFetcherStatusOK
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err) {
+			statusLabel = metrics.OCIFetcherStatusTimeout
+		} else if errors.Is(err, context.Canceled) || status.IsCanceledError(err) {
+			statusLabel = metrics.OCIFetcherStatusCanceled
+		} else {
+			statusLabel = metrics.OCIFetcherStatusError
+		}
+	}
+	metrics.OCIFetcherRequestCount.WithLabelValues(metrics.OCIFetcherMethodFetchBlob, role, statusLabel).Inc()
+	metrics.OCIFetcherRequestDurationUsec.WithLabelValues(metrics.OCIFetcherMethodFetchBlob, role).Observe(float64(duration.Microseconds()))
 }
 
 func parseBlobDigestRef(ref string, digestRequiredMsg string) (gcrname.Digest, gcr.Hash, error) {
