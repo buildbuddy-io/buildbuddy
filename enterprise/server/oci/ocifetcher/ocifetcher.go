@@ -148,25 +148,11 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	if err := validateBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
 		return err
 	}
-	digestRef, hash, err := parseBlobDigestRef(req.GetRef(), "blob reference must be a digest reference, got %q")
+	digestRef, hash, err := parseBlobDigestRef(req.GetRef())
 	if err != nil {
 		return err
 	}
 
-	if req.GetBypassRegistry() {
-		err := s.fetchBlobFromCacheWithMetadataLookup(ctx, stream, digestRef, hash)
-		if err == nil {
-			return nil
-		}
-		if !status.IsNotFoundError(err) {
-			// It is possible this error occurred while writing to the stream.
-			// Since we do not know the state of the stream, it is not safe
-			// to write bytes to the stream past this point.
-			log.CtxWarningf(ctx, "Error fetching blob from cache: %s", err)
-			return err
-		}
-		return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", digestRef)
-	}
 	err = s.fetchBlobFromCacheWithMetadataLookup(ctx, stream, digestRef, hash)
 	if err == nil {
 		return nil
@@ -177,6 +163,9 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		// to write bytes to the stream past this point.
 		log.CtxWarningf(ctx, "Error fetching blob from cache: %s", err)
 		return err
+	}
+	if req.GetBypassRegistry() {
+		return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", digestRef)
 	}
 	return s.dedupedFetchBlob(ctx, stream, digestRef, hash, req.GetCredentials())
 }
@@ -192,7 +181,7 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 	if err := validateBypassRegistry(ctx, req.GetBypassRegistry()); err != nil {
 		return nil, err
 	}
-	digestRef, hash, err := parseBlobDigestRef(req.GetRef(), "blob reference must be a digest reference (e.g., repo@sha256:...), got %q")
+	digestRef, hash, err := parseBlobDigestRef(req.GetRef())
 	if err != nil {
 		return nil, err
 	}
@@ -270,14 +259,14 @@ func validateBypassRegistry(ctx context.Context, bypassRegistry bool) error {
 	return nil
 }
 
-func parseBlobDigestRef(ref string, digestRequiredMsg string) (gcrname.Digest, gcr.Hash, error) {
+func parseBlobDigestRef(ref string) (gcrname.Digest, gcr.Hash, error) {
 	blobRef, err := gcrname.ParseReference(ref)
 	if err != nil {
 		return gcrname.Digest{}, gcr.Hash{}, status.InvalidArgumentErrorf("invalid blob reference %q: %s", ref, err)
 	}
 	digestRef, ok := blobRef.(gcrname.Digest)
 	if !ok {
-		return gcrname.Digest{}, gcr.Hash{}, status.InvalidArgumentErrorf(digestRequiredMsg, ref)
+		return gcrname.Digest{}, gcr.Hash{}, status.InvalidArgumentErrorf("blob reference must be a digest reference (e.g., repo@sha256:...), got %q", ref)
 	}
 	hash, err := gcr.NewHash(digestRef.DigestStr())
 	if err != nil {
