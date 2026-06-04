@@ -241,6 +241,87 @@ func TestRetryingClient_Send_DoesNotReplayNonCompleted(t *testing.T) {
 	assert.Equal(t, op, got[0])
 }
 
+func TestRetryingClient_Reconnect_RetryableReplayFailure_RedialsAndSucceeds(t *testing.T) {
+	// Stream 1: first send succeeds, then it breaks.
+	// Stream 2: every send fails with a retryable error — exercises
+	// reconnect's `continue outer`, where a successful redial but failing
+	// replay triggers another redial.
+	// Stream 3: works. The buffered COMPLETED is replayed here, then the
+	// new COMPLETED is sent.
+	stream1 := &fakeStream{}
+	stream2 := &fakeStream{sendErr: io.EOF}
+	stream3 := &fakeStream{}
+	pub, client := newPublisher(t, stream1, stream2, stream3)
+
+	op1 := completedOp(t)
+	op2 := completedOp(t)
+
+	require.NoError(t, pub.Send(op1))
+	assert.Equal(t, 1, len(stream1.recordedOps()))
+
+	stream1.mu.Lock()
+	stream1.sendErr = io.EOF
+	stream1.mu.Unlock()
+
+	require.NoError(t, pub.Send(op2))
+
+	assert.Equal(t, 3, client.dialed, "reconnect should have redialed after stream 2's replay failure")
+	assert.Empty(t, stream2.recordedOps(), "stream 2's replay was rigged to fail")
+	got := stream3.recordedOps()
+	require.Equal(t, 2, len(got), "stream 3 must receive op1 (replayed) then op2 (retried)")
+	assert.Equal(t, op1, got[0], "buffered COMPLETED replayed first")
+	assert.Equal(t, op2, got[1], "new COMPLETED sent after replay")
+	assert.Equal(t, 2, len(pub.retryStream.previousCompletedMessages))
+}
+
+func TestRetryingClient_Reconnect_NonRetryableReplayFailure_Surfaces(t *testing.T) {
+	// Stream 1: first send succeeds, then breaks.
+	// Stream 2: replay fails with a non-retryable error — reconnect must
+	// return the wrapped error immediately rather than redialing or
+	// silently swallowing the rejection.
+	stream1 := &fakeStream{}
+	stream2 := &fakeStream{sendErr: gstatus.Error(gcodes.InvalidArgument, "rejected")}
+	pub, _ := newPublisher(t, stream1, stream2)
+
+	op1 := completedOp(t)
+	require.NoError(t, pub.Send(op1))
+
+	stream1.mu.Lock()
+	stream1.sendErr = io.EOF
+	stream1.mu.Unlock()
+
+	err := pub.Send(completedOp(t))
+	require.Error(t, err, "the rejected replay must surface to the caller")
+	// op2's send aborted before the append, so the buffer should only
+	// contain the originally-acked op1.
+	assert.Equal(t, 1, len(pub.retryStream.previousCompletedMessages))
+}
+
+func TestRetryingClient_CloseAndRecv_ReplaysMultipleBufferedCompleted(t *testing.T) {
+	// Two COMPLETED messages get buffered on stream 1. Stream 1's
+	// CloseAndRecv returns a retryable error, so reconnect runs and must
+	// replay BOTH buffered messages on stream 2 before closeAndRecv loops
+	// back to close it.
+	stream1 := &fakeStream{closeErr: gstatus.Error(gcodes.Unavailable, "broken")}
+	stream2 := &fakeStream{}
+	pub, _ := newPublisher(t, stream1, stream2)
+
+	op1 := completedOp(t)
+	op2 := completedOp(t)
+
+	require.NoError(t, pub.Send(op1))
+	require.NoError(t, pub.Send(op2))
+	assert.Equal(t, 2, len(stream1.recordedOps()))
+
+	_, err := pub.CloseAndRecv()
+	require.NoError(t, err)
+
+	got := stream2.recordedOps()
+	require.Equal(t, 2, len(got), "stream 2 should receive both buffered COMPLETED messages")
+	assert.Equal(t, op1, got[0])
+	assert.Equal(t, op2, got[1])
+}
+
 func TestRetryingClient_CloseAndRecv_ReconnectsAndReplaysCompleted(t *testing.T) {
 	// COMPLETED is sent successfully on stream 1 (and buffered). Stream 1's
 	// CloseAndRecv then returns a retryable error. closeAndRecv should
