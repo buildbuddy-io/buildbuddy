@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"io"
 	"net/url"
-	"slices"
 	"sync"
 	"time"
 
@@ -116,11 +115,14 @@ type messageWithStage struct {
 }
 
 // Publish begins a PublishOperation stream and transparently reconnects the
-// stream if disconnected. After a disconnect (either in Send or CloseAndRecv),
-// it will re-publish previously-sent messages on the new stream to ensure
-// the server has acknowledged them: every COMPLETED message, and the most
-// recent message of each non-COMPLETED stage (so the server sees the
-// latest known progress state).
+// stream if disconnected. After a disconnect (either in Send or CloseAndRecv)
+// it replays previously-sent messages on the new stream:
+//   - Before the first COMPLETED, only the most recent message is replayed
+//     (older progress updates are dropped as new ones arrive — the server
+//     only needs the latest known progress state).
+//   - From the first COMPLETED onward, every message is replayed: the
+//     execution server needs to see all completion-stage updates (e.g.
+//     post-completion stats) to build the final execution record.
 func Publish(ctx context.Context, client repb.ExecutionClient, taskID string) (*Publisher, error) {
 	r, err := digest.ParseUploadResourceName(taskID)
 	if err != nil {
@@ -162,28 +164,13 @@ func (c *retryingClient) send(msg *longrunningpb.Operation) error {
 }
 
 func (c *retryingClient) saveMessage(msg *longrunningpb.Operation) {
-	stage := ExtractStage(msg)
-	if stage == repb.ExecutionStage_COMPLETED {
-		// Resend all COMPLETED messages on reconnect.
-		c.republishMessages = append(c.republishMessages, &messageWithStage{
-			msg:   msg,
-			stage: stage,
-		})
-		return
+	// Drop any buffered messages, unless the execution has completed.
+	// We need to resend all completion updates since the execution server
+	// needs to see all of them in order to properly build the final execution.
+	if len(c.republishMessages) > 0 && c.republishMessages[0].stage != repb.ExecutionStage_COMPLETED {
+		c.republishMessages = c.republishMessages[:0]
 	}
-
-	// Resend the most recent message of each other stage on reconnect.
-	i := slices.IndexFunc(c.republishMessages, func(m *messageWithStage) bool {
-		return m.stage == stage
-	})
-	if i != -1 {
-		c.republishMessages[i].msg = msg
-	} else {
-		c.republishMessages = append(c.republishMessages, &messageWithStage{
-			msg:   msg,
-			stage: stage,
-		})
-	}
+	c.republishMessages = append(c.republishMessages, &messageWithStage{msg, ExtractStage(msg)})
 }
 
 func (s *retryingClient) reconnect(retryCtx context.Context) error {
