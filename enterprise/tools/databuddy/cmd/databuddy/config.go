@@ -27,7 +27,7 @@ type ChartConfig struct {
 
 func ParseYAMLComments(sql string) (*QueryConfig, error) {
 	lines := strings.Split(strings.TrimSpace(sql), "\n")
-	rawMetadata := ""
+	var rawMetadata strings.Builder
 	for _, line := range lines {
 		if !strings.HasPrefix(line, "-- ") && !strings.HasPrefix(line, "// ") {
 			break
@@ -35,10 +35,10 @@ func ParseYAMLComments(sql string) (*QueryConfig, error) {
 		// TODO: return a ParseError if missing a space after // or --
 		line = strings.TrimPrefix(line, "-- ")
 		line = strings.TrimPrefix(line, "// ")
-		rawMetadata += line + "\n"
+		rawMetadata.WriteString(line + "\n")
 	}
 	config := &QueryConfig{}
-	dec := yaml.NewDecoder(strings.NewReader(rawMetadata))
+	dec := yaml.NewDecoder(strings.NewReader(rawMetadata.String()))
 	if err := dec.Decode(config); err != nil {
 		return nil, err
 	}

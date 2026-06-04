@@ -25,14 +25,8 @@
     "@types/uuid": "^8.3.4",
     "@types/varint": "^6.0.3",
     "browser-headers": "^0.4.1",
-<<<<<<< HEAD
-<<<<<<< HEAD
     "corepack": "^0.34.7",
-=======
-    "csv-stringify": "^6.5.2",
->>>>>>> 6643f43d0e (DataBuddy)
-=======
->>>>>>> 9a54f89684 (Migrate DataBuddy to rules_js)
+    "csv-stringify": "^6.6.0",
     "d3-scale": "^4.0.2",
     "d3-time": "^3.1.0",
     "dagre-d3-react": "^0.2.4",
@@ -69,7 +63,7 @@
     "react-router5": "^8.0.1",
     "router5": "^8.0.1",
     "router5-plugin-browser": "^8.0.1",
-    "uplot": "^1.6.31",
+    "uplot": "^1.6.32",
     "yarn": "^1.22.22"
   },
   "pnpm": {
@@ -82,12 +76,5 @@
         }
       }
     }
-  },
-  "dependencies": {
-    "csv-stringify": "^6.6.0",
-    "react-router5": "^8.0.1",
-    "router5": "^8.0.1",
-    "router5-plugin-browser": "^8.0.1",
-    "uplot": "^1.6.32"
   }
 }
