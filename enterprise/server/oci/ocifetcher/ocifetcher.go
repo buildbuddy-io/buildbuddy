@@ -186,7 +186,7 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		log.CtxWarningf(ctx, "Error fetching blob from cache: %s", err)
 		return err
 	}
-	return s.fetchBlobWithSingleflight(ctx, stream, blobRef, req.GetCredentials())
+	return s.dedupedFetchBlob(ctx, stream, blobRef, req.GetCredentials())
 }
 
 func recordFetchBlobMetrics(role string, err error, duration time.Duration) {
@@ -324,31 +324,27 @@ func (s *ociFetcherServer) fetchBlobFromCacheOnly(ctx context.Context, stream of
 	return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", ref.ref)
 }
 
-func (s *ociFetcherServer) fetchBlobWithSingleflight(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, ref *blobDigestRef, creds *rgpb.Credentials) error {
+func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, ref *blobDigestRef, creds *rgpb.Credentials) error {
 	start := time.Now()
 	key := ocicache.NewBlobFetchKey(ref.repo, ref.hash, creds)
 	isLeader := false
 	result, _, err := s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (blobFetchResult, error) {
 		isLeader = true
-		return s.fetchBlobSingleflightLeader(ctx, stream, ref, creds)
+		contentLength, err := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, ref.digest, ref.repo, ref.hash, creds, stream)
+		return blobFetchResult{contentLength: contentLength}, err
 	})
 
 	if isLeader {
 		recordFetchBlobMetrics(metrics.OCIFetcherRoleLeader, err, time.Since(start))
 		return err
 	}
-	return s.fetchBlobSingleflightWaiter(ctx, stream, ref, result, err, start)
+	return s.fetchBlobFromCacheAfterDedupedRemoteFetch(ctx, stream, ref, result, err, start)
 }
 
-func (s *ociFetcherServer) fetchBlobSingleflightLeader(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, ref *blobDigestRef, creds *rgpb.Credentials) (blobFetchResult, error) {
-	contentLength, err := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, ref.digest, ref.repo, ref.hash, creds, stream)
-	return blobFetchResult{contentLength: contentLength}, err
-}
-
-func (s *ociFetcherServer) fetchBlobSingleflightWaiter(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, ref *blobDigestRef, result blobFetchResult, leaderErr error, start time.Time) error {
-	if leaderErr != nil {
-		recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, leaderErr, time.Since(start))
-		return leaderErr
+func (s *ociFetcherServer) fetchBlobFromCacheAfterDedupedRemoteFetch(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, ref *blobDigestRef, result blobFetchResult, remoteErr error, start time.Time) error {
+	if remoteErr != nil {
+		recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, remoteErr, time.Since(start))
+		return remoteErr
 	}
 	w := &grpcStreamWriter{stream: stream}
 	err := ocicache.FetchBlobFromCache(ctx, w, s.bsClient, ref.hash, result.contentLength)
