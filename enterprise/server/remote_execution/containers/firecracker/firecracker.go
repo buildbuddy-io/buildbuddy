@@ -2936,7 +2936,6 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 
 	pauseTime := time.Since(start)
 	log.CtxDebugf(ctx, "Pause took %s", pauseTime)
-	c.postCompletionStats.PauseDurationUsec = pauseTime.Microseconds()
 
 	c.observeStageDuration("pause", pauseTime)
 	return err

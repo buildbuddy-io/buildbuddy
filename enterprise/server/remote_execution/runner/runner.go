@@ -507,16 +507,9 @@ func (r *taskRunner) GetIsolationType() string {
 }
 
 // PostCompletionStats returns observability data produced by the underlying
-// Container after Exec or Run have completed. Returns nil for containers that
-// don't expose such stats.
+// Container after Exec or Run have completed.
 func (r *taskRunner) PostCompletionStats() *espb.PostCompletionStats {
-	type postCompletionStatsProvider interface {
-		PostCompletionStats() *espb.PostCompletionStats
-	}
-	if p, ok := r.Container.Delegate.(postCompletionStatsProvider); ok {
-		return p.PostCompletionStats()
-	}
-	return nil
+	return r.Container.PostCompletionStats()
 }
 
 // shutdown runs any manual cleanup required to clean up processes before
