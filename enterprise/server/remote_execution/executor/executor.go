@@ -315,7 +315,10 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 
 		// Recycling can produce observability data that wasn't available at
 		// COMPLETED publish time. Publish a follow-up stage=COMPLETED Operation
-		// whose auxiliary_metadata carries just the PostCompletionStats.
+		// whose auxiliary_metadata carries just the PostCompletionStats. Only
+		// do this if the peer is ready to handle this partial COMPLETED update,
+		// which is indicated by the presence of
+		// "remote_execution.publish_post_completion_stats" in experiments.
 		if slices.Contains(task.GetExperiments(), "remote_execution.publish_post_completion_stats") {
 			if stats := r.PostCompletionStats(); stats != nil && firstCompletedPublished {
 				statsAny, err := anypb.New(stats)
