@@ -93,6 +93,8 @@ func (p *Publisher) SetState(state repb.ExecutionProgress_ExecutionState) error 
 // CloseAndRecv closes the send direction of the stream and waits for the
 // server to ack.
 func (p *Publisher) CloseAndRecv() (*repb.PublishOperationResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.retryStream.closeAndRecv()
 }
 
