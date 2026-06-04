@@ -124,17 +124,39 @@ func TestRetryingClient_Send_BuffersCompletedAfterSuccess(t *testing.T) {
 
 	// Stream received the op, and the buffer contains it for future replay.
 	assert.Equal(t, 1, len(stream.recordedOps()))
-	assert.Equal(t, 1, len(pub.retryStream.previousCompletedMessages))
+	assert.Equal(t, 1, len(pub.retryStream.republishMessages))
 }
 
-func TestRetryingClient_Send_DoesNotBufferNonCompleted(t *testing.T) {
+func TestRetryingClient_Send_BuffersOneMessagePerNonCompletedStage(t *testing.T) {
+	// Non-COMPLETED progress updates are also saved for replay, but at most
+	// one entry per stage — a second update with the same stage replaces
+	// the first in place so the buffer always holds the latest known
+	// progress state for each stage.
 	stream := &fakeStream{}
 	pub, _ := newPublisher(t, stream)
 
-	require.NoError(t, pub.Send(progressOp(t)))
+	first := progressOp(t)
+	require.NoError(t, pub.Send(first))
+	assert.Equal(t, 1, len(pub.retryStream.republishMessages))
 
-	assert.Equal(t, 1, len(stream.recordedOps()))
-	assert.Empty(t, pub.retryStream.previousCompletedMessages, "non-COMPLETED messages must not be buffered")
+	second := progressOp(t)
+	require.NoError(t, pub.Send(second))
+	require.Equal(t, 1, len(pub.retryStream.republishMessages), "same-stage updates collapse")
+	assert.Same(t, second, pub.retryStream.republishMessages[0].msg, "buffer holds the most recent")
+}
+
+func TestRetryingClient_Send_BuffersDifferentNonCompletedStagesSeparately(t *testing.T) {
+	stream := &fakeStream{}
+	pub, _ := newPublisher(t, stream)
+
+	queued, err := Assemble(testTaskID, Metadata(repb.ExecutionStage_QUEUED, testDigest), nil)
+	require.NoError(t, err)
+	executing := progressOp(t) // EXECUTING stage
+
+	require.NoError(t, pub.Send(queued))
+	require.NoError(t, pub.Send(executing))
+
+	assert.Equal(t, 2, len(pub.retryStream.republishMessages), "different stages get separate buffer entries")
 }
 
 func TestRetryingClient_Send_NonRetryableError_NotBuffered(t *testing.T) {
@@ -148,7 +170,7 @@ func TestRetryingClient_Send_NonRetryableError_NotBuffered(t *testing.T) {
 	err := pub.Send(completedOp(t))
 	require.Error(t, err)
 	assert.Equal(t, gcodes.InvalidArgument, gstatus.Code(err))
-	assert.Empty(t, pub.retryStream.previousCompletedMessages, "rejected messages must not be buffered")
+	assert.Empty(t, pub.retryStream.republishMessages, "rejected messages must not be buffered")
 }
 
 func TestRetryingClient_Send_ReconnectsAndDeliversCompletedExactlyOnce(t *testing.T) {
@@ -165,14 +187,14 @@ func TestRetryingClient_Send_ReconnectsAndDeliversCompletedExactlyOnce(t *testin
 
 	assert.Empty(t, stream1.recordedOps(), "stream 1's Send was rigged to fail")
 	assert.Equal(t, 1, len(stream2.recordedOps()), "stream 2 must receive the COMPLETED exactly once")
-	assert.Equal(t, 1, len(pub.retryStream.previousCompletedMessages))
+	assert.Equal(t, 1, len(pub.retryStream.republishMessages))
 }
 
 func TestRetryingClient_Send_ReconnectsAndDeliversNonCompletedExactlyOnce(t *testing.T) {
-	// A non-COMPLETED Send that fails with a retryable error should still
-	// be retried on the new stream by sendWithRetry — the "don't buffer
-	// non-COMPLETED" rule means it won't be replayed by future reconnects,
-	// but the in-flight send itself must succeed.
+	// A non-COMPLETED Send that fails with a retryable error should be
+	// retried on the new stream by sendWithRetry and delivered exactly
+	// once — not duplicated by the replay loop + retry — and then saved
+	// to the buffer for future reconnects.
 	stream1 := &fakeStream{sendErr: io.EOF}
 	stream2 := &fakeStream{}
 	pub, _ := newPublisher(t, stream1, stream2)
@@ -184,7 +206,7 @@ func TestRetryingClient_Send_ReconnectsAndDeliversNonCompletedExactlyOnce(t *tes
 	got := stream2.recordedOps()
 	require.Equal(t, 1, len(got), "stream 2 must receive the progress update exactly once")
 	assert.Equal(t, op, got[0])
-	assert.Empty(t, pub.retryStream.previousCompletedMessages, "non-COMPLETED messages must not be buffered even after a reconnect")
+	assert.Equal(t, 1, len(pub.retryStream.republishMessages))
 }
 
 func TestRetryingClient_Send_ReplaysBufferedCompletedOnNewStream(t *testing.T) {
@@ -212,15 +234,14 @@ func TestRetryingClient_Send_ReplaysBufferedCompletedOnNewStream(t *testing.T) {
 	require.Equal(t, 2, len(got), "stream 2 should see both COMPLETED messages")
 	assert.Equal(t, op1, got[0], "buffered COMPLETED replayed first")
 	assert.Equal(t, op2, got[1], "new COMPLETED sent after replay")
-	assert.Equal(t, 2, len(pub.retryStream.previousCompletedMessages))
+	assert.Equal(t, 2, len(pub.retryStream.republishMessages))
 }
 
-func TestRetryingClient_Send_DoesNotReplayNonCompleted(t *testing.T) {
-	// A non-COMPLETED progress update goes through on stream 1 but is not
-	// buffered. After stream 1 breaks, a COMPLETED send triggers reconnect.
-	// The replay loop should send nothing (buffer is empty), then the
-	// COMPLETED is sent on stream 2. Stream 2 must NOT see the dropped
-	// progress update.
+func TestRetryingClient_Send_ReplaysNonCompletedOnNewStream(t *testing.T) {
+	// A non-COMPLETED progress update goes through on stream 1 and is
+	// buffered. After stream 1 breaks, a COMPLETED send triggers reconnect:
+	// the replay loop sends the buffered progress update on stream 2 first,
+	// then sendWithRetry sends the COMPLETED.
 	stream1 := &fakeStream{}
 	stream2 := &fakeStream{}
 	pub, _ := newPublisher(t, stream1, stream2)
@@ -237,8 +258,9 @@ func TestRetryingClient_Send_DoesNotReplayNonCompleted(t *testing.T) {
 	require.NoError(t, pub.Send(op))
 
 	got := stream2.recordedOps()
-	require.Equal(t, 1, len(got), "stream 2 should see only the COMPLETED")
-	assert.Equal(t, op, got[0])
+	require.Equal(t, 2, len(got), "stream 2 should see the replayed progress update and the COMPLETED")
+	assert.Same(t, progress, got[0], "buffered progress update replayed first")
+	assert.Same(t, op, got[1])
 }
 
 func TestRetryingClient_Reconnect_RetryableReplayFailure_RedialsAndSucceeds(t *testing.T) {
@@ -271,7 +293,7 @@ func TestRetryingClient_Reconnect_RetryableReplayFailure_RedialsAndSucceeds(t *t
 	require.Equal(t, 2, len(got), "stream 3 must receive op1 (replayed) then op2 (retried)")
 	assert.Equal(t, op1, got[0], "buffered COMPLETED replayed first")
 	assert.Equal(t, op2, got[1], "new COMPLETED sent after replay")
-	assert.Equal(t, 2, len(pub.retryStream.previousCompletedMessages))
+	assert.Equal(t, 2, len(pub.retryStream.republishMessages))
 }
 
 func TestRetryingClient_Reconnect_NonRetryableReplayFailure_Surfaces(t *testing.T) {
@@ -292,9 +314,11 @@ func TestRetryingClient_Reconnect_NonRetryableReplayFailure_Surfaces(t *testing.
 
 	err := pub.Send(completedOp(t))
 	require.Error(t, err, "the rejected replay must surface to the caller")
-	// op2's send aborted before the append, so the buffer should only
-	// contain the originally-acked op1.
-	assert.Equal(t, 1, len(pub.retryStream.previousCompletedMessages))
+	// op2 was saved before reconnect (so reconnect's replay would deliver
+	// it) and stays in the buffer when reconnect fails. The Publisher is
+	// effectively dead after surfacing a non-retryable error anyway, so
+	// leaving op2 buffered is harmless.
+	assert.Equal(t, 2, len(pub.retryStream.republishMessages))
 }
 
 func TestRetryingClient_CloseAndRecv_ReplaysMultipleBufferedCompleted(t *testing.T) {

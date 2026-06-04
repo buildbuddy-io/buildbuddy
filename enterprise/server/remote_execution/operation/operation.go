@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"io"
 	"net/url"
+	"slices"
 	"sync"
 	"time"
 
@@ -103,17 +104,23 @@ func (p *Publisher) CloseAndRecv() (*repb.PublishOperationResponse, error) {
 // the backend; instead it depends on the client connection being terminated by
 // an L7 proxy.
 type retryingClient struct {
-	ctx                       context.Context
-	client                    repb.ExecutionClient
-	clientStream              repb.Execution_PublishOperationClient
-	previousCompletedMessages []*longrunningpb.Operation
+	ctx               context.Context
+	client            repb.ExecutionClient
+	clientStream      repb.Execution_PublishOperationClient
+	republishMessages []*messageWithStage
+}
+
+type messageWithStage struct {
+	msg   *longrunningpb.Operation
+	stage repb.ExecutionStage_Value
 }
 
 // Publish begins a PublishOperation stream and transparently reconnects the
 // stream if disconnected. After a disconnect (either in Send or CloseAndRecv),
-// it will re-publish every COMPLETED message sent so far to ensure the server
-// has acknowledged them. Non-COMPLETED progress updates are not buffered and
-// may be silently dropped on disconnect.
+// it will re-publish previously-sent messages on the new stream to ensure
+// the server has acknowledged them: every COMPLETED message, and the most
+// recent message of each non-COMPLETED stage (so the server sees the
+// latest known progress state).
 func Publish(ctx context.Context, client repb.ExecutionClient, taskID string) (*Publisher, error) {
 	r, err := digest.ParseUploadResourceName(taskID)
 	if err != nil {
@@ -135,56 +142,48 @@ func Publish(ctx context.Context, client repb.ExecutionClient, taskID string) (*
 }
 
 func (c *retryingClient) send(msg *longrunningpb.Operation) error {
-	if err := c.sendWithRetry(msg); err != nil {
+	// Save msg now because even on a successful local Send, the gRPC stream may
+	// have only buffered the message locally without the server receiving it.
+	c.saveMessage(msg)
+	err := c.clientStream.Send(msg)
+	if err != nil && !isRetryablePublishError(err) {
 		return err
 	}
-	// Even though Send returned nil, the gRPC stream may have only buffered the
-	// message locally without the server actually receiving it. To ensure we
-	// don't lose critical updates, save all COMPLETED messages and replay them
-	// after any future reconnect. Other progress updates are not critical.
-	//
-	// Note: the append must happen *after* sendWithRetry succeeds, not before.
-	// sendWithRetry's reconnect path already replays previousCompletedMessages
-	// on the new stream, so appending beforehand would cause the COMPLETED
-	// message to be delivered twice on the same reconnect cycle (once by the
-	// replay, once by sendWithRetry's retry of msg).
-	stage := ExtractStage(msg)
-	if stage == repb.ExecutionStage_COMPLETED {
-		c.previousCompletedMessages = append(c.previousCompletedMessages, msg)
+	if err == nil {
+		return nil
+	}
+	log.CtxInfof(c.ctx, "PublishOperation stream disconnected; attempting to reconnect.")
+	retryCtx, cancel := context.WithTimeout(c.ctx, reconnectTimeout)
+	defer cancel()
+	if err := c.reconnect(retryCtx); err != nil {
+		return status.WrapError(err, "failed to reconnect PublishOperation stream")
 	}
 	return nil
 }
 
-func (c *retryingClient) sendWithRetry(msg *longrunningpb.Operation) error {
-	var lastErr error
-	retryCtx, cancel := context.WithTimeout(c.ctx, reconnectTimeout)
-	defer cancel()
-	r := retry.DefaultWithContext(retryCtx)
-	for r.Next() {
-		err := c.clientStream.Send(msg)
-		if err == nil {
-			return nil
-		}
-		if !isRetryablePublishError(err) {
-			return err
-		}
-		lastErr = err
-		log.CtxInfof(c.ctx, "PublishOperation stream disconnected; attempting to reconnect.")
-		// EOF means we got disconnected; reconnect and retry.
-		if err := c.reconnect(retryCtx); err != nil {
-			return status.WrapError(err, "failed to reconnect PublishOperation stream")
-		}
+func (c *retryingClient) saveMessage(msg *longrunningpb.Operation) {
+	stage := ExtractStage(msg)
+	if stage == repb.ExecutionStage_COMPLETED {
+		// Resend all COMPLETED messages on reconnect.
+		c.republishMessages = append(c.republishMessages, &messageWithStage{
+			msg:   msg,
+			stage: stage,
+		})
+		return
 	}
-	if lastErr != nil {
-		return lastErr
+
+	// Resend the most recent message of each other stage on reconnect.
+	i := slices.IndexFunc(c.republishMessages, func(m *messageWithStage) bool {
+		return m.stage == stage
+	})
+	if i != -1 {
+		c.republishMessages[i].msg = msg
+	} else {
+		c.republishMessages = append(c.republishMessages, &messageWithStage{
+			msg:   msg,
+			stage: stage,
+		})
 	}
-	// Retry loop didn't even execute once; this should only happen if
-	// there is a ctx error. Return that error.
-	if retryCtx.Err() != nil {
-		return retryCtx.Err()
-	}
-	// Should never happen, but make sure we still return an error in this case.
-	return status.UnknownError("Send: unknown error")
 }
 
 func (s *retryingClient) reconnect(retryCtx context.Context) error {
@@ -201,8 +200,8 @@ outer:
 		}
 		log.CtxInfof(s.ctx, "Successfully reconnected PublishOperation stream.")
 		s.clientStream = clientStream
-		for _, msg := range s.previousCompletedMessages {
-			if err := s.clientStream.Send(msg); err != nil {
+		for _, msg := range s.republishMessages {
+			if err := s.clientStream.Send(msg.msg); err != nil {
 				if !isRetryablePublishError(err) {
 					return status.WrapError(err, "failed to resend completed message after reconnect")
 				}
@@ -240,8 +239,8 @@ func (c *retryingClient) closeAndRecv() (*repb.PublishOperationResponse, error) 
 		}
 		lastErr = err
 		log.CtxInfof(c.ctx, "PublishOperation stream disconnected; attempting to reconnect.")
-		// Stream is broken; reconnect and resend COMPLETED messages. If this
-		// fails, return the original error.
+		// Stream is broken; reconnect (which replays buffered messages on
+		// the new stream). If this fails, return the original error.
 		if err := c.reconnect(retryCtx); err != nil {
 			log.CtxWarningf(c.ctx, "Failed to reconnect operation stream: %s", err)
 			break
