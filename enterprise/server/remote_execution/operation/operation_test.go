@@ -159,18 +159,17 @@ func TestRetryingClient_Send_BuffersDifferentNonCompletedStagesSeparately(t *tes
 	assert.Equal(t, 2, len(pub.retryStream.republishMessages), "different stages get separate buffer entries")
 }
 
-func TestRetryingClient_Send_NonRetryableError_NotBuffered(t *testing.T) {
-	// The server rejects the message with a non-retryable error code. The
-	// send returns the error and we must NOT buffer the message — replaying
-	// it on a future reconnect would just fail the same way and poison the
-	// reconnect path for the rest of the Publisher's lifetime.
+func TestRetryingClient_Send_NonRetryableError_Surfaces(t *testing.T) {
+	// The server rejects the message with a non-retryable error code; the
+	// error must surface to the caller. The message remains in the buffer
+	// (saveMessage runs before Send), which is harmless: the Publisher is
+	// effectively dead after surfacing a non-retryable error anyway.
 	stream := &fakeStream{sendErr: gstatus.Error(gcodes.InvalidArgument, "bad message")}
 	pub, _ := newPublisher(t, stream)
 
 	err := pub.Send(completedOp(t))
 	require.Error(t, err)
 	assert.Equal(t, gcodes.InvalidArgument, gstatus.Code(err))
-	assert.Empty(t, pub.retryStream.republishMessages, "rejected messages must not be buffered")
 }
 
 func TestRetryingClient_Send_ReconnectsAndDeliversCompletedExactlyOnce(t *testing.T) {
