@@ -8,7 +8,7 @@ import (
 	"github.com/grafana/grafana-foundation-sdk/go/timeseries"
 )
 
-const pduLabelValuesQuery = `label_values(pdu_snmp_scrape_pdus_returned,pdu)`
+const pduLabelValuesQuery = `label_values(pdu_snmp_scrape_pdus_returned{region="${region}"},pdu)`
 
 func powerPanel(title, legendSortBy string) *timeseries.PanelBuilder {
 	return dash.Timeseries(title, dash.UnitWatts).
@@ -58,9 +58,9 @@ func totalInputPowerByRackPanel() *timeseries.PanelBuilder {
 		WithTarget(
 			dash.PromQuery(
 				`sum by (pdu) (
-    pdu_infeedPower{job="snmp_servertech_sentry3"}
+    pdu_infeedPower{job="snmp_servertech_sentry3", region="${region}"}
         or
-    pdu_st4InputCordActivePower{job="snmp_servertech_sentry4"}
+    pdu_st4InputCordActivePower{job="snmp_servertech_sentry4", region="${region}"}
 )`,
 				"__auto",
 			).RefId("A"),
@@ -75,13 +75,13 @@ func totalInputPowerByUnitPanel() *timeseries.PanelBuilder {
 		Thresholds(powerThresholds(7560, 8640)).
 		WithTarget(
 			dash.PromQuery(
-				`sum by (pdu, towerIndex) (pdu_infeedPower{job="snmp_servertech_sentry3", pdu="${pdu}"})`,
+				`sum by (pdu, towerIndex) (pdu_infeedPower{job="snmp_servertech_sentry3", region="${region}", pdu="${pdu}"})`,
 				"{{pdu}} > Unit {{towerIndex}}",
 			).RefId("A"),
 		).
 		WithTarget(
 			dash.PromQuery(
-				`sum by (pdu, st4UnitName) (pdu_st4InputCordActivePower{job="snmp_servertech_sentry4", pdu="${pdu}"})`,
+				`sum by (pdu, st4UnitName) (pdu_st4InputCordActivePower{job="snmp_servertech_sentry4", region="${region}", pdu="${pdu}"})`,
 				"{{pdu}} > Unit {{st4UnitName}}",
 			).RefId("B"),
 		)
@@ -105,7 +105,7 @@ func outputPowerPanel() *timeseries.PanelBuilder {
 		).
 		WithTarget(
 			dash.PromQuery(
-				`sum by (pdu, towerIndex, outletIndex) (pdu_outletPower{job="snmp_servertech_sentry3", pdu="${pdu}"})`,
+				`sum by (pdu, towerIndex, outletIndex) (pdu_outletPower{job="snmp_servertech_sentry3", region="${region}", pdu="${pdu}"})`,
 				"{{pdu}} > Unit {{towerIndex}} > Outlet {{outletIndex}}",
 			).RefId("A"),
 		)
@@ -122,6 +122,13 @@ func rackRow() *dashboard.RowBuilder {
 		Id(2).
 		GridPos(dashboard.GridPos{H: 1, W: 24, X: 0, Y: 9}).
 		Repeat("pdu")
+}
+
+func regionVariable() *dashboard.QueryVariableBuilder {
+	return dash.QueryVar("region", `label_values(pdu_snmp_scrape_pdus_returned,region)`).
+		Label("Region").
+		Refresh(dashboard.VariableRefreshOnDashboardLoad).
+		Current(dash.SelectedOption("us-sjc", "us-sjc"))
 }
 
 func pduVariable() *dashboard.QueryVariableBuilder {
@@ -156,6 +163,7 @@ func build() (dashboard.Dashboard, error) {
 		Tooltip(dashboard.DashboardCursorSyncOff).
 		Timepicker(dashboard.NewTimePickerBuilder()).
 		Refresh("1m").
+		WithVariable(regionVariable()).
 		WithVariable(pduVariable()).
 		WithRow(overviewRow()).
 		WithPanel(totalInputPowerByRackPanel()).
