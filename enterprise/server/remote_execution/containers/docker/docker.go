@@ -27,16 +27,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/docker/docker/api/types/registry"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/containerd/errdefs"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/types/registry"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	dockercontainer "github.com/docker/docker/api/types/container"
-	dti "github.com/docker/docker/api/types/image"
-	dockerclient "github.com/docker/docker/client"
 	units "github.com/docker/go-units"
+	dockercontainer "github.com/moby/moby/api/types/container"
+	dockerclient "github.com/moby/moby/client"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -95,9 +95,8 @@ func NewClient() (*dockerclient.Client, error) {
 		if !strings.Contains(dockerSocket, "://") {
 			dockerSocket = fmt.Sprintf("unix://%s", dockerSocket)
 		}
-		dockerClient, initErr = dockerclient.NewClientWithOpts(
+		dockerClient, initErr = dockerclient.New(
 			dockerclient.WithHost(dockerSocket),
-			dockerclient.WithAPIVersionNegotiation(),
 		)
 	})
 
@@ -233,11 +232,11 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 	}
 	createResponse, err := r.client.ContainerCreate(
 		ctx,
-		containerCfg,
-		r.hostConfig(workDir),
-		/*networkingConfig=*/ nil,
-		/*platform=*/ nil,
-		containerName,
+		dockerclient.ContainerCreateOptions{
+			Config:     containerCfg,
+			HostConfig: r.hostConfig(workDir),
+			Name:       containerName,
+		},
 	)
 	if err != nil {
 		result.Error = wrapDockerErr(err, "failed to create docker container")
@@ -245,7 +244,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 	}
 	cid := createResponse.ID
 
-	hijackedResp, err := r.client.ContainerAttach(ctx, cid, dockercontainer.AttachOptions{
+	hijackedResp, err := r.client.ContainerAttach(ctx, cid, dockerclient.ContainerAttachOptions{
 		Stream: true,
 		Stdout: true,
 		Stderr: true,
@@ -256,7 +255,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 	}
 	defer hijackedResp.Close()
 
-	err = r.client.ContainerStart(ctx, cid, dockercontainer.StartOptions{})
+	_, err = r.client.ContainerStart(ctx, cid, dockerclient.ContainerStartOptions{})
 	if err != nil {
 		result.Error = wrapDockerErr(err, "failed to start docker container")
 		return result
@@ -273,11 +272,11 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 			state := state
 			mu.Unlock()
 			if state != ctrExitedCleanly {
-				if err := r.client.ContainerKill(ctx, cid, "SIGKILL"); err != nil {
+				if _, err := r.client.ContainerKill(ctx, cid, dockerclient.ContainerKillOptions{Signal: "SIGKILL"}); err != nil {
 					log.Errorf("Failed to kill docker container: %s", err)
 				}
 			}
-			if err := r.client.ContainerRemove(ctx, cid, dockercontainer.RemoveOptions{}); err != nil {
+			if _, err := r.client.ContainerRemove(ctx, cid, dockerclient.ContainerRemoveOptions{}); err != nil {
 				log.Errorf("Failed to remove docker container: %s", err)
 			}
 		}()
@@ -299,9 +298,9 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return wrapDockerErr(err, "failed to copy docker container output")
 	})
 	eg.Go(func() error {
-		statusCh, errCh := r.client.ContainerWait(ctx, cid, dockercontainer.WaitConditionNotRunning)
+		containerWaitResult := r.client.ContainerWait(ctx, cid, dockerclient.ContainerWaitOptions{Condition: dockercontainer.WaitConditionNotRunning})
 		select {
-		case err := <-errCh:
+		case err := <-containerWaitResult.Error:
 			mu.Lock()
 			state = ctrDidNotExitCleanly
 			mu.Unlock()
@@ -309,7 +308,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 			// exit.
 			hijackedResp.Close()
 			return wrapDockerErr(err, "container did not exit cleanly")
-		case s := <-statusCh:
+		case s := <-containerWaitResult.Result:
 			mu.Lock()
 			state = ctrExitedCleanly
 			mu.Unlock()
@@ -481,7 +480,7 @@ func (r *dockerCommandContainer) IsImageCached(ctx context.Context) (bool, error
 	if err == nil {
 		return true, nil
 	}
-	if !dockerclient.IsErrNotFound(err) {
+	if !errdefs.IsNotFound(err) {
 		return false, err
 	}
 	return false, nil
@@ -501,7 +500,7 @@ func PullImage(ctx context.Context, client *dockerclient.Client, image string, c
 		if err != nil {
 			return err
 		}
-		rc, err := client.ImagePull(ctx, image, dti.PullOptions{
+		rc, err := client.ImagePull(ctx, image, dockerclient.ImagePullOptions{
 			RegistryAuth: auth,
 		})
 		if err != nil {
@@ -575,17 +574,17 @@ func (r *dockerCommandContainer) create(ctx context.Context, workDir string) err
 		ctx,
 		// Top-level container process just sleeps forever so that the container
 		// stays alive until explicitly killed.
-		containerConfig,
-		r.hostConfig(workDir),
-		/*networkingConfig=*/ nil,
-		/*platform=*/ nil,
-		containerName,
+		dockerclient.ContainerCreateOptions{
+			Config:     containerConfig,
+			HostConfig: r.hostConfig(workDir),
+			Name:       containerName,
+		},
 	)
 	if err != nil {
 		return wrapDockerErr(err, "failed to create container")
 	}
 	r.id = createResponse.ID
-	if err := r.client.ContainerStart(ctx, r.id, dockercontainer.StartOptions{}); err != nil {
+	if _, err := r.client.ContainerStart(ctx, r.id, dockerclient.ContainerStartOptions{}); err != nil {
 		return wrapDockerErr(err, "failed to start container")
 	}
 	r.workDir = workDir
@@ -612,7 +611,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		result.Error = err
 		return result
 	}
-	cfg := dockercontainer.ExecOptions{
+	cfg := dockerclient.ExecCreateOptions{
 		Cmd:          command.GetArguments(),
 		Env:          commandutil.EnvStringList(command),
 		WorkingDir:   filepath.Join(r.workDir, command.GetWorkingDirectory()),
@@ -621,12 +620,12 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		AttachStdin:  stdio.Stdin != nil,
 		User:         u,
 	}
-	exec, err := r.client.ContainerExecCreate(ctx, r.id, cfg)
+	exec, err := r.client.ExecCreate(ctx, r.id, cfg)
 	if err != nil {
 		result.Error = wrapDockerErr(err, "docker exec create failed")
 		return result
 	}
-	attachResp, err := r.client.ContainerExecAttach(ctx, exec.ID, dockercontainer.ExecStartOptions{})
+	attachResp, err := r.client.ExecAttach(ctx, exec.ID, dockerclient.ExecAttachOptions{})
 	if err != nil {
 		result.Error = wrapDockerErr(err, "docker exec attach failed")
 		return result
@@ -659,7 +658,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		result.Error = wrapDockerErr(err, "failed to get output of exec process")
 		return result
 	}
-	info, err := r.client.ContainerExecInspect(ctx, exec.ID)
+	info, err := r.client.ExecInspect(ctx, exec.ID, dockerclient.ExecInspectOptions{})
 	if err != nil {
 		result.Error = wrapDockerErr(err, "failed to get exec process info")
 		return result
@@ -692,14 +691,14 @@ func (r *dockerCommandContainer) Signal(ctx context.Context, sig syscall.Signal)
 }
 
 func (r *dockerCommandContainer) Unpause(ctx context.Context) error {
-	if err := r.client.ContainerUnpause(ctx, r.id); err != nil {
+	if _, err := r.client.ContainerUnpause(ctx, r.id, dockerclient.ContainerUnpauseOptions{}); err != nil {
 		return wrapDockerErr(err, "failed to unpause container")
 	}
 	return nil
 }
 
 func (r *dockerCommandContainer) Pause(ctx context.Context) error {
-	if err := r.client.ContainerPause(ctx, r.id); err != nil {
+	if _, err := r.client.ContainerPause(ctx, r.id, dockerclient.ContainerPauseOptions{}); err != nil {
 		return wrapDockerErr(err, "failed to pause container")
 	}
 	return nil
@@ -708,7 +707,7 @@ func (r *dockerCommandContainer) Pause(ctx context.Context) error {
 func (r *dockerCommandContainer) Remove(ctx context.Context) error {
 	r.removed = true
 	if r.id != "" {
-		if err := r.client.ContainerRemove(ctx, r.id, dockercontainer.RemoveOptions{Force: true}); err != nil {
+		if _, err := r.client.ContainerRemove(ctx, r.id, dockerclient.ContainerRemoveOptions{Force: true}); err != nil {
 			return wrapDockerErr(err, fmt.Sprintf("failed to remove docker container %s", r.id))
 		}
 		r.id = ""
@@ -717,7 +716,7 @@ func (r *dockerCommandContainer) Remove(ctx context.Context) error {
 }
 
 func (r *dockerCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
-	stats, err := r.client.ContainerStatsOneShot(ctx, r.id)
+	stats, err := r.client.ContainerStats(ctx, r.id, dockerclient.ContainerStatsOptions{})
 	if err != nil {
 		return nil, err
 	}

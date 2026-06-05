@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	dockerclient "github.com/docker/docker/client"
+	dockerclient "github.com/moby/moby/client"
 )
 
 func writeFile(t *testing.T, parentDir, fileName, content string) {
