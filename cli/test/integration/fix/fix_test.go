@@ -17,31 +17,71 @@ package fix_test
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 )
-
-// protoLibraryRule matches a top-level proto_library rule declaration. The
-// `^` anchor (with multiline mode) avoids matching `go_proto_library(`, which
-// also ends in `proto_library(`.
-var protoLibraryRule = regexp.MustCompile(`(?m)^proto_library\(`)
-
-// protoLibraryLoad matches a load() of the proto_library symbol from any
-// external .bzl. The Gazelle 0.51.3 upgrade switches the source of this load
-// from @rules_proto to @com_google_protobuf; this pattern matches either so
-// the invariant ("proto_library is loaded, not assumed native") holds across
-// the version bump without pinning the post-upgrade target on this branch.
-var protoLibraryLoad = regexp.MustCompile(`load\("@[^"]+", "proto_library"\)`)
 
 // poorlyFormatted is a BUILD file that buildifier should rewrite.
 const poorlyFormatted = `load( "@rules_shell//shell:sh_binary.bzl",   "sh_binary" )
 sh_binary( name="x",srcs=["x.sh"] )
+`
+
+const generatedProtoBuild = `load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+proto_library(
+    name = "proto_proto",
+    srcs = ["service.proto"],
+    visibility = ["//visibility:public"],
+)
+
+go_proto_library(
+    name = "proto_go_proto",
+    importpath = "proto",
+    proto = ":proto_proto",
+    visibility = ["//visibility:public"],
+)
+
+go_library(
+    name = "proto",
+    embed = [":proto_go_proto"],
+    importpath = "proto",
+    visibility = ["//visibility:public"],
+)
+`
+
+const mergedProtoBuild = `load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+# keep package comment
+package(default_visibility = ["//visibility:private"])
+
+# keep rule comment
+proto_library(
+    name = "proto_proto",
+    srcs = ["service.proto"],
+    tags = ["manual"],
+)
+
+go_proto_library(
+    name = "proto_go_proto",
+    importpath = "proto",
+    proto = ":proto_proto",
+)
+
+go_library(
+    name = "proto",
+    embed = [":proto_go_proto"],
+    importpath = "proto",
+)
 `
 
 // fixWorkspace creates a fresh temp dir for `bb fix` to operate on. Unlike
@@ -114,11 +154,19 @@ func requireNoBuildFile(t *testing.T, dir string) {
 	require.NoFileExists(t, filepath.Join(dir, "BUILD"))
 }
 
-// repoGazelleWorkspace creates a workspace whose //:gazelle target is a stub
-// sh_binary that records the args it was invoked with into gazelle.args. This
-// lets us assert how `bb fix` drives a repo-defined Gazelle without running a
-// real one. Note: this invokes real bazel (and fetches rules_shell from BCR).
-func repoGazelleWorkspace(t *testing.T) string {
+func requireEqualFileContents(t *testing.T, expected, actual string) {
+	t.Helper()
+	if diff := cmp.Diff(expected, actual); diff != "" {
+		t.Fatalf("file contents mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// repoGazelleStubWorkspace creates a workspace whose //:gazelle target records
+// the args it was invoked with into gazelle.args. This verifies `bb fix`
+// dispatch and arg propagation for repo-defined Gazelle targets; it does not
+// exercise real Gazelle behavior. Note: this invokes real bazel (and fetches
+// rules_shell from BCR).
+func repoGazelleStubWorkspace(t *testing.T) string {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
 		"BUILD.bazel": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
@@ -222,17 +270,7 @@ func TestFix_GazelleGeneratesProtoBuildFile(t *testing.T) {
 	require.NoError(t, err, "output: %s", out)
 
 	contents := readBuildFile(t, filepath.Join(ws, "proto"))
-	require.Contains(t, contents, "proto_library(",
-		"Gazelle should generate a proto_library rule for .proto sources")
-	require.Contains(t, contents, `"service.proto"`)
-	// The rule must be loadable, not assumed-native. The upgrade changes the
-	// load source (see protoLibraryLoad), so we match version-agnostically.
-	require.Regexp(t, protoLibraryLoad, contents,
-		"Gazelle should emit a load() for proto_library")
-	// Generated rules carry a default visibility entry (one of the behaviors
-	// the upgrade explicitly preserves).
-	require.Contains(t, contents, `visibility = ["//visibility:public"]`,
-		"Gazelle should set default visibility on generated rules")
+	requireEqualFileContents(t, generatedProtoBuild, contents)
 }
 
 func TestFix_DiffShowsGazelleGeneratedProtoBuildFileWithoutMutating(t *testing.T) {
@@ -335,20 +373,11 @@ proto_library(
 	require.NoError(t, err, "output: %s", out)
 
 	contents := readBuildFile(t, filepath.Join(ws, "proto"))
-	// Gazelle must merge into the single existing rule, not add a duplicate.
-	require.Len(t, protoLibraryRule.FindAllString(contents, -1), 1,
-		"expected exactly one proto_library rule after merge:\n%s", contents)
-	// Handwritten content survives the merge...
-	require.Contains(t, contents, "# keep package comment")
-	require.Contains(t, contents, "# keep rule comment")
-	require.Contains(t, contents, `package(default_visibility = ["//visibility:private"])`)
-	require.Contains(t, contents, `tags = ["manual"]`)
-	// ...and the generated src is merged into that same rule.
-	require.Contains(t, contents, `"service.proto"`)
+	requireEqualFileContents(t, mergedProtoBuild, contents)
 }
 
 func TestFix_RepoGazelleTargetIsPreferredOverBuiltinGazelle(t *testing.T) {
-	ws := repoGazelleWorkspace(t)
+	ws := repoGazelleStubWorkspace(t)
 
 	out, err := runFix(t, ws)
 	require.NoError(t, err, "output: %s", out)
@@ -359,7 +388,7 @@ func TestFix_RepoGazelleTargetIsPreferredOverBuiltinGazelle(t *testing.T) {
 }
 
 func TestFix_DiffPassesModeDiffToRepoGazelleTarget(t *testing.T) {
-	ws := repoGazelleWorkspace(t)
+	ws := repoGazelleStubWorkspace(t)
 
 	out, err := runFix(t, ws, "--diff")
 	require.NoError(t, err, "output: %s", out)
