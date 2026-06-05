@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -39,14 +40,16 @@ func lookupProxyTarget(fullMethodName string) (string, error) {
 
 type dialFn = func(string, ...grpc.DialOption) (*grpc_client.ClientConnPool, error)
 
-func dial(target string, opts ...grpc.DialOption) (*grpc_client.ClientConnPool, error) {
-	if *poolSize < 0 {
-		return nil, status.InvalidArgumentErrorf("Invalid pool size: %d", *poolSize)
+func newDialer(env environment.Env) dialFn {
+	return func(target string, opts ...grpc.DialOption) (*grpc_client.ClientConnPool, error) {
+		if *poolSize < 0 {
+			return nil, status.InvalidArgumentErrorf("Invalid pool size: %d", *poolSize)
+		}
+		if *poolSize == 0 {
+			return grpc_client.DialInternal(env, target, opts...)
+		}
+		return grpc_client.DialInternalWithPoolSize(env, target, *poolSize, opts...)
 	}
-	if *poolSize == 0 {
-		return grpc_client.DialSimple(target, opts...)
-	}
-	return grpc_client.DialSimpleWithPoolSize(target, *poolSize, opts...)
 }
 
 func getConnectionPool(dialer dialFn, target string) (*grpc_client.ClientConnPool, error) {
@@ -77,26 +80,29 @@ func getConnectionPool(dialer dialFn, target string) (*grpc_client.ClientConnPoo
 	return newPool, nil
 }
 
-func director(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
-	target, err := lookupProxyTarget(fullMethodName)
-	if err != nil {
-		return nil, nil, err
-	}
+func newDirector(env environment.Env) proxy.StreamDirector {
+	dialer := newDialer(env)
+	return func(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
+		target, err := lookupProxyTarget(fullMethodName)
+		if err != nil {
+			return nil, nil, err
+		}
 
-	pool, err := getConnectionPool(dial, target)
-	if err != nil {
-		return nil, nil, err
-	}
+		pool, err := getConnectionPool(dialer, target)
+		if err != nil {
+			return nil, nil, err
+		}
 
-	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		ctx = metadata.NewOutgoingContext(ctx, md.Copy())
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			ctx = metadata.NewOutgoingContext(ctx, md.Copy())
+		}
+		return ctx, pool, nil
 	}
-	return ctx, pool, nil
 }
 
-func GetForwardingServerOption() grpc.ServerOption {
+func GetForwardingServerOption(env environment.Env) grpc.ServerOption {
 	if len(*proxyTargets) == 0 {
 		return nil
 	}
-	return grpc.UnknownServiceHandler(proxy.TransparentHandler(director))
+	return grpc.UnknownServiceHandler(proxy.TransparentHandler(newDirector(env)))
 }

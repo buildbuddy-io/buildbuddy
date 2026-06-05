@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/grpc_forward",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/environment",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/status",
