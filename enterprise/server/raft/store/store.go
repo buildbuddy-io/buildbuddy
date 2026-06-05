@@ -111,14 +111,15 @@ type Store struct {
 	grpcServer    *grpc.Server
 	apiClient     *client.APIClient
 	liveness      *nodeliveness.Liveness
-	// This session is used by most of the SyncPropose traffic
+	// session is used for batches that arrive at gRPC Store.SyncPropose
+	// without a pre-attached session. The txn Coordinator always pre-attaches
+	// sessions, while generic multi-key write paths such as metadata Set/Delete
+	// and metadata atime updates currently do not.
 	session *client.Session
-	// The following sessions are created so that we can seperate background
-	// traffic such as eviction, startShard, splitRange from the main write
-	// traffic.
-	// session for transactions; used by split, add and remove replica.
-	txnSession *client.Session
-	// session for eviction
+	// evictionSession is a dedicated session for eviction deletes. It gives
+	// eviction its own (session ID, range ID) dedup namespace and, more
+	// importantly, its own propose locker, so high-volume eviction does not
+	// serialize against atime/metadata writes on the same range.
 	evictionSession *client.Session
 	// session for StartShard
 	shardStarterSession *client.Session
@@ -339,7 +340,6 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 
 	clock := env.GetClock()
 	session := client.NewSessionWithClock(clock)
-	txnSession := client.NewSessionWithClock(clock)
 	evictionSession := client.NewSessionWithClock(clock)
 	shardStarterSession := client.NewSessionWithClock(clock)
 	lkSession := client.NewSessionWithClock(clock)
@@ -364,7 +364,6 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 		apiClient:           apiClient,
 		liveness:            nodeLiveness,
 		session:             session,
-		txnSession:          txnSession,
 		evictionSession:     evictionSession,
 		shardStarterSession: shardStarterSession,
 		log:                 nhLog,
@@ -1894,15 +1893,12 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 		rangeID = r.RangeID()
 	}
 
+	// Eviction deletes use a dedicated session so they don't serialize
+	// against atime/metadata writes on the same range. A batch is treated as
+	// eviction when its first union is a Delete.
 	session := s.session
-	if len(req.GetBatch().GetTransactionId()) > 0 {
-		session = s.txnSession
-	} else {
-		// use eviction session for delete requests
-		unions := req.GetBatch().GetUnion()
-		if len(unions) > 0 && unions[0].GetDelete() != nil {
-			session = s.evictionSession
-		}
+	if unions := req.GetBatch().GetUnion(); len(unions) > 0 && unions[0].GetDelete() != nil {
+		session = s.evictionSession
 	}
 	batchResponse, err := session.SyncProposeLocal(ctx, s.nodeHost, rangeID, req.GetBatch())
 	if err != nil {

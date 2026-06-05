@@ -226,6 +226,8 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 	start := pu.clock.Now()
 	defer metrics.RaftBatchDeleteDurationUsec.Observe(float64(pu.clock.Since(start).Microseconds()))
 
+	// Eviction delete is replay-safe: a duplicate retry after the entry is gone
+	// still returns success, so this path does not need sender-owned sessions.
 	rsps, err := pu.sender.RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
@@ -249,19 +251,20 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 		if err != nil {
 			return nil, err
 		}
+		parsed := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
 		res := make([]*approxlru.Sample[*evictionKey], 0)
-		batchRsp := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
 		errCount := 0
+		var lastErr error
 		for i, k := range keys {
-			_, err = batchRsp.DeleteResponse(i)
-			if err == nil {
+			_, lastErr = parsed.DeleteResponse(i)
+			if lastErr == nil {
 				res = append(res, k.Meta.(*approxlru.Sample[*evictionKey]))
 			} else {
 				errCount++
 			}
 		}
 		if errCount > 0 {
-			return res, fmt.Errorf("failed to evict %d keys in partition %s, last error: %s", errCount, pu.part.ID, err)
+			return res, fmt.Errorf("failed to evict %d keys in partition %s, last error: %s", errCount, pu.part.ID, lastErr)
 		}
 		return res, nil
 	})

@@ -449,6 +449,9 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 		start := rc.clock.Now()
 		defer metrics.RaftBatchAtimeUpdateDurationUsec.Observe(float64(rc.clock.Since(start).Microseconds()))
 
+		// UpdateAtime is safe to send through RunMultiKey: retries may be
+		// re-executed on current state rather than replaying the original
+		// response, but the state-machine effect is monotonic/no-op on replay.
 		_, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 			batch := rbuilder.NewBatchBuilder()
 			for _, k := range keys {
@@ -793,6 +796,8 @@ func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.De
 	}
 
 	// Shard the query by key and query shards in parallel.
+	// Delete is safe to send through RunMultiKey: once the key is gone,
+	// duplicate retries still return success.
 	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
 		// sender runMultiKeyFuncs require that we return an interface{}
 		// and error, but in this case there's no value to return, so

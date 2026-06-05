@@ -253,6 +253,23 @@ func RunNodehostFn(ctx context.Context, maxSingleOpTimeout time.Duration, nhf fu
 	return aggregatedErr.err()
 }
 
+// Session is a retry-stable idempotency token for raft proposals. A
+// session has a stable session ID and a session index that increases
+// monotonically per session ID — every new BatchCmdRequest under a
+// session bumps the session index.
+//
+// One session ID can be shared across ranges — Sender keeps a single
+// base session and stamps the destination range ID onto each proposal.
+// Each range stores only the highest-index session it has seen for
+// that session ID and range ID, along with the cached response; a retry
+// whose session ID and session index match the stored record replays
+// the cached response instead of re-applying.
+//
+// Held by Sender (gRPC path, pre-attached per range so the destination
+// skips bookkeeping) and by local-direct callers — rangelease, bringup,
+// deleteSessions worker — that propose into the local nodehost and need
+// replay semantics (e.g. a rangelease CAS retry must replay, not
+// re-compare).
 type Session struct {
 	id        string
 	index     uint64
@@ -305,30 +322,38 @@ func (s *Session) maybeRefresh() {
 	s.refreshAt = now.Add(*sessionLifetime)
 }
 
-func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, rangeID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	_, spn := tracing.StartNamedSpan(ctx, "SyncProposeLocal: locker.Lock") // nolint:SA4006
-	if spn.IsRecording() {
-		spn.SetAttributes(attribute.Int64("range_id", int64(rangeID)))
-	}
-	// At most one SyncProposeLocal can be run for the same replica per session.
-	start := s.clock.Now()
-	unlockFn := s.locker.Lock(strconv.Itoa(int(rangeID)))
-	spn.End()
-	defer func() {
-		unlockFn()
-		metrics.RaftRangeLockDurationMsec.With(prometheus.Labels{
-			metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
-		}).Observe(float64(s.clock.Since(start).Milliseconds()))
-	}()
-
-	_, spn = tracing.StartNamedSpan(ctx, "SyncProposeLocal: set session") // nolint:SA4006
+func (s *Session) NextRequestSession() *rfpb.Session {
 	s.mu.Lock()
-	// Refreshes the session if necessary
+	defer s.mu.Unlock()
 	s.maybeRefresh()
 	s.index++
-	batch.Session = s.ToProto()
-	s.mu.Unlock()
-	spn.End()
+	return s.ToProto()
+}
+
+func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, rangeID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	// If the batch already carries a session, the caller (Sender or txn
+	// Coordinator) owns retry-stable idempotency for this logical request
+	// and has already serialized concurrent proposes on its side.
+	if batch.GetSession() == nil {
+		_, spn := tracing.StartNamedSpan(ctx, "SyncProposeLocal: locker.Lock") // nolint:SA4006
+		if spn.IsRecording() {
+			spn.SetAttributes(attribute.Int64("range_id", int64(rangeID)))
+		}
+		// At most one SyncProposeLocal can be run for the same replica per session.
+		start := s.clock.Now()
+		unlockFn := s.locker.Lock(strconv.Itoa(int(rangeID)))
+		spn.End()
+		defer func() {
+			unlockFn()
+			metrics.RaftRangeLockDurationMsec.With(prometheus.Labels{
+				metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
+			}).Observe(float64(s.clock.Since(start).Milliseconds()))
+		}()
+
+		_, spn = tracing.StartNamedSpan(ctx, "SyncProposeLocal: set session") // nolint:SA4006
+		batch.Session = s.NextRequestSession()
+		spn.End()
+	}
 
 	sesh := nodehost.GetNoOPSession(rangeID)
 
