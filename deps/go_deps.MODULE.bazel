@@ -81,7 +81,13 @@ go_deps.module_override(
     patches = ["@com_github_buildbuddy_io_buildbuddy//buildpatches:go-grpc-channelz.patch"],
     path = "github.com/rantav/go-grpc-channelz",
 )
-
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:com_github_smacker_go_tree_sitter_alloc_cdeps.patch",
+    ],
+    path = "github.com/smacker/go-tree-sitter",
+)
 # Go repos with custom directives
 go_deps.gazelle_override(
     directives = [

@@ -10,7 +10,6 @@ go_test(
     srcs = ["podman_test.go"],
     data = [
         "//enterprise/server/remote_execution/containers/ociruntime:crun",
-        "//enterprise/server/remote_execution/containers/podman:podman-static.tar.gz",
     ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
@@ -33,7 +32,6 @@ go_test(
     target_compatible_with = ["@platforms//os:linux"],
     x_defs = {
         "crunRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/ociruntime:crun)",
-        "podmanArchiveRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/podman:podman-static.tar.gz)",
     },
     deps = [
         "//enterprise/server/remote_execution/commandutil",
@@ -41,6 +39,7 @@ go_test(
         "//enterprise/server/remote_execution/containers/docker",
         "//enterprise/server/remote_execution/containers/podman",
         "//enterprise/server/util/oci",
+        "//enterprise/server/util/testpodman",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/testutil/testauth",

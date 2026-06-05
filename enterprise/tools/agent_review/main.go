@@ -40,27 +40,29 @@ Schema:
     {
       "file": "<file path relative to repo root, e.g. server/foo.go>",
       "line": <integer — the line number in the NEW version of the file>,
-      "body": "<full comment text as markdown>",
-      "severity": "<critical | warning | suggestion>"
+      "body": "<full comment text as markdown>"
     }
   ]
 }
 
 Rules:
-- Include a comment entry for every finding that mentions a file path, even if the line number is approximate — use the nearest relevant line you can infer from context.
+- Include a comment entry for every unique finding that mentions a file path, even if the line number is approximate — use the nearest relevant line you can infer from context.
+  Avoid including redundant comments; instead of making the same comment on every line where a particular issue occurs,
+  you can say things like "(same comment applies to ...)" or "... (here and below)."
 - Findings with no file reference at all go into "summary".
 - File paths must be relative (no leading slash, no absolute paths).
 - Remove any footnote-style numeric references such as "(#1)" or "(#2)" from comment bodies and the summary — GitHub interprets these as issue/PR links.
+- Omit comments that only praise, affirm, or acknowledge a change without raising an actionable concern or suggesting an improvement (e.g. "good cleanup", "no callers found — safe to remove", "looks correct").
+- Avoid "introductory" or summary phrases with labels or categorizations like "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead.". Just write the comment directly, like "strings.Split allocates. Use strings.SplitSeq instead."
 - Output ONLY the JSON object. No other text before or after it.
 
 REVIEW:
 `
 
 type reviewComment struct {
-	File     string `json:"file"`
-	Line     int    `json:"line"`
-	Body     string `json:"body"`
-	Severity string `json:"severity"`
+	File string `json:"file"`
+	Line int    `json:"line"`
+	Body string `json:"body"`
 }
 
 type reviewJSON struct {
@@ -269,10 +271,10 @@ func main() {
 				Path: github.String(c.File),
 				Line: github.Int(c.Line),
 				Side: github.String("RIGHT"),
-				Body: github.String(fmt.Sprintf("**[%s]** %s", c.Severity, c.Body)),
+				Body: github.String(c.Body),
 			})
 		} else {
-			overflowLines = append(overflowLines, fmt.Sprintf("- **[%s]** `%s:%d` — %s", c.Severity, c.File, c.Line, c.Body))
+			overflowLines = append(overflowLines, fmt.Sprintf("- `%s:%d` — %s", c.File, c.Line, c.Body))
 		}
 	}
 

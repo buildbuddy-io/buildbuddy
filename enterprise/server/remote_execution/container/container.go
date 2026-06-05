@@ -32,6 +32,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
@@ -730,6 +731,8 @@ type TracedCommandContainer struct {
 	mu       sync.RWMutex
 	removed  bool
 	Delegate CommandContainer
+
+	pauseDuration time.Duration
 }
 
 func (t *TracedCommandContainer) IsolationType() string {
@@ -737,6 +740,7 @@ func (t *TracedCommandContainer) IsolationType() string {
 }
 
 func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult {
+	t.pauseDuration = 0
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 
@@ -789,6 +793,7 @@ func (t *TracedCommandContainer) Create(ctx context.Context, workingDir string) 
 }
 
 func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command, opts *interfaces.Stdio) *interfaces.CommandResult {
+	t.pauseDuration = 0
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 
@@ -837,7 +842,10 @@ func (t *TracedCommandContainer) Pause(ctx context.Context) error {
 		return ErrRemoved
 	}
 
-	return t.Delegate.Pause(ctx)
+	start := time.Now()
+	err := t.Delegate.Pause(ctx)
+	t.pauseDuration = time.Since(start)
+	return err
 }
 
 func (t *TracedCommandContainer) Remove(ctx context.Context) error {
@@ -875,6 +883,18 @@ func (t *TracedCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 	}
 
 	return t.Delegate.Stats(ctx)
+}
+
+func (t *TracedCommandContainer) PostCompletionStats() *espb.PostCompletionStats {
+	type postCompletionStatsProvider interface {
+		PostCompletionStats() *espb.PostCompletionStats
+	}
+	stats := &espb.PostCompletionStats{}
+	if p, ok := t.Delegate.(postCompletionStatsProvider); ok {
+		stats = p.PostCompletionStats()
+	}
+	stats.PauseDurationUsec = t.pauseDuration.Microseconds()
+	return stats
 }
 
 func NewTracedCommandContainer(delegate CommandContainer) *TracedCommandContainer {

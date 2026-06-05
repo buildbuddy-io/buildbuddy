@@ -1,0 +1,1 @@
+APP_PACKAGE_ROOT = "app"
