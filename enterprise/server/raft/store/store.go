@@ -735,7 +735,6 @@ func (s *Store) getLastUsedIDsInMetaRangeForDebug() ([]keyValue, error) {
 	}
 	defer db.Close()
 	start, end := keys.Range(keys.MakeKey(constants.LocalPrefix, []byte("c1n")))
-
 	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: start,
 		UpperBound: end,
@@ -746,9 +745,10 @@ func (s *Store) getLastUsedIDsInMetaRangeForDebug() ([]keyValue, error) {
 
 	var res []keyValue
 	for iter.First(); iter.Valid(); iter.Next() {
-		if bytes.Contains(iter.Key(), constants.LastReplicaIDKeyPrefix) || bytes.Contains(iter.Key(), constants.LastRangeIDKey) {
+		key := iter.Key()
+		if bytes.Contains(key, constants.LastReplicaIDKeyPrefix) || bytes.Contains(key, constants.LastRangeIDKey) {
 			res = append(res, keyValue{
-				key:   string(iter.Key()),
+				key:   string(key),
 				value: binary.LittleEndian.Uint64(iter.Value()),
 			})
 		}
