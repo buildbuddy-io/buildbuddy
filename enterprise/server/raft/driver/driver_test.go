@@ -90,6 +90,39 @@ func (tc *testClient) GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescrip
 	return nil, nil
 }
 
+// usage builds a StoreUsage. Tests that don't care about disk usage
+// commonly pass 100/900 (well below the full-disk threshold).
+func usage(nhid, zone string, replicaCount, used, free int64) *rfpb.StoreUsage {
+	return &rfpb.StoreUsage{
+		Node:           &rfpb.NodeDescriptor{Nhid: nhid, Zone: zone},
+		ReplicaCount:   replicaCount,
+		TotalBytesUsed: used,
+		TotalBytesFree: free,
+	}
+}
+
+// leaseUsage builds a StoreUsage for lease-rebalance tests (no zone, no disk).
+func leaseUsage(nhid string, leaseCount, replicaCount int64) *rfpb.StoreUsage {
+	return &rfpb.StoreUsage{
+		Node:         &rfpb.NodeDescriptor{Nhid: nhid},
+		LeaseCount:   leaseCount,
+		ReplicaCount: replicaCount,
+	}
+}
+
+// replicas builds ReplicaDescriptors with sequential replica IDs starting at 1.
+func replicas(rangeID uint64, nhids ...string) []*rfpb.ReplicaDescriptor {
+	out := make([]*rfpb.ReplicaDescriptor, len(nhids))
+	for i, nhid := range nhids {
+		out[i] = &rfpb.ReplicaDescriptor{
+			RangeId:   rangeID,
+			ReplicaId: uint64(i + 1),
+			Nhid:      proto.String(nhid),
+		}
+	}
+	return out
+}
+
 func TestCandidateComparison(t *testing.T) {
 	expected := []*candidate{
 		// Candidate with full disk
@@ -187,75 +220,28 @@ func TestFindNodeForAllocation(t *testing.T) {
 		{
 			desc: "skip-node-with-range",
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					ReplicaCount:   1,
-					TotalBytesUsed: 5,
-					TotalBytesFree: 990,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					ReplicaCount:   4,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					ReplicaCount:   3,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "", 10, 100, 900),
+				usage("nhid-2", "", 1, 5, 990),
+				usage("nhid-3", "", 4, 100, 900),
+				usage("nhid-4", "", 3, 100, 900),
 			},
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 1,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  1,
+				Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			expected: &rfpb.NodeDescriptor{Nhid: "nhid-4"},
 		},
 		{
 			desc: "skip-node-with-range-to-be-removed",
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					ReplicaCount:   1,
-					TotalBytesUsed: 5,
-					TotalBytesFree: 990,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					ReplicaCount:   3,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					ReplicaCount:   4,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "", 10, 100, 900),
+				usage("nhid-2", "", 1, 5, 990),
+				usage("nhid-3", "", 3, 100, 900),
+				usage("nhid-4", "", 4, 100, 900),
 			},
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 1,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-				},
+				RangeId:  1,
+				Replicas: replicas(1, "nhid-1", "nhid-2"),
 				Removed: []*rfpb.ReplicaDescriptor{
 					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
 				},
@@ -265,72 +251,28 @@ func TestFindNodeForAllocation(t *testing.T) {
 		{
 			desc: "skip-node-with-full-disk",
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					ReplicaCount:   1,
-					TotalBytesUsed: 990,
-					TotalBytesFree: 10,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					ReplicaCount:   4,
-					TotalBytesUsed: 960,
-					TotalBytesFree: 10,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					ReplicaCount:   3,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "", 10, 100, 900),
+				usage("nhid-2", "", 1, 990, 10),
+				usage("nhid-3", "", 4, 960, 10),
+				usage("nhid-4", "", 3, 100, 900),
 			},
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 1,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-				},
+				RangeId:  1,
+				Replicas: replicas(1, "nhid-1"),
 			},
 			expected: &rfpb.NodeDescriptor{Nhid: "nhid-4"},
 		},
 		{
 			desc: "choose-node-with-staging",
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					ReplicaCount:   1,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					ReplicaCount:   4,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 10,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					ReplicaCount:   3,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "", 10, 100, 900),
+				usage("nhid-2", "", 1, 100, 900),
+				usage("nhid-3", "", 4, 100, 10),
+				usage("nhid-4", "", 3, 100, 900),
 			},
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 1,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-				},
+				RangeId:  1,
+				Replicas: replicas(1, "nhid-1"),
 				Staging: []*rfpb.ReplicaDescriptor{
 					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
 				},
@@ -340,36 +282,14 @@ func TestFindNodeForAllocation(t *testing.T) {
 		{
 			desc: "find-node-with-least-ranges",
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 990,
-					TotalBytesFree: 10,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					ReplicaCount:   5,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					ReplicaCount:   3,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "", 10, 100, 900),
+				usage("nhid-2", "", 10, 990, 10),
+				usage("nhid-3", "", 5, 100, 900),
+				usage("nhid-4", "", 3, 100, 900),
 			},
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 1,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-				},
+				RangeId:  1,
+				Replicas: replicas(1, "nhid-1"),
 			},
 			expected: &rfpb.NodeDescriptor{Nhid: "nhid-4"},
 		},
@@ -380,43 +300,15 @@ func TestFindNodeForAllocation(t *testing.T) {
 			desc:                "zone-aware-prefer-underrepresented-zone",
 			minReplicasPerRange: 3,
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-a"},
-					ReplicaCount:   1,
-					TotalBytesUsed: 10,
-					TotalBytesFree: 990,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"},
-					ReplicaCount:   5,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-c"},
-					ReplicaCount:   3,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 10, 100, 900),
+				usage("nhid-2", "zone-a", 10, 100, 900),
+				usage("nhid-3", "zone-a", 1, 10, 990),
+				usage("nhid-4", "zone-b", 5, 100, 900),
+				usage("nhid-5", "zone-c", 3, 100, 900),
 			},
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 2,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-				},
+				RangeId:  2,
+				Replicas: replicas(2, "nhid-1", "nhid-2"),
 			},
 			// nhid-3 is in zone-a (already at 2, targetMax=1), filtered out.
 			// nhid-5 (zone-c, replicaCount=3) beats nhid-4 (zone-b, replicaCount=5).
@@ -430,30 +322,13 @@ func TestFindNodeForAllocation(t *testing.T) {
 			desc:                "zone-aware-prefer-empty-zone",
 			minReplicasPerRange: 3,
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   1,
-					TotalBytesUsed: 10,
-					TotalBytesFree: 990,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-b"},
-					ReplicaCount:   5,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 10, 100, 900),
+				usage("nhid-2", "zone-a", 1, 10, 990),
+				usage("nhid-3", "zone-b", 5, 100, 900),
 			},
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 2,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-				},
+				RangeId:  2,
+				Replicas: replicas(2, "nhid-1"),
 			},
 			// zone-b (0 replicas) is below targetMin=1, so only zone-b
 			// candidates are considered. nhid-3 is the only option.
@@ -467,30 +342,10 @@ func TestFindNodeForAllocation(t *testing.T) {
 			desc:                "zone-aware-both-at-min-falls-through-to-max",
 			minReplicasPerRange: 3,
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   1,
-					TotalBytesUsed: 10,
-					TotalBytesFree: 990,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-b"},
-					ReplicaCount:   5,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 10, 100, 900),
+				usage("nhid-2", "zone-a", 1, 10, 990),
+				usage("nhid-3", "zone-b", 5, 100, 900),
+				usage("nhid-4", "zone-b", 10, 100, 900),
 			},
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 2,
@@ -512,30 +367,10 @@ func TestFindNodeForAllocation(t *testing.T) {
 			desc:                "zone-aware-fallback-all-candidates-filtered",
 			minReplicasPerRange: 3,
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-a"},
-					ReplicaCount:   1,
-					TotalBytesUsed: 10,
-					TotalBytesFree: 990,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"},
-					ReplicaCount:   5,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 10, 100, 900),
+				usage("nhid-2", "zone-a", 10, 100, 900),
+				usage("nhid-3", "zone-a", 1, 10, 990),
+				usage("nhid-4", "zone-b", 5, 100, 900),
 			},
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 2,
@@ -559,37 +394,31 @@ func TestFindNodeForAllocation(t *testing.T) {
 			minReplicasPerRange: 10,
 			usages: []*rfpb.StoreUsage{
 				// zone-a: 4 stores, all holding replicas.
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-a1", Zone: "zone-a"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-a2", Zone: "zone-a"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-a3", Zone: "zone-a"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-a4", Zone: "zone-a"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				usage("nhid-a1", "zone-a", 10, 100, 900),
+				usage("nhid-a2", "zone-a", 10, 100, 900),
+				usage("nhid-a3", "zone-a", 10, 100, 900),
+				usage("nhid-a4", "zone-a", 10, 100, 900),
 				// zone-b: 4 stores, 3 hold replicas. nhid-b4 is a candidate
 				// with very low load — would win on load tiebreak.
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-b1", Zone: "zone-b"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-b2", Zone: "zone-b"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-b3", Zone: "zone-b"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-b4", Zone: "zone-b"}, ReplicaCount: 1, TotalBytesUsed: 10, TotalBytesFree: 990},
+				usage("nhid-b1", "zone-b", 10, 100, 900),
+				usage("nhid-b2", "zone-b", 10, 100, 900),
+				usage("nhid-b3", "zone-b", 10, 100, 900),
+				usage("nhid-b4", "zone-b", 1, 10, 990),
 				// zone-c: 3 stores, 2 hold replicas. nhid-c3 is a candidate.
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-c1", Zone: "zone-c"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-c2", Zone: "zone-c"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-c3", Zone: "zone-c"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				usage("nhid-c1", "zone-c", 10, 100, 900),
+				usage("nhid-c2", "zone-c", 10, 100, 900),
+				usage("nhid-c3", "zone-c", 10, 100, 900),
 				// zone-d: 1 store, holds the replica. No candidate available.
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-d1", Zone: "zone-d"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				usage("nhid-d1", "zone-d", 10, 100, 900),
 			},
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 2,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-a1")},
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-a2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-a3")},
-					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-a4")},
-					{RangeId: 2, ReplicaId: 5, Nhid: proto.String("nhid-b1")},
-					{RangeId: 2, ReplicaId: 6, Nhid: proto.String("nhid-b2")},
-					{RangeId: 2, ReplicaId: 7, Nhid: proto.String("nhid-b3")},
-					{RangeId: 2, ReplicaId: 8, Nhid: proto.String("nhid-c1")},
-					{RangeId: 2, ReplicaId: 9, Nhid: proto.String("nhid-c2")},
-					{RangeId: 2, ReplicaId: 10, Nhid: proto.String("nhid-d1")},
-				},
+				Replicas: replicas(2,
+					"nhid-a1", "nhid-a2", "nhid-a3", "nhid-a4",
+					"nhid-b1", "nhid-b2", "nhid-b3",
+					"nhid-c1", "nhid-c2",
+					"nhid-d1",
+				),
 			},
 			// replicasByZone: a=4, b=3, c=2, d=1. Candidates: nhid-b4 (zone-b,
 			// count 3), nhid-c3 (zone-c, count 2). zone-c has fewer replicas
@@ -605,47 +434,18 @@ func TestFindNodeForAllocation(t *testing.T) {
 			desc:                "zone-aware-prefer-most-under-represented-zone",
 			minReplicasPerRange: 3,
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-b"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 10, 100, 900),
+				usage("nhid-2", "zone-a", 10, 100, 900),
+				usage("nhid-3", "zone-b", 10, 100, 900),
 				// zone-b candidate with low load — would beat nhid-5 by score
 				// if both were considered, but zone-b is already at currentMin+1.
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"},
-					ReplicaCount:   1,
-					TotalBytesUsed: 10,
-					TotalBytesFree: 990,
-				},
+				usage("nhid-4", "zone-b", 1, 10, 990),
 				// zone-c is the empty zone (most under-represented).
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-c"},
-					ReplicaCount:   5,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-5", "zone-c", 5, 100, 900),
 			},
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 2,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // zone-a
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")}, // zone-a
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")}, // zone-b
-				},
+				RangeId:  2,
+				Replicas: replicas(2, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			// replicasByZone: a=2, b=1, c=0. currentMin=0, currentMax=2.
 			// First try keeps only zone-c (count <= 0) → nhid-5.
@@ -678,36 +478,11 @@ func TestFindNodesForAllocation(t *testing.T) {
 			desc:                "spread-across-3-zones",
 			minReplicasPerRange: 3,
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   1,
-					TotalBytesUsed: 10,
-					TotalBytesFree: 990,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   5,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-b"},
-					ReplicaCount:   2,
-					TotalBytesUsed: 20,
-					TotalBytesFree: 980,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"},
-					ReplicaCount:   6,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-c"},
-					ReplicaCount:   3,
-					TotalBytesUsed: 50,
-					TotalBytesFree: 950,
-				},
+				usage("nhid-1", "zone-a", 1, 10, 990),
+				usage("nhid-2", "zone-a", 5, 100, 900),
+				usage("nhid-3", "zone-b", 2, 20, 980),
+				usage("nhid-4", "zone-b", 6, 100, 900),
+				usage("nhid-5", "zone-c", 3, 50, 950),
 			},
 			// Sorted by score (best first): nhid-1, nhid-3, nhid-5, nhid-2, nhid-4.
 			// Greedy: nhid-1 (zone-a: 0<1), nhid-3 (zone-b: 0<1), nhid-5 (zone-c: 0<1). Done.
@@ -719,30 +494,10 @@ func TestFindNodesForAllocation(t *testing.T) {
 			desc:                "spread-across-2-zones",
 			minReplicasPerRange: 3,
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   1,
-					TotalBytesUsed: 10,
-					TotalBytesFree: 990,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   2,
-					TotalBytesUsed: 20,
-					TotalBytesFree: 980,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-b"},
-					ReplicaCount:   3,
-					TotalBytesUsed: 50,
-					TotalBytesFree: 950,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 1, 10, 990),
+				usage("nhid-2", "zone-a", 2, 20, 980),
+				usage("nhid-3", "zone-b", 3, 50, 950),
+				usage("nhid-4", "zone-b", 10, 100, 900),
 			},
 			// Sorted by score (best first): nhid-1, nhid-2, nhid-3, nhid-4.
 			// Pass 1 (fill to targetMin=1): nhid-1 (zone-a: 0<1)✓,
@@ -759,36 +514,11 @@ func TestFindNodesForAllocation(t *testing.T) {
 			desc:                "second-pass-needed-uneven-zones",
 			minReplicasPerRange: 5,
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   1,
-					TotalBytesUsed: 10,
-					TotalBytesFree: 990,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   2,
-					TotalBytesUsed: 20,
-					TotalBytesFree: 980,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-a"},
-					ReplicaCount:   3,
-					TotalBytesUsed: 50,
-					TotalBytesFree: 950,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-a"},
-					ReplicaCount:   4,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-b"},
-					ReplicaCount:   5,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 1, 10, 990),
+				usage("nhid-2", "zone-a", 2, 20, 980),
+				usage("nhid-3", "zone-a", 3, 50, 950),
+				usage("nhid-4", "zone-a", 4, 100, 900),
+				usage("nhid-5", "zone-b", 5, 100, 900),
 			},
 			// Sorted by score: nhid-1, nhid-2, nhid-3, nhid-4, nhid-5.
 			// Pass 1 (fill to targetMin=2): nhid-1 (a:0<2)✓, nhid-2 (a:1<2)✓,
@@ -806,42 +536,12 @@ func TestFindNodesForAllocation(t *testing.T) {
 			desc:                "non-divisible-spread-across-3-zones",
 			minReplicasPerRange: 4,
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   1,
-					TotalBytesUsed: 10,
-					TotalBytesFree: 990,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   2,
-					TotalBytesUsed: 20,
-					TotalBytesFree: 980,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-b"},
-					ReplicaCount:   3,
-					TotalBytesUsed: 30,
-					TotalBytesFree: 970,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"},
-					ReplicaCount:   4,
-					TotalBytesUsed: 40,
-					TotalBytesFree: 960,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-a"},
-					ReplicaCount:   5,
-					TotalBytesUsed: 50,
-					TotalBytesFree: 950,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-6", Zone: "zone-c"},
-					ReplicaCount:   6,
-					TotalBytesUsed: 60,
-					TotalBytesFree: 940,
-				},
+				usage("nhid-1", "zone-a", 1, 10, 990),
+				usage("nhid-2", "zone-a", 2, 20, 980),
+				usage("nhid-3", "zone-b", 3, 30, 970),
+				usage("nhid-4", "zone-b", 4, 40, 960),
+				usage("nhid-5", "zone-a", 5, 50, 950),
+				usage("nhid-6", "zone-c", 6, 60, 940),
 			},
 			// Sorted by score: nhid-1 (a), nhid-2 (a), nhid-3 (b), nhid-4 (b),
 			// nhid-5 (a), nhid-6 (c).
@@ -857,30 +557,10 @@ func TestFindNodesForAllocation(t *testing.T) {
 			desc:                "single-zone",
 			minReplicasPerRange: 3,
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   1,
-					TotalBytesUsed: 10,
-					TotalBytesFree: 990,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   2,
-					TotalBytesUsed: 20,
-					TotalBytesFree: 980,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-a"},
-					ReplicaCount:   3,
-					TotalBytesUsed: 50,
-					TotalBytesFree: 950,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-a"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 1, 10, 990),
+				usage("nhid-2", "zone-a", 2, 20, 980),
+				usage("nhid-3", "zone-a", 3, 50, 950),
+				usage("nhid-4", "zone-a", 10, 100, 900),
 			},
 			expectedNhids: []string{"nhid-1", "nhid-2", "nhid-3"},
 		},
@@ -927,12 +607,7 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				RangeId:                1,
 				LastAddedReplicaId:     proto.Uint64(4),
 				LastReplicaAddedAtUsec: proto.Int64(withinGracePeriodTS),
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
-				},
+				Replicas:               replicas(1, "nhid-1", "nhid-2", "nhid-3", "nhid-4"),
 			},
 			replicaStateMap: map[uint64]constants.ReplicaState{
 				1: constants.ReplicaStateCurrent,
@@ -940,39 +615,11 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				3: constants.ReplicaStateBehind,
 				4: constants.ReplicaStateBehind,
 			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
-				},
-			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 990,
-					TotalBytesFree: 10,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					ReplicaCount:   5,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					ReplicaCount:   3,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "", 10, 100, 900),
+				usage("nhid-2", "", 10, 990, 10),
+				usage("nhid-3", "", 5, 100, 900),
+				usage("nhid-4", "", 3, 100, 900),
 			},
 			expected: &rfpb.ReplicaDescriptor{
 				RangeId:   1,
@@ -990,12 +637,7 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				RangeId:                1,
 				LastAddedReplicaId:     proto.Uint64(4),
 				LastReplicaAddedAtUsec: proto.Int64(outsideGracePeriodTS),
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
-				},
+				Replicas:               replicas(1, "nhid-1", "nhid-2", "nhid-3", "nhid-4"),
 			},
 			replicaStateMap: map[uint64]constants.ReplicaState{
 				1: constants.ReplicaStateCurrent,
@@ -1003,39 +645,11 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				3: constants.ReplicaStateCurrent,
 				4: constants.ReplicaStateCurrent,
 			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
-				},
-			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 955,
-					TotalBytesFree: 45,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					ReplicaCount:   5,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					ReplicaCount:   12,
-					TotalBytesUsed: 960,
-					TotalBytesFree: 40,
-				},
+				usage("nhid-1", "", 10, 100, 900),
+				usage("nhid-2", "", 10, 955, 45),
+				usage("nhid-3", "", 5, 100, 900),
+				usage("nhid-4", "", 12, 960, 40),
 			},
 			expected: &rfpb.ReplicaDescriptor{
 				RangeId:   1,
@@ -1054,12 +668,7 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				RangeId:                1,
 				LastAddedReplicaId:     proto.Uint64(4),
 				LastReplicaAddedAtUsec: proto.Int64(outsideGracePeriodTS),
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
-				},
+				Replicas:               replicas(1, "nhid-1", "nhid-2", "nhid-3", "nhid-4"),
 			},
 			replicaStateMap: map[uint64]constants.ReplicaState{
 				1: constants.ReplicaStateCurrent,
@@ -1067,39 +676,11 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				3: constants.ReplicaStateBehind,
 				4: constants.ReplicaStateBehind,
 			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
-				},
-			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					ReplicaCount:   11,
-					TotalBytesUsed: 955,
-					TotalBytesFree: 45,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					ReplicaCount:   5,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					ReplicaCount:   14,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "", 10, 100, 900),
+				usage("nhid-2", "", 11, 955, 45),
+				usage("nhid-3", "", 5, 100, 900),
+				usage("nhid-4", "", 14, 100, 900),
 			},
 			expected: &rfpb.ReplicaDescriptor{
 				RangeId:   1,
@@ -1116,12 +697,8 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				RangeId:                2,
 				LastAddedReplicaId:     proto.Uint64(4),
 				LastReplicaAddedAtUsec: proto.Int64(outsideGracePeriodTS),
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local, zone-a
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")}, // zone-a
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")}, // zone-b
-					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-4")}, // zone-c
-				},
+				// nhid-1 local: zone-a, nhid-2: zone-a, nhid-3: zone-b, nhid-4: zone-c.
+				Replicas: replicas(2, "nhid-1", "nhid-2", "nhid-3", "nhid-4"),
 			},
 			replicaStateMap: map[uint64]constants.ReplicaState{
 				1: constants.ReplicaStateCurrent,
@@ -1129,39 +706,11 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				3: constants.ReplicaStateCurrent,
 				4: constants.ReplicaStateCurrent,
 			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-4")},
-				},
-			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   8,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-b"},
-					ReplicaCount:   5,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-c"},
-					ReplicaCount:   3,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 10, 100, 900),
+				usage("nhid-2", "zone-a", 8, 100, 900),
+				usage("nhid-3", "zone-b", 5, 100, 900),
+				usage("nhid-4", "zone-c", 3, 100, 900),
 			},
 			// Only zone-a candidates (nhid-2) should be considered. nhid-1 is local.
 			expected: &rfpb.ReplicaDescriptor{
@@ -1179,12 +728,8 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				RangeId:                2,
 				LastAddedReplicaId:     proto.Uint64(4),
 				LastReplicaAddedAtUsec: proto.Int64(outsideGracePeriodTS),
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local, zone-a
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")}, // zone-a
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")}, // zone-a
-					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-4")}, // zone-b
-				},
+				// nhid-1..3 in zone-a (nhid-1 local), nhid-4 in zone-b.
+				Replicas: replicas(2, "nhid-1", "nhid-2", "nhid-3", "nhid-4"),
 			},
 			replicaStateMap: map[uint64]constants.ReplicaState{
 				1: constants.ReplicaStateCurrent,
@@ -1192,39 +737,11 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				3: constants.ReplicaStateCurrent,
 				4: constants.ReplicaStateCurrent,
 			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-4")},
-				},
-			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   12,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-a"},
-					ReplicaCount:   5,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"},
-					ReplicaCount:   3,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 10, 100, 900),
+				usage("nhid-2", "zone-a", 12, 100, 900),
+				usage("nhid-3", "zone-a", 5, 100, 900),
+				usage("nhid-4", "zone-b", 3, 100, 900),
 			},
 			// nhid-2 has highest replica count in zone-a (overrepresented).
 			expected: &rfpb.ReplicaDescriptor{
@@ -1243,12 +760,8 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				RangeId:                2,
 				LastAddedReplicaId:     proto.Uint64(4),
 				LastReplicaAddedAtUsec: proto.Int64(outsideGracePeriodTS),
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local, zone-a
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")}, // zone-a
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")}, // zone-b
-					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-4")}, // zone-b
-				},
+				// nhid-1..2 in zone-a (nhid-1 local), nhid-3..4 in zone-b.
+				Replicas: replicas(2, "nhid-1", "nhid-2", "nhid-3", "nhid-4"),
 			},
 			replicaStateMap: map[uint64]constants.ReplicaState{
 				1: constants.ReplicaStateCurrent,
@@ -1256,39 +769,11 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				3: constants.ReplicaStateCurrent,
 				4: constants.ReplicaStateCurrent,
 			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-4")},
-				},
-			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   12,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-b"},
-					ReplicaCount:   5,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"},
-					ReplicaCount:   3,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 10, 100, 900),
+				usage("nhid-2", "zone-a", 12, 100, 900),
+				usage("nhid-3", "zone-b", 5, 100, 900),
+				usage("nhid-4", "zone-b", 3, 100, 900),
 			},
 			// Both zones have 2 replicas = targetMax. No zone filtering.
 			// Score-based: nhid-2 (replicaCount=12) is worst → removed.
@@ -1311,12 +796,8 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				RangeId:                2,
 				LastAddedReplicaId:     proto.Uint64(4),
 				LastReplicaAddedAtUsec: proto.Int64(outsideGracePeriodTS),
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local, zone-a
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")}, // zone-a
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")}, // zone-b
-					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-4")}, // zone-c
-				},
+				// nhid-1..2 in zone-a (nhid-1 local), nhid-3 in zone-b, nhid-4 in zone-c.
+				Replicas: replicas(2, "nhid-1", "nhid-2", "nhid-3", "nhid-4"),
 			},
 			replicaStateMap: map[uint64]constants.ReplicaState{
 				1: constants.ReplicaStateCurrent,
@@ -1324,40 +805,12 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				3: constants.ReplicaStateBehind,
 				4: constants.ReplicaStateBehind,
 			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-4")},
-				},
-			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   10,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 10, 100, 900),
+				usage("nhid-2", "zone-a", 10, 100, 900),
 				// nhid-3 has the highest load → most evictable among removable.
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-b"},
-					ReplicaCount:   15,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-c"},
-					ReplicaCount:   5,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-3", "zone-b", 15, 100, 900),
+				usage("nhid-4", "zone-c", 5, 100, 900),
 			},
 			// Removable = {r3, r4} (the behind replicas). zone-b and zone-c
 			// both have count 1. Pick the worst by load: r3 (replicaCount=15).
@@ -1380,14 +833,8 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				RangeId:                2,
 				LastAddedReplicaId:     proto.Uint64(6),
 				LastReplicaAddedAtUsec: proto.Int64(outsideGracePeriodTS),
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local, zone-a
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")}, // zone-a
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")}, // zone-a
-					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-4")}, // zone-b
-					{RangeId: 2, ReplicaId: 5, Nhid: proto.String("nhid-5")}, // zone-b
-					{RangeId: 2, ReplicaId: 6, Nhid: proto.String("nhid-6")}, // zone-c
-				},
+				// nhid-1..3 in zone-a (nhid-1 local), nhid-4..5 in zone-b, nhid-6 in zone-c.
+				Replicas: replicas(2, "nhid-1", "nhid-2", "nhid-3", "nhid-4", "nhid-5", "nhid-6"),
 			},
 			replicaStateMap: map[uint64]constants.ReplicaState{
 				1: constants.ReplicaStateCurrent,
@@ -1397,26 +844,16 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				5: constants.ReplicaStateBehind,
 				6: constants.ReplicaStateBehind,
 			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-4")},
-					{RangeId: 2, ReplicaId: 5, Nhid: proto.String("nhid-5")},
-					{RangeId: 2, ReplicaId: 6, Nhid: proto.String("nhid-6")},
-				},
-			},
 			usages: []*rfpb.StoreUsage{
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-a"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				usage("nhid-1", "zone-a", 10, 100, 900),
+				usage("nhid-2", "zone-a", 10, 100, 900),
+				usage("nhid-3", "zone-a", 10, 100, 900),
 				// nhid-4 (zone-b): higher load than nhid-5.
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"}, ReplicaCount: 20, TotalBytesUsed: 100, TotalBytesFree: 900},
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-b"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				usage("nhid-4", "zone-b", 20, 100, 900),
+				usage("nhid-5", "zone-b", 10, 100, 900),
 				// nhid-6 (zone-c): worst load overall — would win on load
 				// alone, but zone-c is more under-represented than zone-b.
-				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-6", Zone: "zone-c"}, ReplicaCount: 50, TotalBytesUsed: 100, TotalBytesFree: 900},
+				usage("nhid-6", "zone-c", 50, 100, 900),
 			},
 			// Removable = {r4, r5, r6} (the behind replicas). Among them,
 			// zone-b has count 2 and zone-c has count 1. We want zone-b,
@@ -1430,7 +867,11 @@ func TestFindReplicaForRemoval(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
-			storeMap := newTestStoreMap(tc.usages, tc.replicasByStatus)
+			rbs := tc.replicasByStatus
+			if rbs == nil {
+				rbs = &storemap.ReplicasByStatus{LiveReplicas: tc.rd.GetReplicas()}
+			}
+			storeMap := newTestStoreMap(tc.usages, rbs)
 			rq := &Queue{
 				storeMap:            storeMap,
 				minReplicasPerRange: tc.minReplicasPerRange,
@@ -1457,51 +898,15 @@ func TestRebalanceReplica(t *testing.T) {
 		{
 			desc: "move-range-to-new-node",
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 1,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
-			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  1,
+				Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					ReplicaCount:   700,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					ReplicaCount:   600,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					ReplicaCount:   500,
-					TotalBytesUsed: 50,
-					TotalBytesFree: 950,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					ReplicaCount:   200,
-					TotalBytesUsed: 50,
-					TotalBytesFree: 950,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5"},
-					ReplicaCount:   0,
-					TotalBytesUsed: 0,
-					TotalBytesFree: 1000,
-				},
+				usage("nhid-1", "", 700, 100, 900),
+				usage("nhid-2", "", 600, 100, 900),
+				usage("nhid-3", "", 500, 50, 950),
+				usage("nhid-4", "", 200, 50, 950),
+				usage("nhid-5", "", 0, 0, 1000),
 			},
 			// Even though it's better to move range from nhid-1 to nhid-5. Since
 			// we are running on nhid-1, we will skip nhid-1 to choose the second-
@@ -1514,54 +919,18 @@ func TestRebalanceReplica(t *testing.T) {
 		{
 			desc: "not-select-node-with-replica-to-be-removed",
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 1,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  1,
+				Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
 				Removed: []*rfpb.ReplicaDescriptor{
 					{RangeId: 1, ReplicaId: 5, Nhid: proto.String("nhid-5")},
 				},
 			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
-			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					ReplicaCount:   700,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					ReplicaCount:   600,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					ReplicaCount:   500,
-					TotalBytesUsed: 50,
-					TotalBytesFree: 950,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					ReplicaCount:   0,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5"},
-					ReplicaCount:   0,
-					TotalBytesUsed: 0,
-					TotalBytesFree: 1000,
-				},
+				usage("nhid-1", "", 700, 100, 900),
+				usage("nhid-2", "", 600, 100, 900),
+				usage("nhid-3", "", 500, 50, 950),
+				usage("nhid-4", "", 0, 100, 900),
+				usage("nhid-5", "", 0, 0, 1000),
 			},
 			expected: &rebalanceOp{
 				from: &candidate{nhid: "nhid-2"},
@@ -1571,56 +940,20 @@ func TestRebalanceReplica(t *testing.T) {
 		{
 			desc: "move-range-to-node-far-below-mean",
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 1,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
-			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  1,
+				Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					ReplicaCount:   400,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "", 400, 100, 900),
 				// Replica count is slightly above the mean: 400, but below
 				// overfull threshold: 420.
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					ReplicaCount:   410,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-2", "", 410, 100, 900),
 				// Replica count is slightly above the mean: 400, but below
 				// overfull threshold: 420.
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					ReplicaCount:   405,
-					TotalBytesUsed: 50,
-					TotalBytesFree: 950,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					ReplicaCount:   595,
-					TotalBytesUsed: 50,
-					TotalBytesFree: 950,
-				},
+				usage("nhid-3", "", 405, 50, 950),
+				usage("nhid-4", "", 595, 50, 950),
 				// Replica count is far below the mean.
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5"},
-					ReplicaCount:   190,
-					TotalBytesUsed: 50,
-					TotalBytesFree: 950,
-				},
+				usage("nhid-5", "", 190, 50, 950),
 			},
 			expected: &rebalanceOp{
 				from: &candidate{nhid: "nhid-2"},
@@ -1630,54 +963,18 @@ func TestRebalanceReplica(t *testing.T) {
 		{
 			desc: "move-range-from-full-disk",
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 1,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
-			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  1,
+				Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					ReplicaCount:   400,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					ReplicaCount:   400,
-					TotalBytesUsed: 800,
-					TotalBytesFree: 200,
-				},
+				usage("nhid-1", "", 400, 100, 900),
+				usage("nhid-2", "", 400, 800, 200),
 				// disk usage percent: 95.5%
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					ReplicaCount:   400,
-					TotalBytesUsed: 955,
-					TotalBytesFree: 45,
-				},
+				usage("nhid-3", "", 400, 955, 45),
 				// disk usage percent: 93% > maxDiskCapacityForRebalance. We should
 				// not choose this node to rebalance to.
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					ReplicaCount:   350,
-					TotalBytesUsed: 930,
-					TotalBytesFree: 70,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5"},
-					ReplicaCount:   650,
-					TotalBytesUsed: 900,
-					TotalBytesFree: 1100,
-				},
+				usage("nhid-4", "", 350, 930, 70),
+				usage("nhid-5", "", 650, 900, 1100),
 			},
 			expected: &rebalanceOp{
 				from: &candidate{nhid: "nhid-3"},
@@ -1695,51 +992,15 @@ func TestRebalanceReplica(t *testing.T) {
 			// incorrectly pick nhid-5.
 			desc: "pick-target-with-fewer-replicas",
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 1,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
-			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  1,
+				Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					ReplicaCount:   500,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					ReplicaCount:   600,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					ReplicaCount:   500,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					ReplicaCount:   200,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5"},
-					ReplicaCount:   600,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "", 500, 100, 900),
+				usage("nhid-2", "", 600, 100, 900),
+				usage("nhid-3", "", 500, 100, 900),
+				usage("nhid-4", "", 200, 100, 900),
+				usage("nhid-5", "", 600, 100, 900),
 			},
 			expected: &rebalanceOp{
 				from: &candidate{nhid: "nhid-2"},
@@ -1753,51 +1014,15 @@ func TestRebalanceReplica(t *testing.T) {
 			// the less loaded node in zone-b.
 			desc: "2-zones-rebalance-across-zones",
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 2,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
-			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  2,
+				Replicas: replicas(2, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   500,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   600,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-a"},
-					ReplicaCount:   400,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"},
-					ReplicaCount:   200,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-b"},
-					ReplicaCount:   300,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 500, 100, 900),
+				usage("nhid-2", "zone-a", 600, 100, 900),
+				usage("nhid-3", "zone-a", 400, 100, 900),
+				usage("nhid-4", "zone-b", 200, 100, 900),
+				usage("nhid-5", "zone-b", 300, 100, 900),
 			},
 			expected: &rebalanceOp{
 				from: &candidate{nhid: "nhid-2"},
@@ -1811,51 +1036,15 @@ func TestRebalanceReplica(t *testing.T) {
 			// pick the less loaded node (nhid-5 in zone-c).
 			desc: "3-zones-two-empty-pick-less-loaded",
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 2,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
-			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  2,
+				Replicas: replicas(2, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   500,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   600,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-a"},
-					ReplicaCount:   400,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"},
-					ReplicaCount:   300,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-c"},
-					ReplicaCount:   100,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 500, 100, 900),
+				usage("nhid-2", "zone-a", 600, 100, 900),
+				usage("nhid-3", "zone-a", 400, 100, 900),
+				usage("nhid-4", "zone-b", 300, 100, 900),
+				usage("nhid-5", "zone-c", 100, 100, 900),
 			},
 			expected: &rebalanceOp{
 				from: &candidate{nhid: "nhid-2"},
@@ -1870,54 +1059,18 @@ func TestRebalanceReplica(t *testing.T) {
 			// target by load (would create 1-2-0 and oscillate).
 			desc: "3-zones-prefer-empty-zone-over-load",
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 2,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
-			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  2,
+				Replicas: replicas(2, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   500,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   600,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-b"},
-					ReplicaCount:   400,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 500, 100, 900),
+				usage("nhid-2", "zone-a", 600, 100, 900),
+				usage("nhid-3", "zone-b", 400, 100, 900),
 				// zone-b store with low load — would be preferred as target
 				// by raw load, but is in a zone that's already at targetMin.
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"},
-					ReplicaCount:   50,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-4", "zone-b", 50, 100, 900),
 				// zone-c is empty — the correct target.
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-c"},
-					ReplicaCount:   200,
-					TotalBytesUsed: 200,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-5", "zone-c", 200, 200, 900),
 			},
 			expected: &rebalanceOp{
 				from: &candidate{nhid: "nhid-2"},
@@ -1933,54 +1086,16 @@ func TestRebalanceReplica(t *testing.T) {
 			desc:        "3-zones-2-2-0-fill-empty-zone",
 			minReplicas: 4,
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 2,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-4")},
-				},
-			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-4")},
-				},
+				RangeId:  2,
+				Replicas: replicas(2, "nhid-1", "nhid-2", "nhid-3", "nhid-4"),
 			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   500,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   600,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-b"},
-					ReplicaCount:   500,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"},
-					ReplicaCount:   550,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 500, 100, 900),
+				usage("nhid-2", "zone-a", 600, 100, 900),
+				usage("nhid-3", "zone-b", 500, 100, 900),
+				usage("nhid-4", "zone-b", 550, 100, 900),
 				// Empty zone-c — the correct target.
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-c"},
-					ReplicaCount:   100,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-5", "zone-c", 100, 100, 900),
 			},
 			// Source must come from one of the at-max zones. Both zone-a
 			// (nhid-2, count 600) and zone-b (nhid-4, count 550) are
@@ -1998,51 +1113,15 @@ func TestRebalanceReplica(t *testing.T) {
 			// the less loaded empty zone.
 			desc: "4-zones-rebalance-across-zones",
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 2,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
-			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  2,
+				Replicas: replicas(2, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   500,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
-					ReplicaCount:   600,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-b"},
-					ReplicaCount:   400,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-c"},
-					ReplicaCount:   200,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-d"},
-					ReplicaCount:   100,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 500, 100, 900),
+				usage("nhid-2", "zone-a", 600, 100, 900),
+				usage("nhid-3", "zone-b", 400, 100, 900),
+				usage("nhid-4", "zone-c", 200, 100, 900),
+				usage("nhid-5", "zone-d", 100, 100, 900),
 			},
 			expected: &rebalanceOp{
 				from: &candidate{nhid: "nhid-2"},
@@ -2058,51 +1137,15 @@ func TestRebalanceReplica(t *testing.T) {
 			// nhid-4 respectively.
 			desc: "3-zones-balanced-normal-rebalance",
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 2,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
-			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  2,
+				Replicas: replicas(2, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
-					ReplicaCount:   600,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-b"},
-					ReplicaCount:   600,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-c"},
-					ReplicaCount:   600,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-a"},
-					ReplicaCount:   100,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-b"},
-					ReplicaCount:   100,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
+				usage("nhid-1", "zone-a", 600, 100, 900),
+				usage("nhid-2", "zone-b", 600, 100, 900),
+				usage("nhid-3", "zone-c", 600, 100, 900),
+				usage("nhid-4", "zone-a", 100, 100, 900),
+				usage("nhid-5", "zone-b", 100, 100, 900),
 			},
 			expected: &rebalanceOp{
 				from: &candidate{nhid: "nhid-3"},
@@ -2112,58 +1155,26 @@ func TestRebalanceReplica(t *testing.T) {
 		{
 			desc: "no-rebalance-when-around-mean",
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 1,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
-			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  1,
+				Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					ReplicaCount:   400,
-					TotalBytesUsed: 100,
-					TotalBytesFree: 900,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					ReplicaCount:   395,
-					TotalBytesUsed: 800,
-					TotalBytesFree: 200,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					ReplicaCount:   410,
-					TotalBytesUsed: 900,
-					TotalBytesFree: 100,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					ReplicaCount:   405,
-					TotalBytesUsed: 900,
-					TotalBytesFree: 100,
-				},
-				{
-					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5"},
-					ReplicaCount:   390,
-					TotalBytesUsed: 900,
-					TotalBytesFree: 1100,
-				},
+				usage("nhid-1", "", 400, 100, 900),
+				usage("nhid-2", "", 395, 800, 200),
+				usage("nhid-3", "", 410, 900, 100),
+				usage("nhid-4", "", 405, 900, 100),
+				usage("nhid-5", "", 390, 900, 1100),
 			},
 			expected: nil,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
-			storeMap := newTestStoreMap(tc.usages, tc.replicasByStatus)
+			rbs := tc.replicasByStatus
+			if rbs == nil {
+				rbs = &storemap.ReplicasByStatus{LiveReplicas: tc.rd.GetReplicas()}
+			}
+			storeMap := newTestStoreMap(tc.usages, rbs)
 			minReplicas := tc.minReplicas
 			if minReplicas == 0 {
 				minReplicas = 3
@@ -2210,41 +1221,14 @@ func TestRebalanceLeases(t *testing.T) {
 		{
 			desc: "move-lease-to-node-far-below-mean",
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 1,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
-			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  1,
+				Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					LeaseCount:   70,
-					ReplicaCount: 91,
-				},
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					LeaseCount:   10,
-					ReplicaCount: 91,
-				},
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					LeaseCount:   20,
-					ReplicaCount: 90,
-				},
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					LeaseCount:   20,
-					ReplicaCount: 90,
-				},
+				leaseUsage("nhid-1", 70, 91),
+				leaseUsage("nhid-2", 10, 91),
+				leaseUsage("nhid-3", 20, 90),
+				leaseUsage("nhid-4", 20, 90),
 			},
 			expected: &rebalanceOp{
 				from: &candidate{nhid: "nhid-1"},
@@ -2254,41 +1238,14 @@ func TestRebalanceLeases(t *testing.T) {
 		{
 			desc: "not-move-to-machine-unable-to-connect",
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 1,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
-			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  1,
+				Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					LeaseCount:   70,
-					ReplicaCount: 91,
-				},
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					LeaseCount:   20,
-					ReplicaCount: 91,
-				},
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					LeaseCount:   10,
-					ReplicaCount: 90,
-				},
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					LeaseCount:   20,
-					ReplicaCount: 90,
-				},
+				leaseUsage("nhid-1", 70, 91),
+				leaseUsage("nhid-2", 20, 91),
+				leaseUsage("nhid-3", 10, 90),
+				leaseUsage("nhid-4", 20, 90),
 			},
 			expected: &rebalanceOp{
 				from: &candidate{nhid: "nhid-1"},
@@ -2298,159 +1255,55 @@ func TestRebalanceLeases(t *testing.T) {
 		{
 			desc: "no-reblance-when-around-mean",
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 1,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
-			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  1,
+				Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					LeaseCount:   30,
-					ReplicaCount: 91,
-				},
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					LeaseCount:   31,
-					ReplicaCount: 91,
-				},
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					LeaseCount:   29,
-					ReplicaCount: 90,
-				},
+				leaseUsage("nhid-1", 30, 91),
+				leaseUsage("nhid-2", 31, 91),
+				leaseUsage("nhid-3", 29, 90),
 			},
 			expected: nil,
 		},
 		{
 			desc: "no-rebalance-with-good-choice",
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 1,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
-			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  1,
+				Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					LeaseCount:   70,
-					ReplicaCount: 161,
-				},
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					LeaseCount:   69,
-					ReplicaCount: 160,
-				},
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					LeaseCount:   69,
-					ReplicaCount: 160,
-				},
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					LeaseCount:   5,
-					ReplicaCount: 160,
-				},
+				leaseUsage("nhid-1", 70, 161),
+				leaseUsage("nhid-2", 69, 160),
+				leaseUsage("nhid-3", 69, 160),
+				leaseUsage("nhid-4", 5, 160),
 			},
 			expected: nil,
 		},
 		{
 			desc: "no-rebalance-when-all-nodes-above-mean",
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 1,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
-			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  1,
+				Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					LeaseCount:   75,
-					ReplicaCount: 161,
-				},
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					LeaseCount:   64,
-					ReplicaCount: 160,
-				},
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					LeaseCount:   69,
-					ReplicaCount: 160,
-				},
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					LeaseCount:   5,
-					ReplicaCount: 160,
-				},
+				leaseUsage("nhid-1", 75, 161),
+				leaseUsage("nhid-2", 64, 160),
+				leaseUsage("nhid-3", 69, 160),
+				leaseUsage("nhid-4", 5, 160),
 			},
 			expected: nil,
 		},
 		{
 			desc: "no-move-too-many-missing-leases",
 			rd: &rfpb.RangeDescriptor{
-				RangeId: 1,
-				Replicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
-			},
-			replicasByStatus: &storemap.ReplicasByStatus{
-				LiveReplicas: []*rfpb.ReplicaDescriptor{
-					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-				},
+				RangeId:  1,
+				Replicas: replicas(1, "nhid-1", "nhid-2", "nhid-3"),
 			},
 			usages: []*rfpb.StoreUsage{
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-1"},
-					LeaseCount:   60,
-					ReplicaCount: 91,
-				},
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-2"},
-					LeaseCount:   5,
-					ReplicaCount: 91,
-				},
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-3"},
-					LeaseCount:   10,
-					ReplicaCount: 90,
-				},
-				{
-					Node:         &rfpb.NodeDescriptor{Nhid: "nhid-4"},
-					LeaseCount:   20,
-					ReplicaCount: 90,
-				},
+				leaseUsage("nhid-1", 60, 91),
+				leaseUsage("nhid-2", 5, 91),
+				leaseUsage("nhid-3", 10, 90),
+				leaseUsage("nhid-4", 20, 90),
 			},
 			expected: nil,
 		},
@@ -2458,7 +1311,11 @@ func TestRebalanceLeases(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
-			storeMap := newTestStoreMap(tc.usages, tc.replicasByStatus)
+			rbs := tc.replicasByStatus
+			if rbs == nil {
+				rbs = &storemap.ReplicasByStatus{LiveReplicas: tc.rd.GetReplicas()}
+			}
+			storeMap := newTestStoreMap(tc.usages, rbs)
 			rq := &Queue{
 				storeMap:  storeMap,
 				apiClient: client,
@@ -2543,7 +1400,7 @@ func TestBaseQueueRetry(t *testing.T) {
 	ctx := context.Background()
 	clock := clockwork.NewFakeClock()
 	instructions := map[string]instruction{
-		"1-1": instruction{
+		"1-1": {
 			action:      DriverSplitRange,
 			priority:    10.0,
 			requeueType: RequeueRetry,
@@ -2588,7 +1445,7 @@ func TestBaseQueueAttemptRecordRetain(t *testing.T) {
 	ctx := context.Background()
 	clock := clockwork.NewFakeClock()
 	instructions := map[string]instruction{
-		"1-1": instruction{
+		"1-1": {
 			action:      DriverSplitRange,
 			priority:    10.0,
 			requeueType: RequeueRetry,
@@ -2624,7 +1481,7 @@ func TestBaseQueueAttemptRecordReset(t *testing.T) {
 	ctx := context.Background()
 	clock := clockwork.NewFakeClock()
 	instructions := map[string]instruction{
-		"1-1": instruction{
+		"1-1": {
 			action:      DriverSplitRange,
 			priority:    10.0,
 			requeueType: RequeueRetry,
