@@ -181,7 +181,7 @@ require (
 	golang.org/x/sync v0.20.0
 	golang.org/x/sys v0.43.0
 	golang.org/x/term v0.42.0
-	golang.org/x/text v0.36.0
+	golang.org/x/text v0.37.0
 	golang.org/x/time v0.15.0
 	golang.org/x/tools v0.44.0
 	golang.zx2c4.com/wireguard v0.0.0-20250521234502-f333402bd9cb
@@ -197,7 +197,7 @@ require (
 	gorm.io/driver/mysql v1.5.1
 	gorm.io/driver/postgres v1.5.2
 	gorm.io/driver/sqlite v1.5.2
-	gorm.io/gorm v1.25.2
+	gorm.io/gorm v1.30.0
 	gvisor.dev/gvisor v0.0.0-20250503011706-39ed1f5ac29c
 	k8s.io/api v0.35.3
 	k8s.io/apimachinery v0.35.3
