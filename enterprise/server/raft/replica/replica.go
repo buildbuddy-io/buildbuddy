@@ -136,14 +136,6 @@ func sizeOf(key []byte, val []byte) (int64, error) {
 	return size, nil
 }
 
-func isFileRecordKey(keyBytes []byte) bool {
-	key := &filestore.PebbleKey{}
-	if _, err := key.FromBytes(keyBytes); err == nil {
-		return true
-	}
-	return false
-}
-
 func (sm *Replica) batchContainsKey(wb pebble.Batch, key []byte) ([]byte, bool) {
 	k := sm.replicaLocalKey(key)
 	batchReader := wb.Reader()
@@ -1315,8 +1307,6 @@ func validateHeaderAgainstRange(rd *rfpb.RangeDescriptor, header *rfpb.Header) e
 	}
 	return nil
 }
-
-var digestRunes = []rune("abcdef1234567890")
 
 func (sm *Replica) updateInMemoryState(wb pebble.Batch) {
 	// Update the local in-memory range descriptor iff this batch modified

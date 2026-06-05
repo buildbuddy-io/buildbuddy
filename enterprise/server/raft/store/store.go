@@ -3974,6 +3974,8 @@ func (s *Store) TestingFlush() {
 
 func (s *Store) refreshMetrics(ctx context.Context) {
 	ticker := s.clock.NewTicker(metricsRefreshPeriod)
+	nhid := s.nodeHost.ID()
+	replicaLocations := map[uint64]prometheus.Labels{}
 	for {
 		select {
 		case <-ctx.Done():
@@ -3990,14 +3992,61 @@ func (s *Store) refreshMetrics(ctx context.Context) {
 				metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: constants.CacheName}).Set(float64(fsu.Avail))
 			}
 			metrics.RaftStoreEventsChanSize.Set(float64(len(s.events)))
+			replicaLocations = s.reportReplicaLocations(nhid, replicaLocations)
 		}
 	}
+}
+
+// reportReplicaLocations sets RaftRangeReplica for every currently-open
+// replica and clears entries from prev that no longer apply. Returns the
+// labelsets emitted this tick, to be passed back in as prev next time.
+func (s *Store) reportReplicaLocations(nhid string, prev map[uint64]prometheus.Labels) map[uint64]prometheus.Labels {
+	cur := s.snapshotReplicaLocations(nhid)
+	for _, lbl := range cur {
+		metrics.RaftRangeReplica.With(lbl).Set(1)
+	}
+	for rangeID, lbl := range prev {
+		if _, ok := cur[rangeID]; !ok {
+			metrics.RaftRangeReplica.Delete(lbl)
+		}
+	}
+	return cur
 }
 
 func (s *Store) getFileSystemUsage() (gosigar.FileSystemUsage, error) {
 	fsu := gosigar.FileSystemUsage{}
 	err := fsu.Get(s.rootDir)
 	return fsu, err
+}
+
+func (s *Store) snapshotReplicaLocations(nhid string) map[uint64]prometheus.Labels {
+	s.rangeMu.RLock()
+	defer s.rangeMu.RUnlock()
+	out := make(map[uint64]prometheus.Labels, len(s.openRanges))
+	for rangeID, rd := range s.openRanges {
+		out[rangeID] = prometheus.Labels{
+			metrics.RaftRangeIDLabel:    strconv.FormatUint(rangeID, 10),
+			metrics.RaftNodeHostIDLabel: nhid,
+			metrics.PartitionID:         partitionIDFromRangeStart(rd.GetStart()),
+			metrics.ZoneLabel:           s.zone,
+		}
+	}
+	return out
+}
+
+// partitionIDFromRangeStart parses the partition_id out of a range descriptor's
+// start key. Range data is keyed under "PT<partition_id>/..."; returns "" for
+// ranges with no partition prefix (e.g., the meta range).
+func partitionIDFromRangeStart(key []byte) string {
+	prefix := []byte(filestore.PartitionDirectoryPrefix)
+	if !bytes.HasPrefix(key, prefix) {
+		return ""
+	}
+	rest := key[len(prefix):]
+	if before, _, ok := bytes.Cut(rest, []byte{'/'}); ok {
+		return string(before)
+	}
+	return ""
 }
 
 func (s *Store) setupPartitions(ctx context.Context) {
