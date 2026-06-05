@@ -194,27 +194,27 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazel-9.1.0-darwin-arm64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.0/bazel-9.1.0-darwin-arm64"],
-        sha256 = "084a1784fa8f0dcae77fb4e88faa15048d8149a36c947ce198508bffb060e1bb",
+        name = "io_bazel_bazel-9.1.1-darwin-arm64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.1/bazel-9.1.1-darwin-arm64"],
+        sha256 = "2db883718453f0437a7bcb408e889dbf8539cdc4d61c8ebc3807a1a88d02ff08",
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazel-9.1.0-darwin-x86_64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.0/bazel-9.1.0-darwin-x86_64"],
-        sha256 = "666c6c79eda285cada5f5c39c891c6dd7ee0971b20bff365ea87a4b897271433",
+        name = "io_bazel_bazel-9.1.1-darwin-x86_64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.1/bazel-9.1.1-darwin-x86_64"],
+        sha256 = "6fd490084bdccf044d7a6d8360a26f8770fa09f4e624328efea292f493204930",
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazel-9.1.0-linux-arm64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.0/bazel-9.1.0-linux-arm64"],
-        sha256 = "ba933bfc943e4c44f0743a5823aa2312a34b39628532add5dd037e08d8ec27a4",
+        name = "io_bazel_bazel-9.1.1-linux-arm64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.1/bazel-9.1.1-linux-arm64"],
+        sha256 = "82d1163884e45a6a7ff764cc01197b1b1ed497000726b84dc4b47c1dfc8a2bb4",
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazel-9.1.0-linux-x86_64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.0/bazel-9.1.0-linux-x86_64"],
-        sha256 = "a667454f3f4f8878df8199136b82c199f6ada8477b337fae3b1ef854f01e4e2f",
+        name = "io_bazel_bazel-9.1.1-linux-x86_64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.1/bazel-9.1.1-linux-x86_64"],
+        sha256 = "857bed5d2756b4d998d3caebf2d941d13d434c4eda4b1d6d7dda205736c25a93",
         executable = True,
     )
     http_file(

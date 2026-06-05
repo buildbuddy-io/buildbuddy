@@ -431,9 +431,9 @@ func TestLinearizabilityUnderSplits(t *testing.T) {
 	flags.Set(t, "cache.raft.op_timeout", 5*time.Second)
 
 	sf := testutil.NewStoreFactoryWithRootDir(t, t.TempDir())
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2, s3}
@@ -551,10 +551,10 @@ func TestLinearizabilityUnderKillRestart(t *testing.T) {
 	flags.Set(t, "cache.raft.op_timeout", 5*time.Second)
 
 	sf := testutil.NewStoreFactoryWithRootDir(t, t.TempDir())
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
-	s4 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
+	s4 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	initialStores := []*testutil.TestingStore{s1, s2, s3}

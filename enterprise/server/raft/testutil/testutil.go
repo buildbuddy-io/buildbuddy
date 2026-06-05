@@ -155,7 +155,9 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 		store.WithPebbleOptsGetter(pebbleOptionsGetter),
 		store.WithTestNodeHostConfig(),
 		store.WithRegistryGetter(registryGetter),
-		store.WithGRPCServerConfig(ts.GRPCServerConfig))
+		store.WithZone(ts.Zone),
+		store.WithGRPCServerConfig(ts.GRPCServerConfig),
+	)
 	require.NoError(t, err)
 	require.NotNil(t, store)
 	store.Start()
@@ -164,11 +166,12 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 	ts.leaser = store.LeaserForTest()
 }
 
-func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
-	return sf.NewStoreWithGRPCServerConfig(t, grpc_server.GRPCServerConfig{})
+type StoreOptions struct {
+	Zone             string
+	GrpcServerConfig grpc_server.GRPCServerConfig
 }
 
-func (sf *StoreFactory) NewStoreWithGRPCServerConfig(t *testing.T, grpcServerConfig grpc_server.GRPCServerConfig) *TestingStore {
+func (sf *StoreFactory) NewStore(t *testing.T, opts StoreOptions) *TestingStore {
 	nodeAddr := localAddr(t)
 	gm, err := gossip.NewWithArgs("name-"+nodeAddr, nodeAddr, sf.gossipAddrs)
 	require.NoError(t, err)
@@ -184,13 +187,21 @@ func (sf *StoreFactory) NewStoreWithGRPCServerConfig(t *testing.T, grpcServerCon
 		GossipAddress:    nodeAddr,
 		RootDir:          filepath.Join(sf.rootDir, fmt.Sprintf("store-%d", len(sf.gossipAddrs))),
 		nhid:             id.String(),
-		GRPCServerConfig: grpcServerConfig,
+		Zone:             opts.Zone,
+		GRPCServerConfig: opts.GrpcServerConfig,
 	}
 	sf.RecreateStore(t, ts)
 	t.Cleanup(func() {
 		ts.Stop()
 	})
 	return ts
+}
+
+func (sf *StoreFactory) NewStoreWithGRPCServerConfig(t *testing.T, grpcServerConfig grpc_server.GRPCServerConfig) *TestingStore {
+	return sf.NewStore(t, StoreOptions{
+		Zone:             "",
+		GrpcServerConfig: grpcServerConfig,
+	})
 }
 
 func (sf *StoreFactory) SetPartitions(partitions []disk.Partition) {
@@ -211,6 +222,7 @@ type TestingStore struct {
 
 	leaser pebble.Leaser
 	nhid   string
+	Zone   string
 
 	gm               *gossip.GossipManager
 	Registry         registry.NodeRegistry

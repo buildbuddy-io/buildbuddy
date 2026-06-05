@@ -7,6 +7,10 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -31,7 +35,7 @@ func TestLookupRangeDescriptor(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	// Start shard to set up meta range
@@ -65,7 +69,7 @@ func TestLookupRangeDescriptorsForPartition(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	// Start shard to set up meta range
@@ -117,7 +121,7 @@ func TestFetchPartitionDescriptors(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	// Start shard to set up meta range
@@ -162,13 +166,64 @@ func TestFetchPartitionDescriptors(t *testing.T) {
 	require.Equal(t, uint64(4), pd2.GetFirstRangeId())
 }
 
-func TestDuplicateApplyOnReplicaRetry(t *testing.T) {
+func TestSyncProposeIsIdempotentOnReplicaRetry(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_driver", false)
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 
-	key := []byte("PTdefault/dup-apply")
+	key := keys.MakeKey(constants.SystemPrefix, []byte("dup-apply"))
+	var faultInjected atomic.Bool
+	interceptor := func(
+		ctx context.Context,
+		req any,
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (any, error) {
+		rsp, err := handler(ctx, req)
+		syncReq, ok := req.(*rfpb.SyncProposeRequest)
+		shouldFault := ok &&
+			len(syncReq.GetBatch().GetUnion()) == 1 &&
+			syncReq.GetBatch().GetUnion()[0].GetIncrement() != nil &&
+			string(syncReq.GetBatch().GetUnion()[0].GetIncrement().GetKey()) == string(key)
+		if err == nil &&
+			strings.HasSuffix(info.FullMethod, "/SyncPropose") &&
+			shouldFault &&
+			faultInjected.CompareAndSwap(false, true) {
+			return nil, gstatus.Error(codes.Unavailable, "injected fault after apply")
+		}
+		return rsp, err
+	}
+
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{
+		GrpcServerConfig: grpc_server.GRPCServerConfig{
+			ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{interceptor},
+		},
+	})
+	ctx := context.Background()
+
+	stores := []*testutil.TestingStore{s1}
+	sf.StartShard(t, ctx, s1)
+	testutil.WaitForRangeLease(t, ctx, stores, 1)
+	testutil.WaitForRangeLease(t, ctx, stores, 2)
+
+	value, err := s1.Sender().Increment(ctx, key, 1)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), value)
+
+	buf, err := s1.Sender().DirectRead(ctx, key)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), binary.LittleEndian.Uint64(buf))
+}
+
+func TestSyncProposeWithRangeDescriptorIsIdempotentOnReplicaRetry(t *testing.T) {
+	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+
+	key := keys.MakeKey(constants.SystemPrefix, []byte("dup-apply-rd"))
 	var faultInjected atomic.Bool
 	interceptor := func(
 		ctx context.Context,
@@ -202,13 +257,96 @@ func TestDuplicateApplyOnReplicaRetry(t *testing.T) {
 	testutil.WaitForRangeLease(t, ctx, stores, 1)
 	testutil.WaitForRangeLease(t, ctx, stores, 2)
 
-	value, err := s1.Sender().Increment(ctx, key, 1)
+	batch, err := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
+		Key:   key,
+		Delta: 1,
+	}).ToProto()
 	require.NoError(t, err)
-	// This asserts the current buggy behavior: the retried Increment is applied
-	// twice after the interceptor returns Unavailable post-apply.
-	require.Equal(t, uint64(2), value)
+	// Route to range 1 (meta range, ["\x02", "\x04")) since the key is
+	// a system-prefix key. CAS/Increment are only permitted on
+	// non-splittable keys, so the natural test target is the meta
+	// range that owns them.
+	rd := s1.GetRange(1)
+
+	rsp, err := s1.Sender().SyncProposeWithRangeDescriptor(ctx, rd, batch, header.MakeLinearizableWithRangeValidation)
+	require.NoError(t, err)
+	require.NoError(t, rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).AnyError())
 
 	buf, err := s1.Sender().DirectRead(ctx, key)
 	require.NoError(t, err)
-	require.Equal(t, uint64(2), binary.LittleEndian.Uint64(buf))
+	require.Equal(t, uint64(1), binary.LittleEndian.Uint64(buf))
+}
+
+func TestSyncProposeCASIsIdempotentOnReplicaRetry(t *testing.T) {
+	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+
+	key := keys.MakeKey(constants.SystemPrefix, []byte("dup-apply-cas"))
+	oldValue := []byte("initial")
+	newValue := []byte("updated")
+
+	var faultInjected atomic.Bool
+	interceptor := func(
+		ctx context.Context,
+		req any,
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (any, error) {
+		rsp, err := handler(ctx, req)
+		syncReq, ok := req.(*rfpb.SyncProposeRequest)
+		shouldFault := ok &&
+			len(syncReq.GetBatch().GetUnion()) == 1 &&
+			syncReq.GetBatch().GetUnion()[0].GetCas() != nil &&
+			string(syncReq.GetBatch().GetUnion()[0].GetCas().GetKv().GetKey()) == string(key)
+		if err == nil &&
+			strings.HasSuffix(info.FullMethod, "/SyncPropose") &&
+			shouldFault &&
+			faultInjected.CompareAndSwap(false, true) {
+			return nil, gstatus.Error(codes.Unavailable, "injected fault after apply")
+		}
+		return rsp, err
+	}
+
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStoreWithGRPCServerConfig(t, grpc_server.GRPCServerConfig{
+		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{interceptor},
+	})
+	ctx := context.Background()
+
+	stores := []*testutil.TestingStore{s1}
+	sf.StartShard(t, ctx, s1)
+	testutil.WaitForRangeLease(t, ctx, stores, 1)
+	testutil.WaitForRangeLease(t, ctx, stores, 2)
+
+	// Seed the key with oldValue. The interceptor only faults CAS requests
+	// to this key, so the seeding write passes through normally.
+	writeBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{Key: key, Value: oldValue},
+	}).ToProto()
+	require.NoError(t, err)
+	_, err = s1.Sender().SyncPropose(ctx, key, writeBatch)
+	require.NoError(t, err)
+
+	// CAS oldValue -> newValue. The first attempt applies on the replica
+	// (so state is already newValue), then the interceptor returns
+	// Unavailable so the sender retries. Without idempotency the retry
+	// would see current=newValue, expected=oldValue and report a
+	// CAS mismatch error.
+	casBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
+		Kv:            &rfpb.KV{Key: key, Value: newValue},
+		ExpectedValue: oldValue,
+	}).ToProto()
+	require.NoError(t, err)
+
+	rsp, err := s1.Sender().SyncPropose(ctx, key, casBatch)
+	require.NoError(t, err)
+	casRsp, err := rbuilder.NewBatchResponseFromProto(rsp).CASResponse(0)
+	require.NoError(t, err)
+	require.Equal(t, newValue, casRsp.GetKv().GetValue())
+
+	buf, err := s1.Sender().DirectRead(ctx, key)
+	require.NoError(t, err)
+	require.Equal(t, newValue, buf)
 }

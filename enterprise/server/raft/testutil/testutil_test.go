@@ -10,7 +10,7 @@ import (
 
 func TestStartShard(t *testing.T) {
 	sf := testutil.NewStoreFactoryWithClock(t, clockwork.NewRealClock())
-	s1 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	sf.StartShard(t, ctx, s1)

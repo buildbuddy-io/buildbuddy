@@ -31,6 +31,7 @@ go_test(
         "test.EstimatedComputeUnits": "8",
         "test.workload-isolation-type": "firecracker",
     },
+    shard_count = 8,
     tags = ["block-network"],
     deps = [
         ":txn",
@@ -41,9 +42,13 @@ go_test(
         "//enterprise/server/raft/sender",
         "//enterprise/server/raft/testutil",
         "//proto:raft_go_proto",
+        "//server/util/grpc_server",
         "//server/util/proto",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )

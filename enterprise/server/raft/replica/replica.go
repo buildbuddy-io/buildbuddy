@@ -1342,11 +1342,27 @@ func errorEntry(err error) dbsm.Result {
 	}
 }
 
+// sessionPebbleKey returns the pebble key for a session's dedup record.
+// When the session has range ID set, the key namespaces the record by
+// session ID and range ID. During a split a retry can land on the right
+// range with range ID still set to the left range — that's fine, since
+// the dedup record for the session ID under the left range ID is a
+// different record than the right range's own entries under the right
+// range ID, so no collision. When unset, the key stays
+// `session-<session ID>`, matching pre-upgrade entries.
+func sessionPebbleKey(s *rfpb.Session) []byte {
+	if s.GetRangeId() == 0 {
+		return keys.MakeKey(constants.SessionPrefix, s.GetId())
+	}
+	return keys.MakeKey(constants.SessionPrefix, s.GetId(),
+		[]byte("/"+strconv.Itoa(int(s.GetRangeId()))))
+}
+
 func (sm *Replica) getLastRespFromSession(db ReplicaReader, reqSession *rfpb.Session) ([]byte, error) {
 	if reqSession == nil {
 		return nil, nil
 	}
-	sessionKey := keys.MakeKey(constants.SessionPrefix, reqSession.GetId())
+	sessionKey := sessionPebbleKey(reqSession)
 	buf, err := sm.lookup(db, sessionKey)
 	if err != nil {
 		if status.IsNotFoundError(err) {
@@ -1399,7 +1415,7 @@ func (sm *Replica) updateSession(wb pebble.Batch, reqSession *rfpb.Session, rspB
 	if err != nil {
 		return status.InternalErrorf("[%s] failed to marshal session: %w", sm.name(), err)
 	}
-	sessionKey := keys.MakeKey(constants.SessionPrefix, reqSession.GetId())
+	sessionKey := sessionPebbleKey(reqSession)
 	wb.Set(sm.replicaLocalKey(sessionKey), sessionBuf, nil)
 	return nil
 }

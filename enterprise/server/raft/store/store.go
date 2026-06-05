@@ -111,14 +111,15 @@ type Store struct {
 	grpcServer    *grpc.Server
 	apiClient     *client.APIClient
 	liveness      *nodeliveness.Liveness
-	// This session is used by most of the SyncPropose traffic
+	// session is used for batches that arrive at gRPC Store.SyncPropose
+	// without a pre-attached session. The txn Coordinator always pre-attaches
+	// sessions, while generic multi-key write paths such as metadata Set/Delete
+	// and metadata atime updates currently do not.
 	session *client.Session
-	// The following sessions are created so that we can seperate background
-	// traffic such as eviction, startShard, splitRange from the main write
-	// traffic.
-	// session for transactions; used by split, add and remove replica.
-	txnSession *client.Session
-	// session for eviction
+	// evictionSession is a dedicated session for eviction deletes. It gives
+	// eviction its own (session ID, range ID) dedup namespace and, more
+	// importantly, its own propose locker, so high-volume eviction does not
+	// serialize against atime/metadata writes on the same range.
 	evictionSession *client.Session
 	// session for StartShard
 	shardStarterSession *client.Session
@@ -168,6 +169,8 @@ type Store struct {
 	stopped bool
 
 	maxSingleOpTimeout time.Duration
+
+	zone string
 }
 
 type registryHolder struct {
@@ -243,6 +246,7 @@ type options struct {
 	getNodehostConfigFn func(cfg *raftConfig.ServerConfig, raftListener *listener.RaftListener, nrf dbConfig.NodeRegistryFactory) dbConfig.NodeHostConfig
 	getPebbleOptsFn     func(mc *pebble.MetricsCollector) *pebble.Options
 	getRegistryFn       func() registry.NodeRegistry
+	zone                string
 	grpcServerConfig    grpc_server.GRPCServerConfig
 }
 
@@ -269,6 +273,14 @@ func WithNodeRegistryFactory(nrf dbConfig.NodeRegistryFactory) Option {
 func WithRegistryGetter(getter func() registry.NodeRegistry) Option {
 	return func(o *options) {
 		o.getRegistryFn = getter
+	}
+}
+
+// Override the zone for this store. If not set or empty, defaults to
+// resources.GetZone() or "local" if that returns empty.
+func WithZone(zone string) Option {
+	return func(o *options) {
+		o.zone = zone
 	}
 }
 
@@ -328,15 +340,22 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 
 	clock := env.GetClock()
 	session := client.NewSessionWithClock(clock)
-	txnSession := client.NewSessionWithClock(clock)
 	evictionSession := client.NewSessionWithClock(clock)
 	shardStarterSession := client.NewSessionWithClock(clock)
 	lkSession := client.NewSessionWithClock(clock)
 
+	zone := o.zone
+	if zone == "" {
+		zone = resources.GetZone()
+		if zone == "" {
+			zone = "local"
+		}
+	}
 	s := &Store{
 		env:                 env,
 		rootDir:             cfg.RootDir,
 		grpcAddr:            cfg.GRPCAddr,
+		zone:                zone,
 		nodeHost:            nodeHost,
 		partitions:          cfg.Partitions,
 		gossipManager:       cfg.GossipManager,
@@ -345,7 +364,6 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 		apiClient:           apiClient,
 		liveness:            nodeLiveness,
 		session:             session,
-		txnSession:          txnSession,
 		evictionSession:     evictionSession,
 		shardStarterSession: shardStarterSession,
 		log:                 nhLog,
@@ -1502,7 +1520,7 @@ func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {
 		Nhid:        s.nodeHost.ID(),
 		RaftAddress: s.nodeHost.RaftAddress(),
 		GrpcAddress: s.grpcAddr,
-		Zone:        getZone(),
+		Zone:        s.zone,
 	}
 }
 
@@ -1875,15 +1893,12 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 		rangeID = r.RangeID()
 	}
 
+	// Eviction deletes use a dedicated session so they don't serialize
+	// against atime/metadata writes on the same range. A batch is treated as
+	// eviction when its first union is a Delete.
 	session := s.session
-	if len(req.GetBatch().GetTransactionId()) > 0 {
-		session = s.txnSession
-	} else {
-		// use eviction session for delete requests
-		unions := req.GetBatch().GetUnion()
-		if len(unions) > 0 && unions[0].GetDelete() != nil {
-			session = s.evictionSession
-		}
+	if unions := req.GetBatch().GetUnion(); len(unions) > 0 && unions[0].GetDelete() != nil {
+		session = s.evictionSession
 	}
 	batchResponse, err := session.SyncProposeLocal(ctx, s.nodeHost, rangeID, req.GetBatch())
 	if err != nil {
@@ -2803,18 +2818,10 @@ func (w *updateTagsWorker) handleTask(task *updateTagsTask) {
 	w.updateTags()
 }
 
-var getZone func() string = sync.OnceValue(func() string {
-	zone := resources.GetZone()
-	if zone == "" {
-		return "local"
-	}
-	return zone
-})
-
 func (w *updateTagsWorker) updateTags() error {
 	storeTags := make(map[string]string, 4)
 
-	storeTags[constants.ZoneTag] = getZone()
+	storeTags[constants.ZoneTag] = w.store.zone
 
 	if podIndex := os.Getenv("MY_POD_INDEX"); podIndex != "" {
 		storeTags[constants.PodIndexTag] = podIndex

@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -113,7 +114,17 @@ func addRequestIdToContext(ctx context.Context) context.Context {
 	return ctx
 }
 
-func addClientIPToContext(ctx context.Context) context.Context {
+func addClientIPToContext(ctx context.Context, env environment.Env) context.Context {
+	// Use the gRPC proxy-supplied client IP if it is provided and the caller
+	// is trusted, as verified by its clientidentity.
+	if cis := env.GetClientIdentityService(); cis != nil {
+		if si, err := cis.IdentityFromContext(ctx); err == nil && si != nil && si.Client == interfaces.ClientIdentityGRPCProxy {
+			if hdrs := metadata.ValueFromIncomingContext(ctx, clientip.HeaderName); len(hdrs) > 0 {
+				return context.WithValue(ctx, clientip.ContextKey, hdrs[0])
+			}
+		}
+	}
+
 	hdrs := metadata.ValueFromIncomingContext(ctx, "X-Forwarded-For")
 	if len(hdrs) == 0 {
 		// No proxy header; use direct connection peer address.
@@ -277,8 +288,10 @@ func requestIDUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 
 // clientIPStreamInterceptor is a server interceptor that inserts the client IP
 // into the context.
-func clientIPStreamServerInterceptor() grpc.StreamServerInterceptor {
-	return contextReplacingStreamServerInterceptor(addClientIPToContext)
+func clientIPStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
+	return contextReplacingStreamServerInterceptor(func(ctx context.Context) context.Context {
+		return addClientIPToContext(ctx, env)
+	})
 }
 
 // subdomainStreamServerInterceptor adds customer subdomain information to the
@@ -289,8 +302,10 @@ func subdomainStreamServerInterceptor() grpc.StreamServerInterceptor {
 
 // clientIPUnaryInterceptor is a server interceptor that inserts the client IP
 // into the context.
-func ClientIPUnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	return contextReplacingUnaryServerInterceptor(addClientIPToContext)
+func clientIPUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
+	return contextReplacingUnaryServerInterceptor(func(ctx context.Context) context.Context {
+		return addClientIPToContext(ctx, env)
+	})
 }
 
 // subdomainUnaryServerInterceptor adds customer subdomain information to the
@@ -557,7 +572,10 @@ func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnarySer
 		unaryRecoveryInterceptor(),
 		copyHeadersUnaryServerInterceptor(),
 		propagateRequestMetadataToSpanUnaryServerInterceptor(),
-		ClientIPUnaryServerInterceptor(),
+		// identity must run before clientIP so that a trusted proxy's asserted
+		// client IP can be honored.
+		identityUnaryServerInterceptor(env),
+		clientIPUnaryServerInterceptor(env),
 		subdomainUnaryServerInterceptor(),
 		requestIDUnaryServerInterceptor(),
 		invocationIDLoggerUnaryServerInterceptor(),
@@ -572,7 +590,6 @@ func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnarySer
 	}
 	interceptors = append(interceptors, authUnaryServerInterceptor(env),
 		quotaUnaryServerInterceptor(env),
-		identityUnaryServerInterceptor(env),
 		ipAuthUnaryServerInterceptor(env),
 		roleAuthUnaryServerInterceptor(env))
 	return grpc.ChainUnaryInterceptor(interceptors...)
@@ -583,7 +600,10 @@ func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamS
 		streamRecoveryInterceptor(),
 		copyHeadersStreamServerInterceptor(),
 		propagateRequestMetadataToSpanStreamServerInterceptor(),
-		clientIPStreamServerInterceptor(),
+		// identity must run before clientIP so that a trusted proxy's asserted
+		// client IP can be honored.
+		identityStreamServerInterceptor(env),
+		clientIPStreamServerInterceptor(env),
 		subdomainStreamServerInterceptor(),
 		requestIDStreamServerInterceptor(),
 		invocationIDLoggerStreamServerInterceptor(),
@@ -597,7 +617,6 @@ func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamS
 	}
 	interceptors = append(interceptors, authStreamServerInterceptor(env),
 		quotaStreamServerInterceptor(env),
-		identityStreamServerInterceptor(env),
 		ipAuthStreamServerInterceptor(env),
 		roleAuthStreamServerInterceptor(env))
 	return grpc.ChainStreamInterceptor(interceptors...)
