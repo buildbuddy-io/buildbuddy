@@ -26,7 +26,6 @@ import (
 	"encoding/binary"
 	"flag"
 	"hash/fnv"
-	"maps"
 	"math"
 	"math/rand"
 	"slices"
@@ -1242,21 +1241,16 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 	if len(sources) == 0 || len(targets) == 0 {
 		return nil
 	}
-	replicaCounts := slices.Collect(maps.Values(replicasByZone))
-	currentMinPerZone, currentMaxPerZone := slices.Min(replicaCounts), slices.Max(replicaCounts)
-	// If the difference between the biggest and smallest zones is at least 2,
-	// then moving between those two zones would help zone balance. If the
-	// difference is smaller, no move could help zone balance and we pick by
-	// load alone.
-	moveAcrossZones := currentMaxPerZone-currentMinPerZone >= 2
-	pickBy := compareByScoreAndID
-	if moveAcrossZones {
-		pickBy = compareByZoneAndScore(replicasByZone)
-	}
+	sortFunc := compareByZoneAndScore(replicasByZone)
 	// MinFunc picks the worst target (best source to evict); MaxFunc picks the
 	// best target.
-	bestSource := slices.MinFunc(sources, pickBy)
-	bestTarget := slices.MaxFunc(targets, pickBy)
+	bestSource := slices.MinFunc(sources, sortFunc)
+	bestTarget := slices.MaxFunc(targets, sortFunc)
+	sourceZoneCount := replicasByZone[bestSource.usage.GetNode().GetZone()]
+	targetZoneCount := replicasByZone[bestTarget.usage.GetNode().GetZone()]
+	// If the difference between zone counts is 1 or less, a move can't help
+	// zone balance.
+	moveAcrossZones := sourceZoneCount-targetZoneCount >= 2
 	if !bestSource.fullDisk && !moveAcrossZones {
 		overfullThreshold := int64(math.Ceil(aboveMeanReplicaCountThreshold(storesWithStats.ReplicaCount.Mean)))
 		if bestSource.usage.ReplicaCount < overfullThreshold {
