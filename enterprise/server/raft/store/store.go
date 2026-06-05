@@ -113,9 +113,14 @@ type Store struct {
 	liveness      *nodeliveness.Liveness
 	// session is used for batches that arrive at gRPC Store.SyncPropose
 	// without a pre-attached session. The txn Coordinator always pre-attaches
-	// sessions, while generic multi-key write paths such as metadata Set/Delete,
-	// metadata atime updates, and eviction deletes currently do not.
+	// sessions, while generic multi-key write paths such as metadata Set/Delete
+	// and metadata atime updates currently do not.
 	session *client.Session
+	// evictionSession is a dedicated session for eviction deletes. It gives
+	// eviction its own (session ID, range ID) dedup namespace and, more
+	// importantly, its own propose locker, so high-volume eviction does not
+	// serialize against atime/metadata writes on the same range.
+	evictionSession *client.Session
 	// session for StartShard
 	shardStarterSession *client.Session
 
@@ -335,6 +340,7 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 
 	clock := env.GetClock()
 	session := client.NewSessionWithClock(clock)
+	evictionSession := client.NewSessionWithClock(clock)
 	shardStarterSession := client.NewSessionWithClock(clock)
 	lkSession := client.NewSessionWithClock(clock)
 
@@ -358,6 +364,7 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 		apiClient:           apiClient,
 		liveness:            nodeLiveness,
 		session:             session,
+		evictionSession:     evictionSession,
 		shardStarterSession: shardStarterSession,
 		log:                 nhLog,
 
@@ -1886,7 +1893,14 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 		rangeID = r.RangeID()
 	}
 
-	batchResponse, err := s.session.SyncProposeLocal(ctx, s.nodeHost, rangeID, req.GetBatch())
+	// Eviction deletes use a dedicated session so they don't serialize
+	// against atime/metadata writes on the same range. A batch is treated as
+	// eviction when its first union is a Delete.
+	session := s.session
+	if unions := req.GetBatch().GetUnion(); len(unions) > 0 && unions[0].GetDelete() != nil {
+		session = s.evictionSession
+	}
+	batchResponse, err := session.SyncProposeLocal(ctx, s.nodeHost, rangeID, req.GetBatch())
 	if err != nil {
 		if errors.Is(err, dragonboat.ErrShardNotFound) {
 			return nil, status.OutOfRangeErrorf("%s: range %d not found", constants.RangeNotFoundMsg, rangeID)
