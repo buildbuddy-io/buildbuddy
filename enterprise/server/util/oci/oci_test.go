@@ -825,7 +825,10 @@ func TestResolve_WithCache(t *testing.T) {
 	}
 }
 
-func TestResolveWithCacheWithoutOCIFetcherRequiresValidCredentials(t *testing.T) {
+// TestResolveWithCacheRequiresValidCredentials verifies that the in-executor
+// cache path (use_oci_fetcher=false) does not serve a cached private image to
+// callers with missing or invalid credentials.
+func TestResolveWithCacheRequiresValidCredentials(t *testing.T) {
 	te := setupTestEnvWithCache(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
@@ -853,9 +856,6 @@ func TestResolveWithCacheWithoutOCIFetcherRequiresValidCredentials(t *testing.T)
 	require.Len(t, layers, 1)
 	require.Empty(t, cmp.Diff(map[string][]byte{"/private": []byte("private image contents")}, layerFiles(t, layers[0])))
 
-	authError := func(err error) bool {
-		return status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err)
-	}
 	for _, tc := range []struct {
 		name        string
 		credentials oci.Credentials
@@ -878,7 +878,7 @@ func TestResolveWithCacheWithoutOCIFetcherRequiresValidCredentials(t *testing.T)
 				false, /*=useOCIFetcher*/
 			)
 			require.Error(t, err)
-			require.True(t, authError(err), "expected auth error, got: %v", err)
+			require.True(t, status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err), "expected auth error, got: %v", err)
 		})
 	}
 }
