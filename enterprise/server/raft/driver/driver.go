@@ -906,8 +906,6 @@ func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor, storesWithStats
 		return nil
 	}
 
-	// Zone-aware selection: prefer the candidate in the least-represented
-	// zone, breaking ties by load.
 	usagesByNhid := make(map[string]*rfpb.StoreUsage, len(storesWithStats.Usages))
 	for _, su := range storesWithStats.Usages {
 		usagesByNhid[su.GetNode().GetNhid()] = su
@@ -918,15 +916,7 @@ func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor, storesWithStats
 			replicasByZone[su.GetNode().GetZone()]++
 		}
 	}
-	return slices.MinFunc(candidates, func(a, b *candidate) int {
-		za := replicasByZone[a.usage.GetNode().GetZone()]
-		zb := replicasByZone[b.usage.GetNode().GetZone()]
-		if c := cmp.Compare(za, zb); c != 0 {
-			return c
-		}
-		// Best targets are up front.
-		return -compareByScoreAndID(a, b)
-	}).usage.GetNode()
+	return slices.MaxFunc(candidates, compareByZoneAndScore(replicasByZone)).usage.GetNode()
 }
 
 type removeDataOp struct {
@@ -1249,36 +1239,24 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 		}
 	}
 
+	if len(sources) == 0 || len(targets) == 0 {
+		return nil
+	}
 	replicaCounts := slices.Collect(maps.Values(replicasByZone))
 	currentMinPerZone, currentMaxPerZone := slices.Min(replicaCounts), slices.Max(replicaCounts)
 	// If the difference between the biggest and smallest zones is at least 2,
 	// then moving between those two zones would help zone balance. If the
-	// difference is smaller, no move could help zone balance.
+	// difference is smaller, no move could help zone balance and we pick by
+	// load alone.
 	moveAcrossZones := currentMaxPerZone-currentMinPerZone >= 2
+	pickBy := compareByScoreAndID
 	if moveAcrossZones {
-		filteredSources := sources[:0]
-		for _, source := range sources {
-			// Sources can only be in the zone(s) with the maximum stores.
-			if replicasByZone[source.usage.GetNode().GetZone()] >= currentMaxPerZone {
-				filteredSources = append(filteredSources, source)
-			}
-		}
-		sources = filteredSources
-
-		filteredTargets := targets[:0]
-		for _, target := range targets {
-			// Targets can only be in the zone(s) with the minimum stores.
-			if replicasByZone[target.usage.GetNode().GetZone()] <= currentMinPerZone {
-				filteredTargets = append(filteredTargets, target)
-			}
-		}
-		targets = filteredTargets
+		pickBy = compareByZoneAndScore(replicasByZone)
 	}
-	if len(sources) == 0 || len(targets) == 0 {
-		return nil
-	}
-	bestSource := slices.MinFunc(sources, compareByScoreAndID)
-	bestTarget := slices.MaxFunc(targets, compareByScoreAndID)
+	// MinFunc picks the worst target (best source to evict); MaxFunc picks the
+	// best target.
+	bestSource := slices.MinFunc(sources, pickBy)
+	bestTarget := slices.MaxFunc(targets, pickBy)
 	if !bestSource.fullDisk && !moveAcrossZones {
 		overfullThreshold := int64(math.Ceil(aboveMeanReplicaCountThreshold(storesWithStats.ReplicaCount.Mean)))
 		if bestSource.usage.ReplicaCount < overfullThreshold {
@@ -1289,7 +1267,6 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 			}
 		}
 	}
-
 	return &rebalanceOp{
 		from: bestSource,
 		to:   bestTarget,
@@ -1402,16 +1379,7 @@ func (rq *Queue) findReplicaForRemoval(rd *rfpb.RangeDescriptor, replicaStateMap
 		return nil
 	}
 
-	// Zone-aware selection: prefer the candidate in the most over-represented
-	// zone, breaking ties by load (worst-fit first).
-	worst := slices.MinFunc(candidates, func(a, b *candidate) int {
-		za := replicasByZone[a.usage.GetNode().GetZone()]
-		zb := replicasByZone[b.usage.GetNode().GetZone()]
-		if c := cmp.Compare(za, zb); c != 0 {
-			return -c
-		}
-		return compareByScoreAndID(a, b)
-	})
+	worst := slices.MinFunc(candidates, compareByZoneAndScore(replicasByZone))
 	return replicaByNhid[worst.nhid]
 }
 
@@ -1736,6 +1704,26 @@ func compareByScoreAndID(a *candidate, b *candidate) int {
 		return res
 	}
 	return cmp.Compare(a.nhid, b.nhid)
+}
+
+// compareByZoneAndScore returns a comparator that ranks candidates as replica
+// placement targets: candidates in less-represented zones are preferred, with
+// compareByScoreAndID as the tiebreak. A positive result means a is a better
+// target than b.
+//
+// Use with slices.MaxFunc to pick the best target (when adding a replica).
+// Use with slices.MinFunc to pick the worst replica (for removing or
+// rebalancing).
+func compareByZoneAndScore(replicasByZone map[string]int) func(a, b *candidate) int {
+	return func(a, b *candidate) int {
+		za := replicasByZone[a.usage.GetNode().GetZone()]
+		zb := replicasByZone[b.usage.GetNode().GetZone()]
+		if za != zb {
+			// Fewer replicas in a's zone → a is a better target.
+			return cmp.Compare(zb, za)
+		}
+		return compareByScoreAndID(a, b)
+	}
 }
 
 func replicaCountMeanLevel(storesWithStats *storemap.StoresWithStats, su *rfpb.StoreUsage) meanLevel {
