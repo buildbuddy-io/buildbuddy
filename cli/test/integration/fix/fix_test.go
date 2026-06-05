@@ -1,18 +1,23 @@
 // Package fix_test contains end-to-end integration tests for `bb fix`.
 //
 // These tests run the real `bb` binary as a subprocess against scratch
-// repos. They cover the network-free behaviors documented in cli/fix/fix.go:
-// MODULE.bazel bootstrap, buildifier formatting, Gazelle BUILD generation,
-// hidden-directory skipping, --diff being non-mutating, idempotency on re-run,
-// and --help.
+// repos. They cover the behaviors documented in cli/fix/fix.go:
+// MODULE.bazel bootstrap, buildifier formatting, Gazelle BUILD generation
+// (built-in and repo-defined //:gazelle), hidden-directory skipping, --diff
+// being non-mutating, idempotency on re-run, and --help.
 //
-// Tests that would exercise language dependency insertion use --diff where
-// possible, since non-diff mode may go to BCR via `bb add`.
+// Most tests are network-free. The two exceptions invoke real bazel via a
+// repo-defined //:gazelle target, which fetches rules_shell from BCR
+// (deterministic via the pinned lockfile; permitted by test.dockerNetwork in
+// the BUILD file). Language dependency *insertion* (bb add -> registry.build,
+// and gazelle update-repos) is network-bound, so those paths are exercised
+// only through --diff, which short-circuits before any dep insertion runs.
 package fix_test
 
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -21,6 +26,18 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/require"
 )
+
+// protoLibraryRule matches a top-level proto_library rule declaration. The
+// `^` anchor (with multiline mode) avoids matching `go_proto_library(`, which
+// also ends in `proto_library(`.
+var protoLibraryRule = regexp.MustCompile(`(?m)^proto_library\(`)
+
+// protoLibraryLoad matches a load() of the proto_library symbol from any
+// external .bzl. The Gazelle 0.51.3 upgrade switches the source of this load
+// from @rules_proto to @com_google_protobuf; this pattern matches either so
+// the invariant ("proto_library is loaded, not assumed native") holds across
+// the version bump without pinning the post-upgrade target on this branch.
+var protoLibraryLoad = regexp.MustCompile(`load\("@[^"]+", "proto_library"\)`)
 
 // poorlyFormatted is a BUILD file that buildifier should rewrite.
 const poorlyFormatted = `load( "@rules_shell//shell:sh_binary.bzl",   "sh_binary" )
@@ -95,6 +112,28 @@ func requireNoBuildFile(t *testing.T, dir string) {
 	t.Helper()
 	require.NoFileExists(t, filepath.Join(dir, "BUILD.bazel"))
 	require.NoFileExists(t, filepath.Join(dir, "BUILD"))
+}
+
+// repoGazelleWorkspace creates a workspace whose //:gazelle target is a stub
+// sh_binary that records the args it was invoked with into gazelle.args. This
+// lets us assert how `bb fix` drives a repo-defined Gazelle without running a
+// real one. Note: this invokes real bazel (and fetches rules_shell from BCR).
+func repoGazelleWorkspace(t *testing.T) string {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"BUILD.bazel": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+sh_binary(
+    name = "gazelle",
+    srcs = ["gazelle.sh"],
+)
+`,
+		"gazelle.sh": `#!/usr/bin/env bash
+printf '%s\n' "$@" > "${BUILD_WORKSPACE_DIRECTORY}/gazelle.args"
+`,
+	})
+	testfs.MakeExecutable(t, ws, "gazelle.sh")
+	return ws
 }
 
 func TestFix_BootstrapsModuleBazel(t *testing.T) {
@@ -186,6 +225,14 @@ func TestFix_GazelleGeneratesProtoBuildFile(t *testing.T) {
 	require.Contains(t, contents, "proto_library(",
 		"Gazelle should generate a proto_library rule for .proto sources")
 	require.Contains(t, contents, `"service.proto"`)
+	// The rule must be loadable, not assumed-native. The upgrade changes the
+	// load source (see protoLibraryLoad), so we match version-agnostically.
+	require.Regexp(t, protoLibraryLoad, contents,
+		"Gazelle should emit a load() for proto_library")
+	// Generated rules carry a default visibility entry (one of the behaviors
+	// the upgrade explicitly preserves).
+	require.Contains(t, contents, `visibility = ["//visibility:public"]`,
+		"Gazelle should set default visibility on generated rules")
 }
 
 func TestFix_DiffShowsGazelleGeneratedProtoBuildFileWithoutMutating(t *testing.T) {
@@ -258,9 +305,14 @@ func TestFix_DiffShowsGazelleGeneratedTsProjectDepsWithoutMutating(t *testing.T)
 	require.Contains(t, out, `"//:node_modules/@types/react"`)
 }
 
-func TestFix_GazelleMergesGeneratedAttrsIntoExistingBuildFile(t *testing.T) {
+func TestFix_GazelleMergesGeneratedSrcsIntoExistingProtoRule(t *testing.T) {
 	ws := fixWorkspace(t, map[string]string{
 		"MODULE.bazel": "module(name = \"x\")\n",
+		// The rule is named to match the target Gazelle generates for this
+		// directory ("<dir>_proto" => "proto_proto"), so Gazelle merges the new
+		// src into the existing rule rather than emitting a second, parallel
+		// proto_library. (With a non-matching name it would add a duplicate;
+		// this test guards against silently accepting that.)
 		"proto/BUILD.bazel": `# keep package comment
 package(default_visibility = ["//visibility:private"])
 
@@ -268,7 +320,7 @@ load("@rules_proto//proto:defs.bzl", "proto_library")
 
 # keep rule comment
 proto_library(
-    name = "service_proto",
+    name = "proto_proto",
     srcs = [],
     tags = ["manual"],
 )
@@ -283,28 +335,20 @@ proto_library(
 	require.NoError(t, err, "output: %s", out)
 
 	contents := readBuildFile(t, filepath.Join(ws, "proto"))
+	// Gazelle must merge into the single existing rule, not add a duplicate.
+	require.Len(t, protoLibraryRule.FindAllString(contents, -1), 1,
+		"expected exactly one proto_library rule after merge:\n%s", contents)
+	// Handwritten content survives the merge...
 	require.Contains(t, contents, "# keep package comment")
 	require.Contains(t, contents, "# keep rule comment")
 	require.Contains(t, contents, `package(default_visibility = ["//visibility:private"])`)
 	require.Contains(t, contents, `tags = ["manual"]`)
+	// ...and the generated src is merged into that same rule.
 	require.Contains(t, contents, `"service.proto"`)
 }
 
 func TestFix_RepoGazelleTargetIsPreferredOverBuiltinGazelle(t *testing.T) {
-	ws := testcli.NewWorkspace(t)
-	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD.bazel": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-
-sh_binary(
-    name = "gazelle",
-    srcs = ["gazelle.sh"],
-)
-`,
-		"gazelle.sh": `#!/usr/bin/env bash
-printf '%s\n' "$@" > "${BUILD_WORKSPACE_DIRECTORY}/gazelle.args"
-`,
-	})
-	testfs.MakeExecutable(t, ws, "gazelle.sh")
+	ws := repoGazelleWorkspace(t)
 
 	out, err := runFix(t, ws)
 	require.NoError(t, err, "output: %s", out)
@@ -315,20 +359,7 @@ printf '%s\n' "$@" > "${BUILD_WORKSPACE_DIRECTORY}/gazelle.args"
 }
 
 func TestFix_DiffPassesModeDiffToRepoGazelleTarget(t *testing.T) {
-	ws := testcli.NewWorkspace(t)
-	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD.bazel": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-
-sh_binary(
-    name = "gazelle",
-    srcs = ["gazelle.sh"],
-)
-`,
-		"gazelle.sh": `#!/usr/bin/env bash
-printf '%s\n' "$@" > "${BUILD_WORKSPACE_DIRECTORY}/gazelle.args"
-`,
-	})
-	testfs.MakeExecutable(t, ws, "gazelle.sh")
+	ws := repoGazelleWorkspace(t)
 
 	out, err := runFix(t, ws, "--diff")
 	require.NoError(t, err, "output: %s", out)
@@ -337,7 +368,15 @@ printf '%s\n' "$@" > "${BUILD_WORKSPACE_DIRECTORY}/gazelle.args"
 	require.Equal(t, "-mode=diff", strings.TrimSpace(args))
 }
 
-func TestFix_BzlmodModeDoesNotWriteWorkspaceUpdateReposMacro(t *testing.T) {
+func TestFix_DiffWithGoModSkipsUpdateReposMacro(t *testing.T) {
+	// This exercises the --diff short-circuit in walk(): even when a dependency
+	// file (go.mod) is present, diff mode returns before any update-repos /
+	// `bb add` work, so no deps.bzl macro is written.
+	//
+	// Note: this does NOT cover the separate bzlmod guard in runUpdateRepos
+	// (which skips update-repos for MODULE.bazel). That guard only runs in
+	// non-diff mode, which reaches the network via `bb add` (registry.build),
+	// so it can't be exercised hermetically here.
 	ws := fixWorkspace(t, map[string]string{
 		"MODULE.bazel": "module(name = \"x\")\n",
 		"go.mod":       "module example.com/x\n\ngo 1.24\n",
@@ -346,7 +385,7 @@ func TestFix_BzlmodModeDoesNotWriteWorkspaceUpdateReposMacro(t *testing.T) {
 	out, _ := runFix(t, ws, "--diff")
 
 	require.NoFileExists(t, filepath.Join(ws, "deps.bzl"),
-		"bzlmod diff mode must not write WORKSPACE update-repos macros (output: %s)", out)
+		"--diff must not write update-repos macros even with a dep file present (output: %s)", out)
 }
 
 func TestFix_SkipsHiddenDirectories(t *testing.T) {
