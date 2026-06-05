@@ -833,11 +833,10 @@ func TestResolveWithCacheRequiresValidCredentials(t *testing.T) {
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
 
+	imageFiles := map[string][]byte{"/private": []byte("private image contents")}
 	registryCreds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
 	registry := testregistry.Run(t, testregistry.Opts{Creds: registryCreds})
-	imageAddress, pushedImage := registry.PushNamedImageWithFiles(t, "private_image", map[string][]byte{
-		"/private": []byte("private image contents"),
-	}, registryCreds)
+	imageAddress, pushedImage := registry.PushNamedImageWithFiles(t, "private_image", imageFiles, registryCreds)
 	imageDigest, err := pushedImage.Digest()
 	require.NoError(t, err)
 	imageAddressWithDigest := imageAddress + "@" + imageDigest.String()
@@ -854,7 +853,7 @@ func TestResolveWithCacheRequiresValidCredentials(t *testing.T) {
 	layers, err := pulledImage.Layers()
 	require.NoError(t, err)
 	require.Len(t, layers, 1)
-	require.Empty(t, cmp.Diff(map[string][]byte{"/private": []byte("private image contents")}, layerFiles(t, layers[0])))
+	require.Empty(t, cmp.Diff(imageFiles, layerFiles(t, layers[0])))
 
 	for _, tc := range []struct {
 		name        string
