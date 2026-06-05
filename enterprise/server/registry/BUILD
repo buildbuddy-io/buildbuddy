@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//server/interfaces",
         "//server/real_environment",
+        "//server/util/lib/seq",
         "//server/util/log",
     ],
 )

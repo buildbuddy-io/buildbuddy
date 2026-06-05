@@ -20,6 +20,7 @@ go_library(
         "//server/metrics",
         "//server/util/alert",
         "//server/util/disk",
+        "//server/util/lib/set",
         "//server/util/log",
         "//server/util/priority_queue",
         "//server/util/status",

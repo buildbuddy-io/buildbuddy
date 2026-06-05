@@ -3063,4 +3063,16 @@ message StoredExecution {
   // CPU architecture that the execution targeted (e.g. "amd64", "arm64").
   // Sourced from the Arch platform property.
   string arch = 82;
+
+  // Whether a snapshot was saved locally for this execution. This should be
+  // true whenever a snapshot was saved, because remote saves also save locally.
+  bool snapshot_saved_locally = 83;
+  // Whether a snapshot was saved remotely for this execution.
+  bool snapshot_saved_remotely = 84;
+  bool snapshot_is_diff = 85;
+  // Uncompressed bytes written by the snapshot save. For diff snapshots,
+  // counts only modified chunks.
+  int64 snapshot_saved_bytes = 86;
+  // Wall-clock duration of Container.Pause.
+  int64 pause_duration_usec = 87;
 }

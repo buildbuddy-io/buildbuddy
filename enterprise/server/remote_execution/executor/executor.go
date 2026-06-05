@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
@@ -107,10 +106,6 @@ func (s *Executor) Warmup() {
 		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, executor_auth.APIKey())
 	}
 	s.runnerPool.Warmup(ctx)
-}
-
-func timevalDuration(tv syscall.Timeval) time.Duration {
-	return time.Duration(tv.Sec)*time.Second + time.Duration(tv.Usec)*time.Microsecond
 }
 
 type executionTimeouts struct {
@@ -233,14 +228,14 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 	actionMetrics.AuxMetadata = auxMetadata
 	opStateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest.GetDigest())
-	stateChangeFn := operation.StateChangeFunc(func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {
+	stateChangeFn := func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {
 		if stage == repb.ExecutionStage_COMPLETED {
 			if err := appendAuxiliaryMetadata(execResponse.GetResult().GetExecutionMetadata(), auxMetadata); err != nil {
 				log.CtxWarningf(ctx, "Failed to append ExecutionAuxiliaryMetadata: %s", err)
 			}
 		}
 		return opStateChangeFn(stage, execResponse)
-	})
+	}
 	md := &repb.ExecutedActionMetadata{
 		Worker:                   s.hostID,
 		QueuedTimestamp:          task.QueuedTimestamp,
@@ -305,6 +300,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	actionMetrics.Isolation = r.GetIsolationType()
 	reuseRunner := false
 	var cmdResult *interfaces.CommandResult
+	firstCompletedPublished := false
 	defer func() {
 		// Respect the DoNotRecycle bit set by the container implementation,
 		// since specific implementations will have better knowledge about the
@@ -316,6 +312,32 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		// that the runner is fully cleaned up (if applicable) before its
 		// resource claims are freed up by the priority_task_scheduler.
 		s.runnerPool.TryRecycle(ctx, r, reuseRunner)
+
+		// Recycling can produce observability data that wasn't available at
+		// COMPLETED publish time. Publish a follow-up stage=COMPLETED Operation
+		// whose auxiliary_metadata carries just the PostCompletionStats. Only
+		// do this if the peer is ready to handle this partial COMPLETED update,
+		// which is indicated by the presence of
+		// "remote_execution.publish_post_completion_stats" in experiments.
+		if slices.Contains(task.GetExperiments(), "remote_execution.publish_post_completion_stats") {
+			if stats := r.PostCompletionStats(); stats != nil && firstCompletedPublished {
+				statsAny, err := anypb.New(stats)
+				if err != nil {
+					log.CtxWarningf(ctx, "Failed to marshal PostCompletionStats: %s", err)
+					return
+				}
+				rsp := &repb.ExecuteResponse{
+					Result: &repb.ActionResult{
+						ExecutionMetadata: &repb.ExecutedActionMetadata{
+							AuxiliaryMetadata: []*anypb.Any{statsAny},
+						},
+					},
+				}
+				if err := opStateChangeFn(repb.ExecutionStage_COMPLETED, rsp); err != nil {
+					log.CtxWarningf(ctx, "Failed to publish post-completion stats: %s", err)
+				}
+			}
+		}
 	}()
 
 	log.CtxDebugf(ctx, "Preparing runner for task.")
@@ -519,6 +541,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		}
 		return finishWithErrFn(status.WrapError(err, "publish execute response"))
 	}
+	firstCompletedPublished = true
 	if cmdResult.Error == nil {
 		log.CtxDebugf(ctx, "Task finished cleanly.")
 		reuseRunner = true

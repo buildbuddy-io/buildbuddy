@@ -22,7 +22,7 @@ import (
 
 func TestRollbackPendingTxn(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
-	store := sf.NewStore(t)
+	store := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 	sf.StartShard(t, ctx, store)
 
@@ -129,7 +129,7 @@ func TestRollbackPendingTxn(t *testing.T) {
 
 func TestCommitPreparedTxn(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
-	store := sf.NewStore(t)
+	store := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 	sf.StartShard(t, ctx, store)
 
@@ -237,7 +237,7 @@ func TestCommitPreparedTxn(t *testing.T) {
 
 func TestRecoverTxnToUpdateRangeDescriptor(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
-	store := sf.NewStore(t)
+	store := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 	sf.StartShard(t, ctx, store)
 
@@ -320,9 +320,9 @@ func verifyRangeDescriptorInMetaRangeEquals(t *testing.T, ctx context.Context, s
 
 func TestRecoverSplitTxn(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	stores := []*testutil.TestingStore{s1, s2, s3}
 	ctx := context.Background()
 
@@ -381,7 +381,7 @@ func TestRecoverSplitTxn(t *testing.T) {
 func TestFetchTxnRecords(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
 	clock := clockwork.NewFakeClock()
-	store := sf.NewStore(t)
+	store := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 	sf.StartShard(t, ctx, store)
 	tc := txn.NewCoordinator(store, store.APIClient(), clock)
@@ -430,9 +430,9 @@ func TestFetchTxnRecords(t *testing.T) {
 
 func TestRunTxn(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)

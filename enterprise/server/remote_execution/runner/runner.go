@@ -506,6 +506,12 @@ func (r *taskRunner) GetIsolationType() string {
 	return r.PlatformProperties.WorkloadIsolationType
 }
 
+// PostCompletionStats returns observability data produced by the underlying
+// Container after Exec or Run have completed.
+func (r *taskRunner) PostCompletionStats() *espb.PostCompletionStats {
+	return r.Container.PostCompletionStats()
+}
+
 // shutdown runs any manual cleanup required to clean up processes before
 // removing a runner from the pool. This has no effect for isolation types
 // that fully isolate all processes started by the runner and remove them

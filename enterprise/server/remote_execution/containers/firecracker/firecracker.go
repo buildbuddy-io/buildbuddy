@@ -69,6 +69,7 @@ import (
 	"google.golang.org/grpc"
 
 	vmsupport_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/vmsupport"
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -732,6 +733,10 @@ type FirecrackerContainer struct {
 	}
 
 	useOCIFetcher bool
+
+	// postCompletionStats accumulates firecracker snapshot save stats
+	// during the latest Pause.
+	postCompletionStats *espb.PostCompletionStats
 }
 
 var _ container.VM = (*FirecrackerContainer)(nil)
@@ -2917,6 +2922,9 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	c.postCompletionStats = &espb.PostCompletionStats{
+		FirecrackerPostExecStats: &espb.FirecrackerPostExecStats{},
+	}
 	start := time.Now()
 	err := c.pause(ctx)
 
@@ -2931,6 +2939,13 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 
 	c.observeStageDuration("pause", pauseTime)
 	return err
+}
+
+// PostCompletionStats returns observability data accumulated during the most
+// recent call to Pause. Returns nil if Pause has not yet been called on this
+// container.
+func (c *FirecrackerContainer) PostCompletionStats() *espb.PostCompletionStats {
+	return c.postCompletionStats
 }
 
 func (c *FirecrackerContainer) pause(ctx context.Context) error {
@@ -2992,16 +3007,19 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		return status.WrapError(err, "unmount vbds")
 	}
 
+	c.postCompletionStats.FirecrackerPostExecStats.SnapshotIsDiff = snapDetails.snapshotType == diffSnapshotType
 	if shouldSaveSnapshot {
 		if err := c.saveSnapshot(ctx, snapDetails); err != nil {
-			if err := c.emitChunkedSnapshotMetrics(ctx); err != nil {
+			if err := c.emitChunkedSnapshotMetrics(ctx, snapDetails.snapshotType == diffSnapshotType); err != nil {
 				log.CtxWarningf(ctx, "Failed to emit snapshot metrics: %s", err)
 			}
 			return err
 		}
+		c.postCompletionStats.FirecrackerPostExecStats.SnapshotSavedLocally = snapDetails.saveLocalSnapshot
+		c.postCompletionStats.FirecrackerPostExecStats.SnapshotSavedRemotely = snapDetails.saveRemoteSnapshot
 	}
 
-	if err := c.emitChunkedSnapshotMetrics(ctx); err != nil {
+	if err := c.emitChunkedSnapshotMetrics(ctx, snapDetails.snapshotType == diffSnapshotType); err != nil {
 		log.CtxWarningf(ctx, "Failed to emit snapshot metrics: %s", err)
 	}
 
@@ -3013,7 +3031,7 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	return nil
 }
 
-func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context) error {
+func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context, isDiff bool) error {
 	if !snaputil.IsChunkedSnapshotSharingEnabled() {
 		return nil
 	}
@@ -3029,11 +3047,13 @@ func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context) e
 		chunkedStores[memoryChunkDirName] = c.memoryStore
 	}
 
+	var totalSnapshotBytes int64
+
 	for name, store := range chunkedStores {
 		chunks := store.SortedChunks()
 		chunkSourceCounter := make(map[snaputil.ChunkSource]int, 0)
 		bytesReadPerSource := make(map[snaputil.ChunkSource]int64, 0)
-		var dirtyBytes, dirtyChunkCount int64
+		var dirtyBytes, dirtyChunkCount, allBytes int64
 		for _, chunk := range chunks {
 			chunkSrc := chunk.Source()
 			chunkSourceCounter[chunkSrc]++
@@ -3044,11 +3064,17 @@ func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context) e
 			}
 
 			bytesReadPerSource[chunkSrc] += chunkSize
+			allBytes += chunkSize
 			dirty := store.Dirty(chunk.Offset)
 			if dirty {
 				dirtyBytes += chunkSize
 				dirtyChunkCount++
 			}
+		}
+		if isDiff {
+			totalSnapshotBytes += dirtyBytes
+		} else {
+			totalSnapshotBytes += allBytes
 		}
 
 		var chunkSrcLog strings.Builder
@@ -3075,6 +3101,7 @@ func (c *FirecrackerContainer) emitChunkedSnapshotMetrics(ctx context.Context) e
 
 		log.CtxDebugf(ctx, "For chunked %s snapshot, %d MB (%d chunks) were dirty%s", name, dirtyBytes/(1024*1024), dirtyChunkCount, chunkSrcLog.String())
 	}
+	c.postCompletionStats.FirecrackerPostExecStats.SnapshotSavedBytes = totalSnapshotBytes
 	return nil
 }
 

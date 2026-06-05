@@ -147,9 +147,8 @@ message Execution {
   int32 invocation_link_type = 19;
 }
 
-// Auxiliary metadata with BuildBuddy-specific information.
-// This is stored in the auxiliary_metadata field of
-// ExecutedActionMetadata.
+// Auxiliary metadata with BuildBuddy-specific information. Stored in
+// ExecutedActionMetadata.auxiliary_metadata.
 message ExecutionAuxiliaryMetadata {
   // Platform overrides set via remote header.
   build.bazel.remote.execution.v2.Platform platform_overrides = 1;
@@ -177,6 +176,35 @@ message ExecutionAuxiliaryMetadata {
 
   // Metadata containing more detail about the input fetch phase of execution.
   InputFetchMetadata input_fetch_detailed_stats = 11;
+}
+
+// Stats about work done after the COMPLETED operation is streamed back to the
+// client. Stored in ExecutedActionMetadata.auxiliary_metadata.
+message PostCompletionStats {
+  // Wall-clock time spent in Container.Pause. For VMs, this includes snapshot
+  // creation, chunk uploads, and VM teardown.
+  int64 pause_duration_usec = 1;
+
+  // Firecracker-specific post-execution stats. Nil for non-firecracker runners.
+  FirecrackerPostExecStats firecracker_post_exec_stats = 2;
+}
+
+message FirecrackerPostExecStats {
+  // Whether the snapshot was actually saved to the local cache. This is the
+  // resolved value after Pause, not the prediction reported in VMMetadata
+  // before Pause runs.
+  bool snapshot_saved_locally = 1;
+
+  // Whether the snapshot was actually saved to the remote cache.
+  bool snapshot_saved_remotely = 2;
+
+  // Whether the saved snapshot was a diff snapshot (vs full).
+  bool snapshot_is_diff = 3;
+
+  // Total uncompressed bytes written for the snapshot. For diff snapshots,
+  // this counts only the modified chunks (i.e. the bytes that materially
+  // changed since the base snapshot).
+  int64 snapshot_saved_bytes = 4;
 }
 
 message RunnerMetadata {

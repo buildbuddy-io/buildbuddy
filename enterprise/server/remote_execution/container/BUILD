@@ -11,6 +11,7 @@ go_library(
         "//enterprise/server/remote_execution/executor_auth",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/util/oci",
+        "//proto:execution_stats_go_proto",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
@@ -41,6 +42,7 @@ go_test(
     deps = [
         ":container",
         "//enterprise/server/util/oci",
+        "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/testutil/testauth",
