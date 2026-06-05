@@ -549,6 +549,108 @@ func TestFindNodeForAllocation(t *testing.T) {
 			// targetMax=2, 2 < 2 is false → filtered out → fallback picks nhid-3.
 			expected: &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-a"},
 		},
+		{
+			// 4 zones in 4-3-2-1 distribution. The absolute-min zone (zone-d,
+			// count 1) has no available candidate because its only store
+			// already holds the replica. The next-best target is zone-c
+			// (count 2), not zone-b (count 3). Even though zone-b's
+			// candidate has the best load score, zone count dominates.
+			desc:                "zone-aware-fall-back-to-next-under-zone",
+			minReplicasPerRange: 10,
+			usages: []*rfpb.StoreUsage{
+				// zone-a: 4 stores, all holding replicas.
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-a1", Zone: "zone-a"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-a2", Zone: "zone-a"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-a3", Zone: "zone-a"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-a4", Zone: "zone-a"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				// zone-b: 4 stores, 3 hold replicas. nhid-b4 is a candidate
+				// with very low load — would win on load tiebreak.
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-b1", Zone: "zone-b"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-b2", Zone: "zone-b"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-b3", Zone: "zone-b"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-b4", Zone: "zone-b"}, ReplicaCount: 1, TotalBytesUsed: 10, TotalBytesFree: 990},
+				// zone-c: 3 stores, 2 hold replicas. nhid-c3 is a candidate.
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-c1", Zone: "zone-c"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-c2", Zone: "zone-c"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-c3", Zone: "zone-c"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				// zone-d: 1 store, holds the replica. No candidate available.
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-d1", Zone: "zone-d"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+			},
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 2,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-a1")},
+					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-a2")},
+					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-a3")},
+					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-a4")},
+					{RangeId: 2, ReplicaId: 5, Nhid: proto.String("nhid-b1")},
+					{RangeId: 2, ReplicaId: 6, Nhid: proto.String("nhid-b2")},
+					{RangeId: 2, ReplicaId: 7, Nhid: proto.String("nhid-b3")},
+					{RangeId: 2, ReplicaId: 8, Nhid: proto.String("nhid-c1")},
+					{RangeId: 2, ReplicaId: 9, Nhid: proto.String("nhid-c2")},
+					{RangeId: 2, ReplicaId: 10, Nhid: proto.String("nhid-d1")},
+				},
+			},
+			// replicasByZone: a=4, b=3, c=2, d=1. Candidates: nhid-b4 (zone-b,
+			// count 3), nhid-c3 (zone-c, count 2). zone-c has fewer replicas
+			// so nhid-c3 wins despite nhid-b4 having far better load.
+			expected: &rfpb.NodeDescriptor{Nhid: "nhid-c3", Zone: "zone-c"},
+		},
+		{
+			// 3 zones with 3 distinct zone-counts (2-1-0). Adding the next
+			// replica must go to zone-c (count 0) to reach 2-1-1, even though
+			// zone-b's candidate has a lower replica count. Without the
+			// "absolute-min" preference, the load tiebreak would pick
+			// zone-b's nhid-4 and overshoot to 2-2-0.
+			desc:                "zone-aware-prefer-most-under-represented-zone",
+			minReplicasPerRange: 3,
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
+					ReplicaCount:   10,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
+					ReplicaCount:   10,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-b"},
+					ReplicaCount:   10,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				// zone-b candidate with low load — would beat nhid-5 by score
+				// if both were considered, but zone-b is already at currentMin+1.
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"},
+					ReplicaCount:   1,
+					TotalBytesUsed: 10,
+					TotalBytesFree: 990,
+				},
+				// zone-c is the empty zone (most under-represented).
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-c"},
+					ReplicaCount:   5,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+			},
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 2,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // zone-a
+					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")}, // zone-a
+					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")}, // zone-b
+				},
+			},
+			// replicasByZone: a=2, b=1, c=0. currentMin=0, currentMax=2.
+			// First try keeps only zone-c (count <= 0) → nhid-5.
+			expected: &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-c"},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
