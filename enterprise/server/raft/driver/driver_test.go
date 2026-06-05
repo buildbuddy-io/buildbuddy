@@ -593,7 +593,6 @@ func TestFindReplicaForRemoval(t *testing.T) {
 		desc                string
 		rd                  *rfpb.RangeDescriptor
 		replicaStateMap     map[uint64]constants.ReplicaState
-		replicasByStatus    *storemap.ReplicasByStatus
 		usages              []*rfpb.StoreUsage
 		expected            *rfpb.ReplicaDescriptor
 		minReplicasPerRange int
@@ -867,10 +866,7 @@ func TestFindReplicaForRemoval(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
-			rbs := tc.replicasByStatus
-			if rbs == nil {
-				rbs = &storemap.ReplicasByStatus{LiveReplicas: tc.rd.GetReplicas()}
-			}
+			rbs := &storemap.ReplicasByStatus{LiveReplicas: tc.rd.GetReplicas()}
 			storeMap := newTestStoreMap(tc.usages, rbs)
 			rq := &Queue{
 				storeMap:            storeMap,
@@ -886,10 +882,9 @@ func TestFindReplicaForRemoval(t *testing.T) {
 func TestRebalanceReplica(t *testing.T) {
 	localReplicaID := uint64(1)
 	tests := []struct {
-		desc             string
-		usages           []*rfpb.StoreUsage
-		replicasByStatus *storemap.ReplicasByStatus
-		rd               *rfpb.RangeDescriptor
+		desc   string
+		usages []*rfpb.StoreUsage
+		rd     *rfpb.RangeDescriptor
 		// minReplicas overrides minReplicasPerRange / minMetaRangeReplicas
 		// (which default to 3 when zero).
 		minReplicas int
@@ -1170,10 +1165,7 @@ func TestRebalanceReplica(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
-			rbs := tc.replicasByStatus
-			if rbs == nil {
-				rbs = &storemap.ReplicasByStatus{LiveReplicas: tc.rd.GetReplicas()}
-			}
+			rbs := &storemap.ReplicasByStatus{LiveReplicas: tc.rd.GetReplicas()}
 			storeMap := newTestStoreMap(tc.usages, rbs)
 			minReplicas := tc.minReplicas
 			if minReplicas == 0 {
@@ -1212,11 +1204,10 @@ func TestRebalanceLeases(t *testing.T) {
 	}
 	ctx := context.Background()
 	tests := []struct {
-		desc             string
-		usages           []*rfpb.StoreUsage
-		rd               *rfpb.RangeDescriptor
-		replicasByStatus *storemap.ReplicasByStatus
-		expected         *rebalanceOp
+		desc     string
+		usages   []*rfpb.StoreUsage
+		rd       *rfpb.RangeDescriptor
+		expected *rebalanceOp
 	}{
 		{
 			desc: "move-lease-to-node-far-below-mean",
@@ -1311,10 +1302,7 @@ func TestRebalanceLeases(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
-			rbs := tc.replicasByStatus
-			if rbs == nil {
-				rbs = &storemap.ReplicasByStatus{LiveReplicas: tc.rd.GetReplicas()}
-			}
+			rbs := &storemap.ReplicasByStatus{LiveReplicas: tc.rd.GetReplicas()}
 			storeMap := newTestStoreMap(tc.usages, rbs)
 			rq := &Queue{
 				storeMap:  storeMap,
