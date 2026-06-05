@@ -2,8 +2,9 @@
 //
 // These tests run the real `bb` binary as a subprocess against scratch
 // repos. They cover the network-free behaviors documented in cli/fix/fix.go:
-// MODULE.bazel bootstrap, buildifier formatting, hidden-directory skipping,
-// --diff being non-mutating, idempotency on re-run, and --help.
+// MODULE.bazel bootstrap, buildifier formatting, Gazelle BUILD generation,
+// hidden-directory skipping, --diff being non-mutating, idempotency on re-run,
+// and --help.
 //
 // Tests that would exercise language detection (which goes to BCR via
 // `bb add`) or repo-defined Gazelle (which would invoke real bazel) are
@@ -35,6 +36,16 @@ func fixWorkspace(t *testing.T, contents map[string]string) string {
 	return ws
 }
 
+func protoWorkspace(t *testing.T) string {
+	return fixWorkspace(t, map[string]string{
+		"MODULE.bazel": "module(name = \"x\")\n",
+		"proto/service.proto": "" +
+			"syntax = \"proto3\";\n" +
+			"package proto;\n" +
+			"message Ping {}\n",
+	})
+}
+
 // runFix runs `bb fix <args>` in ws and returns combined output.
 func runFix(t *testing.T, ws string, args ...string) (string, error) {
 	cmd := testcli.Command(t, ws, append([]string{"fix"}, args...)...)
@@ -64,6 +75,20 @@ func snapshot(t *testing.T, ws string) map[string]string {
 	})
 	require.NoError(t, err)
 	return out
+}
+
+func readBuildFile(t *testing.T, dir string) string {
+	t.Helper()
+	for _, name := range []string{"BUILD.bazel", "BUILD"} {
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		if os.IsNotExist(err) {
+			continue
+		}
+		require.NoError(t, err)
+		return string(b)
+	}
+	require.FailNow(t, "expected BUILD file to exist", "dir: %s", dir)
+	return ""
 }
 
 func TestFix_BootstrapsModuleBazel(t *testing.T) {
@@ -143,6 +168,34 @@ func TestFix_FormatsBzlFile(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, poorlyFormattedBzl, string(b),
 		".bzl files should be formatted directly by buildifier")
+}
+
+func TestFix_GeneratesBuildFileWithGazelle(t *testing.T) {
+	ws := protoWorkspace(t)
+
+	out, err := runFix(t, ws)
+	require.NoError(t, err, "output: %s", out)
+
+	contents := readBuildFile(t, filepath.Join(ws, "proto"))
+	require.Contains(t, contents, "proto_library(",
+		"Gazelle should generate a proto_library rule for .proto sources")
+	require.Contains(t, contents, "service.proto")
+}
+
+func TestFix_DiffShowsGazelleGeneratedBuildFile(t *testing.T) {
+	ws := protoWorkspace(t)
+	before := snapshot(t, ws)
+
+	out, err := runFix(t, ws, "--diff")
+	require.Error(t, err, "Gazelle diff mode should exit non-zero when changes are present")
+	after := snapshot(t, ws)
+
+	require.Equal(t, before, after, "--diff must not modify any files (output: %s)", out)
+	require.NoFileExists(t, filepath.Join(ws, "proto", "BUILD.bazel"))
+	require.NoFileExists(t, filepath.Join(ws, "proto", "BUILD"))
+	require.Contains(t, out, "proto_library(",
+		"Gazelle diff should show the proto_library rule it would generate")
+	require.Contains(t, out, "service.proto")
 }
 
 func TestFix_SkipsHiddenDirectories(t *testing.T) {
