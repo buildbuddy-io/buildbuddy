@@ -17,6 +17,7 @@ go_library(
         "@io_bazel_rules_go//go/platform:darwin": [
             "//enterprise/server/remote_execution/container",
             "//enterprise/server/util/vfscommon",
+            "//proto:execution_stats_go_proto",
             "//proto:remote_execution_go_proto",
             "//proto:vfs_go_proto",
             "//server/cache/dirtools",
@@ -25,6 +26,7 @@ go_library(
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/container",
             "//enterprise/server/util/vfscommon",
+            "//proto:execution_stats_go_proto",
             "//proto:remote_execution_go_proto",
             "//proto:vfs_go_proto",
             "//server/cache/dirtools",
@@ -42,6 +44,7 @@ go_library(
             "//third_party/singleflight",
             "@com_github_hanwen_go_fuse_v2//fs",
             "@com_github_hanwen_go_fuse_v2//fuse",
+            "@com_github_roaringbitmap_roaring//:roaring",
             "@org_golang_google_grpc//:grpc",
             "@org_golang_google_grpc//codes",
             "@org_golang_google_grpc//status",
@@ -50,6 +53,7 @@ go_library(
         "@io_bazel_rules_go//go/platform:windows": [
             "//enterprise/server/remote_execution/container",
             "//enterprise/server/util/vfscommon",
+            "//proto:execution_stats_go_proto",
             "//proto:remote_execution_go_proto",
             "//proto:vfs_go_proto",
             "//server/cache/dirtools",
@@ -85,6 +89,7 @@ go_test(
         "//server/util/prefix",
         "@com_github_google_go_cmp//cmp",
         "@com_github_hanwen_go_fuse_v2//fuse",
+        "@com_github_roaringbitmap_roaring//:roaring",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",

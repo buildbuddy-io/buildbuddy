@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
@@ -67,14 +68,20 @@ func setupVFSWithInputTree(t *testing.T, env environment.Env, tree *repb.Tree) (
 	err = os.MkdirAll(back, 0755)
 	require.NoError(t, err)
 
-	tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{})
+	tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{
+		LazyFetch:                true,
+		RecordInputFetchMetadata: true,
+	})
 	require.NoError(t, err)
 	_, err = tf.Start()
 	require.NoError(t, err)
 
 	server, err := vfs_server.New(env, back)
 	require.NoError(t, err)
-	_, err = server.Prepare(context.Background(), &container.FileSystemLayout{Inputs: tree}, tf)
+	_, err = server.Prepare(context.Background(), &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs:         tree,
+	}, tf)
 	require.NoError(t, err)
 
 	client := vfs_server.NewDirectClient(server)
@@ -905,7 +912,10 @@ func TestLayoutUpdate(t *testing.T) {
 		require.NoError(t, err)
 		_, err = tf.Start()
 		require.NoError(t, err)
-		invalidated, err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: newTree}, tf)
+		invalidated, err := server.Prepare(ctx, &container.FileSystemLayout{
+			DigestFunction: repb.DigestFunction_SHA256,
+			Inputs:         newTree,
+		}, tf)
 		require.NoError(t, err)
 		err = client.PrepareForTask(ctx, "foo", invalidated)
 		require.NoError(t, err)
@@ -930,7 +940,10 @@ func TestLayoutUpdate(t *testing.T) {
 		require.NoError(t, err)
 		_, err = tf.Start()
 		require.NoError(t, err)
-		invalidated, err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: newTree}, tf)
+		invalidated, err := server.Prepare(ctx, &container.FileSystemLayout{
+			DigestFunction: repb.DigestFunction_SHA256,
+			Inputs:         newTree,
+		}, tf)
 		require.NoError(t, err)
 		err = client.PrepareForTask(ctx, "foo", invalidated)
 		require.NoError(t, err)
@@ -953,7 +966,10 @@ func TestLayoutUpdate(t *testing.T) {
 		require.NoError(t, err)
 		_, err = tf.Start()
 		require.NoError(t, err)
-		invalidated, err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: newTree}, tf)
+		invalidated, err := server.Prepare(ctx, &container.FileSystemLayout{
+			DigestFunction: repb.DigestFunction_SHA256,
+			Inputs:         newTree,
+		}, tf)
 		require.NoError(t, err)
 		err = client.PrepareForTask(ctx, "foo", invalidated)
 		require.NoError(t, err)
@@ -1012,6 +1028,11 @@ func TestComputeStats(t *testing.T) {
 	require.EqualValues(t, 1, vfsStats.CasFilesAccessedCount)
 	require.EqualValues(t, 650, vfsStats.CasFilesSizeBytes)
 	require.EqualValues(t, 100, vfsStats.CasFilesAccessedBytes)
+	metadata := server.ComputeInputFetchMetadata()
+	require.NotNil(t, metadata)
+	bitmap := roaring.New()
+	require.NoError(t, bitmap.UnmarshalBinary(metadata.GetAccessedFileIndicesBitmap()))
+	require.Equal(t, []uint32{0}, bitmap.ToArray())
 }
 
 func TestRenameWhiteout(t *testing.T) {

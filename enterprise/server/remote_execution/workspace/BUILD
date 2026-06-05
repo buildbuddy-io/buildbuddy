@@ -17,6 +17,7 @@ go_library(
         "//enterprise/server/remote_execution/vfs",
         "//enterprise/server/util/ci_runner_util",
         "//enterprise/server/util/vfs_server",
+        "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/cache/dirtools",
         "//server/environment",
@@ -32,6 +33,7 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_gobwas_glob//:glob",
+        "@com_github_roaringbitmap_roaring//:roaring",
         "@io_opentelemetry_go_otel//attribute",
         "@org_golang_x_sync//errgroup",
     ] + select({

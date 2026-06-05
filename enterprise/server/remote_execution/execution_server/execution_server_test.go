@@ -3,10 +3,13 @@ package execution_server_test
 import (
 	"context"
 	"io"
+	"path"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
@@ -30,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -72,6 +76,19 @@ type schedulerServerMock struct {
 	canceledCount int
 	scheduleReqs  []*scpb.ScheduleTaskRequest
 	scheduleErr   error
+}
+
+type blockingActionCacheClient struct {
+	repb.ActionCacheClient
+}
+
+func (c *blockingActionCacheClient) GetActionResult(ctx context.Context, _ *repb.GetActionResultRequest, _ ...grpc.CallOption) (*repb.ActionResult, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (c *blockingActionCacheClient) UpdateActionResult(context.Context, *repb.UpdateActionResultRequest, ...grpc.CallOption) (*repb.ActionResult, error) {
+	return nil, status.FailedPreconditionError("unexpected UpdateActionResult call")
 }
 
 func (s *schedulerServerMock) GetPoolInfo(_ context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType platform.PoolType) (*interfaces.PoolInfo, error) {
@@ -207,6 +224,186 @@ func TestDispatch(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, task.GetRequestMetadata().GetToolDetails(), "ToolDetails should be nil")
 	assert.Equal(t, iid, task.GetRequestMetadata().GetToolInvocationId(), "invocation ID should be passed along")
+}
+
+func TestDispatch_LoadsVFSInputFetchProfileByPrimaryOutput(t *testing.T) {
+	env, _, _ := setupEnv(t)
+	ctx := context.Background()
+	s := env.GetRemoteExecutionService()
+
+	const iid = "10243d8a-a329-4f46-abfb-bfbceed12baa"
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: iid,
+	})
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	action := &repb.Action{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "enable-vfs", Value: "true"},
+		}},
+	}
+	cmd := &repb.Command{
+		Arguments:   []string{"test"},
+		OutputFiles: []string{"bazel-out/k8-fastbuild/bin/some/test"},
+	}
+	arn := uploadActionWithCommand(ctx, t, env, "test-instance", repb.DigestFunction_SHA256, action, cmd)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	uploadInputFetchProfile(ctx, t, env, "GR1", arn.GetInstanceName(), arn.GetDigestFunction(), platform.GetProto(action, cmd), nil, cmd, []uint32{2, 0})
+
+	taskID := arn.NewUploadString()
+	require.NoError(t, s.Dispatch(ctx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	}, action, taskID))
+
+	sched := env.GetSchedulerService().(*schedulerServerMock)
+	require.Equal(t, 1, len(sched.scheduleReqs))
+	task := &repb.ExecutionTask{}
+	require.NoError(t, proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task))
+	requireInputFetchBitmapEqual(t, task.GetPredictedInputFetchIndicesBitmap(), 0, 2)
+}
+
+func TestDispatch_BoundsVFSInputFetchProfileLookup(t *testing.T) {
+	flags.Set(t, "remote_execution.vfs_input_fetch_profile_lookup_timeout", 10*time.Millisecond)
+
+	env, _, _ := setupEnv(t)
+	ctx := context.Background()
+	s := env.GetRemoteExecutionService()
+
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: "10243d8a-a329-4f46-abfb-bfbceed12baa",
+	})
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	action := &repb.Action{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "enable-vfs", Value: "true"},
+		}},
+	}
+	cmd := &repb.Command{
+		Arguments:   []string{"test"},
+		OutputFiles: []string{"out.o"},
+	}
+	arn := uploadActionWithCommand(ctx, t, env, "test-instance", repb.DigestFunction_SHA256, action, cmd)
+	env.SetActionCacheClient(&blockingActionCacheClient{})
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	dispatchCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	start := time.Now()
+	require.NoError(t, s.Dispatch(dispatchCtx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	}, action, arn.NewUploadString()))
+	require.Less(t, time.Since(start), 500*time.Millisecond)
+
+	sched := env.GetSchedulerService().(*schedulerServerMock)
+	require.Equal(t, 1, len(sched.scheduleReqs))
+	task := &repb.ExecutionTask{}
+	require.NoError(t, proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task))
+	require.Empty(t, task.GetPredictedInputFetchIndicesBitmap())
+}
+
+func TestDispatch_DoesNotShareVFSInputFetchProfileAcrossWorkingDirectories(t *testing.T) {
+	env, _, _ := setupEnv(t)
+	ctx := context.Background()
+	s := env.GetRemoteExecutionService()
+
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: "10243d8a-a329-4f46-abfb-bfbceed12baa",
+	})
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	profileAction := &repb.Action{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "enable-vfs", Value: "true"},
+		}},
+	}
+	profileCmd := &repb.Command{
+		Arguments:        []string{"test"},
+		WorkingDirectory: "pkg/a",
+		OutputFiles:      []string{"out.o"},
+	}
+	dispatchAction := &repb.Action{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "enable-vfs", Value: "true"},
+		}},
+	}
+	dispatchCmd := &repb.Command{
+		Arguments:        []string{"test"},
+		WorkingDirectory: "pkg/b",
+		OutputFiles:      []string{"out.o"},
+	}
+	arn := uploadActionWithCommand(ctx, t, env, "test-instance", repb.DigestFunction_SHA256, dispatchAction, dispatchCmd)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	uploadInputFetchProfile(ctx, t, env, "GR1", arn.GetInstanceName(), arn.GetDigestFunction(), platform.GetProto(profileAction, profileCmd), nil, profileCmd, []uint32{0})
+
+	taskID := arn.NewUploadString()
+	require.NoError(t, s.Dispatch(ctx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	}, dispatchAction, taskID))
+
+	sched := env.GetSchedulerService().(*schedulerServerMock)
+	require.Equal(t, 1, len(sched.scheduleReqs))
+	task := &repb.ExecutionTask{}
+	require.NoError(t, proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task))
+	require.Empty(t, task.GetPredictedInputFetchIndicesBitmap())
+}
+
+func TestDispatch_DoesNotShareVFSInputFetchProfileAcrossPlatformOverrides(t *testing.T) {
+	env, _, _ := setupEnv(t)
+	ctx := context.Background()
+	s := env.GetRemoteExecutionService()
+
+	ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+		ToolDetails:      &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.3.0"},
+		ToolInvocationId: "10243d8a-a329-4f46-abfb-bfbceed12baa",
+	})
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+
+	action := &repb.Action{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "enable-vfs", Value: "true"},
+		}},
+	}
+	cmd := &repb.Command{
+		Arguments:   []string{"test"},
+		OutputFiles: []string{"out.o"},
+	}
+	arn := uploadActionWithCommand(ctx, t, env, "test-instance", repb.DigestFunction_SHA256, action, cmd)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	uploadInputFetchProfile(ctx, t, env, "GR1", arn.GetInstanceName(), arn.GetDigestFunction(), platform.GetProto(action, cmd), platformOverridesForTest(map[string]string{
+		"env-overrides": "MODE=profile",
+	}), cmd, []uint32{0})
+	ctx = withIncomingPlatformOverride(t, ctx, "env-overrides", "MODE=dispatch")
+
+	taskID := arn.NewUploadString()
+	require.NoError(t, s.Dispatch(ctx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	}, action, taskID))
+
+	sched := env.GetSchedulerService().(*schedulerServerMock)
+	require.Equal(t, 1, len(sched.scheduleReqs))
+	task := &repb.ExecutionTask{}
+	require.NoError(t, proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task))
+	require.Empty(t, task.GetPredictedInputFetchIndicesBitmap())
 }
 
 func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
@@ -756,6 +953,13 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			publishMoreMetadata:    true,
 		},
 		{
+			name:                      "StoresVFSInputFetchProfile",
+			platformOverrides:         map[string]string{"enable-vfs": "true"},
+			expectedExecutionUsage:    tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			inputFetchMetadata:        &espb.InputFetchMetadata{AccessedFileIndicesBitmap: inputFetchBitmapForTest(t, 0, 2)},
+			expectedInputFetchProfile: []uint32{0, 2},
+		},
+		{
 			name:                   "PublishMoreMetadata_PrimaryDBAndRedisDoubleWrite",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			publishMoreMetadata:    true,
@@ -811,19 +1015,21 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 }
 
 type publishTest struct {
-	name                     string
-	platformOverrides        map[string]string
-	flagOverrides            map[string]any
-	expectedSelfHosted       bool
-	expectedExecutionUsage   tables.UsageCounts
-	cachedResult, doNotCache bool
-	status                   error
-	exitCode                 int32
-	publishMoreMetadata      bool
-	redisRestart             bool
-	useDefaultPool           bool
-	recycleRunner            bool
-	flushAfterCleanup        bool
+	name                      string
+	platformOverrides         map[string]string
+	flagOverrides             map[string]any
+	expectedSelfHosted        bool
+	expectedExecutionUsage    tables.UsageCounts
+	cachedResult, doNotCache  bool
+	status                    error
+	exitCode                  int32
+	inputFetchMetadata        *espb.InputFetchMetadata
+	expectedInputFetchProfile []uint32
+	publishMoreMetadata       bool
+	redisRestart              bool
+	useDefaultPool            bool
+	recycleRunner             bool
+	flushAfterCleanup         bool
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
@@ -870,11 +1076,12 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	if test.recycleRunner {
 		platformProperties = append(platformProperties, &repb.Platform_Property{Name: "recycle-runner", Value: "true"})
 	}
-	arn := uploadAction(clientCtx, t, env, instanceName, digestFunction, &repb.Action{
+	action := &repb.Action{
 		Timeout:    &durationpb.Duration{Seconds: 10},
 		DoNotCache: test.doNotCache,
 		Platform:   &repb.Platform{Properties: platformProperties},
-	})
+	}
+	arn := uploadAction(clientCtx, t, env, instanceName, digestFunction, action)
 	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
 		InstanceName:   arn.GetInstanceName(),
 		ActionDigest:   arn.GetDigest(),
@@ -906,6 +1113,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			&repb.Platform_Property{Name: k, Value: v},
 		)
 	}
+	aux.InputFetchDetailedStats = test.inputFetchMetadata
 
 	if test.redisRestart {
 		r.Restart()
@@ -941,6 +1149,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 				EstimatedFreeDiskBytes: 3003,
 			},
 			ExecutorGroupId: executorGroupID,
+			TaskGroupId:     "group1",
 			Pool:            effectivePool,
 		}
 		usageStats.Timeline = &repb.UsageTimeline{
@@ -971,6 +1180,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		}
 		aux.SchedulingMetadata = &scpb.SchedulingMetadata{
 			ExecutorGroupId: executorGroupID,
+			TaskGroupId:     "group1",
 			Pool:            effectivePool,
 		}
 	}
@@ -1045,6 +1255,15 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	cachedExecuteResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), taskID)
 	require.NoError(t, err)
 	assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
+	if test.expectedInputFetchProfile != nil {
+		cmd := &repb.Command{
+			Arguments:   []string{"test"},
+			OutputFiles: []string{"bazel-out/k8-fastbuild/bin/some/test"},
+		}
+		profile := getInputFetchProfile(ctx, t, env, "group1", instanceName, digestFunction, platform.GetProto(action, cmd), platformOverridesForTest(test.platformOverrides), cmd)
+		require.NotNil(t, profile)
+		requireInputFetchBitmapEqual(t, profile.GetAccessedFileIndicesBitmap(), test.expectedInputFetchProfile...)
+	}
 
 	// Should also have recorded usage, unless redis restart wiped it.
 	ut := env.GetUsageTracker().(*testusage.Tracker)
@@ -2074,10 +2293,151 @@ func uploadActionWithCommand(ctx context.Context, t *testing.T, env *real_enviro
 	return digest.NewCASResourceName(ad, instanceName, df)
 }
 
+func inputFetchBitmapForTest(t *testing.T, indices ...uint32) []byte {
+	bitmap := roaring.New()
+	bitmap.AddMany(indices)
+	data, err := bitmap.MarshalBinary()
+	require.NoError(t, err)
+	return data
+}
+
+func requireInputFetchBitmapEqual(t *testing.T, data []byte, indices ...uint32) {
+	bitmap := roaring.New()
+	require.NoError(t, bitmap.UnmarshalBinary(data))
+	require.Equal(t, indices, bitmap.ToArray())
+}
+
+func uploadInputFetchProfile(ctx context.Context, t *testing.T, env *real_environment.RealEnv, groupID, instanceName string, df repb.DigestFunction_Value, platformProto, platformOverrides *repb.Platform, cmd *repb.Command, indices []uint32) {
+	profile := &espb.InputFetchMetadata{AccessedFileIndicesBitmap: inputFetchBitmapForTest(t, indices...)}
+	b, err := proto.Marshal(profile)
+	require.NoError(t, err)
+	rn := inputFetchProfileResourceNameForTest(t, groupID, instanceName, df, platformProto, platformOverrides, cmd)
+	require.NoError(t, cachetools.UploadActionResult(ctx, env.GetActionCacheClient(), rn, &repb.ActionResult{StdoutRaw: b}))
+}
+
+func getInputFetchProfile(ctx context.Context, t *testing.T, env *real_environment.RealEnv, groupID, instanceName string, df repb.DigestFunction_Value, platformProto, platformOverrides *repb.Platform, cmd *repb.Command) *espb.InputFetchMetadata {
+	rn := inputFetchProfileResourceNameForTest(t, groupID, instanceName, df, platformProto, platformOverrides, cmd)
+	ar, err := env.GetActionCacheClient().GetActionResult(ctx, &repb.GetActionResultRequest{
+		InstanceName:   rn.GetInstanceName(),
+		ActionDigest:   rn.GetDigest(),
+		DigestFunction: rn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+	profile := &espb.InputFetchMetadata{}
+	require.NoError(t, proto.Unmarshal(ar.GetStdoutRaw(), profile))
+	return profile
+}
+
+func primaryOutputPathForTest(cmd *repb.Command) string {
+	for _, path := range cmd.GetOutputPaths() {
+		if path != "" {
+			return path
+		}
+	}
+	for _, path := range cmd.GetOutputFiles() {
+		if path != "" {
+			return path
+		}
+	}
+	for _, path := range cmd.GetOutputDirectories() {
+		if path != "" {
+			return path
+		}
+	}
+	return ""
+}
+
+func normalizedWorkingDirectoryForTest(cmd *repb.Command) string {
+	workingDirectory := path.Clean(cmd.GetWorkingDirectory())
+	if workingDirectory == "." {
+		return ""
+	}
+	return workingDirectory
+}
+
+func platformOverridesForTest(overrides map[string]string) *repb.Platform {
+	if len(overrides) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(overrides))
+	for name := range overrides {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	platformProto := &repb.Platform{Properties: make([]*repb.Platform_Property, 0, len(names))}
+	for _, name := range names {
+		platformProto.Properties = append(platformProto.Properties, &repb.Platform_Property{
+			Name:  name,
+			Value: overrides[name],
+		})
+	}
+	return platformProto
+}
+
+func inputFetchProfilePlatformForTest(platformProto, platformOverrides *repb.Platform) *repb.Platform {
+	propertyValues := make(map[string]string)
+	addProperties := func(properties []*repb.Platform_Property) {
+		for _, prop := range properties {
+			name := strings.ToLower(strings.TrimSpace(prop.GetName()))
+			if name == "" {
+				continue
+			}
+			value := strings.TrimSpace(prop.GetValue())
+			if value == "" {
+				delete(propertyValues, name)
+				continue
+			}
+			propertyValues[name] = value
+		}
+	}
+	addProperties(platformProto.GetProperties())
+	addProperties(platformOverrides.GetProperties())
+
+	names := make([]string, 0, len(propertyValues))
+	for name := range propertyValues {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	platformProto = &repb.Platform{Properties: make([]*repb.Platform_Property, 0, len(names))}
+	for _, name := range names {
+		platformProto.Properties = append(platformProto.Properties, &repb.Platform_Property{
+			Name:  name,
+			Value: propertyValues[name],
+		})
+	}
+	return platformProto
+}
+
+func inputFetchProfileResourceNameForTest(t *testing.T, groupID, instanceName string, df repb.DigestFunction_Value, platformProto, platformOverrides *repb.Platform, cmd *repb.Command) *digest.ACResourceName {
+	platformBytes, err := proto.Marshal(inputFetchProfilePlatformForTest(platformProto, platformOverrides))
+	require.NoError(t, err)
+	key := strings.Join([]string{
+		"vfs-input-fetch-profile/v1",
+		groupID,
+		hash.String(instanceName),
+		hash.Bytes(platformBytes),
+		hash.String(normalizedWorkingDirectoryForTest(cmd)),
+		hash.String(primaryOutputPathForTest(cmd)),
+	}, "/")
+	d, err := digest.Compute(strings.NewReader(key), df)
+	require.NoError(t, err)
+	return digest.NewACResourceName(d, instanceName, df)
+}
+
 func withIncomingMetadata(t *testing.T, ctx context.Context, rmd *repb.RequestMetadata) context.Context {
 	b, err := proto.Marshal(rmd)
 	require.NoError(t, err)
 	return metadata.NewIncomingContext(ctx, metadata.Pairs(bazel_request.RequestMetadataKey, string(b)))
+}
+
+func withIncomingPlatformOverride(t *testing.T, ctx context.Context, name, value string) context.Context {
+	md, ok := metadata.FromIncomingContext(ctx)
+	require.True(t, ok)
+	md = md.Copy()
+	md.Set("x-buildbuddy-platform."+name, value)
+	return metadata.NewIncomingContext(ctx, md)
 }
 
 func configureExperiments(t *testing.T, env *testenv.TestEnv, flags map[string]bool) {

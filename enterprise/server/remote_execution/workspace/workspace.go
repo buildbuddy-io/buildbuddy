@@ -15,6 +15,7 @@ import (
 
 	_ "embed"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/overlayfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
@@ -37,6 +38,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cli_bundle "github.com/buildbuddy-io/buildbuddy/server/util/bb"
 )
@@ -56,6 +58,11 @@ var (
 	vfsVerboseFUSEOps      = flag.Bool("executor.vfs.verbose_fuse", false, "Enables low-level verbose logs in the go-fuse library.")
 	vfsLogFUSELatencyStats = flag.Bool("executor.vfs.log_fuse_latency_stats", false, "Enables logging of per-operation latency stats when VFS is unmounted. Implicitly enabled by --executor.vfs.verbose.")
 	vfsLogFUSEPerFileStats = flag.Bool("executor.vfs.log_fuse_per_file_stats", false, "Enables tracking and logging of per-file per-operation stats. Logged when VFS is unmounted.")
+)
+
+const (
+	predictedInputFetchParallelism = 16
+	maxPredictedInputFetches       = 10000
 )
 
 func setDeleteLimit() {
@@ -323,9 +330,12 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	opts := &dirtools.DownloadTreeOpts{CaseInsensitive: ws.Opts.CaseInsensitive}
 	if ws.vfs == nil {
 		opts.RootDir = ws.inputRoot()
+		opts.RecordInputFetchMetadata = *recordInputFetchMetadata && slices.Contains(ws.task.GetExperiments(), "remote_execution.record_input_fetch_metadata")
+	} else {
+		opts.LazyFetch = true
+		opts.RecordInputFetchMetadata = true
 	}
 	opts.ChunkedInputFiles = slices.Contains(ws.task.GetExperiments(), "executor.download_inputs_chunked")
-	opts.RecordInputFetchMetadata = *recordInputFetchMetadata && slices.Contains(ws.task.GetExperiments(), "remote_execution.record_input_fetch_metadata")
 	if ws.Opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
@@ -340,6 +350,11 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	inputsState, err := tf.Start()
 	if err != nil {
 		return status.WrapErrorf(err, "could not start tree fetcher")
+	}
+	if ws.vfs != nil {
+		if err := ws.prefetchPredictedInputs(ctx); err != nil {
+			return err
+		}
 	}
 
 	// Inform VFS about the layout of the input tree and give it access to the
@@ -374,6 +389,39 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	}
 
 	return nil
+}
+
+func (ws *Workspace) prefetchPredictedInputs(ctx context.Context) error {
+	bitmapData := ws.task.GetPredictedInputFetchIndicesBitmap()
+	if len(bitmapData) == 0 {
+		return nil
+	}
+	bitmap := roaring.New()
+	if err := bitmap.UnmarshalBinary(bitmapData); err != nil {
+		log.CtxWarningf(ctx, "Failed to unmarshal predicted VFS input bitmap: %s", err)
+		return nil
+	}
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(predictedInputFetchParallelism)
+	iter := bitmap.Iterator()
+	for i := 0; iter.HasNext() && i < maxPredictedInputFetches; i++ {
+		inputIndex := iter.Next()
+		eg.Go(func() error {
+			found, err := ws.treeFetcher.FetchByBitsetIndex(egCtx, inputIndex)
+			if err != nil {
+				if egCtx.Err() != nil {
+					return egCtx.Err()
+				}
+				log.CtxWarningf(ctx, "Failed to prefetch predicted VFS input index %d: %s", inputIndex, err)
+				return nil
+			}
+			if !found {
+				log.CtxDebugf(ctx, "Skipping predicted VFS input index %d because it is not present in the input tree", inputIndex)
+			}
+			return nil
+		})
+	}
+	return eg.Wait()
 }
 
 func (ws *Workspace) AddRemoteRunnerBinaries(ctx context.Context) error {
@@ -649,12 +697,26 @@ func (ws *Workspace) TaskFinished() (*dirtools.TransferInfo, error) {
 	if tf == nil {
 		return nil, status.FailedPreconditionError("tree fetcher not set")
 	}
-	// TODO(vadim): cancel unfinished transfers instead of waiting for them
-	txInfo, err := tf.Wait()
+	txInfo, err := tf.Finish()
+	if ws.vfsServer != nil {
+		mergeInputFetchMetadata(txInfo, ws.vfsServer.ComputeInputFetchMetadata())
+	}
 	ws.mu.Lock()
 	ws.treeFetcher = nil
 	ws.mu.Unlock()
 	return txInfo, err
+}
+
+func mergeInputFetchMetadata(txInfo *dirtools.TransferInfo, metadata *espb.InputFetchMetadata) {
+	if txInfo == nil || metadata == nil {
+		return
+	}
+	if txInfo.InputFetchMetadata == nil {
+		txInfo.InputFetchMetadata = &espb.InputFetchMetadata{}
+	}
+	if len(metadata.GetAccessedFileIndicesBitmap()) > 0 {
+		txInfo.InputFetchMetadata.AccessedFileIndicesBitmap = metadata.GetAccessedFileIndicesBitmap()
+	}
 }
 
 // Clean removes files and directories in the workspace which are not preserved

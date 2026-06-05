@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 )
@@ -19,6 +20,10 @@ type Server struct {
 }
 
 func (s *Server) ComputeStats() *repb.VfsStats {
+	return nil
+}
+
+func (s *Server) ComputeInputFetchMetadata() *espb.InputFetchMetadata {
 	return nil
 }
 
