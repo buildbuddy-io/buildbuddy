@@ -187,7 +187,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
           bandwidth.
           <br />
           <br />
-          <a className="button" href="https://www.buildbuddy.io/docs/cache-proxy">
+          <a className="button" href="https://www.buildbuddy.io/docs/enterprise-proxy">
             Read the docs to get started
           </a>
         </p>
