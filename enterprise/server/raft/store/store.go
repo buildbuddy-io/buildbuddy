@@ -4038,15 +4038,14 @@ func (s *Store) snapshotReplicaLocations(nhid string) map[uint64]prometheus.Labe
 // start key. Range data is keyed under "PT<partition_id>/..."; returns "" for
 // ranges with no partition prefix (e.g., the meta range).
 func partitionIDFromRangeStart(key []byte) string {
-	prefix := []byte(filestore.PartitionDirectoryPrefix)
-	if !bytes.HasPrefix(key, prefix) {
-		return ""
+	rest, found := bytes.CutPrefix(key, []byte(filestore.PartitionDirectoryPrefix))
+	if !found {
+		return "unknown"
 	}
-	rest := key[len(prefix):]
 	if before, _, ok := bytes.Cut(rest, []byte{'/'}); ok {
 		return string(before)
 	}
-	return ""
+	return "unknown"
 }
 
 func (s *Store) setupPartitions(ctx context.Context) {
