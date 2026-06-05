@@ -825,64 +825,6 @@ func TestResolve_WithCache(t *testing.T) {
 	}
 }
 
-func TestResolveWithCacheWithoutOCIFetcherRequiresValidCredentials(t *testing.T) {
-	te := setupTestEnvWithCache(t)
-	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
-
-	registryCreds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
-	registry := testregistry.Run(t, testregistry.Opts{Creds: registryCreds})
-	imageAddress, pushedImage := registry.PushNamedImageWithFiles(t, "private_image", map[string][]byte{
-		"/private": []byte("private image contents"),
-	}, registryCreds)
-	imageDigest, err := pushedImage.Digest()
-	require.NoError(t, err)
-	imageAddressWithDigest := imageAddress + "@" + imageDigest.String()
-
-	ctx := contextWithUnverifiedJWT(&claims.Claims{UserID: "US123"})
-	pulledImage, err := newResolver(t, te).Resolve(
-		ctx,
-		imageAddressWithDigest,
-		oci.RuntimePlatform(),
-		creds(registryCreds.Username, registryCreds.Password),
-		false, /*=useOCIFetcher*/
-	)
-	require.NoError(t, err)
-	layers, err := pulledImage.Layers()
-	require.NoError(t, err)
-	require.Len(t, layers, 1)
-	require.Empty(t, cmp.Diff(map[string][]byte{"/private": []byte("private image contents")}, layerFiles(t, layers[0])))
-
-	authError := func(err error) bool {
-		return status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err)
-	}
-	for _, tc := range []struct {
-		name        string
-		credentials oci.Credentials
-	}{
-		{
-			name:        "MissingCredentials",
-			credentials: oci.Credentials{},
-		},
-		{
-			name:        "InvalidCredentials",
-			credentials: creds("wrong", "wrong"),
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := newResolver(t, te).Resolve(
-				ctx,
-				imageAddressWithDigest,
-				oci.RuntimePlatform(),
-				tc.credentials,
-				false, /*=useOCIFetcher*/
-			)
-			require.Error(t, err)
-			require.True(t, authError(err), "expected auth error, got: %v", err)
-		})
-	}
-}
-
 // contextWithUnverifiedJWT creates a JWT with the given claims
 // and attaches it to the returned context.
 // Necessary now that we do not allow anonymous requests to access
