@@ -1298,6 +1298,135 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				Nhid:      proto.String("nhid-2"),
 			},
 		},
+		{
+			// 4 replicas in 2-1-1 distribution. zone-a (count 2, the max) has
+			// no removable replicas because both zone-a replicas are current
+			// and numUpToDate == quorum, so only behind replicas (in zone-b
+			// and zone-c) are removable. The current code filters candidates
+			// to the absolute-max zone (zone-a) → empty → returns nil instead
+			// of removing the most-evictable behind replica.
+			desc:                "zone-aware-fall-back-when-max-zone-not-removable",
+			minReplicasPerRange: 3,
+			rd: &rfpb.RangeDescriptor{
+				RangeId:                2,
+				LastAddedReplicaId:     proto.Uint64(4),
+				LastReplicaAddedAtUsec: proto.Int64(outsideGracePeriodTS),
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local, zone-a
+					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")}, // zone-a
+					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")}, // zone-b
+					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-4")}, // zone-c
+				},
+			},
+			replicaStateMap: map[uint64]constants.ReplicaState{
+				1: constants.ReplicaStateCurrent,
+				2: constants.ReplicaStateCurrent,
+				3: constants.ReplicaStateBehind,
+				4: constants.ReplicaStateBehind,
+			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-4")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"},
+					ReplicaCount:   10,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"},
+					ReplicaCount:   10,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				// nhid-3 has the highest load → most evictable among removable.
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-b"},
+					ReplicaCount:   15,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-c"},
+					ReplicaCount:   5,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+			},
+			// Removable = {r3, r4} (the behind replicas). zone-b and zone-c
+			// both have count 1. Pick the worst by load: r3 (replicaCount=15).
+			expected: &rfpb.ReplicaDescriptor{
+				RangeId:   2,
+				ReplicaId: 3,
+				Nhid:      proto.String("nhid-3"),
+			},
+		},
+		{
+			// 6 replicas in 3-2-1 distribution. zone-a (count 3, the max) has
+			// no removable replicas. zone-b (count 2) and zone-c (count 1)
+			// both have removable replicas. We should fall back to zone-b
+			// (the next-most-over-represented zone among candidates), not
+			// to zone-c. The current code filters to the absolute-max zone
+			// (zone-a) → empty → returns nil.
+			desc:                "zone-aware-fall-back-to-next-most-over-zone",
+			minReplicasPerRange: 5,
+			rd: &rfpb.RangeDescriptor{
+				RangeId:                2,
+				LastAddedReplicaId:     proto.Uint64(6),
+				LastReplicaAddedAtUsec: proto.Int64(outsideGracePeriodTS),
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local, zone-a
+					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")}, // zone-a
+					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")}, // zone-a
+					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-4")}, // zone-b
+					{RangeId: 2, ReplicaId: 5, Nhid: proto.String("nhid-5")}, // zone-b
+					{RangeId: 2, ReplicaId: 6, Nhid: proto.String("nhid-6")}, // zone-c
+				},
+			},
+			replicaStateMap: map[uint64]constants.ReplicaState{
+				1: constants.ReplicaStateCurrent,
+				2: constants.ReplicaStateCurrent,
+				3: constants.ReplicaStateCurrent,
+				4: constants.ReplicaStateBehind,
+				5: constants.ReplicaStateBehind,
+				6: constants.ReplicaStateBehind,
+			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 2, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+					{RangeId: 2, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 2, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 2, ReplicaId: 4, Nhid: proto.String("nhid-4")},
+					{RangeId: 2, ReplicaId: 5, Nhid: proto.String("nhid-5")},
+					{RangeId: 2, ReplicaId: 6, Nhid: proto.String("nhid-6")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-1", Zone: "zone-a"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-2", Zone: "zone-a"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-3", Zone: "zone-a"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				// nhid-4 (zone-b): higher load than nhid-5.
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-4", Zone: "zone-b"}, ReplicaCount: 20, TotalBytesUsed: 100, TotalBytesFree: 900},
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-5", Zone: "zone-b"}, ReplicaCount: 10, TotalBytesUsed: 100, TotalBytesFree: 900},
+				// nhid-6 (zone-c): worst load overall — would win on load
+				// alone, but zone-c is more under-represented than zone-b.
+				{Node: &rfpb.NodeDescriptor{Nhid: "nhid-6", Zone: "zone-c"}, ReplicaCount: 50, TotalBytesUsed: 100, TotalBytesFree: 900},
+			},
+			// Removable = {r4, r5, r6} (the behind replicas). Among them,
+			// zone-b has count 2 and zone-c has count 1. We want zone-b,
+			// then the worst-fit there: r4 (replicaCount=20).
+			expected: &rfpb.ReplicaDescriptor{
+				RangeId:   2,
+				ReplicaId: 4,
+				Nhid:      proto.String("nhid-4"),
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {

@@ -1365,11 +1365,19 @@ func (rq *Queue) findReplicaForRemoval(rd *rfpb.RangeDescriptor, replicaStateMap
 	for _, repl := range removableReplicas {
 		removableSet.Add(repl.GetNhid())
 	}
-	// Get all replica stores to be able to get per-zone counts.
+	// Find the local replica's nhid (if any) so we can skip it as a
+	// candidate.
+	replicaByNhid := make(map[string]*rfpb.ReplicaDescriptor, len(rd.GetReplicas()))
 	replicaNhids := make([]string, 0, len(rd.GetReplicas()))
+	var localNhid string
 	for _, repl := range rd.GetReplicas() {
+		replicaByNhid[repl.GetNhid()] = repl
 		replicaNhids = append(replicaNhids, repl.GetNhid())
+		if repl.GetReplicaId() == localReplicaID {
+			localNhid = repl.GetNhid()
+		}
 	}
+	// Get all replica stores to be able to get per-zone counts.
 	stores := rq.storeMap.GetStoresWithStatsFromIDs(replicaNhids)
 
 	replicasByZone := make(map[string]int)
@@ -1377,7 +1385,7 @@ func (rq *Queue) findReplicaForRemoval(rd *rfpb.RangeDescriptor, replicaStateMap
 	for _, su := range stores.Usages {
 		replicasByZone[su.GetNode().GetZone()]++
 		nhid := su.GetNode().GetNhid()
-		if !removableSet.Contains(nhid) {
+		if !removableSet.Contains(nhid) || nhid == localNhid {
 			continue
 		}
 		candidates = append(candidates, &candidate{
@@ -1389,37 +1397,22 @@ func (rq *Queue) findReplicaForRemoval(rd *rfpb.RangeDescriptor, replicaStateMap
 			rendezvousScore:       rendezvousScore(rd.GetRangeId(), nhid),
 		})
 	}
-
-	// Zone-aware filtering: prefer removing from over-represented zones.
-	curMaxPerZone := slices.Max(slices.Collect(maps.Values(replicasByZone)))
-	filtered := candidates[:0]
-	for _, c := range candidates {
-		if replicasByZone[c.usage.GetNode().GetZone()] >= curMaxPerZone {
-			filtered = append(filtered, c)
-		}
-	}
-	candidates = filtered
 	if len(candidates) == 0 {
 		// cannot find candidates for removal
 		return nil
 	}
 
-	slices.SortFunc(candidates, compareByScoreAndID)
-
-	for _, c := range candidates {
-		for _, repl := range rd.GetReplicas() {
-			if repl.GetNhid() == c.usage.GetNode().GetNhid() {
-				if repl.GetReplicaId() != localReplicaID {
-					return repl
-				}
-				// For simplicity, we don't want to select the local replica
-				// as the removal target. Let's go to the next worst candidate.
-				// TODO: support lease transfer so we can remove local replica.
-				break
-			}
+	// Zone-aware selection: prefer the candidate in the most over-represented
+	// zone, breaking ties by load (worst-fit first).
+	worst := slices.MinFunc(candidates, func(a, b *candidate) int {
+		za := replicasByZone[a.usage.GetNode().GetZone()]
+		zb := replicasByZone[b.usage.GetNode().GetZone()]
+		if c := cmp.Compare(za, zb); c != 0 {
+			return -c
 		}
-	}
-	return nil
+		return compareByScoreAndID(a, b)
+	})
+	return replicaByNhid[worst.nhid]
 }
 
 func (rq *Queue) removeReplica(ctx context.Context, rd *rfpb.RangeDescriptor, localRepl IReplica) *change {
