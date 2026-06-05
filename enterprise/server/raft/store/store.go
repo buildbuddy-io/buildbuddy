@@ -721,9 +721,14 @@ func (s *Store) AdminUpdateDescriptor(ctx context.Context, req *rfpb.AdminUpdate
 	return &rfpb.AdminUpdateDescriptorResponse{}, err
 }
 
-// getLocalSystemKeysInMetaRangeForDebug returns a map of key, value pair of
-// system keys in the pebble db except for partition descriptors.
-func (s *Store) getLastUsedIDsInMetaRangeForDebug() (map[string]uint64, error) {
+type keyValue struct {
+	key   string
+	value uint64
+}
+
+// getLocalSystemKeysInMetaRangeForDebug returns a slice of system keys and
+// their values in the pebble db except for partition descriptors.
+func (s *Store) getLastUsedIDsInMetaRangeForDebug() ([]keyValue, error) {
 	db, err := s.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -739,26 +744,13 @@ func (s *Store) getLastUsedIDsInMetaRangeForDebug() (map[string]uint64, error) {
 		return nil, err
 	}
 
-	res := make(map[string]uint64)
+	var res []keyValue
 	for iter.First(); iter.Valid(); iter.Next() {
 		if bytes.Contains(iter.Key(), constants.LastReplicaIDKeyPrefix) || bytes.Contains(iter.Key(), constants.LastRangeIDKey) {
-			res[string(iter.Key())] = binary.LittleEndian.Uint64(iter.Value())
-		}
-	}
-
-	// TODO: remove this once the LastReplicaIDKey and LastRangeIDKey are migrated
-	// https: //github.com/buildbuddy-io/buildbuddy-internal/issues/6563
-	start, end = keys.Range(constants.SystemPrefix)
-	iter, err = db.NewIter(&pebble.IterOptions{
-		LowerBound: start,
-		UpperBound: end,
-	})
-	if err != nil {
-		return nil, err
-	}
-	for iter.First(); iter.Valid(); iter.Next() {
-		if bytes.Contains(iter.Key(), constants.LastReplicaIDKeyPrefix) || bytes.Contains(iter.Key(), constants.LastRangeIDKey) {
-			res[string(iter.Key())] = binary.LittleEndian.Uint64(iter.Value())
+			res = append(res, keyValue{
+				key:   string(iter.Key()),
+				value: binary.LittleEndian.Uint64(iter.Value()),
+			})
 		}
 	}
 	return res, nil
@@ -839,8 +831,8 @@ func (s *Store) Statusz(ctx context.Context) string {
 	} else if len(sysKeys) == 0 {
 		buf.WriteString("no system keys found\n")
 	} else {
-		for _, key := range slices.Sorted(maps.Keys(sysKeys)) {
-			buf.WriteString(fmt.Sprintf("\t%q: %d\n", key, sysKeys[key]))
+		for _, entry := range sysKeys {
+			buf.WriteString(fmt.Sprintf("\t%q: %d\n", entry.key, entry.value))
 		}
 	}
 	buf.WriteString("</pre>")
