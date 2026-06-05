@@ -31,7 +31,7 @@ func TestLookupRangeDescriptor(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	// Start shard to set up meta range
@@ -65,7 +65,7 @@ func TestLookupRangeDescriptorsForPartition(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	// Start shard to set up meta range
@@ -117,7 +117,7 @@ func TestFetchPartitionDescriptors(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
 	ctx := context.Background()
 
 	// Start shard to set up meta range
@@ -192,8 +192,10 @@ func TestDuplicateApplyOnReplicaRetry(t *testing.T) {
 	}
 
 	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStoreWithGRPCServerConfig(t, grpc_server.GRPCServerConfig{
-		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{interceptor},
+	s1 := sf.NewStore(t, testutil.StoreOptions{
+		GrpcServerConfig: grpc_server.GRPCServerConfig{
+			ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{interceptor},
+		},
 	})
 	ctx := context.Background()
 
