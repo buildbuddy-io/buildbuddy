@@ -329,6 +329,23 @@ func TestScoringMatchExplicitFilename(t *testing.T) {
 	assert.InDelta(t, 1.0, exactScore, 0.1)
 }
 
+func TestScoringNilDocumentMatchUsesTokenizerFieldLength(t *testing.T) {
+	ctx := context.Background()
+	q, err := NewReQuery(ctx, "file:abc")
+	require.NoError(t, err)
+
+	scorer := q.Scorer()
+	require.NotNil(t, scorer)
+
+	doc := newTestDocument(t, map[string][]byte{
+		"id":       []byte("1"),
+		"filename": []byte("abcde"),
+		"content":  []byte("foo"),
+	})
+	exactScore := scorer.Score(nil, doc)
+	assert.Equal(t, bm25Score(2, 6), exactScore)
+}
+
 func TestScorerWithNoMatchers(t *testing.T) {
 	ctx := context.Background()
 	q, err := NewReQuery(ctx, "lang:java")

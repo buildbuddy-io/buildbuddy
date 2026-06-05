@@ -163,13 +163,14 @@ func (fs *fieldScorer) upperBoundScoreInternal(docMatch types.DocumentMatch) (ma
 func (fs *fieldScorer) exactScoreInternal(docMatch types.DocumentMatch, doc types.Document) (matchCount, tokenCount int) {
 	switch fs.op {
 	case Match:
-		contents := doc.Field(fs.fieldName).Contents()
+		field := doc.Field(fs.fieldName)
+		contents := field.Contents()
 		m := match(fs.matcher.Clone(), contents)
 		matchCount = len(m) * fs.weight
 		if docMatch != nil {
 			tokenCount = int(docMatch.FieldLength(fs.fieldName)) * fs.weight
 		} else {
-			tokenCount = len(strings.Fields(string(contents))) * fs.weight
+			tokenCount = fieldLength(field) * fs.weight
 		}
 		return matchCount, tokenCount
 	case Or:
@@ -201,11 +202,22 @@ func (fs *fieldScorer) exactScoreInternal(docMatch types.DocumentMatch, doc type
 	}
 }
 
+func fieldLength(field types.Field) int {
+	tokenizer := field.Schema().MakeTokenizer()
+	tokenizer.Reset(bytes.NewReader(field.Contents()))
+	for {
+		if err := tokenizer.Next(); err != nil {
+			break
+		}
+	}
+	return int(tokenizer.TermFrequencyStats().Occurrences)
+}
+
 func bm25Score(f_qi_d, D float64) float64 {
 	// See https://en.wikipedia.org/wiki/Okapi_BM25#The_ranking_function for
 	// the formula for BM25 scoring. k1 and b are left at "default" values here, and haven't been
-	// tuned. Query scoring currently passes a fixed D=1 because we use index-side term
-	// frequencies without loading full stored fields to count document tokens.
+	// tuned. Query scoring passes a field-length based normalization value computed from
+	// the indexed fields that contributed to the score.
 	k1 := 1.2
 	b := 0.75
 	return (f_qi_d * (k1 + 1)) / (f_qi_d + k1*(1-b+b*D))

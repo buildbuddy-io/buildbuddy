@@ -34,8 +34,6 @@ const (
 	generationKey       = "__generation__"
 )
 
-const fieldStatsPointLookupThreshold = 1024
-
 type postingLists map[string]*posting.BuilderList
 
 // Writer is not thread-safe. A single instance should not be used concurrently.
@@ -832,21 +830,23 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
 	return fields, nil
 }
 
-func (r *Reader) getFieldLengths(docID uint64) (map[string]uint32, error) {
-	key := r.docStatsKey(docID)
-	fieldLengthsBytes, closer, err := r.db.Get(key)
+func (r *Reader) getStoredField(docID uint64, fieldName string) (types.Field, error) {
+	key := r.storedFieldKey(docID, fieldName)
+	value, closer, err := r.db.Get(key)
 	if err != nil {
 		if err == pebble.ErrNotFound {
-			return map[string]uint32{}, nil
+			return r.schema.Field(fieldName).MakeField(nil), nil
 		}
 		return nil, err
 	}
 	defer closer.Close()
 	if tracker := performance.TrackerFromContext(r.ctx); tracker != nil {
-		tracker.Add(performance.FIELD_STATS_KEYS_READ, 1)
-		tracker.Add(performance.FIELD_STATS_BYTES_READ, int64(len(key)+len(fieldLengthsBytes)))
+		tracker.Add(performance.DOC_KEYS_SCANNED, 1)
+		tracker.Add(performance.DOC_BYTES_READ, int64(len(key)+len(value)))
 	}
-	return unmarshalFieldLengths(fieldLengthsBytes)
+	fieldVal := make([]byte, len(value))
+	copy(fieldVal, value)
+	return r.schema.Field(fieldName).MakeField(fieldVal), nil
 }
 
 func (r *Reader) populateFieldLengths(docMatches map[uint64]*docMatch) error {
@@ -860,19 +860,24 @@ func (r *Reader) populateFieldLengths(docMatches map[uint64]*docMatch) error {
 		}
 	}()
 
-	if len(docMatches) < fieldStatsPointLookupThreshold {
-		for docID, docMatch := range docMatches {
-			fieldLengths, err := r.getFieldLengths(docID)
-			if err != nil {
-				return err
-			}
-			docMatch.fieldLengths = fieldLengths
-		}
-		return nil
+	// Look up each requested doc's stats key directly via a single iterator,
+	// seeking in lexically-sorted key order. Cost is O(len(docMatches)) seeks
+	// regardless of how many docs the namespace holds -- unlike a full range
+	// scan, whose cost grows with the corpus.
+	type target struct {
+		key   []byte
+		docID uint64
 	}
+	targets := make([]target, 0, len(docMatches))
+	for docID := range docMatches {
+		targets = append(targets, target{key: r.docStatsKey(docID), docID: docID})
+	}
+	slices.SortFunc(targets, func(a, b target) int {
+		return bytes.Compare(a.key, b.key)
+	})
 
 	iter, err := r.db.NewIter(&pebble.IterOptions{
-		LowerBound: fmt.Appendf(nil, "%s:sta:", r.namespace),
+		LowerBound: targets[0].key,
 		UpperBound: fmt.Appendf(nil, "%s:sta:\xff", r.namespace),
 	})
 	if err != nil {
@@ -883,25 +888,18 @@ func (r *Reader) populateFieldLengths(docMatches map[uint64]*docMatch) error {
 		r.recordIterStats(iter, docStatsField)
 	}()
 
-	k := key{}
-	remaining := len(docMatches)
-	for iter.First(); iter.Valid() && remaining > 0; iter.Next() {
-		if err := k.FromBytes(iter.Key()); err != nil {
-			return err
+	for _, t := range targets {
+		if !iter.SeekGE(t.key) {
+			break // nothing at or beyond this key
 		}
-		if k.keyType != docStatsField {
-			return status.FailedPreconditionErrorf("key %q not doc stats field!", iter.Key())
-		}
-		docMatch, ok := docMatches[k.DocID()]
-		if !ok {
-			continue
+		if !bytes.Equal(iter.Key(), t.key) {
+			continue // no stats key for this doc (e.g. deleted); leave unset
 		}
 		fieldLengths, err := unmarshalFieldLengths(iter.Value())
 		if err != nil {
 			return err
 		}
-		docMatch.fieldLengths = fieldLengths
-		remaining--
+		docMatches[t.docID].fieldLengths = fieldLengths
 	}
 	return nil
 }
@@ -1123,14 +1121,9 @@ func (d lazyDoc) Field(name string) types.Field {
 	if f, ok := d.fields[name]; ok {
 		return f
 	}
-	fm, err := d.r.getStoredFields(d.id, name)
+	field, err := d.r.getStoredField(d.id, name)
 	if err == nil {
-		field, ok := fm[name]
-		if !ok {
-			d.fields[name] = d.r.schema.Field(name).MakeField(nil)
-		} else {
-			d.fields[name] = field
-		}
+		d.fields[name] = field
 	}
 	return d.fields[name]
 }

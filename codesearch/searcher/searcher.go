@@ -3,8 +3,9 @@ package searcher
 import (
 	"container/heap"
 	"context"
-	"slices"
+	"runtime"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
@@ -58,18 +59,25 @@ type scoredDoc struct {
 	score float64
 }
 
-func lowestScoredDoc(pq priority_queue.PriorityQueue[scoredDoc]) (scoredDoc, bool) {
+func lowerScoredDoc(a, b scoredDoc) bool {
+	if a.score == b.score {
+		return a.docID > b.docID
+	}
+	return a.score < b.score
+}
+
+func lowestScoredDoc(pq priority_queue.PriorityQueue[scoredDoc]) (int, scoredDoc, bool) {
 	if len(pq) == 0 {
-		return scoredDoc{}, false
+		return 0, scoredDoc{}, false
 	}
 	// priority_queue is a max heap, so the lowest priority item is one of the leaves.
 	minIndex := len(pq) / 2
 	for i := minIndex + 1; i < len(pq); i++ {
-		if pq[i].Value().score < pq[minIndex].Value().score {
+		if lowerScoredDoc(pq[i].Value(), pq[minIndex].Value()) {
 			minIndex = i
 		}
 	}
-	return pq[minIndex].Value(), true
+	return minIndex, pq[minIndex].Value(), true
 }
 
 func pushOrReplaceTopDoc(pq *priority_queue.PriorityQueue[scoredDoc], doc scoredDoc, limit int) {
@@ -80,26 +88,43 @@ func pushOrReplaceTopDoc(pq *priority_queue.PriorityQueue[scoredDoc], doc scored
 		heap.Push(pq, priority_queue.NewItem(doc, doc.score))
 		return
 	}
-	minDoc, ok := lowestScoredDoc(*pq)
+	minIndex, minDoc, ok := lowestScoredDoc(*pq)
 	if !ok {
 		return
 	}
 	if doc.score > minDoc.score || (doc.score == minDoc.score && doc.docID < minDoc.docID) {
-		pq.RemoveItemWithMinPriority()
+		heap.Remove(pq, minIndex)
 		heap.Push(pq, priority_queue.NewItem(doc, doc.score))
 	}
 }
 
+func upperBoundCannotEnterTopDocs(candidate candidateDoc, minDoc scoredDoc) bool {
+	if candidate.upperBound == minDoc.score {
+		return candidate.docID >= minDoc.docID
+	}
+	return candidate.upperBound < minDoc.score
+}
+
+func (c *CodeSearcher) scoreCandidateBatch(scorer types.Scorer, candidates []candidateDoc) []scoredDoc {
+	results := make([]scoredDoc, len(candidates))
+	var wg sync.WaitGroup
+	wg.Add(len(candidates))
+	for i, candidate := range candidates {
+		i := i
+		candidate := candidate
+		go func() {
+			defer wg.Done()
+			doc := c.indexReader.GetStoredDocument(candidate.docID)
+			score := scorer.Score(candidate.match, doc)
+			results[i] = scoredDoc{docID: candidate.docID, score: score}
+		}()
+	}
+	wg.Wait()
+	return results
+}
+
 func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMatch, numResults, offset int) ([]uint64, error) {
 	start := time.Now()
-
-	allDocIDs := make([]uint64, 0)
-	for _, match := range matches {
-		allDocIDs = append(allDocIDs, match.Docid())
-	}
-	slices.Sort(allDocIDs)
-	docIDs := slices.Compact(allDocIDs)
-	numDocs := len(docIDs)
 	docsScored := 0
 
 	defer func() {
@@ -112,6 +137,13 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
 	}()
 
 	if scorer.Skip() {
+		docIDs := make([]uint64, 0, len(matches))
+		for _, match := range matches {
+			docIDs = append(docIDs, match.Docid())
+		}
+		sort.Slice(docIDs, func(i, j int) bool {
+			return docIDs[i] < docIDs[j]
+		})
 		return truncate(docIDs, numResults, offset), nil
 	}
 
@@ -119,7 +151,7 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
 		return nil, nil
 	}
 
-	candidates := make([]candidateDoc, 0, numDocs)
+	candidates := make([]candidateDoc, 0, len(matches))
 	for _, match := range matches {
 		upperBound := scorer.UpperBoundScore(match)
 		if upperBound <= 0 {
@@ -141,22 +173,52 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
 	resultLimit := offset + numResults
 	topDocs := make(priority_queue.PriorityQueue[scoredDoc], 0, resultLimit)
 	heap.Init(&topDocs)
+	scoreBatchSize := runtime.GOMAXPROCS(0)
+	if scoreBatchSize < 1 {
+		scoreBatchSize = 1
+	}
+	if scoreBatchSize > resultLimit {
+		scoreBatchSize = resultLimit
+	}
 	quitScoringEarly := false
-	for _, candidate := range candidates {
-		if topDocs.Len() >= resultLimit {
-			minDoc, ok := lowestScoredDoc(topDocs)
-			if ok && candidate.upperBound <= minDoc.score {
-				break
-			}
-		}
-		if docsScored > maxDocsToScore {
+	for i := 0; i < len(candidates); {
+		if docsScored >= maxDocsToScore {
 			quitScoringEarly = true
 			break
 		}
-		doc := c.indexReader.GetStoredDocument(candidate.docID)
-		score := scorer.Score(candidate.match, doc)
-		pushOrReplaceTopDoc(&topDocs, scoredDoc{docID: candidate.docID, score: score}, resultLimit)
-		docsScored += 1
+
+		batchLimit := scoreBatchSize
+		if topDocs.Len() < resultLimit {
+			batchLimit = min(batchLimit, resultLimit-topDocs.Len())
+		}
+		batchLimit = min(batchLimit, maxDocsToScore-docsScored)
+
+		batchEnd := i
+		for batchEnd < len(candidates) && batchEnd-i < batchLimit {
+			candidate := candidates[batchEnd]
+			if topDocs.Len() >= resultLimit {
+				_, minDoc, ok := lowestScoredDoc(topDocs)
+				if ok && upperBoundCannotEnterTopDocs(candidate, minDoc) {
+					// This pruning relies on UpperBoundScore being a true upper bound for
+					// Score for every candidate. The regexp scorer makes that a practical
+					// heuristic by using index-side ngram frequency as the approximate match
+					// count, which should be greater than or equal to the exact regexp
+					// match-line count for normal code-search queries.
+					break
+				}
+			}
+			batchEnd++
+		}
+		if batchEnd == i {
+			break
+		}
+
+		scoredBatch := c.scoreCandidateBatch(scorer, candidates[i:batchEnd])
+		docsScored += len(scoredBatch)
+		for _, scored := range scoredBatch {
+			pushOrReplaceTopDoc(&topDocs, scored, resultLimit)
+		}
+		i = batchEnd
 	}
 	if quitScoringEarly {
 		log.Warningf("Stopped scoring after %d (max) docs", maxDocsToScore)

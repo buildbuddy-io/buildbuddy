@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/posting"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
@@ -758,6 +759,35 @@ func TestRawQueryDocumentMatchesIncludeFieldLengths(t *testing.T) {
 
 	assert.Equal(t, uint32(1), matches[0].FieldLength("id"))
 	assert.Equal(t, uint32(3), matches[0].FieldLength("content"))
+}
+
+func TestLazyDocFieldUsesPointLookup(t *testing.T) {
+	ctx := performance.WrapContext(context.Background())
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.KeywordField, "content", true),
+			schema.MustFieldSchema(types.KeywordField, "owner", true),
+		},
+	)
+
+	w, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+	require.NoError(t, w.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
+		"id":      []byte("1"),
+		"content": []byte("needle"),
+		"owner":   []byte("tyler"),
+	})))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testns", docSchema)
+	storedDoc := r.GetStoredDocument(1)
+	assert.Equal(t, "needle", string(storedDoc.Field("content").Contents()))
+
+	tracker := performance.TrackerFromContext(ctx)
+	require.NotNil(t, tracker)
+	assert.Equal(t, int64(1), tracker.Get(performance.DOC_KEYS_SCANNED))
 }
 
 func printDB(t testing.TB, db *pebble.DB) {
