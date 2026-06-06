@@ -472,10 +472,10 @@ func (f *termFreqs) any() bool {
 	return false
 }
 
-// MergeList is a mutable posting list used by the pebble value merger and by
-// delete compaction. Unlike BuilderList it supports Or (merging another list,
-// summing shared frequencies) and Remove, but not the indexing Add path. It
-// keeps frequencies decoded (termFreqs) so they can be mutated.
+// MergeList is a mutable posting list used by the pebble value merger, delete
+// compaction, and query result combination. Unlike BuilderList it supports
+// boolean set operations, keeping frequencies decoded (termFreqs) so they can
+// be preserved and summed as lists are combined.
 type MergeList struct {
 	docs docIDSet
 
@@ -503,6 +503,39 @@ func (l *MergeList) Clear() {
 	l.docs.reset()
 	l.freqs.clear()
 	l.serialized = nil
+}
+
+func (l *MergeList) Add(id uint64) {
+	if _, ok := l.docs.indexOf(id); ok {
+		return
+	}
+	if l.docs.len() == 0 || id > l.docs.last {
+		l.docs.appendSorted(id)
+		if l.freqs.materialized {
+			l.freqs.dense = append(l.freqs.dense, 1)
+		}
+		l.serialized = nil
+		return
+	}
+
+	oldIDs := l.docs.array()
+	ids := make([]uint64, 0, len(oldIDs)+1)
+	freqs := make([]uint32, 0, len(oldIDs)+1)
+	inserted := false
+	for i, oldID := range oldIDs {
+		if !inserted && id < oldID {
+			ids = append(ids, id)
+			freqs = append(freqs, 1)
+			inserted = true
+		}
+		ids = append(ids, oldID)
+		freqs = append(freqs, l.frequencyAt(i))
+	}
+	if !inserted {
+		ids = append(ids, id)
+		freqs = append(freqs, 1)
+	}
+	l.setFromSorted(ids, freqs)
 }
 
 // setFromSorted resets l to the given ascending doc IDs and parallel
@@ -562,6 +595,40 @@ func (l *MergeList) Or(other ReadOnlyList) {
 		freqs = append(freqs, rFreqs[j])
 	}
 	l.setFromSorted(ids, freqs)
+}
+
+func (l *MergeList) And(other ReadOnlyList) {
+	if l.docs.len() == 0 {
+		return
+	}
+	if other.GetCardinality() == 0 {
+		l.Clear()
+		return
+	}
+	otherBM := readOnlyListToRoaring(other)
+
+	if !l.freqs.materialized {
+		bm := l.docs.roaring()
+		bm.And(otherBM)
+		l.docs.setSorted(bm.ToArray())
+		l.serialized = nil
+		return
+	}
+
+	ids := l.docs.array()
+	keepIDs := make([]uint64, 0, len(ids))
+	keepFreqs := make([]uint32, 0, len(ids))
+	for i, id := range ids {
+		if otherBM.Contains(id) {
+			keepIDs = append(keepIDs, id)
+			keepFreqs = append(keepFreqs, l.freqs.at(i))
+		}
+	}
+	l.setFromSorted(keepIDs, keepFreqs)
+}
+
+func (l *MergeList) AndNot(other ReadOnlyList) {
+	l.RemoveAll(other)
 }
 
 // Remove deletes id from the list, preserving the frequencies of surviving docs.
@@ -908,7 +975,7 @@ func (fm *FieldMap) OrField(fieldName string, pl2 ReadOnlyList) {
 	if pl, ok := (*fm)[fieldName]; ok {
 		pl.Or(pl2)
 	} else {
-		newPl := NewList()
+		newPl := NewMergeList()
 		newPl.Or(pl2)
 		(*fm)[fieldName] = newPl
 	}
@@ -931,7 +998,7 @@ func (fm *FieldMap) And(fm2 FieldMap) {
 	}
 }
 func (fm *FieldMap) ToPosting() List {
-	pl := NewList()
+	pl := NewMergeList()
 	for _, pl2 := range *fm {
 		pl.Or(pl2)
 	}
