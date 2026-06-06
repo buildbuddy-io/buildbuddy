@@ -145,9 +145,11 @@ const (
 	// Keys are separated by `keySeparator`. The general key form is:
 	// <namespace>:<key_type>:<contents>:<field_name>:<segment_id>
 	keySeparator = ":"
-)
 
-const fieldLengthsField = "_field_lengths"
+	// The field name used for per-doc field lengths is this (reserved)
+	// string.
+	fieldLengthsField = "_field_lengths"
+)
 
 type key struct {
 	namespace string
