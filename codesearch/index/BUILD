@@ -27,6 +27,7 @@ go_test(
     srcs = ["index_test.go"],
     embed = [":index"],
     deps = [
+        "//codesearch/performance",
         "//codesearch/posting",
         "//codesearch/schema",
         "//codesearch/types",

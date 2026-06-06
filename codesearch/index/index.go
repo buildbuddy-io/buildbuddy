@@ -793,12 +793,9 @@ func (r *Reader) recordIterStats(iter *pebble.Iterator, kt indexKeyType) {
 }
 
 func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string]types.Field, error) {
-	docIDStart := r.storedFieldKey(docID, "")
-	docIDEnd := r.storedFieldKey(docID, "\xff")
-
 	iter, err := r.db.NewIter(&pebble.IterOptions{
-		LowerBound: docIDStart,
-		UpperBound: docIDEnd,
+		LowerBound: r.storedFieldKey(docID, ""),
+		UpperBound: r.storedFieldKey(docID, "\xff"),
 	})
 	if err != nil {
 		return nil, err
