@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"runtime"
 	"slices"
 	"strconv"
@@ -144,6 +145,10 @@ const (
 	// Keys are separated by `keySeparator`. The general key form is:
 	// <namespace>:<key_type>:<contents>:<field_name>:<segment_id>
 	keySeparator = ":"
+
+	// The field name used for per-doc field lengths is this (reserved)
+	// string.
+	fieldLengthsField = "_field_lengths"
 )
 
 const fieldLengthsField = "_field_lengths"
@@ -236,7 +241,14 @@ func postingListKey(namespace, ngram, field string) []byte {
 
 func marshalFieldLengths(fieldLengths map[string]uint32) []byte {
 	fieldNames := slices.Sorted(maps.Keys(fieldLengths))
-	buf := make([]byte, 0, len(fieldNames)*8)
+	// Pre-size the buffer: a uvarint field count, then per field a uvarint name
+	// length, the name bytes, and a uvarint length. Use the max varint widths so
+	// the buffer never has to regrow.
+	size := binary.MaxVarintLen64
+	for _, fieldName := range fieldNames {
+		size += binary.MaxVarintLen64 + len(fieldName) + binary.MaxVarintLen32
+	}
+	buf := make([]byte, 0, size)
 	buf = binary.AppendUvarint(buf, uint64(len(fieldNames)))
 	for _, fieldName := range fieldNames {
 		buf = binary.AppendUvarint(buf, uint64(len(fieldName)))
@@ -261,7 +273,12 @@ func unmarshalFieldLengths(buf []byte) (map[string]uint32, error) {
 	if err != nil {
 		return nil, err
 	}
-	fieldLengths := make(map[string]uint32, int(fieldCount))
+
+	// Cap the pre-allocation hint: a corrupt fieldCount could otherwise declare a
+	// huge map. Each entry needs at least 2 bytes (a uvarint name length and a
+	// uvarint field length), so len(buf)/2 is a safe upper bound on real entries.
+	sizeHint := min(fieldCount, uint64(len(buf)/2))
+	fieldLengths := make(map[string]uint32, int(sizeHint))
 	for i := uint64(0); i < fieldCount; i++ {
 		fieldNameLen, err := readUvarint()
 		if err != nil {
@@ -285,20 +302,6 @@ func unmarshalFieldLengths(buf []byte) (map[string]uint32, error) {
 		return nil, status.InternalError("error parsing field lengths: trailing bytes")
 	}
 	return fieldLengths, nil
-}
-
-func uint32Saturating(n uint64) uint32 {
-	if n > uint64(^uint32(0)) {
-		return ^uint32(0)
-	}
-	return uint32(n)
-}
-
-func uint32SaturatingFromInt64(n int64) uint32 {
-	if n <= 0 {
-		return 0
-	}
-	return uint32Saturating(uint64(n))
 }
 
 func (w *Writer) lookupDocId(matchField types.Field) (uint64, error) {
@@ -586,7 +589,11 @@ func (w *Writer) AddDocument(doc types.Document) error {
 			s.tokens++
 		})
 		tfStats := tokenizer.TermFrequencyStats()
-		fieldLengths[field.Name()] = uint32SaturatingFromInt64(tfStats.Occurrences)
+		occurrences := tfStats.Occurrences
+		if occurrences < 0 {
+			occurrences = 0
+		}
+		fieldLengths[field.Name()] = uint32(min(occurrences, math.MaxUint32))
 		indexprofile.RecordTermFrequencyStats(field.Name(), tfStats)
 
 		if field.Schema().Stored() {
