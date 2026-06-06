@@ -761,7 +761,7 @@ func TestRawQueryDocumentMatchesIncludeFieldLengths(t *testing.T) {
 	assert.Equal(t, uint32(3), matches[0].FieldLength("content"))
 }
 
-func TestLazyDocFieldUsesPointLookup(t *testing.T) {
+func TestLazyDocFieldSeeksRequestedField(t *testing.T) {
 	ctx := performance.WrapContext(context.Background())
 	db := mustOpenDB(t, testfs.MakeTempDir(t))
 	docSchema := schema.NewDocumentSchema(
@@ -788,6 +788,37 @@ func TestLazyDocFieldUsesPointLookup(t *testing.T) {
 	tracker := performance.TrackerFromContext(ctx)
 	require.NotNil(t, tracker)
 	assert.Equal(t, int64(1), tracker.Get(performance.DOC_KEYS_SCANNED))
+}
+
+func TestGetStoredFieldsSeeksRequestedFields(t *testing.T) {
+	ctx := performance.WrapContext(context.Background())
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.KeywordField, "content", true),
+			schema.MustFieldSchema(types.KeywordField, "owner", true),
+		},
+	)
+
+	w, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+	require.NoError(t, w.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
+		"id":      []byte("1"),
+		"content": []byte("needle"),
+		"owner":   []byte("tyler"),
+	})))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testns", docSchema)
+	fields, err := r.getStoredFields(1, "owner", "content")
+	require.NoError(t, err)
+	assert.Equal(t, "needle", string(fields["content"].Contents()))
+	assert.Equal(t, "tyler", string(fields["owner"].Contents()))
+
+	tracker := performance.TrackerFromContext(ctx)
+	require.NotNil(t, tracker)
+	assert.Equal(t, int64(2), tracker.Get(performance.DOC_KEYS_SCANNED))
 }
 
 func printDB(t testing.TB, db *pebble.DB) {

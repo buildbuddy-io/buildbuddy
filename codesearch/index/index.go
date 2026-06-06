@@ -794,9 +794,11 @@ func (r *Reader) recordIterStats(iter *pebble.Iterator, kt indexKeyType) {
 
 func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string]types.Field, error) {
 	docIDStart := r.storedFieldKey(docID, "")
+	docIDEnd := r.storedFieldKey(docID, "\xff")
+
 	iter, err := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: docIDStart,
-		UpperBound: r.storedFieldKey(docID, "\xff"),
+		UpperBound: docIDEnd,
 	})
 	if err != nil {
 		return nil, err
@@ -806,11 +808,28 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
 		r.recordIterStats(iter, docField)
 	}()
 
-	shouldCopyField := func(fieldName string) bool {
-		if len(fieldNames) == 0 {
-			return true
+	if len(fieldNames) > 0 {
+		fieldNames = slices.Clone(fieldNames)
+		slices.Sort(fieldNames)
+		fieldNames = slices.Compact(fieldNames)
+
+		fields := make(map[string]types.Field, len(fieldNames))
+		for _, fieldName := range fieldNames {
+			if fieldName == types.DocIDField {
+				continue
+			}
+			fieldKey := r.storedFieldKey(docID, fieldName)
+			if !iter.SeekGE(fieldKey) {
+				break
+			}
+			if !bytes.Equal(iter.Key(), fieldKey) {
+				continue
+			}
+			fieldVal := make([]byte, len(iter.Value()))
+			copy(fieldVal, iter.Value())
+			fields[fieldName] = r.schema.Field(fieldName).MakeField(fieldVal)
 		}
-		return slices.Contains(fieldNames, fieldName)
+		return fields, nil
 	}
 
 	fields := make(map[string]types.Field, 0)
@@ -823,34 +842,11 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
 			// Skip docID -- we already have it from args.
 			continue
 		}
-
-		if !shouldCopyField(k.field) {
-			continue
-		}
 		fieldVal := make([]byte, len(iter.Value()))
 		copy(fieldVal, iter.Value())
 		fields[k.field] = r.schema.Field(k.field).MakeField(fieldVal)
 	}
 	return fields, nil
-}
-
-func (r *Reader) getStoredField(docID uint64, fieldName string) (types.Field, error) {
-	key := r.storedFieldKey(docID, fieldName)
-	value, closer, err := r.db.Get(key)
-	if err != nil {
-		if err == pebble.ErrNotFound {
-			return r.schema.Field(fieldName).MakeField(nil), nil
-		}
-		return nil, err
-	}
-	defer closer.Close()
-	if tracker := performance.TrackerFromContext(r.ctx); tracker != nil {
-		tracker.Add(performance.DOC_KEYS_SCANNED, 1)
-		tracker.Add(performance.DOC_BYTES_READ, int64(len(key)+len(value)))
-	}
-	fieldVal := make([]byte, len(value))
-	copy(fieldVal, value)
-	return r.schema.Field(fieldName).MakeField(fieldVal), nil
 }
 
 func (r *Reader) populateFieldLengths(docMatches map[uint64]*docMatch) error {
@@ -1125,9 +1121,14 @@ func (d lazyDoc) Field(name string) types.Field {
 	if f, ok := d.fields[name]; ok {
 		return f
 	}
-	field, err := d.r.getStoredField(d.id, name)
+	fm, err := d.r.getStoredFields(d.id, name)
 	if err == nil {
-		d.fields[name] = field
+		field, ok := fm[name]
+		if !ok {
+			d.fields[name] = d.r.schema.Field(name).MakeField(nil)
+		} else {
+			d.fields[name] = field
+		}
 	}
 	return d.fields[name]
 }
