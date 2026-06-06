@@ -151,8 +151,6 @@ const (
 	fieldLengthsField = "_field_lengths"
 )
 
-const fieldLengthsField = "_field_lengths"
-
 type key struct {
 	namespace string
 	keyType   indexKeyType
