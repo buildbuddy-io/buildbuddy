@@ -271,7 +271,6 @@ func unmarshalFieldLengths(buf []byte) (map[string]uint32, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	// Cap the pre-allocation hint: a corrupt fieldCount could otherwise declare a
 	// huge map. Each entry needs at least 2 bytes (a uvarint name length and a
 	// uvarint field length), so len(buf)/2 is a safe upper bound on real entries.
