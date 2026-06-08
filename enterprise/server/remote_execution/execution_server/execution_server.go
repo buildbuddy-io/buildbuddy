@@ -1724,6 +1724,7 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 	}
 
 	if err := incrementOLAPExecutionUsage(ctx, ut, olapLabels, plat.OS, plat.Arch, pool.IsSelfHosted, dur, counts.CPUNanos, usg.GetPeakMemoryBytes()); err != nil {
+		log.CtxWarningf(ctx, "Failed to increment OLAP usage: %s", err)
 		lastErr = err
 	}
 
@@ -1774,19 +1775,17 @@ func (s *ExecutionServer) updateUsageFromStoredExecution(ctx context.Context, ex
 		lastErr = err
 	}
 	if err := incrementOLAPExecutionUsage(ctx, ut, olapLabels, execution.GetOs(), execution.GetArch(), execution.GetSelfHosted(), dur, counts.CPUNanos, execution.GetPeakMemoryBytes()); err != nil {
+		log.CtxWarningf(ctx, "Failed to increment OLAP usage: %s", err)
 		lastErr = err
 	}
 	return lastErr
 }
 
 func incrementOLAPExecutionUsage(ctx context.Context, ut interfaces.UsageTracker, baseLabels sku.Labels, os, arch string, selfHosted bool, duration time.Duration, cpuNanos, peakMemoryBytes int64) error {
-	var lastErr error
-	osLabel := sku.GetOSLabel(os)
-	archLabel := sku.GetArchLabel(arch)
 	executionLabels := make(sku.Labels, len(baseLabels)+3)
 	maps.Copy(executionLabels, baseLabels)
-	executionLabels[sku.OS] = osLabel
-	executionLabels[sku.Arch] = archLabel
+	executionLabels[sku.OS] = sku.GetOSLabel(os)
+	executionLabels[sku.Arch] = sku.GetArchLabel(arch)
 	executionLabels[sku.SelfHosted] = sku.GetSelfHostedLabel(selfHosted)
 	memoryGBNanos := int64(float64(peakMemoryBytes) * float64(duration.Nanoseconds()) / 1e9)
 	executionCounts := map[sku.SKU]int64{
@@ -1795,11 +1794,7 @@ func incrementOLAPExecutionUsage(ctx context.Context, ut interfaces.UsageTracker
 		sku.RemoteExecutionExecuteWorkerMemoryGBNanos: memoryGBNanos,
 		sku.RemoteExecutionExecuteComputeNanos:        duration.Nanoseconds(),
 	}
-	if err := ut.IncrementOLAP(ctx, executionLabels, executionCounts); err != nil {
-		log.CtxWarningf(ctx, "Failed to increment OLAP execution usage: %s", err)
-		lastErr = err
-	}
-	return lastErr
+	return ut.IncrementOLAP(ctx, executionLabels, executionCounts)
 }
 
 func (s *ExecutionServer) fetchAction(ctx context.Context, actionResourceName *digest.CASResourceName) (*repb.Action, error) {
