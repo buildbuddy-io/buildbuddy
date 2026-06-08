@@ -1792,7 +1792,7 @@ func incrementOLAPExecutionUsage(ctx context.Context, ut interfaces.UsageTracker
 		sku.RemoteExecutionExecuteWorkerCPUNanos:      cpuNanos,
 		sku.RemoteExecutionExecuteWorkerDurationNanos: duration.Nanoseconds(),
 		sku.RemoteExecutionExecuteWorkerMemoryGBNanos: memoryGBNanos,
-		sku.RemoteExecutionExecuteComputeNanos:        duration.Nanoseconds(),
+		sku.RemoteExecutionExecuteFixedComputeNanos:   duration.Nanoseconds(),
 	}
 	return ut.IncrementOLAP(ctx, executionLabels, executionCounts)
 }
