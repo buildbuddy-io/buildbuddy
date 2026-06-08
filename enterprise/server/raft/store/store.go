@@ -569,7 +569,6 @@ func (s *Store) setMetaRangeBuf(buf []byte) {
 		s.log.Errorf("Error unmarshaling new metarange data: %s", err)
 		return
 	}
-	keys.EnsurePartitionID(new)
 	if len(s.metaRangeData) > 0 {
 		// Compare existing to new -- only update if generation is greater.
 		existing := &rfpb.RangeDescriptor{}
@@ -4048,7 +4047,11 @@ func (s *Store) rangeReplicaLabels(rd *rfpb.RangeDescriptor) prometheus.Labels {
 		partitionID = keys.PartitionIDFromRangeStart(rd.GetStart())
 	}
 	if partitionID == "" {
-		partitionID = "meta"
+		if rd.GetRangeId() == 1 {
+			partitionID = "meta"
+		} else {
+			partitionID = "unknown"
+		}
 	}
 	return prometheus.Labels{
 		metrics.RaftRangeIDLabel:    strconv.FormatUint(rd.GetRangeId(), 10),
