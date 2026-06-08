@@ -825,6 +825,63 @@ func TestResolve_WithCache(t *testing.T) {
 	}
 }
 
+// TestResolveWithCacheRequiresValidCredentials verifies that the in-executor
+// cache path (use_oci_fetcher=false) does not serve a cached private image to
+// callers with missing or invalid credentials.
+func TestResolveWithCacheRequiresValidCredentials(t *testing.T) {
+	te := setupTestEnvWithCache(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
+
+	imageFiles := map[string][]byte{"/private": []byte("private image contents")}
+	registryCreds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
+	registry := testregistry.Run(t, testregistry.Opts{Creds: registryCreds})
+	imageAddress, pushedImage := registry.PushNamedImageWithFiles(t, "private_image", imageFiles, registryCreds)
+	imageDigest, err := pushedImage.Digest()
+	require.NoError(t, err)
+	imageAddressWithDigest := imageAddress + "@" + imageDigest.String()
+
+	ctx := contextWithUnverifiedJWT(&claims.Claims{UserID: "US123"})
+	pulledImage, err := newResolver(t, te).Resolve(
+		ctx,
+		imageAddressWithDigest,
+		oci.RuntimePlatform(),
+		creds(registryCreds.Username, registryCreds.Password),
+		false, /*=useOCIFetcher*/
+	)
+	require.NoError(t, err)
+	layers, err := pulledImage.Layers()
+	require.NoError(t, err)
+	require.Len(t, layers, 1)
+	require.Empty(t, cmp.Diff(imageFiles, layerFiles(t, layers[0])))
+
+	for _, tc := range []struct {
+		name        string
+		credentials oci.Credentials
+	}{
+		{
+			name:        "MissingCredentials",
+			credentials: oci.Credentials{},
+		},
+		{
+			name:        "InvalidCredentials",
+			credentials: creds("wrong", "wrong"),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := newResolver(t, te).Resolve(
+				ctx,
+				imageAddressWithDigest,
+				oci.RuntimePlatform(),
+				tc.credentials,
+				false, /*=useOCIFetcher*/
+			)
+			require.Error(t, err)
+			require.True(t, status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err), "expected auth error, got: %v", err)
+		})
+	}
+}
+
 // contextWithUnverifiedJWT creates a JWT with the given claims
 // and attaches it to the returned context.
 // Necessary now that we do not allow anonymous requests to access
