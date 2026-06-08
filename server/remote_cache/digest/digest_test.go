@@ -702,6 +702,18 @@ func TestSafeBufferSize(t *testing.T) {
 	}
 }
 
+func TestIsMissingDigestError(t *testing.T) {
+	d := &repb.Digest{
+		Hash:      strings.Repeat("a", 64),
+		SizeBytes: 123,
+	}
+	require.True(t, digest.IsMissingDigestError(digest.MissingDigestError(d)))
+	require.True(t, digest.IsMissingDigestError(digest.MissingDigestErrorf(d, "custom message")))
+	require.False(t, digest.IsMissingDigestError(status.NotFoundError("not found")))
+	require.False(t, digest.IsMissingDigestError(status.FailedPreconditionError("failed precondition")))
+	require.False(t, digest.IsMissingDigestError(fmt.Errorf("plain error")))
+}
+
 func BenchmarkParseDownloadString(b *testing.B) {
 	rns := []string{
 		"/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49ac/1234",

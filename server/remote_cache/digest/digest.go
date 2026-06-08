@@ -746,6 +746,25 @@ func MissingDigestErrorf(d *repb.Digest, format string, args ...interface{}) err
 	}
 }
 
+func IsMissingDigestError(err error) bool {
+	st, ok := gstatus.FromError(err)
+	if !ok {
+		return false
+	}
+	for _, detail := range st.Details() {
+		pf, ok := detail.(*errdetails.PreconditionFailure)
+		if !ok {
+			continue
+		}
+		for _, violation := range pf.GetViolations() {
+			if violation.GetType() == "MISSING" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // String returns the digest formatted as "HASH/SIZE" or the string "<nil>"
 // if the digest is nil.
 //
