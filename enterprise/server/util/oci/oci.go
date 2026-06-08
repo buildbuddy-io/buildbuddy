@@ -16,9 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
-	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
-	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -31,12 +28,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
-	gcrname "github.com/google/go-containerregistry/pkg/name"
-	gcr "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+
+	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
+	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	gcrname "github.com/google/go-containerregistry/pkg/name"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -57,6 +58,8 @@ type Registry struct {
 	Hostnames []string `yaml:"hostnames" json:"hostnames"`
 	Username  string   `yaml:"username" json:"username"`
 	Password  string   `yaml:"password" json:"password" config:"secret"`
+	// Insecure allows pulling from the registry over plain HTTP.
+	Insecure bool `yaml:"insecure" json:"insecure"`
 }
 
 type Credentials struct {
@@ -136,7 +139,7 @@ func CredentialsFromProperties(props *platform.Properties) (Credentials, error) 
 func resolveWithDefaultKeychain(ref reference.Named) (Credentials, error) {
 	// TODO: parse the errors below and if they're 403/401 errors then return
 	// Unauthenticated/PermissionDenied
-	ctrRef, err := gcrname.ParseReference(ref.String())
+	ctrRef, err := ParseReference(ref.String())
 	if err != nil {
 		log.Debugf("Failed to parse image ref %q: %s", ref.String(), err)
 		return Credentials{}, nil
@@ -195,6 +198,28 @@ func (c Credentials) Equals(o Credentials) bool {
 	return c.Username == o.Username && c.Password == o.Password
 }
 
+// ParseReference parses an OCI image reference, honoring
+// executor.container_registries[].insecure when selecting the registry scheme.
+func ParseReference(ref string) (gcrname.Reference, error) {
+	imageRef, err := gcrname.ParseReference(ref)
+	if err != nil {
+		return nil, err
+	}
+	if isInsecureRegistryHost(imageRef.Context().RegistryStr()) {
+		return gcrname.ParseReference(ref, gcrname.Insecure)
+	}
+	return imageRef, nil
+}
+
+func isInsecureRegistryHost(hostname string) bool {
+	for _, registry := range *registries {
+		if registry.Insecure && slices.Contains(registry.Hostnames, hostname) {
+			return true
+		}
+	}
+	return false
+}
+
 type Resolver struct {
 	env environment.Env
 
@@ -235,7 +260,7 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 
 	log.CtxDebugf(ctx, "Authenticating with registry for %q", imageName)
 
-	imageRef, err := gcrname.ParseReference(imageName)
+	imageRef, err := ParseReference(imageName)
 	if err != nil {
 		return status.InvalidArgumentErrorf("invalid image reference %q: %s", imageName, err)
 	}
@@ -259,28 +284,30 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 // ResolveImageDigest keeps an LRU cache that maps between canonical image names with tags
 // to image names with digests, to reduce the number of HEAD requests.
 func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (string, error) {
-	if imageRefWithDigest, err := gcrname.NewDigest(imageName); err == nil {
-		return imageRefWithDigest.String(), nil
-	}
-	tagRef, err := gcrname.ParseReference(imageName)
+	// Resolving a tag makes a remote HEAD request, so parse through ParseReference
+	// to honor executor.container_registries[].insecure.
+	imageRef, err := ParseReference(imageName)
 	if err != nil {
 		return "", status.InvalidArgumentErrorf("invalid image name %q", imageName)
 	}
+	if _, ok := imageRef.(gcrname.Digest); ok {
+		return imageRef.String(), nil
+	}
 
-	if nameWithDigest, ok := r.imageTagToDigestLRU.Get(tagRef.String()); ok {
+	if nameWithDigest, ok := r.imageTagToDigestLRU.Get(imageRef.String()); ok {
 		return nameWithDigest, nil
 	}
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	desc, err := remote.Head(tagRef, remoteOpts...)
+	desc, err := remote.Head(imageRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return "", status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
 		}
 		return "", status.UnavailableErrorf("could not fetch manifest metadata from remote registry: %s", err)
 	}
-	imageNameWithDigest := tagRef.Context().Digest(desc.Digest.String()).String()
-	r.imageTagToDigestLRU.Add(tagRef.String(), imageNameWithDigest)
+	imageNameWithDigest := imageRef.Context().Digest(desc.Digest.String()).String()
+	r.imageTagToDigestLRU.Add(imageRef.String(), imageNameWithDigest)
 	return imageNameWithDigest, nil
 }
 
@@ -288,7 +315,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	imageRef, err := gcrname.ParseReference(imageName)
+	imageRef, err := ParseReference(imageName)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imageName)
 	}
@@ -312,8 +339,15 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	}
 	useCache := cacheEnabled && !isAnon
 
-	if useOCIFetcher && r.env.GetOCIFetcherClient() == nil {
-		return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
+	if useOCIFetcher {
+		if isInsecureRegistryHost(imageRef.Context().RegistryStr()) {
+			// OCIFetcher parses refs on the server side, so keep insecure registry pulls
+			// on the direct path where this resolver has applied the registry config.
+			log.CtxDebugf(ctx, "Skipping OCI fetcher for insecure registry %q", imageRef.Context().RegistryStr())
+			useOCIFetcher = false
+		} else if r.env.GetOCIFetcherClient() == nil {
+			return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
+		}
 	}
 
 	return fetchImageFromCacheOrRemote(

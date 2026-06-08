@@ -75,6 +75,53 @@ func TestCredentialsFromProto(t *testing.T) {
 	assert.Equal(t, "foo:bar", creds.String())
 }
 
+func TestParseReference_UsesInsecureRegistryConfig(t *testing.T) {
+	for _, testCase := range []struct {
+		name           string
+		registries     []oci.Registry
+		expectedScheme string
+	}{
+		{
+			name: "registry is secure by default",
+			registries: []oci.Registry{
+				{
+					Hostnames: []string{"registry.example.com:5000"},
+				},
+			},
+			expectedScheme: "https",
+		},
+		{
+			name: "insecure registry uses http",
+			registries: []oci.Registry{
+				{
+					Hostnames: []string{"registry.example.com:5000"},
+					Insecure:  true,
+				},
+			},
+			expectedScheme: "http",
+		},
+		{
+			name: "unmatched insecure registry does not affect image",
+			registries: []oci.Registry{
+				{
+					Hostnames: []string{"other.example.com:5000"},
+					Insecure:  true,
+				},
+			},
+			expectedScheme: "https",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags.Set(t, "executor.container_registries", testCase.registries)
+
+			ref, err := oci.ParseReference("registry.example.com:5000/repo/image:tag")
+			require.NoError(t, err)
+
+			require.Equal(t, testCase.expectedScheme, ref.Context().Registry.Scheme())
+		})
+	}
+}
+
 func TestCredentialsFromProperties(t *testing.T) {
 	registries := []oci.Registry{
 		{
@@ -1131,6 +1178,7 @@ func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
 	require.NoError(t, err)
 	resolvedDigest, err := name.NewDigest(nameWithDigest)
 	require.NoError(t, err)
+	require.Equal(t, nameToResolve, nameWithDigest)
 	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 
 	require.Empty(t, counter.Snapshot())
@@ -1326,6 +1374,50 @@ func TestResolveWithOCIFetcher_NoClient(t *testing.T) {
 	)
 	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got: %v", err)
 	require.Contains(t, err.Error(), "OCIFetcherClient is required")
+}
+
+func TestResolveWithOCIFetcher_InsecureRegistrySkipsFetcher(t *testing.T) {
+	// Use a test env without OCIFetcherClient configured, so this test fails
+	// if insecure registry pulls try to use the fetcher service.
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+
+	counter := testhttp.NewRequestCounter()
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	})
+	registry.PushNamedImage(t, "test_image", nil)
+	flags.Set(t, "executor.container_registries", []oci.Registry{
+		{
+			Hostnames: []string{registry.Address()},
+			Insecure:  true,
+		},
+	})
+
+	// The registry is configured as insecure, so Resolve should stay on the
+	// direct pull path even though the caller requested the OCI fetcher.
+	counter.Reset()
+	pulledImage, err := newResolver(t, te).Resolve(
+		context.Background(),
+		registry.ImageAddress("test_image"),
+		&rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+		oci.Credentials{},
+		true, /*=useOCIFetcher*/
+	)
+	require.NoError(t, err)
+	require.NotNil(t, pulledImage)
+
+	expectedRequests := map[string]int{
+		http.MethodGet + " /v2/":                            1,
+		http.MethodGet + " /v2/test_image/manifests/latest": 1,
+	}
+	require.Empty(t, cmp.Diff(expectedRequests, counter.Snapshot()))
 }
 
 // TestResolveWithOCIFetcher exercises Resolver.Resolve with useOCIFetcher=true,

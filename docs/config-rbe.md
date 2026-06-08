@@ -89,6 +89,23 @@ executor:
         }
 ```
 
+### Using cluster-internal container registries
+
+To use a cluster-internal registry over plain HTTP, configure
+`executor.container_registries`, set `insecure: true` on the internal
+registry, and allow the registry Service's ClusterIP:
+
+```yaml title="config.yaml"
+executor:
+  container_registry_allowed_private_ips:
+    # Replace this with the ClusterIP of the registry Service.
+    - "10.12.34.56/32"
+  container_registries:
+    - hostnames:
+        - "example-image-mirror.example-namespace.svc.cluster.local:5000"
+      insecure: true
+```
+
 ### GPU support
 
 Self-hosted executors can expose GPUs to remotely executed actions. Setup
