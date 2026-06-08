@@ -146,7 +146,6 @@ const SUMMABLE_METRICS = [
   stat_filter.InvocationMetricType.TIME_SAVED_USEC_INVOCATION_METRIC,
   stat_filter.InvocationMetricType.CAS_CACHE_UPLOAD_SIZE_INVOCATION_METRIC,
   stat_filter.InvocationMetricType.CAS_CACHE_DOWNLOAD_SIZE_INVOCATION_METRIC,
-  stat_filter.InvocationMetricType.CAS_CACHE_UPLOAD_SIZE_INVOCATION_METRIC,
   stat_filter.InvocationMetricType.CAS_CACHE_MISSES_INVOCATION_METRIC,
   stat_filter.InvocationMetricType.ACTION_CACHE_MISSES_INVOCATION_METRIC,
 ];
