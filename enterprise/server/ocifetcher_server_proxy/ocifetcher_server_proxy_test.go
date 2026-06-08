@@ -265,7 +265,8 @@ func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
 	err = reg.Shutdown()
 	require.NoError(t, err)
 
-	// Second fetch: should be served from local BS cache.
+	// Second fetch: access was proven on the first fetch, so this is served
+	// from the local BS cache without contacting the (now-stopped) registry.
 	stream2, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
 	require.NoError(t, err)
 	data2 := collectBlobData(t, stream2)
@@ -597,6 +598,102 @@ func TestInvalidOrMissingCredentials(t *testing.T) {
 				require.Error(t, recvErr)
 				require.True(t, status.IsUnauthenticatedError(recvErr), "expected UnauthenticatedError, got: %v", recvErr)
 			}
+		})
+	}
+}
+
+func TestPrivateRegistryCacheHitsRequireValidCredentials(t *testing.T) {
+	ctx := context.Background()
+	registryCreds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
+	validRequestCreds := &rgpb.Credentials{Username: "testuser", Password: "testpass"}
+
+	reg := setupTestRegistry(t, registryCreds)
+	imageName, img := reg.PushNamedImage(t, "test-image", registryCreds)
+	manifestDigest, _, _ := imageMetadata(t, img)
+	expectedManifest, err := img.RawManifest()
+	require.NoError(t, err)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedBlob := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+	proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+
+	// Populate the upstream OCIFetcher manifest/blob/blob-metadata caches and
+	// the proxy's local blob cache using credentials that are valid for the
+	// private registry.
+	manifestResp, err := proxyClient.FetchManifest(ctx, &ofpb.FetchManifestRequest{
+		Ref:         imageName + "@" + manifestDigest,
+		Credentials: validRequestCreds,
+	})
+	require.NoError(t, err)
+	require.Equal(t, expectedManifest, manifestResp.GetManifest())
+
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+		Ref:         imageName + "@" + layerDigest.String(),
+		Credentials: validRequestCreds,
+	})
+	require.NoError(t, err)
+	require.Equal(t, expectedBlob, collectBlobData(t, stream))
+
+	for _, tc := range []struct {
+		name  string
+		creds *rgpb.Credentials
+	}{
+		{
+			name:  "MissingCredentials",
+			creds: nil,
+		},
+		{
+			name:  "InvalidCredentials",
+			creds: &rgpb.Credentials{Username: "wrong", Password: "wrong"},
+		},
+	} {
+		t.Run("FetchManifestMetadata/"+tc.name, func(t *testing.T) {
+			_, err := proxyClient.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{
+				Ref:         imageName + "@" + manifestDigest,
+				Credentials: tc.creds,
+			})
+			require.Error(t, err)
+			require.True(t, status.IsUnauthenticatedError(err), "FetchManifestMetadata: expected Unauthenticated, got: %v", err)
+		})
+
+		t.Run("FetchManifest/"+tc.name, func(t *testing.T) {
+			_, err := proxyClient.FetchManifest(ctx, &ofpb.FetchManifestRequest{
+				Ref:         imageName + "@" + manifestDigest,
+				Credentials: tc.creds,
+			})
+			require.Error(t, err)
+			require.True(t, status.IsUnauthenticatedError(err), "FetchManifest: expected Unauthenticated, got: %v", err)
+		})
+
+		t.Run("FetchBlobMetadata/"+tc.name, func(t *testing.T) {
+			_, err := proxyClient.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
+				Ref:         imageName + "@" + layerDigest.String(),
+				Credentials: tc.creds,
+			})
+			require.Error(t, err)
+			require.True(t, status.IsUnauthenticatedError(err), "FetchBlobMetadata: expected Unauthenticated, got: %v", err)
+		})
+
+		t.Run("FetchBlob/"+tc.name, func(t *testing.T) {
+			stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+				Ref:         imageName + "@" + layerDigest.String(),
+				Credentials: tc.creds,
+			})
+			if err != nil {
+				require.True(t, status.IsUnauthenticatedError(err), "FetchBlob: expected Unauthenticated, got: %v", err)
+				return
+			}
+			_, recvErr := stream.Recv()
+			require.Error(t, recvErr)
+			require.True(t, status.IsUnauthenticatedError(recvErr), "FetchBlob: expected Unauthenticated, got: %v", recvErr)
 		})
 	}
 }
