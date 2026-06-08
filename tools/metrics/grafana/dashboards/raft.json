@@ -3456,7 +3456,7 @@
           "targets": [
             {
               "editorMode": "code",
-              "expr": "count by (partition_id) (\n    count by (partition_id, range_id) (buildbuddy_raft_range_replica{region=\"$region\", namespace=\"$namespace\"})\n  )\n",
+              "expr": "count by (partition_id) (count by (partition_id, range_id) (buildbuddy_raft_range_replica{region=\"${region}\", namespace=\"${namespace}\"}))",
               "legendFormat": "{{partition_id}}",
               "range": true,
               "refId": "A"
@@ -3876,7 +3876,7 @@
           "targets": [
             {
               "editorMode": "code",
-              "expr": "count(\n    count by (range_id) (\n      count by (range_id, zone) (buildbuddy_raft_range_replica{region=\"$region\", namespace=\"$namespace\"})\n    ) != 3\n  ) or vector(0)\n",
+              "expr": "count(count by (range_id) (count by (range_id, zone) (buildbuddy_raft_range_replica{region=\"${region}\", namespace=\"${namespace}\"})) != 3) or vector(0)",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
