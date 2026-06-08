@@ -569,6 +569,7 @@ func (s *Store) setMetaRangeBuf(buf []byte) {
 		s.log.Errorf("Error unmarshaling new metarange data: %s", err)
 		return
 	}
+	keys.EnsurePartitionID(new)
 	if len(s.metaRangeData) > 0 {
 		// Compare existing to new -- only update if generation is greater.
 		existing := &rfpb.RangeDescriptor{}
@@ -923,6 +924,10 @@ func (s *Store) Start() error {
 	}
 	s.eg.Go(func() error {
 		s.updateStoreUsageTag(s.egCtx)
+		return nil
+	})
+	s.eg.Go(func() error {
+		s.backfillPartitionIDs(s.egCtx)
 		return nil
 	})
 	s.eg.Go(func() error {
@@ -2585,6 +2590,44 @@ func (s *Store) updateStoreUsageTag(ctx context.Context) {
 	}
 }
 
+// backfillPartitionIDs listens for range-lease-acquired events and persists
+// RangeDescriptor.PartitionId for the leased range if it is missing (e.g. for
+// ranges created before the field existed). Only the lease holder may propose
+// the descriptor update, which is why the work is triggered here.
+func (s *Store) backfillPartitionIDs(ctx context.Context) {
+	eventsCh := s.AddEventListener("backfillPartitionIDs")
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case e := <-eventsCh:
+			if e.EventType() != events.EventRangeLeaseAcquired {
+				continue
+			}
+			rangeEvent, ok := e.(events.RangeEvent)
+			if !ok {
+				continue
+			}
+			old := s.lookupRange(rangeEvent.RangeID)
+			if old == nil || old.GetPartitionId() != "" {
+				continue
+			}
+			partitionID := keys.PartitionIDFromRangeStart(old.GetStart())
+			if partitionID == "" {
+				continue
+			}
+			new := proto.Clone(old).(*rfpb.RangeDescriptor)
+			new.PartitionId = partitionID
+			new.Generation = old.GetGeneration() + 1
+			if err := s.UpdateRangeDescriptor(ctx, old, new); err != nil {
+				s.log.Warningf("backfill partition_id for range %d failed: %s", old.GetRangeId(), err)
+				continue
+			}
+			s.log.Infof("backfilled partition_id=%q on range %d", partitionID, old.GetRangeId())
+		}
+	}
+}
+
 func (s *Store) Usage() *rfpb.StoreUsage {
 	su := &rfpb.StoreUsage{
 		Node: s.NodeDescriptor(),
@@ -4000,27 +4043,19 @@ func (s *Store) getFileSystemUsage() (gosigar.FileSystemUsage, error) {
 
 // rangeReplicaLabels builds the labelset for the RaftRangeReplica gauge.
 func (s *Store) rangeReplicaLabels(rd *rfpb.RangeDescriptor) prometheus.Labels {
+	partitionID := rd.GetPartitionId()
+	if partitionID == "" {
+		partitionID = keys.PartitionIDFromRangeStart(rd.GetStart())
+	}
+	if partitionID == "" {
+		partitionID = "meta"
+	}
 	return prometheus.Labels{
 		metrics.RaftRangeIDLabel:    strconv.FormatUint(rd.GetRangeId(), 10),
 		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
-		metrics.PartitionID:         partitionIDFromRangeStart(rd.GetStart()),
+		metrics.PartitionID:         partitionID,
 		metrics.ZoneLabel:           s.zone,
 	}
-}
-
-// partitionIDFromRangeStart parses the partition_id out of a range descriptor's
-// start key. Range data is keyed under "PT<partition_id>/..."; returns "" for
-// ranges with no partition prefix (e.g., the meta range).
-// TODO(go/b/7513): remove after we add partition to RangeDescriptor.
-func partitionIDFromRangeStart(key []byte) string {
-	rest, found := bytes.CutPrefix(key, []byte(filestore.PartitionDirectoryPrefix))
-	if !found {
-		return "unknown"
-	}
-	if before, _, ok := bytes.Cut(rest, []byte{'/'}); ok {
-		return string(before)
-	}
-	return "unknown"
 }
 
 func (s *Store) setupPartitions(ctx context.Context) {

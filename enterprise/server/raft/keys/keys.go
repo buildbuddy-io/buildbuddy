@@ -3,6 +3,10 @@ package keys
 import (
 	"bytes"
 	"math"
+
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
+
+	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
 
 type Key []byte
@@ -42,4 +46,33 @@ func IsLocalKey(key Key) bool {
 // range identified by the given key prefix.
 func Range(key []byte) ([]byte, []byte) {
 	return MakeKey(key, MinByte), MakeKey(key, MaxByte)
+}
+
+// PartitionIDFromRangeStart parses the partition ID out of a range descriptor's
+// start key. Range data is keyed under "PT<partition_id>/..."; returns "" for
+// keys without that prefix (e.g., the meta range).
+func PartitionIDFromRangeStart(key []byte) string {
+	rest, found := bytes.CutPrefix(key, []byte(filestore.PartitionDirectoryPrefix))
+	if !found {
+		return ""
+	}
+	before, _, ok := bytes.Cut(rest, []byte{'/'})
+	if !ok {
+		return ""
+	}
+	return string(before)
+}
+
+// EnsurePartitionID backfills rd.PartitionId from its start key if empty.
+// Returns true if the descriptor was modified.
+func EnsurePartitionID(rd *rfpb.RangeDescriptor) bool {
+	if rd.GetPartitionId() != "" {
+		return false
+	}
+	id := PartitionIDFromRangeStart(rd.GetStart())
+	if id == "" {
+		return false
+	}
+	rd.PartitionId = id
+	return true
 }
