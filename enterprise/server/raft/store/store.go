@@ -1304,6 +1304,7 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 			metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
 		}).Inc()
 	}
+	metrics.RaftRangeReplica.With(s.rangeReplicaLabels(rd)).Set(1)
 
 	if len(rd.GetReplicas()) == 0 {
 		s.log.Debugf("range %d has no replicas (yet?)", rd.GetRangeId())
@@ -1353,6 +1354,7 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	metrics.RaftRanges.With(prometheus.Labels{
 		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
 	}).Dec()
+	metrics.RaftRangeReplica.Delete(s.rangeReplicaLabels(rd))
 
 	if len(rd.GetReplicas()) == 0 {
 		s.log.Debugf("range descriptor had no replicas yet")
@@ -3974,8 +3976,6 @@ func (s *Store) TestingFlush() {
 
 func (s *Store) refreshMetrics(ctx context.Context) {
 	ticker := s.clock.NewTicker(metricsRefreshPeriod)
-	nhid := s.nodeHost.ID()
-	replicaLocations := map[uint64]prometheus.Labels{}
 	for {
 		select {
 		case <-ctx.Done():
@@ -3992,25 +3992,8 @@ func (s *Store) refreshMetrics(ctx context.Context) {
 				metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: constants.CacheName}).Set(float64(fsu.Avail))
 			}
 			metrics.RaftStoreEventsChanSize.Set(float64(len(s.events)))
-			replicaLocations = s.reportReplicaLocations(nhid, replicaLocations)
 		}
 	}
-}
-
-// reportReplicaLocations sets RaftRangeReplica for every currently-open
-// replica and clears entries from prev that no longer apply. Returns the
-// labelsets emitted this tick, to be passed back in as prev next time.
-func (s *Store) reportReplicaLocations(nhid string, prev map[uint64]prometheus.Labels) map[uint64]prometheus.Labels {
-	cur := s.snapshotReplicaLocations(nhid)
-	for _, lbl := range cur {
-		metrics.RaftRangeReplica.With(lbl).Set(1)
-	}
-	for rangeID, lbl := range prev {
-		if _, ok := cur[rangeID]; !ok {
-			metrics.RaftRangeReplica.Delete(lbl)
-		}
-	}
-	return cur
 }
 
 func (s *Store) getFileSystemUsage() (gosigar.FileSystemUsage, error) {
@@ -4019,19 +4002,18 @@ func (s *Store) getFileSystemUsage() (gosigar.FileSystemUsage, error) {
 	return fsu, err
 }
 
-func (s *Store) snapshotReplicaLocations(nhid string) map[uint64]prometheus.Labels {
-	s.rangeMu.RLock()
-	defer s.rangeMu.RUnlock()
-	out := make(map[uint64]prometheus.Labels, len(s.openRanges))
-	for rangeID, rd := range s.openRanges {
-		out[rangeID] = prometheus.Labels{
-			metrics.RaftRangeIDLabel:    strconv.FormatUint(rangeID, 10),
-			metrics.RaftNodeHostIDLabel: nhid,
-			metrics.PartitionID:         partitionIDFromRangeStart(rd.GetStart()),
-			metrics.ZoneLabel:           s.zone,
-		}
+// rangeReplicaLabels builds the labelset for the RaftRangeReplica gauge. It is
+// used from both UpdateRange (Set) and RemoveRange (Delete); the labels are
+// stable for a given range_id on this store (nhid and zone don't change, and a
+// range's start key doesn't migrate between partitions — splits produce new
+// range_ids), so a Delete after Set sees the same labelset.
+func (s *Store) rangeReplicaLabels(rd *rfpb.RangeDescriptor) prometheus.Labels {
+	return prometheus.Labels{
+		metrics.RaftRangeIDLabel:    strconv.FormatUint(rd.GetRangeId(), 10),
+		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+		metrics.PartitionID:         partitionIDFromRangeStart(rd.GetStart()),
+		metrics.ZoneLabel:           s.zone,
 	}
-	return out
 }
 
 // partitionIDFromRangeStart parses the partition_id out of a range descriptor's
