@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -22,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -29,7 +31,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
-	"google.golang.org/grpc/metadata"
 )
 
 var (
@@ -694,26 +695,34 @@ func (h *hitTracker) recordCacheUsage(ctx context.Context, d *repb.Digest, actio
 	if h.usage == nil {
 		return nil
 	}
+
+	skuCounts := map[sku.SKU]int64{}
+
 	c := &tables.UsageCounts{}
 	if actionCounter == Hit {
 		c.TotalDownloadSizeBytes = d.GetSizeBytes()
+		skuCounts[sku.RemoteCacheCASDownloadedBytes] = d.GetSizeBytes()
 		if h.actionCache {
 			c.ActionCacheHits = 1
+			skuCounts[sku.RemoteCacheACHits] = 1
 			if md := h.executedActionMetadata; md != nil {
 				execStartTime := md.GetExecutionStartTimestamp().AsTime()
 				execEndTime := md.GetExecutionCompletedTimestamp().AsTime()
 				execDuration := execEndTime.Sub(execStartTime)
 				c.TotalCachedActionExecUsec = execDuration.Microseconds()
+				skuCounts[sku.RemoteCacheACCachedExecDurationNanos] = execDuration.Nanoseconds()
 			}
 		} else {
 			c.CASCacheHits = 1
+			skuCounts[sku.RemoteCacheCASHits] = 1
 		}
 	} else if actionCounter == Upload {
 		c.TotalUploadSizeBytes = d.GetSizeBytes()
+		skuCounts[sku.RemoteCacheCASUploadedBytes] = d.GetSizeBytes()
 	} else {
 		return nil
 	}
-	labels, err := usageutil.LabelsForUsageRecording(ctx, h.serverName)
+	labels, olapLabels, err := usageutil.LabelsForUsageRecording(ctx, h.serverName)
 	if err != nil {
 		return status.WrapError(err, "get usage labels")
 	}
@@ -723,7 +732,16 @@ func (h *hitTracker) recordCacheUsage(ctx context.Context, d *repb.Digest, actio
 			d.GetSizeBytes(), h.iid, h.targetField(), labels, h.groupID)
 	}
 
-	return h.usage.Increment(h.ctx, labels, c)
+	var lastErr error
+	if err := h.usage.Increment(h.ctx, labels, c); err != nil {
+		log.CtxWarningf(ctx, "Failed to increment usage: %s", err)
+		lastErr = err
+	}
+	if err := h.usage.IncrementOLAP(h.ctx, olapLabels, skuCounts); err != nil {
+		log.CtxWarningf(ctx, "Failed to increment OLAP usage: %s", err)
+		lastErr = err
+	}
+	return lastErr
 }
 
 var occasionalUncompressedDownloadLogger = log.NamedSubLogger("uncompressed_download").EveryDuration(time.Minute)

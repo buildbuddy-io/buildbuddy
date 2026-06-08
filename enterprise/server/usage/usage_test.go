@@ -154,16 +154,38 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	require.NoError(t, err)
 
 	labels := &tables.UsageLabels{Origin: "internal", Client: "bazel"}
+	olapLabels := sku.Labels{
+		sku.Origin: sku.OriginInternal,
+		sku.Client: sku.ClientBazel,
+	}
 
-	// Increment cache usage for group 1, then group 2. Cached action exec
-	// duration is stored in microseconds in the legacy usage shape.
-	ut.Increment(ctx1, labels, &tables.UsageCounts{
+	executionLabels := sku.Labels{
+		sku.Origin:     sku.OriginInternal,
+		sku.Client:     sku.ClientBazel,
+		sku.OS:         sku.OSLinux,
+		sku.SelfHosted: sku.SelfHostedFalse,
+	}
+	recordUsage := func(ctx context.Context, counts *tables.UsageCounts) {
+		// Record primary DB usage and the corresponding OLAP rows explicitly.
+		// Legacy usage records durations in microseconds; OLAP records durations in nanoseconds.
+		require.NoError(t, ut.Increment(ctx, labels, counts))
+		require.NoError(t, ut.IncrementOLAP(ctx, olapLabels, map[sku.SKU]int64{
+			sku.RemoteCacheCASHits:                   counts.CASCacheHits,
+			sku.RemoteCacheACCachedExecDurationNanos: counts.TotalCachedActionExecUsec * 1000,
+		}))
+		require.NoError(t, ut.IncrementOLAP(ctx, executionLabels, map[sku.SKU]int64{
+			sku.RemoteExecutionExecuteWorkerDurationNanos: counts.LinuxExecutionDurationUsec * 1000,
+			sku.RemoteExecutionExecuteWorkerMemoryGBNanos: counts.MemoryGBUsec * 1000,
+		}))
+	}
+	// Increment cache and execution usage for group 1, then group 2.
+	recordUsage(ctx1, &tables.UsageCounts{
 		CASCacheHits:               1,
 		LinuxExecutionDurationUsec: 12,
 		TotalCachedActionExecUsec:  123,
 		MemoryGBUsec:               34,
 	})
-	ut.Increment(ctx2, labels, &tables.UsageCounts{
+	recordUsage(ctx2, &tables.UsageCounts{
 		CASCacheHits:               10,
 		LinuxExecutionDurationUsec: 56,
 		TotalCachedActionExecUsec:  456,
