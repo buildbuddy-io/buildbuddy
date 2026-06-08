@@ -250,6 +250,7 @@ func (sm *Replica) setRange(val []byte) error {
 	if err := proto.Unmarshal(val, rangeDescriptor); err != nil {
 		return err
 	}
+	keys.EnsurePartitionID(rangeDescriptor)
 
 	sm.rangeMu.Lock()
 	sm.log.Infof("Range descriptor is changing from %s to %s", rdString(sm.rangeDescriptor), rdString(rangeDescriptor))

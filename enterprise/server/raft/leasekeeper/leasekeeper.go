@@ -154,7 +154,8 @@ func (la *leaseAgent) isStopped() bool {
 
 func (la *leaseAgent) sendRangeEvent(eventType events.EventType) {
 	ev := events.RangeEvent{
-		Type: eventType,
+		Type:    eventType,
+		RangeID: la.l.GetRangeID(),
 	}
 	select {
 	case la.broadcast <- ev:
