@@ -133,6 +133,31 @@ export function renderMetricValue(m: stat_filter.Metric, v: number) {
   }
 }
 
+const SUMMABLE_METRICS = [
+  stat_filter.ExecutionMetricType.EXECUTION_WALL_TIME_EXECUTION_METRIC,
+  stat_filter.ExecutionMetricType.QUEUE_TIME_USEC_EXECUTION_METRIC,
+  stat_filter.ExecutionMetricType.INPUT_DOWNLOAD_TIME_EXECUTION_METRIC,
+  stat_filter.ExecutionMetricType.REAL_EXECUTION_TIME_EXECUTION_METRIC,
+  stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_TIME_EXECUTION_METRIC,
+  stat_filter.ExecutionMetricType.EXECUTION_CPU_NANOS_EXECUTION_METRIC,
+  stat_filter.ExecutionMetricType.INPUT_DOWNLOAD_SIZE_EXECUTION_METRIC,
+  stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_SIZE_EXECUTION_METRIC,
+  stat_filter.InvocationMetricType.DURATION_USEC_INVOCATION_METRIC,
+  stat_filter.InvocationMetricType.TIME_SAVED_USEC_INVOCATION_METRIC,
+  stat_filter.InvocationMetricType.CAS_CACHE_UPLOAD_SIZE_INVOCATION_METRIC,
+  stat_filter.InvocationMetricType.CAS_CACHE_DOWNLOAD_SIZE_INVOCATION_METRIC,
+  stat_filter.InvocationMetricType.CAS_CACHE_MISSES_INVOCATION_METRIC,
+  stat_filter.InvocationMetricType.ACTION_CACHE_MISSES_INVOCATION_METRIC,
+];
+
+export function renderTotalValue(m: stat_filter.Metric, v: number): string | null {
+  const metricType = m.execution ?? m.invocation;
+  if (!metricType || !SUMMABLE_METRICS.includes(metricType)) {
+    return null;
+  }
+  return renderMetricValue(m, v);
+}
+
 export function encodeMetricUrlParam(metric: stat_filter.Metric): string {
   if (metric.execution) {
     return "e" + metric.execution;
