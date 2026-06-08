@@ -17,6 +17,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	gstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
@@ -238,10 +240,35 @@ func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStre
 	}()
 	if err := cachetools.GetBlob(ctx, bsClient, blobRN, mw); err != nil {
 		blobMiss(ctx)
+		if isMissingDigestError(err) {
+			return status.NotFoundErrorf("blob %s/%d not found in cache", hash.Hex, contentLength)
+		}
 		return err
 	}
 	blobHit(ctx)
 	return nil
+}
+
+func isMissingDigestError(err error) bool {
+	if status.IsNotFoundError(err) {
+		return true
+	}
+	st, ok := gstatus.FromError(err)
+	if !ok {
+		return false
+	}
+	for _, detail := range st.Details() {
+		pf, ok := detail.(*errdetails.PreconditionFailure)
+		if !ok {
+			continue
+		}
+		for _, violation := range pf.GetViolations() {
+			if violation.GetType() == "MISSING" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func writeBlobMetadataToCache(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) error {

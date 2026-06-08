@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/crane"
@@ -280,6 +281,17 @@ func blobDoesNotExist(t *testing.T, ctx context.Context, te *testenv.TestEnv, re
 	out := &bytes.Buffer{}
 	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
 	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+}
+
+func TestFetchBlobFromCache_MissingBlobReturnsNotFound(t *testing.T) {
+	te := setupTestEnv(t)
+
+	_, _, hash, _ := createLayer(t, "missing_blob_returns_not_found", 1024)
+	out := &bytes.Buffer{}
+	err := ocicache.FetchBlobFromCache(context.Background(), out, te.GetByteStreamClient(), hash, 1024)
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
 }
 
 func TestBlobUploader_BlobExists(t *testing.T) {
