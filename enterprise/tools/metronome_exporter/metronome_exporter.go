@@ -172,6 +172,7 @@ func exportAll(ctx context.Context, env *real_environment.RealEnv, client *metro
 		events = append(events, metronome.UsageEvent{
 			GroupID:     r.GroupID,
 			PeriodStart: w.from,
+			PeriodEnd:   w.to,
 			SKU:         r.SKU,
 			Labels:      r.Labels,
 			Count:       r.Count,

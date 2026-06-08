@@ -47,6 +47,7 @@ func defaultRetryOptions() *retry.Options {
 type UsageEvent struct {
 	GroupID     string
 	PeriodStart time.Time
+	PeriodEnd   time.Time
 	SKU         sku.SKU
 	Labels      map[sku.LabelName]sku.LabelValue
 	Count       int64
@@ -130,9 +131,11 @@ func encodeEvent(e UsageEvent) (*MetronomeEvent, error) {
 		return nil, status.InvalidArgumentError("group ID is required")
 	}
 	properties := map[string]string{
-		"group_id": e.GroupID,
-		"sku":      e.SKU.String(),
-		"count":    strconv.FormatInt(e.Count, 10),
+		"group_id":     e.GroupID,
+		"sku":          e.SKU.String(),
+		"count":        strconv.FormatInt(e.Count, 10),
+		"period_start": e.PeriodStart.UTC().Format(time.RFC3339),
+		"period_end":   e.PeriodEnd.UTC().Format(time.RFC3339),
 	}
 	for k, v := range e.Labels {
 		properties[k] = v
@@ -158,6 +161,7 @@ func transactionID(e UsageEvent) string {
 	writeField(e.GroupID)
 	writeField(region.ConfiguredAppRegion())
 	writeField(e.PeriodStart.UTC().Format(time.RFC3339))
+	writeField(e.PeriodEnd.UTC().Format(time.RFC3339))
 	writeField(e.SKU.String())
 	keys := make([]string, 0, len(e.Labels))
 	for k := range e.Labels {
