@@ -1069,7 +1069,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		if _, ok := u.Counts[sku.RemoteExecutionExecuteWorkerDurationNanos]; ok {
 			foundOLAPExecutorUsage = &u
 		}
-		if _, ok := u.Counts[sku.RemoteExecutionExecuteComputeNanos]; ok {
+		if _, ok := u.Counts[sku.RemoteExecutionExecuteFixedComputeNanos]; ok {
 			foundOLAPComputeUsage = &u
 		}
 	}
@@ -1093,7 +1093,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		sku.SelfHosted: sku.GetSelfHostedLabel(test.expectedSelfHosted),
 	}
 	assert.Equal(t, expectedComputeOLAPLabels, foundOLAPComputeUsage.Labels)
-	assert.Equal(t, expectedDurationNanos, foundOLAPComputeUsage.Counts[sku.RemoteExecutionExecuteComputeNanos])
+	assert.Equal(t, expectedDurationNanos, foundOLAPComputeUsage.Counts[sku.RemoteExecutionExecuteFixedComputeNanos])
 
 	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
 	require.NoError(t, err)
