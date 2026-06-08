@@ -1314,15 +1314,6 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
-	// Make sure RaftBytes has a value for this range. The apply path will
-	// refresh it as data is written; this guarantees presence even for idle
-	// ranges that never get to entriesBetweenUsageChecks.
-	if usage, err := r.Usage(); err == nil {
-		metrics.RaftBytes.With(prometheus.Labels{
-			metrics.RaftRangeIDLabel: strconv.FormatUint(rd.GetRangeId(), 10),
-		}).Set(float64(usage.GetEstimatedDiskBytesUsed()))
-	}
-
 	s.mu.Lock()
 	stopped := s.stopped
 	s.mu.Unlock()
@@ -1361,9 +1352,6 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	metrics.RaftRanges.With(prometheus.Labels{
 		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
 	}).Dec()
-	metrics.RaftBytes.Delete(prometheus.Labels{
-		metrics.RaftRangeIDLabel: strconv.FormatUint(rd.GetRangeId(), 10),
-	})
 
 	if len(rd.GetReplicas()) == 0 {
 		s.log.Debugf("range descriptor had no replicas yet")
@@ -2546,7 +2534,7 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, targetRangeSiz
 				rangeID := rangeUsageEvent.RangeDescriptor.GetRangeId()
 				estimatedDiskBytes := rangeUsageEvent.ReplicaUsage.GetEstimatedDiskBytesUsed()
 				metrics.RaftBytes.With(prometheus.Labels{
-					metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
+					metrics.RaftRangeIDLabel: strconv.FormatUint(rangeID, 10),
 				}).Set(float64(estimatedDiskBytes))
 				if rangeID == constants.MetaRangeID {
 					continue
