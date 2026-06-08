@@ -8,7 +8,7 @@
 //
 // Example:
 //
-//	bazel run //enterprise/server/metronome_exporter:metronome_exporter \
+//	bazel run //enterprise/tools/metronome_exporter:metronome_exporter \
 //	  --from=2026-06-01T00:00:00Z \
 //	  --to=2026-06-01T01:05:00Z \
 //	  --group_id=GR123 --group_id=GR456 \
@@ -29,6 +29,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/billing/metronome"
+	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -58,10 +59,10 @@ var (
 )
 
 func main() {
+	flag.Parse()
 	if err := disableAutoMigration(); err != nil {
 		log.Fatalf("disable auto-migration: %s", err)
 	}
-	flag.Parse()
 	if err := run(); err != nil {
 		log.Fatal(err.Error())
 	}
@@ -83,6 +84,10 @@ func run() error {
 	if err := configsecrets.Configure(); err != nil {
 		return fmt.Errorf("prepare config secrets provider: %w", err)
 	}
+	if err := config.Load(); err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
 	if err := log.Configure(); err != nil {
 		return fmt.Errorf("configure log: %w", err)
 	}
@@ -132,7 +137,7 @@ func parseWindow() (*window, error) {
 	}
 	cutoff := time.Now().UTC().Add(-minAge)
 	if t.After(cutoff) {
-		return nil, fmt.Errorf("--to (%s) is within --min_age=%s of now; refusing to export possibly-unsettled periods", t, minAge)
+		return nil, fmt.Errorf("--to (%s) is within min age %s of now; refusing to export possibly-unsettled periods", t, minAge)
 	}
 	return &window{from: f, to: t}, nil
 }
@@ -166,7 +171,7 @@ func exportAll(ctx context.Context, env *real_environment.RealEnv, client *metro
 	for _, r := range rows {
 		events = append(events, metronome.UsageEvent{
 			GroupID:     r.GroupID,
-			PeriodStart: r.PeriodStart,
+			PeriodStart: w.from,
 			SKU:         r.SKU,
 			Labels:      r.Labels,
 			Count:       r.Count,
@@ -192,12 +197,11 @@ func queryUsageRows(ctx context.Context, env *real_environment.RealEnv, groups [
 			group_id,
 			sku,
 			labels,
-			? AS period_start,
 			SUM(count) AS count
-		FROM Usage
+		FROM "Usage"
 		WHERE period_start >= ?
 			AND period_start < ?`
-	args := []interface{}{w.from, w.from, w.to}
+	args := []interface{}{w.from, w.to}
 	if len(groups) > 0 {
 		query += `
 			AND group_id IN ?`
@@ -217,9 +221,6 @@ func queryUsageRows(ctx context.Context, env *real_environment.RealEnv, groups [
 }
 
 func disableAutoMigration() error {
-	if err := flagutil.SetValueForFlagName("auto_migrate_db", false, nil, false); err != nil {
-		return err
-	}
 	if err := flagutil.SetValueForFlagName("olap_database.auto_migrate_db", false, nil, false); err != nil {
 		return err
 	}
