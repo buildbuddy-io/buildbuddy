@@ -16,27 +16,39 @@ func (s SKU) String() string {
 
 // SKU constants - enumerated explicitly to ensure low cardinality.
 //
-// The format is roughly "<service>.<category>.<metric>". This hierarchical
-// convention allows easily querying subsets of usage data using prefix
-// matching, and when sorting by SKU, the usage data is naturally grouped by
-// service and type.
+// The format is roughly "<product-area>.<category>.<metric>", organized mostly
+// according to the originating RPC. This hierarchical convention allows easily
+// querying subsets of usage data using prefix matching, and when sorting by
+// SKU, the usage data is naturally grouped by service and type.
 const (
-	BuildEventsBESCount SKU = "build_events.build_event_stream.count"
+	// SKUs related to build event handling/processing (PublishBuildToolEventStream RPC)
+	categoryBES = "build_events.build_event_stream."
 
-	RemoteCacheCASHits                   SKU = "remote_cache.content_addressable_storage.hits"
-	RemoteCacheCASDownloadedBytes        SKU = "remote_cache.content_addressable_storage.downloaded_bytes"
-	RemoteCacheCASUploadedBytes          SKU = "remote_cache.content_addressable_storage.uploaded_bytes"
-	RemoteCacheACHits                    SKU = "remote_cache.action_cache_hits.hits"
-	RemoteCacheACCachedExecDurationNanos SKU = "remote_cache.action_cache.cached_execution_duration_nanos"
+	BuildEventsBESCount SKU = categoryBES + "count"
 
-	RemoteExecutionExecuteWorkerDurationNanos   SKU = "remote_execution.execute.worker_duration_nanos"
-	RemoteExecutionExecuteWorkerCPUNanos        SKU = "remote_execution.execute.worker_cpu_nanos"
-	RemoteExecutionExecuteWorkerMemoryGBNanos   SKU = "remote_execution.execute.worker_memory_gb_nanos"
-	RemoteExecutionExecuteComputeNanos          SKU = "remote_execution.execute.compute_nanos"
-	RemoteExecutionExecuteBurstableComputeNanos SKU = "remote_execution.execute.burstable_compute_nanos"
+	// SKUs related to remote cache (Content Addressable Storage / CAS RPCs)
+	categoryCAS = "remote_cache.content_addressable_storage."
 
-	LocalSnapshotSavedBytes  SKU = "remote_execution.local_snapshot_saved_bytes"
-	RemoteSnapshotSavedBytes SKU = "remote_execution.remote_snapshot_saved_bytes"
+	RemoteCacheCASHits            SKU = categoryCAS + "hits"
+	RemoteCacheCASDownloadedBytes SKU = categoryCAS + "downloaded_bytes"
+	RemoteCacheCASUploadedBytes   SKU = categoryCAS + "uploaded_bytes"
+
+	// SKUs related to remote cache (Action Cache / AC RPCs)
+	categoryAC = "remote_cache.action_cache."
+
+	RemoteCacheACHits                    SKU = categoryAC + "hits"
+	RemoteCacheACCachedExecDurationNanos SKU = categoryAC + "cached_execution_duration_nanos"
+
+	// SKUs related to remote execution action processing (Execute RPC)
+	categoryRBE = "remote_execution.execute."
+
+	RemoteExecutionExecuteWorkerDurationNanos      SKU = categoryRBE + "worker_duration_nanos"
+	RemoteExecutionExecuteWorkerCPUNanos           SKU = categoryRBE + "worker_cpu_nanos"
+	RemoteExecutionExecuteWorkerMemoryGBNanos      SKU = categoryRBE + "worker_memory_gb_nanos"
+	RemoteExecutionExecuteFixedComputeNanos        SKU = categoryRBE + "fixed_compute_nanos"
+	RemoteExecutionExecuteFlexibleComputeNanos     SKU = categoryRBE + "flexible_compute_nanos"
+	RemoteExecutionExecuteLocalSnapshotSavedBytes  SKU = categoryRBE + "local_snapshot_saved_bytes"
+	RemoteExecutionExecuteRemoteSnapshotSavedBytes SKU = categoryRBE + "remote_snapshot_saved_bytes"
 )
 
 // LabelName is a usage counter label, which further qualifies the SKU.
