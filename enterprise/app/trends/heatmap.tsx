@@ -351,7 +351,7 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
         metric: highMetric,
         metricBucketIndex: highMetricIndex,
         value: +this.props.heatmapData.column[highDateIndex].value[highMetricIndex],
-        total: +this.props.heatmapData.column[lowDateIndex].total[lowMetricIndex],
+        total: +this.props.heatmapData.column[highDateIndex].total[highMetricIndex],
       },
     ];
   }

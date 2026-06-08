@@ -848,8 +848,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
     let selectionTotal = 0;
     let restTotal = 0;
+    const hasSelection = !(lowDateIndex < 0 || highDateIndex < 0 || lowMetricIndex < 0 || highMetricIndex < 0);
     if (this.state.heatmapData) {
-      const hasSelection = !(lowDateIndex < 0 || highDateIndex < 0 || lowMetricIndex < 0 || highMetricIndex < 0);
       for (let d = 0; d < this.state.heatmapData.column.length; d++) {
         for (let m = 0; m < this.state.heatmapData.column[d].total.length; m++) {
           const t = +(this.state.heatmapData.column[d].total[m] ?? 0);
@@ -862,7 +862,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       }
     }
 
-    const selectionTotalValue = renderTotalValue(this.selectedMetric.metric, selectionTotal);
+    const selectionTotalValue = hasSelection ? renderTotalValue(this.selectedMetric.metric, selectionTotal) : null;
     const restTotalValue = renderTotalValue(this.selectedMetric.metric, restTotal);
 
     let selectionSummary = (
