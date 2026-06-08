@@ -26,8 +26,9 @@ import (
 )
 
 var (
-	usageStartDate = flag.String("app.usage_start_date", "", "If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z")
-	alertsEnabled  = flag.Bool("app.usage_alerts_enabled", false, "If set, usage alerts will be enabled in the UI.")
+	usageStartDate      = flag.String("app.usage_start_date", "", "If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z")
+	alertsEnabled       = flag.Bool("app.usage_alerts_enabled", false, "If set, usage alerts will be enabled in the UI.")
+	readUsageFromOLAPDB = flag.Bool("app.read_usage_from_olap_db", false, "If enabled, read Usage page data from OLAP DB.")
 )
 
 const (
@@ -262,8 +263,10 @@ func quotedRawUsageLabelValues(values ...sku.LabelValue) string {
 }
 
 type usageService struct {
-	env   environment.Env
-	clock clockwork.Clock
+	env            environment.Env
+	clock          clockwork.Clock
+	olapdbh        interfaces.OLAPDBHandle
+	readFromOLAPDB bool
 
 	// start is the earliest moment in time at which we're able to return usage
 	// data to the user. We return usage data from the start of the month
@@ -271,20 +274,32 @@ type usageService struct {
 	start time.Time
 }
 
-// Registers the usage service if usage tracking is enabled
+// Register registers the usage service if usage tracking is enabled.
 func Register(env *real_environment.RealEnv) error {
 	if usage_config.UsageTrackingEnabled() {
-		env.SetUsageService(New(env, clockwork.NewRealClock()))
+		service, err := New(env, env.GetClock())
+		if err != nil {
+			return err
+		}
+		env.SetUsageService(service)
 	}
 	return nil
 }
 
-func New(env environment.Env, clock clockwork.Clock) *usageService {
-	return &usageService{
-		env:   env,
-		clock: clock,
-		start: configuredUsageStartDate(),
+// New returns a usage service configured with the provided env and clock.
+func New(env environment.Env, clock clockwork.Clock) (*usageService, error) {
+	olapdbh := env.GetOLAPDBHandle()
+	readFromOLAPDB := *readUsageFromOLAPDB
+	if readFromOLAPDB && olapdbh == nil {
+		return nil, status.FailedPreconditionError("OLAP DB handle must be configured when app.read_usage_from_olap_db is true")
 	}
+	return &usageService{
+		env:            env,
+		clock:          clock,
+		olapdbh:        olapdbh,
+		readFromOLAPDB: readFromOLAPDB,
+		start:          configuredUsageStartDate(),
+	}, nil
 }
 
 // GetAlertsEnabled returns whether usage alerting should be exposed to the frontend.
@@ -505,6 +520,13 @@ func (s *usageService) countUsageAlertingRules(ctx context.Context, dbh interfac
 }
 
 func (s *usageService) scanUsages(ctx context.Context, groupID string, start, end time.Time) ([]*usagepb.Usage, error) {
+	if s.readFromOLAPDB {
+		return s.scanOLAPUsages(ctx, groupID, start, end)
+	}
+	return s.scanPrimaryDBUsages(ctx, groupID, start, end)
+}
+
+func (s *usageService) scanPrimaryDBUsages(ctx context.Context, groupID string, start, end time.Time) ([]*usagepb.Usage, error) {
 	dbh := s.env.GetDBHandle()
 	selectExpressions := []string{dbh.DateFromUsecTimestamp("period_start_usec", 0) + ` AS period`}
 	for _, field := range UsageFields {
@@ -518,6 +540,23 @@ func (s *usageService) scanUsages(ctx context.Context, groupID string, start, en
 		GROUP BY period
 		ORDER BY period ASC
 	`, start.UnixMicro(), end.UnixMicro(), groupID)
+	return db.ScanAll(rq, &usagepb.Usage{})
+}
+
+func (s *usageService) scanOLAPUsages(ctx context.Context, groupID string, start, end time.Time) ([]*usagepb.Usage, error) {
+	dbh := s.olapdbh
+	selectExpressions := []string{"formatDateTime(period_start, '%F') AS period"}
+	for _, field := range UsageFields {
+		selectExpressions = append(selectExpressions, fmt.Sprintf("%s AS %s", field.OLAPExpression, field.Name))
+	}
+	rq := dbh.NewQuery(ctx, "usage_service_scan_olap").Raw(`
+		SELECT `+strings.Join(selectExpressions, ",\n\t\t")+`
+		FROM Usage
+		WHERE period_start >= ? AND period_start < ?
+		AND group_id = ?
+		GROUP BY period
+		ORDER BY period ASC
+	`, start, end, groupID)
 	return db.ScanAll(rq, &usagepb.Usage{})
 }
 
