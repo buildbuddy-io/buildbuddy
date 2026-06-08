@@ -4002,11 +4002,7 @@ func (s *Store) getFileSystemUsage() (gosigar.FileSystemUsage, error) {
 	return fsu, err
 }
 
-// rangeReplicaLabels builds the labelset for the RaftRangeReplica gauge. It is
-// used from both UpdateRange (Set) and RemoveRange (Delete); the labels are
-// stable for a given range_id on this store (nhid and zone don't change, and a
-// range's start key doesn't migrate between partitions — splits produce new
-// range_ids), so a Delete after Set sees the same labelset.
+// rangeReplicaLabels builds the labelset for the RaftRangeReplica gauge.
 func (s *Store) rangeReplicaLabels(rd *rfpb.RangeDescriptor) prometheus.Labels {
 	return prometheus.Labels{
 		metrics.RaftRangeIDLabel:    strconv.FormatUint(rd.GetRangeId(), 10),
