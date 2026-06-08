@@ -28,6 +28,16 @@ interface State {
   directoryToFileLimit: Map<string, number>;
 }
 
+interface DirectorySummary {
+  entry: tools.protos.ExecLogEntry;
+  sizeBytes: Long;
+}
+
+interface DirectoryMetadata {
+  sizeBytes: Long;
+  hash?: string;
+}
+
 const pageSize = 100;
 export default class InvocationFileCardComponent extends React.Component<Props, State> {
   state: State = {
@@ -42,6 +52,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
   };
 
   timeoutRef?: number;
+  directoryMetadataCache = new Map<string, DirectoryMetadata>();
 
   componentDidMount() {
     this.fetchLog();
@@ -99,15 +110,15 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
     }
   }
 
-  compareDirectories(a: tools.protos.ExecLogEntry, b: tools.protos.ExecLogEntry): number {
+  compareDirectories(a: DirectorySummary, b: DirectorySummary): number {
     let first = this.state.direction == "asc" ? a : b;
     let second = this.state.direction == "asc" ? b : a;
 
     switch (this.state.sort) {
       case "size":
-        return +this.sumFileSizes(first?.directory?.files) - +this.sumFileSizes(second?.directory?.files);
+        return first.sizeBytes.compare(second.sizeBytes);
       default:
-        return (first.directory?.path || "").localeCompare(second.directory?.path || "");
+        return (first.entry.directory?.path || "").localeCompare(second.entry.directory?.path || "");
     }
   }
 
@@ -119,9 +130,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
   }
 
   sumFileSizes(files: Array<tools.protos.ExecLogEntry.File> | undefined) {
-    return (
-      (files || []).map((f) => f.digest?.sizeBytes || 0).reduce((a, b) => new Long(+a + +b), Long.ZERO) || Long.ZERO
-    );
+    return (files || []).reduce((sum, f) => sum.add(f.digest?.sizeBytes || 0), Long.ZERO);
   }
 
   hashFileHashes(files: Array<tools.protos.ExecLogEntry.File> | undefined) {
@@ -136,6 +145,35 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
         }
         return hash;
       }, "");
+  }
+
+  summarizeDirectory(entry: tools.protos.ExecLogEntry): DirectorySummary {
+    return {
+      entry,
+      sizeBytes: this.directoryMetadata(entry).sizeBytes,
+    };
+  }
+
+  directoryKey(entry: tools.protos.ExecLogEntry): string {
+    return entry.id + ":" + (entry.directory?.path || "");
+  }
+
+  directoryMetadata(entry: tools.protos.ExecLogEntry): DirectoryMetadata {
+    const key = this.directoryKey(entry);
+    let metadata = this.directoryMetadataCache.get(key);
+    if (!metadata) {
+      metadata = { sizeBytes: this.sumFileSizes(entry.directory?.files) };
+      this.directoryMetadataCache.set(key, metadata);
+    }
+    return metadata;
+  }
+
+  directoryHash(entry: tools.protos.ExecLogEntry): string {
+    let metadata = this.directoryMetadata(entry);
+    if (metadata.hash === undefined) {
+      metadata.hash = this.hashFileHashes(entry.directory?.files);
+    }
+    return metadata.hash;
   }
 
   handleSortDirectionChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -231,6 +269,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
 
         return true;
       })
+      .map((entry) => this.summarizeDirectory(entry))
       .sort(this.compareDirectories.bind(this));
 
     const symlinks = this.state.log
@@ -361,7 +400,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
             </div>
             <div>
               <div className="invocation-execution-table">
-                {directories.slice(0, this.state.directoryLimit).map((entry) => {
+                {directories.slice(0, this.state.directoryLimit).map(({ entry, sizeBytes }) => {
                   let path = entry.directory?.path || "";
                   let fileLimit = this.state.directoryToFileLimit.get(path) || 0;
                   return (
@@ -380,8 +419,8 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
                             <div>
                               <DigestComponent
                                 digest={{
-                                  sizeBytes: this.sumFileSizes(entry.directory?.files),
-                                  hash: this.hashFileHashes(entry.directory?.files),
+                                  sizeBytes,
+                                  hash: this.directoryHash(entry),
                                 }}
                                 expanded={true}
                               />
