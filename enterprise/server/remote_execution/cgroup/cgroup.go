@@ -490,24 +490,24 @@ func Stats(ctx context.Context, dir string, blockDevice *block_io.Device) (*repb
 	}
 
 	// Read PSI metrics.
-	// Note that PSI may not be supported in all environments,
-	// so ignore NotExist errors.
+	// Note that PSI may not be supported in all environments. The files may
+	// either be missing, or reads may return EOPNOTSUPP if PSI is disabled.
 
 	cpuPressurePath := filepath.Join(dir, "cpu.pressure")
 	cpuPressure, err := readPSIFile(cpuPressurePath)
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !isUnsupportedPSIError(err) {
 		return nil, err
 	}
 
 	memPressurePath := filepath.Join(dir, "memory.pressure")
 	memPressure, err := readPSIFile(memPressurePath)
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !isUnsupportedPSIError(err) {
 		return nil, err
 	}
 
 	ioPressurePath := filepath.Join(dir, "io.pressure")
 	ioPressure, err := readPSIFile(ioPressurePath)
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !isUnsupportedPSIError(err) {
 		return nil, err
 	}
 
@@ -519,6 +519,10 @@ func Stats(ctx context.Context, dir string, blockDevice *block_io.Device) (*repb
 		MemoryPressure: memPressure,
 		IoPressure:     ioPressure,
 	}, nil
+}
+
+func isUnsupportedPSIError(err error) bool {
+	return os.IsNotExist(err) || errors.Is(err, syscall.EOPNOTSUPP)
 }
 
 func (p *Paths) v1Stats(ctx context.Context, cid string) (*repb.UsageStats, error) {

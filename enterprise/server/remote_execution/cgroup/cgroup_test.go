@@ -1,7 +1,9 @@
 package cgroup
 
 import (
+	"io/fs"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
@@ -149,6 +151,18 @@ full avg10=0.01 avg60=0.50 avg300=1.23 total=23456
 			Total:  23456,
 		},
 	}, psi, protocmp.Transform()))
+}
+
+func TestIsUnsupportedPSIError(t *testing.T) {
+	// Kernels with PSI disabled can expose cgroup pressure files but reject
+	// reads with EOPNOTSUPP.
+	require.True(t, isUnsupportedPSIError(&fs.PathError{Op: "read", Path: "/sys/fs/cgroup/cpu.pressure", Err: syscall.EOPNOTSUPP}))
+
+	// Some cgroup environments do not expose PSI files at all.
+	require.True(t, isUnsupportedPSIError(&fs.PathError{Op: "open", Path: "/sys/fs/cgroup/cpu.pressure", Err: fs.ErrNotExist}))
+
+	// Other read failures should still be surfaced.
+	require.False(t, isUnsupportedPSIError(&fs.PathError{Op: "read", Path: "/sys/fs/cgroup/cpu.pressure", Err: syscall.EIO}))
 }
 
 func TestParseIOStats(t *testing.T) {
