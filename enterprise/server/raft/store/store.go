@@ -1303,6 +1303,7 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 			metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
 		}).Inc()
 	}
+	metrics.RaftRangeReplica.With(s.rangeReplicaLabels(rd)).Set(1)
 
 	if len(rd.GetReplicas()) == 0 {
 		s.log.Debugf("range %d has no replicas (yet?)", rd.GetRangeId())
@@ -1352,6 +1353,7 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	metrics.RaftRanges.With(prometheus.Labels{
 		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
 	}).Dec()
+	metrics.RaftRangeReplica.Delete(s.rangeReplicaLabels(rd))
 
 	if len(rd.GetReplicas()) == 0 {
 		s.log.Debugf("range descriptor had no replicas yet")
@@ -3994,6 +3996,31 @@ func (s *Store) getFileSystemUsage() (gosigar.FileSystemUsage, error) {
 	fsu := gosigar.FileSystemUsage{}
 	err := fsu.Get(s.rootDir)
 	return fsu, err
+}
+
+// rangeReplicaLabels builds the labelset for the RaftRangeReplica gauge.
+func (s *Store) rangeReplicaLabels(rd *rfpb.RangeDescriptor) prometheus.Labels {
+	return prometheus.Labels{
+		metrics.RaftRangeIDLabel:    strconv.FormatUint(rd.GetRangeId(), 10),
+		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+		metrics.PartitionID:         partitionIDFromRangeStart(rd.GetStart()),
+		metrics.ZoneLabel:           s.zone,
+	}
+}
+
+// partitionIDFromRangeStart parses the partition_id out of a range descriptor's
+// start key. Range data is keyed under "PT<partition_id>/..."; returns "" for
+// ranges with no partition prefix (e.g., the meta range).
+// TODO(go/b/7513): remove after we add partition to RangeDescriptor.
+func partitionIDFromRangeStart(key []byte) string {
+	rest, found := bytes.CutPrefix(key, []byte(filestore.PartitionDirectoryPrefix))
+	if !found {
+		return "unknown"
+	}
+	if before, _, ok := bytes.Cut(rest, []byte{'/'}); ok {
+		return string(before)
+	}
+	return "unknown"
 }
 
 func (s *Store) setupPartitions(ctx context.Context) {

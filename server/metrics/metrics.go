@@ -206,6 +206,9 @@ const (
 	// The ID of a partition.
 	RaftNodeHostIDLabel = "node_host_id"
 
+	// The availability zone of a node.
+	ZoneLabel = "zone"
+
 	// The range ID of a raft region.
 	RaftRangeIDLabel = "range_id"
 
@@ -2825,6 +2828,18 @@ var (
 		Help:      "Number of raft ranges on each nodehost.",
 	}, []string{
 		RaftNodeHostIDLabel,
+	})
+
+	RaftRangeReplica = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "range_replica",
+		Help:      "Indicator (always 1) that the labeled nodehost holds a replica of the given range. Use to verify replica placement across zones and partitions.",
+	}, []string{
+		RaftRangeIDLabel,
+		RaftNodeHostIDLabel,
+		PartitionID,
+		ZoneLabel,
 	})
 
 	RaftLeases = promauto.NewGaugeVec(prometheus.GaugeOpts{
