@@ -4015,6 +4015,7 @@ func (s *Store) rangeReplicaLabels(rd *rfpb.RangeDescriptor) prometheus.Labels {
 // partitionIDFromRangeStart parses the partition_id out of a range descriptor's
 // start key. Range data is keyed under "PT<partition_id>/..."; returns "" for
 // ranges with no partition prefix (e.g., the meta range).
+// TODO(go/b/7513): remove after we add partition to RangeDescriptor.
 func partitionIDFromRangeStart(key []byte) string {
 	rest, found := bytes.CutPrefix(key, []byte(filestore.PartitionDirectoryPrefix))
 	if !found {
