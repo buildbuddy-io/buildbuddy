@@ -35,7 +35,9 @@ If using the [BuildBuddy Enterprise Helm charts](https://github.com/buildbuddy-i
 
 For a BuildBuddy deployment running multiple apps, it is necessary to provide a default redis target for some features to work correctly. Metrics collection, usage tracking, and responsive build logs all depend on this.
 
-If no default redis target is configured, we will fall back to using the cache redis target, if available, and then the remote execution target, if available. The default redis target also acts as the primary fallback if the remote execution redis target is left unspecified. The default redis target does NOT act as a fallback for the cache redis target.
+If no default redis target is configured, we will fall back to using the deprecated cache redis target, if available, and then the remote execution target, if available.
+New deployments should set `app.default_redis_target` explicitly. The default redis target also acts as the primary fallback if the remote execution redis target is left unspecified.
+The default redis target does NOT act as a fallback for the deprecated cache redis target.
 
 The configuration below demostrates a default redis target:
 
@@ -44,15 +46,13 @@ app:
   default_redis_target: "my-redis.local:6379"
 ```
 
-### GCS Based Cache / Object Storage / Redis
+### GCS Object Storage
 
-By default, BuildBuddy will cache objects and store uploaded build events on the local disk. If you want to store them in a shared durable location, like a Google Cloud Storage bucket, you can do that by configuring a GCS cache or storage backend.
+By default, BuildBuddy stores uploaded build events on the local disk. If you want to store uploaded build events in a shared durable location, like a Google Cloud Storage bucket, you can configure a GCS storage backend.
 
 If your BuildBuddy instance is running on a machine with Google Default Credentials, no credentials file will be necessary. If not, you should [create a service account](https://cloud.google.com/docs/authentication/getting-started) with permissions to write to cloud storage, and download the credentials .json file.
 
-We also recommend providing a Redis instance for improved remote build execution & small file performance. This can be configured automatically using the [BuildBuddy Enterprise Helm charts](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy-enterprise) with the `redis.enabled` value.
-
-The configuration below configures Redis & GCS storage bucket to act as a storage backend and cache:
+The configuration below configures a GCS storage bucket:
 
 ```yaml title="config.yaml"
 storage:
@@ -62,16 +62,9 @@ storage:
     bucket: "buildbuddy_prod_blobs"
     project_id: "flame-build"
     credentials_file: "your_service-acct.json"
-cache:
-  redis_target: "my-redis.local:6379"
-  gcs:
-    bucket: "buildbuddy_cache"
-    project_id: "your_gcs_project_id"
-    credentials_file: "/path/to/your/credential/file.json"
-    ttl_days: 30
 ```
 
-If using Amazon S3, you can configure your storage and cache similarly:
+If using Amazon S3, you can configure your storage similarly:
 
 ```yaml title="config.yaml"
 storage:
@@ -81,13 +74,6 @@ storage:
     region: "us-west-2"
     bucket: "buildbuddy-bucket"
     credentials_profile: "other-profile"
-cache:
-  redis_target: "my-redis.local:6379"
-  s3:
-    region: "us-west-2"
-    bucket: "buildbuddy-bucket"
-    credentials_profile: "other-profile"
-    ttl_days: 30
 ```
 
 ### Authentication Provider Integration
@@ -162,6 +148,7 @@ app:
   build_buddy_url: "https://app.buildbuddy.mydomain"
   events_api_url: "grpcs://events.buildbuddy.mydomain:1986"
   cache_api_url: "grpcs://cache.buildbuddy.mydomain:1986"
+  default_redis_target: "my-redis.local:6379"
 database:
   data_source: "mysql://user:pass@tcp(12.34.56.78)/database_name"
 storage:
@@ -172,11 +159,8 @@ storage:
     project_id: "flame-build"
     credentials_file: "your_service-acct.json"
 cache:
-  gcs:
-    bucket: "buildbuddy_cache"
-    project_id: "your_gcs_project_id"
-    credentials_file: "/path/to/your/credential/file.json"
-    ttl_days: 30
+  disk:
+    root_directory: "/data/buildbuddy-cache"
 auth:
   oauth_providers:
     - issuer_url: "https://your-custom-domain.okta.com"

@@ -32,6 +32,7 @@ import {
   encodeTargetLabelUrlParam,
   encodeWorkerUrlParam,
   renderMetricValue,
+  renderTotalValue,
 } from "./common";
 import HeatmapComponent, { HeatmapSelection } from "./heatmap";
 
@@ -824,29 +825,85 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   summarizeSelection(): React.ReactElement | null {
-    if (!this.currentHeatmapSelection) {
-      return (
+    let [lowDateIndex, highDateIndex, lowMetricIndex, highMetricIndex] = [-1, -1, -1, -1];
+    if (this.currentHeatmapSelection) {
+      const longNumberCompare = (n: number) => (l: Long) => +l === n;
+      lowDateIndex =
+        this.state.heatmapData?.timestampBracket.findIndex(
+          longNumberCompare(this.currentHeatmapSelection.dateRangeMicros.startInclusive)
+        ) ?? -1;
+      highDateIndex =
+        this.state.heatmapData?.timestampBracket.findIndex(
+          longNumberCompare(this.currentHeatmapSelection.dateRangeMicros.endExclusive)
+        ) ?? -1;
+      lowMetricIndex =
+        this.state.heatmapData?.bucketBracket.findIndex(
+          longNumberCompare(this.currentHeatmapSelection.bucketRange.startInclusive)
+        ) ?? -1;
+      highMetricIndex =
+        this.state.heatmapData?.bucketBracket.findIndex(
+          longNumberCompare(this.currentHeatmapSelection.bucketRange.endExclusive)
+        ) ?? -1;
+    }
+
+    let selectionTotal = 0;
+    let restTotal = 0;
+    const hasSelection = !(lowDateIndex < 0 || highDateIndex < 0 || lowMetricIndex < 0 || highMetricIndex < 0);
+    if (this.state.heatmapData) {
+      for (let d = 0; d < this.state.heatmapData.column.length; d++) {
+        for (let m = 0; m < this.state.heatmapData.column[d].total.length; m++) {
+          const t = +(this.state.heatmapData.column[d].total[m] ?? 0);
+          if (hasSelection && m >= lowMetricIndex && m < highMetricIndex && d >= lowDateIndex && d < highDateIndex) {
+            selectionTotal += t;
+          } else {
+            restTotal += t;
+          }
+        }
+      }
+    }
+
+    const selectionTotalValue = hasSelection ? renderTotalValue(this.selectedMetric.metric, selectionTotal) : null;
+    const restTotalValue = renderTotalValue(this.selectedMetric.metric, restTotal);
+
+    let selectionSummary = (
+      <span className="selection-summary-text">
+        <strong>Selection</strong> will be computed when you select a region in the heatmap.
+      </span>
+    );
+    if (this.currentHeatmapSelection) {
+      const startDate = moment(this.currentHeatmapSelection.dateRangeMicros.startInclusive / 1000).format("lll");
+      const endDate = moment(this.currentHeatmapSelection.dateRangeMicros.endExclusive / 1000).format("lll");
+      const startValue = renderMetricValue(
+        this.selectedMetric.metric,
+        this.currentHeatmapSelection.bucketRange.startInclusive
+      );
+      const endValue = renderMetricValue(
+        this.selectedMetric.metric,
+        this.currentHeatmapSelection.bucketRange.endExclusive
+      );
+      selectionSummary = (
         <span className="selection-summary-text">
-          <strong>Selection</strong> will be computed when you select a region in the heatmap.
+          <strong>Selection</strong> contains events between {startDate} and {endDate} with values {startValue} -{" "}
+          {endValue}
+          {selectionTotalValue ? ", totaling " + selectionTotalValue : ""}.
         </span>
       );
     }
 
-    const startDate = moment(this.currentHeatmapSelection.dateRangeMicros.startInclusive / 1000).format("lll");
-    const endDate = moment(this.currentHeatmapSelection.dateRangeMicros.endExclusive / 1000).format("lll");
-    const startValue = renderMetricValue(
-      this.selectedMetric.metric,
-      this.currentHeatmapSelection.bucketRange.startInclusive
-    );
-    const endValue = renderMetricValue(
-      this.selectedMetric.metric,
-      this.currentHeatmapSelection.bucketRange.endExclusive
-    );
     return (
-      <span className="selection-summary-text">
-        <strong>Selection</strong> contains events between {startDate} and {endDate} with values {startValue} -{" "}
-        {endValue}
-      </span>
+      <div>
+        <div className="drilldown-selection-summary">
+          <div className="selection-summary-indicator selection"></div>
+          {selectionSummary}
+        </div>
+        <div className="drilldown-selection-summary">
+          <div className="selection-summary-indicator baseline"></div>
+          <span className="selection-summary-text">
+            <strong>Base</strong> includes all other events from the heatmap above
+            {restTotalValue ? ", totaling " + restTotalValue : ""}.
+          </span>
+        </div>
+      </div>
     );
   }
 
@@ -903,6 +960,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   metricBucketFormatter={(v) => renderMetricValue(this.selectedMetric.metric, v)}
                   metricBucketName={this.selectedMetric.name}
                   valueFormatter={(v) => this.renderBucketValue(v)}
+                  totalFormatter={(v) => renderTotalValue(this.selectedMetric.metric, v)}
                   selectionCallback={(s) => this.handleHeatmapSelection(s)}
                   zoomCallback={(s) => this.handleHeatmapZoom(s)}
                   selectedData={this.currentHeatmapSelection}></HeatmapComponent>
@@ -911,18 +969,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   {this.state.loadingDrilldowns && <div className="loading"></div>}
                   {!this.state.loadingDrilldowns && this.state.drilldownData && (
                     <>
-                      <div>
-                        <div className="drilldown-selection-summary">
-                          <div className="selection-summary-indicator selection"></div>
-                          {this.summarizeSelection()}
-                        </div>
-                        <div className="drilldown-selection-summary">
-                          <div className="selection-summary-indicator baseline"></div>
-                          <span className="selection-summary-text">
-                            <strong>Base</strong> includes all other events from the heatmap above.
-                          </span>
-                        </div>
-                      </div>
+                      {this.summarizeSelection()}
                       <div className="container nopadding-dense">
                         {this.state.drilldownData.chart.map(
                           (chart) =>

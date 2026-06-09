@@ -24,6 +24,10 @@ go_library(
     ],
 )
 
+# Tell gazelle to make each file a separate test target,
+# so the ClickHouse-backed usage service test can keep separate runner properties.
+# gazelle:go_test file
+
 go_test(
     name = "usage_service_test",
     srcs = ["usage_service_test.go"],
@@ -38,11 +42,41 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+go_test(
+    name = "usage_service_olap_test",
+    srcs = ["usage_service_olap_test.go"],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+        "test.runner-recycling-key": "clickhouse25.3",
+        "test.EstimatedComputeUnits": "4",
+    },
+    tags = ["docker"],
+    deps = [
+        ":usage_service",
+        "//proto:context_go_proto",
+        "//proto:usage_go_proto",
+        "//server/tables",
+        "//server/testutil/testenv",
+        "//server/usage/sku",
+        "//server/util/clickhouse/schema",
+        "//server/util/testing/flags",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/column/orderedmap",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -38,6 +39,10 @@ const (
 var (
 	// ErrV1NotSupported is returned when a function does not support cgroup V1.
 	ErrV1NotSupported = fmt.Errorf("cgroup v1 is not supported")
+
+	// true if we've ever gotten EOPNOTSUPP when trying to read a PSI file. This
+	// can happen for some cloud platforms which have PSI disabled by default.
+	psiNotSupported atomic.Bool
 )
 
 // GetCurrent returns the cgroup of which the current process is a member.
@@ -490,24 +495,24 @@ func Stats(ctx context.Context, dir string, blockDevice *block_io.Device) (*repb
 	}
 
 	// Read PSI metrics.
-	// Note that PSI may not be supported in all environments,
-	// so ignore NotExist errors.
+	// Note that PSI may not be supported in all environments. The files may
+	// either be missing, or reads may return EOPNOTSUPP if PSI is disabled.
 
 	cpuPressurePath := filepath.Join(dir, "cpu.pressure")
-	cpuPressure, err := readPSIFile(cpuPressurePath)
-	if err != nil && !os.IsNotExist(err) {
+	cpuPressure, err := readPSIFileIfSupported(cpuPressurePath)
+	if err != nil {
 		return nil, err
 	}
 
 	memPressurePath := filepath.Join(dir, "memory.pressure")
-	memPressure, err := readPSIFile(memPressurePath)
-	if err != nil && !os.IsNotExist(err) {
+	memPressure, err := readPSIFileIfSupported(memPressurePath)
+	if err != nil {
 		return nil, err
 	}
 
 	ioPressurePath := filepath.Join(dir, "io.pressure")
-	ioPressure, err := readPSIFile(ioPressurePath)
-	if err != nil && !os.IsNotExist(err) {
+	ioPressure, err := readPSIFileIfSupported(ioPressurePath)
+	if err != nil {
 		return nil, err
 	}
 
@@ -668,6 +673,32 @@ func readAllInt64Fields(path string) (map[string]int64, error) {
 		m[fields[0]] = val
 	}
 	return m, nil
+}
+
+func readPSIFileIfSupported(path string) (*repb.PSI, error) {
+	if psiNotSupported.Load() {
+		return nil, nil
+	}
+	psi, err := readPSIFile(path)
+	if err != nil {
+		// TODO: can NotExist happen in cases where PSI is supported (e.g.
+		// occasionally, due to race conditions or other edge cases)? If not,
+		// maybe set psiNotSupported=true to match the EOPNOTSUPP case below.
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		// On some systems, PSI files may exist, but trying to read them
+		// returns EOPNOTSUPP. Detect this case lazily and prevent future PSI
+		// reads.
+		if errors.Is(err, syscall.EOPNOTSUPP) {
+			if psiNotSupported.CompareAndSwap(false, true) {
+				log.Infof("Linux PSI is unavailable: reading cgroup pressure file %q returned EOPNOTSUPP. BuildBuddy will omit PSI metrics; CPU, memory, and IO usage stats are still collected, but task autosizing may be less accurate. To enable PSI, boot executor nodes with kernel parameter psi=1.", path)
+			}
+			return nil, nil
+		}
+		return nil, err
+	}
+	return psi, nil
 }
 
 func readPSIFile(path string) (*repb.PSI, error) {

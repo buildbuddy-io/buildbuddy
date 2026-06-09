@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
@@ -56,7 +57,8 @@ func TestGetUsage(t *testing.T) {
 	// Current time for test: 2024-02-22, noon UTC
 	now := time.Date(2024, 2, 22, 12, 0, 0, 0, time.UTC)
 	clock := clockwork.NewFakeClockAt(now)
-	service := usage_service.New(env, clock)
+	service, err := usage_service.New(env, clock)
+	require.NoError(t, err)
 	// Insert some usage data:
 	for _, row := range []*tables.Usage{
 		// GR1, current usage period
@@ -172,6 +174,18 @@ func TestUsageFields_CoverEveryUsageFieldAndAlertingMetric(t *testing.T) {
 	assert.Equal(t, alertingMetrics, seenAlertingMetrics)
 }
 
+func TestNew_ReadUsageFromOLAPDBRequiresOLAPDB(t *testing.T) {
+	flags.Set(t, "app.read_usage_from_olap_db", true)
+	env := testenv.GetTestEnv(t)
+
+	// Enabling OLAP reads without configuring an OLAP DB should fail during
+	// service setup instead of falling back to primary DB reads later.
+	service, err := usage_service.New(env, clockwork.NewFakeClock())
+
+	require.Nil(t, service)
+	assert.True(t, status.IsFailedPreconditionError(err))
+}
+
 func TestUsageAlertingRules_CreateListDelete(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -186,7 +200,8 @@ func TestUsageAlertingRules_CreateListDelete(t *testing.T) {
 	now := time.Date(2024, 2, 22, 12, 0, 0, 0, time.UTC)
 	clock := clockwork.NewFakeClockAt(now)
 	env.GetDBHandle().SetNowFunc(clock.Now)
-	service := usage_service.New(env, clock)
+	service, err := usage_service.New(env, clock)
+	require.NoError(t, err)
 
 	// Create a usage alerting rule for the authenticated org.
 	createRsp, err := service.CreateUsageAlertingRule(ctx1, &usagepb.CreateUsageAlertingRuleRequest{
@@ -271,7 +286,8 @@ func TestUsageAlertingRules_AreScopedToAuthenticatedGroup(t *testing.T) {
 	now := time.Date(2024, 2, 22, 12, 0, 0, 0, time.UTC)
 	clock := clockwork.NewFakeClockAt(now)
 	env.GetDBHandle().SetNowFunc(clock.Now)
-	service := usage_service.New(env, clock)
+	service, err := usage_service.New(env, clock)
+	require.NoError(t, err)
 	createRsp, err := service.CreateUsageAlertingRule(ctx1, &usagepb.CreateUsageAlertingRuleRequest{
 		Configuration: &usagepb.UsageAlertingRuleConfiguration{
 			Metric:            usagepb.UsageAlertingMetric_TOTAL_WORKFLOW_DOWNLOAD_SIZE_BYTES,
@@ -305,7 +321,8 @@ func TestUsageAlertingRules_RequiresOrgAdmin(t *testing.T) {
 	env.SetAuthenticator(ta)
 	ctx1, err := ta.WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
-	service := usage_service.New(env, clockwork.NewFakeClock())
+	service, err := usage_service.New(env, clockwork.NewFakeClock())
+	require.NoError(t, err)
 
 	// A group member without ORG_ADMIN cannot list usage alerting rules.
 	_, err = service.GetUsageAlertingRules(ctx1, &usagepb.GetUsageAlertingRulesRequest{})
@@ -337,7 +354,8 @@ func TestUsageAlertingRules_ValidateConfiguration(t *testing.T) {
 	env.SetAuthenticator(ta)
 	ctx1, err := ta.WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
-	service := usage_service.New(env, clockwork.NewFakeClock())
+	service, err := usage_service.New(env, clockwork.NewFakeClock())
+	require.NoError(t, err)
 
 	for _, testCase := range []struct {
 		name   string
@@ -409,7 +427,8 @@ func TestUsageAlertingRules_DuplicateConfigurationRejected(t *testing.T) {
 	env.SetAuthenticator(ta)
 	ctx1, err := ta.WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
-	service := usage_service.New(env, clockwork.NewFakeClock())
+	service, err := usage_service.New(env, clockwork.NewFakeClock())
+	require.NoError(t, err)
 
 	configuration := &usagepb.UsageAlertingRuleConfiguration{
 		Metric:            usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES,
@@ -449,7 +468,8 @@ func TestUsageAlertingRules_MaxRulesPerGroup(t *testing.T) {
 	env.SetAuthenticator(ta)
 	ctx1, err := ta.WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
-	service := usage_service.New(env, clockwork.NewFakeClock())
+	service, err := usage_service.New(env, clockwork.NewFakeClock())
+	require.NoError(t, err)
 
 	// Rules up to the per-group cap are accepted.
 	for i := range usage_service.MaxUsageAlertingRulesPerGroup {

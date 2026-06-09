@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -1712,11 +1713,22 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 			}
 		}
 	}
-	labels, err := usageutil.LabelsForUsageRecording(ctx, usageutil.ServerName())
+	labels, olapLabels, err := usageutil.LabelsForUsageRecording(ctx, usageutil.ServerName())
 	if err != nil {
 		return status.WrapError(err, "compute usage labels")
 	}
-	return ut.Increment(ctx, labels, counts)
+	var lastErr error
+	if err := ut.Increment(ctx, labels, counts); err != nil {
+		log.CtxWarningf(ctx, "Failed to increment usage: %s", err)
+		lastErr = err
+	}
+
+	if err := incrementOLAPExecutionUsage(ctx, ut, olapLabels, plat.OS, plat.Arch, pool.IsSelfHosted, dur, counts.CPUNanos, usg.GetPeakMemoryBytes()); err != nil {
+		log.CtxWarningf(ctx, "Failed to increment OLAP usage: %s", err)
+		lastErr = err
+	}
+
+	return lastErr
 }
 
 // updateUsageFromStoredExecution records usage counters from a merged
@@ -1753,11 +1765,36 @@ func (s *ExecutionServer) updateUsageFromStoredExecution(ctx context.Context, ex
 			}
 		}
 	}
-	labels, err := usageutil.LabelsForUsageRecording(ctx, usageutil.ServerName())
+	labels, olapLabels, err := usageutil.LabelsForUsageRecording(ctx, usageutil.ServerName())
 	if err != nil {
 		return status.WrapError(err, "compute usage labels")
 	}
-	return ut.Increment(ctx, labels, counts)
+	var lastErr error
+	if err := ut.Increment(ctx, labels, counts); err != nil {
+		log.CtxWarningf(ctx, "Failed to increment usage: %s", err)
+		lastErr = err
+	}
+	if err := incrementOLAPExecutionUsage(ctx, ut, olapLabels, execution.GetOs(), execution.GetArch(), execution.GetSelfHosted(), dur, counts.CPUNanos, execution.GetPeakMemoryBytes()); err != nil {
+		log.CtxWarningf(ctx, "Failed to increment OLAP usage: %s", err)
+		lastErr = err
+	}
+	return lastErr
+}
+
+func incrementOLAPExecutionUsage(ctx context.Context, ut interfaces.UsageTracker, baseLabels sku.Labels, os, arch string, selfHosted bool, duration time.Duration, cpuNanos, peakMemoryBytes int64) error {
+	executionLabels := make(sku.Labels, len(baseLabels)+3)
+	maps.Copy(executionLabels, baseLabels)
+	executionLabels[sku.OS] = sku.GetOSLabel(os)
+	executionLabels[sku.Arch] = sku.GetArchLabel(arch)
+	executionLabels[sku.SelfHosted] = sku.GetSelfHostedLabel(selfHosted)
+	memoryGBNanos := int64(float64(peakMemoryBytes) * float64(duration.Nanoseconds()) / 1e9)
+	executionCounts := map[sku.SKU]int64{
+		sku.RemoteExecutionExecuteWorkerCPUNanos:      cpuNanos,
+		sku.RemoteExecutionExecuteWorkerDurationNanos: duration.Nanoseconds(),
+		sku.RemoteExecutionExecuteWorkerMemoryGBNanos: memoryGBNanos,
+		sku.RemoteExecutionExecuteFixedComputeNanos:   duration.Nanoseconds(),
+	}
+	return ut.IncrementOLAP(ctx, executionLabels, executionCounts)
 }
 
 func (s *ExecutionServer) fetchAction(ctx context.Context, actionResourceName *digest.CASResourceName) (*repb.Action, error) {

@@ -3,7 +3,6 @@ package gcs_cache
 import (
 	"context"
 	"errors"
-	"flag"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -15,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -27,11 +27,13 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
+const deprecatedGCSCacheFlagMessage = "The cache.gcs backend is deprecated. Use storage.gcs for durable blob storage and cache.disk.root_directory for cache storage."
+
 var (
-	bucket          = flag.String("cache.gcs.bucket", "", "The name of the GCS bucket to store cache files in.")
-	credentialsFile = flag.String("cache.gcs.credentials_file", "", "A path to a JSON credentials file that will be used to authenticate to GCS.")
-	projectID       = flag.String("cache.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
-	ttlDays         = flag.Int64("cache.gcs.ttl_days", 0, "The period after which cache files should be TTLd. Disabled if 0.")
+	bucket          = flag.String("cache.gcs.bucket", "", "The name of the GCS bucket to store cache files in.", flag.Deprecated(deprecatedGCSCacheFlagMessage))
+	credentialsFile = flag.String("cache.gcs.credentials_file", "", "A path to a JSON credentials file that will be used to authenticate to GCS.", flag.Deprecated(deprecatedGCSCacheFlagMessage))
+	projectID       = flag.String("cache.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.", flag.Deprecated(deprecatedGCSCacheFlagMessage))
+	ttlDays         = flag.Int64("cache.gcs.ttl_days", 0, "The period after which cache files should be TTLd. Disabled if 0.", flag.Deprecated(deprecatedGCSCacheFlagMessage))
 )
 
 const (
