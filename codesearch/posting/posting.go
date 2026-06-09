@@ -740,21 +740,12 @@ func readOnlyListToRoaring(l ReadOnlyList) *roaring64.Bitmap {
 }
 
 func Unmarshal(buf []byte) (*MergeList, error) {
-	ml := NewMergeList()
-	if isCountedList(buf) {
-		roList, err := unmarshalCountedReadOnly(buf)
-		if err != nil {
-			return nil, err
-		}
-		ml.setFromSorted(roList.ToArray(), roList.freqs)
-		return ml, nil
-	}
-
-	roList, err := UnmarshalReadOnly(buf)
+	bm, freqs, err := decodePostings(buf)
 	if err != nil {
 		return nil, err
 	}
-	ml.setFromSorted(roList.ToArray(), nil)
+	ml := NewMergeList()
+	ml.setFromSorted(bm.ToArray(), freqs)
 	return ml, nil
 }
 
@@ -762,51 +753,84 @@ func Unmarshal(buf []byte) (*MergeList, error) {
 // the underlying data. Important: buf must remain valid for the lifetime of the returned
 // ReadOnlyList.
 func UnmarshalReadOnly(buf []byte) (ReadOnlyList, error) {
-	if isCountedList(buf) {
-		return unmarshalCountedReadOnly(buf)
-	}
-	pl := roaring64.New()
-	n, err := pl.FromUnsafeBytes(buf)
+	bm, freqs, err := decodePostings(buf)
 	if err != nil {
 		return nil, err
 	}
-	if n < int64(len(buf)) {
-		return nil, fmt.Errorf("read only %d bytes of buffer with size %d", n, len(buf))
+	if freqs == nil {
+		return &roaringWrapper{bm}, nil
 	}
-	return &roaringWrapper{pl}, nil
+	return &countedReadOnlyList{bm: bm, freqs: freqs, serialized: buf}, nil
 }
 
-func isCountedList(buf []byte) bool {
-	return bytes.HasPrefix(buf, countedListMagic)
-}
+// decodePostings is the shared decode path for both Unmarshal and
+// UnmarshalReadOnly. It splits buf into the roaring doc-ID payload and (for
+// counted lists) the RLE frequency tail, then decodes each: a plain list is just
+// the roaring payload, while a counted list carries the magic prefix, an
+// explicit roaring length, the roaring payload, then the tail. freqs is nil for
+// a plain (all-ones) list. The returned bitmap aliases buf via FromUnsafeBytes,
+// so buf must outlive any read-only list built from it.
+func decodePostings(buf []byte) (*roaring64.Bitmap, []uint32, error) {
+	counted := bytes.HasPrefix(buf, countedListMagic)
 
-func unmarshalCountedReadOnly(buf []byte) (*countedReadOnlyList, error) {
-	if !bytes.HasPrefix(buf, countedListMagic) {
-		return nil, fmt.Errorf("unknown counted posting list format")
+	// For a plain list the whole buffer is the roaring payload; for a counted
+	// list the length prefix bounds it and the remainder is the frequency tail.
+	roaringBuf := buf
+	var tail []byte
+	if counted {
+		rest := buf[len(countedListMagic):]
+		roaringLen, n := binary.Uvarint(rest)
+		if n <= 0 {
+			return nil, nil, fmt.Errorf("invalid counted posting list roaring length")
+		}
+		rest = rest[n:]
+		if roaringLen > uint64(len(rest)) {
+			return nil, nil, fmt.Errorf("counted posting list roaring length %d exceeds remaining buffer %d", roaringLen, len(rest))
+		}
+		roaringBuf = rest[:roaringLen:roaringLen]
+		tail = rest[roaringLen:]
 	}
-	pl, countBuf, err := unmarshalCountedRoaring(buf[len(countedListMagic):])
+
+	bm := roaring64.New()
+	read, err := bm.FromUnsafeBytes(roaringBuf)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	cardinality := pl.GetCardinality()
+	if read < int64(len(roaringBuf)) {
+		return nil, nil, fmt.Errorf("read only %d bytes of roaring buffer with size %d", read, len(roaringBuf))
+	}
+
+	if !counted {
+		return bm, nil, nil
+	}
+	freqs, err := decodeRLEFreqs(tail, bm.GetCardinality())
+	if err != nil {
+		return nil, nil, err
+	}
+	return bm, freqs, nil
+}
+
+// decodeRLEFreqs expands the run-length-encoded frequency tail (see
+// marshalCounted) into a per-position slice of length cardinality.
+func decodeRLEFreqs(tail []byte, cardinality uint64) ([]uint32, error) {
 	if cardinality > uint64(int(^uint(0)>>1)) {
 		return nil, fmt.Errorf("counted posting list cardinality %d overflows int", cardinality)
 	}
 	freqs := make([]uint32, 0, int(cardinality))
-	for len(countBuf) > 0 {
-		runlen, n := binary.Uvarint(countBuf)
+	for len(tail) > 0 {
+		runlen, n := binary.Uvarint(tail)
 		if n <= 0 || runlen == 0 {
 			return nil, fmt.Errorf("invalid counted posting list run length")
 		}
-		countBuf = countBuf[n:]
-		value, n := binary.Uvarint(countBuf)
+		tail = tail[n:]
+		value, n := binary.Uvarint(tail)
 		if n <= 0 {
 			return nil, fmt.Errorf("invalid counted posting list frequency")
 		}
 		if value > uint64(^uint32(0)) {
 			return nil, fmt.Errorf("posting list frequency %d overflows uint32", value)
 		}
-		countBuf = countBuf[n:]
+		tail = tail[n:]
 		if uint64(len(freqs))+runlen > cardinality {
 			return nil, fmt.Errorf("counted posting list runs total %d exceed cardinality %d", uint64(len(freqs))+runlen, cardinality)
 		}
@@ -818,34 +842,7 @@ func unmarshalCountedReadOnly(buf []byte) (*countedReadOnlyList, error) {
 	if uint64(len(freqs)) != cardinality {
 		return nil, fmt.Errorf("decoded %d frequencies for posting list with cardinality %d", len(freqs), cardinality)
 	}
-	return &countedReadOnlyList{
-		bm:         pl,
-		freqs:      freqs,
-		serialized: buf,
-	}, nil
-}
-
-func unmarshalCountedRoaring(rest []byte) (*roaring64.Bitmap, []byte, error) {
-	roaringLen, n := binary.Uvarint(rest)
-	if n <= 0 {
-		return nil, nil, fmt.Errorf("invalid counted posting list roaring length")
-	}
-	rest = rest[n:]
-	if roaringLen > uint64(len(rest)) {
-		return nil, nil, fmt.Errorf("counted posting list roaring length %d exceeds remaining buffer %d", roaringLen, len(rest))
-	}
-	roaringBuf := rest[:roaringLen:roaringLen]
-	rest = rest[roaringLen:]
-
-	pl := roaring64.New()
-	read, err := pl.FromUnsafeBytes(roaringBuf)
-	if err != nil {
-		return nil, nil, err
-	}
-	if read < int64(len(roaringBuf)) {
-		return nil, nil, fmt.Errorf("read only %d bytes of roaring buffer with size %d", read, len(roaringBuf))
-	}
-	return pl, rest, nil
+	return freqs, nil
 }
 
 // A FieldMap is a collection of postingLists that are keyed by the field that
