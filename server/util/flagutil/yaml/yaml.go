@@ -237,7 +237,7 @@ func (r *redactSecrets) Transform(in any, n *yaml.Node, flg *flag.Flag) (*yaml.N
 		}
 		for i := 0; i < t.NumField(); i++ {
 			ft := t.Field(i)
-			name := strings.Split(ft.Tag.Get("yaml"), ",")[0]
+			name, _, _ := strings.Cut(ft.Tag.Get("yaml"), ",")
 			if name == "" {
 				name = strings.ToLower(ft.Name)
 			}
@@ -349,7 +349,7 @@ func DocumentNode(in any, n *yaml.Node, flg *flag.Flag, opts ...common.DocumentN
 			}
 			for i := 0; i < t.NumField(); i++ {
 				ft := t.Field(i)
-				name := strings.Split(ft.Tag.Get("yaml"), ",")[0]
+				name, _, _ := strings.Cut(ft.Tag.Get("yaml"), ",")
 				if name == "" {
 					name = strings.ToLower(ft.Name)
 				}
