@@ -130,6 +130,12 @@ func (fs *fieldScorer) scoreInternal(docMatch types.DocumentMatch) (matchCount, 
 			return 0, tokenCount
 		}
 		matchCount = int(posting.Frequency()) * fs.weight
+		// A field always holds at least as many tokens as any one term's
+		// occurrences, so matchCount is a lower bound on the true field
+		// length. Docs indexed before field lengths were stored report
+		// FieldLength 0; without this floor they'd skip BM25 length
+		// normalization entirely and outscore reindexed docs.
+		tokenCount = max(tokenCount, matchCount)
 		return matchCount, tokenCount
 	case Or:
 		// Sum up the matches of all children. Arguably, we could take the highest score,

@@ -227,6 +227,24 @@ func TestScoringMatchContentOnly(t *testing.T) {
 	assert.Equal(t, bm25Score(2, 3), scorer.Score(docMatch))
 }
 
+func TestScoringMissingFieldLengthsFloorsAtMatchCount(t *testing.T) {
+	// Docs indexed before field lengths were stored report FieldLength 0 for
+	// every field. The scorer should fall back to the match count as the field
+	// length rather than scoring with length normalization disabled.
+	ctx := context.Background()
+	q, err := NewReQuery(ctx, "foo")
+	require.NoError(t, err)
+
+	scorer := q.Scorer()
+	require.NotNil(t, scorer)
+
+	docMatch := matchWithFrequenciesAndLengths(
+		map[string]uint32{contentField: 1},
+		nil,
+	)
+	assert.Equal(t, bm25Score(2, 2), scorer.Score(docMatch))
+}
+
 func TestScoringMatchContentAndFilename(t *testing.T) {
 	ctx := context.Background()
 	q, err := NewReQuery(ctx, "foo f:bar.go")
