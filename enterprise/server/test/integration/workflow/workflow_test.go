@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -174,6 +175,14 @@ func makeRepo(t *testing.T, contents map[string]string) (string, string) {
 	repoPath := testbazel.MakeTempModule(t, contents)
 	commitSHA := testgit.Init(t, repoPath)
 	return repoPath, commitSHA
+}
+
+func checkoutBranch(t testing.TB, repoPath, branch string) {
+	// Avoid recreating the default branch when it is already checked out.
+	if branch == testgit.CurrentBranch(t, repoPath) {
+		return
+	}
+	testshell.Run(t, repoPath, fmt.Sprintf("git checkout -b %q", branch))
 }
 
 func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.WorkflowService) {
@@ -604,6 +613,7 @@ func TestCancelOlderRunsOnSameBranch(t *testing.T) {
 			// Set up a workflow that hangs, so the workflow doesn't accidentally complete before we can cancel it.
 			repoContentsMap := repoWithSlowScript()
 			repoPath, commitSHA := makeRepo(t, repoContentsMap)
+			checkoutBranch(t, repoPath, branch)
 			repoURL := fmt.Sprintf("file://%s", repoPath)
 
 			ctx := env.WithUserID(context.Background(), env.UserID1)
@@ -668,6 +678,7 @@ func TestCancelOlderRunsOnSameBranch_MultipleWorkflows(t *testing.T) {
 	bb := env.GetBuildBuddyServiceClient()
 
 	repoPath, commitSHA := makeRepo(t, repoContents)
+	checkoutBranch(t, repoPath, "my-branch")
 	repoURL := fmt.Sprintf("file://%s", repoPath)
 	ctx := env.WithUserID(context.Background(), env.UserID1)
 	reqCtx := &ctxpb.RequestContext{
