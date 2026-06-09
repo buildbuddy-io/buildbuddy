@@ -1,6 +1,7 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image", "container_push")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 container_image(
     name = "probers_image",
@@ -17,7 +18,7 @@ container_image(
     ],
     tags = ["manual"],
     tars = [
-        "//server/util/bazel:bazel_binaries_tar",
+        "//server/util/bazel:prober_bazel_binaries_tar",
     ],
     visibility = ["//visibility:public"],
 )
@@ -54,10 +55,23 @@ oci_image(
         "@platforms//os:linux",
     ],
     tars = [
-        "//server/util/bazel:bazel_binaries_tar",
+        "//server/util/bazel:prober_bazel_binaries_tar",
         ":files_tar",
     ],
     visibility = ["//visibility:public"],
+)
+
+sh_test(
+    name = "prober_image_inputs_test",
+    srcs = ["prober_image_inputs_test.sh"],
+    args = [
+        "$(rootpath //server/util/bazel:prober_bazel_binaries_tar)",
+        "$(rootpath :files_tar)",
+    ],
+    data = [
+        ":files_tar",
+        "//server/util/bazel:prober_bazel_binaries_tar",
+    ],
 )
 
 oci_push(

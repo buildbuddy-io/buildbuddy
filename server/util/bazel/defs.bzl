@@ -122,8 +122,8 @@ extract_bazel_installation = rule(
     doc = "Pre-extract a bazel installation and optionally a repository cache to the given output directory.",
 )
 
-def bazel_pkg_tar(name, versions = [], **kwargs):
-    """Create a tar file containing Bazel executable for each version in versions."""
+def bazel_binary_targets(versions = [], **kwargs):
+    """Create Bazel binary and extracted-installation targets for versions."""
     for version in versions:
         copy_file(
             name = "bazel-{}_crossplatform".format(version),
@@ -170,6 +170,9 @@ def bazel_pkg_tar(name, versions = [], **kwargs):
             exec_properties = {"dockerNetwork": "bridge"} if warm_repository_cache else {},
             **kwargs
         )
+
+def bazel_pkg_tar(name, versions = [], **kwargs):
+    """Create a tar file containing Bazel executable for each version in versions."""
     pkg_tar(
         name = name,
         srcs = [":bazel-{}_crossplatform".format(version) for version in versions],
