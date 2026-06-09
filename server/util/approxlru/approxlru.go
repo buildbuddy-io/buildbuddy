@@ -104,8 +104,7 @@ type Opts[T Key] struct {
 	EvictionEvictLatencyUsec prometheus.Observer
 	// RateLimit is the maximum number of evictions to perform per second.
 	// If not set, no limit is enforced.
-	RateLimit          float64
-	NumEvictionWorkers int
+	RateLimit float64
 
 	Clock clockwork.Clock
 
