@@ -341,9 +341,11 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 	}
 	token, ok := s.cacheAccessAuth.CachedToken(repo, creds)
 	if !ok {
-		err = status.PermissionDeniedErrorf("missing OCI cache access token for %q", repo)
-		recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
-		return err
+		token, err = s.authorizeBlobCacheAccess(ctx, digestRef, creds)
+		if err != nil {
+			recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
+			return err
+		}
 	}
 	err = ocicache.FetchBlobFromCache(ctx, token, repo, &grpcStreamWriter{stream: stream}, s.bsClient, hash, contentLength)
 	recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))

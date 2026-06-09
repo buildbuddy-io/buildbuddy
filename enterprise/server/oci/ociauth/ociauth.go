@@ -90,10 +90,9 @@ func (a *TokenAuthenticator[T]) Authorize(ctx context.Context, token T, prove fu
 
 func (a *TokenAuthenticator[T]) purgeExpiredTokens() {
 	now := time.Now()
-	for token, elem := range a.entries {
+	for _, elem := range a.entries {
 		if now.After(elem.Value.(*tokenEntry[T]).expireTime) {
 			a.removeElement(elem)
-			delete(a.entries, token)
 		}
 	}
 }
