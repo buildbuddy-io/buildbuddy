@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -100,10 +100,7 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 	if err != nil {
 		return nil, status.InternalErrorf("error initializing puller cache: %s", err)
 	}
-	cacheAccessAuth, err := ociauth.NewCacheAccessAuthenticator(accessProofCacheTTL, accessProofCacheMaxEntries)
-	if err != nil {
-		return nil, status.InternalErrorf("error initializing access proof cache: %s", err)
-	}
+	cacheAccessAuth := ociauth.NewCacheAccessAuthenticator(accessProofCacheTTL, accessProofCacheMaxEntries)
 	return &ociFetcherServer{
 		allowedPrivateIPs: allowedPrivateIPs,
 		mirrors:           Mirrors(),

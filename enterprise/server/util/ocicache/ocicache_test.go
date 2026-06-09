@@ -6,8 +6,8 @@ import (
 	"io"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"

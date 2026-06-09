@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/remote_execution/block_io",
         "//enterprise/server/remote_execution/executor_auth",
         "//enterprise/server/remote_execution/operation",
+        "//enterprise/server/oci/ociauth",
         "//enterprise/server/util/oci",
         "//proto:execution_stats_go_proto",
         "//proto:firecracker_go_proto",

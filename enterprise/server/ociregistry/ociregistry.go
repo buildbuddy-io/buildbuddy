@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/trafficstats"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"

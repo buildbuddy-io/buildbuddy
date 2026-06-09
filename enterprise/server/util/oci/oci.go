@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
