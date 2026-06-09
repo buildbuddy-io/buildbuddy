@@ -234,6 +234,25 @@ type provider struct {
 	cdiRegistry *cdi.Cache
 }
 
+func startLxcfs(ctx context.Context, lxcfsMountDir string) (*exec.Cmd, error) {
+	c := exec.CommandContext(ctx, "lxcfs", "-f", "--enable-cfs", lxcfsMountDir)
+	c.Stdout = log.Writer("[LXCFS] ")
+	c.Stderr = log.Writer("[LXCFS] ")
+	c.SysProcAttr = &syscall.SysProcAttr{
+		// Run in a separate process group so that a graceful shutdown signal
+		// sent to the executor process group doesn't immediately kill lxcfs.
+		Setpgid: true,
+		// Set pdeathsig so that lxcfs gets SIGTERM when its creating thread
+		// dies. The supervisor goroutine calls [runtime.LockOSThread] to ensure
+		// golang keeps the thread alive while the executor is running.
+		Pdeathsig: syscall.SIGTERM,
+	}
+	if err := c.Start(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, error) {
 	if !slices.Contains([]string{"", "bridge", "off"}, *defaultNetworkMode) {
 		return nil, fmt.Errorf("unsupported 'executor.oci.default_network_mode' setting %q", *defaultNetworkMode)
@@ -294,22 +313,36 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 			log.Infof("successfully unmounted dead lxcfs path, re-mounting shortly")
 		}
 
-		// Mount lxcfs fuse fs on lxcfsMountDir.
-		c := exec.CommandContext(env.GetServerContext(), "lxcfs", "-f", "--enable-cfs", lxcfsMountDir)
-		c.Stdout = log.Writer("[LXCFS] ")
-		c.Stderr = log.Writer("[LXCFS] ")
-		if err := c.Start(); err != nil {
-			return nil, err
-		}
-
-		// Wait (in bg) for foregrounded lxcfs process . It will exit
-		// when the executor dies.
+		startErr := make(chan error, 1)
 		go func() {
+			// PR_SET_PDEATHSIG is tied to the thread that created the child
+			// process, not the parent process. Keep lxcfs starts and waits on
+			// this OS thread so lxcfs stays alive until the executor exits.
+			// See https://man7.org/linux/man-pages/man2/PR_SET_PDEATHSIG.2const.html.
+			runtime.LockOSThread()
+			defer runtime.UnlockOSThread()
+
+			// Mount lxcfs fuse fs on lxcfsMountDir.
+			c, err := startLxcfs(env.GetServerContext(), lxcfsMountDir)
+			startErr <- err
+			if err != nil {
+				return
+			}
+
+			// Wait for foregrounded lxcfs process. It will exit when the
+			// executor dies.
 			if err := c.Wait(); err != nil {
 				log.Errorf("[LXCFS] err: %s", err)
 			}
-			// While the server is alive, attempt to keep lxcfs
-			// running if it was configured.
+			// While the server is alive, attempt to keep lxcfs running if it
+			// was configured.
+			//
+			// TODO: If lxcfs dies, the filesystems mounted in actions will
+			// become unreachable, and operations can fail with "Transport
+			// endpoint is not connected". It would probably be better to kill
+			// the whole executor in this situation rather than keep running
+			// actions while they are in a bad state, or at least cancel/retry
+			// actions that are in the bad state.
 			for {
 				select {
 				case <-env.GetServerContext().Done():
@@ -319,17 +352,19 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 
 				// If LXCFS has exited, attempt to restart it.
 				log.Infof("[LXCFS] process died; attempting to restart...")
-				c = exec.CommandContext(env.GetServerContext(), "lxcfs", "-f", "--enable-cfs", lxcfsMountDir)
-				c.Stdout = log.Writer("[LXCFS] ")
-				c.Stderr = log.Writer("[LXCFS] ")
-				if err := c.Start(); err != nil {
+				c, err = startLxcfs(env.GetServerContext(), lxcfsMountDir)
+				if err != nil {
 					log.Errorf("[LXCFS] start err: %s", err)
+					continue
 				}
 				if err := c.Wait(); err != nil {
 					log.Errorf("[LXCFS] err: %s", err)
 				}
 			}
 		}()
+		if err := <-startErr; err != nil {
+			return nil, err
+		}
 		testPath := filepath.Join(lxcfsMountDir, lxcfsFiles[0])
 		if err := disk.WaitUntilExists(env.GetServerContext(), testPath, disk.WaitOpts{}); err != nil {
 			return nil, status.UnavailableErrorf("lxcfs did not mount %q: %s", testPath, err)
