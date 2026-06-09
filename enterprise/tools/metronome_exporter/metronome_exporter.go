@@ -151,8 +151,8 @@ func parseGroups() ([]string, error) {
 	if slices.Contains(*groupIDs, "") {
 		return nil, errors.New("--group_id values must be non-empty")
 	}
+	slices.Sort(*groupIDs)
 	deduped := slices.Compact(*groupIDs)
-	slices.Sort(deduped)
 	return deduped, nil
 }
 
@@ -181,7 +181,7 @@ func exportAll(ctx context.Context, env *real_environment.RealEnv, client usageR
 		}
 		if client == nil {
 			for _, e := range events {
-				log.Infof("DRY-RUN group=%s period=%s sku=%s count=%d labels=%v", e.GroupID, e.PeriodStart.Format(time.RFC3339), e.SKU, e.Count, e.Labels)
+				log.Infof("DRY-RUN group=%s period=[%s, %s) sku=%s count=%d labels=%v", e.GroupID, e.PeriodStart.Format(time.RFC3339), e.PeriodEnd.Format(time.RFC3339), e.SKU, e.Count, e.Labels)
 			}
 		} else {
 			if err := client.ReportUsage(ctx, events); err != nil {

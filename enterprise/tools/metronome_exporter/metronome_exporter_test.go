@@ -105,9 +105,11 @@ func TestQueryUsageRows(t *testing.T) {
 		rawUsage("GR1", from.Add(4*time.Minute), sku.RemoteCacheCASHits, internalLabels, 13),
 		// Event from a different group.
 		rawUsage("GR2", from.Add(time.Minute), sku.BuildEventsBESCount, bazelLabels, 17),
-		// Events with zero count should not be included.
+		// Zero count rows do not affect positive aggregates.
 		rawUsage("GR1", from.Add(2*time.Minute), sku.BuildEventsBESCount, bazelLabels, 0),
 		rawUsage("GR1", from.Add(3*time.Minute), sku.RemoteCacheCASHits, bazelLabels, 0),
+		// An aggregate whose rows sum to zero should not be included.
+		rawUsage("GR1", from.Add(3*time.Minute), sku.RemoteCacheCASDownloadedBytes, internalLabels, 0),
 	}
 	require.NoError(t, env.GetOLAPDBHandle().FlushUsages(ctx, rows))
 

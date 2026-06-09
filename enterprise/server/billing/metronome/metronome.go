@@ -265,5 +265,5 @@ func errorForStatusCode(statusCode int, body string) error {
 }
 
 func IsWindowAligned(t time.Time) bool {
-	return t.Unix()%int64(WindowSize.Seconds()) == 0
+	return t.Truncate(WindowSize).Equal(t)
 }
