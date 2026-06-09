@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"sort"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -41,15 +41,15 @@ import (
 	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 )
 
-const periodGranularity = time.Minute
-
-// Refuse to export if --to is newer than (now - min_age).
-// Prevents querying periods that may still be receiving writes.
-//
-// Usage is bucketed in Redis in 1-min increments, then flushed.
-// Metronome ignores events with duplicate IDs, so if we flush partial usage data for a period, it can't be later amended
-// if we receive more data for that period. This delay ensures all data is finalized before it's flushed.
-const minAge = 5 * time.Minute
+const (
+	// Refuse to export if --to is newer than (now - min_age).
+	// Prevents querying periods that may still be receiving writes.
+	//
+	// Usage is bucketed in Redis in 1-min increments, then flushed.
+	// Metronome ignores events with duplicate IDs, so if we flush partial usage data for a period, it can't be later amended
+	// if we receive more data for that period. This delay ensures all data is finalized before it's flushed.
+	minAge = 5 * time.Minute
+)
 
 var (
 	from     = flag.String("from", "", "Start of the export window (inclusive), RFC3339. Required.")
@@ -92,7 +92,7 @@ func run() error {
 		return fmt.Errorf("configure log: %w", err)
 	}
 
-	var client *metronome.Client
+	var client usageReporter
 	if !*dryRun {
 		client, err = metronome.NewClient(nil, nil)
 		if err != nil {
@@ -118,6 +118,10 @@ func run() error {
 
 type window struct{ from, to time.Time }
 
+type usageReporter interface {
+	ReportUsage(ctx context.Context, events []metronome.UsageEvent) error
+}
+
 func parseWindow() (*window, error) {
 	if *from == "" || *to == "" {
 		return nil, errors.New("--from and --to are required")
@@ -130,8 +134,6 @@ func parseWindow() (*window, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse --to: %w", err)
 	}
-	f = f.UTC().Truncate(periodGranularity)
-	t = t.UTC().Truncate(periodGranularity)
 	if !f.Before(t) {
 		return nil, fmt.Errorf("--from (%s) must be before --to (%s)", f, t)
 	}
@@ -139,59 +141,62 @@ func parseWindow() (*window, error) {
 	if t.After(cutoff) {
 		return nil, fmt.Errorf("--to (%s) is within min age %s of now; refusing to export possibly-unsettled periods", t, minAge)
 	}
+	if !metronome.IsWindowAligned(f) || !metronome.IsWindowAligned(t) {
+		return nil, fmt.Errorf("--from and --to must be aligned to window size %s", metronome.WindowSize)
+	}
 	return &window{from: f, to: t}, nil
 }
 
 func parseGroups() ([]string, error) {
-	seen := map[string]bool{}
-	out := make([]string, 0, len(*groupIDs))
-	for _, g := range *groupIDs {
-		if g == "" {
-			return nil, errors.New("--group_id values must be non-empty")
-		}
-		if seen[g] {
-			continue
-		}
-		seen[g] = true
-		out = append(out, g)
+	if slices.Contains(*groupIDs, "") {
+		return nil, errors.New("--group_id values must be non-empty")
 	}
-	sort.Strings(out)
-	return out, nil
+	deduped := slices.Compact(*groupIDs)
+	slices.Sort(deduped)
+	return deduped, nil
 }
 
-func exportAll(ctx context.Context, env *real_environment.RealEnv, client *metronome.Client, groups []string, w *window) error {
-	rows, err := queryUsageRows(ctx, env, groups, w)
-	if err != nil {
-		return fmt.Errorf("query ClickHouse: %w", err)
-	}
-	if len(rows) == 0 {
-		return nil
-	}
-	events := make([]metronome.UsageEvent, 0, len(rows))
-	for _, r := range rows {
-		events = append(events, metronome.UsageEvent{
-			GroupID:     r.GroupID,
-			PeriodStart: w.from,
-			PeriodEnd:   w.to,
-			SKU:         r.SKU,
-			Labels:      r.Labels,
-			Count:       r.Count,
-		})
-	}
-	if client == nil {
-		for _, e := range events {
-			log.Infof("DRY-RUN group=%s period=%s sku=%s count=%d labels=%v", e.GroupID, e.PeriodStart.Format(time.RFC3339), e.SKU, e.Count, e.Labels)
+func exportAll(ctx context.Context, env *real_environment.RealEnv, client usageReporter, groups []string, w *window) error {
+	totalEventCount := 0
+	// Export in increments of metronome.WindowSize.
+	for start := w.from; start.Before(w.to); start = start.Add(metronome.WindowSize) {
+		end := start.Add(metronome.WindowSize)
+		rows, err := queryUsageRows(ctx, env, groups, &window{from: start, to: end})
+		if err != nil {
+			return fmt.Errorf("query ClickHouse: %w", err)
 		}
-		log.Infof("Exported %d event(s)", len(events))
-		return nil
+		if len(rows) == 0 {
+			continue
+		}
+		events := make([]metronome.UsageEvent, 0, len(rows))
+		for _, r := range rows {
+			events = append(events, metronome.UsageEvent{
+				GroupID:     r.GroupID,
+				PeriodStart: start,
+				PeriodEnd:   end,
+				SKU:         r.SKU,
+				Labels:      r.Labels,
+				Count:       r.Count,
+			})
+		}
+		if client == nil {
+			for _, e := range events {
+				log.Infof("DRY-RUN group=%s period=%s sku=%s count=%d labels=%v", e.GroupID, e.PeriodStart.Format(time.RFC3339), e.SKU, e.Count, e.Labels)
+			}
+		} else {
+			if err := client.ReportUsage(ctx, events); err != nil {
+				return err
+			}
+		}
+		totalEventCount += len(events)
 	}
-	if err := client.ReportUsage(ctx, events); err != nil {
-		return err
-	}
-	log.Infof("Exported %d event(s)", len(events))
+	log.Infof("Exported %d event(s)", totalEventCount)
 	return nil
 }
 
+// Even though this returns a Usage struct, which is typically aggregated per minute, this query aggregates data over the entire window
+// and doesn't set PeriodStart.
+// The larger aggregation window is intended to reduce the number of Metronome events sent.
 func queryUsageRows(ctx context.Context, env *real_environment.RealEnv, groups []string, w *window) ([]*olaptables.Usage, error) {
 	query := `
 		SELECT
@@ -202,7 +207,7 @@ func queryUsageRows(ctx context.Context, env *real_environment.RealEnv, groups [
 		FROM "Usage"
 		WHERE period_start >= ?
 			AND period_start < ?`
-	args := []interface{}{w.from, w.to}
+	args := []any{w.from, w.to}
 	if len(groups) > 0 {
 		query += `
 			AND group_id IN ?`

@@ -42,6 +42,7 @@ go_test(
     },
     tags = ["docker"],
     deps = [
+        "//enterprise/server/billing/metronome",
         "//server/real_environment",
         "//server/testutil/testclickhouse",
         "//server/usage/sku",

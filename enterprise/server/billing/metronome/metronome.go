@@ -30,6 +30,13 @@ var (
 const (
 	ingestPath                = "/v1/ingest"
 	MaxEventsPerIngestRequest = 100
+
+	// Caution: Do not change this value!
+	// Each Metronome event should cover a window of this size, aligned to the nearest interval of this duration.
+	//
+	// We include the period start and end timestamps in the transaction ID for deduplication.
+	// If this window size is changed, events will not be deduplicated correctly, and users may be over-billed.
+	WindowSize = 5 * time.Minute
 )
 
 func defaultRetryOptions() *retry.Options {
@@ -130,6 +137,13 @@ func encodeEvent(e UsageEvent) (*MetronomeEvent, error) {
 	if e.GroupID == "" {
 		return nil, status.InvalidArgumentError("group ID is required")
 	}
+	if !IsWindowAligned(e.PeriodStart) || !IsWindowAligned(e.PeriodEnd) {
+		return nil, status.InvalidArgumentErrorf("period start and end [%s, %s] must be aligned to window size %s", e.PeriodStart, e.PeriodEnd, WindowSize)
+	}
+	if e.PeriodEnd.Sub(e.PeriodStart) != WindowSize {
+		return nil, status.InvalidArgumentErrorf("[%s, %s] must be of window size %s", e.PeriodStart, e.PeriodEnd, WindowSize)
+	}
+
 	properties := map[string]string{
 		"group_id":     e.GroupID,
 		"sku":          e.SKU.String(),
@@ -248,4 +262,8 @@ func errorForStatusCode(statusCode int, body string) error {
 		return status.UnavailableError(message)
 	}
 	return status.InternalError(message)
+}
+
+func IsWindowAligned(t time.Time) bool {
+	return t.Unix()%int64(WindowSize.Seconds()) == 0
 }
