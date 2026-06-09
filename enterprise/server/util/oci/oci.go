@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
@@ -937,8 +938,11 @@ func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
 	pr, pw := io.Pipe()
 	go func() {
 		defer pw.Close()
+		token := ociauth.BypassCacheAccessToken(l.repo)
 		err := ocicache.FetchBlobFromCache(
 			l.image.ctx,
+			token,
+			l.repo,
 			pw,
 			l.image.bsClient,
 			l.digest,
