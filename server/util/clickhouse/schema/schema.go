@@ -7,6 +7,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math/big"
+	"strconv"
 	"strings"
 	"time"
 
@@ -62,6 +64,7 @@ type View interface {
 func getAllTables() []Table {
 	tbls := []Table{
 		&Invocation{},
+		&AllInvocation{},
 		&Execution{},
 		&TestTargetStatus{},
 		&AuditLog{},
@@ -88,6 +91,17 @@ func getEngine() string {
 		return fmt.Sprintf("ReplicatedReplacingMergeTree('%s', '%s')", *zooPath, *replicaName)
 	}
 	return "ReplacingMergeTree()"
+}
+
+// getReplacingMergeTreeEngine returns a ReplacingMergeTree engine clause that
+// uses the given column as the version column. ReplacingMergeTree keeps the row
+// with the highest version for each sorting key, which allows the same
+// invocation to be written multiple times (e.g. while it is in progress).
+func getReplacingMergeTreeEngine(versionColumn string) string {
+	if *dataReplicationEnabled {
+		return fmt.Sprintf("ReplicatedReplacingMergeTree('%s', '%s', %s)", *zooPath, *replicaName, versionColumn)
+	}
+	return fmt.Sprintf("ReplacingMergeTree(%s)", versionColumn)
 }
 
 // Invocation constains a subset of tables.Invocations.
@@ -162,6 +176,86 @@ func (i *Invocation) TableOptions(clickhouseVersion string) string {
 	// ReplacingMergeTree will remove entries with the same sorting key in the background.
 	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid)", getEngine()) +
 		" PARTITION BY toYYYYMM(toDateTime(intDiv(updated_at_usec, 1000000), 'UTC'))"
+}
+
+// AllInvocation contains the same fields as Invocation, plus two columns derived
+// in Go (small_inv_uuid, small_group_id) used as a compact sorting key.
+//
+// Unlike the Invocations table, AllInvocations uses ReplacingMergeTree with
+// updated_at_usec as the version column and a stable sorting key that does not
+// include updated_at_usec. This allows the same invocation to be written
+// repeatedly (e.g. while in progress); the row with the highest updated_at_usec
+// wins after background merges (and when reading with FINAL).
+type AllInvocation struct {
+	GroupID        string `gorm:"primaryKey;"`
+	UpdatedAtUsec  int64  `gorm:"primaryKey;"`
+	CreatedAtUsec  int64
+	InvocationUUID string
+	Role           string
+	User           string
+	Host           string
+	CommitSHA      string
+	BranchName     string
+	Command        string
+	BazelExitCode  string
+
+	UserID           string
+	Pattern          string
+	InvocationStatus int64
+	Attempt          uint64
+
+	ActionCount                       int64
+	RepoURL                           string
+	DurationUsec                      int64
+	Success                           bool
+	ActionCacheHits                   int64
+	ActionCacheMisses                 int64
+	ActionCacheUploads                int64
+	CasCacheHits                      int64
+	CasCacheMisses                    int64
+	CasCacheUploads                   int64
+	TotalDownloadSizeBytes            int64
+	TotalUploadSizeBytes              int64
+	TotalDownloadTransferredSizeBytes int64
+	TotalUploadTransferredSizeBytes   int64
+	TotalDownloadUsec                 int64
+	TotalUploadUsec                   int64
+	TotalCachedActionExecUsec         int64
+	TotalUncachedActionExecUsec       int64
+	DownloadThroughputBytesPerSecond  int64
+	UploadThroughputBytesPerSecond    int64
+	DownloadOutputsOption             int64
+	UploadLocalResultsEnabled         bool
+	RemoteExecutionEnabled            bool
+	Tags                              []string `gorm:"type:Array(String);"`
+	RunID                             string
+	ParentRunID                       string
+	RunStatus                         int64
+
+	// Columns computed in Go by ToAllInvocationFromPrimaryDB (not MATERIALIZED).
+	// They are part of the sorting key, so they are marked primaryKey, which also
+	// makes the GORM migrator skip them (it never tries to ALTER primaryKey
+	// columns). small_inv_uuid mirrors reinterpretAsUInt128(unhex(invocation_uuid))
+	// and small_group_id mirrors toUInt64(if(group_id='', '0', substring(group_id, 3))).
+	SmallInvUUID *big.Int `gorm:"column:small_inv_uuid;primaryKey;type:UInt128"`
+	SmallGroupID uint64   `gorm:"column:small_group_id;primaryKey;type:UInt64"`
+}
+
+func (i *AllInvocation) ExcludedFields() []string {
+	return (&Invocation{}).ExcludedFields()
+}
+
+func (i *AllInvocation) AdditionalFields() []string {
+	return []string{"SmallInvUUID", "SmallGroupID"}
+}
+
+func (i *AllInvocation) TableName() string {
+	return "AllInvocations"
+}
+
+func (i *AllInvocation) TableOptions(clickhouseVersion string) string {
+	return fmt.Sprintf("ENGINE=%s ORDER BY (small_group_id, created_at_usec, small_inv_uuid)", getReplacingMergeTreeEngine("updated_at_usec")) +
+		" PARTITION BY toYYYYMM(toDateTime(intDiv(created_at_usec, 1000000), 'UTC'))"
 }
 
 type Execution struct {
@@ -798,4 +892,80 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		ParentRunID:                       ti.ParentRunID,
 		RunStatus:                         ti.RunStatus,
 	}
+}
+
+func ToAllInvocationFromPrimaryDB(ti *tables.Invocation) *AllInvocation {
+	inv := ToInvocationFromPrimaryDB(ti)
+	return &AllInvocation{
+		GroupID:                           inv.GroupID,
+		UpdatedAtUsec:                     inv.UpdatedAtUsec,
+		CreatedAtUsec:                     inv.CreatedAtUsec,
+		InvocationUUID:                    inv.InvocationUUID,
+		Role:                              inv.Role,
+		User:                              inv.User,
+		UserID:                            inv.UserID,
+		Host:                              inv.Host,
+		CommitSHA:                         inv.CommitSHA,
+		BranchName:                        inv.BranchName,
+		Command:                           inv.Command,
+		BazelExitCode:                     inv.BazelExitCode,
+		Pattern:                           inv.Pattern,
+		Attempt:                           inv.Attempt,
+		ActionCount:                       inv.ActionCount,
+		InvocationStatus:                  inv.InvocationStatus,
+		RepoURL:                           inv.RepoURL,
+		DurationUsec:                      inv.DurationUsec,
+		Success:                           inv.Success,
+		ActionCacheHits:                   inv.ActionCacheHits,
+		ActionCacheMisses:                 inv.ActionCacheMisses,
+		ActionCacheUploads:                inv.ActionCacheUploads,
+		CasCacheHits:                      inv.CasCacheHits,
+		CasCacheMisses:                    inv.CasCacheMisses,
+		CasCacheUploads:                   inv.CasCacheUploads,
+		TotalDownloadSizeBytes:            inv.TotalDownloadSizeBytes,
+		TotalUploadSizeBytes:              inv.TotalUploadSizeBytes,
+		TotalDownloadUsec:                 inv.TotalDownloadUsec,
+		TotalUploadUsec:                   inv.TotalUploadUsec,
+		TotalDownloadTransferredSizeBytes: inv.TotalDownloadTransferredSizeBytes,
+		TotalUploadTransferredSizeBytes:   inv.TotalUploadTransferredSizeBytes,
+		TotalCachedActionExecUsec:         inv.TotalCachedActionExecUsec,
+		TotalUncachedActionExecUsec:       inv.TotalUncachedActionExecUsec,
+		DownloadThroughputBytesPerSecond:  inv.DownloadThroughputBytesPerSecond,
+		UploadThroughputBytesPerSecond:    inv.UploadThroughputBytesPerSecond,
+		DownloadOutputsOption:             inv.DownloadOutputsOption,
+		UploadLocalResultsEnabled:         inv.UploadLocalResultsEnabled,
+		RemoteExecutionEnabled:            inv.RemoteExecutionEnabled,
+		Tags:                              inv.Tags,
+		RunID:                             inv.RunID,
+		ParentRunID:                       inv.ParentRunID,
+		RunStatus:                         inv.RunStatus,
+		SmallGroupID:                      smallGroupID(ti.GroupID),
+		SmallInvUUID:                      smallInvUUID(ti.InvocationUUID),
+	}
+}
+
+// smallGroupID mirrors the ClickHouse expression
+// toUInt64(if(group_id=”, '0', substring(group_id, 3))), i.e. the numeric part
+// of the group ID with the "GR" prefix stripped (0 if there is no numeric part).
+func smallGroupID(groupID string) uint64 {
+	if len(groupID) <= 2 {
+		return 0
+	}
+	v, err := strconv.ParseUint(groupID[2:], 10, 64)
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
+// smallInvUUID mirrors the ClickHouse expression
+// reinterpretAsUInt128(unhex(invocation_uuid)), which interprets the 16 raw UUID
+// bytes as a little-endian UInt128. big.Int.SetBytes expects big-endian input, so
+// we reverse the bytes first.
+func smallInvUUID(uuidBytes []byte) *big.Int {
+	b := make([]byte, len(uuidBytes))
+	for i := range uuidBytes {
+		b[len(uuidBytes)-1-i] = uuidBytes[i]
+	}
+	return new(big.Int).SetBytes(b)
 }

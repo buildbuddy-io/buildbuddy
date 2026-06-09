@@ -66,6 +66,11 @@ type DBHandle struct {
 
 	shutdown     chan struct{}
 	invocationCh chan *schema.Invocation
+
+	// AllInvocations has its own channel and shutdown signal so that the existing
+	// Invocations batch inserter is left completely untouched.
+	allInvocationShutdown chan struct{}
+	allInvocationCh       chan *schema.AllInvocation
 }
 
 func (dbh *DBHandle) GORM(ctx context.Context, name string) *gorm.DB {
@@ -126,6 +131,52 @@ func (dbh *DBHandle) startInvocationBatchInserter(interval time.Duration) func()
 	}()
 	return func() {
 		close(dbh.shutdown)
+		<-done
+	}
+}
+
+func (dbh *DBHandle) startAllInvocationBatchInserter(interval time.Duration) func() {
+	ctx := context.Background()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		var batch []*schema.AllInvocation
+		for shutdown := false; !shutdown; {
+			select {
+			case item := <-dbh.allInvocationCh:
+				// Add item to batch
+				batch = append(batch, item)
+				continue
+			case <-dbh.allInvocationShutdown:
+				// Flush the final batch then exit the loop.
+				shutdown = true
+			case <-ticker.C:
+			}
+			// Flush batch
+			if len(batch) == 0 {
+				continue
+			}
+			(func() {
+				ctx, cancel := context.WithTimeout(ctx, invocationBatchInsertTimeout)
+				defer cancel()
+				if err := dbh.insertWithRetrier(ctx, (&schema.AllInvocation{}).TableName(), len(batch), batch); err != nil {
+					log.CtxErrorf(ctx, "Failed to insert all-invocation batch (n=%d): %s", len(batch), err)
+				} else {
+					log.CtxInfof(ctx, "Inserted all-invocation batch (n=%d)", len(batch))
+				}
+			})()
+			// reuse slice
+			clear(batch)
+			batch = batch[:0]
+		}
+	}()
+	return func() {
+		close(dbh.allInvocationShutdown)
 		<-done
 	}
 }
@@ -326,6 +377,25 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 	}
 	if err := h.insertWithRetrier(ctx, inv.TableName(), 1, inv); err != nil {
 		return status.UnavailableErrorf("failed to insert invocation (invocation_id = %q), err: %s", ti.InvocationID, err)
+	}
+	return nil
+}
+
+func (h *DBHandle) FlushAllInvocationStats(ctx context.Context, ti *tables.Invocation) error {
+	inv := schema.ToAllInvocationFromPrimaryDB(ti)
+	if *invocationBatchInsertInterval > 0 && !*asyncInsert {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case h.allInvocationCh <- inv:
+			// Accepted by batch inserter.
+			return nil
+		case <-h.allInvocationShutdown:
+			// Batch inserter was stopped due to shutdown. Flush synchronously.
+		}
+	}
+	if err := h.insertWithRetrier(ctx, inv.TableName(), 1, inv); err != nil {
+		return status.UnavailableErrorf("failed to insert all-invocation (invocation_id = %q), err: %s", ti.InvocationID, err)
 	}
 	return nil
 }
@@ -609,15 +679,19 @@ func Register(env *real_environment.RealEnv) error {
 	}
 
 	dbh := &DBHandle{
-		db:           db,
-		shutdown:     make(chan struct{}),
-		invocationCh: make(chan *schema.Invocation),
+		db:                    db,
+		shutdown:              make(chan struct{}),
+		invocationCh:          make(chan *schema.Invocation),
+		allInvocationShutdown: make(chan struct{}),
+		allInvocationCh:       make(chan *schema.AllInvocation),
 	}
 	if *invocationBatchInsertInterval > 0 && !*asyncInsert {
 		stop := dbh.startInvocationBatchInserter(*invocationBatchInsertInterval)
+		stopAll := dbh.startAllInvocationBatchInserter(*invocationBatchInsertInterval)
 		if hc := env.GetHealthChecker(); hc != nil {
 			env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 				stop()
+				stopAll()
 				return nil
 			})
 		}

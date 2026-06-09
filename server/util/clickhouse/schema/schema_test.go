@@ -2,6 +2,7 @@ package schema
 
 import (
 	"encoding/hex"
+	"math/big"
 	"reflect"
 	"slices"
 	"strings"
@@ -20,6 +21,10 @@ func TestSchemaInSync(t *testing.T) {
 	}{
 		{
 			clickhouseTable: &Invocation{},
+			primaryDBTable:  tables.Invocation{},
+		},
+		{
+			clickhouseTable: &AllInvocation{},
 			primaryDBTable:  tables.Invocation{},
 		},
 		{
@@ -136,6 +141,47 @@ func TestToInvocationFromPrimaryDB(t *testing.T) {
 			assert.Failf(t, "dest has invalid field %q", primaryField.Name)
 		}
 	}
+}
+
+func TestToAllInvocationFromPrimaryDB(t *testing.T) {
+	src := &tables.Invocation{}
+	err := faker.FakeData(src)
+	require.NoError(t, err)
+	// Use a realistic group ID and UUID so we can verify the derived columns.
+	src.GroupID = "GR12345678987654321337"
+	src.InvocationUUID = []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
+
+	inv := ToInvocationFromPrimaryDB(src)
+	all := ToAllInvocationFromPrimaryDB(src)
+
+	// Every field AllInvocation shares with Invocation should match the
+	// Invocation conversion exactly.
+	invType := reflect.TypeOf(*inv)
+	invValue := reflect.ValueOf(*inv)
+	allValue := reflect.ValueOf(*all)
+	for _, f := range reflect.VisibleFields(invType) {
+		destField := allValue.FieldByName(f.Name)
+		require.True(t, destField.IsValid(), "AllInvocation is missing shared field %q", f.Name)
+		assert.Equal(t, invValue.FieldByName(f.Name).Interface(), destField.Interface(),
+			"shared field %q differs between Invocation and AllInvocation conversions", f.Name)
+	}
+
+	// small_group_id = toUInt64(substring("GR12345678987654321337", 3))
+	assert.Equal(t, uint64(12345678987654321337), all.SmallGroupID)
+	// small_inv_uuid = reinterpretAsUInt128(unhex(...)) reads the 16 bytes
+	// little-endian, so the big.Int is built from the reversed bytes.
+	expectedUUID := new(big.Int).SetBytes([]byte{15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0})
+	require.NotNil(t, all.SmallInvUUID)
+	assert.Equal(t, 0, expectedUUID.Cmp(all.SmallInvUUID), "small_inv_uuid mismatch: got %s, want %s", all.SmallInvUUID, expectedUUID)
+}
+
+func TestSmallGroupID(t *testing.T) {
+	assert.Equal(t, uint64(0), smallGroupID(""))
+	assert.Equal(t, uint64(0), smallGroupID("GR"))
+	assert.Equal(t, uint64(123), smallGroupID("GR123"))
+	assert.Equal(t, uint64(12345678987654321337), smallGroupID("GR12345678987654321337"))
+	// Non-numeric suffix can't be parsed; falls back to 0.
+	assert.Equal(t, uint64(0), smallGroupID("GRabc"))
 }
 
 func TestExtractProjectionNames(t *testing.T) {

@@ -6,13 +6,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testolapdb"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 )
 
@@ -91,6 +97,77 @@ func TestCreateReadUpdateDelete(t *testing.T) {
 	).Take(ie)
 	require.NoError(t, err)
 	require.Equal(t, "invocation-2-execution", ie.ExecutionID)
+}
+
+func makeExperimentProvider(t *testing.T, defaultVariant string) interfaces.ExperimentFlagProvider {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"olap.write_all_invocations": {
+			State:          memprovider.Enabled,
+			DefaultVariant: defaultVariant,
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+	return fp
+}
+
+func TestDualWriteToAllInvocations(t *testing.T) {
+	flags.Set(t, "app.enable_write_all_invocations_to_olap_db", true)
+	env, authenticator, ctx := getEnvAuthAndCtx(t)
+	ctx, err := authenticator.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
+	olap := testolapdb.NewHandle()
+	env.SetOLAPDBHandle(olap)
+	env.SetExperimentFlagProvider(makeExperimentProvider(t, "true"))
+	idb := invocationdb.NewInvocationDB(env, env.GetDBHandle())
+
+	iid := "inv-enrolled"
+	created, err := idb.CreateInvocation(ctx, &tables.Invocation{InvocationID: iid, Pattern: "//x"})
+	require.NoError(t, err)
+	require.True(t, created)
+
+	// Enrolled groups dual-write the full canonical row to AllInvocations.
+	got := olap.GetAllInvocation(iid)
+	require.NotNil(t, got, "expected enrolled invocation to be dual-written to AllInvocations")
+	require.Equal(t, iid, got.InvocationID)
+	require.Equal(t, "group1", got.GroupID, "dual-written row should be the full canonical row (with group_id)")
+}
+
+func TestDualWriteToAllInvocations_NotEnrolled(t *testing.T) {
+	flags.Set(t, "app.enable_write_all_invocations_to_olap_db", true)
+	env, authenticator, ctx := getEnvAuthAndCtx(t)
+	ctx, err := authenticator.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
+	olap := testolapdb.NewHandle()
+	env.SetOLAPDBHandle(olap)
+	env.SetExperimentFlagProvider(makeExperimentProvider(t, "false"))
+	idb := invocationdb.NewInvocationDB(env, env.GetDBHandle())
+
+	iid := "inv-not-enrolled"
+	_, err = idb.CreateInvocation(ctx, &tables.Invocation{InvocationID: iid})
+	require.NoError(t, err)
+	require.Nil(t, olap.GetAllInvocation(iid), "un-enrolled group must not dual-write")
+}
+
+func TestDualWriteToAllInvocations_GlobalFlagOff(t *testing.T) {
+	// The global flag defaults to false; leave it unset.
+	env, authenticator, ctx := getEnvAuthAndCtx(t)
+	ctx, err := authenticator.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
+	olap := testolapdb.NewHandle()
+	env.SetOLAPDBHandle(olap)
+	env.SetExperimentFlagProvider(makeExperimentProvider(t, "true"))
+	idb := invocationdb.NewInvocationDB(env, env.GetDBHandle())
+
+	iid := "inv-flag-off"
+	_, err = idb.CreateInvocation(ctx, &tables.Invocation{InvocationID: iid})
+	require.NoError(t, err)
+	require.Nil(t, olap.GetAllInvocation(iid), "global flag off must disable dual-write")
 }
 
 func TestAttemptLogic(t *testing.T) {

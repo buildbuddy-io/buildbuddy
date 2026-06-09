@@ -9,9 +9,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/olapdbconfig"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -27,6 +29,10 @@ import (
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
+
+// allInvocationsExperimentFlag is the per-group experiment that enables
+// dual-writing invocations to the ClickHouse AllInvocations table.
+const allInvocationsExperimentFlag = "olap.write_all_invocations"
 
 type InvocationDB struct {
 	env environment.Env
@@ -105,13 +111,17 @@ func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocati
 	ti.GroupID = permissions.GroupID
 	ti.Perms = ti.Perms | permissions.Perms
 	ti.CreatedWithCapabilities = capabilities.ToInt(caps)
-	return d.registerInvocationAttempt(ctx, ti)
+	created, err := d.registerInvocationAttempt(ctx, ti)
+	if err == nil && created {
+		d.maybeFlushToAllInvocations(ctx, ti.InvocationID)
+	}
+	return created, err
 }
 
 // UpdateInvocation updates an existing invocation with the given
 // id and attempt number. It returns whether a row was updated.
 func (d *InvocationDB) UpdateInvocation(ctx context.Context, ti *tables.Invocation) (bool, error) {
-	return retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (bool, error) {
+	updated, err := retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (bool, error) {
 		result := d.h.GORM(ctx, "invocationdb_update_invocation").Where("invocation_id = ? AND attempt = ?", ti.InvocationID, ti.Attempt).Updates(ti)
 		updated := result.RowsAffected > 0
 
@@ -124,6 +134,47 @@ func (d *InvocationDB) UpdateInvocation(ctx context.Context, ti *tables.Invocati
 			return updated, nil
 		}
 	})
+	if err == nil && updated {
+		d.maybeFlushToAllInvocations(ctx, ti.InvocationID)
+	}
+	return updated, err
+}
+
+// maybeFlushToAllInvocations dual-writes the invocation to the ClickHouse
+// AllInvocations table, gated by a global flag and the per-group
+// olap.write_all_invocations experiment. It re-reads the canonical full row from
+// the primary DB rather than trusting the passed-in invocation, because callers
+// of UpdateInvocation may pass a partial row (e.g. only cache stats) and the
+// AllInvocations table is a ReplacingMergeTree that replaces whole rows. All
+// errors are logged and swallowed: the dual-write must never affect the primary
+// MySQL write path.
+func (d *InvocationDB) maybeFlushToAllInvocations(ctx context.Context, invocationID string) {
+	if !olapdbconfig.WriteAllInvocationsToOLAPDBEnabled() {
+		return
+	}
+	olap := d.env.GetOLAPDBHandle()
+	if olap == nil {
+		return
+	}
+	efp := d.env.GetExperimentFlagProvider()
+	if efp == nil {
+		return
+	}
+	// group_id is read from the context's claims by the experiment provider; the
+	// statsRecorder update path runs on an unauthenticated context and so will
+	// not be enrolled here (its data is dual-written via the OLAP flush instead).
+	if !efp.Boolean(ctx, allInvocationsExperimentFlag, false) {
+		return
+	}
+	full := &tables.Invocation{}
+	if err := d.h.NewQuery(ctx, "invocationdb_lookup_for_all_invocations").Raw(
+		`SELECT * FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(full); err != nil {
+		log.CtxWarningf(ctx, "AllInvocations dual-write lookup failed for %q: %s", invocationID, err)
+		return
+	}
+	if err := olap.FlushAllInvocationStats(ctx, full); err != nil {
+		log.CtxWarningf(ctx, "AllInvocations dual-write failed for %q: %s", invocationID, err)
+	}
 }
 
 func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string, acl *aclpb.ACL) error {

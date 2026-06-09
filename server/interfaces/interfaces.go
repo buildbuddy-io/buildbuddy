@@ -436,6 +436,10 @@ type OLAPDBHandle interface {
 
 	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string
 	FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error
+	// FlushAllInvocationStats writes the invocation to the AllInvocations table,
+	// which (unlike FlushInvocationStats) accepts in-progress invocations and may
+	// be called multiple times per invocation.
+	FlushAllInvocationStats(ctx context.Context, ti *tables.Invocation) error
 	FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error
 	FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error
 	FlushUsages(ctx context.Context, entries []*schema.RawUsage) error

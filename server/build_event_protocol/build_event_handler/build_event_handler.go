@@ -358,6 +358,20 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 	// Temporary logging for debugging clickhouse missing data.
 	log.CtxInfo(ctx, "Successfully wrote invocation to clickhouse")
 
+	// Dual-write the final, cache-stats-complete invocation to the AllInvocations
+	// table for enrolled groups. We use the already-looked-up full row and an
+	// authenticated context (so the experiment can target by group_id), since the
+	// in-progress dual-write in invocationdb runs on the (unauthenticated)
+	// statsRecorder context and is skipped for this update.
+	if olapdbconfig.WriteAllInvocationsToOLAPDBEnabled() {
+		authCtx := r.env.GetAuthenticator().AuthContextFromTrustedJWT(ctx, ij.jwt)
+		if efp := r.env.GetExperimentFlagProvider(); efp != nil && efp.Boolean(authCtx, "olap.write_all_invocations", false) {
+			if err := r.env.GetOLAPDBHandle().FlushAllInvocationStats(authCtx, inv); err != nil {
+				log.CtxWarningf(ctx, "Failed to write invocation %q to AllInvocations: %s", ij.id, err)
+			}
+		}
+	}
+
 	if r.env.GetExecutionCollector() == nil {
 		return nil
 	}

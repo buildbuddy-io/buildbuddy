@@ -20,6 +20,7 @@ import (
 type Handle struct {
 	executionIDsByInvID sync.Map // map of invocationID => a slice of execution IDs
 	invIDs              sync.Map // map of invocationID => struct{}
+	allInvByInvID       sync.Map // map of invocationID => *tables.Invocation (last write)
 }
 
 func (h *Handle) DialectName() string {
@@ -55,6 +56,21 @@ func (h *Handle) DateFromUsecTimestamp(fieldNmae string, timezoneOffsetMinutes i
 func (h *Handle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
 	h.invIDs.LoadOrStore(ti.InvocationID, struct{}{})
 	return nil
+}
+
+func (h *Handle) FlushAllInvocationStats(ctx context.Context, ti *tables.Invocation) error {
+	h.allInvByInvID.Store(ti.InvocationID, ti)
+	return nil
+}
+
+// GetAllInvocation returns the last invocation flushed to the AllInvocations
+// table for the given invocation ID, or nil if none was flushed.
+func (h *Handle) GetAllInvocation(invID string) *tables.Invocation {
+	v, ok := h.allInvByInvID.Load(invID)
+	if !ok {
+		return nil
+	}
+	return v.(*tables.Invocation)
 }
 
 func (h *Handle) FlushUsages(ctx context.Context, rows []*schema.RawUsage) error {
