@@ -9,7 +9,6 @@ go_library(
         "//codesearch/performance",
         "//codesearch/types",
         "//server/util/log",
-        "//server/util/priority_queue",
     ],
 )
 

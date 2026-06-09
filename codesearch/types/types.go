@@ -115,8 +115,10 @@ type IndexReader interface {
 
 type Scorer interface {
 	Skip() bool
-	UpperBoundScore(docMatch DocumentMatch) float64
-	Score(docMatch DocumentMatch, doc Document) float64
+	// Score computes a relevance score for a matched document using only
+	// index-side data (term frequencies and field lengths) — it must not need
+	// the stored document, so it stays cheap enough to run on every match.
+	Score(docMatch DocumentMatch) float64
 }
 
 type HighlightedRegion interface {

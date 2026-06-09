@@ -106,7 +106,6 @@ type fieldScorer struct {
 	op        scorerOp
 	fieldName string
 	weight    int
-	matcher   *dfa.Regexp
 	children  []*fieldScorer
 }
 
@@ -114,7 +113,12 @@ func (fs *fieldScorer) Skip() bool {
 	return fs.op == Noop
 }
 
-func (fs *fieldScorer) upperBoundScoreInternal(docMatch types.DocumentMatch) (matchCount, tokenCount int) {
+func (fs *fieldScorer) scoreInternal(docMatch types.DocumentMatch) (matchCount, tokenCount int) {
+	// We adapt BM25 scoring to work with multiple fields by counting matches and tokens from each
+	// field, summing them up, then running BM25 on those numbers. Fields can be weighted - the
+	// counts from a field (both token and match) are duplicated `weight` times.
+	// This approach is meant to match the method described here:
+	// https://www.researchgate.net/publication/221613382_Simple_BM25_extension_to_multiple_weighted_fields
 	switch fs.op {
 	case Match:
 		if docMatch == nil {
@@ -133,7 +137,7 @@ func (fs *fieldScorer) upperBoundScoreInternal(docMatch types.DocumentMatch) (ma
 		matchCount = 0
 		tokenCount = 0
 		for _, child := range fs.children {
-			m, t := child.upperBoundScoreInternal(docMatch)
+			m, t := child.scoreInternal(docMatch)
 			matchCount += m
 			tokenCount += t
 		}
@@ -144,7 +148,7 @@ func (fs *fieldScorer) upperBoundScoreInternal(docMatch types.DocumentMatch) (ma
 		tokenCount = 0
 
 		for _, child := range fs.children {
-			m, t := child.upperBoundScoreInternal(docMatch)
+			m, t := child.scoreInternal(docMatch)
 			if m == 0 {
 				return 0, 0
 			}
@@ -158,59 +162,6 @@ func (fs *fieldScorer) upperBoundScoreInternal(docMatch types.DocumentMatch) (ma
 		log.Warningf("Unknown scorer operation %d", fs.op)
 		return 0, 0 // Should never happen
 	}
-}
-
-func (fs *fieldScorer) exactScoreInternal(docMatch types.DocumentMatch, doc types.Document) (matchCount, tokenCount int) {
-	switch fs.op {
-	case Match:
-		field := doc.Field(fs.fieldName)
-		contents := field.Contents()
-		m := match(fs.matcher.Clone(), contents)
-		matchCount = len(m) * fs.weight
-		if docMatch != nil {
-			tokenCount = int(docMatch.FieldLength(fs.fieldName)) * fs.weight
-		} else {
-			tokenCount = fieldLength(field) * fs.weight
-		}
-		return matchCount, tokenCount
-	case Or:
-		matchCount = 0
-		tokenCount = 0
-		for _, child := range fs.children {
-			m, t := child.exactScoreInternal(docMatch, doc)
-			matchCount += m
-			tokenCount += t
-		}
-		return matchCount, tokenCount
-	case And:
-		matchCount = 0
-		tokenCount = 0
-		for _, child := range fs.children {
-			m, t := child.exactScoreInternal(docMatch, doc)
-			if m == 0 {
-				return 0, 0
-			}
-			matchCount += m
-			tokenCount += t
-		}
-		return matchCount, tokenCount
-	case Noop:
-		return 1, 1
-	default:
-		log.Warningf("Unknown scorer operation %d", fs.op)
-		return 0, 0 // Should never happen
-	}
-}
-
-func fieldLength(field types.Field) int {
-	tokenizer := field.Schema().MakeTokenizer()
-	tokenizer.Reset(bytes.NewReader(field.Contents()))
-	for {
-		if err := tokenizer.Next(); err != nil {
-			break
-		}
-	}
-	return int(tokenizer.TermFrequencyStats().Occurrences)
 }
 
 func bm25Score(f_qi_d, D float64) float64 {
@@ -229,12 +180,11 @@ func newNoopScorer() *fieldScorer {
 	}
 }
 
-func newFieldScorer(fieldName string, weight int, matcher *dfa.Regexp) *fieldScorer {
+func newFieldScorer(fieldName string, weight int) *fieldScorer {
 	return &fieldScorer{
 		op:        Match,
 		fieldName: fieldName,
 		weight:    weight,
-		matcher:   matcher,
 	}
 }
 
@@ -264,13 +214,8 @@ func orScorers(a *fieldScorer, b *fieldScorer) *fieldScorer {
 	}
 }
 
-func (fs *fieldScorer) UpperBoundScore(docMatch types.DocumentMatch) float64 {
-	matchCount, tokenCount := fs.upperBoundScoreInternal(docMatch)
-	return bm25Score(float64(matchCount), float64(tokenCount))
-}
-
-func (fs *fieldScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 {
-	matchCount, tokenCount := fs.exactScoreInternal(docMatch, doc)
+func (fs *fieldScorer) Score(docMatch types.DocumentMatch) float64 {
+	matchCount, tokenCount := fs.scoreInternal(docMatch)
 	return bm25Score(float64(matchCount), float64(tokenCount))
 }
 
@@ -404,13 +349,9 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 			return nil, status.InvalidArgumentError(err.Error())
 		}
 		sClauses = append(sClauses, subQ)
-		fileMatchRe, err := dfa.Compile(filename)
-		if err != nil {
-			return nil, status.InvalidArgumentError(err.Error())
-		}
 		// Weight 2 because explicit filename matches should be more impactful to ranking than
 		// non-explicit filename matches.
-		scorer = andScorers(scorer, newFieldScorer(filenameField, 2, fileMatchRe))
+		scorer = andScorers(scorer, newFieldScorer(filenameField, 2))
 	}
 
 	q, lang := filters.ExtractLanguageFilter(q)
@@ -458,8 +399,8 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 			orScorers(
 				// Weight 2 because content matches should be more important than non-explicit
 				// filename matches.
-				newFieldScorer(contentField, 2, re),
-				newFieldScorer(filenameField, 1, re),
+				newFieldScorer(contentField, 2),
+				newFieldScorer(filenameField, 1),
 			))
 		contentMatcher = re
 

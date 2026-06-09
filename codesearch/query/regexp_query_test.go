@@ -4,28 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-var testSchema = schema.NewDocumentSchema(
-	[]types.FieldSchema{
-		schema.MustFieldSchema(types.KeywordField, "id", true),
-		schema.MustFieldSchema(types.TrigramField, "filename", true),
-		schema.MustFieldSchema(types.SparseNgramField, "content", true),
-		schema.MustFieldSchema(types.KeywordField, "lang", true),
-	},
-)
-
-func newTestDocument(t *testing.T, fieldMap map[string][]byte) types.Document {
-	doc, err := testSchema.MakeDocument(fieldMap)
-	if err != nil {
-		t.Fatalf("failed to create test document: %v", err)
-	}
-	return doc
-}
 
 type testPosting struct {
 	docid     uint64
@@ -242,16 +224,7 @@ func TestScoringMatchContentOnly(t *testing.T) {
 		map[string]uint32{contentField: 1},
 		map[string]uint32{contentField: 1, filenameField: 1},
 	)
-	upperBoundScore := scorer.UpperBoundScore(docMatch)
-	assert.Equal(t, bm25Score(2, 3), upperBoundScore)
-
-	doc := newTestDocument(t, map[string][]byte{
-		"id":       []byte("1"),
-		"filename": []byte("bar.txt"),
-		"content":  []byte("foo"),
-	})
-	exactScore := scorer.Score(docMatch, doc)
-	assert.InDelta(t, 0.88, exactScore, 0.1)
+	assert.Equal(t, bm25Score(2, 3), scorer.Score(docMatch))
 }
 
 func TestScoringMatchContentAndFilename(t *testing.T) {
@@ -269,16 +242,7 @@ func TestScoringMatchContentAndFilename(t *testing.T) {
 		},
 		map[string]uint32{contentField: 1, filenameField: 1},
 	)
-	upperBoundScore := scorer.UpperBoundScore(docMatch)
-	assert.Equal(t, bm25Score(5, 5), upperBoundScore)
-
-	doc := newTestDocument(t, map[string][]byte{
-		"id":       []byte("1"),
-		"filename": []byte("bar.go"),
-		"content":  []byte("foo"),
-	})
-	exactScore := scorer.Score(docMatch, doc)
-	assert.InDelta(t, 1, exactScore, 0.1)
+	assert.Equal(t, bm25Score(5, 5), scorer.Score(docMatch))
 }
 
 func TestScoringMatchFilenameWithoutAtom(t *testing.T) {
@@ -293,16 +257,7 @@ func TestScoringMatchFilenameWithoutAtom(t *testing.T) {
 		map[string]uint32{filenameField: 1},
 		map[string]uint32{contentField: 1, filenameField: 1},
 	)
-	upperBoundScore := scorer.UpperBoundScore(docMatch)
-	assert.Equal(t, bm25Score(1, 3), upperBoundScore)
-
-	doc := newTestDocument(t, map[string][]byte{
-		"id":       []byte("1"),
-		"filename": []byte("bar.txt"),
-		"content":  []byte("foo"),
-	})
-	exactScore := scorer.Score(docMatch, doc)
-	assert.InDelta(t, 0.55, exactScore, 0.1)
+	assert.Equal(t, bm25Score(1, 3), scorer.Score(docMatch))
 }
 
 func TestScoringMatchExplicitFilename(t *testing.T) {
@@ -317,33 +272,7 @@ func TestScoringMatchExplicitFilename(t *testing.T) {
 		map[string]uint32{filenameField: 1},
 		map[string]uint32{contentField: 1, filenameField: 1},
 	)
-	upperBoundScore := scorer.UpperBoundScore(docMatch)
-	assert.Equal(t, bm25Score(2, 2), upperBoundScore)
-
-	doc := newTestDocument(t, map[string][]byte{
-		"id":       []byte("1"),
-		"filename": []byte("bar.txt"),
-		"content":  []byte("foo"),
-	})
-	exactScore := scorer.Score(docMatch, doc)
-	assert.InDelta(t, 1.0, exactScore, 0.1)
-}
-
-func TestScoringNilDocumentMatchUsesTokenizerFieldLength(t *testing.T) {
-	ctx := context.Background()
-	q, err := NewReQuery(ctx, "file:abc")
-	require.NoError(t, err)
-
-	scorer := q.Scorer()
-	require.NotNil(t, scorer)
-
-	doc := newTestDocument(t, map[string][]byte{
-		"id":       []byte("1"),
-		"filename": []byte("abcde"),
-		"content":  []byte("foo"),
-	})
-	exactScore := scorer.Score(nil, doc)
-	assert.Equal(t, bm25Score(2, 6), exactScore)
+	assert.Equal(t, bm25Score(2, 2), scorer.Score(docMatch))
 }
 
 func TestScorerWithNoMatchers(t *testing.T) {
@@ -354,17 +283,7 @@ func TestScorerWithNoMatchers(t *testing.T) {
 	scorer := q.Scorer()
 	require.NotNil(t, scorer)
 
-	upperBoundScore := scorer.UpperBoundScore(matchWithFrequencies(nil))
-	assert.Equal(t, 1.0, upperBoundScore)
-
-	doc := newTestDocument(t, map[string][]byte{
-		"id":       []byte("1"),
-		"filename": []byte("bar.txt"),
-		"content":  []byte("foo"),
-		"lang":     []byte("java"),
-	})
-	exactScore := scorer.Score(matchWithFrequencies(nil), doc)
-	assert.Equal(t, 1.0, exactScore)
+	assert.Equal(t, 1.0, scorer.Score(matchWithFrequencies(nil)))
 }
 
 func TestScorerNonMatch(t *testing.T) {
@@ -379,16 +298,7 @@ func TestScorerNonMatch(t *testing.T) {
 		nil,
 		map[string]uint32{contentField: 1, filenameField: 1},
 	)
-	upperBoundScore := scorer.UpperBoundScore(docMatch)
-	assert.Equal(t, 0.0, upperBoundScore)
-
-	doc := newTestDocument(t, map[string][]byte{
-		"id":       []byte("1"),
-		"filename": []byte("bar.txt"),
-		"content":  []byte("foo"),
-	})
-	exactScore := scorer.Score(docMatch, doc)
-	assert.Equal(t, 0.0, exactScore)
+	assert.Equal(t, 0.0, scorer.Score(docMatch))
 }
 
 func TestScorerWithOnlyOneMatch(t *testing.T) {
@@ -403,16 +313,7 @@ func TestScorerWithOnlyOneMatch(t *testing.T) {
 		map[string]uint32{contentField: 1},
 		map[string]uint32{contentField: 1, filenameField: 1},
 	)
-	upperBoundScore := scorer.UpperBoundScore(docMatch)
-	assert.Equal(t, 0.0, upperBoundScore)
-
-	doc := newTestDocument(t, map[string][]byte{
-		"id":       []byte("1"),
-		"filename": []byte("bar.txt"),
-		"content":  []byte("foo"),
-	})
-	exactScore := scorer.Score(docMatch, doc)
-	assert.Equal(t, 0.0, exactScore)
+	assert.Equal(t, 0.0, scorer.Score(docMatch))
 }
 
 func TestScorerWithShortFilePathNoMatch(t *testing.T) {
@@ -430,14 +331,5 @@ func TestScorerWithShortFilePathNoMatch(t *testing.T) {
 		map[string]uint32{contentField: 1},
 		map[string]uint32{contentField: 1, filenameField: 1},
 	)
-	upperBoundScore := scorer.UpperBoundScore(docMatch)
-	assert.Equal(t, 0.0, upperBoundScore)
-
-	doc := newTestDocument(t, map[string][]byte{
-		"id":       []byte("1"),
-		"filename": []byte("bar.txt"),
-		"content":  []byte("foo"),
-	})
-	exactScore := scorer.Score(docMatch, doc)
-	assert.Equal(t, 0.0, exactScore)
+	assert.Equal(t, 0.0, scorer.Score(docMatch))
 }
