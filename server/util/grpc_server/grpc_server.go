@@ -47,6 +47,8 @@ var (
 	internalGRPCSPort = flag.Int("internal_grpcs_port", 1988, "The port to listen for internal gRPCS traffic on")
 
 	enablePrometheusHistograms = flag.Bool("app.enable_prometheus_histograms", true, "If true, collect prometheus histograms for all RPCs")
+
+	serverWorkerMultipler = flag.Int("grpc_server_worker_multiplier", 2, "The number of gRPC server workers per CPU")
 )
 
 func GRPCPort() int {
@@ -220,7 +222,7 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 		grpc.UnaryInterceptor(interceptors.TracedUnaryServerInterceptor("grpc_server.MetricsInterceptor", Metrics().UnaryServerInterceptor())),
 		experimental.BufferPool(mem.DefaultBufferPool()),
 		grpc.MaxRecvMsgSize(MaxRecvMsgSizeBytes()),
-		grpc.NumStreamWorkers(uint32(runtime.GOMAXPROCS(0))),
+		grpc.NumStreamWorkers(uint32(runtime.GOMAXPROCS(0)) * uint32(*serverWorkerMultipler)),
 		KeepaliveEnforcementPolicy(),
 	}
 	for _, h := range config.ExtraStatsHandlers {
