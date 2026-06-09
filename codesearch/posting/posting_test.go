@@ -92,10 +92,16 @@ func TestBuilderList(t *testing.T) {
 	assert.Equal(t, []uint64{1, 2, 3}, pl.ToArray())
 }
 
-func TestBuilderListPanicsOnNonIncreasingAdd(t *testing.T) {
-	pl := posting.NewBuilderList(1, 2, 3)
-	assert.Panics(t, func() { pl.Add(3) }, "duplicate trailing id should panic")
-	assert.Panics(t, func() { pl.Add(2) }, "out-of-order id should panic")
+func TestBuilderListAddOutOfOrder(t *testing.T) {
+	// The unified list accepts adds in any order: duplicates are ignored and
+	// smaller ids are inserted in sorted position. The indexing path still hits
+	// the increasing-append fast path, but out-of-order adds are no longer a
+	// programming error.
+	pl := posting.NewBuilderList(1, 2, 4)
+	pl.Add(4) // duplicate trailing id: ignored
+	pl.Add(2) // duplicate interior id: ignored
+	pl.Add(3) // out-of-order id: inserted in place
+	assert.Equal(t, []uint64{1, 2, 3, 4}, pl.ToArray())
 }
 
 func TestBuilderListFrequencyDecodesRLE(t *testing.T) {
@@ -108,7 +114,7 @@ func TestBuilderListFrequencyDecodesRLE(t *testing.T) {
 	assert.Equal(t, uint32(1), pl.Frequency(1))
 	assert.Equal(t, uint32(3), pl.Frequency(2))
 	assert.Equal(t, uint32(3), pl.Frequency(3))
-	assert.Equal(t, uint32(1), pl.Frequency(4)) // in the not-yet-flushed final run
+	assert.Equal(t, uint32(1), pl.Frequency(4)) // last run
 	assert.Equal(t, uint32(0), pl.Frequency(99))
 }
 
@@ -516,15 +522,48 @@ func BenchmarkListSerializationPosting(b *testing.B) {
 		}
 	}
 
+	// b.Loop() requires the timer to be running when it's evaluated, so the
+	// per-iteration work goes straight in the loop body; setup before the loop is
+	// excluded from timing automatically.
 	b.ReportAllocs()
-	b.StopTimer()
 	for b.Loop() {
-		b.StartTimer()
 		pl := posting.NewList(ids...)
-		_, err := pl.Marshal()
-		b.StopTimer()
-		require.NoError(b, err)
+		if _, err := pl.Marshal(); err != nil {
+			b.Fatal(err)
+		}
 	}
+}
+
+// BenchmarkBuildList models the indexing hot path: append doc IDs in increasing
+// order via AddWithFrequency, then serialize. The AllOnes arm exercises the
+// common case where the frequency column never materializes; SparseOutliers
+// adds occasional TF>1 docs so the dense column and the RLE marshal kick in.
+func BenchmarkBuildList(b *testing.B) {
+	const n = 100_000
+	build := func(b *testing.B, freq func(i uint64) uint32) {
+		b.ReportAllocs()
+		for b.Loop() {
+			pl := posting.NewBuilderList()
+			for i := uint64(0); i < n; i++ {
+				pl.AddWithFrequency(i, freq(i))
+			}
+			if _, err := pl.Marshal(); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+
+	b.Run("AllOnes", func(b *testing.B) {
+		build(b, func(i uint64) uint32 { return 1 })
+	})
+	b.Run("SparseOutliers", func(b *testing.B) {
+		build(b, func(i uint64) uint32 {
+			if i%50 == 0 {
+				return 3
+			}
+			return 1
+		})
+	})
 }
 
 func BenchmarkListDeserializationPosting(b *testing.B) {

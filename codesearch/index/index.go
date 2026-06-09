@@ -35,7 +35,7 @@ const (
 	generationKey       = "__generation__"
 )
 
-type postingLists map[string]*posting.BuilderList
+type postingLists map[string]*posting.MergeList
 
 // Writer is not thread-safe. A single instance should not be used concurrently.
 // Multiple instances can be used concurrently without crashing, however CRUD operations are
