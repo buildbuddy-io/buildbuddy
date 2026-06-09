@@ -731,6 +731,10 @@ func (r *Reader) storedFieldKey(docID uint64, field string) []byte {
 	return fmt.Appendf(nil, "%s:doc:%d:%s", r.namespace, docID, field)
 }
 
+func (r *Reader) docStatsKey(docID uint64) []byte {
+	return fmt.Appendf(nil, "%s:sta:%d:%s", r.namespace, docID, fieldLengthsField)
+}
+
 func (r *Reader) allDocIDs() (posting.FieldMap, error) {
 	iter, err := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: r.storedFieldKey(0, types.DocIDField),
@@ -780,15 +784,17 @@ func (r *Reader) recordIterStats(iter *pebble.Iterator, kt indexKeyType) {
 	case ngramField:
 		tracker.Add(performance.INDEX_BYTES_READ, int64(iStats.KeyBytes+iStats.ValueBytes))
 		tracker.Add(performance.INDEX_KEYS_SCANNED, int64(iStats.PointCount))
+	case docStatsField:
+		tracker.Add(performance.FIELD_STATS_BYTES_READ, int64(iStats.KeyBytes+iStats.ValueBytes))
+		tracker.Add(performance.FIELD_STATS_KEYS_READ, int64(iStats.PointCount))
 	default:
 		break
 	}
 }
 
 func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string]types.Field, error) {
-	docIDStart := r.storedFieldKey(docID, "")
 	iter, err := r.db.NewIter(&pebble.IterOptions{
-		LowerBound: docIDStart,
+		LowerBound: r.storedFieldKey(docID, ""),
 		UpperBound: r.storedFieldKey(docID, "\xff"),
 	})
 	if err != nil {
@@ -799,11 +805,28 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
 		r.recordIterStats(iter, docField)
 	}()
 
-	shouldCopyField := func(fieldName string) bool {
-		if len(fieldNames) == 0 {
-			return true
+	if len(fieldNames) > 0 {
+		fieldNames = slices.Clone(fieldNames)
+		slices.Sort(fieldNames)
+		fieldNames = slices.Compact(fieldNames)
+
+		fields := make(map[string]types.Field, len(fieldNames))
+		for _, fieldName := range fieldNames {
+			if fieldName == types.DocIDField {
+				continue
+			}
+			fieldKey := r.storedFieldKey(docID, fieldName)
+			if !iter.SeekGE(fieldKey) {
+				break
+			}
+			if !bytes.Equal(iter.Key(), fieldKey) {
+				continue
+			}
+			fieldVal := make([]byte, len(iter.Value()))
+			copy(fieldVal, iter.Value())
+			fields[fieldName] = r.schema.Field(fieldName).MakeField(fieldVal)
 		}
-		return slices.Contains(fieldNames, fieldName)
+		return fields, nil
 	}
 
 	fields := make(map[string]types.Field, 0)
@@ -816,15 +839,66 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
 			// Skip docID -- we already have it from args.
 			continue
 		}
-
-		if !shouldCopyField(k.field) {
-			continue
-		}
 		fieldVal := make([]byte, len(iter.Value()))
 		copy(fieldVal, iter.Value())
 		fields[k.field] = r.schema.Field(k.field).MakeField(fieldVal)
 	}
 	return fields, nil
+}
+
+func (r *Reader) populateFieldLengths(docMatches map[uint64]*docMatch) error {
+	if len(docMatches) == 0 {
+		return nil
+	}
+	start := time.Now()
+	defer func() {
+		if tracker := performance.TrackerFromContext(r.ctx); tracker != nil {
+			tracker.Add(performance.FIELD_STATS_READ_DURATION, int64(time.Since(start)))
+		}
+	}()
+
+	// Look up each requested doc's stats key directly via a single iterator,
+	// seeking in lexically-sorted key order. Cost is O(len(docMatches)) seeks
+	// regardless of how many docs the namespace holds -- unlike a full range
+	// scan, whose cost grows with the corpus.
+	type target struct {
+		key   []byte
+		docID uint64
+	}
+	targets := make([]target, 0, len(docMatches))
+	for docID := range docMatches {
+		targets = append(targets, target{key: r.docStatsKey(docID), docID: docID})
+	}
+	slices.SortFunc(targets, func(a, b target) int {
+		return bytes.Compare(a.key, b.key)
+	})
+
+	iter, err := r.db.NewIter(&pebble.IterOptions{
+		LowerBound: targets[0].key,
+		UpperBound: fmt.Appendf(nil, "%s:sta:\xff", r.namespace),
+	})
+	if err != nil {
+		return err
+	}
+	defer iter.Close()
+	defer func() {
+		r.recordIterStats(iter, docStatsField)
+	}()
+
+	for _, t := range targets {
+		if !iter.SeekGE(t.key) {
+			break // nothing at or beyond this key
+		}
+		if !bytes.Equal(iter.Key(), t.key) {
+			continue // no stats key for this doc (e.g. deleted); leave unset
+		}
+		fieldLengths, err := unmarshalFieldLengths(iter.Value())
+		if err != nil {
+			return err
+		}
+		docMatches[t.docID].fieldLengths = fieldLengths
+	}
+	return nil
 }
 
 // TODO(jdelfino): We can't know if the document exists or not until we fetch the fields, but we
@@ -999,6 +1073,20 @@ func (r *Reader) removeDeletedDocIDs(results posting.FieldMap) error {
 type docMatch struct {
 	docid           uint64
 	matchedPostings map[string]types.Posting
+	fieldLengths    map[string]uint32
+}
+
+type matchPosting struct {
+	docid     uint64
+	frequency uint32
+}
+
+func (p matchPosting) Docid() uint64 {
+	return p.docid
+}
+
+func (p matchPosting) Frequency() uint32 {
+	return p.frequency
 }
 
 func (dm *docMatch) FieldNames() []string {
@@ -1009,6 +1097,10 @@ func (dm *docMatch) Docid() uint64 {
 }
 func (dm *docMatch) Posting(fieldName string) types.Posting {
 	return dm.matchedPostings[fieldName]
+}
+
+func (dm *docMatch) FieldLength(fieldName string) uint32 {
+	return dm.fieldLengths[fieldName]
 }
 
 type lazyDoc struct {
@@ -1147,8 +1239,14 @@ func (r *Reader) RawQuery(squery string) ([]types.DocumentMatch, error) {
 				}
 			}
 			docMatch := docMatches[docid]
-			docMatch.matchedPostings[field] = nil // TODO(tylerw): fill in.
+			docMatch.matchedPostings[field] = matchPosting{
+				docid:     docid,
+				frequency: pl.Frequency(docid),
+			}
 		}
+	}
+	if err := r.populateFieldLengths(docMatches); err != nil {
+		return nil, err
 	}
 
 	// Convert to interface (ugh).

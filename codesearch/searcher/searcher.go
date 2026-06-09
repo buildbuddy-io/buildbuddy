@@ -1,20 +1,15 @@
 package searcher
 
 import (
+	"container/heap"
 	"context"
-	"runtime"
-	"slices"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"golang.org/x/sync/errgroup"
 )
-
-const maxDocsToScore = 100_000
 
 type CodeSearcher struct {
 	ctx         context.Context
@@ -48,27 +43,53 @@ func truncate(results []uint64, numResults, offset int) []uint64 {
 	return rest
 }
 
-func dropZeroScores(docIDs []uint64, scoreMap map[uint64]float64) []uint64 {
-	// Precondition: docIDs is sorted in descending order of score.
-	for i, docID := range docIDs {
-		if scoreMap[docID] <= 0.0 {
-			log.Infof("Dropping %d zero scores", len(docIDs)-i)
-			return docIDs[:i]
-		}
+type scoredDoc struct {
+	docID uint64
+	score float64
+}
+
+// lowerScoredDoc orders docs from weakest to strongest: ascending score,
+// breaking ties toward the larger doc ID so that equal-scored docs surface in
+// ascending doc ID order.
+func lowerScoredDoc(a, b scoredDoc) bool {
+	if a.score == b.score {
+		return a.docID > b.docID
 	}
-	return docIDs
+	return a.score < b.score
+}
+
+// topDocsHeap is a min-heap whose root is the weakest doc in the current top
+// set, so a stronger doc can replace it in O(log n).
+type topDocsHeap []scoredDoc
+
+func (h topDocsHeap) Len() int           { return len(h) }
+func (h topDocsHeap) Less(i, j int) bool { return lowerScoredDoc(h[i], h[j]) }
+func (h topDocsHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *topDocsHeap) Push(x any)        { *h = append(*h, x.(scoredDoc)) }
+func (h *topDocsHeap) Pop() any {
+	old := *h
+	doc := old[len(old)-1]
+	*h = old[:len(old)-1]
+	return doc
+}
+
+func pushOrReplaceTopDoc(h *topDocsHeap, doc scoredDoc, limit int) {
+	if doc.score <= 0 {
+		return
+	}
+	if h.Len() < limit {
+		heap.Push(h, doc)
+		return
+	}
+	if lowerScoredDoc((*h)[0], doc) {
+		(*h)[0] = doc
+		heap.Fix(h, 0)
+	}
 }
 
 func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMatch, numResults, offset int) ([]uint64, error) {
 	start := time.Now()
-
-	allDocIDs := make([]uint64, 0)
-	for _, match := range matches {
-		allDocIDs = append(allDocIDs, match.Docid())
-	}
-	slices.Sort(allDocIDs)
-	docIDs := slices.Compact(allDocIDs)
-	numDocs := len(docIDs)
+	docsScored := 0
 
 	defer func() {
 		tracker := performance.TrackerFromContext(c.ctx)
@@ -76,57 +97,45 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
 			return
 		}
 		tracker.TrackOnce(performance.TOTAL_SCORING_DURATION, int64(time.Since(start)))
-		tracker.TrackOnce(performance.TOTAL_DOCS_SCORED_COUNT, int64(numDocs))
+		tracker.TrackOnce(performance.TOTAL_DOCS_SCORED_COUNT, int64(docsScored))
 	}()
 
 	if scorer.Skip() {
+		docIDs := make([]uint64, 0, len(matches))
+		for _, match := range matches {
+			docIDs = append(docIDs, match.Docid())
+		}
+		sort.Slice(docIDs, func(i, j int) bool {
+			return docIDs[i] < docIDs[j]
+		})
 		return truncate(docIDs, numResults, offset), nil
 	}
 
-	scoreMap := make(map[uint64]float64, numDocs)
-	var mu sync.Mutex
+	if numResults <= 0 {
+		return nil, nil
+	}
 
-	// TODO(tylerw): use a priority-queue; stop iteration early.
-	g := new(errgroup.Group)
-	g.SetLimit(runtime.GOMAXPROCS(0))
-
-	docsScored := 0
-	quitScoringEarly := false
+	// Scoring uses only index-side data (term frequencies and field lengths),
+	// so it is cheap enough to run on every match; the heap keeps just the
+	// docs that can make it into the requested result window.
+	resultLimit := offset + numResults
+	topDocs := make(topDocsHeap, 0, resultLimit)
 	for _, match := range matches {
-		docID := match.Docid()
-		if docsScored > maxDocsToScore {
-			quitScoringEarly = true
-			mu.Lock()
-			scoreMap[docID] = 0.0
-			mu.Unlock()
-			continue
-		}
-		g.Go(func() error {
-			// TODO(jdelfino): We throw away the stored document here, but then re-fetch it if
-			// this document makes the cut. Save it and plumb it back out to improve performance.
-			doc := c.indexReader.GetStoredDocument(docID)
-
-			score := scorer.Score(match, doc)
-			mu.Lock()
-			scoreMap[docID] = score
-			mu.Unlock()
-			return nil
-		})
-		docsScored += 1
-	}
-	if err := g.Wait(); err != nil {
-		log.Errorf("error: %s", err)
-	}
-	if quitScoringEarly {
-		log.Warningf("Stopped scoring after %d (max) docs", maxDocsToScore)
+		doc := scoredDoc{docID: match.Docid(), score: scorer.Score(match)}
+		docsScored++
+		pushOrReplaceTopDoc(&topDocs, doc, resultLimit)
 	}
 
-	sort.Slice(docIDs, func(i, j int) bool {
-		return scoreMap[docIDs[i]] > scoreMap[docIDs[j]]
+	results := []scoredDoc(topDocs)
+	sort.Slice(results, func(i, j int) bool {
+		return lowerScoredDoc(results[j], results[i])
 	})
 
-	docIDs = truncate(docIDs, numResults, offset)
-	return dropZeroScores(docIDs, scoreMap), nil
+	resultDocIDs := make([]uint64, len(results))
+	for i, result := range results {
+		resultDocIDs[i] = result.docID
+	}
+	return truncate(resultDocIDs, numResults, offset), nil
 }
 
 func (c *CodeSearcher) Search(q types.Query, numResults, offset int) ([]types.Document, error) {

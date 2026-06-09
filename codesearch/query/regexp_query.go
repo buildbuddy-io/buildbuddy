@@ -106,7 +106,6 @@ type fieldScorer struct {
 	op        scorerOp
 	fieldName string
 	weight    int
-	matcher   *dfa.Regexp
 	children  []*fieldScorer
 }
 
@@ -114,57 +113,68 @@ func (fs *fieldScorer) Skip() bool {
 	return fs.op == Noop
 }
 
-func (fs *fieldScorer) scoreInternal(doc types.Document) (matchCount, tokenCount int) {
+func (fs *fieldScorer) scoreInternal(docMatch types.DocumentMatch) (matchCount, tokenCount int) {
 	// We adapt BM25 scoring to work with multiple fields by counting matches and tokens from each
 	// field, summing them up, then running BM25 on those numbers. Fields can be weighted - the
 	// counts from a field (both token and match) are duplicated `weight` times.
-	// This approach is meant to match the method describe here:
+	// This approach is meant to match the method described here:
 	// https://www.researchgate.net/publication/221613382_Simple_BM25_extension_to_multiple_weighted_fields
-
 	switch fs.op {
 	case Match:
-		contents := doc.Field(fs.fieldName).Contents()
-		m := match(fs.matcher.Clone(), contents)
-		matchCount = len(m) * fs.weight
-		tokenCount = len(strings.Fields(string(contents))) * fs.weight
+		if docMatch == nil {
+			return 0, 0
+		}
+		posting := docMatch.Posting(fs.fieldName)
+		tokenCount = int(docMatch.FieldLength(fs.fieldName)) * fs.weight
+		if posting == nil {
+			return 0, tokenCount
+		}
+		matchCount = int(posting.Frequency()) * fs.weight
+		// A field always holds at least as many tokens as any one term's
+		// occurrences, so matchCount is a lower bound on the true field
+		// length. Docs indexed before field lengths were stored report
+		// FieldLength 0; without this floor they'd skip BM25 length
+		// normalization entirely and outscore reindexed docs.
+		tokenCount = max(tokenCount, matchCount)
 		return matchCount, tokenCount
 	case Or:
-		// Sum up the scores of all children. Arguably, we could take the highest score,
+		// Sum up the matches of all children. Arguably, we could take the highest score,
 		// but it seems more useful to boost queries that match more terms.
-		matchCount = 0.0
-		tokenCount = 0.0
+		matchCount = 0
+		tokenCount = 0
 		for _, child := range fs.children {
-			m, t := child.scoreInternal(doc)
+			m, t := child.scoreInternal(docMatch)
 			matchCount += m
 			tokenCount += t
 		}
 		return matchCount, tokenCount
 	case And:
-		// Same os OR, but if any child scores 0, the overall score is 0.
-		matchCount = 0.0
-		tokenCount = 0.0
+		// Same as OR, but if any child scores 0, the overall score is 0.
+		matchCount = 0
+		tokenCount = 0
 
 		for _, child := range fs.children {
-			m, t := child.scoreInternal(doc)
-			if m == 0.0 {
-				return 0.0, 0.0
+			m, t := child.scoreInternal(docMatch)
+			if m == 0 {
+				return 0, 0
 			}
 			matchCount += m
 			tokenCount += t
 		}
 		return matchCount, tokenCount
 	case Noop:
-		return 1.0, 1.0
+		return 1, 1
 	default:
 		log.Warningf("Unknown scorer operation %d", fs.op)
-		return 0.0, 0.0 // Should never happen
+		return 0, 0 // Should never happen
 	}
 }
 
 func bm25Score(f_qi_d, D float64) float64 {
 	// See https://en.wikipedia.org/wiki/Okapi_BM25#The_ranking_function for
 	// the formula for BM25 scoring. k1 and b are left at "default" values here, and haven't been
-	// tuned.
+	// tuned. Query scoring passes a field-length based normalization value computed from
+	// the indexed fields that contributed to the score.
 	k1 := 1.2
 	b := 0.75
 	return (f_qi_d * (k1 + 1)) / (f_qi_d + k1*(1-b+b*D))
@@ -176,12 +186,11 @@ func newNoopScorer() *fieldScorer {
 	}
 }
 
-func newFieldScorer(fieldName string, weight int, matcher *dfa.Regexp) *fieldScorer {
+func newFieldScorer(fieldName string, weight int) *fieldScorer {
 	return &fieldScorer{
 		op:        Match,
 		fieldName: fieldName,
 		weight:    weight,
-		matcher:   matcher,
 	}
 }
 
@@ -211,8 +220,8 @@ func orScorers(a *fieldScorer, b *fieldScorer) *fieldScorer {
 	}
 }
 
-func (fs *fieldScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 {
-	matchCount, tokenCount := fs.scoreInternal(doc)
+func (fs *fieldScorer) Score(docMatch types.DocumentMatch) float64 {
+	matchCount, tokenCount := fs.scoreInternal(docMatch)
 	return bm25Score(float64(matchCount), float64(tokenCount))
 }
 
@@ -346,13 +355,9 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 			return nil, status.InvalidArgumentError(err.Error())
 		}
 		sClauses = append(sClauses, subQ)
-		fileMatchRe, err := dfa.Compile(filename)
-		if err != nil {
-			return nil, status.InvalidArgumentError(err.Error())
-		}
 		// Weight 2 because explicit filename matches should be more impactful to ranking than
 		// non-explicit filename matches.
-		scorer = andScorers(scorer, newFieldScorer(filenameField, 2, fileMatchRe))
+		scorer = andScorers(scorer, newFieldScorer(filenameField, 2))
 	}
 
 	q, lang := filters.ExtractLanguageFilter(q)
@@ -400,8 +405,8 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 			orScorers(
 				// Weight 2 because content matches should be more important than non-explicit
 				// filename matches.
-				newFieldScorer(contentField, 2, re),
-				newFieldScorer(filenameField, 1, re),
+				newFieldScorer(contentField, 2),
+				newFieldScorer(filenameField, 1),
 			))
 		contentMatcher = re
 

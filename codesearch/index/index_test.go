@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/posting"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
@@ -688,6 +689,136 @@ func TestSparseNgramFrequenciesAcrossMultipleDocs(t *testing.T) {
 		docID := uint64(i + 1)
 		assert.Equal(t, d.wantTF, roList.Frequency(docID), "readonly docID=%d (%s)", docID, d.id)
 	}
+}
+
+func TestRawQueryDocumentMatchesIncludeFrequencies(t *testing.T) {
+	ctx := context.Background()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.SparseNgramField, "content", true),
+		},
+	)
+
+	docs := []struct {
+		id      string
+		content string
+		wantTF  uint32
+	}{
+		{"1", "abc", 1},
+		{"2", "abc abc abc", 3},
+	}
+	w, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+	for _, d := range docs {
+		require.NoError(t, w.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
+			"id":      []byte(d.id),
+			"content": []byte(d.content),
+		})))
+	}
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testns", docSchema)
+	matches, err := r.RawQuery(`(:eq content abc)`)
+	require.NoError(t, err)
+
+	got := make(map[string]uint32)
+	for _, match := range matches {
+		storedDoc := r.GetStoredDocument(match.Docid())
+		id := string(storedDoc.Field("id").Contents())
+		posting := match.Posting("content")
+		require.NotNil(t, posting)
+		got[id] = posting.Frequency()
+	}
+	assert.Equal(t, map[string]uint32{"1": 1, "2": 3}, got)
+}
+
+func TestRawQueryDocumentMatchesIncludeFieldLengths(t *testing.T) {
+	ctx := context.Background()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.KeywordField, "content", true),
+		},
+	)
+
+	w, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+	require.NoError(t, w.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
+		"id":      []byte("1"),
+		"content": []byte("one two two"),
+	})))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testns", docSchema)
+	matches, err := r.RawQuery(`(:eq content two)`)
+	require.NoError(t, err)
+	require.Len(t, matches, 1)
+
+	assert.Equal(t, uint32(1), matches[0].FieldLength("id"))
+	assert.Equal(t, uint32(3), matches[0].FieldLength("content"))
+}
+
+func TestLazyDocFieldSeeksRequestedField(t *testing.T) {
+	ctx := performance.WrapContext(context.Background())
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.KeywordField, "content", true),
+			schema.MustFieldSchema(types.KeywordField, "owner", true),
+		},
+	)
+
+	w, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+	require.NoError(t, w.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
+		"id":      []byte("1"),
+		"content": []byte("needle"),
+		"owner":   []byte("tyler"),
+	})))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testns", docSchema)
+	storedDoc := r.GetStoredDocument(1)
+	assert.Equal(t, "needle", string(storedDoc.Field("content").Contents()))
+
+	tracker := performance.TrackerFromContext(ctx)
+	require.NotNil(t, tracker)
+	assert.Equal(t, int64(1), tracker.Get(performance.DOC_KEYS_SCANNED))
+}
+
+func TestGetStoredFieldsSeeksRequestedFields(t *testing.T) {
+	ctx := performance.WrapContext(context.Background())
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.KeywordField, "content", true),
+			schema.MustFieldSchema(types.KeywordField, "owner", true),
+		},
+	)
+
+	w, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+	require.NoError(t, w.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
+		"id":      []byte("1"),
+		"content": []byte("needle"),
+		"owner":   []byte("tyler"),
+	})))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testns", docSchema)
+	fields, err := r.getStoredFields(1, "owner", "content")
+	require.NoError(t, err)
+	assert.Equal(t, "needle", string(fields["content"].Contents()))
+	assert.Equal(t, "tyler", string(fields["owner"].Contents()))
+
+	tracker := performance.TrackerFromContext(ctx)
+	require.NotNil(t, tracker)
+	assert.Equal(t, int64(2), tracker.Get(performance.DOC_KEYS_SCANNED))
 }
 
 func printDB(t testing.TB, db *pebble.DB) {

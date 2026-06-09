@@ -59,14 +59,14 @@ type Document interface {
 
 type Posting interface {
 	Docid() uint64
-	Positions() []uint64
-	Merge(Posting)
+	Frequency() uint32
 }
 
 type DocumentMatch interface {
 	Docid() uint64
 	FieldNames() []string
 	Posting(fieldName string) Posting
+	FieldLength(fieldName string) uint32
 }
 
 type Tokenizer interface {
@@ -115,7 +115,10 @@ type IndexReader interface {
 
 type Scorer interface {
 	Skip() bool
-	Score(docMatch DocumentMatch, doc Document) float64
+	// Score computes a relevance score for a matched document using only
+	// index-side data (term frequencies and field lengths) — it must not need
+	// the stored document, so it stays cheap enough to run on every match.
+	Score(docMatch DocumentMatch) float64
 }
 
 type HighlightedRegion interface {

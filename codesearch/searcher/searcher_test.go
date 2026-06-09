@@ -2,6 +2,7 @@ package searcher_test
 
 import (
 	"context"
+	"sort"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
@@ -50,19 +51,18 @@ var sampleData = []struct {
 
 type constantScorer struct{}
 
-func (s constantScorer) Skip() bool                                                     { return false }
-func (s constantScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 { return 0.1 }
-
-type explicitScorer struct {
-	scores map[string]float64
+func (s constantScorer) Skip() bool { return false }
+func (s constantScorer) Score(docMatch types.DocumentMatch) float64 {
+	return 0.1
 }
 
-func (s explicitScorer) Skip() bool { return false }
-func (s explicitScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 {
-	if score, ok := s.scores[string(doc.Field("ident").Contents())]; ok {
-		return score
-	}
-	return 0.0
+type explicitScorer struct {
+	scores map[uint64]float64
+}
+
+func (s *explicitScorer) Skip() bool { return false }
+func (s *explicitScorer) Score(docMatch types.DocumentMatch) float64 {
+	return s.scores[docMatch.Docid()]
 }
 
 type sQuery struct {
@@ -121,11 +121,11 @@ func TestSearcherZeroScoresDropped(t *testing.T) {
 	db := createSampleIndex(t)
 	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
 
-	scorer := explicitScorer{
-		scores: map[string]float64{
-			"one":   1.0,
-			"four":  0.5,
-			"eight": 0.00001,
+	scorer := &explicitScorer{
+		scores: map[uint64]float64{
+			1: 1.0,
+			4: 0.5,
+			8: 0.00001,
 		},
 	}
 	docs, err := s.Search(sQuery{"(:all)", scorer}, 100, 0)
@@ -135,4 +135,105 @@ func TestSearcherZeroScoresDropped(t *testing.T) {
 	assert.Equal(t, "one", string(docs[0].Field("ident").Contents()))
 	assert.Equal(t, "four", string(docs[1].Field("ident").Contents()))
 	assert.Equal(t, "eight", string(docs[2].Field("ident").Contents()))
+}
+
+func TestSearcherTopKMatchesExhaustiveScan(t *testing.T) {
+	ctx := context.Background()
+	db := createSampleIndex(t)
+	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
+
+	scorer := &explicitScorer{
+		scores: map[uint64]float64{
+			1:  1.0,
+			2:  80.0,
+			3:  2.0,
+			4:  85.0,
+			5:  3.0,
+			6:  4.0,
+			7:  5.0,
+			8:  81.0,
+			9:  9.0,
+			10: 8.0,
+			11: 7.0,
+		},
+	}
+	docs, err := s.Search(sQuery{"(:all)", scorer}, 3, 0)
+	require.NoError(t, err)
+
+	assert.Equal(t, exhaustiveTopIdents(scorer.scores, 3, 0), docIdents(docs))
+}
+
+func TestSearcherTopKWithOffsetMatchesExhaustiveScan(t *testing.T) {
+	ctx := context.Background()
+	db := createSampleIndex(t)
+	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
+
+	scorer := &explicitScorer{
+		scores: map[uint64]float64{
+			1:  1.0,
+			2:  80.0,
+			3:  2.0,
+			4:  85.0,
+			5:  3.0,
+			6:  4.0,
+			7:  5.0,
+			8:  81.0,
+			9:  9.0,
+			10: 8.0,
+			11: 7.0,
+		},
+	}
+	docs, err := s.Search(sQuery{"(:all)", scorer}, 3, 2)
+	require.NoError(t, err)
+
+	assert.Equal(t, exhaustiveTopIdents(scorer.scores, 3, 2), docIdents(docs))
+}
+
+func TestSearcherEvictsLargerDocIDOnScoreTie(t *testing.T) {
+	ctx := context.Background()
+	db := createSampleIndex(t)
+	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
+
+	scorer := &explicitScorer{
+		scores: map[uint64]float64{
+			1: 1.0,
+			2: 1.0,
+			3: 1.0,
+		},
+	}
+	docs, err := s.Search(sQuery{"(:all)", scorer}, 2, 0)
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"one", "two"}, docIdents(docs))
+}
+
+func docIdents(docs []types.Document) []string {
+	idents := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		idents = append(idents, string(doc.Field("ident").Contents()))
+	}
+	return idents
+}
+
+func exhaustiveTopIdents(scores map[uint64]float64, numResults, offset int) []string {
+	docIDs := make([]uint64, 0, len(scores))
+	for docID, score := range scores {
+		if score > 0 {
+			docIDs = append(docIDs, docID)
+		}
+	}
+	sort.Slice(docIDs, func(i, j int) bool {
+		if scores[docIDs[i]] == scores[docIDs[j]] {
+			return docIDs[i] < docIDs[j]
+		}
+		return scores[docIDs[i]] > scores[docIDs[j]]
+	})
+
+	start := min(offset, len(docIDs))
+	end := min(offset+numResults, len(docIDs))
+	idents := make([]string, 0, end-start)
+	for _, docID := range docIDs[start:end] {
+		idents = append(idents, sampleData[docID-1].id)
+	}
+	return idents
 }
