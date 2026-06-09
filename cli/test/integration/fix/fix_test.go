@@ -431,6 +431,9 @@ func TestFix_SkipsHiddenDirectories(t *testing.T) {
 }
 
 func TestFix_GazelleDoesNotDescendIntoGitDirectory(t *testing.T) {
+	if raceDetectorEnabled {
+		t.Skip("embedded Gazelle's walker reports a data race under -race")
+	}
 	ws := fixWorkspace(t, map[string]string{
 		"MODULE.bazel":              "module(name = \"x\")\n",
 		".git/objects/hidden.proto": "syntax = \"proto3\";\npackage hidden;\nmessage Hidden {}\n",
