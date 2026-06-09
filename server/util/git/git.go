@@ -139,11 +139,11 @@ func ParseRepoURL(repo string) (*url.URL, error) {
 	}
 
 	if repoURL.Scheme == "" && repoURL.Host == "" && !strings.HasPrefix(repoURL.Path, "/") {
-		if components := strings.Split(repoURL.Path, "/"); strings.ContainsAny(components[0], ".:") || components[0] == "localhost" {
+		if host, _, found := strings.Cut(repoURL.Path, "/"); strings.ContainsAny(host, ".:") || host == "localhost" {
 			// convert e.g gitlab.com/buildbuddy-io/buildbuddy -> //gitlab.com/buildbuddy-io/buildbuddy
-			repoURL.Host = components[0]
-			repoURL.Path = repoURL.Path[len(components[0]):]
-		} else if len(components) == 2 {
+			repoURL.Host = host
+			repoURL.Path = repoURL.Path[len(host):]
+		} else if found {
 			// convert e.g buildbuddy-io/buildbuddy -> //github.com/buildbuddy-io/buildbuddy
 			repoURL.Host = "github.com"
 			repoURL.Path = "/" + repoURL.Path

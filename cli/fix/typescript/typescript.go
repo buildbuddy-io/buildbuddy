@@ -114,7 +114,8 @@ func (t *TS) GenerateRules(args language.GenerateArgs) language.GenerateResult {
 		if !strings.HasSuffix(baseName, tsFileExtension) && !strings.HasSuffix(baseName, tsxFileExtension) {
 			continue
 		}
-		r := rule.NewRule(tsProjectRuleName, strings.Split(baseName, ".")[0])
+		name, _, _ := strings.Cut(baseName, ".")
+		r := rule.NewRule(tsProjectRuleName, name)
 		r.SetAttr(srcAttribute, []string{baseName})
 		rules = append(rules, r)
 		filePath := path.Join(args.Dir, baseName)

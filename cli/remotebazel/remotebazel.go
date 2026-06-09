@@ -222,7 +222,7 @@ func determineRemote() (*gitRemote, error) {
 		return nil, fmt.Errorf("select git remote: %w", err)
 	}
 
-	selectedRemote := strings.Split(selectedRemoteAndURL, " (")[0]
+	selectedRemote, _, _ := strings.Cut(selectedRemoteAndURL, " (")
 	for _, r := range remotes {
 		if r.name == selectedRemote {
 			err = storage.WriteRepoConfig(gitConfigRemoteBazelRemote, r.name)

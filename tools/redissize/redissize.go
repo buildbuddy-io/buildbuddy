@@ -103,7 +103,7 @@ func padRight(s string, length int) string {
 }
 
 func keyType(key string) string {
-	firstPiece := strings.Split(key, "/")[0]
+	firstPiece, _, _ := strings.Cut(key, "/")
 	if _, err := uuid.Parse(firstPiece); err == nil {
 		return "invocation_logs"
 	}
