@@ -132,7 +132,7 @@ func ParseRepoURL(repo string) (*url.URL, error) {
 
 	// convert e.g file://buildbuddy-io/buildbuddy -> buildbuddy-io/buildbuddy
 	// and e.g //buildbuddy-io/buildbuddy -> buildbuddy-io/buildbuddy
-	if (repoURL.Scheme == "file" || repoURL.Scheme == "") && repoURL.Host != "" && repoURL.Hostname() != "localhost" && !strings.ContainsAny(repoURL.Host, ".:") && repoURL.Path != "" && !strings.Contains(repoURL.Path[1:], "/") {
+	if (repoURL.Scheme == "file" || repoURL.Scheme == "") && repoURL.Host != "" && repoURL.Hostname() != "localhost" && !strings.ContainsAny(repoURL.Host, ".:") && repoURL.Path != "" {
 		repoURL.Scheme = ""
 		repoURL.Path = repoURL.Host + repoURL.Path
 		repoURL.Host = ""
