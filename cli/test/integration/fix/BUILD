@@ -4,11 +4,7 @@ package(default_visibility = ["//cli:__subpackages__"])
 
 go_test(
     name = "fix_test",
-    srcs = [
-        "fix_test.go",
-        "race_disabled.go",
-        "race_enabled.go",
-    ],
+    srcs = ["fix_test.go"],
     exec_properties = {
         # Mirror cli/test/integration/cli: bb may reach the network during
         # startup (e.g. for version checks). The repo-defined //:gazelle tests

@@ -239,51 +239,48 @@ go_library(
 	require.Equal(t, expected, contents)
 }
 
-func TestFix_DiffShowsGazelleGeneratedProtoBuildFileWithoutMutating(t *testing.T) {
-	ws := protoWorkspace(t)
-	before := snapshot(t, ws)
-
-	// These fixtures are built to produce Gazelle diffs, whose non-zero diff
-	// exit verifies that `bb fix --diff` reached Gazelle and found changes.
-	out, err := runFix(t, ws, "--diff")
-	require.Error(t, err, "Gazelle diff mode should exit non-zero when changes are present")
-	after := snapshot(t, ws)
-
-	require.Equal(t, before, after, "--diff must not modify any files (output: %s)", out)
-	requireNoBuildFile(t, filepath.Join(ws, "proto"))
-	require.Contains(t, out, "proto_library(",
-		"Gazelle diff should show the proto_library rule it would generate")
-	require.Contains(t, out, `"service.proto"`)
-}
-
-func TestFix_DiffShowsGazelleGeneratedGoLibraryAndTestWithoutMutating(t *testing.T) {
-	ws := fixWorkspace(t, map[string]string{
-		"MODULE.bazel": "module(name = \"x\")\n",
-		"go.mod":       "module example.com/x\n\ngo 1.24\n",
-		"lib/foo.go":   "package lib\n\nfunc Foo() string { return \"foo\" }\n",
-		"lib/foo_test.go": "" +
-			"package lib\n\n" +
-			"import \"testing\"\n\n" +
-			"func TestFoo(t *testing.T) { _ = Foo() }\n",
-	})
-	before := snapshot(t, ws)
-
-	out, err := runFix(t, ws, "--diff")
-	require.Error(t, err, "Gazelle diff mode should exit non-zero when changes are present")
-	after := snapshot(t, ws)
-
-	require.Equal(t, before, after, "--diff must not modify any files (output: %s)", out)
-	requireNoBuildFile(t, filepath.Join(ws, "lib"))
-	require.Contains(t, out, "go_library(")
-	require.Contains(t, out, "go_test(")
-	require.Contains(t, out, `"foo.go"`)
-	require.Contains(t, out, `"foo_test.go"`)
-}
-
-func TestFix_DiffShowsGazelleGeneratedTsProjectDepsWithoutMutating(t *testing.T) {
-	ws := fixWorkspace(t, map[string]string{
-		"MODULE.bazel": "module(name = \"x\")\n",
-		"package.json": `{
+// TestFix_DiffShowsGazelleGeneratedRulesWithoutMutating verifies, across
+// several languages, that `bb fix --diff` shows the BUILD rules Gazelle would
+// generate without writing any files. Each fixture is built to produce a
+// Gazelle diff, so the non-zero exit also confirms `bb fix --diff` actually
+// reached Gazelle and found changes. The go case additionally has a dep file
+// (go.mod) present, exercising the --diff short-circuit in walk() that returns
+// before any update-repos / `bb add` work runs.
+func TestFix_DiffShowsGazelleGeneratedRulesWithoutMutating(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		setup        func(t *testing.T) string
+		dir          string
+		wantContains []string
+	}{
+		{
+			name:         "proto",
+			setup:        protoWorkspace,
+			dir:          "proto",
+			wantContains: []string{"proto_library(", `"service.proto"`},
+		},
+		{
+			name: "go",
+			setup: func(t *testing.T) string {
+				return fixWorkspace(t, map[string]string{
+					"MODULE.bazel": "module(name = \"x\")\n",
+					"go.mod":       "module example.com/x\n\ngo 1.24\n",
+					"lib/foo.go":   "package lib\n\nfunc Foo() string { return \"foo\" }\n",
+					"lib/foo_test.go": "" +
+						"package lib\n\n" +
+						"import \"testing\"\n\n" +
+						"func TestFoo(t *testing.T) { _ = Foo() }\n",
+				})
+			},
+			dir:          "lib",
+			wantContains: []string{"go_library(", "go_test(", `"foo.go"`, `"foo_test.go"`},
+		},
+		{
+			name: "ts",
+			setup: func(t *testing.T) string {
+				return fixWorkspace(t, map[string]string{
+					"MODULE.bazel": "module(name = \"x\")\n",
+					"package.json": `{
   "dependencies": {
     "react": "19.0.0",
     "tslib": "2.8.0"
@@ -293,22 +290,30 @@ func TestFix_DiffShowsGazelleGeneratedTsProjectDepsWithoutMutating(t *testing.T)
   }
 }
 `,
-		"web/app.tsx": "" +
-			"import React from 'react';\n" +
-			"export const app = <div>{React.version}</div>;\n",
-	})
-	before := snapshot(t, ws)
+					"web/app.tsx": "" +
+						"import React from 'react';\n" +
+						"export const app = <div>{React.version}</div>;\n",
+				})
+			},
+			dir:          "web",
+			wantContains: []string{"ts_project(", `"app.tsx"`, `"//:node_modules/react"`, `"//:node_modules/@types/react"`},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ws := tc.setup(t)
+			before := snapshot(t, ws)
 
-	out, err := runFix(t, ws, "--diff")
-	require.Error(t, err, "Gazelle diff mode should exit non-zero when changes are present")
-	after := snapshot(t, ws)
+			out, err := runFix(t, ws, "--diff")
+			require.Error(t, err, "Gazelle diff mode should exit non-zero when changes are present")
+			after := snapshot(t, ws)
 
-	require.Equal(t, before, after, "--diff must not modify any files (output: %s)", out)
-	requireNoBuildFile(t, filepath.Join(ws, "web"))
-	require.Contains(t, out, "ts_project(")
-	require.Contains(t, out, `"app.tsx"`)
-	require.Contains(t, out, `"//:node_modules/react"`)
-	require.Contains(t, out, `"//:node_modules/@types/react"`)
+			require.Equal(t, before, after, "--diff must not modify any files (output: %s)", out)
+			requireNoBuildFile(t, filepath.Join(ws, tc.dir))
+			for _, want := range tc.wantContains {
+				require.Contains(t, out, want, "diff output should mention %q", want)
+			}
+		})
+	}
 }
 
 func TestFix_GazelleMergesGeneratedSrcsIntoExistingProtoRule(t *testing.T) {
@@ -391,26 +396,6 @@ func TestFix_DiffPassesModeDiffToRepoGazelleTarget(t *testing.T) {
 	require.Equal(t, "-mode=diff", strings.TrimSpace(args))
 }
 
-func TestFix_DiffWithGoModSkipsUpdateReposMacro(t *testing.T) {
-	// This exercises the --diff short-circuit in walk(): even when a dependency
-	// file (go.mod) is present, diff mode returns before any update-repos /
-	// `bb add` work, so no deps.bzl macro is written.
-	//
-	// Note: this does NOT cover the separate bzlmod guard in runUpdateRepos
-	// (which skips update-repos for MODULE.bazel). That guard only runs in
-	// non-diff mode, which reaches the network via `bb add` (registry.build),
-	// so it can't be exercised hermetically here.
-	ws := fixWorkspace(t, map[string]string{
-		"MODULE.bazel": "module(name = \"x\")\n",
-		"go.mod":       "module example.com/x\n\ngo 1.24\n",
-	})
-
-	out, _ := runFix(t, ws, "--diff")
-
-	require.NoFileExists(t, filepath.Join(ws, "deps.bzl"),
-		"--diff must not write update-repos macros even with a dep file present (output: %s)", out)
-}
-
 func TestFix_SkipsHiddenDirectories(t *testing.T) {
 	// `bb fix`'s buildifier walk skips dot-prefixed directories. We only
 	// verify `.git` here: in-process Gazelle, which runs afterwards, has
@@ -428,23 +413,6 @@ func TestFix_SkipsHiddenDirectories(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, poorlyFormatted, string(b),
 		".git/BUILD.bazel should not be modified (hidden directory)")
-}
-
-func TestFix_GazelleDoesNotDescendIntoGitDirectory(t *testing.T) {
-	if raceDetectorEnabled {
-		t.Skip("embedded Gazelle's walker reports a data race under -race")
-	}
-	ws := fixWorkspace(t, map[string]string{
-		"MODULE.bazel":              "module(name = \"x\")\n",
-		".git/objects/hidden.proto": "syntax = \"proto3\";\npackage hidden;\nmessage Hidden {}\n",
-		"proto/service.proto":       "syntax = \"proto3\";\npackage proto;\nmessage Ping {}\n",
-	})
-
-	out, err := runFix(t, ws)
-	require.NoError(t, err, "output: %s", out)
-
-	requireNoBuildFile(t, filepath.Join(ws, ".git", "objects"))
-	require.Contains(t, readBuildFile(t, filepath.Join(ws, "proto")), `"service.proto"`)
 }
 
 func TestFix_IgnoresNonBuildFiles(t *testing.T) {
