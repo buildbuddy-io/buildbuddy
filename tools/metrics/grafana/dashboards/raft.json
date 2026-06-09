@@ -366,7 +366,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 393
+            "y": 49
           },
           "id": 110,
           "options": {
@@ -520,7 +520,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 393
+            "y": 49
           },
           "id": 109,
           "options": {
@@ -674,7 +674,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 401
+            "y": 81
           },
           "id": 111,
           "options": {
@@ -823,7 +823,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2324
+            "y": 2796
           },
           "id": 84,
           "options": {
@@ -920,7 +920,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2324
+            "y": 2796
           },
           "id": 85,
           "options": {
@@ -1033,7 +1033,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 3
+            "y": 475
           },
           "id": 47,
           "options": {
@@ -1142,7 +1142,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 3
+            "y": 475
           },
           "id": 50,
           "options": {
@@ -1269,7 +1269,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 11
+            "y": 483
           },
           "id": 23,
           "options": {
@@ -1401,7 +1401,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 11
+            "y": 483
           },
           "id": 2,
           "options": {
@@ -1559,7 +1559,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 195
+            "y": 667
           },
           "id": 1,
           "options": {
@@ -1699,7 +1699,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 195
+            "y": 667
           },
           "id": 5,
           "options": {
@@ -1799,7 +1799,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 203
+            "y": 675
           },
           "id": 8,
           "options": {
@@ -1897,7 +1897,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 203
+            "y": 675
           },
           "id": 119,
           "options": {
@@ -1994,7 +1994,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 211
+            "y": 683
           },
           "id": 76,
           "options": {
@@ -2106,7 +2106,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1022
+            "y": 1494
           },
           "id": 102,
           "options": {
@@ -2208,7 +2208,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 1022
+            "y": 1494
           },
           "id": 104,
           "options": {
@@ -2306,7 +2306,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1124
+            "y": 1596
           },
           "id": 105,
           "options": {
@@ -2418,7 +2418,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1031
+            "y": 1503
           },
           "id": 16,
           "options": {
@@ -2520,7 +2520,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 1031
+            "y": 1503
           },
           "id": 51,
           "options": {
@@ -2618,7 +2618,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1109
+            "y": 1581
           },
           "id": 64,
           "options": {
@@ -2731,7 +2731,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 286
+            "y": 758
           },
           "id": 22,
           "options": {
@@ -2830,7 +2830,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 286
+            "y": 758
           },
           "id": 121,
           "options": {
@@ -2929,7 +2929,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 334
+            "y": 806
           },
           "id": 61,
           "options": {
@@ -3026,7 +3026,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 334
+            "y": 806
           },
           "id": 62,
           "options": {
@@ -3123,7 +3123,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 342
+            "y": 814
           },
           "id": 65,
           "options": {
@@ -3220,7 +3220,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 342
+            "y": 814
           },
           "id": 93,
           "options": {
@@ -3344,7 +3344,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1716
+            "y": 7
           },
           "id": 87,
           "options": {
@@ -3371,6 +3371,98 @@
             }
           ],
           "title": "Partition Operations By Status",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 7
+          },
+          "id": 124,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "count by (partition_id) (count by (partition_id, range_id) (buildbuddy_raft_range_replica{region=\"${region}\", namespace=\"${namespace}\"}))",
+              "legendFormat": "{{partition_id}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Number of Ranges Per Partition",
           "type": "timeseries"
         }
       ],
@@ -3450,7 +3542,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1717
+            "y": 16
           },
           "id": 92,
           "options": {
@@ -3556,7 +3648,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 289
+            "y": 9
           },
           "id": 3,
           "options": {
@@ -3667,7 +3759,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 289
+            "y": 9
           },
           "id": 49,
           "options": {
@@ -3756,6 +3848,195 @@
                     "value": 80
                   }
                 ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 17
+          },
+          "id": 123,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "count(count by (range_id) (count by (range_id, zone) (buildbuddy_raft_range_replica{region=\"${region}\", namespace=\"${namespace}\"})) != 3) or vector(0)",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Number of ranges not in 3 zones",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 17
+          },
+          "id": 79,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum (count_eq_over_time(max by (range_id) (buildbuddy_raft_leases{region=\"${region}\", namespace=\"${namespace}\"}), 0))",
+              "instant": false,
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Number of ranges w/o leases",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
               },
               "unit": "decmbytes"
             },
@@ -3765,7 +4046,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 297
+            "y": 25
           },
           "id": 4,
           "options": {
@@ -3890,9 +4171,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 297
+            "y": 25
           },
-          "id": 79,
+          "id": 63,
           "options": {
             "legend": {
               "calcs": [],
@@ -3914,14 +4195,14 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum (count_eq_over_time(max by (range_id) (buildbuddy_raft_leases{region=\"${region}\", namespace=\"${namespace}\"}), 0))",
+              "expr": "sum(increase(buildbuddy_raft_lease_action_count{region=\"${region}\", status!=\"OK\"}[${window}])) by (pod_name,lease_action, range_id)",
               "instant": false,
-              "legendFormat": "__auto",
+              "legendFormat": "{{pod_name}} - {{lease_action}} - {{range_id}}",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "Number of ranges w/o leases",
+          "title": "Lease Action Error",
           "type": "timeseries"
         },
         {
@@ -3989,7 +4270,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 305
+            "y": 33
           },
           "id": 60,
           "options": {
@@ -4021,103 +4302,6 @@
             }
           ],
           "title": "Lease Acquisition latency (q=${quantile})",
-          "type": "timeseries"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "barWidthFactor": 0.6,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green"
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 305
-          },
-          "id": 63,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "hideZeros": false,
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "pluginVersion": "11.6.2",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "editorMode": "code",
-              "expr": "sum(increase(buildbuddy_raft_lease_action_count{region=\"${region}\", status!=\"OK\"}[${window}])) by (pod_name,lease_action, range_id)",
-              "instant": false,
-              "legendFormat": "{{pod_name}} - {{lease_action}} - {{range_id}}",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "Lease Action Error",
           "type": "timeseries"
         }
       ],
@@ -4197,7 +4381,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2865
+            "y": 10
           },
           "id": 81,
           "options": {
@@ -4290,7 +4474,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2865
+            "y": 10
           },
           "id": 7,
           "options": {
@@ -4389,7 +4573,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2873
+            "y": 18
           },
           "id": 6,
           "options": {
@@ -4513,7 +4697,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2873
+            "y": 18
           },
           "id": 9,
           "options": {
@@ -4639,7 +4823,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2881
+            "y": 26
           },
           "id": 82,
           "options": {
@@ -4745,7 +4929,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1720
+            "y": 2192
           },
           "id": 66,
           "options": {
@@ -4842,7 +5026,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 1720
+            "y": 2192
           },
           "id": 67,
           "options": {
@@ -4939,7 +5123,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1774
+            "y": 2246
           },
           "id": 69,
           "options": {
@@ -5036,7 +5220,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 1774
+            "y": 2246
           },
           "id": 68,
           "options": {
@@ -5147,7 +5331,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 3277
+            "y": 3749
           },
           "id": 52,
           "options": {
@@ -5244,7 +5428,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 3277
+            "y": 3749
           },
           "id": 53,
           "options": {
@@ -5356,7 +5540,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2332
+            "y": 2804
           },
           "id": 11,
           "options": {
@@ -5455,7 +5639,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2332
+            "y": 2804
           },
           "id": 94,
           "options": {
@@ -5556,7 +5740,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2484
+            "y": 2956
           },
           "id": 96,
           "options": {
@@ -5656,7 +5840,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2484
+            "y": 2956
           },
           "id": 97,
           "options": {
@@ -5755,7 +5939,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2612
+            "y": 3084
           },
           "id": 98,
           "options": {
@@ -5854,7 +6038,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2612
+            "y": 3084
           },
           "id": 99,
           "options": {
@@ -5967,7 +6151,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 849
+            "y": 1321
           },
           "id": 80,
           "options": {
@@ -6064,7 +6248,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 849
+            "y": 1321
           },
           "id": 120,
           "options": {
@@ -6161,7 +6345,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 857
+            "y": 1329
           },
           "id": 77,
           "options": {
@@ -6258,7 +6442,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 857
+            "y": 1329
           },
           "id": 118,
           "options": {
@@ -6365,7 +6549,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 3766
+            "y": 4238
           },
           "id": 74,
           "options": {
@@ -6463,7 +6647,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 3766
+            "y": 4238
           },
           "id": 72,
           "options": {
@@ -6561,7 +6745,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 3774
+            "y": 4246
           },
           "id": 75,
           "options": {
@@ -6660,7 +6844,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 3774
+            "y": 4246
           },
           "id": 73,
           "options": {
@@ -6772,7 +6956,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2489
+            "y": 2961
           },
           "id": 100,
           "options": {
@@ -6883,7 +7067,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2489
+            "y": 2961
           },
           "id": 101,
           "options": {
@@ -6996,7 +7180,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 2497
+            "y": 2969
           },
           "id": 24,
           "options": {
@@ -7128,7 +7312,7 @@
             "h": 8,
             "w": 24,
             "x": 12,
-            "y": 2497
+            "y": 2969
           },
           "id": 26,
           "options": {
@@ -7283,7 +7467,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 2505
+            "y": 2977
           },
           "id": 27,
           "options": {
@@ -7378,7 +7562,7 @@
             "h": 8,
             "w": 24,
             "x": 12,
-            "y": 2505
+            "y": 2977
           },
           "id": 28,
           "options": {
@@ -7473,7 +7657,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 2513
+            "y": 2985
           },
           "id": 29,
           "options": {
@@ -7568,7 +7752,7 @@
             "h": 9,
             "w": 24,
             "x": 12,
-            "y": 2513
+            "y": 2985
           },
           "id": 30,
           "options": {
@@ -7663,7 +7847,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 2522
+            "y": 2994
           },
           "id": 31,
           "options": {
@@ -7760,7 +7944,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 2522
+            "y": 2994
           },
           "id": 89,
           "options": {
@@ -7852,7 +8036,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 2531
+            "y": 3003
           },
           "id": 88,
           "options": {
@@ -7958,7 +8142,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1827
+            "y": 2299
           },
           "id": 32,
           "options": {
@@ -8055,7 +8239,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 1827
+            "y": 2299
           },
           "id": 33,
           "options": {
@@ -8152,7 +8336,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2019
+            "y": 2491
           },
           "id": 34,
           "options": {
@@ -8249,7 +8433,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2019
+            "y": 2491
           },
           "id": 35,
           "options": {
@@ -8346,7 +8530,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2027
+            "y": 2499
           },
           "id": 38,
           "options": {
@@ -8443,7 +8627,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2027
+            "y": 2499
           },
           "id": 39,
           "options": {
@@ -8540,7 +8724,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2035
+            "y": 2507
           },
           "id": 40,
           "options": {
@@ -8637,7 +8821,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2035
+            "y": 2507
           },
           "id": 41,
           "options": {
@@ -8734,7 +8918,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2043
+            "y": 2515
           },
           "id": 42,
           "options": {
@@ -8831,7 +9015,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2043
+            "y": 2515
           },
           "id": 43,
           "options": {
@@ -8928,7 +9112,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2051
+            "y": 2523
           },
           "id": 44,
           "options": {
@@ -9025,7 +9209,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2051
+            "y": 2523
           },
           "id": 45,
           "options": {
@@ -9122,7 +9306,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2059
+            "y": 2531
           },
           "id": 46,
           "options": {
@@ -9233,9 +9417,9 @@
           },
           "gridPos": {
             "h": 11,
-            "w": 12,
+            "w": 24,
             "x": 0,
-            "y": 18
+            "y": 490
           },
           "id": 12,
           "options": {
@@ -9356,9 +9540,9 @@
           },
           "gridPos": {
             "h": 11,
-            "w": 12,
+            "w": 24,
             "x": 12,
-            "y": 18
+            "y": 490
           },
           "id": 18,
           "options": {
@@ -9471,7 +9655,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 29
+            "y": 501
           },
           "id": 48,
           "options": {
@@ -9569,7 +9753,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 29
+            "y": 501
           },
           "id": 90,
           "options": {
@@ -9664,9 +9848,9 @@
           },
           "gridPos": {
             "h": 10,
-            "w": 12,
+            "w": 24,
             "x": 0,
-            "y": 38
+            "y": 510
           },
           "id": 14,
           "options": {
@@ -9763,9 +9947,9 @@
           },
           "gridPos": {
             "h": 10,
-            "w": 12,
+            "w": 24,
             "x": 12,
-            "y": 38
+            "y": 510
           },
           "id": 15,
           "options": {
@@ -9863,9 +10047,9 @@
           },
           "gridPos": {
             "h": 10,
-            "w": 12,
+            "w": 24,
             "x": 0,
-            "y": 48
+            "y": 520
           },
           "id": 19,
           "options": {
@@ -9925,9 +10109,9 @@
           },
           "gridPos": {
             "h": 10,
-            "w": 12,
+            "w": 24,
             "x": 12,
-            "y": 48
+            "y": 520
           },
           "id": 21,
           "maxDataPoints": 25,
@@ -10054,9 +10238,9 @@
           },
           "gridPos": {
             "h": 9,
-            "w": 12,
+            "w": 24,
             "x": 0,
-            "y": 58
+            "y": 530
           },
           "id": 13,
           "options": {
@@ -10155,7 +10339,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 58
+            "y": 530
           },
           "id": 117,
           "options": {
@@ -10285,7 +10469,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 67
+            "y": 539
           },
           "id": 114,
           "options": {
@@ -10378,7 +10562,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 67
+            "y": 539
           },
           "id": 112,
           "options": {
@@ -10474,7 +10658,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 75
+            "y": 547
           },
           "id": 122,
           "options": {
@@ -10580,7 +10764,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 195
+            "y": 667
           },
           "id": 115,
           "options": {
@@ -10673,7 +10857,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 195
+            "y": 667
           },
           "id": 116,
           "options": {
