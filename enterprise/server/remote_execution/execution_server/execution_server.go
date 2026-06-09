@@ -479,7 +479,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			}
 
 			if schedulingMeta := auxMeta.GetSchedulingMetadata(); schedulingMeta != nil {
-				executionProto.EstimatedFreeDiskBytes = schedulingMeta.GetTaskSize().GetEstimatedFreeDiskBytes()
+				executionProto.EstimatedFreeDiskBytes = md.GetEstimatedTaskSize().GetEstimatedFreeDiskBytes()
 				executionProto.PreviousMeasuredMemoryBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMemoryBytes()
 				executionProto.PreviousMeasuredMilliCpu = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMilliCpu()
 				executionProto.PreviousMeasuredFreeDiskBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedFreeDiskBytes()
@@ -1726,8 +1726,12 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 	// Project the live ExecuteResponse + aux metadata onto a StoredExecution
 	// so we can reuse incrementOLAPExecutionUsage's accounting logic. Only
 	// the fields that function reads are populated; snapshot stats arrive
-	// via a second COMPLETED that this code path doesn't merge.
-	taskSize := auxMeta.GetSchedulingMetadata().GetTaskSize()
+	// via a second COMPLETED that this code path doesn't merge. The
+	// Estimated* fields come from md.EstimatedTaskSize — same source the
+	// stored path uses (via fillExecutionFromActionMetadata, line 107-108).
+	md := executeResponse.GetResult().GetExecutionMetadata()
+	estimatedTaskSize := md.GetEstimatedTaskSize()
+	auxMeta.GetSchedulingMetadata().GetTaskSize()
 	execution := &repb.StoredExecution{
 		Os:                     plat.OS,
 		Arch:                   plat.Arch,
@@ -1739,9 +1743,9 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 		RequestedMilliCpu:      plat.EstimatedMilliCPU,
 		RequestedMemoryBytes:   plat.EstimatedMemoryBytes,
 		RequestedFreeDiskBytes: plat.EstimatedFreeDiskBytes,
-		EstimatedMilliCpu:      taskSize.GetEstimatedMilliCpu(),
-		EstimatedMemoryBytes:   taskSize.GetEstimatedMemoryBytes(),
-		EstimatedFreeDiskBytes: taskSize.GetEstimatedFreeDiskBytes(),
+		EstimatedMilliCpu:      estimatedTaskSize.GetEstimatedMilliCpu(),
+		EstimatedMemoryBytes:   estimatedTaskSize.GetEstimatedMemoryBytes(),
+		EstimatedFreeDiskBytes: estimatedTaskSize.GetEstimatedFreeDiskBytes(),
 	}
 	if err := incrementOLAPExecutionUsage(ctx, ut, olapLabels, execution, dur); err != nil {
 		log.CtxWarningf(ctx, "Failed to increment OLAP usage: %s", err)
@@ -1804,17 +1808,18 @@ func (s *ExecutionServer) updateUsageFromStoredExecution(ctx context.Context, ex
 func incrementOLAPExecutionUsage(ctx context.Context, ut interfaces.UsageTracker, baseLabels sku.Labels, execution *repb.StoredExecution, duration time.Duration) error {
 	executionLabels := make(sku.Labels, len(baseLabels)+4)
 	maps.Copy(executionLabels, baseLabels)
+	isolationLabel := sku.GetIsolationTypeLabel(execution.GetEffectiveIsolationType())
 	executionLabels[sku.OS] = sku.GetOSLabel(execution.GetOs())
 	executionLabels[sku.Arch] = sku.GetArchLabel(execution.GetArch())
 	executionLabels[sku.SelfHosted] = sku.GetSelfHostedLabel(execution.GetSelfHosted())
-	executionLabels[sku.IsolationType] = sku.GetIsolationTypeLabel(execution.GetEffectiveIsolationType())
+	executionLabels[sku.IsolationType] = isolationLabel
 	memoryGBNanos := int64(float64(execution.GetPeakMemoryBytes()) * float64(duration.Nanoseconds()) / 1e9)
 	executionCounts := map[sku.SKU]int64{
 		sku.RemoteExecutionExecuteWorkerCPUNanos:      execution.GetCpuNanos(),
 		sku.RemoteExecutionExecuteWorkerDurationNanos: duration.Nanoseconds(),
 		sku.RemoteExecutionExecuteWorkerMemoryGBNanos: memoryGBNanos,
 	}
-	if execution.GetEffectiveIsolationType() == "firecracker" || execution.GetRequestedComputeUnits() > 0 {
+	if isolationLabel == string(platform.FirecrackerContainerType) || execution.GetRequestedComputeUnits() > 0 {
 		// Fixed compute
 		computeUnits := max(
 			execution.GetRequestedComputeUnits(),
@@ -1833,11 +1838,11 @@ func incrementOLAPExecutionUsage(ctx context.Context, ut interfaces.UsageTracker
 		executionCounts[sku.RemoteExecutionExecuteFlexibleComputeNanos] = int64(computeUnits * float64(duration.Nanoseconds()))
 	}
 	if execution.GetSnapshotSavedRemotely() {
-		executionCounts[sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes] = execution.SnapshotSavedBytes
+		executionCounts[sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes] = execution.GetSnapshotSavedBytes()
 	} else if execution.GetSnapshotSavedLocally() {
 		// Charge for local saves only if the snapshot was saved locally and not
 		// remotely, because remote implies local.
-		executionCounts[sku.RemoteExecutionExecuteLocalSnapshotSavedBytes] = execution.SnapshotSavedBytes
+		executionCounts[sku.RemoteExecutionExecuteLocalSnapshotSavedBytes] = execution.GetSnapshotSavedBytes()
 	}
 	return ut.IncrementOLAP(ctx, executionLabels, executionCounts)
 }

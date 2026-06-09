@@ -1217,7 +1217,8 @@ message ExecutedActionMetadata {
   // Any compute stats (CPU/memory) that were collected during this execution.
   UsageStats usage_stats = 1002;
 
-  // Estimated task size that was used for scheduling purposes.
+  // Task size that was used for scheduling purposes. Despite the name,
+  // this is the effective task size that the executor used.
   scheduler.TaskSize estimated_task_size = 1003;
 
   // Whether the executed Action was marked with `do_not_cache`.

@@ -796,6 +796,11 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			recycleRunner:          true,
 		},
+		{
+			name:                   "FlexibleCompute",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			flexibleCompute:        true,
+		},
 	} {
 		for _, flushAfterCleanup := range []bool{false, true} {
 			test := test
@@ -825,6 +830,9 @@ type publishTest struct {
 	useDefaultPool           bool
 	recycleRunner            bool
 	flushAfterCleanup        bool
+	// flexibleCompute routes the execution into the flexible-compute branch
+	// of incrementOLAPExecutionUsage.
+	flexibleCompute bool
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
@@ -859,11 +867,14 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		clientCtx = metadata.AppendToOutgoingContext(clientCtx, "x-buildbuddy-platform."+k, v)
 	}
 	platformProperties := []*repb.Platform_Property{
-		{Name: "EstimatedComputeUnits", Value: "2.5"},
 		{Name: "EstimatedFreeDiskBytes", Value: "1000"},
 		{Name: "EstimatedCPU", Value: "1.5"},
 		{Name: "EstimatedMemory", Value: "2000"},
 		{Name: "workload-isolation-type", Value: "oci"},
+	}
+	if !test.flexibleCompute {
+		// Set EstimatedComputeUnits so we go through the fixed compute path.
+		platformProperties = append(platformProperties, &repb.Platform_Property{Name: "EstimatedComputeUnits", Value: "2.5"})
 	}
 	if !test.useDefaultPool {
 		platformProperties = append(platformProperties, &repb.Platform_Property{Name: "pool", Value: "test-pool"})
@@ -989,6 +1000,14 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			UsageStats:               usageStats,
 		},
 	}
+	if test.flexibleCompute {
+		// Memory-dominant size: 10 GiB memory => 4 BCU, which beats 1.5 CPU
+		// and tiny disk. Drives the flexible-compute SKU to a non-zero value.
+		actionResult.ExecutionMetadata.EstimatedTaskSize = &scpb.TaskSize{
+			EstimatedMilliCpu:    1500,
+			EstimatedMemoryBytes: 10 * tasksize.GiB,
+		}
+	}
 	expectedExecuteResponse := &repb.ExecuteResponse{
 		CachedResult: test.cachedResult,
 		Result:       actionResult,
@@ -1063,13 +1082,17 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	// Also check OLAP totals are recorded. Look for the entry that has the
 	// execution duration SKU specifically, since there may be other OLAP
 	// entries from cache operations.
+	expectedComputeSKU := sku.RemoteExecutionExecuteFixedComputeNanos
+	if test.flexibleCompute {
+		expectedComputeSKU = sku.RemoteExecutionExecuteFlexibleComputeNanos
+	}
 	var foundOLAPExecutorUsage *testusage.OLAPTotal
 	var foundOLAPComputeUsage *testusage.OLAPTotal
 	for _, u := range ut.OLAPTotals() {
 		if _, ok := u.Counts[sku.RemoteExecutionExecuteWorkerDurationNanos]; ok {
 			foundOLAPExecutorUsage = &u
 		}
-		if _, ok := u.Counts[sku.RemoteExecutionExecuteFixedComputeNanos]; ok {
+		if _, ok := u.Counts[expectedComputeSKU]; ok {
 			foundOLAPComputeUsage = &u
 		}
 	}
@@ -1101,14 +1124,22 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		sku.IsolationType: expectedIsolationType,
 	}
 	assert.Equal(t, expectedComputeOLAPLabels, foundOLAPComputeUsage.Labels)
-	// RequestedComputeUnits=2.5 (from EstimatedComputeUnits in the platform)
-	// dominates the max over the cpu/memory/disk dimensions, so the
-	// fixed-compute SKU should be 2.5 * duration.
-	expectedFixedComputeNanos := int64(2.5 * float64(expectedDurationNanos))
-	assert.Equal(t, expectedFixedComputeNanos, foundOLAPComputeUsage.Counts[sku.RemoteExecutionExecuteFixedComputeNanos])
-	// Flexible compute should NOT be recorded when RequestedComputeUnits > 0.
-	_, hasFlexible := foundOLAPComputeUsage.Counts[sku.RemoteExecutionExecuteFlexibleComputeNanos]
-	assert.False(t, hasFlexible, "flexible compute SKU should not be recorded when requested compute units is set")
+	if test.flexibleCompute {
+		// 10 GiB / 2.5 GiB/BCU = 4 BCU (memory dimension dominates),
+		// so flexible-compute = 4 * duration.
+		expectedFlexibleComputeNanos := int64(tasksize.MemoryComputeUnits(10*tasksize.GiB) * float64(expectedDurationNanos))
+		assert.Equal(t, expectedFlexibleComputeNanos, foundOLAPComputeUsage.Counts[sku.RemoteExecutionExecuteFlexibleComputeNanos])
+		_, hasFixed := foundOLAPComputeUsage.Counts[sku.RemoteExecutionExecuteFixedComputeNanos]
+		assert.False(t, hasFixed, "fixed compute SKU should not be recorded on the flexible path")
+	} else {
+		// RequestedComputeUnits=2.5 (from EstimatedComputeUnits in the
+		// platform) dominates the max over the cpu/memory/disk dimensions,
+		// so the fixed-compute SKU should be 2.5 * duration.
+		expectedFixedComputeNanos := int64(2.5 * float64(expectedDurationNanos))
+		assert.Equal(t, expectedFixedComputeNanos, foundOLAPComputeUsage.Counts[sku.RemoteExecutionExecuteFixedComputeNanos])
+		_, hasFlexible := foundOLAPComputeUsage.Counts[sku.RemoteExecutionExecuteFlexibleComputeNanos]
+		assert.False(t, hasFlexible, "flexible compute SKU should not be recorded when requested compute units is set")
+	}
 
 	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
 	require.NoError(t, err)
@@ -1132,7 +1163,6 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		ExitCode:                     test.exitCode,
 		DoNotCache:                   test.doNotCache,
 		CachedResult:                 test.cachedResult,
-		RequestedComputeUnits:        2.5,
 		RequestedFreeDiskBytes:       1000,
 		RequestedMemoryBytes:         2000,
 		RequestedMilliCpu:            1500,
@@ -1150,6 +1180,15 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		QueuedTimestampUsec:          queuedTime.UnixMicro(),
 		WorkerStartTimestampUsec:     workerStartTime.UnixMicro(),
 		WorkerCompletedTimestampUsec: workerEndTime.UnixMicro(),
+	}
+	if !test.flexibleCompute {
+		expectedExecution.RequestedComputeUnits = 2.5
+	} else {
+		// EstimatedTaskSize on the ExecutedActionMetadata flows through
+		// fillExecutionFromActionMetadata -> TableExecToProto into the
+		// StoredExecution proto.
+		expectedExecution.EstimatedMilliCpu = 1500
+		expectedExecution.EstimatedMemoryBytes = 10 * tasksize.GiB
 	}
 	if test.useDefaultPool {
 		expectedExecution.RequestedPool = ""
