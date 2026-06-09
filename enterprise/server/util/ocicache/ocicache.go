@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -219,10 +218,7 @@ func blobHit(ctx context.Context) {
 	updateCacheEventMetric(metrics.OCIBlobResourceTypeLabel, metrics.HitStatusLabel)
 }
 
-func FetchBlobFromCache(ctx context.Context, token ociauth.CacheAccessToken, repo gcrname.Repository, w io.Writer, bsClient bspb.ByteStreamClient, hash gcr.Hash, contentLength int64) error {
-	if !token.IsValidForRepo(repo) {
-		return status.PermissionDeniedError("missing OCI cache access token")
-	}
+func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, hash gcr.Hash, contentLength int64) error {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,

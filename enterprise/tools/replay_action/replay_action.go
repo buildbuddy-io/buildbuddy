@@ -19,7 +19,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
@@ -971,8 +970,7 @@ func (r *Replayer) copyCachedContainerImage(ctx, srcCtx, targetCtx context.Conte
 		defer pr.Close()
 		go func() {
 			defer pw.Close()
-			token := ociauth.BypassCacheAccessToken(digestRef.Repository)
-			if err := ocicache.FetchBlobFromCache(srcCtx, token, digestRef.Repository, pw, r.sourceBSClient, hash, contentLength); err != nil {
+			if err := ocicache.FetchBlobFromCache(srcCtx, pw, r.sourceBSClient, hash, contentLength); err != nil {
 				pw.CloseWithError(fmt.Errorf("read image %s blob %s from source cache: %s", label, hash, err))
 			}
 		}()

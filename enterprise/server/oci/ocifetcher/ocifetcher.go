@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -64,9 +63,11 @@ type ociFetcherServer struct {
 	mu        sync.Mutex
 	pullerLRU lru.LRU[*pullerLRUEntry]
 
-	// cacheAccessAuth records repository+credentials pairs for which a registry
-	// access check recently succeeded, then issues tokens for cached blob reads.
-	cacheAccessAuth *ociauth.CacheAccessAuthenticator
+	// accessProofCache records repository+credentials pairs for which a
+	// registry access check recently succeeded. Pull authorization is
+	// repository-scoped, so one success lets every manifest and blob in the
+	// repo skip the registry for those credentials until the entry expires.
+	accessProofCache lru.LRU[struct{}]
 
 	// blobFetchGroup deduplicates concurrent blob fetch requests.
 	// Only one request fetches from upstream and writes to cache;
@@ -100,14 +101,22 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 	if err != nil {
 		return nil, status.InternalErrorf("error initializing puller cache: %s", err)
 	}
-	cacheAccessAuth := ociauth.NewCacheAccessAuthenticator(accessProofCacheTTL, accessProofCacheMaxEntries)
+	accessProofCache, err := lru.New[struct{}](&lru.Config[struct{}]{
+		SizeFn:     func(_ struct{}) int64 { return 1 },
+		MaxSize:    int64(accessProofCacheMaxEntries),
+		TTL:        accessProofCacheTTL,
+		ThreadSafe: true,
+	})
+	if err != nil {
+		return nil, status.InternalErrorf("error initializing access proof cache: %s", err)
+	}
 	return &ociFetcherServer{
 		allowedPrivateIPs: allowedPrivateIPs,
 		mirrors:           Mirrors(),
 		bsClient:          bsClient,
 		acClient:          acClient,
 		pullerLRU:         pullerLRU,
-		cacheAccessAuth:   cacheAccessAuth,
+		accessProofCache:  accessProofCache,
 	}, nil
 }
 
@@ -177,8 +186,8 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 	}
 	repo := digestRef.Context()
 
-	_, authorizedForCache := s.cacheAccessAuth.CachedToken(repo, req.GetCredentials())
-	if req.GetBypassRegistry() || authorizedForCache {
+	accessKey := repoAccessKey(repo, req.GetCredentials())
+	if req.GetBypassRegistry() || s.accessProofCache.Contains(accessKey) {
 		if resp, err := s.fetchBlobMetadataFromCache(ctx, digestRef, hash); err == nil {
 			return resp, nil
 		} else if !status.IsNotFoundError(err) {
@@ -193,7 +202,7 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 	if err != nil {
 		return nil, err
 	}
-	s.cacheAccessAuth.Refresh(repo, req.GetCredentials())
+	s.accessProofCache.Add(accessKey, struct{}{})
 	return resp, nil
 }
 
@@ -248,7 +257,7 @@ func (s *ociFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.
 	if err != nil {
 		return nil, err
 	}
-	s.cacheAccessAuth.Refresh(imageRef.Context(), req.GetCredentials())
+	s.accessProofCache.Add(repoAccessKey(imageRef.Context(), req.GetCredentials()), struct{}{})
 	return resp, nil
 }
 
@@ -286,8 +295,7 @@ func (s *ociFetcherServer) streamBlobFromCache(ctx context.Context, stream ofpb.
 	if err != nil {
 		return err
 	}
-	token := ociauth.BypassCacheAccessToken(repo)
-	return ocicache.FetchBlobFromCache(ctx, token, repo, &grpcStreamWriter{stream: stream}, s.bsClient, hash, metadata.GetContentLength())
+	return ocicache.FetchBlobFromCache(ctx, &grpcStreamWriter{stream: stream}, s.bsClient, hash, metadata.GetContentLength())
 }
 
 func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef gcrname.Digest, hash gcr.Hash, creds *rgpb.Credentials) error {
@@ -302,13 +310,12 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 		// to prove the caller may access the repo before serving it from cache.
 		metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, repo, hash)
 		if err == nil {
-			token, err := s.authorizeBlobCacheAccess(ctx, digestRef, creds)
-			if err != nil {
+			if err := s.proveBlobAccess(ctx, digestRef, creds); err != nil {
 				return 0, err
 			}
 			contentLength := metadata.GetContentLength()
 			cacheWriter := &grpcStreamWriter{stream: stream}
-			err = ocicache.FetchBlobFromCache(ctx, token, repo, cacheWriter, s.bsClient, hash, contentLength)
+			err := ocicache.FetchBlobFromCache(ctx, cacheWriter, s.bsClient, hash, contentLength)
 			if err == nil {
 				return contentLength, nil
 			}
@@ -326,7 +333,7 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 		// the blob through to the cache.
 		size, err := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, creds, stream)
 		if err == nil {
-			s.cacheAccessAuth.Refresh(repo, creds)
+			s.accessProofCache.Add(repoAccessKey(repo, creds), struct{}{})
 		}
 		return size, err
 	})
@@ -339,15 +346,7 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 		recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
 		return err
 	}
-	token, ok := s.cacheAccessAuth.CachedToken(repo, creds)
-	if !ok {
-		token, err = s.authorizeBlobCacheAccess(ctx, digestRef, creds)
-		if err != nil {
-			recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
-			return err
-		}
-	}
-	err = ocicache.FetchBlobFromCache(ctx, token, repo, &grpcStreamWriter{stream: stream}, s.bsClient, hash, contentLength)
+	err = ocicache.FetchBlobFromCache(ctx, &grpcStreamWriter{stream: stream}, s.bsClient, hash, contentLength)
 	recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
 	return err
 }
@@ -508,24 +507,30 @@ func (s *ociFetcherServer) resolveManifestDigest(ctx context.Context, imageRef g
 // the given manifest ref in the remote registry.
 func (s *ociFetcherServer) proveManifestAccess(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) error {
 	repo := imageRef.Context()
-	_, err := s.cacheAccessAuth.Authorize(ctx, repo, creds, func(ctx context.Context) error {
-		_, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*gcr.Descriptor, error) {
-			return puller.Head(ctx, imageRef)
-		})
+	if s.accessProofCache.Contains(repoAccessKey(repo, creds)) {
+		return nil
+	}
+	if _, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*gcr.Descriptor, error) {
+		return puller.Head(ctx, imageRef)
+	}); err != nil {
 		return err
-	})
-	return err
+	}
+	s.accessProofCache.Add(repoAccessKey(repo, creds), struct{}{})
+	return nil
 }
 
-// authorizeBlobCacheAccess checks that the caller's credentials allow accessing
-// the blob's repository in the remote registry (via a metadata HEAD), then
-// returns a token that must be passed to cached blob reads.
-func (s *ociFetcherServer) authorizeBlobCacheAccess(ctx context.Context, digestRef gcrname.Digest, creds *rgpb.Credentials) (ociauth.CacheAccessToken, error) {
+// proveBlobAccess checks that the caller's credentials allow accessing the
+// blob's repository in the remote registry (via a metadata HEAD).
+func (s *ociFetcherServer) proveBlobAccess(ctx context.Context, digestRef gcrname.Digest, creds *rgpb.Credentials) error {
 	repo := digestRef.Context()
-	return s.cacheAccessAuth.Authorize(ctx, repo, creds, func(ctx context.Context) error {
-		_, err := s.fetchBlobMetadataFromRemote(ctx, digestRef, creds)
+	if s.accessProofCache.Contains(repoAccessKey(repo, creds)) {
+		return nil
+	}
+	if _, err := s.fetchBlobMetadataFromRemote(ctx, digestRef, creds); err != nil {
 		return err
-	})
+	}
+	s.accessProofCache.Add(repoAccessKey(repo, creds), struct{}{})
+	return nil
 }
 
 func (s *ociFetcherServer) resolveTagToDigest(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) (gcr.Hash, error) {
@@ -535,7 +540,7 @@ func (s *ociFetcherServer) resolveTagToDigest(ctx context.Context, imageRef gcrn
 	if err != nil {
 		return gcr.Hash{}, err
 	}
-	s.cacheAccessAuth.Refresh(imageRef.Context(), creds)
+	s.accessProofCache.Add(repoAccessKey(imageRef.Context(), creds), struct{}{})
 	hash, err := gcr.NewHash(desc.Digest.String())
 	if err != nil {
 		return gcr.Hash{}, status.InvalidArgumentErrorf("invalid resolved digest %q: %s", desc.Digest.String(), err)
@@ -647,6 +652,16 @@ func (s *ociFetcherServer) evictPuller(imageRef gcrname.Reference, creds *rgpb.C
 	s.mu.Lock()
 	s.pullerLRU.Remove(key)
 	s.mu.Unlock()
+}
+
+// repoAccessKey returns the access-proof cache key for the given repository and
+// credentials. Registry pull authorization is repository-scoped, so the key is
+// deliberately not specific to any one manifest or blob digest.
+func repoAccessKey(repo gcrname.Repository, creds *rgpb.Credentials) string {
+	if creds == nil {
+		return hash.Strings(repo.Name(), "", "")
+	}
+	return hash.Strings(repo.Name(), creds.GetUsername(), creds.GetPassword())
 }
 
 func pullerKey(ref gcrname.Reference, creds *rgpb.Credentials) string {

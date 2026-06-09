@@ -6,7 +6,6 @@ import (
 	"io"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -279,21 +278,8 @@ func blobDoesNotExist(t *testing.T, ctx context.Context, te *testenv.TestEnv, re
 	require.Nil(t, metadata)
 
 	out := &bytes.Buffer{}
-	token := ociauth.BypassCacheAccessToken(repo)
-	err = ocicache.FetchBlobFromCache(ctx, token, repo, out, bsClient, hash, contentLength)
+	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
 	require.Error(t, err)
-}
-
-func TestFetchBlobFromCache_RequiresToken(t *testing.T) {
-	te := setupTestEnv(t)
-	_, _, hash, _ := createLayer(t, "fetch_blob_from_cache_requires_token", 1024)
-
-	out := &bytes.Buffer{}
-	var token ociauth.CacheAccessToken
-	repo := mustRepo(t, "gcr.io/foo/fetch_blob_from_cache_requires_token")
-	err := ocicache.FetchBlobFromCache(context.Background(), token, repo, out, te.GetByteStreamClient(), hash, 1024)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "missing OCI cache access token")
 }
 
 func TestBlobUploader_BlobExists(t *testing.T) {
@@ -451,8 +437,7 @@ func fetchAndCheckBlob(t *testing.T, te *testenv.TestEnv, layerBuf []byte, repo 
 	require.Equal(t, contentLength, metadata.GetContentLength())
 
 	out := &bytes.Buffer{}
-	token := ociauth.BypassCacheAccessToken(repo)
-	err = ocicache.FetchBlobFromCache(ctx, token, repo, out, bsClient, hash, contentLength)
+	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
 	require.NoError(t, err)
 	require.Empty(t, cmp.Diff(layerBuf, out.Bytes()))
 }

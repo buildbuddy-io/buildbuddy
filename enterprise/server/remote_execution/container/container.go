@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
@@ -637,13 +636,52 @@ func NewImageCacheToken(ctx context.Context, env environment.Env, creds oci.Cred
 	}, nil
 }
 
-type ImageCacheAuthenticatorOpts = ociauth.TokenAuthenticatorOpts
+// imageCacheAuthenticator grants access to short-lived tokens for accessing
+// locally cached images without needing to re-authenticate with the remote
+// registry (which can be slow).
+type imageCacheAuthenticator struct {
+	opts ImageCacheAuthenticatorOpts
 
-func NewImageCacheAuthenticator(opts ImageCacheAuthenticatorOpts) interfaces.ImageCacheAuthenticator {
+	mu               sync.Mutex // protects(tokenExpireTimes)
+	tokenExpireTimes map[interfaces.ImageCacheToken]time.Time
+}
+
+type ImageCacheAuthenticatorOpts struct {
+	// TokenTTL controls how long tokens can be used to access locally cached
+	// images until re-authentication with the remote registry is required.
+	TokenTTL time.Duration
+}
+
+func NewImageCacheAuthenticator(opts ImageCacheAuthenticatorOpts) *imageCacheAuthenticator {
 	if opts.TokenTTL == 0 {
 		opts.TokenTTL = defaultImageCacheTokenTTL
 	}
-	return ociauth.NewTokenAuthenticator[interfaces.ImageCacheToken](opts)
+	return &imageCacheAuthenticator{
+		opts:             opts,
+		tokenExpireTimes: map[interfaces.ImageCacheToken]time.Time{},
+	}
+}
+
+func (a *imageCacheAuthenticator) IsAuthorized(token interfaces.ImageCacheToken) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.purgeExpiredTokens()
+	_, ok := a.tokenExpireTimes[token]
+	return ok
+}
+
+func (a *imageCacheAuthenticator) Refresh(token interfaces.ImageCacheToken) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.tokenExpireTimes[token] = time.Now().Add(a.opts.TokenTTL)
+}
+
+func (a *imageCacheAuthenticator) purgeExpiredTokens() {
+	for token, expireTime := range a.tokenExpireTimes {
+		if time.Now().After(expireTime) {
+			delete(a.tokenExpireTimes, token)
+		}
+	}
 }
 
 // Parses a "USER[:GROUP]" string, which has the same semantics as docker/

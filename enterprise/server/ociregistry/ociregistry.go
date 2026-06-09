@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/trafficstats"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -577,8 +576,7 @@ func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, b
 	if !writeBody {
 		return nil
 	}
-	token := ociauth.BypassCacheAccessToken(repo)
-	return ocicache.FetchBlobFromCache(ctx, token, repo, w, bsClient, hash, blobMetadata.GetContentLength())
+	return ocicache.FetchBlobFromCache(ctx, w, bsClient, hash, blobMetadata.GetContentLength())
 }
 
 // resolveTagToDigest resolves a manifest tag to its digest, using an
