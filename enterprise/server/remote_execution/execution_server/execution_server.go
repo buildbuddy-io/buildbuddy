@@ -1537,7 +1537,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
 				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
 			}
-			if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties, flushExecutionsOnEOF); err != nil {
+			if err := s.markTaskComplete(ctx, actionRN, response, auxMeta, action, cmd, properties, flushExecutionsOnEOF); err != nil {
 				// Errors updating the router or recording usage are non-fatal.
 				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
 			}
@@ -1640,7 +1640,7 @@ func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceN
 // usage is recorded here from the live ExecuteResponse + platform.Properties.
 // When true, usage is recorded later by flushAndRecordUsage from the merged
 // StoredExecution in Redis.
-func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ACResourceName, executeResponse *repb.ExecuteResponse, action *repb.Action, cmd *repb.Command, properties *platform.Properties, flushExecutionsOnEOF bool) error {
+func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ACResourceName, executeResponse *repb.ExecuteResponse, auxMeta *espb.ExecutionAuxiliaryMetadata, action *repb.Action, cmd *repb.Command, properties *platform.Properties, flushExecutionsOnEOF bool) error {
 	execErr := gstatus.ErrorProto(executeResponse.GetStatus())
 	router := s.env.GetTaskRouter()
 	if router != nil && !executeResponse.GetCachedResult() {
@@ -1666,7 +1666,7 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 	}
 
 	if !flushExecutionsOnEOF {
-		if err := s.updateUsage(ctx, executeResponse, properties); err != nil {
+		if err := s.updateUsage(ctx, executeResponse, auxMeta, properties); err != nil {
 			// TODO(vanja) should this be done when the executor got a cache hit?
 			log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", executeResponse, err)
 		}
@@ -1675,7 +1675,7 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 	return nil
 }
 
-func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb.ExecuteResponse, plat *platform.Properties) error {
+func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb.ExecuteResponse, auxMeta *espb.ExecutionAuxiliaryMetadata, plat *platform.Properties) error {
 	ut := s.env.GetUsageTracker()
 	if ut == nil {
 		return nil
@@ -1700,7 +1700,7 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 	}
 
 	counts := &tables.UsageCounts{}
-	setExecutionDuration(counts, dur, pool, plat)
+	setExecutionDuration(counts, dur, pool.IsSelfHosted, plat.OS)
 	usg := executeResponse.GetResult().GetExecutionMetadata().GetUsageStats()
 	if !pool.IsSelfHosted && usg.GetCpuNanos() > 0 {
 		counts.CPUNanos = usg.GetCpuNanos()
@@ -1723,7 +1723,27 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 		lastErr = err
 	}
 
-	if err := incrementOLAPExecutionUsage(ctx, ut, olapLabels, plat.OS, plat.Arch, pool.IsSelfHosted, dur, counts.CPUNanos, usg.GetPeakMemoryBytes()); err != nil {
+	// Project the live ExecuteResponse + aux metadata onto a StoredExecution
+	// so we can reuse incrementOLAPExecutionUsage's accounting logic. Only
+	// the fields that function reads are populated; snapshot stats arrive
+	// via a second COMPLETED that this code path doesn't merge.
+	taskSize := auxMeta.GetSchedulingMetadata().GetTaskSize()
+	execution := &repb.StoredExecution{
+		Os:                     plat.OS,
+		Arch:                   plat.Arch,
+		SelfHosted:             pool.IsSelfHosted,
+		EffectiveIsolationType: auxMeta.GetIsolationType(),
+		CpuNanos:               counts.CPUNanos,
+		PeakMemoryBytes:        usg.GetPeakMemoryBytes(),
+		RequestedComputeUnits:  plat.EstimatedComputeUnits,
+		RequestedMilliCpu:      plat.EstimatedMilliCPU,
+		RequestedMemoryBytes:   plat.EstimatedMemoryBytes,
+		RequestedFreeDiskBytes: plat.EstimatedFreeDiskBytes,
+		EstimatedMilliCpu:      taskSize.GetEstimatedMilliCpu(),
+		EstimatedMemoryBytes:   taskSize.GetEstimatedMemoryBytes(),
+		EstimatedFreeDiskBytes: taskSize.GetEstimatedFreeDiskBytes(),
+	}
+	if err := incrementOLAPExecutionUsage(ctx, ut, olapLabels, execution, dur); err != nil {
 		log.CtxWarningf(ctx, "Failed to increment OLAP usage: %s", err)
 		lastErr = err
 	}
@@ -1753,7 +1773,7 @@ func (s *ExecutionServer) updateUsageFromStoredExecution(ctx context.Context, ex
 	}
 
 	counts := &tables.UsageCounts{}
-	setExecutionDurationFromStored(counts, dur, execution)
+	setExecutionDuration(counts, dur, execution.GetSelfHosted(), execution.GetOs())
 	if !execution.GetSelfHosted() && execution.GetCpuNanos() > 0 {
 		counts.CPUNanos = execution.GetCpuNanos()
 
@@ -1774,25 +1794,50 @@ func (s *ExecutionServer) updateUsageFromStoredExecution(ctx context.Context, ex
 		log.CtxWarningf(ctx, "Failed to increment usage: %s", err)
 		lastErr = err
 	}
-	if err := incrementOLAPExecutionUsage(ctx, ut, olapLabels, execution.GetOs(), execution.GetArch(), execution.GetSelfHosted(), dur, counts.CPUNanos, execution.GetPeakMemoryBytes()); err != nil {
+	if err := incrementOLAPExecutionUsage(ctx, ut, olapLabels, execution, dur); err != nil {
 		log.CtxWarningf(ctx, "Failed to increment OLAP usage: %s", err)
 		lastErr = err
 	}
 	return lastErr
 }
 
-func incrementOLAPExecutionUsage(ctx context.Context, ut interfaces.UsageTracker, baseLabels sku.Labels, os, arch string, selfHosted bool, duration time.Duration, cpuNanos, peakMemoryBytes int64) error {
-	executionLabels := make(sku.Labels, len(baseLabels)+3)
+func incrementOLAPExecutionUsage(ctx context.Context, ut interfaces.UsageTracker, baseLabels sku.Labels, execution *repb.StoredExecution, duration time.Duration) error {
+	executionLabels := make(sku.Labels, len(baseLabels)+4)
 	maps.Copy(executionLabels, baseLabels)
-	executionLabels[sku.OS] = sku.GetOSLabel(os)
-	executionLabels[sku.Arch] = sku.GetArchLabel(arch)
-	executionLabels[sku.SelfHosted] = sku.GetSelfHostedLabel(selfHosted)
-	memoryGBNanos := int64(float64(peakMemoryBytes) * float64(duration.Nanoseconds()) / 1e9)
+	executionLabels[sku.OS] = sku.GetOSLabel(execution.GetOs())
+	executionLabels[sku.Arch] = sku.GetArchLabel(execution.GetArch())
+	executionLabels[sku.SelfHosted] = sku.GetSelfHostedLabel(execution.GetSelfHosted())
+	executionLabels[sku.IsolationType] = sku.GetIsolationTypeLabel(execution.GetEffectiveIsolationType())
+	memoryGBNanos := int64(float64(execution.GetPeakMemoryBytes()) * float64(duration.Nanoseconds()) / 1e9)
 	executionCounts := map[sku.SKU]int64{
-		sku.RemoteExecutionExecuteWorkerCPUNanos:      cpuNanos,
+		sku.RemoteExecutionExecuteWorkerCPUNanos:      execution.GetCpuNanos(),
 		sku.RemoteExecutionExecuteWorkerDurationNanos: duration.Nanoseconds(),
 		sku.RemoteExecutionExecuteWorkerMemoryGBNanos: memoryGBNanos,
-		sku.RemoteExecutionExecuteFixedComputeNanos:   duration.Nanoseconds(),
+	}
+	if execution.GetEffectiveIsolationType() == "firecracker" || execution.GetRequestedComputeUnits() > 0 {
+		// Fixed compute
+		computeUnits := max(
+			execution.GetRequestedComputeUnits(),
+			tasksize.CpuComputeUnits(execution.GetRequestedMilliCpu()),
+			tasksize.MemoryComputeUnits(execution.GetRequestedMemoryBytes()),
+			tasksize.DiskComputeUnits(execution.GetRequestedFreeDiskBytes()),
+		)
+		executionCounts[sku.RemoteExecutionExecuteFixedComputeNanos] = int64(computeUnits * float64(duration.Nanoseconds()))
+	} else {
+		// Flexible compute
+		computeUnits := max(
+			tasksize.CpuComputeUnits(execution.GetEstimatedMilliCpu()),
+			tasksize.MemoryComputeUnits(execution.GetEstimatedMemoryBytes()),
+			tasksize.DiskComputeUnits(execution.GetEstimatedFreeDiskBytes()),
+		)
+		executionCounts[sku.RemoteExecutionExecuteFlexibleComputeNanos] = int64(computeUnits * float64(duration.Nanoseconds()))
+	}
+	if execution.GetSnapshotSavedRemotely() {
+		executionCounts[sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes] = execution.SnapshotSavedBytes
+	} else if execution.GetSnapshotSavedLocally() {
+		// Charge for local saves only if the snapshot was saved locally and not
+		// remotely, because remote implies local.
+		executionCounts[sku.RemoteExecutionExecuteLocalSnapshotSavedBytes] = execution.SnapshotSavedBytes
 	}
 	return ut.IncrementOLAP(ctx, executionLabels, executionCounts)
 }
@@ -1887,20 +1932,20 @@ func executionDuration(md *repb.ExecutedActionMetadata) (time.Duration, error) {
 	return dur, nil
 }
 
-func setExecutionDuration(counts *tables.UsageCounts, duration time.Duration, pool *interfaces.PoolInfo, props *platform.Properties) {
+func setExecutionDuration(counts *tables.UsageCounts, duration time.Duration, isSelfHosted bool, os string) {
 	if duration < 0 {
 		return
 	}
-	if pool.IsSelfHosted {
-		if props.OS == platform.LinuxOperatingSystemName {
+	if isSelfHosted {
+		if os == platform.LinuxOperatingSystemName {
 			counts.SelfHostedLinuxExecutionDurationUsec += duration.Microseconds()
-		} else if props.OS == platform.DarwinOperatingSystemName {
+		} else if os == platform.DarwinOperatingSystemName {
 			counts.SelfHostedMacExecutionDurationUsec += duration.Microseconds()
 		}
 	} else {
-		if props.OS == platform.LinuxOperatingSystemName {
+		if os == platform.LinuxOperatingSystemName {
 			counts.LinuxExecutionDurationUsec += duration.Microseconds()
-		} else if props.OS == platform.DarwinOperatingSystemName {
+		} else if os == platform.DarwinOperatingSystemName {
 			counts.MacExecutionDurationUsec += duration.Microseconds()
 		}
 	}
@@ -1917,25 +1962,6 @@ func executionDurationFromStored(execution *repb.StoredExecution) (time.Duration
 		return 0, status.InternalErrorf("Execution duration is <= 0")
 	}
 	return dur, nil
-}
-
-func setExecutionDurationFromStored(counts *tables.UsageCounts, duration time.Duration, execution *repb.StoredExecution) {
-	if duration < 0 {
-		return
-	}
-	if execution.GetSelfHosted() {
-		if execution.GetOs() == platform.LinuxOperatingSystemName {
-			counts.SelfHostedLinuxExecutionDurationUsec += duration.Microseconds()
-		} else if execution.GetOs() == platform.DarwinOperatingSystemName {
-			counts.SelfHostedMacExecutionDurationUsec += duration.Microseconds()
-		}
-	} else {
-		if execution.GetOs() == platform.LinuxOperatingSystemName {
-			counts.LinuxExecutionDurationUsec += duration.Microseconds()
-		} else if execution.GetOs() == platform.DarwinOperatingSystemName {
-			counts.MacExecutionDurationUsec += duration.Microseconds()
-		}
-	}
 }
 
 func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error {

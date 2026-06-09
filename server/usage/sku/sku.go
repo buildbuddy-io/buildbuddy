@@ -75,6 +75,9 @@ const (
 	// SelfHosted indicates whether the usage was incurred on a self-hosted
 	// instance of the service.
 	SelfHosted LabelName = "self_hosted"
+	// IsolationType is the effective (lower case) isolation type that ran the
+	// execution (oci, firecracker, etc.).
+	IsolationType LabelName = "isolation_type"
 	// TODO: client region (if known), server region
 )
 
@@ -151,6 +154,10 @@ func GetSelfHostedLabel(isSelfHosted bool) LabelValue {
 		return SelfHostedTrue
 	}
 	return SelfHostedFalse
+}
+
+func GetIsolationTypeLabel(isolationType string) LabelValue {
+	return strings.ToLower(isolationType)
 }
 
 // Labels represents a collection of unique label values.

@@ -1075,11 +1075,18 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	}
 	require.NotNil(t, foundOLAPExecutorUsage, "expected OLAP execution usage to be recorded")
 	assert.Equal(t, "group1", foundOLAPExecutorUsage.GroupID)
+	var expectedIsolationType sku.LabelValue
+	if test.publishMoreMetadata {
+		// aux.IsolationType = "firecracker" propagates into the
+		// StoredExecution and shows up as the lower-cased OLAP label.
+		expectedIsolationType = "firecracker"
+	}
 	expectedOLAPLabels := sku.Labels{
-		sku.Client:     sku.ClientExecutor,
-		sku.OS:         sku.OSLinux,
-		sku.Arch:       sku.ArchX86_64,
-		sku.SelfHosted: sku.GetSelfHostedLabel(test.expectedSelfHosted),
+		sku.Client:        sku.ClientExecutor,
+		sku.OS:            sku.OSLinux,
+		sku.Arch:          sku.ArchX86_64,
+		sku.SelfHosted:    sku.GetSelfHostedLabel(test.expectedSelfHosted),
+		sku.IsolationType: expectedIsolationType,
 	}
 	assert.Equal(t, expectedOLAPLabels, foundOLAPExecutorUsage.Labels)
 	expectedDurationNanos := (5 * time.Second).Nanoseconds()
@@ -1087,13 +1094,21 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	require.NotNil(t, foundOLAPComputeUsage, "expected OLAP compute duration usage to be recorded")
 	assert.Equal(t, "group1", foundOLAPComputeUsage.GroupID)
 	expectedComputeOLAPLabels := sku.Labels{
-		sku.Client:     sku.ClientExecutor,
-		sku.OS:         sku.OSLinux,
-		sku.Arch:       sku.ArchX86_64,
-		sku.SelfHosted: sku.GetSelfHostedLabel(test.expectedSelfHosted),
+		sku.Client:        sku.ClientExecutor,
+		sku.OS:            sku.OSLinux,
+		sku.Arch:          sku.ArchX86_64,
+		sku.SelfHosted:    sku.GetSelfHostedLabel(test.expectedSelfHosted),
+		sku.IsolationType: expectedIsolationType,
 	}
 	assert.Equal(t, expectedComputeOLAPLabels, foundOLAPComputeUsage.Labels)
-	assert.Equal(t, expectedDurationNanos, foundOLAPComputeUsage.Counts[sku.RemoteExecutionExecuteFixedComputeNanos])
+	// RequestedComputeUnits=2.5 (from EstimatedComputeUnits in the platform)
+	// dominates the max over the cpu/memory/disk dimensions, so the
+	// fixed-compute SKU should be 2.5 * duration.
+	expectedFixedComputeNanos := int64(2.5 * float64(expectedDurationNanos))
+	assert.Equal(t, expectedFixedComputeNanos, foundOLAPComputeUsage.Counts[sku.RemoteExecutionExecuteFixedComputeNanos])
+	// Flexible compute should NOT be recorded when RequestedComputeUnits > 0.
+	_, hasFlexible := foundOLAPComputeUsage.Counts[sku.RemoteExecutionExecuteFlexibleComputeNanos]
+	assert.False(t, hasFlexible, "flexible compute SKU should not be recorded when requested compute units is set")
 
 	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
 	require.NoError(t, err)
@@ -1753,6 +1768,25 @@ func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flush
 	}
 	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
 	assert.Equal(t, (5 * time.Second).Microseconds(), foundExecutorUsage.Counts.LinuxExecutionDurationUsec)
+
+	// OLAP snapshot bytes are only recorded when the snapshot fields actually
+	// reach the StoredExecution that updateUsageFromStoredExecution reads.
+	// That only happens on the flushAfterCleanup path; on the legacy path
+	// the second COMPLETED is dropped before the OLAP flush runs.
+	var foundRemoteSnapshotBytes, foundLocalSnapshotBytes int64
+	for _, u := range ut.OLAPTotals() {
+		foundRemoteSnapshotBytes += u.Counts[sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes]
+		foundLocalSnapshotBytes += u.Counts[sku.RemoteExecutionExecuteLocalSnapshotSavedBytes]
+	}
+	if flushAfterCleanup {
+		// Both snapshot_saved_locally and snapshot_saved_remotely were sent,
+		// but the remote branch takes precedence in incrementOLAPExecutionUsage.
+		assert.Equal(t, int64(12345), foundRemoteSnapshotBytes, "expected remote snapshot bytes SKU to be recorded")
+		assert.Zero(t, foundLocalSnapshotBytes, "local snapshot bytes SKU should not be recorded when remote takes precedence")
+	} else {
+		assert.Zero(t, foundRemoteSnapshotBytes, "no snapshot SKUs should be recorded on the legacy path")
+		assert.Zero(t, foundLocalSnapshotBytes, "no snapshot SKUs should be recorded on the legacy path")
+	}
 }
 
 // TestPublishOperation_RetryStreamWithOnlyPostCompletionStats simulates the
