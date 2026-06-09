@@ -170,6 +170,13 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
 	}
 
 	results := c.rescoreDocs(scorer, []scoredDoc(topDocs))
+	if len(results) < offset+numResults && len(topDocs) == rescoreLimit {
+		// The window was full, so deeper candidates may exist that were never
+		// rescored. If this fires often, consider rescoring adaptively until
+		// the page fills instead of using a fixed window.
+		log.Warningf("Rescore window exhausted: %d of %d candidates survived for a request of %d results",
+			len(results), rescoreLimit, offset+numResults)
+	}
 	sort.Slice(results, func(i, j int) bool {
 		return lowerScoredDoc(results[j], results[i])
 	})
