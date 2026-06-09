@@ -16,6 +16,7 @@ go_library(
         "//server/real_environment",
         "//server/remote_cache/digest",
         "//server/util/cache_metrics",
+        "//server/util/flag",
         "//server/util/ioutil",
         "//server/util/log",
         "//server/util/prefix",

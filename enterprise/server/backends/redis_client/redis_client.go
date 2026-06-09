@@ -11,6 +11,8 @@ import (
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 )
 
+const cacheRedisFlagMessage = "The cache Redis config is deprecated. Use app.default_redis_target or remote_execution.redis_target for Redis-backed shared state."
+
 var (
 	defaultRedisTarget               = flag.String("app.default_redis_target", "", "A Redis target for storing remote shared state. To ease migration, the redis target from the remote execution config will be used if this value is not specified.", flag.Secret)
 	defaultRedisShards               = flag.Slice("app.default_sharded_redis.shards", []string{}, "Ordered list of Redis shard addresses.")
@@ -22,12 +24,11 @@ var (
 	// migration)
 
 	// Cache Redis
-	// TODO: We need to deprecate one of the redis targets here or distinguish them
-	cacheRedisTargetFallback  = flag.String("cache.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **", flag.Secret)
-	cacheRedisTarget          = flag.String("cache.redis.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **", flag.Secret)
-	cacheRedisShards          = flag.Slice("cache.redis.sharded.shards", []string{}, "Ordered list of Redis shard addresses.")
-	cacheShardedRedisUsername = flag.String("cache.redis.sharded.username", "", "Redis username")
-	cacheShardedRedisPassword = flag.String("cache.redis.sharded.password", "", "Redis password", flag.Secret)
+	cacheRedisTargetFallback  = flag.String("cache.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **", flag.Secret, flag.Deprecated(cacheRedisFlagMessage))
+	cacheRedisTarget          = flag.String("cache.redis.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **", flag.Secret, flag.Deprecated(cacheRedisFlagMessage))
+	cacheRedisShards          = flag.Slice("cache.redis.sharded.shards", []string{}, "Ordered list of Redis shard addresses.", flag.Deprecated(cacheRedisFlagMessage))
+	cacheShardedRedisUsername = flag.String("cache.redis.sharded.username", "", "Redis username", flag.Deprecated(cacheRedisFlagMessage))
+	cacheShardedRedisPassword = flag.String("cache.redis.sharded.password", "", "Redis password", flag.Secret, flag.Deprecated(cacheRedisFlagMessage))
 
 	// Remote Execution Redis
 	remoteExecRedisTarget          = flag.String("remote_execution.redis_target", "", "A Redis target for storing remote execution state. Falls back to app.default_redis_target if unspecified. Required for remote execution. To ease migration, the redis target from the cache config will be used if neither this value nor app.default_redis_target are specified.", flag.Secret)

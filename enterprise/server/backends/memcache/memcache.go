@@ -24,7 +24,9 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
-var memcacheTargets = flag.Slice("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
+const deprecatedMemcacheFlagMessage = "The memcache cache backend is deprecated. Use app.default_redis_target or remote_execution.redis_target for Redis-backed shared state and cache.disk.root_directory for cache storage."
+
+var memcacheTargets = flag.Slice("cache.memcache_targets", []string{}, "Memcache targets.", flag.Deprecated(deprecatedMemcacheFlagMessage))
 
 const (
 	mcCutoffSizeBytes = 134217728 - 1 // 128 MB

@@ -80,12 +80,8 @@ storage:
     project_id: "flame-build"
     credentials_file: "your_service-acct.json"
 cache:
-  redis_target: "12.34.56.79:6379"
-  gcs:
-    bucket: "buildbuddy_cache"
-    project_id: "your_gcs_project_id"
-    credentials_file: "/path/to/your/credential/file.json"
-    ttl_days: 30
+  disk:
+    root_directory: /data/buildbuddy-cache
 auth:
   oauth_providers:
     - issuer_url: "https://your-custom-domain.okta.com"
