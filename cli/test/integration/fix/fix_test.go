@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -154,13 +153,6 @@ func requireNoBuildFile(t *testing.T, dir string) {
 	require.NoFileExists(t, filepath.Join(dir, "BUILD"))
 }
 
-func requireEqualFileContents(t *testing.T, expected, actual string) {
-	t.Helper()
-	if diff := cmp.Diff(expected, actual); diff != "" {
-		t.Fatalf("file contents mismatch (-want +got):\n%s", diff)
-	}
-}
-
 // repoGazelleStubWorkspace creates a workspace whose //:gazelle target records
 // the args it was invoked with into gazelle.args. This verifies `bb fix`
 // dispatch and arg propagation for repo-defined Gazelle targets; it does not
@@ -270,13 +262,15 @@ func TestFix_GazelleGeneratesProtoBuildFile(t *testing.T) {
 	require.NoError(t, err, "output: %s", out)
 
 	contents := readBuildFile(t, filepath.Join(ws, "proto"))
-	requireEqualFileContents(t, generatedProtoBuild, contents)
+	require.Equal(t, generatedProtoBuild, contents)
 }
 
 func TestFix_DiffShowsGazelleGeneratedProtoBuildFileWithoutMutating(t *testing.T) {
 	ws := protoWorkspace(t)
 	before := snapshot(t, ws)
 
+	// These fixtures are built to produce Gazelle diffs, whose non-zero diff
+	// exit verifies that `bb fix --diff` reached Gazelle and found changes.
 	out, err := runFix(t, ws, "--diff")
 	require.Error(t, err, "Gazelle diff mode should exit non-zero when changes are present")
 	after := snapshot(t, ws)
@@ -373,7 +367,7 @@ proto_library(
 	require.NoError(t, err, "output: %s", out)
 
 	contents := readBuildFile(t, filepath.Join(ws, "proto"))
-	requireEqualFileContents(t, mergedProtoBuild, contents)
+	require.Equal(t, mergedProtoBuild, contents)
 }
 
 func TestFix_RepoGazelleTargetIsPreferredOverBuiltinGazelle(t *testing.T) {
