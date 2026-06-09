@@ -104,6 +104,41 @@ func TestBuilderListAddOutOfOrder(t *testing.T) {
 	assert.Equal(t, []uint64{1, 2, 3, 4}, pl.ToArray())
 }
 
+func TestAddWithFrequencyOnExistingIDIsNoOp(t *testing.T) {
+	// Re-adding an id already present is a no-op: the doc set is unchanged and the
+	// supplied frequency is dropped (the original is kept). This pins the dedup
+	// behavior the unified list inherited from MergeList; the old BuilderList
+	// panicked on a duplicate add instead, so the indexer must continue to feed
+	// unique ids per list.
+	pl := posting.NewBuilderList()
+	pl.AddWithFrequency(1, 2)
+	pl.AddWithFrequency(2, 3)
+
+	pl.AddWithFrequency(2, 9) // duplicate trailing id, higher freq: dropped
+	pl.AddWithFrequency(1, 9) // duplicate interior id, higher freq: dropped
+
+	assert.Equal(t, []uint64{1, 2}, pl.ToArray())
+	assert.Equal(t, uint32(2), pl.Frequency(1))
+	assert.Equal(t, uint32(3), pl.Frequency(2))
+}
+
+func TestAddWithFrequencyOnExistingIDKeepsAllOnesUnmaterialized(t *testing.T) {
+	// A dropped duplicate add must not force an otherwise all-ones list to
+	// materialize a frequency column: it still serializes byte-for-byte as a plain
+	// (uncounted) roaring list.
+	pl := posting.NewBuilderList(1, 2, 3)
+	pl.AddWithFrequency(2, 5) // dropped
+
+	assert.Equal(t, []uint64{1, 2, 3}, pl.ToArray())
+	assert.Equal(t, uint32(1), pl.Frequency(2))
+
+	got, err := pl.Marshal()
+	require.NoError(t, err)
+	want, err := posting.NewList(1, 2, 3).Marshal()
+	require.NoError(t, err)
+	assert.Equal(t, want, got, "duplicate add must not turn an all-ones list into a counted one")
+}
+
 func TestBuilderListFrequencyDecodesRLE(t *testing.T) {
 	pl := posting.NewBuilderList()
 	pl.AddWithFrequency(1, 1)

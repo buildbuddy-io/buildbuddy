@@ -105,7 +105,8 @@ type TermFrequencyStats = types.TermFrequencyStats
 // TermFrequencyStatsFromFrequencies summarizes a per-posting frequency slice
 // in iteration order. freqs is expected to be in the order the posting list's
 // roaring iterator yields doc IDs — the same order used when serializing, so
-// that the RLE byte estimate matches what BuilderList.Marshal would write.
+// that the RLE byte estimate matches what marshalCounted (via MergeList.Marshal)
+// would write.
 func TermFrequencyStatsFromFrequencies(freqs []uint32) TermFrequencyStats {
 	stats := TermFrequencyStats{}
 	// Per-posting aggregates.
