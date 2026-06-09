@@ -7,7 +7,7 @@
 // being non-mutating, idempotency on re-run, and --help.
 //
 // Most tests are network-free. The two exceptions invoke real bazel via a
-// repo-defined //:gazelle target, which fetches rules_shell from BCR
+// repo-defined //:gazelle target, which fetches rules_shell from mirrored BCR
 // (deterministic via the pinned lockfile; permitted by test.dockerNetwork in
 // the BUILD file). Language dependency *insertion* (bb add -> registry.build,
 // and gazelle update-repos) is network-bound, so those paths are exercised
@@ -29,58 +29,6 @@ import (
 // poorlyFormatted is a BUILD file that buildifier should rewrite.
 const poorlyFormatted = `load( "@rules_shell//shell:sh_binary.bzl",   "sh_binary" )
 sh_binary( name="x",srcs=["x.sh"] )
-`
-
-const generatedProtoBuild = `load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@rules_proto//proto:defs.bzl", "proto_library")
-
-proto_library(
-    name = "proto_proto",
-    srcs = ["service.proto"],
-    visibility = ["//visibility:public"],
-)
-
-go_proto_library(
-    name = "proto_go_proto",
-    importpath = "proto",
-    proto = ":proto_proto",
-    visibility = ["//visibility:public"],
-)
-
-go_library(
-    name = "proto",
-    embed = [":proto_go_proto"],
-    importpath = "proto",
-    visibility = ["//visibility:public"],
-)
-`
-
-const mergedProtoBuild = `load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@rules_proto//proto:defs.bzl", "proto_library")
-
-# keep package comment
-package(default_visibility = ["//visibility:private"])
-
-# keep rule comment
-proto_library(
-    name = "proto_proto",
-    srcs = ["service.proto"],
-    tags = ["manual"],
-)
-
-go_proto_library(
-    name = "proto_go_proto",
-    importpath = "proto",
-    proto = ":proto_proto",
-)
-
-go_library(
-    name = "proto",
-    embed = [":proto_go_proto"],
-    importpath = "proto",
-)
 `
 
 // fixWorkspace creates a fresh temp dir for `bb fix` to operate on. Unlike
@@ -157,10 +105,12 @@ func requireNoBuildFile(t *testing.T, dir string) {
 // the args it was invoked with into gazelle.args. This verifies `bb fix`
 // dispatch and arg propagation for repo-defined Gazelle targets; it does not
 // exercise real Gazelle behavior. Note: this invokes real bazel (and fetches
-// rules_shell from BCR).
+// rules_shell from BCR via a mirrored registry).
 func repoGazelleStubWorkspace(t *testing.T) string {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bazelrc": `common --module_mirrors=https://bcr.cloudflaremirrors.com
+`,
 		"BUILD.bazel": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
 sh_binary(
@@ -261,8 +211,32 @@ func TestFix_GazelleGeneratesProtoBuildFile(t *testing.T) {
 	out, err := runFix(t, ws)
 	require.NoError(t, err, "output: %s", out)
 
+	expected := `load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+proto_library(
+    name = "proto_proto",
+    srcs = ["service.proto"],
+    visibility = ["//visibility:public"],
+)
+
+go_proto_library(
+    name = "proto_go_proto",
+    importpath = "proto",
+    proto = ":proto_proto",
+    visibility = ["//visibility:public"],
+)
+
+go_library(
+    name = "proto",
+    embed = [":proto_go_proto"],
+    importpath = "proto",
+    visibility = ["//visibility:public"],
+)
+`
 	contents := readBuildFile(t, filepath.Join(ws, "proto"))
-	require.Equal(t, generatedProtoBuild, contents)
+	require.Equal(t, expected, contents)
 }
 
 func TestFix_DiffShowsGazelleGeneratedProtoBuildFileWithoutMutating(t *testing.T) {
@@ -366,8 +340,34 @@ proto_library(
 	out, err := runFix(t, ws)
 	require.NoError(t, err, "output: %s", out)
 
+	expected := `load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+# keep package comment
+package(default_visibility = ["//visibility:private"])
+
+# keep rule comment
+proto_library(
+    name = "proto_proto",
+    srcs = ["service.proto"],
+    tags = ["manual"],
+)
+
+go_proto_library(
+    name = "proto_go_proto",
+    importpath = "proto",
+    proto = ":proto_proto",
+)
+
+go_library(
+    name = "proto",
+    embed = [":proto_go_proto"],
+    importpath = "proto",
+)
+`
 	contents := readBuildFile(t, filepath.Join(ws, "proto"))
-	require.Equal(t, mergedProtoBuild, contents)
+	require.Equal(t, expected, contents)
 }
 
 func TestFix_RepoGazelleTargetIsPreferredOverBuiltinGazelle(t *testing.T) {

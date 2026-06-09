@@ -8,7 +8,7 @@ go_test(
     exec_properties = {
         # Mirror cli/test/integration/cli: bb may reach the network during
         # startup (e.g. for version checks). The repo-defined //:gazelle tests
-        # also fetch pinned BCR deps via real bazel.
+        # also fetch pinned BCR deps via real bazel using a mirrored registry.
         "test.dockerNetwork": "bridge",
     },
     deps = [
