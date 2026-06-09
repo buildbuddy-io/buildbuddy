@@ -81,11 +81,13 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 		return err
 	}
 
-	size, err := s.fetchBlobSizeFromUpstream(ctx, req)
+	size, err := s.fetchBlobMetadataSize(ctx, req)
 	if err != nil {
 		return err
 	}
 
+	// Also check FailedPrecondition: cachetools.GetBlob wraps NotFound cache
+	// misses as FailedPrecondition via MissingDigestError.
 	if err := fetchBlobFromLocalBS(ctx, s.localBSClient, hash, size, &grpcStreamWriter{stream: stream}); err == nil {
 		return nil // local cache hit
 	} else if !status.IsNotFoundError(err) && !status.IsFailedPreconditionError(err) {
@@ -111,7 +113,7 @@ func parseBlobDigestRef(ref string) (gcrname.Digest, gcr.Hash, error) {
 	return digestRef, hash, nil
 }
 
-func (s *OCIFetcherServerProxy) fetchBlobSizeFromUpstream(ctx context.Context, req *ofpb.FetchBlobRequest) (int64, error) {
+func (s *OCIFetcherServerProxy) fetchBlobMetadataSize(ctx context.Context, req *ofpb.FetchBlobRequest) (int64, error) {
 	metaResp, err := s.remote.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
 		Ref:            req.GetRef(),
 		Credentials:    req.GetCredentials(),
