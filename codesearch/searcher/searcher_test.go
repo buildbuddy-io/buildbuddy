@@ -55,14 +55,26 @@ func (s constantScorer) Skip() bool { return false }
 func (s constantScorer) Score(docMatch types.DocumentMatch) float64 {
 	return 0.1
 }
+func (s constantScorer) Rescore(docMatch types.DocumentMatch, doc types.Document) float64 {
+	return 0.1
+}
 
+// explicitScorer scores docs from fixed maps. If rescores is nil, Rescore
+// returns the same value as Score.
 type explicitScorer struct {
-	scores map[uint64]float64
+	scores   map[uint64]float64
+	rescores map[uint64]float64
 }
 
 func (s *explicitScorer) Skip() bool { return false }
 func (s *explicitScorer) Score(docMatch types.DocumentMatch) float64 {
 	return s.scores[docMatch.Docid()]
+}
+func (s *explicitScorer) Rescore(docMatch types.DocumentMatch, doc types.Document) float64 {
+	if s.rescores == nil {
+		return s.scores[docMatch.Docid()]
+	}
+	return s.rescores[docMatch.Docid()]
 }
 
 type sQuery struct {
@@ -205,6 +217,59 @@ func TestSearcherEvictsLargerDocIDOnScoreTie(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"one", "two"}, docIdents(docs))
+}
+
+func TestSearcherRescoreReordersTopDocs(t *testing.T) {
+	ctx := context.Background()
+	db := createSampleIndex(t)
+	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
+
+	// The cheap scorer ranks doc 4 below the requested page of 3, but the
+	// rescore window over-fetches (minDocsToRescore), so the exact scorer
+	// still sees doc 4 and promotes it to the top.
+	scorer := &explicitScorer{
+		scores:   map[uint64]float64{1: 10.0, 2: 9.0, 3: 8.0, 4: 7.0},
+		rescores: map[uint64]float64{1: 1.0, 2: 2.0, 3: 3.0, 4: 4.0},
+	}
+	docs, err := s.Search(sQuery{"(:all)", scorer}, 3, 0)
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"four", "three", "two"}, docIdents(docs))
+}
+
+func TestSearcherRescoreBackfillsDroppedDocs(t *testing.T) {
+	ctx := context.Background()
+	db := createSampleIndex(t)
+	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
+
+	// Doc 1 leads the cheap ranking but rescores to 0 (ngram false
+	// positive). Because the rescore window is larger than the page, the
+	// page stays full instead of coming back short.
+	scorer := &explicitScorer{
+		scores:   map[uint64]float64{1: 10.0, 2: 9.0, 3: 8.0},
+		rescores: map[uint64]float64{1: 0.0, 2: 1.0, 3: 0.5},
+	}
+	docs, err := s.Search(sQuery{"(:all)", scorer}, 2, 0)
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"two", "three"}, docIdents(docs))
+}
+
+func TestSearcherRescoreDropsZeroScores(t *testing.T) {
+	ctx := context.Background()
+	db := createSampleIndex(t)
+	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
+
+	// Doc 2 looks good to the cheap scorer (ngram false positive) but the
+	// exact scorer rejects it.
+	scorer := &explicitScorer{
+		scores:   map[uint64]float64{1: 10.0, 2: 9.0, 3: 8.0},
+		rescores: map[uint64]float64{1: 1.0, 2: 0.0, 3: 0.5},
+	}
+	docs, err := s.Search(sQuery{"(:all)", scorer}, 100, 0)
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"one", "three"}, docIdents(docs))
 }
 
 func docIdents(docs []types.Document) []string {

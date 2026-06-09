@@ -119,6 +119,11 @@ type Scorer interface {
 	// index-side data (term frequencies and field lengths) — it must not need
 	// the stored document, so it stays cheap enough to run on every match.
 	Score(docMatch DocumentMatch) float64
+	// Rescore computes an exact relevance score using the stored document
+	// contents. It is much more expensive than Score and is only run on the
+	// documents Score ranked into the result window. A Rescore of 0 means the
+	// document is not a true match and must be dropped from the results.
+	Rescore(docMatch DocumentMatch, doc Document) float64
 }
 
 type HighlightedRegion interface {
