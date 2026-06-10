@@ -135,11 +135,6 @@ type Store struct {
 	openRanges map[uint64]*rfpb.RangeDescriptor
 	rangeMap   *rangemap.RangeMap[*rfpb.RangeDescriptor]
 
-	// missingPartitionIDLogged tracks range IDs we've already logged a
-	// "missing partition_id" warning for, so each one logs at most once.
-	// TODO(go/b/7513): remove with the driver backfill.
-	missingPartitionIDLogged sync.Map // map of uint64 rangeID -> struct{}
-
 	leaseKeeper *leasekeeper.LeaseKeeper
 	replicas    sync.Map // map of uint64 rangeID -> *replica.Replica
 
@@ -1277,12 +1272,9 @@ func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 func (s *Store) GetRange(rangeID uint64) *rfpb.RangeDescriptor {
 	rd := s.lookupRange(rangeID)
 	// TODO(go/b/7513): remove once the driver-backed backfill is no longer
-	// needed. A non-empty PartitionId on the meta range is unexpected and the
-	// derived ID won't apply there, so skip the meta range here.
+	// needed. The derived ID won't apply to the meta range, so skip it here.
 	if rd != nil && rangeID != constants.MetaRangeID && rd.GetPartitionId() == "" {
-		if _, loaded := s.missingPartitionIDLogged.LoadOrStore(rangeID, struct{}{}); !loaded {
-			s.log.Warningf("range %d descriptor is missing partition_id (derivable as %q from start key)", rangeID, keys.PartitionIDFromRangeStart(rd.GetStart()))
-		}
+		s.log.Warningf("range %d descriptor is missing partition_id (derivable as %q from start key)", rangeID, keys.PartitionIDFromRangeStart(rd.GetStart()))
 	}
 	return rd
 }
