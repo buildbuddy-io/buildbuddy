@@ -2443,7 +2443,7 @@
             "type": "prometheus",
             "uid": "vm"
           },
-          "expr": "sum by(hostname) (chi_clickhouse_table_parts{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\",active=\"1\"})",
+          "expr": "sum by(hostname) (chi_clickhouse_table_parts{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\",database=~\"$database\",active=\"1\"})",
           "legendFormat": "Parts {{hostname}}",
           "refId": "C"
         }
@@ -2578,7 +2578,7 @@
             "type": "prometheus",
             "uid": "vm"
           },
-          "expr": "sum by(hostname) (chi_clickhouse_table_parts{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\",active=\"0\"})",
+          "expr": "sum by(hostname) (chi_clickhouse_table_parts{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\",database=~\"$database\",active=\"0\"})",
           "hide": true,
           "interval": "",
           "legendFormat": "Inactive {{hostname}} ",
@@ -3557,7 +3557,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "max by(table) (sum by(hostname, table) (chi_clickhouse_table_parts_bytes{exported_namespace=~\"$exported_namespace\", chi=~\"$chi\", database=~\"buildbuddy.*\", active=\"1\"}))",
+          "expr": "max by(database, table) (sum by(hostname, database, table) (chi_clickhouse_table_parts_bytes{exported_namespace=~\"$exported_namespace\", chi=~\"$chi\", database=~\"$database\", active=\"1\"}))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "legendFormat": "__auto",
@@ -3663,7 +3663,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "max by(table) (sum by(hostname, table) (rate(chi_clickhouse_table_parts_bytes{exported_namespace=~\"$exported_namespace\", chi=~\"$chi\", database=~\"buildbuddy.*\", active=\"1\"}[$__rate_interval])))",
+          "expr": "max by(database, table) (sum by(hostname, database, table) (rate(chi_clickhouse_table_parts_bytes{exported_namespace=~\"$exported_namespace\", chi=~\"$chi\", database=~\"$database\", active=\"1\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "legendFormat": "__auto",
@@ -4007,7 +4007,7 @@
             "type": "prometheus",
             "uid": "vm"
           },
-          "expr": "sum by (hostname) (chi_clickhouse_table_mutations{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"})",
+          "expr": "sum by (hostname) (chi_clickhouse_table_mutations{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\",database=~\"$database\"})",
           "legendFormat": "mutations {{hostname}}",
           "refId": "A"
         },
@@ -4016,7 +4016,7 @@
             "type": "prometheus",
             "uid": "vm"
           },
-          "expr": "sum by (hostname) (chi_clickhouse_table_mutations_parts_to_do{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"})",
+          "expr": "sum by (hostname) (chi_clickhouse_table_mutations_parts_to_do{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\",database=~\"$database\"})",
           "legendFormat": "parts_to_do {{hostname}}",
           "refId": "B"
         }
@@ -4479,6 +4479,37 @@
         "query": {
           "query": "label_values({__name__ =~ \"chi_clickhouse_metric_Uptime|chi_clickhouse_metric_fetch_errors\",exported_namespace=~\"$exported_namespace\",chi=~\"$chi\"}, hostname)",
           "refId": "Prometheus-hostname-Variable-Query"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "tagValuesQuery": "",
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "vm"
+        },
+        "definition": "label_values(chi_clickhouse_table_parts_bytes{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\"}, database)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Database",
+        "multi": true,
+        "name": "database",
+        "options": [],
+        "query": {
+          "query": "label_values(chi_clickhouse_table_parts_bytes{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\"}, database)",
+          "refId": "Prometheus-database-Variable-Query"
         },
         "refresh": 2,
         "regex": "",
