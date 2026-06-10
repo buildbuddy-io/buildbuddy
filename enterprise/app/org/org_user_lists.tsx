@@ -386,11 +386,7 @@ class OrgUserListsChildComponent extends React.Component<ChildProps, ChildState>
                 </div>
                 {this.state.editRoleUserList?.user.some(
                   (u) => u.userId?.id === this.props.user.displayUser?.userId?.id
-                ) && (
-                  <div className="editing-self-warning">
-                    <b>Warning</b>: Your account is a member of this group.
-                  </div>
-                )}
+                ) && <Banner type="warning">Your account is a member of this group.</Banner>}
                 <div className="select-role-row">
                   <div>Role</div>
                   <Select value={this.state.editRoleValue} onChange={this.onChangeEditRoleValue.bind(this)}>

@@ -397,12 +397,6 @@
   border-bottom: 1px solid #eee;
 }
 
-.org-members-edit-modal .editing-self-warning {
-  background: #ffcdd2;
-  border-radius: 8px;
-  padding: 16px;
-}
-
 .org-members-edit-modal .flagged-self-user {
   font-weight: 600;
   color: #e53935;
