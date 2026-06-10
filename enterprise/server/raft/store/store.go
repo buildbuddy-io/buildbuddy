@@ -1556,7 +1556,6 @@ func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
 func (s *Store) HasReplicaAndIsLeader(rangeID uint64) bool {
 	repl, err := s.GetReplica(rangeID)
 	if err != nil {
-		s.log.Debugf("failed to get replica for range %d: %s", rangeID, err)
 		return false
 	}
 	return s.isLeader(rangeID, repl.ReplicaID())
