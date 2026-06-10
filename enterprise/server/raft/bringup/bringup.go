@@ -382,17 +382,19 @@ func evenlyDividePartitionIntoRanges(partition disk.Partition) ([]*rfpb.RangeDes
 	for i := 0; i < numRanges-1; i++ {
 		r := new(big.Int).Add(l, interval)
 		ranges = append(ranges, &rfpb.RangeDescriptor{
-			Start:      []byte(filestore.PartitionDirectoryPrefix + partition.ID + "/" + hex.EncodeToString(l.Bytes())),
-			End:        []byte(filestore.PartitionDirectoryPrefix + partition.ID + "/" + hex.EncodeToString(r.Bytes())),
-			Generation: 1,
+			Start:       []byte(filestore.PartitionDirectoryPrefix + partition.ID + "/" + hex.EncodeToString(l.Bytes())),
+			End:         []byte(filestore.PartitionDirectoryPrefix + partition.ID + "/" + hex.EncodeToString(r.Bytes())),
+			Generation:  1,
+			PartitionId: partition.ID,
 		})
 		l = r
 	}
 	// Append a final range from nth split --> end.
 	ranges = append(ranges, &rfpb.RangeDescriptor{
-		Start:      []byte(filestore.PartitionDirectoryPrefix + partition.ID + "/" + hex.EncodeToString(l.Bytes())),
-		End:        keys.MakeKey([]byte(filestore.PartitionDirectoryPrefix+partition.ID+"/"+hex.EncodeToString(maxHashAsBigInt.Bytes())), keys.MaxByte),
-		Generation: 1,
+		Start:       []byte(filestore.PartitionDirectoryPrefix + partition.ID + "/" + hex.EncodeToString(l.Bytes())),
+		End:         keys.MakeKey([]byte(filestore.PartitionDirectoryPrefix+partition.ID+"/"+hex.EncodeToString(maxHashAsBigInt.Bytes())), keys.MaxByte),
+		Generation:  1,
+		PartitionId: partition.ID,
 	})
 	return ranges, nil
 }

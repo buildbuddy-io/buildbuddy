@@ -1270,7 +1270,13 @@ func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 }
 
 func (s *Store) GetRange(rangeID uint64) *rfpb.RangeDescriptor {
-	return s.lookupRange(rangeID)
+	rd := s.lookupRange(rangeID)
+	// TODO(go/b/7513): remove once the driver-backed backfill is no longer
+	// needed. The derived ID won't apply to the meta range, so skip it here.
+	if rd != nil && rangeID != constants.MetaRangeID && rd.GetPartitionId() == "" {
+		s.log.Warningf("range %d descriptor is missing partition_id (derivable as %q from start key)", rangeID, keys.PartitionIDFromRangeStart(rd.GetStart()))
+	}
+	return rd
 }
 
 func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
@@ -4000,27 +4006,23 @@ func (s *Store) getFileSystemUsage() (gosigar.FileSystemUsage, error) {
 
 // rangeReplicaLabels builds the labelset for the RaftRangeReplica gauge.
 func (s *Store) rangeReplicaLabels(rd *rfpb.RangeDescriptor) prometheus.Labels {
+	partitionID := rd.GetPartitionId()
+	if partitionID == "" {
+		partitionID = keys.PartitionIDFromRangeStart(rd.GetStart())
+	}
+	if partitionID == "" {
+		if rd.GetRangeId() == 1 {
+			partitionID = "meta"
+		} else {
+			partitionID = "unknown"
+		}
+	}
 	return prometheus.Labels{
 		metrics.RaftRangeIDLabel:    strconv.FormatUint(rd.GetRangeId(), 10),
 		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
-		metrics.PartitionID:         partitionIDFromRangeStart(rd.GetStart()),
+		metrics.PartitionID:         partitionID,
 		metrics.ZoneLabel:           s.zone,
 	}
-}
-
-// partitionIDFromRangeStart parses the partition_id out of a range descriptor's
-// start key. Range data is keyed under "PT<partition_id>/..."; returns "" for
-// ranges with no partition prefix (e.g., the meta range).
-// TODO(go/b/7513): remove after we add partition to RangeDescriptor.
-func partitionIDFromRangeStart(key []byte) string {
-	rest, found := bytes.CutPrefix(key, []byte(filestore.PartitionDirectoryPrefix))
-	if !found {
-		return "unknown"
-	}
-	if before, _, ok := bytes.Cut(rest, []byte{'/'}); ok {
-		return string(before)
-	}
-	return "unknown"
 }
 
 func (s *Store) setupPartitions(ctx context.Context) {
