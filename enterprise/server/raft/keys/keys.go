@@ -3,8 +3,6 @@ package keys
 import (
 	"bytes"
 	"math"
-
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 )
 
 type Key []byte
