@@ -1695,6 +1695,8 @@ code .comment {
 }
 
 .dense .tab {
+  --tab-selected-color: var(--color-gray-700);
+
   margin-top: 0;
   padding: 12px 16px;
   border: 0;
@@ -1703,16 +1705,20 @@ code .comment {
   color: var(--color-text-emphasis);
 }
 
+.dark.dense .tab {
+  --tab-selected-color: var(--color-blue-gray-200);
+}
+
 .dense .tab.selected {
   background-color: transparent;
-  color: var(--color-gray-700);
+  color: var(--tab-selected-color);
   position: relative;
 }
 
 .dense .tab.selected:after {
   display: block;
   content: " ";
-  background-color: var(--color-gray-700);
+  background-color: var(--tab-selected-color);
   height: 4px;
   position: absolute;
   bottom: 0;
