@@ -941,7 +941,6 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			effectivePool = "default-pool"
 		}
 		aux.SchedulingMetadata = &scpb.SchedulingMetadata{
-			TaskSize: &scpb.TaskSize{EstimatedFreeDiskBytes: 1001},
 			MeasuredTaskSize: &scpb.TaskSize{
 				EstimatedMemoryBytes:   2001,
 				EstimatedMilliCpu:      2002,
@@ -1006,6 +1005,13 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		actionResult.ExecutionMetadata.EstimatedTaskSize = &scpb.TaskSize{
 			EstimatedMilliCpu:    1500,
 			EstimatedMemoryBytes: 10 * tasksize.GiB,
+		}
+	}
+	if test.publishMoreMetadata {
+		// md.EstimatedTaskSize is the source for executionProto.EstimatedFreeDiskBytes
+		// (execution_server.go:482) and for the live-path projection in updateUsage.
+		actionResult.ExecutionMetadata.EstimatedTaskSize = &scpb.TaskSize{
+			EstimatedFreeDiskBytes: 1001,
 		}
 	}
 	expectedExecuteResponse := &repb.ExecuteResponse{
