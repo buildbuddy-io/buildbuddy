@@ -1640,7 +1640,7 @@ func (rq *Queue) processPartitionTask(ctx context.Context, task *driverTask, act
 		err = rq.initializePartition(ctx, task.partitionTask.config)
 	case DriverAddReplica, DriverFinishReplicaRemoval, DriverNoop, DriverRebalanceLease, DriverRebalanceReplica, DriverRemoveDeadReplica, DriverRemoveReplica, DriverReplaceDeadReplica, DriverSplitRange, DriverSetPartitionID:
 		// This should not be called for range tasks
-		alert.UnexpectedEvent("unexpected-action-for-parition-task", "driver action %s for parition %q", task.key.partitionID)
+		alert.UnexpectedEvent("unexpected-action-for-partition-task", "driver action %s for partition %q", action, task.key.partitionID)
 	}
 	if err != nil {
 		rq.log.Errorf("failed to process partition task action %s (ID: %s): %s", action, task.key.partitionID, err)
