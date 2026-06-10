@@ -41,8 +41,8 @@ const (
 	blobChunkSize       = 256 * 1000 // 256 KB to match cachetools buffer size
 	pullerLRUMaxEntries = 1000
 
-	manifestCacheTTL        = 15 * time.Minute
-	manifestCacheMaxEntries = 1000
+	accessProofCacheTTL        = 15 * time.Minute
+	accessProofCacheMaxEntries = 1000
 )
 
 var (
@@ -63,10 +63,11 @@ type ociFetcherServer struct {
 	mu        sync.Mutex
 	pullerLRU lru.LRU[*pullerLRUEntry]
 
-	// manifestCache caches successful registry auth checks (HEAD requests) so that
-	// repeated FetchManifest calls for a cached digest do not hammer the registry.
-	// Entries expire after manifestCacheTTL.
-	manifestCache lru.LRU[struct{}]
+	// accessProofCache records repository+credentials pairs for which a
+	// registry access check recently succeeded. Pull authorization is
+	// repository-scoped, so one success lets every manifest and blob in the
+	// repo skip the registry for those credentials until the entry expires.
+	accessProofCache lru.LRU[struct{}]
 
 	// blobFetchGroup deduplicates concurrent blob fetch requests.
 	// Only one request fetches from upstream and writes to cache;
@@ -100,14 +101,14 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 	if err != nil {
 		return nil, status.InternalErrorf("error initializing puller cache: %s", err)
 	}
-	manifestCache, err := lru.New[struct{}](&lru.Config[struct{}]{
+	accessProofCache, err := lru.New[struct{}](&lru.Config[struct{}]{
 		SizeFn:     func(_ struct{}) int64 { return 1 },
-		MaxSize:    int64(manifestCacheMaxEntries),
-		TTL:        manifestCacheTTL,
+		MaxSize:    int64(accessProofCacheMaxEntries),
+		TTL:        accessProofCacheTTL,
 		ThreadSafe: true,
 	})
 	if err != nil {
-		return nil, status.InternalErrorf("error initializing manifest cache: %s", err)
+		return nil, status.InternalErrorf("error initializing access proof cache: %s", err)
 	}
 	return &ociFetcherServer{
 		allowedPrivateIPs: allowedPrivateIPs,
@@ -115,7 +116,7 @@ func NewServer(bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) 
 		bsClient:          bsClient,
 		acClient:          acClient,
 		pullerLRU:         pullerLRU,
-		manifestCache:     manifestCache,
+		accessProofCache:  accessProofCache,
 	}, nil
 }
 
@@ -154,18 +155,15 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		return err
 	}
 
-	err = s.fetchBlobFromCacheWithMetadataLookup(ctx, stream, digestRef, hash)
-	if err == nil {
-		return nil
-	}
-	if !status.IsNotFoundError(err) {
-		// It is possible this error occurred while writing to the stream.
-		// Since we do not know the state of the stream, it is not safe
-		// to write bytes to the stream past this point.
-		log.CtxWarningf(ctx, "Error fetching blob from cache: %s", err)
-		return err
-	}
 	if req.GetBypassRegistry() {
+		err := s.streamBlobFromCache(ctx, stream, digestRef.Context(), hash)
+		if err == nil {
+			return nil
+		}
+		if !status.IsNotFoundError(err) {
+			log.CtxWarningf(ctx, "Error fetching blob from cache: %s", err)
+			return err
+		}
 		return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", digestRef)
 	}
 	return s.dedupedFetchBlob(ctx, stream, digestRef, hash, req.GetCredentials())
@@ -186,15 +184,26 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 	if err != nil {
 		return nil, err
 	}
-	if resp, err := s.fetchBlobMetadataFromCache(ctx, digestRef, hash); err == nil {
-		return resp, nil
-	} else if !status.IsNotFoundError(err) {
-		log.CtxWarningf(ctx, "Error fetching blob metadata from cache: %s", err)
+	repo := digestRef.Context()
+
+	accessKey := repoAccessKey(repo, req.GetCredentials())
+	if req.GetBypassRegistry() || s.accessProofCache.Contains(accessKey) {
+		if resp, err := s.fetchBlobMetadataFromCache(ctx, digestRef, hash); err == nil {
+			return resp, nil
+		} else if !status.IsNotFoundError(err) {
+			log.CtxWarningf(ctx, "Error fetching blob metadata from cache: %s", err)
+		}
+		if req.GetBypassRegistry() {
+			return nil, status.NotFoundErrorf("bypassing registry, but blob metadata for %q not found in cache", digestRef)
+		}
 	}
-	if req.GetBypassRegistry() {
-		return nil, status.NotFoundErrorf("bypassing registry, but blob metadata for %q not found in cache", digestRef)
+
+	resp, err := s.fetchBlobMetadataFromRemote(ctx, digestRef, req.GetCredentials())
+	if err != nil {
+		return nil, err
 	}
-	return s.fetchBlobMetadataFromRemote(ctx, digestRef, req.GetCredentials())
+	s.accessProofCache.Add(accessKey, struct{}{})
+	return resp, nil
 }
 
 // FetchManifest returns an OCI manifest from the action cache if present,
@@ -244,7 +253,12 @@ func (s *ociFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.
 	if err != nil {
 		return nil, err
 	}
-	return s.fetchManifestMetadataFromRemote(ctx, imageRef, req.GetCredentials())
+	resp, err := s.fetchManifestMetadataFromRemote(ctx, imageRef, req.GetCredentials())
+	if err != nil {
+		return nil, err
+	}
+	s.accessProofCache.Add(repoAccessKey(imageRef.Context(), req.GetCredentials()), struct{}{})
+	return resp, nil
 }
 
 // validateBypassRegistry checks if bypass_registry is enabled and if so,
@@ -276,19 +290,12 @@ func parseBlobDigestRef(ref string) (gcrname.Digest, gcr.Hash, error) {
 	return digestRef, hash, nil
 }
 
-// fetchBlobFromCacheWithMetadataLookup attempts to fetch a blob from the cache and streams it directly to the gRPC response.
-// Returns nil if successful, NotFoundError if not in cache, or another error on failure.
-func (s *ociFetcherServer) fetchBlobFromCacheWithMetadataLookup(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef gcrname.Digest, hash gcr.Hash) error {
-	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, digestRef.Context(), hash)
+func (s *ociFetcherServer) streamBlobFromCache(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, repo gcrname.Repository, hash gcr.Hash) error {
+	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, repo, hash)
 	if err != nil {
 		return err
 	}
-	return s.fetchBlobFromCache(ctx, stream, hash, metadata.GetContentLength())
-}
-
-func (s *ociFetcherServer) fetchBlobFromCache(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, hash gcr.Hash, contentLength int64) error {
-	w := &grpcStreamWriter{stream: stream}
-	return ocicache.FetchBlobFromCache(ctx, w, s.bsClient, hash, contentLength)
+	return ocicache.FetchBlobFromCache(ctx, &grpcStreamWriter{stream: stream}, s.bsClient, hash, metadata.GetContentLength())
 }
 
 func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef gcrname.Digest, hash gcr.Hash, creds *rgpb.Credentials) error {
@@ -298,7 +305,37 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 	isLeader := false
 	contentLength, _, err := s.blobFetchGroup.Do(ctx, key, func(ctx context.Context) (int64, error) {
 		isLeader = true
-		return s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, creds, stream)
+
+		// Cached metadata proves the content-addressed blob exists; we only need
+		// to prove the caller may access the repo before serving it from cache.
+		metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, s.bsClient, s.acClient, repo, hash)
+		if err == nil {
+			if err := s.proveBlobAccess(ctx, digestRef, creds); err != nil {
+				return 0, err
+			}
+			contentLength := metadata.GetContentLength()
+			cacheWriter := &grpcStreamWriter{stream: stream}
+			err := ocicache.FetchBlobFromCache(ctx, cacheWriter, s.bsClient, hash, contentLength)
+			if err == nil {
+				return contentLength, nil
+			}
+			// Only recover if no bytes were streamed. Once bytes have been sent,
+			// falling back would corrupt the response by replaying from offset 0.
+			if cacheWriter.bytesWritten > 0 {
+				return 0, err
+			}
+			log.CtxWarningf(ctx, "Blob metadata was cached but reading blob %q from cache failed before streaming bytes; falling back to registry: %s", digestRef, err)
+		} else if !status.IsNotFoundError(err) {
+			log.CtxWarningf(ctx, "Error looking up blob metadata in cache; falling back to registry: %s", err)
+		}
+
+		// Cache miss: fetch from the registry, which proves access and writes
+		// the blob through to the cache.
+		size, err := s.fetchBlobFromRemoteWriteToCacheAndResponse(ctx, digestRef, repo, hash, creds, stream)
+		if err == nil {
+			s.accessProofCache.Add(repoAccessKey(repo, creds), struct{}{})
+		}
+		return size, err
 	})
 
 	if isLeader {
@@ -309,7 +346,7 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 		recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
 		return err
 	}
-	err = s.fetchBlobFromCache(ctx, stream, hash, contentLength)
+	err = ocicache.FetchBlobFromCache(ctx, &grpcStreamWriter{stream: stream}, s.bsClient, hash, contentLength)
 	recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
 	return err
 }
@@ -469,8 +506,8 @@ func (s *ociFetcherServer) resolveManifestDigest(ctx context.Context, imageRef g
 // proveManifestAccess checks that the caller's credentials allow accessing
 // the given manifest ref in the remote registry.
 func (s *ociFetcherServer) proveManifestAccess(ctx context.Context, imageRef gcrname.Reference, creds *rgpb.Credentials) error {
-	key := manifestCacheKey(imageRef, creds)
-	if s.manifestCache.Contains(key) {
+	repo := imageRef.Context()
+	if s.accessProofCache.Contains(repoAccessKey(repo, creds)) {
 		return nil
 	}
 	if _, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*gcr.Descriptor, error) {
@@ -478,7 +515,21 @@ func (s *ociFetcherServer) proveManifestAccess(ctx context.Context, imageRef gcr
 	}); err != nil {
 		return err
 	}
-	s.manifestCache.Add(key, struct{}{})
+	s.accessProofCache.Add(repoAccessKey(repo, creds), struct{}{})
+	return nil
+}
+
+// proveBlobAccess checks that the caller's credentials allow accessing the
+// blob's repository in the remote registry (via a metadata HEAD).
+func (s *ociFetcherServer) proveBlobAccess(ctx context.Context, digestRef gcrname.Digest, creds *rgpb.Credentials) error {
+	repo := digestRef.Context()
+	if s.accessProofCache.Contains(repoAccessKey(repo, creds)) {
+		return nil
+	}
+	if _, err := s.fetchBlobMetadataFromRemote(ctx, digestRef, creds); err != nil {
+		return err
+	}
+	s.accessProofCache.Add(repoAccessKey(repo, creds), struct{}{})
 	return nil
 }
 
@@ -489,6 +540,7 @@ func (s *ociFetcherServer) resolveTagToDigest(ctx context.Context, imageRef gcrn
 	if err != nil {
 		return gcr.Hash{}, err
 	}
+	s.accessProofCache.Add(repoAccessKey(imageRef.Context(), creds), struct{}{})
 	hash, err := gcr.NewHash(desc.Digest.String())
 	if err != nil {
 		return gcr.Hash{}, status.InvalidArgumentErrorf("invalid resolved digest %q: %s", desc.Digest.String(), err)
@@ -602,11 +654,14 @@ func (s *ociFetcherServer) evictPuller(imageRef gcrname.Reference, creds *rgpb.C
 	s.mu.Unlock()
 }
 
-func manifestCacheKey(ref gcrname.Reference, creds *rgpb.Credentials) string {
+// repoAccessKey returns the access-proof cache key for the given repository and
+// credentials. Registry pull authorization is repository-scoped, so the key is
+// deliberately not specific to any one manifest or blob digest.
+func repoAccessKey(repo gcrname.Repository, creds *rgpb.Credentials) string {
 	if creds == nil {
-		return hash.Strings(ref.String(), "", "")
+		return hash.Strings(repo.Name(), "", "")
 	}
-	return hash.Strings(ref.String(), creds.GetUsername(), creds.GetPassword())
+	return hash.Strings(repo.Name(), creds.GetUsername(), creds.GetPassword())
 }
 
 func pullerKey(ref gcrname.Reference, creds *rgpb.Credentials) string {
@@ -673,13 +728,15 @@ func withPullerRetry[T any](
 }
 
 type grpcStreamWriter struct {
-	stream ofpb.OCIFetcher_FetchBlobServer
+	stream       ofpb.OCIFetcher_FetchBlobServer
+	bytesWritten int64
 }
 
 func (w *grpcStreamWriter) Write(p []byte) (int, error) {
 	if err := w.stream.Send(&ofpb.FetchBlobResponse{Data: p}); err != nil {
 		return 0, status.WrapError(err, "send")
 	}
+	w.bytesWritten += int64(len(p))
 	return len(p), nil
 }
 

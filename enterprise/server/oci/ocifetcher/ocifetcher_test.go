@@ -1,6 +1,7 @@
 package ocifetcher_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
@@ -23,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	gcrname "github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -187,6 +190,22 @@ func (f failingByteStreamClient) QueryWriteStatus(context.Context, *bspb.QueryWr
 	return nil, status.NotFoundError("not found")
 }
 
+// missingBlobByteStreamClient delegates all operations except reads for a
+// specific blob digest, allowing tests to simulate AC metadata surviving after
+// the blob bytes are evicted from CAS.
+type missingBlobByteStreamClient struct {
+	bspb.ByteStreamClient
+
+	missingHash string
+}
+
+func (m missingBlobByteStreamClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	if strings.Contains(req.GetResourceName(), m.missingHash) {
+		return nil, status.NotFoundError("blob bytes evicted")
+	}
+	return m.ByteStreamClient.Read(ctx, req, opts...)
+}
+
 // notFoundActionCacheClient always returns NotFound.
 type notFoundActionCacheClient struct {
 	repb.ActionCacheClient
@@ -198,6 +217,14 @@ func (n notFoundActionCacheClient) GetActionResult(context.Context, *repb.GetAct
 
 func (n notFoundActionCacheClient) UpdateActionResult(context.Context, *repb.UpdateActionResultRequest, ...grpc.CallOption) (*repb.ActionResult, error) {
 	return nil, status.NotFoundError("not found")
+}
+
+type failingGetActionCacheClient struct {
+	repb.ActionCacheClient
+}
+
+func (f failingGetActionCacheClient) GetActionResult(context.Context, *repb.GetActionResultRequest, ...grpc.CallOption) (*repb.ActionResult, error) {
+	return nil, status.InternalError("action cache lookup failed")
 }
 
 // blockingInterceptor blocks HTTP requests until signaled.
@@ -260,6 +287,29 @@ func layerData(t *testing.T, layer v1.Layer) []byte {
 	data, err := io.ReadAll(rc)
 	require.NoError(t, err)
 	return data
+}
+
+func seedBlobCache(t *testing.T, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref string, data []byte, mediaType string) {
+	digestRef, ok := nameRef(t, ref).(gcrname.Digest)
+	require.True(t, ok, "expected digest ref")
+	hash, err := v1.NewHash(digestRef.DigestStr())
+	require.NoError(t, err)
+	require.NoError(t, ocicache.WriteBlobToCache(
+		context.Background(),
+		bytes.NewReader(data),
+		bsClient,
+		acClient,
+		digestRef.Context(),
+		hash,
+		mediaType,
+		int64(len(data)),
+	))
+}
+
+func nameRef(t *testing.T, ref string) gcrname.Reference {
+	nameRef, err := gcrname.ParseReference(ref)
+	require.NoError(t, err)
+	return nameRef
 }
 
 func TestServerHappyPath(t *testing.T) {
@@ -396,7 +446,9 @@ func TestServerHappyPath(t *testing.T) {
 			blobRequests := counter.Snapshot()[http.MethodGet+" /v2/test-image/blobs/"+digest.String()]
 			require.Greater(t, blobRequests, 0, "expected at least one blob request to registry on cache miss")
 
-			// Second fetch - cache hit, should NOT hit registry
+			// Second fetch - cache hit. The first fetch already proved
+			// registry access for these credentials, so this is served
+			// from cache without touching the registry.
 			counter.Reset()
 			stream = &mockFetchBlobServer{ctx: context.Background()}
 			err = server.FetchBlob(&ofpb.FetchBlobRequest{
@@ -406,7 +458,6 @@ func TestServerHappyPath(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, expectedData, stream.collectData())
 
-			// Verify registry was NOT hit (served from cache)
 			assertRequests(t, counter, map[string]int{})
 		})
 	}
@@ -480,6 +531,106 @@ func TestServerMissingAndInvalidCredentials(t *testing.T) {
 			counter.Reset()
 			stream := &mockFetchBlobServer{ctx: context.Background()}
 			err = server.FetchBlob(&ofpb.FetchBlobRequest{
+				Ref:         imageName + "@" + layerDigest.String(),
+				Credentials: cc.requestCreds,
+			}, stream)
+			require.Error(t, err)
+			require.True(t, status.IsUnauthenticatedError(err), "FetchBlob: expected Unauthenticated, got: %v", err)
+		})
+	}
+}
+
+func TestPrivateRegistryCacheHitsRequireValidCredentials(t *testing.T) {
+	registryCreds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
+	validRequestCreds := &rgpb.Credentials{Username: "testuser", Password: "testpass"}
+
+	reg, counter := setupRegistry(t, registryCreds, nil)
+	imageName, img := reg.PushNamedImage(t, "test-image", registryCreds)
+	manifestDigest, _, _ := imageMetadata(t, img)
+	expectedManifest, err := img.RawManifest()
+	require.NoError(t, err)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	layerDigest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedBlob := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	server := newTestServerWithCache(t, bsClient, acClient)
+
+	// Populate manifest, blob, and blob metadata cache entries using credentials
+	// that are valid for the private registry.
+	counter.Reset()
+	manifestResp, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
+		Ref:         imageName + "@" + manifestDigest,
+		Credentials: validRequestCreds,
+	})
+	require.NoError(t, err)
+	require.Equal(t, expectedManifest, manifestResp.GetManifest())
+	require.Greater(t, counter.Snapshot()[http.MethodGet+" /v2/test-image/manifests/"+manifestDigest], 0)
+
+	counter.Reset()
+	stream := &mockFetchBlobServer{ctx: context.Background()}
+	err = server.FetchBlob(&ofpb.FetchBlobRequest{
+		Ref:         imageName + "@" + layerDigest.String(),
+		Credentials: validRequestCreds,
+	}, stream)
+	require.NoError(t, err)
+	require.Equal(t, expectedBlob, stream.collectData())
+	require.Greater(t, counter.Snapshot()[http.MethodGet+" /v2/test-image/blobs/"+layerDigest.String()], 0)
+
+	credsCases := []struct {
+		name         string
+		requestCreds *rgpb.Credentials
+	}{
+		{
+			name:         "MissingCredentials",
+			requestCreds: nil,
+		},
+		{
+			name:         "InvalidCredentials",
+			requestCreds: &rgpb.Credentials{Username: "wrong", Password: "wrong"},
+		},
+	}
+
+	for _, cc := range credsCases {
+		t.Run("FetchManifestMetadata/"+cc.name, func(t *testing.T) {
+			counter.Reset()
+			_, err := server.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{
+				Ref:         imageName + "@" + manifestDigest,
+				Credentials: cc.requestCreds,
+			})
+			require.Error(t, err)
+			require.True(t, status.IsUnauthenticatedError(err), "FetchManifestMetadata: expected Unauthenticated, got: %v", err)
+		})
+
+		t.Run("FetchManifest/"+cc.name, func(t *testing.T) {
+			counter.Reset()
+			_, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{
+				Ref:         imageName + "@" + manifestDigest,
+				Credentials: cc.requestCreds,
+			})
+			require.Error(t, err)
+			require.True(t, status.IsUnauthenticatedError(err), "FetchManifest: expected Unauthenticated, got: %v", err)
+		})
+
+		t.Run("FetchBlobMetadata/"+cc.name, func(t *testing.T) {
+			counter.Reset()
+			_, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
+				Ref:         imageName + "@" + layerDigest.String(),
+				Credentials: cc.requestCreds,
+			})
+			require.Error(t, err)
+			require.True(t, status.IsUnauthenticatedError(err), "FetchBlobMetadata: expected Unauthenticated, got: %v", err)
+		})
+
+		t.Run("FetchBlob/"+cc.name, func(t *testing.T) {
+			counter.Reset()
+			stream := &mockFetchBlobServer{ctx: context.Background()}
+			err := server.FetchBlob(&ofpb.FetchBlobRequest{
 				Ref:         imageName + "@" + layerDigest.String(),
 				Credentials: cc.requestCreds,
 			}, stream)
@@ -796,8 +947,9 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedLayerData, stream.collectData())
 
-	// FetchBlob: second fetch serves from cache (no network calls), even with short timeout
-	// Since blob is cached, there's no network call to timeout, so this succeeds instantly
+	// FetchBlob: second fetch serves entirely from cache. Access to this repo
+	// was already proven (by the earlier FetchManifest), so no registry calls
+	// are made even with a short timeout.
 	counter.Reset()
 	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Millisecond)
 	stream = &mockFetchBlobServer{ctx: ctx}
@@ -805,7 +957,6 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 	cancel()
 	require.NoError(t, err, "cached blob should serve without network calls")
 	require.Equal(t, expectedLayerData, stream.collectData())
-	// Verify no registry requests were made (served from cache)
 	assertRequests(t, counter, map[string]int{})
 }
 
@@ -1005,7 +1156,9 @@ func TestServerBypassRegistry(t *testing.T) {
 		}, stream)
 		require.NoError(t, err)
 
-		// Now fetch metadata - should be served from cache
+		// Now fetch metadata - the preceding FetchBlob already proved registry
+		// access for these credentials, so this is served from cache without
+		// contacting the registry.
 		counter.Reset()
 		resp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{
 			Ref: imageName + "@" + digest.String(),
@@ -1014,7 +1167,6 @@ func TestServerBypassRegistry(t *testing.T) {
 		require.Equal(t, expectedSize, resp.GetSize())
 		require.Equal(t, expectedMediaType, resp.GetMediaType())
 
-		// Verify no registry requests were made (served from cache)
 		assertRequests(t, counter, map[string]int{})
 	})
 
@@ -1251,6 +1403,216 @@ func TestServerBypassRegistry(t *testing.T) {
 	})
 }
 
+func TestServerCacheAccessProof(t *testing.T) {
+	t.Run("FetchBlobMetadata/CacheHit/UnprovenAccessMakesHead", func(t *testing.T) {
+		reg, counter := setupRegistry(t, nil, nil)
+		imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+		layers, err := img.Layers()
+		require.NoError(t, err)
+		require.NotEmpty(t, layers)
+
+		layer := layers[0]
+		digest, err := layer.Digest()
+		require.NoError(t, err)
+		expectedSize, expectedMediaType := layerMetadata(t, layer)
+		expectedData := layerData(t, layer)
+
+		_, bsClient, acClient := setupCacheEnv(t)
+		ref := imageName + "@" + digest.String()
+		cachedMediaType := "application/vnd.buildbuddy.cached.layer"
+		seedBlobCache(t, bsClient, acClient, ref, expectedData, cachedMediaType)
+
+		server := newTestServerWithCache(t, bsClient, acClient)
+		counter.Reset()
+		resp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: ref})
+		require.NoError(t, err)
+		require.Equal(t, expectedSize, resp.GetSize())
+		require.Equal(t, expectedMediaType, resp.GetMediaType())
+		require.NotEqual(t, cachedMediaType, resp.GetMediaType(), "unproven access should fall through to remote metadata instead of returning cached metadata")
+
+		blobPath := "/v2/test-image/blobs/" + digest.String()
+		assertRequests(t, counter, map[string]int{
+			http.MethodGet + " /v2/":         1,
+			http.MethodHead + " " + blobPath: 1,
+		})
+	})
+
+	t.Run("FetchBlobMetadata/CacheHit/ProvenAccessUsesActionCache", func(t *testing.T) {
+		reg, counter := setupRegistry(t, nil, nil)
+		imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+		layers, err := img.Layers()
+		require.NoError(t, err)
+		require.NotEmpty(t, layers)
+
+		layer := layers[0]
+		digest, err := layer.Digest()
+		require.NoError(t, err)
+		expectedData := layerData(t, layer)
+
+		_, bsClient, acClient := setupCacheEnv(t)
+		server := newTestServerWithCache(t, bsClient, acClient)
+		ref := imageName + "@" + digest.String()
+		cachedMediaType := "application/vnd.buildbuddy.cached.layer"
+		seedBlobCache(t, bsClient, acClient, ref, expectedData, cachedMediaType)
+
+		counter.Reset()
+		_, err = server.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+		require.NoError(t, err)
+		assertRequests(t, counter, map[string]int{
+			http.MethodGet + " /v2/":                             1,
+			http.MethodHead + " /v2/test-image/manifests/latest": 1,
+		})
+
+		counter.Reset()
+		resp, err := server.FetchBlobMetadata(context.Background(), &ofpb.FetchBlobMetadataRequest{Ref: ref})
+		require.NoError(t, err)
+		require.Equal(t, int64(len(expectedData)), resp.GetSize())
+		require.Equal(t, cachedMediaType, resp.GetMediaType())
+		assertRequests(t, counter, map[string]int{})
+	})
+
+	t.Run("FetchManifest/CacheHit/DigestRef/UnprovenAccessMakesHead", func(t *testing.T) {
+		reg, counter := setupRegistry(t, nil, nil)
+		imageName, img := reg.PushNamedImage(t, "test-image", nil)
+		digest, _, _ := imageMetadata(t, img)
+		expectedManifest, err := img.RawManifest()
+		require.NoError(t, err)
+
+		_, bsClient, acClient := setupCacheEnv(t)
+		server := newTestServerWithCache(t, bsClient, acClient)
+		ref := imageName + "@" + digest
+
+		resp, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: ref})
+		require.NoError(t, err)
+		require.Equal(t, expectedManifest, resp.GetManifest())
+
+		// Reuse the cache with a fresh server so access is not yet proven in memory.
+		server = newTestServerWithCache(t, bsClient, acClient)
+		counter.Reset()
+		resp, err = server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: ref})
+		require.NoError(t, err)
+		require.Equal(t, expectedManifest, resp.GetManifest())
+
+		manifestPath := "/v2/test-image/manifests/" + digest
+		assertRequests(t, counter, map[string]int{
+			http.MethodGet + " /v2/":             1,
+			http.MethodHead + " " + manifestPath: 1,
+		})
+	})
+
+	t.Run("FetchManifestMetadata/ProvesAccessForBlobCacheHit", func(t *testing.T) {
+		reg, counter := setupRegistry(t, nil, nil)
+		imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+		layers, err := img.Layers()
+		require.NoError(t, err)
+		require.NotEmpty(t, layers)
+
+		layer := layers[0]
+		digest, err := layer.Digest()
+		require.NoError(t, err)
+		expectedData := layerData(t, layer)
+
+		_, bsClient, acClient := setupCacheEnv(t)
+		server := newTestServerWithCache(t, bsClient, acClient)
+		blobRef := imageName + "@" + digest.String()
+
+		stream := &mockFetchBlobServer{ctx: context.Background()}
+		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef}, stream)
+		require.NoError(t, err)
+		require.Equal(t, expectedData, stream.collectData())
+
+		server = newTestServerWithCache(t, bsClient, acClient)
+		counter.Reset()
+		_, err = server.FetchManifestMetadata(context.Background(), &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+		require.NoError(t, err)
+		assertRequests(t, counter, map[string]int{
+			http.MethodGet + " /v2/":                             1,
+			http.MethodHead + " /v2/test-image/manifests/latest": 1,
+		})
+
+		counter.Reset()
+		stream = &mockFetchBlobServer{ctx: context.Background()}
+		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef}, stream)
+		require.NoError(t, err)
+		require.Equal(t, expectedData, stream.collectData())
+		assertRequests(t, counter, map[string]int{})
+	})
+
+	t.Run("FetchBlob/MetadataCacheLookupErrorFallsBackToRegistry", func(t *testing.T) {
+		reg, counter := setupRegistry(t, nil, nil)
+		imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+		layers, err := img.Layers()
+		require.NoError(t, err)
+		require.NotEmpty(t, layers)
+
+		layer := layers[0]
+		digest, err := layer.Digest()
+		require.NoError(t, err)
+		expectedData := layerData(t, layer)
+
+		_, bsClient, acClient := setupCacheEnv(t)
+		server := newTestServerWithCache(t, bsClient, failingGetActionCacheClient{ActionCacheClient: acClient})
+		ref := imageName + "@" + digest.String()
+
+		counter.Reset()
+		stream := &mockFetchBlobServer{ctx: context.Background()}
+		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: ref}, stream)
+		require.NoError(t, err)
+		require.Equal(t, expectedData, stream.collectData())
+
+		blobPath := "/v2/test-image/blobs/" + digest.String()
+		assertRequests(t, counter, map[string]int{
+			http.MethodGet + " /v2/":         1,
+			http.MethodHead + " " + blobPath: 1,
+			http.MethodGet + " " + blobPath:  1,
+		})
+	})
+
+	t.Run("FetchBlob/MetadataCacheHitBlobCacheMissFallsBackToRegistry", func(t *testing.T) {
+		reg, counter := setupRegistry(t, nil, nil)
+		imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+		layers, err := img.Layers()
+		require.NoError(t, err)
+		require.NotEmpty(t, layers)
+
+		layer := layers[0]
+		digest, err := layer.Digest()
+		require.NoError(t, err)
+		expectedData := layerData(t, layer)
+
+		_, bsClient, acClient := setupCacheEnv(t)
+		server := newTestServerWithCache(t, bsClient, acClient)
+		ref := imageName + "@" + digest.String()
+
+		stream := &mockFetchBlobServer{ctx: context.Background()}
+		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: ref}, stream)
+		require.NoError(t, err)
+		require.Equal(t, expectedData, stream.collectData())
+
+		server = newTestServerWithCache(t, missingBlobByteStreamClient{
+			ByteStreamClient: bsClient,
+			missingHash:      digest.Hex,
+		}, acClient)
+		counter.Reset()
+		stream = &mockFetchBlobServer{ctx: context.Background()}
+		err = server.FetchBlob(&ofpb.FetchBlobRequest{Ref: ref}, stream)
+		require.NoError(t, err)
+		require.Equal(t, expectedData, stream.collectData())
+
+		blobPath := "/v2/test-image/blobs/" + digest.String()
+		assertRequests(t, counter, map[string]int{
+			http.MethodGet + " /v2/":         1,
+			http.MethodHead + " " + blobPath: 2,
+			http.MethodGet + " " + blobPath:  1,
+		})
+	})
+}
+
 // runConcurrentFetchBlob runs numRequests concurrent FetchBlob calls and returns results.
 func runConcurrentFetchBlob(
 	t *testing.T,
@@ -1331,8 +1693,8 @@ func TestFetchBlobSingleflightHappyPath(t *testing.T) {
 	}
 }
 
-// TestFetchBlobSingleflightCacheHit ensures concurrent callers hit the cache and do not
-// touch the registry when the blob is already cached.
+// TestFetchBlobSingleflightCacheHit ensures concurrent callers serve from the
+// blob cache without contacting the registry once access has been proven.
 func TestFetchBlobSingleflightCacheHit(t *testing.T) {
 	const numRequests = 10
 
