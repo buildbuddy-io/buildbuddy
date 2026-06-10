@@ -35,3 +35,53 @@ index 9d0a677..ff49cc0 100644
  }
  
  type buildifier struct {
+diff --git a/api_proto/BUILD.bazel b/api_proto/BUILD.bazel
+index 3ecf1b4..7d1efce 100644
+--- a/api_proto/BUILD.bazel
++++ b/api_proto/BUILD.bazel
+@@ -1,4 +1,4 @@
+ load("@io_bazel_rules_go//go:def.bzl", "go_library")
+ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+-load("@rules_proto//proto:defs.bzl", "proto_library")
++load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+ load("//build:build_defs.bzl", "go_proto_checkedin_test")
+diff --git a/build_proto/BUILD.bazel b/build_proto/BUILD.bazel
+index 646ddc2..6b08b47 100644
+--- a/build_proto/BUILD.bazel
++++ b/build_proto/BUILD.bazel
+@@ -1,4 +1,4 @@
+ load("@io_bazel_rules_go//go:def.bzl", "go_library")
+ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+-load("@rules_proto//proto:defs.bzl", "proto_library")
++load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+ load("//build:build_defs.bzl", "go_proto_checkedin_test")
+diff --git a/deps_proto/BUILD.bazel b/deps_proto/BUILD.bazel
+index 2ee4afa..60c9be7 100644
+--- a/deps_proto/BUILD.bazel
++++ b/deps_proto/BUILD.bazel
+@@ -1,4 +1,4 @@
+ load("@io_bazel_rules_go//go:def.bzl", "go_library")
+ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+-load("@rules_proto//proto:defs.bzl", "proto_library")
++load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+ load("//build:build_defs.bzl", "go_proto_checkedin_test")
+diff --git a/extra_actions_base_proto/BUILD.bazel b/extra_actions_base_proto/BUILD.bazel
+index 477aa12..437cad2 100644
+--- a/extra_actions_base_proto/BUILD.bazel
++++ b/extra_actions_base_proto/BUILD.bazel
+@@ -1,4 +1,4 @@
+ load("@io_bazel_rules_go//go:def.bzl", "go_library")
+ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+-load("@rules_proto//proto:defs.bzl", "proto_library")
++load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+ load("//build:build_defs.bzl", "go_proto_checkedin_test")
+diff --git a/warn/docs/BUILD.bazel b/warn/docs/BUILD.bazel
+index 3d40918..c3cb979 100644
+--- a/warn/docs/BUILD.bazel
++++ b/warn/docs/BUILD.bazel
+@@ -1,4 +1,4 @@
+ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+-load("@rules_proto//proto:defs.bzl", "proto_library")
++load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+ load(":build_defs.bzl", "documentation")
