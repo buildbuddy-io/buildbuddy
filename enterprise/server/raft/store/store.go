@@ -926,10 +926,6 @@ func (s *Store) Start() error {
 		return nil
 	})
 	s.eg.Go(func() error {
-		s.backfillPartitionIDs(s.egCtx)
-		return nil
-	})
-	s.eg.Go(func() error {
 		s.refreshMetrics(s.egCtx)
 		return nil
 	})
@@ -2585,44 +2581,6 @@ func (s *Store) updateStoreUsageTag(ctx context.Context) {
 			default:
 				break
 			}
-		}
-	}
-}
-
-// backfillPartitionIDs listens for range-lease-acquired events and persists
-// RangeDescriptor.PartitionId for the leased range if it is missing (e.g. for
-// ranges created before the field existed). Only the lease holder may propose
-// the descriptor update, which is why the work is triggered here.
-func (s *Store) backfillPartitionIDs(ctx context.Context) {
-	eventsCh := s.AddEventListener("backfillPartitionIDs")
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case e := <-eventsCh:
-			if e.EventType() != events.EventRangeLeaseAcquired {
-				continue
-			}
-			rangeEvent, ok := e.(events.RangeEvent)
-			if !ok {
-				continue
-			}
-			old := s.lookupRange(rangeEvent.RangeID)
-			if old == nil || old.GetPartitionId() != "" {
-				continue
-			}
-			partitionID := keys.PartitionIDFromRangeStart(old.GetStart())
-			if partitionID == "" {
-				continue
-			}
-			new := proto.Clone(old).(*rfpb.RangeDescriptor)
-			new.PartitionId = partitionID
-			new.Generation = old.GetGeneration() + 1
-			if err := s.UpdateRangeDescriptor(ctx, old, new); err != nil {
-				s.log.Warningf("backfill partition_id for range %d failed: %s", old.GetRangeId(), err)
-				continue
-			}
-			s.log.Infof("backfilled partition_id=%q on range %d", partitionID, old.GetRangeId())
 		}
 	}
 }

@@ -36,8 +36,7 @@ func (t EventType) String() string {
 }
 
 type RangeEvent struct {
-	Type    EventType
-	RangeID uint64
+	Type EventType
 }
 
 func (r RangeEvent) EventType() EventType {
@@ -47,7 +46,7 @@ func (r RangeEvent) EventType() EventType {
 func (r RangeEvent) String() string {
 	switch r.Type {
 	case EventRangeLeaseAcquired, EventRangeLeaseDropped:
-		return fmt.Sprintf("%s for range ID %d", r.Type, r.RangeID)
+		return r.Type.String()
 	default:
 		return fmt.Sprintf("unknown event type: %s", r.Type)
 	}

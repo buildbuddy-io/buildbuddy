@@ -37,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/storemap"
@@ -47,6 +48,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
@@ -93,6 +95,11 @@ const (
 	DriverReplaceDeadReplica
 	DriverRebalanceReplica
 	DriverRebalanceLease
+	// DriverSetPartitionID backfills RangeDescriptor.PartitionId on ranges
+	// created before the field existed. Lowest priority — only runs when no
+	// other action is needed for the range.
+	// TODO(go/b/7513): remove once no descriptors are missing partition_id.
+	DriverSetPartitionID
 	// Partition-level actions
 	DriverInitializePartition
 )
@@ -167,6 +174,8 @@ func (a DriverAction) Priority() float64 {
 		return 200
 	case DriverRebalanceReplica, DriverRebalanceLease, DriverNoop:
 		return 0
+	case DriverSetPartitionID:
+		return -100
 	default:
 		alert.UnexpectedEvent("unknown-driver-action", "unknown driver action %s", a)
 		return -1
@@ -195,6 +204,8 @@ func (a DriverAction) String() string {
 		return "no-op"
 	case DriverInitializePartition:
 		return "initialize-partition"
+	case DriverSetPartitionID:
+		return "set-partition-id"
 	default:
 		return "unknown"
 	}
@@ -218,6 +229,7 @@ type IStore interface {
 	NHID() string
 	ReserveRangeIDs(ctx context.Context, n int) ([]uint64, error)
 	InitializeShardsForPartition(ctx context.Context, nodeGrpcAddrs map[string]string, partition disk.Partition) error
+	UpdateRangeDescriptor(ctx context.Context, old, new *rfpb.RangeDescriptor) error
 }
 
 type IClient interface {
@@ -638,6 +650,13 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *rangeTask)
 		return action, action.Priority()
 	}
 
+	// Lowest-priority backfill: if partition_id is missing but derivable from
+	// the start key, write it to the descriptor. See [DriverSetPartitionID].
+	if rd.GetPartitionId() == "" && keys.PartitionIDFromRangeStart(rd.GetStart()) != "" {
+		action = DriverSetPartitionID
+		return action, action.Priority()
+	}
+
 	action = DriverNoop
 	return action, action.Priority()
 }
@@ -940,6 +959,12 @@ type change struct {
 	removeDataOp         *removeDataOp
 	splitOp              *rfpb.SplitRangeRequest
 	transferLeadershipOp *rfpb.TransferLeadershipRequest
+	setPartitionIDOp     *setPartitionIDOp
+}
+
+type setPartitionIDOp struct {
+	old *rfpb.RangeDescriptor
+	new *rfpb.RangeDescriptor
 }
 
 func (rq *Queue) finishReplicaRemoval(rd *rfpb.RangeDescriptor) *change {
@@ -959,6 +984,22 @@ func (rq *Queue) splitRange(rd *rfpb.RangeDescriptor) *change {
 		splitOp: &rfpb.SplitRangeRequest{
 			Header: header.New(rd, rd.GetReplicas()[0], rfpb.Header_LINEARIZABLE),
 			Range:  rd,
+		},
+	}
+}
+
+func (rq *Queue) setPartitionID(rd *rfpb.RangeDescriptor) *change {
+	partitionID := keys.PartitionIDFromRangeStart(rd.GetStart())
+	if partitionID == "" {
+		return nil
+	}
+	newRD := proto.Clone(rd).(*rfpb.RangeDescriptor)
+	newRD.PartitionId = partitionID
+	newRD.Generation = rd.GetGeneration() + 1
+	return &change{
+		setPartitionIDOp: &setPartitionIDOp{
+			old: rd,
+			new: newRD,
 		},
 	}
 }
@@ -1503,6 +1544,13 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 		}
 		rq.log.Infof("TransferLeadershipRequest finished: %+v", change.transferLeadershipOp)
 	}
+	if op := change.setPartitionIDOp; op != nil {
+		if err := rq.store.UpdateRangeDescriptor(ctx, op.old, op.new); err != nil {
+			rq.log.Errorf("UpdateRangeDescriptor for partition_id backfill on range %d err: %s", op.old.GetRangeId(), err)
+			return err
+		}
+		rq.log.Infof("Backfilled partition_id=%q on range %d", op.new.GetPartitionId(), op.old.GetRangeId())
+	}
 	return nil
 }
 
@@ -1539,6 +1587,8 @@ func (rq *Queue) processRangeTask(ctx context.Context, task *driverTask, action 
 		change = rq.rebalanceReplica(rd, repl)
 	case DriverRebalanceLease:
 		change = rq.rebalanceLease(ctx, rd, repl)
+	case DriverSetPartitionID:
+		change = rq.setPartitionID(rd)
 	case DriverInitializePartition:
 		// This should not be called for range tasks
 		alert.UnexpectedEvent("unexpected-action-for-range-task", "driver action %s for range_id: %q", action, rangeID)
@@ -1588,7 +1638,7 @@ func (rq *Queue) processPartitionTask(ctx context.Context, task *driverTask, act
 	switch action {
 	case DriverInitializePartition:
 		err = rq.initializePartition(ctx, task.partitionTask.config)
-	case DriverAddReplica, DriverFinishReplicaRemoval, DriverNoop, DriverRebalanceLease, DriverRebalanceReplica, DriverRemoveDeadReplica, DriverRemoveReplica, DriverReplaceDeadReplica, DriverSplitRange:
+	case DriverAddReplica, DriverFinishReplicaRemoval, DriverNoop, DriverRebalanceLease, DriverRebalanceReplica, DriverRemoveDeadReplica, DriverRemoveReplica, DriverReplaceDeadReplica, DriverSplitRange, DriverSetPartitionID:
 		// This should not be called for range tasks
 		alert.UnexpectedEvent("unexpected-action-for-parition-task", "driver action %s for parition %q", task.key.partitionID)
 	}
