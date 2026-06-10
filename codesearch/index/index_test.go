@@ -1,6 +1,7 @@
 package index
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"slices"
@@ -628,7 +629,7 @@ func TestSparseNgramFrequenciesArePersisted(t *testing.T) {
 	require.NoError(t, w.AddDocument(doc))
 	require.NoError(t, w.Flush())
 
-	plBytes, closer, err := db.Get([]byte("testns:gra:abc:content"))
+	plBytes, closer, err := db.Get(postingListKey("testns", "abc", "content"))
 	require.NoError(t, err)
 	defer closer.Close()
 
@@ -669,7 +670,7 @@ func TestSparseNgramFrequenciesAcrossMultipleDocs(t *testing.T) {
 	}
 	require.NoError(t, w.Flush())
 
-	plBytes, closer, err := db.Get([]byte("testns:gra:abc:content"))
+	plBytes, closer, err := db.Get(postingListKey("testns", "abc", "content"))
 	require.NoError(t, err)
 	defer closer.Close()
 
@@ -689,6 +690,191 @@ func TestSparseNgramFrequenciesAcrossMultipleDocs(t *testing.T) {
 		docID := uint64(i + 1)
 		assert.Equal(t, d.wantTF, roList.Frequency(docID), "readonly docID=%d (%s)", docID, d.id)
 	}
+}
+
+type tfEntry struct {
+	docID uint64
+	freq  uint32
+}
+
+func marshalPostings(t *testing.T, entries []tfEntry) []byte {
+	t.Helper()
+	pl := posting.NewMergeList()
+	for _, e := range entries {
+		pl.AddWithFrequency(e.docID, e.freq)
+	}
+	buf, err := pl.Marshal()
+	require.NoError(t, err)
+	return buf
+}
+
+// mergeValues runs operands through the pebble merger the same way pebble
+// does: the first operand seeds the merger, the rest arrive via MergeNewer.
+func mergeValues(t *testing.T, first []byte, rest ...[]byte) []byte {
+	t.Helper()
+	m, err := initRoaringMerger([]byte("testkey"), first)
+	require.NoError(t, err)
+	for _, v := range rest {
+		require.NoError(t, m.MergeNewer(v))
+	}
+	out, closer, err := m.Finish(true)
+	require.NoError(t, err)
+	if closer != nil {
+		defer closer.Close()
+	}
+	return out
+}
+
+func requireFrequencies(t *testing.T, plBytes []byte, want []tfEntry) {
+	t.Helper()
+	wantIDs := make([]uint64, len(want))
+	for i, e := range want {
+		wantIDs[i] = e.docID
+	}
+
+	pl, err := posting.Unmarshal(plBytes)
+	require.NoError(t, err)
+	assert.Equal(t, wantIDs, pl.ToArray())
+	for _, e := range want {
+		assert.Equal(t, e.freq, pl.Frequency(e.docID), "docID=%d", e.docID)
+	}
+
+	// Also decode through the no-copy path the query engine uses.
+	roList, err := posting.UnmarshalReadOnly(plBytes)
+	require.NoError(t, err)
+	for _, e := range want {
+		assert.Equal(t, e.freq, roList.Frequency(e.docID), "readonly docID=%d", e.docID)
+	}
+}
+
+func TestMergerPreservesDisjointTFPayloads(t *testing.T) {
+	// The multi-writer scenario: two writers index disjoint doc sets (distinct
+	// generations), and both flush counted posting lists for the same ngram.
+	gen0 := marshalPostings(t, []tfEntry{{1, 3}, {2, 1}})
+	gen1 := marshalPostings(t, []tfEntry{{1<<32 | 1, 5}, {1<<32 | 2, 2}})
+
+	merged := mergeValues(t, gen0, gen1)
+	requireFrequencies(t, merged, []tfEntry{
+		{1, 3},
+		{2, 1},
+		{1<<32 | 1, 5},
+		{1<<32 | 2, 2},
+	})
+}
+
+func TestMergerSumsTFForSharedDocs(t *testing.T) {
+	a := marshalPostings(t, []tfEntry{{1, 3}, {2, 1}})
+	b := marshalPostings(t, []tfEntry{{1, 2}, {3, 4}})
+
+	merged := mergeValues(t, a, b)
+	requireFrequencies(t, merged, []tfEntry{{1, 5}, {2, 1}, {3, 4}})
+}
+
+func TestMergerCountedWithPlain(t *testing.T) {
+	counted := marshalPostings(t, []tfEntry{{1, 7}})
+	plain, err := posting.NewList(2).Marshal()
+	require.NoError(t, err)
+
+	want := []tfEntry{{1, 7}, {2, 1}}
+	// Both operand orders: a plain list merging into a counted base and vice
+	// versa. Under concurrent writers either can arrive first.
+	requireFrequencies(t, mergeValues(t, counted, plain), want)
+	requireFrequencies(t, mergeValues(t, plain, counted), want)
+
+	// A plain list sharing a doc with the counted list contributes frequency 1
+	// to that doc's sum.
+	overlapping, err := posting.NewList(1, 2).Marshal()
+	require.NoError(t, err)
+	wantSummed := []tfEntry{{1, 8}, {2, 1}}
+	requireFrequencies(t, mergeValues(t, counted, overlapping), wantSummed)
+	requireFrequencies(t, mergeValues(t, overlapping, counted), wantSummed)
+}
+
+func TestMergerAllOnesStaysPlain(t *testing.T) {
+	// Lists whose frequencies are all 1 must keep serializing as plain roaring
+	// bytes (no CSTF header) so merged values stay readable by older readers.
+	a, err := posting.NewList(1, 2).Marshal()
+	require.NoError(t, err)
+	b, err := posting.NewList(1<<32|1, 1<<32|2).Marshal()
+	require.NoError(t, err)
+
+	merged := mergeValues(t, a, b)
+	assert.False(t, bytes.HasPrefix(merged, []byte("CSTF")))
+	requireFrequencies(t, merged, []tfEntry{
+		{1, 1},
+		{2, 1},
+		{1<<32 | 1, 1},
+		{1<<32 | 2, 1},
+	})
+}
+
+func TestMergerOrderIndependence(t *testing.T) {
+	// Pebble may feed operands oldest-first (MergeOlder) or newest-first
+	// (MergeNewer) depending on whether the merge happens during compaction or
+	// a read. TF merging must commute.
+	a := marshalPostings(t, []tfEntry{{1, 3}, {2, 1}})
+	b := marshalPostings(t, []tfEntry{{1, 2}, {1<<32 | 1, 5}})
+
+	newerFirst := mergeValues(t, a, b)
+
+	m, err := initRoaringMerger([]byte("testkey"), b)
+	require.NoError(t, err)
+	require.NoError(t, m.MergeOlder(a))
+	olderFirst, closer, err := m.Finish(true)
+	require.NoError(t, err)
+	if closer != nil {
+		defer closer.Close()
+	}
+
+	assert.Equal(t, newerFirst, olderFirst)
+	requireFrequencies(t, newerFirst, []tfEntry{{1, 5}, {2, 1}, {1<<32 | 1, 5}})
+}
+
+func TestMergerEmptyBase(t *testing.T) {
+	counted := marshalPostings(t, []tfEntry{{1, 4}})
+	merged := mergeValues(t, nil, counted)
+	requireFrequencies(t, merged, []tfEntry{{1, 4}})
+}
+
+func TestTFPayloadsSurviveMultiWriterFlush(t *testing.T) {
+	// End-to-end version of TestMergerPreservesDisjointTFPayloads: two writers
+	// (which get distinct generations) interleave adds and flushes against the
+	// same namespace, so pebble's merger combines their counted posting lists
+	// for the shared ngram key.
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.SparseNgramField, "content", true),
+		},
+	)
+
+	w1, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+	w2, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+
+	require.NoError(t, w1.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
+		"id":      []byte("1"),
+		"content": []byte("abc abc abc"),
+	})))
+	require.NoError(t, w2.AddDocument(docSchema.MustMakeDocument(map[string][]byte{
+		"id":      []byte("2"),
+		"content": []byte("abc abc abc abc abc"),
+	})))
+	require.NoError(t, w1.Flush())
+	require.NoError(t, w2.Flush())
+
+	plBytes, closer, err := db.Get(postingListKey("testns", "abc", "content"))
+	require.NoError(t, err)
+	defer closer.Close()
+
+	// Writer doc IDs are generation<<32 | docIndex; the writers were created in
+	// order, so w1 is generation 0 and w2 is generation 1.
+	requireFrequencies(t, plBytes, []tfEntry{
+		{1, 3},
+		{1<<32 | 1, 5},
+	})
 }
 
 func TestRawQueryDocumentMatchesIncludeFrequencies(t *testing.T) {
@@ -1144,11 +1330,11 @@ func TestCompactDeletesPreservesFrequencies(t *testing.T) {
 	}
 	require.NoError(t, w.Flush())
 
-	const abcKey = "testns:gra:abc:content"
+	abcKey := postingListKey("testns", "abc", "content")
 
 	// Capture doc3's (the survivor's) docID and confirm pre-delete frequencies.
 	doc3ID := func() uint64 {
-		plBytes, closer, err := db.Get([]byte(abcKey))
+		plBytes, closer, err := db.Get(abcKey)
 		require.NoError(t, err)
 		defer closer.Close()
 		pl, err := posting.Unmarshal(plBytes)
@@ -1178,7 +1364,7 @@ func TestCompactDeletesPreservesFrequencies(t *testing.T) {
 	require.NoError(t, w.CompactDeletes())
 	require.NoError(t, w.Flush())
 
-	plBytes, closer, err := db.Get([]byte(abcKey))
+	plBytes, closer, err := db.Get(abcKey)
 	require.NoError(t, err)
 	defer closer.Close()
 
