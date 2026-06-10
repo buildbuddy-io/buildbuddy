@@ -1546,8 +1546,10 @@ func TestPublishOperation_PeriodicFlushDoesNotClobberCompletedRow(t *testing.T) 
 	}, 5*time.Second, 10*time.Millisecond, "main loop's COMPLETED write never landed in the per-invocation list")
 
 	// Sanity check: in-progress data was cleaned up by flushExecutionToOLAP.
-	_, err = env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
-	require.Truef(t, status.IsNotFoundError(err), "expected in-progress data to be cleaned up after flush, got err=%v", err)
+	require.Eventually(t, func() bool {
+		_, err := env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
+		return status.IsNotFoundError(err)
+	}, 5*time.Second, 10*time.Millisecond, "expected in-progress data to be cleaned up after flush")
 
 	// Advance past the 5s flush threshold to let the periodic goroutine wake up
 	fakeClock.Advance(6 * time.Second)
