@@ -397,13 +397,13 @@ func (f *fakeIdentityService) IdentityFromContext(ctx context.Context) (*interfa
 	if !ok {
 		return nil, status.NotFoundError("fakeIdentityService: no header present.")
 	}
-	ciParts := strings.Split(ci[0], "|")
-	if len(ciParts) != 2 {
+	client, origin, found := strings.Cut(ci[0], "|")
+	if !found {
 		return nil, status.NotFoundErrorf("fakeIdentityService: invalid header value %s", ci)
 	}
 	return &interfaces.ClientIdentity{
-		Client: ciParts[0],
-		Origin: ciParts[1],
+		Client: client,
+		Origin: origin,
 	}, nil
 }
 

@@ -58,20 +58,19 @@ func GetCurrent() (string, error) {
 	if s == "" {
 		return "", nil
 	}
-	lines := strings.Split(s, "\n")
+	line, _, found := strings.Cut(s, "\n")
 	// In cgroup v1, a process can be a member of multiple cgroup hierarchies.
-	if len(lines) > 1 {
+	if found {
 		return "", ErrV1NotSupported
 	}
-	parts := strings.Split(lines[0], ":")
-	if len(parts) < 3 {
+	_, parts, _ := strings.Cut(line, ":")
+	controllers, path, found := strings.Cut(parts, ":")
+	if !found {
 		return "", fmt.Errorf("invalid /proc/self/cgroup value %q", err)
 	}
-	if controllers := parts[1]; controllers != "" {
+	if controllers != "" {
 		return "", ErrV1NotSupported
 	}
-	// re-join in case the path itself contains ":"
-	path := strings.Join(parts[2:], ":")
 	// Strip leading "/"
 	path = strings.TrimPrefix(path, string(os.PathSeparator))
 	return path, nil
