@@ -250,10 +250,6 @@ func (sm *Replica) setRange(val []byte) error {
 	if err := proto.Unmarshal(val, rangeDescriptor); err != nil {
 		return err
 	}
-	if keys.EnsurePartitionID(rangeDescriptor) {
-		// TODO(go/b/7513): remove backfill once this no longer fires.
-		sm.log.Infof("range %d descriptor missing partition_id; backfilling in-memory to %q", rangeDescriptor.GetRangeId(), rangeDescriptor.GetPartitionId())
-	}
 
 	sm.rangeMu.Lock()
 	sm.log.Infof("Range descriptor is changing from %s to %s", rdString(sm.rangeDescriptor), rdString(rangeDescriptor))
