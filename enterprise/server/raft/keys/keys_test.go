@@ -5,8 +5,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/stretchr/testify/assert"
-
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
 
 func TestPartitionIDFromRangeStart(t *testing.T) {
@@ -28,25 +26,4 @@ func TestPartitionIDFromRangeStart(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
-}
-
-func TestEnsurePartitionID(t *testing.T) {
-	t.Run("backfills_empty", func(t *testing.T) {
-		rd := &rfpb.RangeDescriptor{Start: []byte("PTfoo/abc")}
-		mutated := keys.EnsurePartitionID(rd)
-		assert.True(t, mutated)
-		assert.Equal(t, "foo", rd.GetPartitionId())
-	})
-	t.Run("leaves_set_value_alone", func(t *testing.T) {
-		rd := &rfpb.RangeDescriptor{Start: []byte("PTfoo/abc"), PartitionId: "preset"}
-		mutated := keys.EnsurePartitionID(rd)
-		assert.False(t, mutated)
-		assert.Equal(t, "preset", rd.GetPartitionId())
-	})
-	t.Run("meta_range_unchanged", func(t *testing.T) {
-		rd := &rfpb.RangeDescriptor{Start: []byte("\x02meta")}
-		mutated := keys.EnsurePartitionID(rd)
-		assert.False(t, mutated)
-		assert.Equal(t, "", rd.GetPartitionId())
-	})
 }

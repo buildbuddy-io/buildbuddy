@@ -5,8 +5,6 @@ import (
 	"math"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
-
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
 
 type Key []byte
@@ -61,18 +59,4 @@ func PartitionIDFromRangeStart(key []byte) string {
 		return ""
 	}
 	return string(before)
-}
-
-// EnsurePartitionID backfills rd.PartitionId from its start key if empty.
-// Returns true if the descriptor was modified.
-func EnsurePartitionID(rd *rfpb.RangeDescriptor) bool {
-	if rd.GetPartitionId() != "" {
-		return false
-	}
-	id := PartitionIDFromRangeStart(rd.GetStart())
-	if id == "" {
-		return false
-	}
-	rd.PartitionId = id
-	return true
 }
