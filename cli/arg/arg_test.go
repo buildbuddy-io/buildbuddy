@@ -80,18 +80,71 @@ func TestAppend_ExecutableArgs(t *testing.T) {
 }
 
 func TestAppendStartupOption(t *testing.T) {
-	args, err := NewBazelArgsNoResolve([]string{"--bazelrc=/tmp/bazelrc", "build", "//foo"})
+	originalArgs := []string{"--digest_function=BLAKE3", "build", "//foo"}
+	for _, resolve := range []bool{true, false} {
+		var args *BazelArgs
+		var err error
+		if resolve {
+			args, err = NewBazelArgs(originalArgs)
+			require.NoError(t, err)
+		} else {
+			args, err = NewBazelArgsNoResolve(originalArgs)
+			require.NoError(t, err)
+		}
+
+		err = args.AppendStartupOption("output_base", "/tmp/output")
+		require.NoError(t, err)
+
+		err = args.AppendStartupOption("host_jvm_args", "-K=VAL")
+		require.NoError(t, err)
+
+		err = args.AppendStartupOption("host_jvm_args", "-K2=VAL")
+		require.NoError(t, err)
+
+		expectedStartupOptions := []string{
+			"--digest_function=BLAKE3",
+			"--output_base=/tmp/output",
+			"--host_jvm_args=-K=VAL",
+			"--host_jvm_args=-K2=VAL",
+		}
+		require.Equal(t, append(expectedStartupOptions, []string{"build", "//foo"}...), args.Forwarded())
+
+		expectedResolvedOptions := expectedStartupOptions
+		if resolve {
+			// Add --ignore_all_rc_files to the resolved args after the original startup options.
+			expectedResolvedOptions = append([]string{expectedStartupOptions[0]}, append([]string{"--ignore_all_rc_files"}, expectedStartupOptions[1:]...)...)
+		}
+		require.Equal(t, append(
+			expectedResolvedOptions,
+			[]string{"build", "//foo"}...,
+		), args.Resolved())
+	}
+}
+
+func TestAppendStartupOption_Bazelrc(t *testing.T) {
+	setupWorkspace(t, ``)
+	ws, err := workspace.Path()
+	require.NoError(t, err)
+	rc := filepath.Join(ws, "extra.bazelrc")
+	require.NoError(t, os.WriteFile(rc, []byte("build --remote_cache=grpc://from-extra\n"), 0644))
+
+	args, err := NewBazelArgs([]string{"build", "//foo"})
 	require.NoError(t, err)
 
-	err = args.AppendStartupOption("output_base", "/tmp/output")
+	err = args.AppendStartupOption("bazelrc", rc)
 	require.NoError(t, err)
 
 	require.Equal(t, []string{
-		"--bazelrc=/tmp/bazelrc",
-		"--output_base=/tmp/output",
+		"--bazelrc=" + rc,
 		"build",
 		"//foo",
 	}, args.Forwarded())
+	require.Equal(t, []string{
+		"--ignore_all_rc_files",
+		"build",
+		"--remote_cache=grpc://from-extra",
+		"//foo",
+	}, args.Resolved())
 }
 
 func TestPrepend(t *testing.T) {

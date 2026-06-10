@@ -49,7 +49,11 @@ func NewBazelArgsNoResolve(args []string) (*BazelArgs, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &BazelArgs{forwarded: parsed, resolved: parsed}, nil
+	return &BazelArgs{forwarded: parsed, resolved: cloneOrderedArgs(parsed)}, nil
+}
+
+func cloneOrderedArgs(args *parsed.OrderedArgs) *parsed.OrderedArgs {
+	return &parsed.OrderedArgs{Args: slices.Clone(args.Args)}
 }
 
 // Set updates the BazelArgs struct with a new slice of bazel args.
@@ -93,14 +97,11 @@ func (a *BazelArgs) AppendStartupOption(name, value string) error {
 		return err
 	}
 
-	if requiresResolve("--" + name) {
+	if requiresResolve(name) {
 		return a.resolve()
 	}
 
-	if err := a.resolved.Append(opt); err != nil {
-		return err
-	}
-	return nil
+	return a.resolved.Append(opt)
 }
 
 // Prepend adds a new bazel arg to the beginning of the list of args, just after the bazel command.
@@ -160,7 +161,7 @@ func (a *BazelArgs) Has(flagName string) bool {
 // when requiresResolve returns true for a flag.
 func (a *BazelArgs) resolve() error {
 	// Clone to avoid mutation of a.forwarded by ResolveArgs.
-	clone := &parsed.OrderedArgs{Args: slices.Clone(a.forwarded.Args)}
+	clone := cloneOrderedArgs(a.forwarded)
 	resolved, err := parser.ResolveArgs(clone)
 	if err != nil {
 		return err
