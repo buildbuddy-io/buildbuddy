@@ -79,6 +79,21 @@ func TestAppend_ExecutableArgs(t *testing.T) {
 	require.Contains(t, bazelArgs, "--build_metadata=ROLE=CI")
 }
 
+func TestAppendStartupOption(t *testing.T) {
+	args, err := NewBazelArgsNoResolve([]string{"--bazelrc=/tmp/bazelrc", "build", "//foo"})
+	require.NoError(t, err)
+
+	err = args.AppendStartupOption("output_base", "/tmp/output")
+	require.NoError(t, err)
+
+	require.Equal(t, []string{
+		"--bazelrc=/tmp/bazelrc",
+		"--output_base=/tmp/output",
+		"build",
+		"//foo",
+	}, args.Forwarded())
+}
+
 func TestPrepend(t *testing.T) {
 	setupWorkspace(t, `
 build:ci --remote_cache=grpc://ci-cache

@@ -83,6 +83,26 @@ func (a *BazelArgs) Append(arg string) error {
 	return nil
 }
 
+// AppendStartupOption adds a Bazel startup option, placing it before the Bazel command.
+func (a *BazelArgs) AppendStartupOption(name, value string) error {
+	opt, err := parser.MakeStartupOption(name, &value)
+	if err != nil {
+		return err
+	}
+	if err := a.forwarded.Append(opt); err != nil {
+		return err
+	}
+
+	if requiresResolve("--" + name) {
+		return a.resolve()
+	}
+
+	if err := a.resolved.Append(opt); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Prepend adds a new bazel arg to the beginning of the list of args, just after the bazel command.
 // If the same flag is specified multiple times, Bazel will use the last value. This is useful for adding flags that should
 // be overridden by later flags.
