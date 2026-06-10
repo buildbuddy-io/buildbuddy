@@ -10,6 +10,7 @@ go_library(
         "//server/interfaces",
         "//server/real_environment",
         "//server/rpc/interceptors",
+        "//server/util/alert",
         "//server/util/grpc_forward",
         "//server/util/log",
         "//server/util/rpcutil",
