@@ -709,8 +709,12 @@ func (h *hitTracker) recordCacheUsage(ctx context.Context, d *repb.Digest, actio
 				execStartTime := md.GetExecutionStartTimestamp().AsTime()
 				execEndTime := md.GetExecutionCompletedTimestamp().AsTime()
 				execDuration := execEndTime.Sub(execStartTime)
-				c.TotalCachedActionExecUsec = execDuration.Microseconds()
-				skuCounts[sku.RemoteCacheACCachedExecDurationNanos] = execDuration.Nanoseconds()
+				if execDuration > 0 {
+					c.TotalCachedActionExecUsec = execDuration.Microseconds()
+					skuCounts[sku.RemoteCacheACCachedExecDurationNanos] = execDuration.Nanoseconds()
+				} else if execDuration < 0 {
+					log.CtxInfof(ctx, "Serving ActionResult with negative cached exec duration: executor_host_id=%q", md.GetWorker())
+				}
 			}
 		} else {
 			c.CASCacheHits = 1
