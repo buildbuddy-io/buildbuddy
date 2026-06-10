@@ -1271,10 +1271,8 @@ func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 
 func (s *Store) GetRange(rangeID uint64) *rfpb.RangeDescriptor {
 	rd := s.lookupRange(rangeID)
-	// TODO(go/b/7513): remove once the driver-backed backfill is no longer
-	// needed. The derived ID won't apply to the meta range, so skip it here.
 	if rd != nil && rangeID != constants.MetaRangeID && rd.GetPartitionId() == "" {
-		s.log.Warningf("range %d descriptor is missing partition_id (derivable as %q from start key)", rangeID, keys.PartitionIDFromRangeStart(rd.GetStart()))
+		alert.UnexpectedEvent("range_missing_partition_id", "range %d descriptor is missing partition_id (derivable as %q from start key)", rangeID, keys.PartitionIDFromRangeStart(rd.GetStart()))
 	}
 	return rd
 }
