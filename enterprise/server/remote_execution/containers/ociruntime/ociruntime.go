@@ -304,13 +304,22 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	// Enable lxcfs, if configured.
 	if *enableLxcfs {
 		lxcfsMountDir := "/var/lib/lxcfs"
+
+		// Unmount lxcfs if it's already mounted (container restarted).
+		// We do this before MkdirAll because otherwise if the lxcfs daemon
+		// has died, MkdirAll can fail with "Transport endpoint not connected"
+		if err := syscall.Unmount(lxcfsMountDir, 0); err != nil {
+			// EINVAL is expected if nothing is mounted; ENOENT is expected
+			// if the dir doesn't exist yet.
+			if !errors.Is(err, syscall.EINVAL) && !errors.Is(err, syscall.ENOENT) {
+				log.Errorf("Failed to unmount %s: %s", lxcfsMountDir, err)
+				// Proceed anyway, though lxcfs will likely fail to start.
+			}
+		} else {
+			log.Infof("Unmounted existing lxcfs mount at %s", lxcfsMountDir)
+		}
 		if err := os.MkdirAll(lxcfsMountDir, 0755); err != nil {
 			return nil, err
-		}
-
-		// Unmount if it's already mounted (container restarted)
-		if err := syscall.Unmount(lxcfsMountDir, 0); err == nil {
-			log.Infof("successfully unmounted dead lxcfs path, re-mounting shortly")
 		}
 
 		startErr := make(chan error, 1)
