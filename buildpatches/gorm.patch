@@ -1,0 +1,73 @@
+diff --git a/utils/utils.go b/utils/utils.go
+index 7e59264..cf815a0 100644
+--- a/utils/utils.go
++++ b/utils/utils.go
+@@ -36,9 +36,14 @@ func sourceDir(file string) string {
+ //   - Exclude test files (*_test.go)
+ //   - go-gorm/gen's Generated files (*.gen.go)
+ func CallerFrame() runtime.Frame {
++	// Preserve the original CallerFrame stack depth after introducing callerFrame().
++	return callerFrame(4)
++}
++
++func callerFrame(skip int) runtime.Frame {
+ 	pcs := [13]uintptr{}
+-	// the third caller usually from gorm internal
+-	len := runtime.Callers(3, pcs[:])
++	// skip is caller-path sensitive and should be selected by each public helper.
++	len := runtime.Callers(skip, pcs[:])
+ 	frames := runtime.CallersFrames(pcs[:len])
+ 	for i := 0; i < len; i++ {
+ 		// second return value is "more", not "ok"
+@@ -54,7 +59,8 @@ func CallerFrame() runtime.Frame {
+ 
+ // FileWithLineNum return the file name and line number of the current file
+ func FileWithLineNum() string {
+-	frame := CallerFrame()
++	// Keep FileWithLineNum one frame outer than CallerFrame to preserve pre-v1.31.1 semantics.
++	frame := callerFrame(4)
+ 	if frame.PC != 0 {
+ 		return string(strconv.AppendInt(append([]byte(frame.File), ':'), int64(frame.Line), 10))
+ 	}
+diff --git a/utils/utils_test.go b/utils/utils_test.go
+index 1b89232..22a2354 100644
+--- a/utils/utils_test.go
++++ b/utils/utils_test.go
+@@ -4,7 +4,10 @@ import (
+ 	"database/sql"
+ 	"database/sql/driver"
+ 	"errors"
++	"fmt"
+ 	"math"
++	"path/filepath"
++	"runtime"
+ 	"strings"
+ 	"testing"
+ 	"time"
+@@ -199,3 +202,23 @@ func TestRTrimSlice(t *testing.T) {
+ 		})
+ 	}
+ }
++
++//go:noinline
++func fileWithLineNumWrappedInnerForTest() string {
++	return FileWithLineNum()
++}
++
++//go:noinline
++func fileWithLineNumWrappedOuterForTest() (got, want string) {
++	_, file, line, _ := runtime.Caller(0)
++	got = filepath.ToSlash(fileWithLineNumWrappedInnerForTest())
++	want = fmt.Sprintf("%s:%d", filepath.ToSlash(file), line+1)
++	return got, want
++}
++
++func TestFileWithLineNumWrappedCallRegression(t *testing.T) {
++	got, want := fileWithLineNumWrappedOuterForTest()
++	if got != want {
++		t.Fatalf("FileWithLineNum wrapped caller mismatch, got %s, want %s", got, want)
++	}
++}
+-- 
+2.47.3
+

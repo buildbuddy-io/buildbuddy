@@ -88,6 +88,14 @@ go_deps.module_override(
     ],
     path = "github.com/smacker/go-tree-sitter",
 )
+# Can remove this once https://github.com/go-gorm/gorm/pull/7717 is released.
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:gorm.patch",
+    ],
+    path = "gorm.io/gorm",
+)
 
 # Go repos with custom directives
 go_deps.gazelle_override(
