@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_forward"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
@@ -47,6 +48,8 @@ var (
 	internalGRPCSPort = flag.Int("internal_grpcs_port", 1988, "The port to listen for internal gRPCS traffic on")
 
 	enablePrometheusHistograms = flag.Bool("app.enable_prometheus_histograms", true, "If true, collect prometheus histograms for all RPCs")
+
+	serverWorkerMultiplier = flag.Int("grpc_server_worker_multiplier", 2, "Multiplier applied to GOMAXPROCS to determine the number of gRPC server workers. 0 disables workers")
 )
 
 func GRPCPort() int {
@@ -210,6 +213,14 @@ var Metrics = sync.OnceValue(func() *grpc_prometheus.ServerMetrics {
 })
 
 func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerConfig) []grpc.ServerOption {
+	workerMultiplier := uint32(*serverWorkerMultiplier)
+	if workerMultiplier > 1000 {
+		// Even 100 is too big, but just catch overflow.
+		alert.UnexpectedEvent(
+			"grpc_server_worker_multiplier_invalid",
+			"uint32(grpc_server_worker_multiplier) is too large (%v). Disabling workers", *serverWorkerMultiplier)
+		workerMultiplier = 0
+	}
 	opts := []grpc.ServerOption{
 		grpc.StatsHandler(otelgrpc.NewServerHandler(otelgrpc.WithMeterProvider(rpcutil.MeterProvider()), otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents))),
 		interceptors.GetUnaryInterceptor(env, config.ExtraChainedUnaryInterceptors...),
@@ -220,7 +231,7 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 		grpc.UnaryInterceptor(interceptors.TracedUnaryServerInterceptor("grpc_server.MetricsInterceptor", Metrics().UnaryServerInterceptor())),
 		experimental.BufferPool(mem.DefaultBufferPool()),
 		grpc.MaxRecvMsgSize(MaxRecvMsgSizeBytes()),
-		grpc.NumStreamWorkers(uint32(runtime.GOMAXPROCS(0))),
+		grpc.NumStreamWorkers(uint32(runtime.GOMAXPROCS(0)) * workerMultiplier),
 		KeepaliveEnforcementPolicy(),
 	}
 	for _, h := range config.ExtraStatsHandlers {
