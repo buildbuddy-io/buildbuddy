@@ -2,6 +2,7 @@ import React from "react";
 import alertService from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
+import Banner from "../../../app/components/banner/banner";
 import Button, { OutlinedButton } from "../../../app/components/button/button";
 import Dialog, {
   DialogBody,
@@ -196,9 +197,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
           ))}
         </div>
         {selectedMembers.some((member) => this.isLoggedInUser(member)) && (
-          <div className="editing-self-warning">
-            <b>Warning</b>: Your account is selected.
-          </div>
+          <Banner type="warning">Your account is selected.</Banner>
         )}
       </>
     );
