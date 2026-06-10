@@ -891,7 +891,11 @@ func (t *TracedCommandContainer) PostCompletionStats() *espb.PostCompletionStats
 	}
 	stats := &espb.PostCompletionStats{}
 	if p, ok := t.Delegate.(postCompletionStatsProvider); ok {
-		stats = p.PostCompletionStats()
+		if s := p.PostCompletionStats(); s != nil {
+			stats = s
+		} else {
+			log.Debugf("container type %T returned nil PostContainerStats", t.Delegate)
+		}
 	}
 	stats.PauseDurationUsec = t.pauseDuration.Microseconds()
 	return stats
