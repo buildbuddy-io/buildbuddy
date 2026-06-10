@@ -629,7 +629,7 @@ func TestSparseNgramFrequenciesArePersisted(t *testing.T) {
 	require.NoError(t, w.AddDocument(doc))
 	require.NoError(t, w.Flush())
 
-	plBytes, closer, err := db.Get([]byte("testns:gra:abc:content"))
+	plBytes, closer, err := db.Get(postingListKey("testns", "abc", "content"))
 	require.NoError(t, err)
 	defer closer.Close()
 
@@ -670,7 +670,7 @@ func TestSparseNgramFrequenciesAcrossMultipleDocs(t *testing.T) {
 	}
 	require.NoError(t, w.Flush())
 
-	plBytes, closer, err := db.Get([]byte("testns:gra:abc:content"))
+	plBytes, closer, err := db.Get(postingListKey("testns", "abc", "content"))
 	require.NoError(t, err)
 	defer closer.Close()
 
@@ -780,6 +780,14 @@ func TestMergerCountedWithPlain(t *testing.T) {
 	// versa. Under concurrent writers either can arrive first.
 	requireFrequencies(t, mergeValues(t, counted, plain), want)
 	requireFrequencies(t, mergeValues(t, plain, counted), want)
+
+	// A plain list sharing a doc with the counted list contributes frequency 1
+	// to that doc's sum.
+	overlapping, err := posting.NewList(1, 2).Marshal()
+	require.NoError(t, err)
+	wantSummed := []tfEntry{{1, 8}, {2, 1}}
+	requireFrequencies(t, mergeValues(t, counted, overlapping), wantSummed)
+	requireFrequencies(t, mergeValues(t, overlapping, counted), wantSummed)
 }
 
 func TestMergerAllOnesStaysPlain(t *testing.T) {
@@ -857,7 +865,7 @@ func TestTFPayloadsSurviveMultiWriterFlush(t *testing.T) {
 	require.NoError(t, w1.Flush())
 	require.NoError(t, w2.Flush())
 
-	plBytes, closer, err := db.Get([]byte("testns:gra:abc:content"))
+	plBytes, closer, err := db.Get(postingListKey("testns", "abc", "content"))
 	require.NoError(t, err)
 	defer closer.Close()
 
@@ -1322,11 +1330,11 @@ func TestCompactDeletesPreservesFrequencies(t *testing.T) {
 	}
 	require.NoError(t, w.Flush())
 
-	const abcKey = "testns:gra:abc:content"
+	abcKey := postingListKey("testns", "abc", "content")
 
 	// Capture doc3's (the survivor's) docID and confirm pre-delete frequencies.
 	doc3ID := func() uint64 {
-		plBytes, closer, err := db.Get([]byte(abcKey))
+		plBytes, closer, err := db.Get(abcKey)
 		require.NoError(t, err)
 		defer closer.Close()
 		pl, err := posting.Unmarshal(plBytes)
@@ -1356,7 +1364,7 @@ func TestCompactDeletesPreservesFrequencies(t *testing.T) {
 	require.NoError(t, w.CompactDeletes())
 	require.NoError(t, w.Flush())
 
-	plBytes, closer, err := db.Get([]byte(abcKey))
+	plBytes, closer, err := db.Get(abcKey)
 	require.NoError(t, err)
 	defer closer.Close()
 
