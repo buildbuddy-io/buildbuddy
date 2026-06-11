@@ -533,7 +533,6 @@ Defines whether an action should execute when a branch is pushed.
   whether a push to the branch will trigger the workflow. Patterns are
   matched using the rules described in
   [Ref pattern matching](#ref-pattern-matching)
-
 - **`tags`** (`string` list): The tag patterns that determine
   whether a push to the tag will trigger the workflow. Patterns are
   matched using the rules described in
@@ -546,25 +545,20 @@ pushed.
 
 **Fields:**
 
-- **`branches`** (`string` list): The branch patterns that determine
-  whether an update to the pull request will trigger the workflow.
-  The _base_ branch of the PR is matched against this list.
-  For example, if this is set to `[ "v1", "v2" ]`, then the
-  associated action is only run when a PR wants to merge a branch _into_
-  the `v1` branch or the `v2` branch. Branch patterns are matched using
-  the rules described in [Ref pattern matching](#ref-pattern-matching)
-- **`tags`** (`string` list): The tag patterns that determine
-  whether a push to the tag will trigger the workflow. Patterns are
-  matched using the rules described in
+- **`branches`** (`string` list): The branch patterns that determine whether an
+  update to the pull request will trigger the workflow. The _base_ branch of the
+  PR is matched against this list. For example, if this is set to
+  `[ "main", "release/*" ]`, then the associated action is only run when a PR
+  wants to merge a branch _into_ the `main` branch or any branch prefixed with
+  `release/`. Branch patterns are matched using the rules described in
   [Ref pattern matching](#ref-pattern-matching)
 - **`merge_with_base`** (`boolean`, default: `true`): Whether to merge the
   base branch into the PR branch before running the workflow action. This
   can help ensure that the changes in the PR branch do not conflict with
   the main branch. However, the action will not be continuously re-run as
   changes are pushed to the base branch. For stronger protection against
-  breaking the main branch, you may wish to use [merge
-  queues](#merge-queue-support). This is not supported if the build trigger
-  is a tag.
+  breaking the main branch, you may wish to use
+  [merge queues](#merge-queue-support).
 
 ### `ScheduleTrigger`
 
