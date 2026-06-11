@@ -564,7 +564,7 @@
           "targets": [
             {
               "editorMode": "code",
-              "expr": "sum(rate(container_cpu_usage_seconds_total{region=\"${region}\", namespace=\"cache-proxy-prod\", container=\"\"}[1m])) by (pod)",
+              "expr": "sum(rate(container_cpu_usage_seconds_total{region=\"${region}\", namespace=~\"cache-proxy-.*\", container=\"\"}[1m])) by (pod)",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -575,7 +575,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "max(container_spec_cpu_quota{region=\"${region}\", namespace=\"cache-proxy-prod\", container=\"\"} / container_spec_cpu_period{region=\"${region}\", namespace=\"cache-proxy-prod\", container=\"\"}) by (pod)",
+              "expr": "max(container_spec_cpu_quota{region=\"${region}\", namespace=~\"cache-proxy-.*\", container=\"\"} / container_spec_cpu_period{region=\"${region}\", namespace=~\"cache-proxy-.*\", container=\"\"}) by (pod)",
               "hide": false,
               "instant": false,
               "legendFormat": "{{pod}} limit",
@@ -670,7 +670,7 @@
           "targets": [
             {
               "editorMode": "code",
-              "expr": "sum(container_memory_working_set_bytes{region=\"${region}\", namespace=\"cache-proxy-prod\", container=\"\"}) by (pod)",
+              "expr": "sum(container_memory_working_set_bytes{region=\"${region}\", namespace=~\"cache-proxy-.*\", container=\"\"}) by (pod)",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -681,7 +681,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(container_spec_memory_limit_bytes{region=\"${region}\", namespace=\"cache-proxy-prod\", container=\"\"}) by (pod)",
+              "expr": "sum(container_spec_memory_limit_bytes{region=\"${region}\", namespace=~\"cache-proxy-.*\", container=\"\"}) by (pod)",
               "hide": false,
               "instant": false,
               "legendFormat": "{{pod}} limit",
