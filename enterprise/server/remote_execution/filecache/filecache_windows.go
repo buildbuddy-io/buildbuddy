@@ -8,6 +8,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+func syncDir(path string) error {
+	return nil
+}
+
 func syncFilesystem(path string) error {
 	vol := filepath.VolumeName(path)
 	volumePath, err := windows.UTF16PtrFromString(`\\.\` + vol)
