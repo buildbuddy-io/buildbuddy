@@ -20,6 +20,8 @@ const (
 	externalInterfaces = "Ethernet1/1|Ethernet31/1"
 )
 
+const routerDataplaneInterfaces = "WAN.*|P2P.*"
+
 // --- Top-level (aggregate) panels ---
 
 func externalThroughputPanel() *timeseries.PanelBuilder {
@@ -227,6 +229,125 @@ func psuActiveByDevicePanel() *timeseries.PanelBuilder {
 		))
 }
 
+// --- Edge routers (TNSR) ---
+
+func routerWanThroughputPanel() *timeseries.PanelBuilder {
+	return dash.Timeseries("WAN throughput by router", dash.UnitBitsPerSec).
+		Description("Traffic on the upstream provider links. This is the DC's internet ingress/egress as seen from the edge routers.").
+		WithTarget(dash.PromQuery(
+			`sum(rate(router_ifHCInOctets{region="${region}", ifName=~"WAN.*"}[1m])) by (router) * 8`,
+			"ingress {{router}}",
+		)).
+		WithTarget(dash.PromQuery(
+			`sum(rate(router_ifHCOutOctets{region="${region}", ifName=~"WAN.*"}[1m])) by (router) * 8`,
+			"egress {{router}}",
+		))
+}
+
+func routerTrafficByInterfacePanel() *timeseries.PanelBuilder {
+	in := fmt.Sprintf(
+		`sum(rate(router_ifHCInOctets{region="${region}", ifName=~%q}[1m])) by (router, ifName) * 8`,
+		routerDataplaneInterfaces,
+	)
+	out := fmt.Sprintf(
+		`sum(rate(router_ifHCOutOctets{region="${region}", ifName=~%q}[1m])) by (router, ifName) * 8`,
+		routerDataplaneInterfaces,
+	)
+	return dash.Timeseries("Router traffic by interface", dash.UnitBitsPerSec).
+		WithTarget(dash.PromQuery(in, "ingress {{router}} {{ifName}}")).
+		WithTarget(dash.PromQuery(out, "egress {{router}} {{ifName}}"))
+}
+
+func routerBgpSessionsPanel() *timeseries.PanelBuilder {
+	return dash.Timeseries("Router BGP sessions established", dash.UnitShort).
+		Description("Established BGP sessions per router and peer group. SPINES are the iBGP-facing fabric sessions; UPSTREAM are the internet providers. Each router should hold all its sessions — any drop is a session down.").
+		WithTarget(dash.PromQuery(
+			`sum(router_frr_bgp_peer_state{region="${region}"} == 1) by (router, peer_group)`,
+			"{{router}} {{peer_group}}",
+		))
+}
+
+func routerBgpPrefixesReceivedPanel() *timeseries.PanelBuilder {
+	return dash.Timeseries("Router BGP prefixes received", dash.UnitShort).
+		Description("Prefixes received per router and peer group. UPSTREAM carries the provider routes — a sudden drop to zero with the session still up indicates a filtering problem.").
+		WithTarget(dash.PromQuery(
+			`sum(router_frr_bgp_peer_prefixes_received_count_total{region="${region}"}) by (router, peer_group)`,
+			"{{router}} {{peer_group}}",
+		))
+}
+
+func routerBfdSessionsPanel() *timeseries.PanelBuilder {
+	return dash.Timeseries("Router BFD sessions", dash.UnitShort).
+		Description("VPP BFD sessions per router (one per spine link). BFD state lives in VPP rather than FRR on TNSR, so only the session count is exported.").
+		WithTarget(dash.PromQuery(
+			`router_bfd_udp4_sessions{region="${region}"}`,
+			"{{router}}",
+		))
+}
+
+func routerErrorsAndDiscardsPanel() *timeseries.PanelBuilder {
+	q := func(metric string) string {
+		return fmt.Sprintf(
+			`sum(rate(%s{region="${region}", ifName=~%q}[1m])) by (router, ifName)`,
+			metric, routerDataplaneInterfaces,
+		)
+	}
+	return dash.Timeseries("Router errors and discards", dash.UnitEventsPerSec).
+		WithTarget(dash.PromQuery(q("router_ifInErrors"), "ingress errors {{router}} {{ifName}}")).
+		WithTarget(dash.PromQuery(q("router_ifInDiscards"), "ingress discards {{router}} {{ifName}}")).
+		WithTarget(dash.PromQuery(q("router_ifOutErrors"), "egress errors {{router}} {{ifName}}")).
+		WithTarget(dash.PromQuery(q("router_ifOutDiscards"), "egress discards {{router}} {{ifName}}"))
+}
+
+func routerDataplaneDropsPanel() *timeseries.PanelBuilder {
+	// The VPP exporter keys per-interface vectors by sw_if_index; join
+	// against the if_names_info mapping to get interface names.
+	q := func(metric string) string {
+		return fmt.Sprintf(
+			`sum(rate(%s{region="${region}"}[1m])`+
+				` * on(router, interface) group_left(name)`+
+				` label_replace(router_if_names_info{region="${region}", name=~%q}, "interface", "$1", "index", "(.+)")) by (router, name)`,
+			metric, routerDataplaneInterfaces,
+		)
+	}
+	return dash.Timeseries("Router dataplane drops", dash.UnitPacketsPerSec).
+		Description("VPP per-interface drop counters. rx-miss means the NIC ran out of descriptors (host couldn't keep up); rx-no-buf means VPP ran out of buffers. Both indicate the dataplane is shedding load.").
+		WithTarget(dash.PromQuery(q("router_if_rx_miss"), "rx miss {{router}} {{name}}")).
+		WithTarget(dash.PromQuery(q("router_if_rx_no_buf"), "rx no-buf {{router}} {{name}}")).
+		WithTarget(dash.PromQuery(q("router_if_drops"), "drops {{router}} {{name}}"))
+}
+
+func routerInterfacesDownPanel() *timeseries.PanelBuilder {
+	return dash.Timeseries("Router interfaces down", dash.UnitShort).
+		Description("Dataplane interfaces that are admin-UP but not oper-UP (ifOperStatus: 1 = up).").
+		WithTarget(dash.PromQuery(
+			fmt.Sprintf(
+				`(router_ifOperStatus{region="${region}", ifName=~%q} != 1)`+
+					` and on(router, ifName) (router_ifAdminStatus{region="${region}"} == 1)`,
+				routerDataplaneInterfaces,
+			),
+			"{{router}} {{ifName}}",
+		))
+}
+
+func routerCpuUtilizationPanel() *timeseries.PanelBuilder {
+	return dash.Timeseries("Router CPU utilization", dash.UnitPercent).
+		Description("Host CPU from node_exporter. Note the DPDK poll-mode workers spin at 100% on their pinned cores by design; watch for changes in the remaining headroom rather than the absolute level.").
+		WithTarget(dash.PromQuery(
+			`100 * (1 - avg by (router) (rate(node_cpu_seconds_total{job="node_router", region="${region}", mode="idle"}[1m])))`,
+			"{{router}}",
+		))
+}
+
+func routerMemoryUtilizationPanel() *timeseries.PanelBuilder {
+	return dash.Timeseries("Router memory utilization", dash.UnitPercent).
+		WithTarget(dash.PromQuery(
+			`100 * (1 - node_memory_MemAvailable_bytes{job="node_router", region="${region}"}`+
+				` / node_memory_MemTotal_bytes{job="node_router", region="${region}"})`,
+			"{{router}}",
+		))
+}
+
 // --- Per-device (per-interface) panels: live inside the repeated row ---
 
 func trafficByInterfacePanel() *timeseries.PanelBuilder {
@@ -419,6 +540,19 @@ func build() (dashboard.Dashboard, error) {
 		WithPanel(psuInputPowerByDevicePanel()).
 		WithPanel(psuActiveByDevicePanel())
 
+	routersRow := dashboard.NewRowBuilder("Edge routers").
+		Collapsed(true).
+		WithPanel(routerWanThroughputPanel()).
+		WithPanel(routerTrafficByInterfacePanel()).
+		WithPanel(routerBgpSessionsPanel()).
+		WithPanel(routerBgpPrefixesReceivedPanel()).
+		WithPanel(routerBfdSessionsPanel()).
+		WithPanel(routerErrorsAndDiscardsPanel()).
+		WithPanel(routerDataplaneDropsPanel()).
+		WithPanel(routerInterfacesDownPanel()).
+		WithPanel(routerCpuUtilizationPanel()).
+		WithPanel(routerMemoryUtilizationPanel())
+
 	deviceRow := dashboard.NewRowBuilder("Device ${device}").
 		Collapsed(true).
 		Repeat("device").
@@ -453,6 +587,7 @@ func build() (dashboard.Dashboard, error) {
 		WithPanel(multicastByDevicePanel()).
 		WithRow(controlPlaneRow).
 		WithRow(systemHealthRow).
+		WithRow(routersRow).
 		WithRow(deviceRow).
 		Build()
 }
