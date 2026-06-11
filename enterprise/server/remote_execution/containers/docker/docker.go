@@ -231,6 +231,12 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		result.Error = err
 		return result
 	}
+	list, err := r.client.ImageList(ctx, dti.ListOptions{})
+	if err != nil {
+		result.Error = wrapDockerErr(err, "failed to list docker images")
+		return result
+	}
+	log.Infof("images:\n%#v\n", list)
 	createResponse, err := r.client.ContainerCreate(
 		ctx,
 		containerCfg,
