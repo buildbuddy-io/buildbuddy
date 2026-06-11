@@ -1,6 +1,7 @@
 package register
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
@@ -15,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/fix"
 	"github.com/buildbuddy-io/buildbuddy/cli/index"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
 	"github.com/buildbuddy-io/buildbuddy/cli/record"
@@ -64,7 +66,10 @@ func register() {
 			Name:    "box",
 			Help:    "Manages remote Firecracker VM boxes.",
 			Handler: box.HandleBox,
-			Flags:   box.Flags,
+			RCSubcommands: []string{
+				"create",
+			},
+			Flags: box.Flags,
 		},
 		{
 			Name:    "download",
@@ -82,7 +87,10 @@ func register() {
 			Name:    "execution",
 			Help:    "Remote execution tools",
 			Handler: execution.HandleExecution,
-			Flags:   execution.Flags,
+			RCSubcommands: []string{
+				"get",
+			},
+			Flags: execution.Flags,
 		},
 		{
 			Name:    "fix",
@@ -125,7 +133,19 @@ func register() {
 			Name:    "remote",
 			Help:    "Runs a bazel command in the cloud with BuildBuddy's hosted bazel service.",
 			Handler: remotebazel.HandleRemoteBazel,
-			Flags:   remotebazel.RemoteFlagset,
+			RCArgBoundary: func(args []string) int {
+				for _, arg := range args {
+					if strings.HasPrefix(arg, "--script") {
+						return len(args)
+					}
+				}
+				_, bazelCommandIndex := parser.GetBazelCommandAndIndex(args)
+				if bazelCommandIndex == -1 {
+					return len(args)
+				}
+				return bazelCommandIndex
+			},
+			Flags: remotebazel.RemoteFlagset,
 		},
 		{
 			Name:    "remote-download",

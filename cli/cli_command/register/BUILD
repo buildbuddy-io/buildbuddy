@@ -20,6 +20,7 @@ go_library(
         "//cli/fix",
         "//cli/index",
         "//cli/login",
+        "//cli/parser",
         "//cli/plugin",
         "//cli/printlog",
         "//cli/record",
