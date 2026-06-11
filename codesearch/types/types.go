@@ -119,6 +119,11 @@ type Scorer interface {
 	// index-side data (term frequencies and field lengths) — it must not need
 	// the stored document, so it stays cheap enough to run on every match.
 	Score(docMatch DocumentMatch) float64
+	// Prepare precomputes statistics over the full candidate set (e.g.
+	// average field length for BM25 normalization) before per-document
+	// scoring begins. Searchers must call Prepare once with all candidate
+	// matches before the first Score call.
+	Prepare(matches []DocumentMatch)
 }
 
 type HighlightedRegion interface {

@@ -224,7 +224,39 @@ func TestScoringMatchContentOnly(t *testing.T) {
 		map[string]uint32{contentField: 1},
 		map[string]uint32{contentField: 1, filenameField: 1},
 	)
-	assert.Equal(t, bm25Score(2, 3), scorer.Score(docMatch))
+	// content contributes weight(2)*sat(tf(1)); filename has no posting.
+	// Unprepared (no candidate stats), field norms default to 1.
+	assert.Equal(t, 2*bm25Sat(1), scorer.Score(docMatch))
+}
+
+func TestScoringLengthNormalization(t *testing.T) {
+	// Two docs with the same match count but different lengths: after
+	// Prepare computes the candidate-set average, each doc's field is scored
+	// by its length relative to that field's average (BM25 dl/avgdl), so the
+	// shorter doc scores higher but is not rewarded in proportion to raw
+	// length.
+	ctx := context.Background()
+	q, err := NewReQuery(ctx, "foo")
+	require.NoError(t, err)
+
+	scorer := q.Scorer()
+	require.NotNil(t, scorer)
+
+	short := matchWithFrequenciesAndLengths(
+		map[string]uint32{contentField: 1},
+		map[string]uint32{contentField: 1, filenameField: 1},
+	)
+	long := matchWithFrequenciesAndLengths(
+		map[string]uint32{contentField: 1},
+		map[string]uint32{contentField: 4, filenameField: 1},
+	)
+	scorer.Prepare([]types.DocumentMatch{short, long}) // avg content len = 2.5
+
+	shortNorm := 1 - bm25B + bm25B*(1.0/2.5)
+	longNorm := 1 - bm25B + bm25B*(4.0/2.5)
+	assert.InDelta(t, 2*bm25Sat(1.0/shortNorm), scorer.Score(short), 1e-9)
+	assert.InDelta(t, 2*bm25Sat(1.0/longNorm), scorer.Score(long), 1e-9)
+	assert.Greater(t, scorer.Score(short), scorer.Score(long))
 }
 
 func TestScoringMissingFieldLengthsFloorsAtMatchCount(t *testing.T) {
@@ -242,7 +274,16 @@ func TestScoringMissingFieldLengthsFloorsAtMatchCount(t *testing.T) {
 		map[string]uint32{contentField: 1},
 		nil,
 	)
-	assert.Equal(t, bm25Score(2, 2), scorer.Score(docMatch))
+	noLengths := docMatch
+	withLengths := matchWithFrequenciesAndLengths(
+		map[string]uint32{contentField: 1},
+		map[string]uint32{contentField: 4},
+	)
+	scorer.Prepare([]types.DocumentMatch{noLengths, withLengths}) // avg content len = 4
+
+	// The lengthless doc's content length floors at its tf (1), not 0.
+	flooredNorm := 1 - bm25B + bm25B*(1.0/4.0)
+	assert.InDelta(t, 2*bm25Sat(1.0/flooredNorm), scorer.Score(noLengths), 1e-9)
 }
 
 func TestScoringMatchContentAndFilename(t *testing.T) {
@@ -260,7 +301,10 @@ func TestScoringMatchContentAndFilename(t *testing.T) {
 		},
 		map[string]uint32{contentField: 1, filenameField: 1},
 	)
-	assert.Equal(t, bm25Score(5, 5), scorer.Score(docMatch))
+	// Root is And(filename-filter, content-or); fields saturate
+	// independently and sum: filter 2*sat(1), content 2*sat(1), implicit
+	// filename 1*sat(1).
+	assert.Equal(t, 5*bm25Sat(1), scorer.Score(docMatch))
 }
 
 func TestScoringMatchFilenameWithoutAtom(t *testing.T) {
@@ -275,7 +319,8 @@ func TestScoringMatchFilenameWithoutAtom(t *testing.T) {
 		map[string]uint32{filenameField: 1},
 		map[string]uint32{contentField: 1, filenameField: 1},
 	)
-	assert.Equal(t, bm25Score(1, 3), scorer.Score(docMatch))
+	// Implicit filename match only: weight(1)*sat(tf(1)).
+	assert.Equal(t, 1*bm25Sat(1), scorer.Score(docMatch))
 }
 
 func TestScoringMatchExplicitFilename(t *testing.T) {
@@ -290,7 +335,8 @@ func TestScoringMatchExplicitFilename(t *testing.T) {
 		map[string]uint32{filenameField: 1},
 		map[string]uint32{contentField: 1, filenameField: 1},
 	)
-	assert.Equal(t, bm25Score(2, 2), scorer.Score(docMatch))
+	// Explicit filename filter: weight(2)*sat(tf(1)).
+	assert.Equal(t, 2*bm25Sat(1), scorer.Score(docMatch))
 }
 
 func TestScorerWithNoMatchers(t *testing.T) {
