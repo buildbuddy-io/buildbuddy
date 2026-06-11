@@ -217,20 +217,6 @@ func (h *directoryHandle) moveToTrash() error {
 	return h.filecache.trash(h.path)
 }
 
-// syncDir fsyncs the directory at path to ensure any pending metadata changes
-// (e.g. file creation or deletion) are durable on disk.
-func syncDir(path string) error {
-	dir, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	start := time.Now()
-	err = dir.Sync()
-	log.Infof("filecache: syncDir(%q) took %s (err: %v)", path, time.Since(start), err)
-	return err
-}
-
 // NewFileCache constructs an fileCache with maxSize that will cache files
 // in rootDir.
 // If deleteContent is true, the root dir will be deleted and recreated.

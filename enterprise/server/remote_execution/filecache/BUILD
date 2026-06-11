@@ -12,7 +12,7 @@ go_library(
         "filecache.go",
         "filecache_darwin.go",
         "filecache_linux.go",
-        "filecache_other.go",
+        "filecache_unix.go",
         "filecache_windows.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache",
@@ -45,7 +45,10 @@ go_library(
 go_test(
     name = "filecache_test",
     size = "small",
-    srcs = ["filecache_test.go"],
+    srcs = [
+        "filecache_test.go",
+        "filecache_windows_test.go",
+    ],
     deps = [
         ":filecache",
         "//proto:remote_execution_go_proto",
