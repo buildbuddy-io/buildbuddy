@@ -1,7 +1,6 @@
 package detect
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -9,16 +8,17 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/cli/explain"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
-	"google.golang.org/protobuf/proto"
 
 	spawn_diff "github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
 )
@@ -64,43 +64,20 @@ var errNondeterminismDetected = errors.New("nondeterminism detected")
 
 type commandRunner interface {
 	Run(ctx context.Context, name string, args ...string) error
-	Output(ctx context.Context, name string, args ...string) ([]byte, error)
+}
+
+type explainer interface {
+	Diff(oldLog, newLog string) (*spawn_diff.DiffResult, error)
+	WriteText(w io.Writer, diff *spawn_diff.DiffResult, verbose bool)
 }
 
 type osCommandRunner struct{}
 
 func (r osCommandRunner) Run(ctx context.Context, name string, args ...string) error {
-	return r.run(ctx, name, args, os.Stdout, os.Stderr)
-}
-
-func (r osCommandRunner) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
-	var stdout, stderr bytes.Buffer
-	if err := r.run(ctx, name, args, &stdout, io.MultiWriter(os.Stderr, &stderr)); err != nil {
-		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
-	}
-	return stdout.Bytes(), nil
-}
-
-func (r osCommandRunner) run(ctx context.Context, name string, args []string, stdout, stderr io.Writer) error {
 	log.Printf("Running %s", shlex.Quote(append([]string{name}, args...)...))
-	if name == "bazel" {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		// Use the bazelisk binary embedded in the bb binary to avoid having to download it.
-		exitCode, err := bazelisk.Run(args, &bazelisk.RunOpts{Stdout: stdout, Stderr: stderr})
-		if err != nil {
-			return err
-		}
-		if exitCode != 0 {
-			return fmt.Errorf("bazel exited with code %d", exitCode)
-		}
-		return nil
-	}
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	return cmd.Run()
 }
@@ -112,16 +89,25 @@ type options struct {
 }
 
 type checker struct {
-	opts   options
-	runner commandRunner
+	opts      options
+	runner    commandRunner
+	explainer explainer
 }
 
 type artifacts struct {
-	tempDir      string
-	oldLog       string
-	newLog       string
-	explainProto string
-	explainText  string
+	tempDir string
+	oldLog  string
+	newLog  string
+}
+
+type explainRunner struct{}
+
+func (explainRunner) Diff(oldLog, newLog string) (*spawn_diff.DiffResult, error) {
+	return explain.Diff(oldLog, newLog)
+}
+
+func (explainRunner) WriteText(w io.Writer, diff *spawn_diff.DiffResult, verbose bool) {
+	explain.WriteText(w, diff, verbose)
 }
 
 func handleNondeterminism(args []string) (int, error) {
@@ -149,10 +135,14 @@ func handleNondeterminism(args []string) (int, error) {
 	}
 
 	c := &checker{
-		opts:   opts,
-		runner: osCommandRunner{},
+		opts:      opts,
+		runner:    osCommandRunner{},
+		explainer: explainRunner{},
 	}
-	if err := c.Run(context.Background()); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := c.Run(ctx); err != nil {
 		if errors.Is(err, errNondeterminismDetected) {
 			return exitCodeNondeterminismDetected, nil
 		}
@@ -186,15 +176,15 @@ func (c *checker) Run(ctx context.Context) error {
 	defer os.RemoveAll(a.tempDir)
 	log.Printf("Writing nondeterminism check files under %s", a.tempDir)
 
-	buildErr := errors.Join(
-		c.runBuild(ctx, 1, filepath.Join(a.tempDir, "output_base_1"), a.oldLog),
-		c.runBuild(ctx, 2, filepath.Join(a.tempDir, "output_base_2"), a.newLog),
-	)
+	buildErr := c.runBuilds(ctx, a)
 	if buildErr != nil {
+		if errors.Is(buildErr, context.Canceled) {
+			return buildErr
+		}
 		log.Warnf("One or both uncached builds failed; continuing with bb explain: %s", buildErr)
 	}
 
-	diff, explainErr := c.runExplainProto(ctx, a)
+	diff, explainErr := c.runExplainDiff(ctx, a)
 	if explainErr != nil {
 		return errors.Join(buildErr, explainErr)
 	}
@@ -204,8 +194,8 @@ func (c *checker) Run(ctx context.Context) error {
 	}
 
 	log.Print("\n\n\033[31mNondeterminism detected.\033[0m\n\n")
-	if err := c.writeExplainText(ctx, a); err != nil {
-		log.Warnf("Failed to write text bb explain artifact: %s", err)
+	if err := c.printExplainText(ctx, diff); err != nil {
+		log.Warnf("Failed to print text bb explain output: %s", err)
 	}
 	return errors.Join(buildErr, errNondeterminismDetected)
 }
@@ -216,12 +206,29 @@ func newArtifacts() (*artifacts, error) {
 		return nil, err
 	}
 	return &artifacts{
-		tempDir:      dir,
-		oldLog:       filepath.Join(dir, "build_1_compact_exec_log.pb.zst"),
-		newLog:       filepath.Join(dir, "build_2_compact_exec_log.pb.zst"),
-		explainProto: filepath.Join(dir, "bb_explain.pb"),
-		explainText:  filepath.Join(dir, "bb_explain.txt"),
+		tempDir: dir,
+		oldLog:  filepath.Join(dir, "build_1_compact_exec_log.pb.zst"),
+		newLog:  filepath.Join(dir, "build_2_compact_exec_log.pb.zst"),
 	}, nil
+}
+
+func (c *checker) runBuilds(ctx context.Context, a *artifacts) error {
+	var buildErr error
+	for i, build := range []struct {
+		outputBase string
+		logPath    string
+	}{
+		{outputBase: filepath.Join(a.tempDir, "output_base_1"), logPath: a.oldLog},
+		{outputBase: filepath.Join(a.tempDir, "output_base_2"), logPath: a.newLog},
+	} {
+		if err := c.runBuild(ctx, i+1, build.outputBase, build.logPath); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return err
+			}
+			buildErr = errors.Join(buildErr, err)
+		}
+	}
+	return buildErr
 }
 
 func (c *checker) runBuild(ctx context.Context, buildNumber int, outputBase, compactLogPath string) error {
@@ -263,38 +270,22 @@ func addBazelFlags(baseArgs *arg.BazelArgs, outputBase, compactLogPath, besBacke
 	return clonedArgs.Forwarded(), nil
 }
 
-func (c *checker) runExplainProto(ctx context.Context, a *artifacts) (*spawn_diff.DiffResult, error) {
-	args := []string{
-		"explain",
-		"--old=" + a.oldLog,
-		"--new=" + a.newLog,
-		"--output_format=proto",
+func (c *checker) runExplainDiff(ctx context.Context, a *artifacts) (*spawn_diff.DiffResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	out, err := c.runner.Output(ctx, "bb", args...)
+	diff, err := c.explainer.Diff(a.oldLog, a.newLog)
 	if err != nil {
 		return nil, fmt.Errorf("run bb explain: %w", err)
-	}
-	if err := os.WriteFile(a.explainProto, out, 0644); err != nil {
-		return nil, fmt.Errorf("write bb explain proto: %w", err)
-	}
-	diff := &spawn_diff.DiffResult{}
-	if err := proto.Unmarshal(out, diff); err != nil {
-		return nil, fmt.Errorf("parse bb explain proto: %w", err)
 	}
 	return diff, nil
 }
 
-func (c *checker) writeExplainText(ctx context.Context, a *artifacts) error {
-	args := []string{
-		"explain",
-		"--old=" + a.oldLog,
-		"--new=" + a.newLog,
-		"--verbose",
+func (c *checker) printExplainText(ctx context.Context, diff *spawn_diff.DiffResult) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	out, err := c.runner.Output(ctx, "bb", args...)
-	if err != nil {
-		return fmt.Errorf("run text bb explain: %w", err)
-	}
-	fmt.Printf("bb explain output:\n%s", string(out))
-	return os.WriteFile(a.explainText, out, 0644)
+	log.Print("bb explain output:\n")
+	c.explainer.WriteText(os.Stdout, diff, false /* verbose */)
+	return nil
 }

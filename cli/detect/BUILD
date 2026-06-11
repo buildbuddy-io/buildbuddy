@@ -11,13 +11,12 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/detect",
     deps = [
         "//cli/arg",
-        "//cli/bazelisk",
+        "//cli/explain",
         "//cli/log",
         "//cli/login",
         "//cli/parser/bazelrc",
         "//proto:spawn_diff_go_proto",
         "//server/util/shlex",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -32,6 +31,5 @@ go_test(
         "//proto:spawn_diff_go_proto",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_protobuf//proto",
     ],
 )

@@ -2,7 +2,7 @@ package detect
 
 import (
 	"context"
-	"errors"
+	"io"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 
 	spawn_diff "github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
 )
@@ -51,11 +50,7 @@ func TestAddBazelFlags_DoesNotMutateBaseArgs(t *testing.T) {
 }
 
 func TestParseBazelCommand(t *testing.T) {
-	bazelArgs, err := parseBazelCommand("")
-	require.NoError(t, err)
-	assert.Equal(t, []string{"build", "//..."}, bazelArgs.Forwarded())
-
-	bazelArgs, err = parseBazelCommand(`--bazelrc=/tmp/bazelrc test //foo:bar --test_output=errors`)
+	bazelArgs, err := parseBazelCommand(`--bazelrc=/tmp/bazelrc test //foo:bar --test_output=errors`)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"--bazelrc=/tmp/bazelrc", "test", "--test_output=errors", "//foo:bar"}, bazelArgs.Forwarded())
 
@@ -65,50 +60,50 @@ func TestParseBazelCommand(t *testing.T) {
 
 func TestRunReturnsDetectionError(t *testing.T) {
 	diff := &spawn_diff.DiffResult{SpawnDiffs: []*spawn_diff.SpawnDiff{{TargetLabel: "//foo:bar"}}}
-	diffBytes, err := proto.Marshal(diff)
-	require.NoError(t, err)
-	runner := &fakeRunner{outputs: [][]byte{diffBytes, []byte("text diff")}}
+	explainer := &fakeExplainer{diff: diff}
+	runner := &fakeRunner{}
 	c := &checker{
 		opts: options{
 			bazelArgs:     bazelArgsForTest(t, "build", "//foo:bar"),
 			besBackend:    defaultBESBackend,
 			besResultsURL: defaultBESResultsURL,
 		},
-		runner: runner,
+		runner:    runner,
+		explainer: explainer,
 	}
 
-	err = c.Run(context.Background())
+	err := c.Run(context.Background())
 	require.ErrorIs(t, err, errNondeterminismDetected)
 
 	require.Len(t, runner.runs, 2)
-	require.Len(t, runner.outputCalls, 2)
-	assert.Contains(t, runner.outputCalls[0].args, "--output_format=proto")
-	assert.Contains(t, runner.outputCalls[1].args, "--verbose")
+	assert.Equal(t, 1, explainer.writeCalls)
+	assert.Same(t, diff, explainer.wroteDiff)
 }
 
 func TestRunReturnsNilWhenNoDiffs(t *testing.T) {
-	diffBytes, err := proto.Marshal(&spawn_diff.DiffResult{})
-	require.NoError(t, err)
-	runner := &fakeRunner{outputs: [][]byte{diffBytes}}
+	explainer := &fakeExplainer{diff: &spawn_diff.DiffResult{}}
+	runner := &fakeRunner{}
 	c := &checker{
 		opts: options{
 			bazelArgs:     bazelArgsForTest(t, "build", "//foo:bar"),
 			besBackend:    defaultBESBackend,
 			besResultsURL: defaultBESResultsURL,
 		},
-		runner: runner,
+		runner:    runner,
+		explainer: explainer,
 	}
 
 	require.NoError(t, c.Run(context.Background()))
 
-	require.Len(t, runner.outputCalls, 1)
+	require.Len(t, runner.runs, 2)
+	assert.Equal(t, 0, explainer.writeCalls)
 }
 
 func bazelArgsForTest(t *testing.T, args ...string) *arg.BazelArgs {
 	t.Helper()
-	bazelArgs, err := arg.NewBazelArgsNoResolve(args)
+	parsedArgs, err := arg.NewBazelArgsNoResolve(args)
 	require.NoError(t, err)
-	return bazelArgs
+	return parsedArgs
 }
 
 type commandCall struct {
@@ -117,11 +112,8 @@ type commandCall struct {
 }
 
 type fakeRunner struct {
-	runs        []commandCall
-	outputCalls []commandCall
-	outputs     [][]byte
-	runErr      error
-	outputErr   error
+	runs   []commandCall
+	runErr error
 }
 
 func (r *fakeRunner) Run(ctx context.Context, name string, args ...string) error {
@@ -129,15 +121,18 @@ func (r *fakeRunner) Run(ctx context.Context, name string, args ...string) error
 	return r.runErr
 }
 
-func (r *fakeRunner) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
-	r.outputCalls = append(r.outputCalls, commandCall{name: name, args: append([]string(nil), args...)})
-	if r.outputErr != nil {
-		return nil, r.outputErr
-	}
-	if len(r.outputs) == 0 {
-		return nil, errors.New("missing fake output")
-	}
-	out := r.outputs[0]
-	r.outputs = r.outputs[1:]
-	return out, nil
+type fakeExplainer struct {
+	diff       *spawn_diff.DiffResult
+	diffErr    error
+	writeCalls int
+	wroteDiff  *spawn_diff.DiffResult
+}
+
+func (e *fakeExplainer) Diff(oldLog, newLog string) (*spawn_diff.DiffResult, error) {
+	return e.diff, e.diffErr
+}
+
+func (e *fakeExplainer) WriteText(w io.Writer, diff *spawn_diff.DiffResult, verbose bool) {
+	e.writeCalls++
+	e.wroteDiff = diff
 }

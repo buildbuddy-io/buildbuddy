@@ -141,14 +141,13 @@ func HandleExplain(args []string) (int, error) {
 		return 1, nil
 	}
 
-	diffResult, err := diff(*oldLog, *newLog)
+	diffResult, err := Diff(*oldLog, *newLog)
 	if err != nil {
 		return -1, err
 	}
 	switch *outputFormat {
 	case "text":
-		writeHeader(os.Stdout, diffResult.OldInvocationId, diffResult.NewInvocationId)
-		writeSpawnDiffs(os.Stdout, diffResult.SpawnDiffs)
+		WriteText(os.Stdout, diffResult, *verbose)
 	case "json":
 		b, err := protojson.MarshalOptions{Multiline: true, UseProtoNames: true}.Marshal(diffResult)
 		if err != nil {
@@ -187,7 +186,8 @@ func HandleExplain(args []string) (int, error) {
 	return 0, nil
 }
 
-func diff(oldPath, newPath string) (*spawn_diff.DiffResult, error) {
+// Diff returns a structural diff of two compact execution logs.
+func Diff(oldPath, newPath string) (*spawn_diff.DiffResult, error) {
 	oldSource, err := openLog(oldPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open old log: %v", err)
@@ -330,7 +330,13 @@ const (
 	finalState
 )
 
-func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
+// WriteText writes a human-readable diff result.
+func WriteText(w io.Writer, diffResult *spawn_diff.DiffResult, verbose bool) {
+	writeHeader(w, diffResult.OldInvocationId, diffResult.NewInvocationId)
+	writeSpawnDiffs(w, diffResult.SpawnDiffs, verbose)
+}
+
+func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff, verbose bool) {
 	// Diffs come in the order "old only", "new only", then "modified".
 	var oldOnly, newOnly map[string]uint32
 	previousState := initialState
@@ -351,7 +357,7 @@ func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 			switch previousState {
 			case oldOnlyState:
 				if len(oldOnly) > 0 {
-					if *verbose {
+					if verbose {
 						_, _ = fmt.Fprintln(w, "\nold only (transitive executions):")
 					} else {
 						_, _ = fmt.Fprintln(w, "old only (pass --verbose to see details):")
@@ -361,7 +367,7 @@ func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 				}
 			case newOnlyState:
 				if len(newOnly) > 0 {
-					if *verbose {
+					if verbose {
 						_, _ = fmt.Fprintln(w, "\nnew only (transitive executions):")
 					} else {
 						_, _ = fmt.Fprintln(w, "new only (pass --verbose to see details):")
@@ -374,12 +380,12 @@ func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 			switch currentState {
 			case oldOnlyState:
 				oldOnly = make(map[string]uint32)
-				if *verbose {
+				if verbose {
 					_, _ = fmt.Fprintln(w, "old only (top-level executions only):")
 				}
 			case newOnlyState:
 				newOnly = make(map[string]uint32)
-				if *verbose {
+				if verbose {
 					_, _ = fmt.Fprintln(w, "new only (top-level executions only):")
 				}
 			default:
@@ -389,19 +395,19 @@ func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 
 		switch td := d.GetDiff().(type) {
 		case *spawn_diff.SpawnDiff_OldOnly:
-			if *verbose && td.OldOnly.TopLevel {
+			if verbose && td.OldOnly.TopLevel {
 				_, _ = fmt.Fprintf(w, "  %s\n", spawnHeader(d))
 			} else {
 				oldOnly[d.Mnemonic]++
 			}
 		case *spawn_diff.SpawnDiff_NewOnly:
-			if *verbose && td.NewOnly.TopLevel {
+			if verbose && td.NewOnly.TopLevel {
 				_, _ = fmt.Fprintf(w, "  %s\n", spawnHeader(d))
 			} else {
 				newOnly[d.Mnemonic]++
 			}
 		case *spawn_diff.SpawnDiff_Modified:
-			if td.Modified.Expected && !*verbose {
+			if td.Modified.Expected && !verbose {
 				continue
 			}
 
