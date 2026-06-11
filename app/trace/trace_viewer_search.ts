@@ -1,20 +1,4 @@
-import { TraceEvent } from "./trace_events";
 import { SectionModel, TrackModel } from "./trace_viewer_model";
-
-function searchableFieldText(value: unknown): string {
-  if (value === undefined || value === null) return "";
-  return String(value).toLowerCase();
-}
-
-export function getTraceEventSearchText(event: TraceEvent): string {
-  return [event.name, event.cat, event.args?.target, event.args?.mnemonic, event.out]
-    .map(searchableFieldText)
-    .join(" ");
-}
-
-export function traceEventMatchesFilter(event: TraceEvent, filter: string): boolean {
-  return !filter || getTraceEventSearchText(event).includes(filter.toLowerCase());
-}
 
 function eventEnd(track: TrackModel, eventIndex: number): number {
   return track.thread.ts[eventIndex] + track.thread.dur[eventIndex];
