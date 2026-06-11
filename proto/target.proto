@@ -57,9 +57,10 @@ message TargetStatus {
 
   // Whether all recorded test attempts for this target invocation were served
   // from cache. For new ClickHouse rows, this legacy field is derived from
-  // total_run_count > 0 && cached_count == total_run_count. Older rows that
-  // predate the explicit cache counts have total_run_count == 0, so clients can
-  // fall back to this bool.
+  // total_run_count > 0 && cached_count == total_run_count. When
+  // total_run_count is 0, the row does not have explicit attempt counts, so
+  // clients should fall back to this bool instead of treating 0 as the number
+  // of attempts.
   bool cached = 6;
 
   // The number of cached test attempts recorded for this target invocation,
@@ -76,7 +77,8 @@ message TargetStatus {
   // The total number of cached and uncached test shard attempts recorded for
   // this target invocation. This comes from Bazel TestSummary.total_run_count;
   // compare cached_count against it to determine whether all attempts were
-  // cached.
+  // cached. A value of 0 indicates that explicit attempt counts are unavailable
+  // for legacy rows.
   int32 total_run_count = 10;
 }
 

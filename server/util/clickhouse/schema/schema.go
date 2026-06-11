@@ -417,9 +417,10 @@ type TestTargetStatus struct {
 	TargetType int32
 	TestSize   int32
 	Status     int32
-	// Deprecated: derive this from TotalRunCount > 0 &&
-	// CachedCount == TotalRunCount for new rows. This is kept for compatibility
-	// with older rows and existing queries.
+	// Deprecated: do not use this stored column for new rows. It can be
+	// derived from TotalRunCount > 0 && CachedCount == TotalRunCount once
+	// explicit attempt counts are present, and remains only for older rows and
+	// existing queries.
 	Cached              bool
 	CachedCount         int32
 	CachedLocallyCount  int32

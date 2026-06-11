@@ -81,9 +81,10 @@ func newTarget(label string, aspect string) *target {
 	}
 }
 
-func (t *target) effectiveCachedCount() int32 {
+func (t *target) effectiveCachedCount(ctx context.Context) int32 {
 	count := t.cachedCount
 	if observed := t.cachedLocallyCount + t.cachedRemotelyCount; observed > count {
+		log.CtxDebugf(ctx, "Observed %d cached TestResult entries for target %q, exceeding TestSummary total_num_cached=%d; using observed count", observed, t.label, t.cachedCount)
 		count = observed
 	}
 	return count
@@ -92,7 +93,7 @@ func (t *target) effectiveCachedCount() int32 {
 func (t *target) effectiveTotalRunCount(ctx context.Context) int32 {
 	count := t.totalRunCount
 	if t.observedResultCount > count {
-		log.CtxDebugf(ctx, "Using observed TestResult count for target %q because it exceeds TestSummary total_run_count (%d > %d)", t.label, t.observedResultCount, t.totalRunCount)
+		log.CtxDebugf(ctx, "Observed %d TestResult events for target %q, exceeding TestSummary total_run_count=%d; using observed count", t.observedResultCount, t.label, t.totalRunCount)
 		count = t.observedResultCount
 	}
 	return count
@@ -389,7 +390,7 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 			testStartTimeUsec = target.firstStartTime.UnixMicro()
 		}
 
-		cachedCount := target.effectiveCachedCount()
+		cachedCount := target.effectiveCachedCount(ctx)
 		totalRunCount := target.effectiveTotalRunCount(ctx)
 
 		entries = append(entries, &schema.TestTargetStatus{
