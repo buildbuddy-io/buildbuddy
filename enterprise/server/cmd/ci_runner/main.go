@@ -2424,7 +2424,10 @@ func runCommand(ctx context.Context, executable string, args []string, env map[s
 	<-copyOutputDone
 
 	if ctx.Err() == context.DeadlineExceeded {
-		_, _ = outputSink.Write([]byte(timeoutExceededMessage()))
+		// Go to the next line so we don't clobber partial output from the
+		// cancelled command (e.g. `git` commands repeatedly overwrite the
+		// same line when showing download progress)
+		_, _ = outputSink.Write([]byte("\r\n" + timeoutExceededMessage()))
 	}
 
 	if err != nil {
