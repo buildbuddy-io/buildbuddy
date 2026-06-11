@@ -32,8 +32,8 @@ const (
 //
 //  1. Open a new incognito window
 //  2. Go to org A's subdomain (org A uses SAML)
-//  3. Click the SSO login button - it should open a pop-up window. Just
-//     close the pop-up
+//  3. Click the SSO login button, but abandon the login flow without
+//     signing in to the IDP
 //  4. Go to org B's subdomain
 //  5. Org A's SAML login now appears (full screen)
 func TestAbandonedSAMLLoginDoesNotAffectOtherSubdomains(t *testing.T) {
@@ -112,13 +112,6 @@ func TestAbandonedSAMLLoginDoesNotAffectOtherSubdomains(t *testing.T) {
 	wt.SwitchWindow(mainWindow)
 
 	// Abandon the SAML login and go to org B's subdomain in the main window.
-	//
-	// Note: the popup is intentionally left open rather than closed as in
-	// the original repro steps. By this point the app has already recorded
-	// the abandoned login attempt (via cookies), which is what triggers the
-	// bug; closing the popup just additionally shows an expected
-	// "Authentication popup closed" error banner in the opener window, and
-	// the webtester fails any test that displays an error banner.
 	wt.Get(orgBURL)
 
 	// Watch the page for a few seconds to make sure we stay on org B's login
