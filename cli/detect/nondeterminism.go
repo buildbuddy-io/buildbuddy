@@ -20,7 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 
-	spawn_diff "github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
+	sdpb "github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
 )
 
 const (
@@ -67,8 +67,8 @@ type commandRunner interface {
 }
 
 type explainer interface {
-	Diff(oldLog, newLog string) (*spawn_diff.DiffResult, error)
-	WriteText(w io.Writer, diff *spawn_diff.DiffResult, verbose bool)
+	Diff(oldLog, newLog string) (*sdpb.DiffResult, error)
+	WriteText(w io.Writer, diff *sdpb.DiffResult, verbose bool)
 }
 
 type osCommandRunner struct{}
@@ -102,11 +102,11 @@ type artifacts struct {
 
 type explainRunner struct{}
 
-func (explainRunner) Diff(oldLog, newLog string) (*spawn_diff.DiffResult, error) {
+func (explainRunner) Diff(oldLog, newLog string) (*sdpb.DiffResult, error) {
 	return explain.Diff(oldLog, newLog)
 }
 
-func (explainRunner) WriteText(w io.Writer, diff *spawn_diff.DiffResult, verbose bool) {
+func (explainRunner) WriteText(w io.Writer, diff *sdpb.DiffResult, verbose bool) {
 	explain.WriteText(w, diff, verbose)
 }
 
@@ -236,13 +236,25 @@ func (c *checker) runBuild(ctx context.Context, buildNumber int, outputBase, com
 	if err != nil {
 		return err
 	}
-	if err := c.runner.Run(ctx, "bazel", args...); err != nil {
-		return fmt.Errorf("uncached build %d: %w", buildNumber, err)
+	runErr := c.runner.Run(ctx, "bazel", args...)
+	cleanupErr := removeOutputBase(outputBase)
+	if cleanupErr != nil {
+		log.Warnf("Failed to remove Bazel output base %s: %s", outputBase, cleanupErr)
+	}
+	if runErr != nil {
+		return fmt.Errorf("uncached build %d: %w", buildNumber, runErr)
 	}
 	return nil
 }
 
-// addBazelFlags adds the necessary Bazel flags to the command line.
+func removeOutputBase(outputBase string) error {
+	log.Printf("Removing Bazel output base %s", outputBase)
+	if err := os.RemoveAll(outputBase); err != nil {
+		return err
+	}
+	return nil
+}
+
 func addBazelFlags(baseArgs *arg.BazelArgs, outputBase, compactLogPath, besBackend, besResultsURL string) ([]string, error) {
 	// Clone the base args to avoid mutating the original, because each build has different flags (output base, compact log path, etc.).
 	clonedArgs, err := arg.NewBazelArgsNoResolve(baseArgs.Forwarded())
@@ -258,6 +270,10 @@ func addBazelFlags(baseArgs *arg.BazelArgs, outputBase, compactLogPath, besBacke
 		"--bes_results_url=" + besResultsURL,
 		// Don't accept remote cache hits, which might paper over nondeterminism.
 		"--noremote_accept_cached",
+		// Disable local caches too.
+		// We don't disable the repository cache because it validates digests on hits, so it can't get poisoned with non-determinism.
+		"--repo_contents_cache=",
+		"--disk_cache=",
 		"--execution_log_compact_file=" + compactLogPath,
 	} {
 		if err := clonedArgs.Append(flag); err != nil {
@@ -270,7 +286,7 @@ func addBazelFlags(baseArgs *arg.BazelArgs, outputBase, compactLogPath, besBacke
 	return clonedArgs.Forwarded(), nil
 }
 
-func (c *checker) runExplainDiff(ctx context.Context, a *artifacts) (*spawn_diff.DiffResult, error) {
+func (c *checker) runExplainDiff(ctx context.Context, a *artifacts) (*sdpb.DiffResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -281,7 +297,7 @@ func (c *checker) runExplainDiff(ctx context.Context, a *artifacts) (*spawn_diff
 	return diff, nil
 }
 
-func (c *checker) printExplainText(ctx context.Context, diff *spawn_diff.DiffResult) error {
+func (c *checker) printExplainText(ctx context.Context, diff *sdpb.DiffResult) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
