@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/box"
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
+	"github.com/buildbuddy-io/buildbuddy/cli/detect"
 	"github.com/buildbuddy-io/buildbuddy/cli/download"
 	"github.com/buildbuddy-io/buildbuddy/cli/execute"
 	"github.com/buildbuddy-io/buildbuddy/cli/execution"
@@ -65,6 +66,12 @@ func register() {
 			Help:    "Manages remote Firecracker VM boxes.",
 			Handler: box.HandleBox,
 			Flags:   box.Flags,
+		},
+		{
+			Name:    "detect",
+			Help:    "Detects issues in the current workspace.",
+			Handler: detect.HandleDetect,
+			Flags:   detect.Flags,
 		},
 		{
 			Name:    "download",

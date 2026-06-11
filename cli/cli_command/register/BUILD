@@ -13,6 +13,7 @@ go_library(
         "//cli/ask",
         "//cli/box",
         "//cli/cli_command",
+        "//cli/detect",
         "//cli/download",
         "//cli/execute",
         "//cli/execution",
