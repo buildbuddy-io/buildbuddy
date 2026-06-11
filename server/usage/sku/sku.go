@@ -2,6 +2,8 @@ package sku
 
 import (
 	"strings"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 )
 
 // SKU is a unique, human-readable identifier tracking a specific usage count.
@@ -157,7 +159,11 @@ func GetSelfHostedLabel(isSelfHosted bool) LabelValue {
 }
 
 func GetIsolationTypeLabel(isolationType string) LabelValue {
-	return strings.ToLower(isolationType)
+	value, ok := platform.CoerceContainerType(isolationType)
+	if !ok {
+		return UnknownLabelValue
+	}
+	return value
 }
 
 // Labels represents a collection of unique label values.

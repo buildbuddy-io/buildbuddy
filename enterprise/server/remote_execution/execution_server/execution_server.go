@@ -467,7 +467,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			executionProto.RequestedTimeoutUsec = action.GetTimeout().AsDuration().Microseconds()
 
 			if properties != nil {
-				executionProto.RequestedIsolationType = platform.CoerceContainerType(properties.WorkloadIsolationType)
+				executionProto.RequestedIsolationType, _ = platform.CoerceContainerType(properties.WorkloadIsolationType)
 				executionProto.RequestedComputeUnits = properties.EstimatedComputeUnits
 				executionProto.RequestedMemoryBytes = properties.EstimatedMemoryBytes
 				executionProto.RequestedMilliCpu = properties.EstimatedMilliCPU
