@@ -17,12 +17,12 @@ const (
 	slug = "saml-test"
 )
 
-func startApp(t *testing.T, idpCertPath string, extraArgs ...string) buildbuddy_enterprise.WebTarget {
+func startApp(t *testing.T, idp *testsaml.IDP, extraArgs ...string) buildbuddy_enterprise.WebTarget {
 	appCert, appKey := testsaml.CreateSelfSignedCert(t)
 	args := append([]string{
 		"--auth.saml.key=" + string(appKey),
 		"--auth.saml.cert=" + string(appCert),
-		"--auth.saml.trusted_idp_cert_files=" + idpCertPath,
+		"--auth.saml.trusted_idp_cert_files=" + idp.CertPath,
 	}, extraArgs...)
 	bb := buildbuddy_enterprise.SetupWebTarget(t, args...)
 	return bb
@@ -30,7 +30,7 @@ func startApp(t *testing.T, idpCertPath string, extraArgs ...string) buildbuddy_
 
 // Creates the org with slug "saml-test" and configures the SAML IDP metadata
 // URL in the DB.
-func setupSAMLTestOrg(t *testing.T, wt *webtester.WebTester, bb buildbuddy_enterprise.WebTarget, idp *mocksaml.IDP) {
+func setupSAMLTestOrg(t *testing.T, wt *webtester.WebTester, bb buildbuddy_enterprise.WebTarget, idp *testsaml.IDP) {
 	// Temporarily log in with self-auth, then configure an org slug in settings
 	// (it's empty by default).
 	webtester.Login(wt, bb)
@@ -56,8 +56,8 @@ func TestSAMLBasicLogin(t *testing.T) {
 	// metadata URL, so only run this test locally for now.
 	buildbuddy_enterprise.MarkTestLocalOnly(t)
 
-	idp, idpCertPath := testsaml.Start(t)
-	bb := startApp(t, idpCertPath)
+	idp := testsaml.Start(t)
+	bb := startApp(t, idp)
 	wt := webtester.New(t)
 	setupSAMLTestOrg(t, wt, bb, idp)
 
@@ -77,10 +77,10 @@ func TestSAMLViewInvocation(t *testing.T) {
 	buildbuddy_enterprise.MarkTestLocalOnly(t)
 
 	ctx := context.Background()
-	idp, idpCertPath := testsaml.Start(t)
+	idp := testsaml.Start(t)
 	// Disable persisting artifacts in blobstore to exercise that cache auth
 	// accesses via the UI work when logged in with SAML.
-	bb := startApp(t, idpCertPath, "--storage.disable_persist_cache_artifacts=true")
+	bb := startApp(t, idp, "--storage.disable_persist_cache_artifacts=true")
 	wt := webtester.New(t)
 	setupSAMLTestOrg(t, wt, bb, idp)
 

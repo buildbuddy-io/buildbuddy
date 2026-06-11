@@ -27,17 +27,16 @@ func Add(t *testing.T, ip string, hostnames ...string) {
 	if os.Geteuid() != 0 {
 		t.Skipf("test requires root privileges to modify %s", hostsFilePath)
 	}
-	stat, err := os.Stat(hostsFilePath)
-	require.NoError(t, err)
 	original, err := os.ReadFile(hostsFilePath)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		require.NoError(t, os.WriteFile(hostsFilePath, original, stat.Mode()))
+		// Note: the mode is ignored since the file already exists.
+		require.NoError(t, os.WriteFile(hostsFilePath, original, 0644))
 	})
 	contents := string(original)
 	if !strings.HasSuffix(contents, "\n") {
 		contents += "\n"
 	}
 	contents += fmt.Sprintf("%s %s\n", ip, strings.Join(hostnames, " "))
-	require.NoError(t, os.WriteFile(hostsFilePath, []byte(contents), stat.Mode()))
+	require.NoError(t, os.WriteFile(hostsFilePath, []byte(contents), 0644))
 }

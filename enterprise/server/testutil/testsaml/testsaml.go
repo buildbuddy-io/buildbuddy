@@ -19,13 +19,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// IDP is a mock SAML IDP scoped to a test.
+type IDP struct {
+	*mocksaml.IDP
+
+	// CertPath is the path to a PEM file containing the certificate that the
+	// IDP signs assertions with, suitable for passing to the app via the
+	// --auth.saml.trusted_idp_cert_files flag.
+	CertPath string
+}
+
 // Start starts a mock SAML IDP on a free port and waits for it to become
 // ready. The IDP is shut down when the test completes.
-//
-// It also returns the path to a PEM file containing the certificate that the
-// IDP signs assertions with, suitable for passing to the app via the
-// --auth.saml.trusted_idp_cert_files flag.
-func Start(t *testing.T) (_ *mocksaml.IDP, certPath string) {
+func Start(t *testing.T) *IDP {
 	idpCert, idpKey := CreateSelfSignedCert(t)
 	idp, err := mocksaml.Start(testport.FindFree(t), bytes.NewReader(idpCert), bytes.NewReader(idpKey))
 	require.NoError(t, err)
@@ -36,7 +42,7 @@ func Start(t *testing.T) (_ *mocksaml.IDP, certPath string) {
 	_, err = idpCertFile.Write(idpCert)
 	require.NoError(t, err)
 	_ = idpCertFile.Close()
-	return idp, idpCertFile.Name()
+	return &IDP{IDP: idp, CertPath: idpCertFile.Name()}
 }
 
 // CreateSelfSignedCert generates a self-signed cert and returns the

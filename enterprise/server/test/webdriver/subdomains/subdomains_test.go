@@ -55,7 +55,7 @@ func setup(t *testing.T) *testEnv {
 		orgBSlug+"."+domain,
 	)
 
-	idp, idpCertPath := testsaml.Start(t)
+	idp := testsaml.Start(t)
 	idpURL, err := url.Parse(idp.MetadataURL())
 	require.NoError(t, err)
 
@@ -71,7 +71,7 @@ func setup(t *testing.T) *testEnv {
 	bb := buildbuddy_enterprise.RunWithConfig(t, appConfig, buildbuddy_enterprise.DefaultConfig,
 		"--auth.saml.key="+string(appKey),
 		"--auth.saml.cert="+string(appCert),
-		"--auth.saml.trusted_idp_cert_files="+idpCertPath,
+		"--auth.saml.trusted_idp_cert_files="+idp.CertPath,
 		// Enable subdomain handling, mirroring the dev/prod config.
 		"--app.build_buddy_url="+env.appURL,
 		"--app.enable_subdomain_matching=true",
