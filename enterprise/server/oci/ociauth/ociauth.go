@@ -5,7 +5,16 @@
 // one from the cache must be gated on proof that the caller could have
 // fetched it from the upstream registry. ociauth makes that proof explicit:
 // ocicache.FetchBlobFromCache requires a CacheAccessToken, and tokens can
-// only be constructed by this package.
+// only be constructed by this package, via one of:
+//
+//   - Authenticator.AuthorizeCacheAccess, which runs an access check (or
+//     reuses a recent one),
+//   - Authenticator.RecordAccess, which must immediately follow a concrete
+//     success demonstrating access (e.g. an authenticated fetch from the
+//     upstream registry) — call sites must document that success, or
+//   - AuthorizeServerAdminCacheAccess, which checks server-admin claims.
+//
+// There is deliberately no way to mint a token without one of these checks.
 package ociauth
 
 import (
@@ -70,7 +79,15 @@ func NewAuthenticator() (*Authenticator, error) {
 // (typically a HEAD request to the upstream registry) and a successful check
 // is recorded for subsequent calls.
 func (a *Authenticator) AuthorizeCacheAccess(ctx context.Context, repo gcrname.Repository, creds *rgpb.Credentials, prove func(ctx context.Context) error) (CacheAccessToken, error) {
-	key := accessProofKey(repo, creds)
+	return a.AuthorizeCacheAccessForCredsKey(ctx, repo, protoCredsKey(creds), prove)
+}
+
+// AuthorizeCacheAccessForCredsKey is AuthorizeCacheAccess for callers whose
+// credentials are not rgpb.Credentials (e.g. a raw Authorization header).
+// credsKey must uniquely identify the credentials; callers should hash any
+// secret material rather than passing it directly.
+func (a *Authenticator) AuthorizeCacheAccessForCredsKey(ctx context.Context, repo gcrname.Repository, credsKey string, prove func(ctx context.Context) error) (CacheAccessToken, error) {
+	key := accessProofKey(repo, credsKey)
 	if a.proofs.Contains(key) {
 		return CacheAccessToken{repo: repo.Name()}, nil
 	}
@@ -81,28 +98,41 @@ func (a *Authenticator) AuthorizeCacheAccess(ctx context.Context, repo gcrname.R
 	return CacheAccessToken{repo: repo.Name()}, nil
 }
 
-// RecordAccess records that creds were just proven to grant access to repo by
-// some out-of-band success (e.g. a fetch from the upstream registry) and
-// returns the corresponding token.
+// RecordAccess records that creds were just proven to grant access to repo
+// and returns the corresponding token. It must only be called immediately
+// after a concrete success that demonstrates access — for example, an
+// authenticated fetch from the upstream registry, or (for trusted tooling) a
+// read authorized by the cache's own access controls. Call sites must
+// document the success that justifies them.
 func (a *Authenticator) RecordAccess(repo gcrname.Repository, creds *rgpb.Credentials) CacheAccessToken {
-	a.proofs.Add(accessProofKey(repo, creds), struct{}{})
+	return a.RecordAccessForCredsKey(repo, protoCredsKey(creds))
+}
+
+// RecordAccessForCredsKey is RecordAccess for callers whose credentials are
+// not rgpb.Credentials. See AuthorizeCacheAccessForCredsKey for credsKey
+// requirements.
+func (a *Authenticator) RecordAccessForCredsKey(repo gcrname.Repository, credsKey string) CacheAccessToken {
+	a.proofs.Add(accessProofKey(repo, credsKey), struct{}{})
 	return CacheAccessToken{repo: repo.Name()}
 }
 
 // HasRecentAccess returns whether access to repo with creds was proven
 // recently enough that the proof is still valid.
 func (a *Authenticator) HasRecentAccess(repo gcrname.Repository, creds *rgpb.Credentials) bool {
-	return a.proofs.Contains(accessProofKey(repo, creds))
+	return a.proofs.Contains(accessProofKey(repo, protoCredsKey(creds)))
+}
+
+// protoCredsKey derives a creds key from proto credentials. A nil proto is
+// equivalent to empty (anonymous) credentials.
+func protoCredsKey(creds *rgpb.Credentials) string {
+	return hash.Strings(creds.GetUsername(), creds.GetPassword())
 }
 
 // accessProofKey returns the access-proof cache key for the given repository
-// and credentials. Registry pull authorization is repository-scoped, so the
-// key is deliberately not specific to any one manifest or blob digest.
-func accessProofKey(repo gcrname.Repository, creds *rgpb.Credentials) string {
-	if creds == nil {
-		return hash.Strings(repo.Name(), "", "")
-	}
-	return hash.Strings(repo.Name(), creds.GetUsername(), creds.GetPassword())
+// and credentials key. Registry pull authorization is repository-scoped, so
+// the key is deliberately not specific to any one manifest or blob digest.
+func accessProofKey(repo gcrname.Repository, credsKey string) string {
+	return hash.Strings(repo.Name(), credsKey)
 }
 
 // AuthorizeServerAdminCacheAccess returns a token scoped to repo if the
@@ -113,15 +143,4 @@ func AuthorizeServerAdminCacheAccess(ctx context.Context, repo gcrname.Repositor
 		return CacheAccessToken{}, err
 	}
 	return CacheAccessToken{repo: repo.Name()}, nil
-}
-
-// UncheckedCacheAccess returns a token scoped to repo without verifying
-// registry access. It exists for callers whose access is enforced by other
-// means: the ociregistry mirror, which intentionally serves cached content
-// without re-authenticating against the upstream registry, and tools like
-// replay_action whose cache reads are authorized by the cache itself (via
-// API key). New callers should use Authenticator.AuthorizeCacheAccess
-// instead.
-func UncheckedCacheAccess(repo gcrname.Repository) CacheAccessToken {
-	return CacheAccessToken{repo: repo.Name()}
 }

@@ -201,6 +201,7 @@ type Resolver struct {
 
 	allowedPrivateIPs   []*net.IPNet
 	imageTagToDigestLRU lru.LRU[string]
+	authenticator       *ociauth.Authenticator
 }
 
 func NewResolver(env environment.Env) (*Resolver, error) {
@@ -218,10 +219,15 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 	if err != nil {
 		return nil, err
 	}
+	authenticator, err := ociauth.NewAuthenticator()
+	if err != nil {
+		return nil, err
+	}
 	return &Resolver{
 		env:                 env,
 		imageTagToDigestLRU: imageTagToDigestLRU,
 		allowedPrivateIPs:   allowedPrivateIPNets,
+		authenticator:       authenticator,
 	}, nil
 }
 
@@ -329,6 +335,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		r.env.GetByteStreamClient(),
 		puller,
 		r.env.GetOCIFetcherClient(),
+		r.authenticator,
 		credentials,
 		useCache,
 		useOCIFetcher,
@@ -339,7 +346,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 // then falls back to fetching from the upstream remote registry.
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
-func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) (gcr.Image, error) {
+func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, authenticator *ociauth.Authenticator, credentials Credentials, useCache bool, useOCIFetcher bool) (gcr.Image, error) {
 	// When using OCIFetcher, skip the separate metadata request and just fetch
 	// the full manifest. The OCIFetcher server caches manifests, so this avoids
 	// an extra round trip.
@@ -389,10 +396,11 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 				}
 			}
 			// Either the manifest HEAD request above authenticated these
-			// credentials with the registry, or the executor is explicitly
-			// bypassing the registry; in both cases the access check happens
-			// outside ociauth.
-			cacheToken := ociauth.UncheckedCacheAccess(digestOrTagRef.Context())
+			// credentials with the registry, or the registry is being
+			// bypassed — a capability the execution server only grants to
+			// server admins — and the manifest was just successfully read
+			// from the cache with this request's cache credentials.
+			cacheToken := authenticator.RecordAccess(digestOrTagRef.Context(), credentials.ToProto())
 			return imageFromDescriptorAndManifest(
 				ctx,
 				digestOrTagRef.Context(),
@@ -403,6 +411,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 				bsClient,
 				puller,
 				ociFetcherClient,
+				authenticator,
 				credentials,
 				cacheToken,
 				useCache,
@@ -434,7 +443,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 	// fetchManifest succeeded against the registry (or the OCI fetcher, which
 	// performs its own access checks), proving these credentials grant access
 	// to the repository.
-	cacheToken := ociauth.UncheckedCacheAccess(digestOrTagRef.Context())
+	cacheToken := authenticator.RecordAccess(digestOrTagRef.Context(), credentials.ToProto())
 	return imageFromDescriptorAndManifest(
 		ctx,
 		digestOrTagRef.Context(),
@@ -445,6 +454,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		bsClient,
 		puller,
 		ociFetcherClient,
+		authenticator,
 		credentials,
 		cacheToken,
 		useCache,
@@ -506,7 +516,7 @@ func fetchManifest(ctx context.Context, digestOrTagRef gcrname.Reference, puller
 // finds a child image matching the given platform (and fetches a manifest for it) if the given manifest is an index,
 // and otherwise returns an error.
 // ociFetcherClient must be non-nil when useOCIFetcher is true.
-func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, cacheToken ociauth.CacheAccessToken, useCache bool, useOCIFetcher bool) (gcr.Image, error) {
+func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, authenticator *ociauth.Authenticator, credentials Credentials, cacheToken ociauth.CacheAccessToken, useCache bool, useOCIFetcher bool) (gcr.Image, error) {
 	if useOCIFetcher && ociFetcherClient == nil {
 		return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
 	}
@@ -533,6 +543,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 			bsClient,
 			puller,
 			ociFetcherClient,
+			authenticator,
 			credentials,
 			useCache,
 			useOCIFetcher,

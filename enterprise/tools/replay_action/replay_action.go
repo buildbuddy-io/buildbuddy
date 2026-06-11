@@ -514,15 +514,20 @@ func runTool(rootCtx, srcCtx, targetCtx context.Context) error {
 	if *printStats {
 		statsCollector = &StatsCollector{}
 	}
+	cacheAuthenticator, err := ociauth.NewAuthenticator()
+	if err != nil {
+		return fmt.Errorf("create cache authenticator: %w", err)
+	}
 	replayer := &Replayer{
-		sourceBSClient:  sourceBSClient,
-		sourceCASClient: sourceCASClient,
-		sourceACClient:  sourceACClient,
-		destBSClient:    destBSClient,
-		destCASClient:   destCASClient,
-		destACClient:    destACClient,
-		execClient:      execClient,
-		statsCollector:  statsCollector,
+		sourceBSClient:     sourceBSClient,
+		sourceCASClient:    sourceCASClient,
+		sourceACClient:     sourceACClient,
+		destBSClient:       destBSClient,
+		destCASClient:      destCASClient,
+		destACClient:       destACClient,
+		execClient:         execClient,
+		statsCollector:     statsCollector,
+		cacheAuthenticator: cacheAuthenticator,
 	}
 	replayer.uploadGroup.SetLimit(3)
 	replayer.executeGroup.SetLimit(*jobs)
@@ -773,6 +778,10 @@ type Replayer struct {
 	sourceACClient, destACClient   repb.ActionCacheClient
 	execClient                     repb.ExecutionClient
 
+	// cacheAuthenticator issues tokens for reading OCI blobs from the source
+	// cache, which authorizes this tool's reads via the configured API key.
+	cacheAuthenticator *ociauth.Authenticator
+
 	// Map of upload keys to [func() error] objects which will upload the
 	// digest once.
 	uploads sync.Map
@@ -966,9 +975,10 @@ func (r *Replayer) copyCachedContainerImage(ctx, srcCtx, targetCtx context.Conte
 	}
 
 	// Now that we've copied manifests, copy blobs.
-	// Reads from the source cache are authorized by the cache itself (via
-	// the configured API key), not by registry credentials.
-	cacheToken := ociauth.UncheckedCacheAccess(digestRef.Repository)
+	// FetchManifestFromAC succeeded above: the source cache, which checks
+	// the configured API key on every read, authorized this tool to read
+	// this image's cache entries.
+	cacheToken := r.cacheAuthenticator.RecordAccess(digestRef.Repository, nil)
 	copyBlob := func(hash gcr.Hash, contentLength int64, contentType string, label string) error {
 		pr, pw := io.Pipe()
 		defer pr.Close()

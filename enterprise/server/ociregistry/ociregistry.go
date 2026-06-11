@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -93,6 +94,10 @@ type registry struct {
 	env     environment.Env
 	client  *http.Client
 	mirrors []Mirror
+	// authenticator issues cache access tokens for serving blobs from the
+	// cache, remembering repository+credentials pairs for which an upstream
+	// access check recently succeeded.
+	authenticator *ociauth.Authenticator
 	// tagDigestCache caches the result of resolving a manifest tag, including
 	// the digest and response headers from the upstream HEAD request.
 	tagDigestCache lru.LRU[manifestResolveResult]
@@ -129,9 +134,14 @@ func New(env environment.Env) (*registry, error) {
 	if err != nil {
 		return nil, status.InternalErrorf("could not create tag digest cache: %s", err)
 	}
+	authenticator, err := ociauth.NewAuthenticator()
+	if err != nil {
+		return nil, err
+	}
 	r := &registry{
 		env:            env,
 		client:         client,
+		authenticator:  authenticator,
 		tagDigestCache: tagDigestCache,
 	}
 	if *registryDomain != "" {
@@ -367,6 +377,34 @@ func (r *registry) makeUpstreamRequest(ctx context.Context, method string, accep
 	return r.client.Do(upreq.WithContext(ctx))
 }
 
+// requestCredsKey returns an access-proof credentials key for the client's
+// Authorization header (hashed, so no secret material is kept in LRU keys).
+// Clients without an Authorization header share the anonymous key.
+func requestCredsKey(inreq *http.Request) string {
+	return hash.Strings(inreq.Header.Get(headerAuthorization))
+}
+
+// checkUpstreamAccess makes a HEAD request to the upstream registry with the
+// client's Authorization header to verify the client may access the given
+// resource.
+func (r *registry) checkUpstreamAccess(ctx context.Context, inreq *http.Request, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) error {
+	resp, err := r.makeUpstreamRequest(ctx, http.MethodHead, inreq.Header.Values(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
+	if err != nil {
+		return status.UnavailableErrorf("error making HEAD request to upstream registry: %s", err)
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return status.PermissionDeniedErrorf("upstream registry denied access to %s (HTTP %d)", ref.Context(), resp.StatusCode)
+	case http.StatusNotFound:
+		return status.NotFoundErrorf("%s not found in upstream registry", ref.Context())
+	default:
+		return status.UnavailableErrorf("upstream registry returned HTTP %d for %s", resp.StatusCode, ref.Context())
+	}
+}
+
 func parseDockerContentDigestHeader(value string) (*gcr.Hash, error) {
 	if value == "" {
 		return nil, nil
@@ -472,18 +510,43 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		http.Error(w, fmt.Sprintf("Error parsing resolved digest in %q: %s", resolvedRef.Context(), err), http.StatusInternalServerError)
 		return
 	}
-	// The mirror intentionally serves cached content without re-checking
-	// access against the upstream registry, so cache access is unchecked
-	// here.
-	cacheToken := ociauth.UncheckedCacheAccess(resolvedRef.Context())
-	err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, cacheToken, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
-	if err == nil {
-		return // Successfully served request from cache.
+	// Serving a cached blob requires proof that the client may access the
+	// repository upstream. Proof is usually already recorded from the
+	// upstream requests made earlier in a pull (tag resolution, read-through
+	// fetches); otherwise prove access now with an upstream HEAD request
+	// using the client's own credentials. If access cannot be proven, skip
+	// the cache and fall through to the upstream fetch path below, which
+	// uses the same credentials and will fail with an appropriate error if
+	// the client genuinely lacks access.
+	var cacheToken ociauth.CacheAccessToken
+	serveFromCache := true
+	if ociResourceType == ocipb.OCIResourceType_BLOB {
+		token, err := r.authenticator.AuthorizeCacheAccessForCredsKey(ctx, resolvedRef.Context(), requestCredsKey(inreq), func(ctx context.Context) error {
+			return r.checkUpstreamAccess(ctx, inreq, ociResourceType, resolvedRef)
+		})
+		if status.IsNotFoundError(err) {
+			// The upstream registry says the blob does not exist, so there
+			// is no point falling through to the upstream fetch below.
+			http.Error(w, fmt.Sprintf("Could not find %q", resolvedRef.Context()), http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			log.CtxInfof(ctx, "Could not prove upstream access to %q; skipping cache: %s", resolvedRef.Context(), err)
+			serveFromCache = false
+		} else {
+			cacheToken = token
+		}
 	}
-	if !status.IsNotFoundError(err) {
-		log.CtxErrorf(ctx, "error fetching image %q from the cache: %s", resolvedRef.Context(), err)
-		http.Error(w, fmt.Sprintf("Error fetching image %q from the cache: %s", resolvedRef.Context(), err), http.StatusServiceUnavailable)
-		return
+	if serveFromCache {
+		err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, cacheToken, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
+		if err == nil {
+			return // Successfully served request from cache.
+		}
+		if !status.IsNotFoundError(err) {
+			log.CtxErrorf(ctx, "error fetching image %q from the cache: %s", resolvedRef.Context(), err)
+			http.Error(w, fmt.Sprintf("Error fetching image %q from the cache: %s", resolvedRef.Context(), err), http.StatusServiceUnavailable)
+			return
+		}
 	}
 
 	// We can only dedupe upstream requests when no auth is involved.
@@ -506,7 +569,10 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		return
 	}
 
-	// The blob should now be in the cache, serve it from there.
+	// The blob should now be in the cache, serve it from there. The upstream
+	// GET in fetchAndCache succeeded with the client's credentials, which
+	// proves access to the repository.
+	cacheToken = r.authenticator.RecordAccessForCredsKey(resolvedRef.Context(), requestCredsKey(inreq))
 	err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, cacheToken, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
 	if err != nil {
 		log.CtxErrorf(ctx, "error serving %q from cache after fetch: %s", resolvedRef.Context(), err)
@@ -622,6 +688,11 @@ func (r *registry) resolveTagToDigest(ctx context.Context, inreq *http.Request, 
 	if result.hash == nil {
 		return manifestResolveResult{}, status.NotFoundErrorf("could not parse digest from manifest for %q", ref.Context())
 	}
+	// The upstream HEAD request succeeded with the client's credentials,
+	// which proves access to the repository. (Deduplicated and tag-cached
+	// resolutions only occur for anonymous requests, which all share the
+	// anonymous credentials key.)
+	r.authenticator.RecordAccessForCredsKey(ref.Context(), requestCredsKey(inreq))
 	if useTagDigestCache {
 		r.tagDigestCache.Add(cacheKey, result)
 	}

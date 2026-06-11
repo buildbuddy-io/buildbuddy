@@ -280,8 +280,17 @@ func blobDoesNotExist(t *testing.T, ctx context.Context, te *testenv.TestEnv, re
 	require.Nil(t, metadata)
 
 	out := &bytes.Buffer{}
-	err = ocicache.FetchBlobFromCache(ctx, ociauth.UncheckedCacheAccess(repo), out, bsClient, repo, hash, contentLength)
+	err = ocicache.FetchBlobFromCache(ctx, testCacheToken(t, repo), out, bsClient, repo, hash, contentLength)
 	require.Error(t, err)
+}
+
+// testCacheToken mints a CacheAccessToken for the given repository the way a
+// real caller would after proving access.
+func testCacheToken(t *testing.T, repo gcrname.Repository) ociauth.CacheAccessToken {
+	t.Helper()
+	a, err := ociauth.NewAuthenticator()
+	require.NoError(t, err)
+	return a.RecordAccess(repo, nil)
 }
 
 func TestBlobUploader_BlobExists(t *testing.T) {
@@ -439,7 +448,7 @@ func fetchAndCheckBlob(t *testing.T, te *testenv.TestEnv, layerBuf []byte, repo 
 	require.Equal(t, contentLength, metadata.GetContentLength())
 
 	out := &bytes.Buffer{}
-	err = ocicache.FetchBlobFromCache(ctx, ociauth.UncheckedCacheAccess(repo), out, bsClient, repo, hash, contentLength)
+	err = ocicache.FetchBlobFromCache(ctx, testCacheToken(t, repo), out, bsClient, repo, hash, contentLength)
 	require.NoError(t, err)
 	require.Empty(t, cmp.Diff(layerBuf, out.Bytes()))
 }
@@ -463,13 +472,13 @@ func TestFetchBlobFromCacheRequiresMatchingToken(t *testing.T) {
 	require.Empty(t, out.Bytes())
 
 	// A token scoped to a different repository grants no access.
-	otherToken := ociauth.UncheckedCacheAccess(mustRepo(t, "buildbuddy.io/other"))
+	otherToken := testCacheToken(t, mustRepo(t, "buildbuddy.io/other"))
 	err = ocicache.FetchBlobFromCache(ctx, otherToken, out, bsClient, repo, hash, contentLength)
 	require.True(t, status.IsPermissionDeniedError(err))
 	require.Empty(t, out.Bytes())
 
 	// A token scoped to the blob's repository grants access.
-	err = ocicache.FetchBlobFromCache(ctx, ociauth.UncheckedCacheAccess(repo), out, bsClient, repo, hash, contentLength)
+	err = ocicache.FetchBlobFromCache(ctx, testCacheToken(t, repo), out, bsClient, repo, hash, contentLength)
 	require.NoError(t, err)
 	require.Empty(t, cmp.Diff(layerBuf, out.Bytes()))
 }

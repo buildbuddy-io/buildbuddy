@@ -2,6 +2,7 @@ package ociregistry_test
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
@@ -96,12 +97,15 @@ func TestPull(t *testing.T) {
 			expectedUpstreamRequests: 1,
 		},
 		{
-			name:                     "HEAD request for existing blob succeeds",
-			method:                   http.MethodHead,
-			blobsOrManifests:         "blobs",
-			expectedStatus:           http.StatusOK,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 1,
+			name:                   "HEAD request for existing blob succeeds",
+			method:                 http.MethodHead,
+			blobsOrManifests:       "blobs",
+			expectedStatus:         http.StatusOK,
+			expectedMirrorRequests: 1,
+			// The mirror makes an upstream HEAD request to prove the client
+			// may access the repository before serving from the cache, then
+			// an upstream GET to fetch the (uncached) blob.
+			expectedUpstreamRequests: 2,
 		},
 		{
 			name:                     "GET request for nonexistent blob fails",
@@ -113,12 +117,15 @@ func TestPull(t *testing.T) {
 			expectedUpstreamRequests: 1,
 		},
 		{
-			name:                     "GET request for existing blob succeeds",
-			method:                   http.MethodGet,
-			blobsOrManifests:         "blobs",
-			expectedStatus:           http.StatusOK,
-			expectedMirrorRequests:   1,
-			expectedUpstreamRequests: 1,
+			name:                   "GET request for existing blob succeeds",
+			method:                 http.MethodGet,
+			blobsOrManifests:       "blobs",
+			expectedStatus:         http.StatusOK,
+			expectedMirrorRequests: 1,
+			// The mirror makes an upstream HEAD request to prove the client
+			// may access the repository before serving from the cache, then
+			// an upstream GET to fetch the (uncached) blob.
+			expectedUpstreamRequests: 2,
 		},
 		{
 			name:                     "HEAD request for nonexistent manifest fails",
@@ -255,12 +262,17 @@ func TestPull(t *testing.T) {
 			expectedUpstreamRequests: 0,
 		},
 		{
-			name:                     "repeated GET requests for existing blob use CAS",
-			method:                   http.MethodGet,
-			blobsOrManifests:         "blobs",
-			expectedStatus:           http.StatusOK,
-			expectedMirrorRequests:   2,
-			expectedUpstreamRequests: 1,
+			name:                   "repeated GET requests for existing blob use CAS",
+			method:                 http.MethodGet,
+			blobsOrManifests:       "blobs",
+			expectedStatus:         http.StatusOK,
+			expectedMirrorRequests: 2,
+			// On the first blob GET, the mirror makes an upstream HEAD
+			// request to prove the client may access the repository, then an
+			// upstream GET to fetch the (uncached) blob. On the second GET,
+			// the access proof is still fresh and the blob is served from
+			// CAS, so no upstream requests are needed.
+			expectedUpstreamRequests: 2,
 			repeatRequestToHitCache:  true,
 		},
 		{
@@ -383,6 +395,87 @@ func TestPull(t *testing.T) {
 			require.Equal(t, tc.expectedUpstreamRequests, upstreamCounter.Load()-upstreamRequestsAtStart)
 		})
 	}
+}
+
+// TestCachedBlobRequiresUpstreamAccessProof verifies that a blob cached by an
+// authorized client is not served from the cache to clients that cannot prove
+// access to the upstream repository.
+func TestCachedBlobRequiresUpstreamAccessProof(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
+	key, err := random.RandomString(16)
+	require.NoError(t, err)
+	flags.Set(t, "app.client_identity.key", string(key))
+	err = clientidentity.Register(te)
+	require.NoError(t, err)
+
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	creds := &testregistry.BasicAuthCreds{Username: "user", Password: "pass"}
+	testreg := testregistry.Run(t, testregistry.Opts{Creds: creds})
+	t.Cleanup(func() {
+		require.NoError(t, testreg.Shutdown())
+	})
+	imageName, image := testreg.PushNamedImage(t, "private_image", creds)
+
+	ocireg, err := ociregistry.New(te)
+	require.NoError(t, err)
+	mirrorHostPort := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	mirrorServer := &http.Server{Handler: ocireg}
+	lis, err := net.Listen("tcp", mirrorHostPort)
+	require.NoError(t, err)
+	go func() { _ = mirrorServer.Serve(lis) }()
+	t.Cleanup(func() {
+		require.NoError(t, mirrorServer.Shutdown(context.TODO()))
+	})
+
+	layers, err := image.Layers()
+	require.NoError(t, err)
+	require.Greater(t, len(layers), 0)
+	layerDigest, err := layers[0].Digest()
+	require.NoError(t, err)
+	rc, err := layers[0].Compressed()
+	require.NoError(t, err)
+	layerBytes, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	require.NoError(t, rc.Close())
+
+	blobURL := fmt.Sprintf("http://%s/v2/%s/blobs/%s", mirrorHostPort, imageName, layerDigest.String())
+	basicAuth := func(username, password string) string {
+		return "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
+	}
+	getBlob := func(authHeader string) (int, []byte) {
+		req, err := http.NewRequest(http.MethodGet, blobURL, nil)
+		require.NoError(t, err)
+		if authHeader != "" {
+			req.Header.Set("Authorization", authHeader)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		return resp.StatusCode, body
+	}
+
+	// An authorized client fetches the blob, which caches it in the CAS.
+	statusCode, body := getBlob(basicAuth("user", "pass"))
+	require.Equal(t, http.StatusOK, statusCode)
+	require.Equal(t, layerBytes, body)
+
+	// The blob is now cached, but clients without credentials, or with
+	// invalid credentials, must not be served the cached blob.
+	statusCode, _ = getBlob("")
+	require.NotEqual(t, http.StatusOK, statusCode)
+	statusCode, _ = getBlob(basicAuth("user", "wrong-password"))
+	require.NotEqual(t, http.StatusOK, statusCode)
+
+	// A client with valid credentials is still served the cached blob.
+	statusCode, body = getBlob(basicAuth("user", "pass"))
+	require.Equal(t, http.StatusOK, statusCode)
+	require.Equal(t, layerBytes, body)
 }
 
 func TestTagDigestCacheBypassedWithAuth(t *testing.T) {

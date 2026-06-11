@@ -107,15 +107,52 @@ func TestRecordAccess(t *testing.T) {
 }
 
 func TestTokenScope(t *testing.T) {
+	a, err := ociauth.NewAuthenticator()
+	require.NoError(t, err)
 	repo := mustRepo(t, "buildbuddy.io/test")
 	otherRepo := mustRepo(t, "buildbuddy.io/other")
 
 	var zero ociauth.CacheAccessToken
 	require.False(t, zero.GrantsAccess(repo))
 
-	token := ociauth.UncheckedCacheAccess(repo)
+	token := a.RecordAccess(repo, nil)
 	require.True(t, token.GrantsAccess(repo))
 	require.False(t, token.GrantsAccess(otherRepo))
+}
+
+func TestAuthorizeCacheAccessForCredsKey(t *testing.T) {
+	a, err := ociauth.NewAuthenticator()
+	require.NoError(t, err)
+	ctx := context.Background()
+	repo := mustRepo(t, "buildbuddy.io/test")
+
+	proveCalls := 0
+	prove := func(ctx context.Context) error {
+		proveCalls++
+		return nil
+	}
+
+	token, err := a.AuthorizeCacheAccessForCredsKey(ctx, repo, "creds-key-a", prove)
+	require.NoError(t, err)
+	require.True(t, token.GrantsAccess(repo))
+	require.Equal(t, 1, proveCalls)
+
+	// The same credentials key is served from the proof cache.
+	_, err = a.AuthorizeCacheAccessForCredsKey(ctx, repo, "creds-key-a", prove)
+	require.NoError(t, err)
+	require.Equal(t, 1, proveCalls)
+
+	// A different credentials key must re-prove access.
+	_, err = a.AuthorizeCacheAccessForCredsKey(ctx, repo, "creds-key-b", prove)
+	require.NoError(t, err)
+	require.Equal(t, 2, proveCalls)
+
+	// RecordAccessForCredsKey satisfies later authorization for its key only.
+	a.RecordAccessForCredsKey(repo, "creds-key-c")
+	_, err = a.AuthorizeCacheAccessForCredsKey(ctx, repo, "creds-key-c", func(ctx context.Context) error {
+		return status.InternalError("should not be called")
+	})
+	require.NoError(t, err)
 }
 
 func TestAuthorizeServerAdminCacheAccessRequiresClaims(t *testing.T) {

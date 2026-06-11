@@ -20,6 +20,7 @@ go_library(
         "//server/real_environment",
         "//server/util/clientip",
         "//server/util/flag",
+        "//server/util/hash",
         "//server/util/log",
         "//server/util/lru",
         "//server/util/prefix",
