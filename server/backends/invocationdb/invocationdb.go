@@ -112,17 +112,38 @@ func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocati
 // id and attempt number. It returns whether a row was updated.
 func (d *InvocationDB) UpdateInvocation(ctx context.Context, ti *tables.Invocation) (bool, error) {
 	return retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (bool, error) {
-		result := d.h.GORM(ctx, "invocationdb_update_invocation").Where("invocation_id = ? AND attempt = ?", ti.InvocationID, ti.Attempt).Updates(ti)
-		updated := result.RowsAffected > 0
+		updated := false
+		err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
+			// Look up current perms to preserve current share status of the invocation.
+			if ti != nil && ti.Perms != 0 && ti.Perms&perms.OTHERS_READ == 0 {
+				var existing tables.Invocation
+				q := `SELECT perms FROM "Invocations" WHERE invocation_id = ? AND attempt = ? ` + d.h.SelectForUpdateModifier()
+				if err := tx.NewQuery(ctx, "invocationdb_get_invocation_perms_for_update").Raw(
+					q,
+					ti.InvocationID,
+					ti.Attempt,
+				).Take(&existing); err != nil {
+					if !errors.Is(err, gorm.ErrRecordNotFound) {
+						return err
+					}
+				} else if existing.Perms&perms.OTHERS_READ != 0 {
+					ti.Perms |= perms.OTHERS_READ
+				}
+			}
 
-		if err := result.Error; d.h.IsDeadlockError(err) {
+			result := tx.GORM(ctx, "invocationdb_update_invocation").Where(
+				"invocation_id = ? AND attempt = ?", ti.InvocationID, ti.Attempt).Updates(ti)
+			updated = result.RowsAffected > 0
+			return result.Error
+		})
+
+		if d.h.IsDeadlockError(err) {
 			return updated, status.UnavailableErrorf("update invocation %s: deadlock: %s", ti.InvocationID, err)
 		} else if err != nil {
 			// Don't retry non-deadlock errors.
 			return updated, retry.NonRetryableError(err)
-		} else {
-			return updated, nil
 		}
+		return updated, nil
 	})
 }
 
