@@ -92,7 +92,6 @@ ts_jasmine_node_test(
         ":trace_events",
         ":trace_viewer_model",
         ":trace_viewer_search",
-        "//app/util:intern",
     ],
 )
 
@@ -134,8 +133,5 @@ ts_library(
 ts_library(
     name = "trace_viewer_search",
     srcs = ["trace_viewer_search.ts"],
-    deps = [
-        "//app/trace:trace_events",
-        "//app/trace:trace_viewer_model",
-    ],
+    deps = ["//app/trace:trace_viewer_model"],
 )
