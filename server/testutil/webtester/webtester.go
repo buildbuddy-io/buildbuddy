@@ -183,6 +183,12 @@ func (wt *WebTester) SwitchWindow(handle string) {
 	require.NoError(wt.t, err)
 }
 
+// DeleteCookie deletes the cookie with the given name from the browser.
+func (wt *WebTester) DeleteCookie(name string) {
+	err := wt.driver.DeleteCookie(name)
+	require.NoError(wt.t, err)
+}
+
 // Find returns the element matching the given CSS selector. Exactly one
 // element must be matched, otherwise the test fails.
 func (wt *WebTester) Find(cssSelector string) *Element {

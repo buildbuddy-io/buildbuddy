@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/crewjam/saml"
 	"github.com/crewjam/saml/samlsp"
 	"github.com/golang-jwt/jwt/v4"
@@ -311,7 +312,7 @@ func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 
 			return claims.AuthContextWithJWT(ctx, c, err)
 		}
-	} else if slug := cookie.GetCookie(r, slugCookie); slug != "" {
+	} else if slug := a.getSlugFromRequest(r); slug != "" {
 		return authutil.AuthContextWithError(ctx, status.PermissionDeniedErrorf("Error getting service provider for slug %s: %s", slug, err.Error()))
 	}
 	return ctx
@@ -502,9 +503,16 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 }
 
 func (a *SAMLAuthenticator) getSlugFromRequest(r *http.Request) string {
-	slug := r.URL.Query().Get(slugParam)
-	if slug == "" {
-		slug = cookie.GetCookie(r, slugCookie)
+	if slug := r.URL.Query().Get(slugParam); slug != "" {
+		return slug
+	}
+	slug := cookie.GetCookie(r, slugCookie)
+	// The slug cookie may be set domain-wide, in which case it can name a
+	// different org than the one the request subdomain refers to. Ignore the
+	// cookie in that case: one org's SSO affinity should not affect other
+	// orgs' subdomains.
+	if sd := subdomain.Get(subdomain.SetHost(r.Context(), r.Host)); sd != "" && sd != slug {
+		return ""
 	}
 	return slug
 }

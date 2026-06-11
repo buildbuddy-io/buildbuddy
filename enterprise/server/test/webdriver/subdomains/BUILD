@@ -12,7 +12,7 @@ go_web_test_suite(
         "test.init-dockerd": "true",
         "test.runner-recycling-key": "mocksaml",
     },
-    shard_count = 1,
+    shard_count = 3,
     tags = ["docker"],
     deps = [
         "//enterprise/server/testutil/buildbuddy_enterprise",
