@@ -154,14 +154,26 @@ describe("truncateTargetPatternList", () => {
     expect(format.truncateTargetPatternList(["//app/invocation:format_test"])).toEqual("//app/invocation:format_test");
   });
 
-  it("collapses deep bazel labels to first and last package segments", () => {
-    expect(format.truncateTargetPatternList(["//a/really/long/target:pattern"])).toEqual("//a/.../target:pattern");
+  it("keeps readable deep bazel labels unchanged", () => {
+    expect(format.truncateTargetPatternList(["//a/really/long/target:pattern"])).toEqual(
+      "//a/really/long/target:pattern"
+    );
   });
 
-  it("preserves repo prefixes while collapsing deep labels", () => {
-    expect(format.truncateTargetPatternList(["@repo//a/really/long/target:pattern"])).toEqual(
-      "@repo//a/.../target:pattern"
-    );
+  it("collapses oversized deep bazel labels to first and last package segments", () => {
+    expect(
+      format.truncateTargetPatternList(["@repo//a/really/long/target:pattern"], {
+        maxItemLength: 30,
+      })
+    ).toEqual("@repo//a/.../target:pattern");
+  });
+
+  it("collapses labels longer than the default limit", () => {
+    expect(
+      format.truncateTargetPatternList([
+        "//app/invocation/components/history/target/patterns/with/a/very/deep/package/path/that/would/otherwise/render/past/the/available/space/in/the/history/page/and/keep/going/for/more/segments/near/the/end/of/a/very/long/package:target",
+      ])
+    ).toEqual("//app/.../package:target");
   });
 
   it("falls back to text truncation when the target name is still too long", () => {
@@ -180,6 +192,6 @@ describe("truncateTargetPatternList", () => {
         "//foo/bar:baz",
         "//one/more:target",
       ])
-    ).toEqual("//a/.../target:pattern, //app/invocation:format_test, //foo/bar:baz and 1 more");
+    ).toEqual("//a/really/long/target:pattern, //app/invocation:format_test, //foo/bar:baz and 1 more");
   });
 });

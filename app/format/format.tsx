@@ -232,7 +232,7 @@ export function sentenceCase(string: string) {
 const ELLIPSIS = "...";
 const MIN_TARGET_PATH_SEGMENTS_TO_COMPACT = 3;
 const DEFAULT_TARGET_PATTERN_PREVIEW_MAX_ITEMS = 3;
-const DEFAULT_TARGET_PATTERN_PREVIEW_MAX_LENGTH = 40;
+const DEFAULT_TARGET_PATTERN_PREVIEW_MAX_LENGTH = 200;
 
 export function truncateList(list: string[]) {
   if (list.length > 3) {
@@ -251,18 +251,20 @@ function truncateTargetPatternList(
   const preview = list.slice(0, maxItems).map((pattern) => {
     let display = pattern;
 
-    // Keep Bazel labels readable by preserving the repo prefix, first package
-    // segment, last package segment, and target name before falling back to a
-    // plain text truncation if the result is still too long.
-    const match = pattern.match(/^([+-]?)(@@?[^/]+)?\/\/([^:]*)(?::(.+))?$/);
-    if (match) {
-      const [, prefix = "", repo = "", packagePath = "", targetName] = match;
-      if (packagePath && !packagePath.includes("...")) {
-        const segments = packagePath.split("/").filter(Boolean);
-        if (segments.length >= MIN_TARGET_PATH_SEGMENTS_TO_COMPACT) {
-          display = `${prefix}${repo}//${segments[0]}/${ELLIPSIS}/${segments[segments.length - 1]}${
-            targetName ? `:${targetName}` : ""
-          }`;
+    if (display.length > maxItemLength) {
+      // Keep oversized Bazel labels readable by preserving the repo prefix,
+      // first package segment, last package segment, and target name before
+      // falling back to a plain text truncation if the result is still too long.
+      const match = pattern.match(/^([+-]?)(@@?[^/]+)?\/\/([^:]*)(?::(.+))?$/);
+      if (match) {
+        const [, prefix = "", repo = "", packagePath = "", targetName] = match;
+        if (packagePath && !packagePath.includes("...")) {
+          const segments = packagePath.split("/").filter(Boolean);
+          if (segments.length >= MIN_TARGET_PATH_SEGMENTS_TO_COMPACT) {
+            display = `${prefix}${repo}//${segments[0]}/${ELLIPSIS}/${segments[segments.length - 1]}${
+              targetName ? `:${targetName}` : ""
+            }`;
+          }
         }
       }
     }
