@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
@@ -387,6 +388,11 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 					MediaType: types.MediaType(mc.GetContentType()),
 				}
 			}
+			// Either the manifest HEAD request above authenticated these
+			// credentials with the registry, or the executor is explicitly
+			// bypassing the registry; in both cases the access check happens
+			// outside ociauth.
+			cacheToken := ociauth.UncheckedCacheAccess(digestOrTagRef.Context())
 			return imageFromDescriptorAndManifest(
 				ctx,
 				digestOrTagRef.Context(),
@@ -398,6 +404,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 				puller,
 				ociFetcherClient,
 				credentials,
+				cacheToken,
 				useCache,
 				useOCIFetcher,
 			)
@@ -424,6 +431,10 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		}
 	}
 
+	// fetchManifest succeeded against the registry (or the OCI fetcher, which
+	// performs its own access checks), proving these credentials grant access
+	// to the repository.
+	cacheToken := ociauth.UncheckedCacheAccess(digestOrTagRef.Context())
 	return imageFromDescriptorAndManifest(
 		ctx,
 		digestOrTagRef.Context(),
@@ -435,6 +446,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		puller,
 		ociFetcherClient,
 		credentials,
+		cacheToken,
 		useCache,
 		useOCIFetcher,
 	)
@@ -494,7 +506,7 @@ func fetchManifest(ctx context.Context, digestOrTagRef gcrname.Reference, puller
 // finds a child image matching the given platform (and fetches a manifest for it) if the given manifest is an index,
 // and otherwise returns an error.
 // ociFetcherClient must be non-nil when useOCIFetcher is true.
-func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) (gcr.Image, error) {
+func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, cacheToken ociauth.CacheAccessToken, useCache bool, useOCIFetcher bool) (gcr.Image, error) {
 	if useOCIFetcher && ociFetcherClient == nil {
 		return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
 	}
@@ -537,6 +549,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 		puller,
 		ociFetcherClient,
 		credentials,
+		cacheToken,
 		useCache,
 		useOCIFetcher,
 	), nil
@@ -593,7 +606,7 @@ func getDigest(ref gcrname.Reference) (gcr.Hash, bool) {
 	return hash, true
 }
 
-func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) *imageFromRawManifest {
+func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, cacheToken ociauth.CacheAccessToken, useCache bool, useOCIFetcher bool) *imageFromRawManifest {
 	i := &imageFromRawManifest{
 		repo:             repo,
 		desc:             desc,
@@ -604,6 +617,7 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 		puller:           puller,
 		ociFetcherClient: ociFetcherClient,
 		credentials:      credentials,
+		cacheToken:       cacheToken,
 		useCache:         useCache,
 		useOCIFetcher:    useOCIFetcher,
 	}
@@ -650,6 +664,7 @@ type imageFromRawManifest struct {
 	puller           *remote.Puller
 	ociFetcherClient ofpb.OCIFetcherClient
 	credentials      Credentials
+	cacheToken       ociauth.CacheAccessToken
 	useCache         bool
 	useOCIFetcher    bool
 
@@ -939,8 +954,10 @@ func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
 		defer pw.Close()
 		err := ocicache.FetchBlobFromCache(
 			l.image.ctx,
+			l.image.cacheToken,
 			pw,
 			l.image.bsClient,
+			l.repo,
 			l.digest,
 			metadata.GetContentLength(),
 		)

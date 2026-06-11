@@ -19,6 +19,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocimanifest"
@@ -965,12 +966,15 @@ func (r *Replayer) copyCachedContainerImage(ctx, srcCtx, targetCtx context.Conte
 	}
 
 	// Now that we've copied manifests, copy blobs.
+	// Reads from the source cache are authorized by the cache itself (via
+	// the configured API key), not by registry credentials.
+	cacheToken := ociauth.UncheckedCacheAccess(digestRef.Repository)
 	copyBlob := func(hash gcr.Hash, contentLength int64, contentType string, label string) error {
 		pr, pw := io.Pipe()
 		defer pr.Close()
 		go func() {
 			defer pw.Close()
-			if err := ocicache.FetchBlobFromCache(srcCtx, pw, r.sourceBSClient, hash, contentLength); err != nil {
+			if err := ocicache.FetchBlobFromCache(srcCtx, cacheToken, pw, r.sourceBSClient, digestRef.Repository, hash, contentLength); err != nil {
 				pw.CloseWithError(fmt.Errorf("read image %s blob %s from source cache: %s", label, hash, err))
 			}
 		}()

@@ -6,6 +6,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/crane"
@@ -278,7 +280,7 @@ func blobDoesNotExist(t *testing.T, ctx context.Context, te *testenv.TestEnv, re
 	require.Nil(t, metadata)
 
 	out := &bytes.Buffer{}
-	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
+	err = ocicache.FetchBlobFromCache(ctx, ociauth.UncheckedCacheAccess(repo), out, bsClient, repo, hash, contentLength)
 	require.Error(t, err)
 }
 
@@ -437,7 +439,37 @@ func fetchAndCheckBlob(t *testing.T, te *testenv.TestEnv, layerBuf []byte, repo 
 	require.Equal(t, contentLength, metadata.GetContentLength())
 
 	out := &bytes.Buffer{}
-	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
+	err = ocicache.FetchBlobFromCache(ctx, ociauth.UncheckedCacheAccess(repo), out, bsClient, repo, hash, contentLength)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(layerBuf, out.Bytes()))
+}
+
+func TestFetchBlobFromCacheRequiresMatchingToken(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "fetch_blob_token", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	err := ocicache.WriteBlobToCache(ctx, bytes.NewReader(layerBuf), bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+
+	// A zero-value token grants no access.
+	out := &bytes.Buffer{}
+	err = ocicache.FetchBlobFromCache(ctx, ociauth.CacheAccessToken{}, out, bsClient, repo, hash, contentLength)
+	require.True(t, status.IsPermissionDeniedError(err))
+	require.Empty(t, out.Bytes())
+
+	// A token scoped to a different repository grants no access.
+	otherToken := ociauth.UncheckedCacheAccess(mustRepo(t, "buildbuddy.io/other"))
+	err = ocicache.FetchBlobFromCache(ctx, otherToken, out, bsClient, repo, hash, contentLength)
+	require.True(t, status.IsPermissionDeniedError(err))
+	require.Empty(t, out.Bytes())
+
+	// A token scoped to the blob's repository grants access.
+	err = ocicache.FetchBlobFromCache(ctx, ociauth.UncheckedCacheAccess(repo), out, bsClient, repo, hash, contentLength)
 	require.NoError(t, err)
 	require.Empty(t, cmp.Diff(layerBuf, out.Bytes()))
 }

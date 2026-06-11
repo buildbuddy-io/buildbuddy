@@ -7,6 +7,7 @@ go_library(
     srcs = ["ocicache.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache",
     deps = [
+        "//enterprise/server/oci/ociauth",
         "//proto:ociregistry_go_proto",
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
@@ -35,6 +36,7 @@ go_test(
     srcs = ["ocicache_test.go"],
     deps = [
         ":ocicache",
+        "//enterprise/server/oci/ociauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//proto:ociregistry_go_proto",
         "//proto:registry_go_proto",
@@ -45,6 +47,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/bazel_request",
         "//server/util/random",
+        "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_containerregistry//pkg/crane",

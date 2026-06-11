@@ -10,6 +10,7 @@ go_library(
     deps = [
         "//enterprise/server/backends/pebble_cache",
         "//enterprise/server/clientidentity",
+        "//enterprise/server/oci/ociauth",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/util/ocicache",
         "//enterprise/server/util/ocimanifest",

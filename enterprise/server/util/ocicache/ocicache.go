@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -218,7 +219,15 @@ func blobHit(ctx context.Context) {
 	updateCacheEventMetric(metrics.OCIBlobResourceTypeLabel, metrics.HitStatusLabel)
 }
 
-func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, hash gcr.Hash, contentLength int64) error {
+// FetchBlobFromCache streams the given blob from the CAS to w.
+//
+// Cached blobs are content-addressed and shared across groups, so callers
+// must present a CacheAccessToken (issued by the ociauth package) proving
+// they may access the repository the blob belongs to.
+func FetchBlobFromCache(ctx context.Context, token ociauth.CacheAccessToken, w io.Writer, bsClient bspb.ByteStreamClient, repo gcrname.Repository, hash gcr.Hash, contentLength int64) error {
+	if !token.GrantsAccess(repo) {
+		return status.PermissionDeniedErrorf("cache access token does not grant access to repository %q", repo.Name())
+	}
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,

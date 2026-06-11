@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/trafficstats"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -471,7 +472,11 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		http.Error(w, fmt.Sprintf("Error parsing resolved digest in %q: %s", resolvedRef.Context(), err), http.StatusInternalServerError)
 		return
 	}
-	err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
+	// The mirror intentionally serves cached content without re-checking
+	// access against the upstream registry, so cache access is unchecked
+	// here.
+	cacheToken := ociauth.UncheckedCacheAccess(resolvedRef.Context())
+	err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, cacheToken, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
 	if err == nil {
 		return // Successfully served request from cache.
 	}
@@ -502,7 +507,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 
 	// The blob should now be in the cache, serve it from there.
-	err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
+	err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, cacheToken, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
 	if err != nil {
 		log.CtxErrorf(ctx, "error serving %q from cache after fetch: %s", resolvedRef.Context(), err)
 		http.Error(w, fmt.Sprintf("Error serving %q: %s", resolvedRef.Context(), err), http.StatusServiceUnavailable)
@@ -549,7 +554,7 @@ func writeBlobMetadataToResponse(ctx context.Context, w http.ResponseWriter, has
 	w.Header().Add(headerContentType, blobMetadata.GetContentType())
 }
 
-func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, ociResourceType ocipb.OCIResourceType, writeBody bool, originalRef gcrname.Reference) error {
+func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, cacheToken ociauth.CacheAccessToken, repo gcrname.Repository, hash gcr.Hash, ociResourceType ocipb.OCIResourceType, writeBody bool, originalRef gcrname.Reference) error {
 	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
 		mc, err := ocicache.FetchManifestFromAC(ctx, acClient, repo, hash, originalRef)
 		if err != nil {
@@ -576,7 +581,7 @@ func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, b
 	if !writeBody {
 		return nil
 	}
-	return ocicache.FetchBlobFromCache(ctx, w, bsClient, hash, blobMetadata.GetContentLength())
+	return ocicache.FetchBlobFromCache(ctx, cacheToken, w, bsClient, repo, hash, blobMetadata.GetContentLength())
 }
 
 // resolveTagToDigest resolves a manifest tag to its digest, using an
