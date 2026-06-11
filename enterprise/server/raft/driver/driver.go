@@ -1195,7 +1195,6 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 	}
 	targetsByID := make(map[string]*candidate, len(storesWithStats.Usages))
 	var sources []*candidate
-	replicasByZone := make(map[string]int)
 	rangeID := rd.GetRangeId()
 	for _, su := range storesWithStats.Usages {
 		nhid := su.GetNode().GetNhid()
@@ -1208,9 +1207,9 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 			rendezvousScore:       rendezvousScore(rangeID, nhid),
 		}
 		targetsByID[nhid] = store
-		replicasByZone[su.GetNode().GetZone()] = 0
 	}
 
+	replicasByZone := make(map[string]int)
 	for _, repl := range rd.GetReplicas() {
 		store, ok := targetsByID[repl.GetNhid()]
 		if !ok {
