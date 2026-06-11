@@ -29,32 +29,6 @@ actions:
     steps:
       - run: "bazel run //tools/lint --config=linux-workflows"
     allow_concurrent_runs: false
-  - name: Test (darwin_amd64)
-    os: "darwin"
-    self_hosted: true
-    pool: workflows
-    triggers:
-      push:
-        branches:
-          - "master"
-      pull_request:
-        branches:
-          - "*"
-    # TODO: Fix the tests below on Mac, and re-enable.
-    steps:
-      - run: >-
-          bazel test --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare
-          --
-          //...
-          -//server/backends/disk_cache:all
-          -//server/test/integration/remote_asset:all
-          -//enterprise/server/backends/pebble_cache:all
-          -//enterprise/server/raft/txn:all
-          -//enterprise/server/raft/store:all
-          -//enterprise/server/remote_execution/commandutil:all
-          -//enterprise/server/remote_execution/runner:all
-          -//enterprise/server/test/integration/...
-    allow_concurrent_runs: false
   - name: Test (darwin_arm64)
     os: "darwin"
     arch: "arm64"
