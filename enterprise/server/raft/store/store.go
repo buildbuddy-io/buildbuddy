@@ -2531,7 +2531,7 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, targetRangeSiz
 				rangeID := rangeUsageEvent.RangeDescriptor.GetRangeId()
 				estimatedDiskBytes := rangeUsageEvent.ReplicaUsage.GetEstimatedDiskBytesUsed()
 				metrics.RaftBytes.With(prometheus.Labels{
-					metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
+					metrics.RaftRangeIDLabel: strconv.FormatUint(rangeID, 10),
 				}).Set(float64(estimatedDiskBytes))
 				if rangeID == constants.MetaRangeID {
 					continue

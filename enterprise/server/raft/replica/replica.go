@@ -262,6 +262,13 @@ func (sm *Replica) setRange(val []byte) error {
 	sm.rangeMu.Unlock()
 
 	if usage, err := sm.Usage(); err == nil {
+		// Set RaftBytes directly here rather than going through the event
+		// channel (which can drop under load). The apply path will refresh
+		// it as data is written; this guarantees presence at replica open
+		// and on every range-descriptor mutation.
+		metrics.RaftBytes.With(prometheus.Labels{
+			metrics.RaftRangeIDLabel: strconv.FormatUint(rangeDescriptor.GetRangeId(), 10),
+		}).Set(float64(usage.GetEstimatedDiskBytesUsed()))
 		sm.notifyListenersOfUsage(rangeDescriptor, usage)
 	} else {
 		sm.log.Errorf("Error computing usage upon opening replica: %s", err)
@@ -2021,6 +2028,11 @@ func (sm *Replica) Close() error {
 
 	if sm.store != nil && rangeDescriptor != nil {
 		sm.store.RemoveRange(rangeDescriptor, sm)
+	}
+	if rangeDescriptor != nil {
+		metrics.RaftBytes.Delete(prometheus.Labels{
+			metrics.RaftRangeIDLabel: strconv.FormatUint(rangeDescriptor.GetRangeId(), 10),
+		})
 	}
 
 	sm.readQPS.Stop()
