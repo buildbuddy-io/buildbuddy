@@ -1731,7 +1731,6 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 	// stored path uses (via fillExecutionFromActionMetadata, line 107-108).
 	md := executeResponse.GetResult().GetExecutionMetadata()
 	estimatedTaskSize := md.GetEstimatedTaskSize()
-	auxMeta.GetSchedulingMetadata().GetTaskSize()
 	execution := &repb.StoredExecution{
 		Os:                     plat.OS,
 		Arch:                   plat.Arch,
