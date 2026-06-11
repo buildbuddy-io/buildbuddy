@@ -100,6 +100,7 @@ const (
 	EnvOverridesBase64PropertyName           = "env-overrides-base64"
 	SecretEnvOverridesPropertyName           = "secret-env-overrides"
 	SecretEnvOverridesBase64PropertyName     = "secret-env-overrides-base64"
+	OIDCTokenAudiencePropertyName            = "oidc-token-audience"
 	IncludeSecretsPropertyName               = "include-secrets"
 	EnvSecretsPropertyName                   = "env-secrets"
 	DefaultTimeoutPropertyName               = "default-timeout"
@@ -342,6 +343,10 @@ type Properties struct {
 	// applied as overrides to the action. These are always redacted in logs/UI.
 	SecretEnvOverrides []string
 
+	// OIDCTokenAudience enables the BuildBuddy RBE OIDC provider for this
+	// action and sets the default audience for requested ID tokens.
+	OIDCTokenAudience string
+
 	// OverrideSnapshotKey specifies a snapshot key that the action should start
 	// from.
 	// Only applies to recyclable firecracker actions.
@@ -580,6 +585,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
 		EnvOverrides:              envOverrides,
 		SecretEnvOverrides:        secretEnvOverrides,
+		OIDCTokenAudience:         stringProp(m, OIDCTokenAudiencePropertyName, ""),
 		OverrideSnapshotKey:       overrideSnapshotKey,
 		Retry:                     boolProp(m, RetryPropertyName, true),
 		PersistentVolumes:         persistentVolumes,

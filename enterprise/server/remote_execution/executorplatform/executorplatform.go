@@ -3,6 +3,7 @@
 package executorplatform
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	rbeoidc "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oidc"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -218,10 +220,11 @@ func registerSecretEnvVarNames(command *repb.Command, secretOverrides []string) 
 
 // ApplyOverrides modifies the platformProps and command as needed to match the
 // locally configured executor properties.
-func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, platformProps *platform.Properties, command *repb.Command) error {
+func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *ExecutorProperties, platformProps *platform.Properties, task *repb.ExecutionTask) error {
 	if len(executorProps.SupportedIsolationTypes) == 0 {
 		return status.FailedPreconditionError("No workload isolation types configured.")
 	}
+	command := task.GetCommand()
 
 	// If VFS is not enabled then coerce the platform prop to false.
 	if !*enableVFS {
@@ -311,8 +314,18 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		command.Arguments = append(tokens, command.Arguments...)
 	}
 
-	additionalEnvVars := append(*extraEnvVars, platformProps.EnvOverrides...)
-	additionalEnvVars = append(additionalEnvVars, platformProps.SecretEnvOverrides...)
+	additionalEnvVars := append([]string{}, *extraEnvVars...)
+	additionalEnvVars = append(additionalEnvVars, platformProps.EnvOverrides...)
+	secretEnvOverrides := append([]string{}, platformProps.SecretEnvOverrides...)
+	if platformProps.OIDCTokenAudience != "" {
+		oidcEnvVars, oidcSecretEnvVars, err := rbeoidc.GenerateRequestEnv(ctx, env, task, platformProps.OIDCTokenAudience)
+		if err != nil {
+			return err
+		}
+		additionalEnvVars = append(additionalEnvVars, oidcEnvVars...)
+		secretEnvOverrides = append(secretEnvOverrides, oidcSecretEnvVars...)
+	}
+	additionalEnvVars = append(additionalEnvVars, secretEnvOverrides...)
 	for _, e := range additionalEnvVars {
 		name, value, hasValue := strings.Cut(e, "=")
 		if !hasValue {
@@ -325,7 +338,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		})
 	}
 
-	if err := registerSecretEnvVarNames(command, platformProps.SecretEnvOverrides); err != nil {
+	if err := registerSecretEnvVarNames(command, secretEnvOverrides); err != nil {
 		return err
 	}
 
