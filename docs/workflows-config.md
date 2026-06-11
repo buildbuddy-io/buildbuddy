@@ -559,6 +559,13 @@ pushed.
   changes are pushed to the base branch. For stronger protection against
   breaking the main branch, you may wish to use
   [merge queues](#merge-queue-support).
+- **`max_base_staleness_before_merge`** (`duration`, optional): If set with
+  `merge_with_base: true`, merge with the base branch only when the merge base is at least
+  this stale relative to the base branch tip. For example, if `max_base_staleness_before_merge: "24h"`, and the merge commit
+  between the PR and base branch is 2h old, do not merge. If the merge commit is 26h old, merge.
+  This can be used to minimize churn in CI if merging with base constantly pulls
+  in new diffs and requires rebuilds, but ensures very stale PR branches are merged
+  to catch merge issues from very stale PR branches.
 
 ### `ScheduleTrigger`
 

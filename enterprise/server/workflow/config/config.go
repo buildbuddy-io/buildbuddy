@@ -113,6 +113,18 @@ type PullRequestTrigger struct {
 	Branches []string `yaml:"branches"`
 	// NOTE: If nil, defaults to true.
 	MergeWithBase *bool `yaml:"merge_with_base"`
+	// If set, merge with the base branch only when the merge base is at least
+	// this stale relative to the base branch tip.
+	//
+	// i.e. If set to 24h, and the merge commit between the PR and base branch
+	// is 2h old, do not merge. If the merge commit is 26h old, merge.
+	//
+	// This can be used to minimize churn in CI if merging with base constantly pulls
+	// in new diffs and requires rebuilds, but ensures very stale PR branches are merged
+	// to catch merge issues from very stale PR branches.
+	//
+	// If MergeWithBase is disabled, this does nothing.
+	MaxBaseStalenessBeforeMerge *time.Duration `yaml:"max_base_staleness_before_merge"`
 	// If MergeWithBase is enabled, determines whether the CI runner should manually
 	// merge the pushed and target branches. If this is disabled, the runner
 	// will try to use the merge commit SHA provided by the CI provider as a
@@ -123,6 +135,10 @@ type PullRequestTrigger struct {
 
 func (t *PullRequestTrigger) GetMergeWithBase() bool {
 	return t.MergeWithBase == nil || *t.MergeWithBase
+}
+
+func (t *PullRequestTrigger) GetMaxBaseStalenessBeforeMerge() *time.Duration {
+	return t.MaxBaseStalenessBeforeMerge
 }
 
 func (t *PullRequestTrigger) GetForceManualMerge() bool {
