@@ -18,6 +18,7 @@ go_web_test_suite(
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//enterprise/server/testutil/testsaml",
         "//enterprise/server/util/mocksaml",
+        "//server/testutil/app",
         "//server/testutil/testhosts",
         "//server/testutil/webtester",
         "@com_github_stretchr_testify//require",

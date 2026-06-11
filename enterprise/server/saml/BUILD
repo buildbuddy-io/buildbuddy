@@ -18,7 +18,6 @@ go_library(
         "//server/util/log",
         "//server/util/lru",
         "//server/util/status",
-        "//server/util/subdomain",
         "@com_github_crewjam_saml//:saml",
         "@com_github_crewjam_saml//samlsp",
         "@com_github_golang_jwt_jwt_v4//:jwt",

@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testsaml"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/mocksaml"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhosts"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/webtester"
 	"github.com/stretchr/testify/require"
@@ -31,6 +32,7 @@ const (
 // SAML.
 type testEnv struct {
 	wt *webtester.WebTester
+	bb *app.App
 
 	// appURL is the URL of the app's default "app" subdomain.
 	appURL string
@@ -80,6 +82,7 @@ func setup(t *testing.T) *testEnv {
 		"--app.popup_auth_enabled=true",
 	)
 
+	env.bb = bb
 	wt := webtester.New(t)
 	env.wt = wt
 
@@ -134,28 +137,34 @@ func TestAbandonedSAMLLoginDoesNotAffectOtherSubdomains(t *testing.T) {
 	requireStaysOnOrgBLoginPage(t, env)
 }
 
-// Logging into org A via SAML should not affect other orgs' subdomains,
-// neither while the org A session is valid nor after it expires.
-func TestSAMLLoginDoesNotAffectOtherSubdomains(t *testing.T) {
+// SAML identities are scoped to a single org, so users who are members of
+// multiple orgs (orgs commonly share a SAML IDP) rely on their SSO org's
+// session to authenticate them on their other orgs' subdomains. An org A
+// SAML session should authenticate the user on org B's subdomain, and once
+// the session expires, org B's subdomain should log back in via org A's IDP.
+func TestSAMLSessionAuthenticatesOnOtherOrgSubdomains(t *testing.T) {
 	env := setup(t)
 
 	popupWindow := startSSOLogin(t, env)
 	completeSSOLogin(t, env, popupWindow)
+	addSAMLUserToOrgB(t, env)
 
-	// A SAML session is only valid for the org it belongs to, so org B's
-	// subdomain should show org B's login page.
+	// The org A SAML session should authenticate the user on org B's
+	// subdomain.
 	env.wt.Get(env.orgBURL)
-	env.wt.FindWithTimeout(`[debug-id="login-button"]`, 10*time.Second)
+	env.wt.FindWithTimeout(`[debug-id="org-picker"]`, 20*time.Second)
 
-	// Simulate the org A SAML session expiring. This deletes the session
-	// itself but keeps the rest of the SAML login state, such as the cookie
-	// remembering which org's SSO the user logs in with.
+	// Once the session expires, org B's subdomain should automatically log
+	// back in via org A's IDP.
 	expireSAMLSession(t, env)
-
-	// Org B's subdomain should still show org B's login page rather than
-	// restarting the SAML login flow with org A's IDP.
 	env.wt.Get(env.orgBURL)
-	requireStaysOnOrgBLoginPage(t, env)
+	requireEventuallyOnHost(t, env, env.idpHost)
+
+	// Completing the re-login at the IDP should land back on org B's
+	// subdomain, logged in.
+	env.wt.Find(mocksaml.SignInButtonSelector).Click()
+	requireEventuallyOnHost(t, env, env.orgBHost)
+	env.wt.FindWithTimeout(`[debug-id="org-picker"]`, 20*time.Second)
 }
 
 // Once a SAML login has completed, an expired session should still seamlessly
@@ -211,6 +220,27 @@ func completeSSOLogin(t *testing.T, env *testEnv, popupWindow string) {
 // session cookie from the browser.
 func expireSAMLSession(t *testing.T, env *testEnv) {
 	env.wt.DeleteCookie("token")
+}
+
+// addSAMLUserToOrgB makes the SAML user, who became a member of org A by
+// logging in via org A's IDP, a member of org B as well, by copying their
+// org A membership row.
+func addSAMLUserToOrgB(t *testing.T, env *testEnv) {
+	res := env.bb.DB().Exec(`
+		INSERT INTO "UserGroups" (user_user_id, group_group_id, role, membership_status)
+		SELECT ug.user_user_id, gb.group_id, ug.role, ug.membership_status
+		FROM "UserGroups" ug
+		JOIN "Users" u ON u.user_id = ug.user_user_id
+		JOIN "Groups" ga ON ga.group_id = ug.group_group_id
+		JOIN "Groups" gb ON gb.url_identifier = ?
+		WHERE ga.url_identifier = ? AND u.sub_id LIKE ('%saml/metadata?slug=' || ? || '/%')
+		`,
+		orgBSlug,
+		orgASlug,
+		orgASlug,
+	)
+	require.NoError(t, res.Error)
+	require.EqualValues(t, 1, res.RowsAffected, "expected to find exactly one org A SAML user membership to copy")
 }
 
 // requireStaysOnOrgBLoginPage asserts that the browser shows org B's login
