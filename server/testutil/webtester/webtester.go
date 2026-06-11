@@ -161,6 +161,28 @@ func (wt *WebTester) Refresh() {
 	wt.Get(wt.CurrentURL())
 }
 
+// CurrentWindowHandle returns the handle of the currently focused window.
+func (wt *WebTester) CurrentWindowHandle() string {
+	handle, err := wt.driver.CurrentWindowHandle()
+	require.NoError(wt.t, err)
+	return handle
+}
+
+// WindowHandles returns the handles of all open windows, including popup
+// windows opened by the page.
+func (wt *WebTester) WindowHandles() []string {
+	handles, err := wt.driver.WindowHandles()
+	require.NoError(wt.t, err)
+	return handles
+}
+
+// SwitchWindow switches the WebTester's focus to the window with the given
+// handle. Subsequent WebTester calls are directed at that window.
+func (wt *WebTester) SwitchWindow(handle string) {
+	err := wt.driver.SwitchWindow(handle)
+	require.NoError(wt.t, err)
+}
+
 // Find returns the element matching the given CSS selector. Exactly one
 // element must be matched, otherwise the test fails.
 func (wt *WebTester) Find(cssSelector string) *Element {

@@ -269,7 +269,6 @@ func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	cookie.SetCookie(w, slugCookie, slug, time.Now().Add(cookieDuration), true /* httpOnly= */)
 	session, err := sp.Session.GetSession(r)
 	if err != nil && err != samlsp.ErrNoSession {
 		log.Warningf("SAML error getting session: %s", err)

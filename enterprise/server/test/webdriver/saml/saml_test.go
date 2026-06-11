@@ -1,23 +1,14 @@
 package saml_test
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
-	"math/big"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testsaml"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/mocksaml"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/webtester"
 	"github.com/stretchr/testify/require"
 )
@@ -26,22 +17,8 @@ const (
 	slug = "saml-test"
 )
 
-func startIDP(t *testing.T) (_ *mocksaml.IDP, certPath string) {
-	idpCert, idpKey := createSelfSignedCert(t)
-	idp, err := mocksaml.Start(testport.FindFree(t), bytes.NewReader(idpCert), bytes.NewReader(idpKey))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = idp.Kill() })
-	err = idp.WaitUntilReady(context.Background())
-	require.NoError(t, err)
-	idpCertFile := testfs.CreateTemp(t)
-	_, err = idpCertFile.Write(idpCert)
-	require.NoError(t, err)
-	_ = idpCertFile.Close()
-	return idp, idpCertFile.Name()
-}
-
 func startApp(t *testing.T, idpCertPath string, extraArgs ...string) buildbuddy_enterprise.WebTarget {
-	appCert, appKey := createSelfSignedCert(t)
+	appCert, appKey := testsaml.CreateSelfSignedCert(t)
 	args := append([]string{
 		"--auth.saml.key=" + string(appKey),
 		"--auth.saml.cert=" + string(appCert),
@@ -79,7 +56,7 @@ func TestSAMLBasicLogin(t *testing.T) {
 	// metadata URL, so only run this test locally for now.
 	buildbuddy_enterprise.MarkTestLocalOnly(t)
 
-	idp, idpCertPath := startIDP(t)
+	idp, idpCertPath := testsaml.Start(t)
 	bb := startApp(t, idpCertPath)
 	wt := webtester.New(t)
 	setupSAMLTestOrg(t, wt, bb, idp)
@@ -100,7 +77,7 @@ func TestSAMLViewInvocation(t *testing.T) {
 	buildbuddy_enterprise.MarkTestLocalOnly(t)
 
 	ctx := context.Background()
-	idp, idpCertPath := startIDP(t)
+	idp, idpCertPath := testsaml.Start(t)
 	// Disable persisting artifacts in blobstore to exercise that cache auth
 	// accesses via the UI work when logged in with SAML.
 	bb := startApp(t, idpCertPath, "--storage.disable_persist_cache_artifacts=true")
@@ -128,26 +105,4 @@ func TestSAMLViewInvocation(t *testing.T) {
 	wt.Get(bb.HTTPURL() + "/invocation/" + buildResult.InvocationID)
 	wt.Find(`[href="#timing"]`).Click()
 	wt.Find(`.trace-viewer`)
-}
-
-func createSelfSignedCert(t *testing.T) (cert, key []byte) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
-	certTemplate := x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{Organization: []string{"mocksaml"}},
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-	}
-	certBytes, err := x509.CreateCertificate(rand.Reader, &certTemplate, &certTemplate, &privateKey.PublicKey, privateKey)
-	require.NoError(t, err)
-	var certBuf, keyBuf bytes.Buffer
-	err = pem.Encode(&keyBuf, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)})
-	require.NoError(t, err)
-	err = pem.Encode(&certBuf, &pem.Block{Type: "CERTIFICATE", Bytes: certBytes})
-	require.NoError(t, err)
-	return certBuf.Bytes(), keyBuf.Bytes()
 }
