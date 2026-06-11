@@ -253,7 +253,7 @@ type PebbleCache struct {
 	env    environment.Env
 	db     pebble.IPebbleDB
 	leaser pebble.Leaser
-	locker lockmap.Locker
+	locker lockmap.Locker[string]
 	clock  clockwork.Clock
 
 	edits    chan *sizeUpdate
@@ -668,7 +668,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		env:                         env,
 		db:                          db,
 		leaser:                      pebble.NewDBLeaser(db),
-		locker:                      lockmap.New(),
+		locker:                      lockmap.New[string](),
 		clock:                       clock,
 		brokenFilesDone:             make(chan struct{}),
 		orphanedFilesDone:           make(chan struct{}),
@@ -2251,7 +2251,7 @@ type partitionEvictor struct {
 	cacheName     string
 	blobDir       string
 	dbGetter      pebble.Leaser
-	locker        lockmap.Locker
+	locker        lockmap.Locker[string]
 	versionGetter versionGetter
 	samples       chan *approxlru.Sample[*evictionKey]
 	deletes       chan *approxlru.Sample[*evictionKey]
@@ -2287,7 +2287,7 @@ type versionGetter interface {
 	minDatabaseVersion() filestore.PebbleKeyVersion
 }
 
-func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker, vg versionGetter, clock clockwork.Clock, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool, sampleBufferSize int, samplesPerBatch int, samplerIterRefreshPeriod time.Duration, deleteBufferSize int, numDeleteWorkers int) (*partitionEvictor, error) {
+func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker[string], vg versionGetter, clock clockwork.Clock, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool, sampleBufferSize int, samplesPerBatch int, samplerIterRefreshPeriod time.Duration, deleteBufferSize int, numDeleteWorkers int) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
 		ctx:                      ctx,
 		mu:                       &sync.Mutex{},

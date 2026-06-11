@@ -17,41 +17,41 @@ type collectableMutex struct {
 //
 // Ex.
 //
-//	l := lockmap.New()          <- this returns a Locker
+//	l := lockmap.New[string]()  <- this returns a Locker keyed by string
 //	unlockFn := l.Lock("key-1") <- this is like Lock()ing a RWMutex
 //	defer unlockFn()            <- this is like Unlock()ing a RWMutex
 //	// do work here.
 //
 // Ex 2.
 //
-//	l := lockmap.New()          <- this returns a Locker
-//	unlockFn := l.Lock("key-1") <- this is like RLock()ing a RWMutex
-//	defer unlockFn()            <- this is like RUnlock()ing a RWMutex
+//	l := lockmap.New[int64]() <- this returns a Locker keyed by int64
+//	unlockFn := l.RLock(42)   <- this is like RLock()ing a RWMutex
+//	defer unlockFn()          <- this is like RUnlock()ing a RWMutex
 //	// do work here.
 //
-// Locks are uniquely identified by string, so the same resource can be both
+// Locks are uniquely identified by key, so the same resource can be both
 // RLock()ed and Lock()ed by different threads, they will share the same
 // RWMutex. The lockmap will cull unused locks periodically to save memory.
-type Locker interface {
-	Lock(key string) func()
-	RLock(key string) func()
+type Locker[K comparable] interface {
+	Lock(key K) func()
+	RLock(key K) func()
 	Close() error
 }
 
-type perKeyMutex struct {
+type perKeyMutex[K comparable] struct {
 	mutexes sync.Map
 	closed  chan struct{}
 }
 
-// New returns a new lock map.
+// New returns a new lock map keyed by K.
 // The caller must call Close() when the map is no longer needed.
-func New() *perKeyMutex {
-	pkm := &perKeyMutex{closed: make(chan struct{})}
+func New[K comparable]() *perKeyMutex[K] {
+	pkm := &perKeyMutex[K]{closed: make(chan struct{})}
 	go pkm.gc()
 	return pkm
 }
 
-func (p *perKeyMutex) gc() {
+func (p *perKeyMutex[K]) gc() {
 	t := time.NewTicker(100 * time.Millisecond)
 	defer t.Stop()
 	for {
@@ -85,7 +85,7 @@ func (p *perKeyMutex) gc() {
 	}
 }
 
-func (p *perKeyMutex) Lock(key string) func() {
+func (p *perKeyMutex[K]) Lock(key K) func() {
 	var rcm *collectableMutex
 	for {
 		val, _ := p.mutexes.LoadOrStore(key, &collectableMutex{})
@@ -101,7 +101,7 @@ func (p *perKeyMutex) Lock(key string) func() {
 	return func() { rcm.Unlock() }
 }
 
-func (p *perKeyMutex) RLock(key string) func() {
+func (p *perKeyMutex[K]) RLock(key K) func() {
 	var rcm *collectableMutex
 	for {
 		val, _ := p.mutexes.LoadOrStore(key, &collectableMutex{})
@@ -116,13 +116,13 @@ func (p *perKeyMutex) RLock(key string) func() {
 	return func() { rcm.RUnlock() }
 }
 
-func (p *perKeyMutex) Close() error {
+func (p *perKeyMutex[K]) Close() error {
 	close(p.closed)
 	return nil
 }
 
 // For testing only.
-func (p *perKeyMutex) count() int {
+func (p *perKeyMutex[K]) count() int {
 	count := 0
 	p.mutexes.Range(func(key, value any) bool {
 		count++

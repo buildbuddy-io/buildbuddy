@@ -12,7 +12,7 @@ import (
 )
 
 func TestLock(t *testing.T) {
-	l := New()
+	l := New[string]()
 	defer l.Close()
 
 	m := make(map[string]int, 0)
@@ -39,7 +39,7 @@ func TestLock(t *testing.T) {
 }
 
 func TestRLock(t *testing.T) {
-	l := New()
+	l := New[string]()
 	defer l.Close()
 
 	m := make(map[string]int, 0)
@@ -75,7 +75,7 @@ func TestRLock(t *testing.T) {
 }
 
 func benchmarkLock(b *testing.B, keyCount int) {
-	l := New()
+	l := New[string]()
 	defer l.Close()
 
 	keys := make([]string, keyCount)
@@ -105,7 +105,7 @@ func BenchmarkLockQPS(b *testing.B) {
 }
 
 func BenchmarkRLockQPS(b *testing.B) {
-	l := New()
+	l := New[string]()
 	defer l.Close()
 
 	b.ReportAllocs()
