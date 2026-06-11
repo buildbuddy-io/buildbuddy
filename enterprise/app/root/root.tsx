@@ -14,7 +14,7 @@ import InvocationComponent from "../../../app/invocation/invocation";
 import MenuComponent from "../../../app/menu/menu";
 import TimingProfilePageComponent from "../../../app/profile/profile";
 import router, { Path } from "../../../app/router/router";
-import Shortcuts from "../../../app/shortcuts/shortcuts";
+import Shortcuts, { KeyCombo } from "../../../app/shortcuts/shortcuts";
 import AuditLogsComponent from "../auditlogs/auditlogs";
 import GroupSearchComponent from "../group_search/group_search";
 import HistoryComponent from "../history/history";
@@ -36,6 +36,7 @@ const CodeComponentV2 = React.lazy(() => import("../code/code_v2"));
 // TODO(siggisim): lazy load all components that make sense more gracefully.
 const CodeReviewComponent = React.lazy(() => import("../review/review"));
 
+import AgentDialog from "../../../app/agent/agent_dialog";
 import alert_service from "../../../app/alert/alert_service";
 import PickerComponent from "../../../app/picker/picker";
 import UserPreferences from "../../../app/preferences/preferences";
@@ -171,6 +172,9 @@ export default class EnterpriseRootComponent extends React.Component {
     keyboardShortcutHelpShowing: false,
   };
 
+  private agentDialogRef = React.createRef<AgentDialog>();
+  private agentShortcutHandle = "";
+
   componentWillMount() {
     if (!capabilities.auth) {
       this.setState({ user: undefined, loading: false });
@@ -188,6 +192,9 @@ export default class EnterpriseRootComponent extends React.Component {
   componentDidMount() {
     errorService.register();
     this.updateDarkModeClass();
+    this.agentShortcutHandle = Shortcuts.registerSequence([KeyCombo.b, KeyCombo.b], () => {
+      this.agentDialogRef.current?.open();
+    });
   }
 
   private updateDarkModeClass() {
@@ -195,6 +202,7 @@ export default class EnterpriseRootComponent extends React.Component {
   }
 
   componentWillUnmount() {
+    Shortcuts.deregister(this.agentShortcutHandle);
     this.state.preferences.cleanup();
   }
 
@@ -495,6 +503,7 @@ export default class EnterpriseRootComponent extends React.Component {
           <AlertComponent />
           <PickerComponent />
           <ShortcutsComponent preferences={this.state.preferences} />
+          <AgentDialog ref={this.agentDialogRef} />
         </div>
       </>
     );

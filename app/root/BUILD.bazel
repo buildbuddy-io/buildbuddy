@@ -13,6 +13,7 @@ ts_library(
     deps = [
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//app/agent:agent_dialog",
         "//app/alert",
         "//app/auth:auth_service",
         "//app/capabilities",
@@ -25,5 +26,6 @@ ts_library(
         "//app/menu",
         "//app/preferences",
         "//app/router",
+        "//app/shortcuts",
     ],
 )
