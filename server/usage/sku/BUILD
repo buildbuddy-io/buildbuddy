@@ -5,4 +5,5 @@ go_library(
     srcs = ["sku.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/usage/sku",
     visibility = ["//visibility:public"],
+    deps = ["//server/util/platform"],
 )

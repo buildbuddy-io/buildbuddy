@@ -49,8 +49,10 @@ const (
 
 	// Definitions for BCU ("BuildBuddy Compute Unit")
 
-	ComputeUnitsToMilliCPU = 1000      // 1 BCU = 1000 milli-CPU
-	ComputeUnitsToRAMBytes = 2.5 * 1e9 // 1 BCU = 2.5GB of memory
+	GiB                     = 1024 * 1024 * 1024
+	ComputeUnitsToMilliCPU  = 1000      // 1 BCU = 1000 milli-CPU
+	ComputeUnitsToRAMBytes  = 2.5 * 1e9 // 1 BCU = 2.5GB of memory
+	ComputeUnitsToDiskBytes = 25 * GiB  // 1 BCU = 25GiB of disk
 
 	// Default resource estimates
 
@@ -701,6 +703,24 @@ func CPUMillisToShares(cpuMillis int64) int64 {
 	cpuShares = min(cpuShares, cpuSharesMax)
 	cpuShares = max(cpuShares, cpuSharesMin)
 	return cpuShares
+}
+
+// CpuComputeUnits returns the BCU count equivalent to the given milli-CPU.
+func CpuComputeUnits(milliCpu int64) float64 {
+	return float64(milliCpu) / ComputeUnitsToMilliCPU
+}
+
+// MemoryComputeUnits returns the BCU count equivalent to the given memory size
+// in bytes (1 BCU = 2.5 GiB).
+func MemoryComputeUnits(memoryBytes int64) float64 {
+	// TODO(vanja) make this use ComputeUnitsToRAMBytes once it's using GiB.
+	return float64(memoryBytes) / 1024 / 1024 / 1024 / 2.5
+}
+
+// DiskComputeUnits returns the BCU count equivalent to the given disk size in
+// bytes (1 BCU = 25 GiB).
+func DiskComputeUnits(diskBytes int64) float64 {
+	return float64(diskBytes) / ComputeUnitsToDiskBytes
 }
 
 func String(size *scpb.TaskSize) string {

@@ -796,6 +796,11 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			recycleRunner:          true,
 		},
+		{
+			name:                   "FlexibleCompute",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			flexibleCompute:        true,
+		},
 	} {
 		for _, flushAfterCleanup := range []bool{false, true} {
 			test := test
@@ -825,6 +830,9 @@ type publishTest struct {
 	useDefaultPool           bool
 	recycleRunner            bool
 	flushAfterCleanup        bool
+	// flexibleCompute routes the execution into the flexible-compute branch
+	// of incrementOLAPExecutionUsage.
+	flexibleCompute bool
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
@@ -859,11 +867,14 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		clientCtx = metadata.AppendToOutgoingContext(clientCtx, "x-buildbuddy-platform."+k, v)
 	}
 	platformProperties := []*repb.Platform_Property{
-		{Name: "EstimatedComputeUnits", Value: "2.5"},
 		{Name: "EstimatedFreeDiskBytes", Value: "1000"},
 		{Name: "EstimatedCPU", Value: "1.5"},
 		{Name: "EstimatedMemory", Value: "2000"},
 		{Name: "workload-isolation-type", Value: "oci"},
+	}
+	if !test.flexibleCompute {
+		// Set EstimatedComputeUnits so we go through the fixed compute path.
+		platformProperties = append(platformProperties, &repb.Platform_Property{Name: "EstimatedComputeUnits", Value: "2.5"})
 	}
 	if !test.useDefaultPool {
 		platformProperties = append(platformProperties, &repb.Platform_Property{Name: "pool", Value: "test-pool"})
@@ -930,7 +941,6 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			effectivePool = "default-pool"
 		}
 		aux.SchedulingMetadata = &scpb.SchedulingMetadata{
-			TaskSize: &scpb.TaskSize{EstimatedFreeDiskBytes: 1001},
 			MeasuredTaskSize: &scpb.TaskSize{
 				EstimatedMemoryBytes:   2001,
 				EstimatedMilliCpu:      2002,
@@ -988,6 +998,21 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			DoNotCache:               test.doNotCache,
 			UsageStats:               usageStats,
 		},
+	}
+	if test.flexibleCompute {
+		// Memory-dominant size: 10 GiB memory => 4 BCU, which beats 1.5 CPU
+		// and tiny disk. Drives the flexible-compute SKU to a non-zero value.
+		actionResult.ExecutionMetadata.EstimatedTaskSize = &scpb.TaskSize{
+			EstimatedMilliCpu:    1500,
+			EstimatedMemoryBytes: 10 * tasksize.GiB,
+		}
+	}
+	if test.publishMoreMetadata {
+		// md.EstimatedTaskSize is the source for executionProto.EstimatedFreeDiskBytes
+		// (execution_server.go:482) and for the live-path projection in updateUsage.
+		actionResult.ExecutionMetadata.EstimatedTaskSize = &scpb.TaskSize{
+			EstimatedFreeDiskBytes: 1001,
+		}
 	}
 	expectedExecuteResponse := &repb.ExecuteResponse{
 		CachedResult: test.cachedResult,
@@ -1063,23 +1088,34 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	// Also check OLAP totals are recorded. Look for the entry that has the
 	// execution duration SKU specifically, since there may be other OLAP
 	// entries from cache operations.
+	expectedComputeSKU := sku.RemoteExecutionExecuteFixedComputeNanos
+	if test.flexibleCompute {
+		expectedComputeSKU = sku.RemoteExecutionExecuteFlexibleComputeNanos
+	}
 	var foundOLAPExecutorUsage *testusage.OLAPTotal
 	var foundOLAPComputeUsage *testusage.OLAPTotal
 	for _, u := range ut.OLAPTotals() {
 		if _, ok := u.Counts[sku.RemoteExecutionExecuteWorkerDurationNanos]; ok {
 			foundOLAPExecutorUsage = &u
 		}
-		if _, ok := u.Counts[sku.RemoteExecutionExecuteFixedComputeNanos]; ok {
+		if _, ok := u.Counts[expectedComputeSKU]; ok {
 			foundOLAPComputeUsage = &u
 		}
 	}
 	require.NotNil(t, foundOLAPExecutorUsage, "expected OLAP execution usage to be recorded")
 	assert.Equal(t, "group1", foundOLAPExecutorUsage.GroupID)
+	expectedIsolationType := sku.UnknownLabelValue
+	if test.publishMoreMetadata {
+		// aux.IsolationType = "firecracker" propagates into the
+		// StoredExecution and shows up as the lower-cased OLAP label.
+		expectedIsolationType = "firecracker"
+	}
 	expectedOLAPLabels := sku.Labels{
-		sku.Client:     sku.ClientExecutor,
-		sku.OS:         sku.OSLinux,
-		sku.Arch:       sku.ArchX86_64,
-		sku.SelfHosted: sku.GetSelfHostedLabel(test.expectedSelfHosted),
+		sku.Client:        sku.ClientExecutor,
+		sku.OS:            sku.OSLinux,
+		sku.Arch:          sku.ArchX86_64,
+		sku.SelfHosted:    sku.GetSelfHostedLabel(test.expectedSelfHosted),
+		sku.IsolationType: expectedIsolationType,
 	}
 	assert.Equal(t, expectedOLAPLabels, foundOLAPExecutorUsage.Labels)
 	expectedDurationNanos := (5 * time.Second).Nanoseconds()
@@ -1087,13 +1123,29 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	require.NotNil(t, foundOLAPComputeUsage, "expected OLAP compute duration usage to be recorded")
 	assert.Equal(t, "group1", foundOLAPComputeUsage.GroupID)
 	expectedComputeOLAPLabels := sku.Labels{
-		sku.Client:     sku.ClientExecutor,
-		sku.OS:         sku.OSLinux,
-		sku.Arch:       sku.ArchX86_64,
-		sku.SelfHosted: sku.GetSelfHostedLabel(test.expectedSelfHosted),
+		sku.Client:        sku.ClientExecutor,
+		sku.OS:            sku.OSLinux,
+		sku.Arch:          sku.ArchX86_64,
+		sku.SelfHosted:    sku.GetSelfHostedLabel(test.expectedSelfHosted),
+		sku.IsolationType: expectedIsolationType,
 	}
 	assert.Equal(t, expectedComputeOLAPLabels, foundOLAPComputeUsage.Labels)
-	assert.Equal(t, expectedDurationNanos, foundOLAPComputeUsage.Counts[sku.RemoteExecutionExecuteFixedComputeNanos])
+	if test.flexibleCompute {
+		// 10 GiB / 2.5 GiB/BCU = 4 BCU (memory dimension dominates),
+		// so flexible-compute = 4 * duration.
+		expectedFlexibleComputeNanos := int64(tasksize.MemoryComputeUnits(10*tasksize.GiB) * float64(expectedDurationNanos))
+		assert.Equal(t, expectedFlexibleComputeNanos, foundOLAPComputeUsage.Counts[sku.RemoteExecutionExecuteFlexibleComputeNanos])
+		_, hasFixed := foundOLAPComputeUsage.Counts[sku.RemoteExecutionExecuteFixedComputeNanos]
+		assert.False(t, hasFixed, "fixed compute SKU should not be recorded on the flexible path")
+	} else {
+		// RequestedComputeUnits=2.5 (from EstimatedComputeUnits in the
+		// platform) dominates the max over the cpu/memory/disk dimensions,
+		// so the fixed-compute SKU should be 2.5 * duration.
+		expectedFixedComputeNanos := int64(2.5 * float64(expectedDurationNanos))
+		assert.Equal(t, expectedFixedComputeNanos, foundOLAPComputeUsage.Counts[sku.RemoteExecutionExecuteFixedComputeNanos])
+		_, hasFlexible := foundOLAPComputeUsage.Counts[sku.RemoteExecutionExecuteFlexibleComputeNanos]
+		assert.False(t, hasFlexible, "flexible compute SKU should not be recorded when requested compute units is set")
+	}
 
 	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
 	require.NoError(t, err)
@@ -1117,7 +1169,6 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		ExitCode:                     test.exitCode,
 		DoNotCache:                   test.doNotCache,
 		CachedResult:                 test.cachedResult,
-		RequestedComputeUnits:        2.5,
 		RequestedFreeDiskBytes:       1000,
 		RequestedMemoryBytes:         2000,
 		RequestedMilliCpu:            1500,
@@ -1135,6 +1186,15 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		QueuedTimestampUsec:          queuedTime.UnixMicro(),
 		WorkerStartTimestampUsec:     workerStartTime.UnixMicro(),
 		WorkerCompletedTimestampUsec: workerEndTime.UnixMicro(),
+	}
+	if !test.flexibleCompute {
+		expectedExecution.RequestedComputeUnits = 2.5
+	} else {
+		// EstimatedTaskSize on the ExecutedActionMetadata flows through
+		// fillExecutionFromActionMetadata -> TableExecToProto into the
+		// StoredExecution proto.
+		expectedExecution.EstimatedMilliCpu = 1500
+		expectedExecution.EstimatedMemoryBytes = 10 * tasksize.GiB
 	}
 	if test.useDefaultPool {
 		expectedExecution.RequestedPool = ""
@@ -1755,6 +1815,25 @@ func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flush
 	}
 	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
 	assert.Equal(t, (5 * time.Second).Microseconds(), foundExecutorUsage.Counts.LinuxExecutionDurationUsec)
+
+	// OLAP snapshot bytes are only recorded when the snapshot fields actually
+	// reach the StoredExecution that updateUsageFromStoredExecution reads.
+	// That only happens on the flushAfterCleanup path; on the legacy path
+	// the second COMPLETED is dropped before the OLAP flush runs.
+	var foundRemoteSnapshotBytes, foundLocalSnapshotBytes int64
+	for _, u := range ut.OLAPTotals() {
+		foundRemoteSnapshotBytes += u.Counts[sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes]
+		foundLocalSnapshotBytes += u.Counts[sku.RemoteExecutionExecuteLocalSnapshotSavedBytes]
+	}
+	if flushAfterCleanup {
+		// Both snapshot_saved_locally and snapshot_saved_remotely were sent,
+		// but the remote branch takes precedence in incrementOLAPExecutionUsage.
+		assert.Equal(t, int64(12345), foundRemoteSnapshotBytes, "expected remote snapshot bytes SKU to be recorded")
+		assert.Zero(t, foundLocalSnapshotBytes, "local snapshot bytes SKU should not be recorded when remote takes precedence")
+	} else {
+		assert.Zero(t, foundRemoteSnapshotBytes, "no snapshot SKUs should be recorded on the legacy path")
+		assert.Zero(t, foundLocalSnapshotBytes, "no snapshot SKUs should be recorded on the legacy path")
+	}
 }
 
 // TestPublishOperation_RetryStreamWithOnlyPostCompletionStats simulates the

@@ -181,15 +181,15 @@ const (
 var KnownContainerTypes []ContainerType = []ContainerType{BareContainerType, PodmanContainerType, DockerContainerType, FirecrackerContainerType, OCIContainerType, SandboxContainerType}
 
 // CoerceContainerType returns t if it's empty or in KnownContainerTypes.
-// Otherwise it returns "Unknown".
-func CoerceContainerType(t string) string {
+// Otherwise it returns "Unknown". It returns true only if t is known.
+func CoerceContainerType(t string) (string, bool) {
 	if t == "" {
-		return ""
+		return "", false
 	}
 	if slices.Contains(KnownContainerTypes, ContainerType(t)) {
-		return t
+		return t, true
 	}
-	return "unknown"
+	return "unknown", false
 }
 
 // PoolType represents the user's requested executor pool type for an executed

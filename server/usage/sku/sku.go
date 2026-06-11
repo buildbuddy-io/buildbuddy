@@ -2,6 +2,8 @@ package sku
 
 import (
 	"strings"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 )
 
 // SKU is a unique, human-readable identifier tracking a specific usage count.
@@ -75,6 +77,9 @@ const (
 	// SelfHosted indicates whether the usage was incurred on a self-hosted
 	// instance of the service.
 	SelfHosted LabelName = "self_hosted"
+	// IsolationType is the effective (lower case) isolation type that ran the
+	// execution (oci, firecracker, etc.).
+	IsolationType LabelName = "isolation_type"
 	// TODO: client region (if known), server region
 )
 
@@ -151,6 +156,14 @@ func GetSelfHostedLabel(isSelfHosted bool) LabelValue {
 		return SelfHostedTrue
 	}
 	return SelfHostedFalse
+}
+
+func GetIsolationTypeLabel(isolationType string) LabelValue {
+	value, ok := platform.CoerceContainerType(isolationType)
+	if !ok {
+		return UnknownLabelValue
+	}
+	return value
 }
 
 // Labels represents a collection of unique label values.
