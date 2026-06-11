@@ -1104,7 +1104,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	}
 	require.NotNil(t, foundOLAPExecutorUsage, "expected OLAP execution usage to be recorded")
 	assert.Equal(t, "group1", foundOLAPExecutorUsage.GroupID)
-	var expectedIsolationType sku.LabelValue
+	expectedIsolationType := sku.UnknownLabelValue
 	if test.publishMoreMetadata {
 		// aux.IsolationType = "firecracker" propagates into the
 		// StoredExecution and shows up as the lower-cased OLAP label.
