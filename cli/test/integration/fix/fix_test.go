@@ -1,18 +1,23 @@
 // Package fix_test contains end-to-end integration tests for `bb fix`.
 //
 // These tests run the real `bb` binary as a subprocess against scratch
-// repos. They cover the network-free behaviors documented in cli/fix/fix.go:
-// MODULE.bazel bootstrap, buildifier formatting, hidden-directory skipping,
-// --diff being non-mutating, idempotency on re-run, and --help.
+// repos. They cover the behaviors documented in cli/fix/fix.go:
+// MODULE.bazel bootstrap, buildifier formatting, Gazelle BUILD generation
+// (built-in and repo-defined //:gazelle), hidden-directory skipping, --diff
+// being non-mutating, idempotency on re-run, and --help.
 //
-// Tests that would exercise language detection (which goes to BCR via
-// `bb add`) or repo-defined Gazelle (which would invoke real bazel) are
-// intentionally omitted to keep the suite hermetic.
+// Most tests are network-free. The two exceptions invoke real bazel via a
+// repo-defined //:gazelle target, which fetches rules_shell from mirrored BCR
+// (deterministic via the pinned lockfile; permitted by test.dockerNetwork in
+// the BUILD file). Language dependency *insertion* (bb add -> registry.build,
+// and gazelle update-repos) is network-bound, so those paths are exercised
+// only through --diff, which short-circuits before any dep insertion runs.
 package fix_test
 
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
@@ -33,6 +38,16 @@ func fixWorkspace(t *testing.T, contents map[string]string) string {
 	ws := testfs.MakeTempDir(t)
 	testfs.WriteAllFileContents(t, ws, contents)
 	return ws
+}
+
+func protoWorkspace(t *testing.T) string {
+	return fixWorkspace(t, map[string]string{
+		"MODULE.bazel": "module(name = \"x\")\n",
+		"proto/service.proto": "" +
+			"syntax = \"proto3\";\n" +
+			"package proto;\n" +
+			"message Ping {}\n",
+	})
 }
 
 // runFix runs `bb fix <args>` in ws and returns combined output.
@@ -64,6 +79,51 @@ func snapshot(t *testing.T, ws string) map[string]string {
 	})
 	require.NoError(t, err)
 	return out
+}
+
+func readBuildFile(t *testing.T, dir string) string {
+	t.Helper()
+	for _, name := range []string{"BUILD.bazel", "BUILD"} {
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		if os.IsNotExist(err) {
+			continue
+		}
+		require.NoError(t, err)
+		return string(b)
+	}
+	require.FailNow(t, "expected BUILD file to exist", "dir: %s", dir)
+	return ""
+}
+
+func requireNoBuildFile(t *testing.T, dir string) {
+	t.Helper()
+	require.NoFileExists(t, filepath.Join(dir, "BUILD.bazel"))
+	require.NoFileExists(t, filepath.Join(dir, "BUILD"))
+}
+
+// repoGazelleStubWorkspace creates a workspace whose //:gazelle target records
+// the args it was invoked with into gazelle.args. This verifies `bb fix`
+// dispatch and arg propagation for repo-defined Gazelle targets; it does not
+// exercise real Gazelle behavior. Note: this invokes real bazel (and fetches
+// rules_shell from BCR via a mirrored registry).
+func repoGazelleStubWorkspace(t *testing.T) string {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bazelrc": `common --module_mirrors=https://bcr.cloudflaremirrors.com
+`,
+		"BUILD.bazel": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+sh_binary(
+    name = "gazelle",
+    srcs = ["gazelle.sh"],
+)
+`,
+		"gazelle.sh": `#!/usr/bin/env bash
+printf '%s\n' "$@" > "${BUILD_WORKSPACE_DIRECTORY}/gazelle.args"
+`,
+	})
+	testfs.MakeExecutable(t, ws, "gazelle.sh")
+	return ws
 }
 
 func TestFix_BootstrapsModuleBazel(t *testing.T) {
@@ -143,6 +203,197 @@ func TestFix_FormatsBzlFile(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, poorlyFormattedBzl, string(b),
 		".bzl files should be formatted directly by buildifier")
+}
+
+func TestFix_GazelleGeneratesProtoBuildFile(t *testing.T) {
+	ws := protoWorkspace(t)
+
+	out, err := runFix(t, ws)
+	require.NoError(t, err, "output: %s", out)
+
+	expected := `load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+proto_library(
+    name = "proto_proto",
+    srcs = ["service.proto"],
+    visibility = ["//visibility:public"],
+)
+
+go_proto_library(
+    name = "proto_go_proto",
+    importpath = "proto",
+    proto = ":proto_proto",
+    visibility = ["//visibility:public"],
+)
+
+go_library(
+    name = "proto",
+    embed = [":proto_go_proto"],
+    importpath = "proto",
+    visibility = ["//visibility:public"],
+)
+`
+	contents := readBuildFile(t, filepath.Join(ws, "proto"))
+	require.Equal(t, expected, contents)
+}
+
+// TestFix_DiffShowsGazelleGeneratedRulesWithoutMutating verifies, across
+// several languages, that `bb fix --diff` shows the BUILD rules Gazelle would
+// generate without writing any files. Each fixture is built to produce a
+// Gazelle diff, so the non-zero exit also confirms `bb fix --diff` actually
+// reached Gazelle and found changes. The go case additionally has a dep file
+// (go.mod) present, exercising the --diff short-circuit in walk() that returns
+// before any update-repos / `bb add` work runs.
+func TestFix_DiffShowsGazelleGeneratedRulesWithoutMutating(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		setup        func(t *testing.T) string
+		dir          string
+		wantContains []string
+	}{
+		{
+			name:         "proto",
+			setup:        protoWorkspace,
+			dir:          "proto",
+			wantContains: []string{"proto_library(", `"service.proto"`},
+		},
+		{
+			name: "go",
+			setup: func(t *testing.T) string {
+				return fixWorkspace(t, map[string]string{
+					"MODULE.bazel": "module(name = \"x\")\n",
+					"go.mod":       "module example.com/x\n\ngo 1.24\n",
+					"lib/foo.go":   "package lib\n\nfunc Foo() string { return \"foo\" }\n",
+					"lib/foo_test.go": "" +
+						"package lib\n\n" +
+						"import \"testing\"\n\n" +
+						"func TestFoo(t *testing.T) { _ = Foo() }\n",
+				})
+			},
+			dir:          "lib",
+			wantContains: []string{"go_library(", "go_test(", `"foo.go"`, `"foo_test.go"`},
+		},
+		{
+			name: "ts",
+			setup: func(t *testing.T) string {
+				return fixWorkspace(t, map[string]string{
+					"MODULE.bazel": "module(name = \"x\")\n",
+					"package.json": `{
+  "dependencies": {
+    "react": "19.0.0",
+    "tslib": "2.8.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.0.0"
+  }
+}
+`,
+					"web/app.tsx": "" +
+						"import React from 'react';\n" +
+						"export const app = <div>{React.version}</div>;\n",
+				})
+			},
+			dir:          "web",
+			wantContains: []string{"ts_project(", `"app.tsx"`, `"//:node_modules/react"`, `"//:node_modules/@types/react"`},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ws := tc.setup(t)
+			before := snapshot(t, ws)
+
+			out, err := runFix(t, ws, "--diff")
+			require.Error(t, err, "Gazelle diff mode should exit non-zero when changes are present")
+			after := snapshot(t, ws)
+
+			require.Equal(t, before, after, "--diff must not modify any files (output: %s)", out)
+			requireNoBuildFile(t, filepath.Join(ws, tc.dir))
+			for _, want := range tc.wantContains {
+				require.Contains(t, out, want, "diff output should mention %q", want)
+			}
+		})
+	}
+}
+
+func TestFix_GazelleMergesGeneratedSrcsIntoExistingProtoRule(t *testing.T) {
+	ws := fixWorkspace(t, map[string]string{
+		"MODULE.bazel": "module(name = \"x\")\n",
+		// The rule is named to match the target Gazelle generates for this
+		// directory ("<dir>_proto" => "proto_proto"), so Gazelle merges the new
+		// src into the existing rule rather than emitting a second, parallel
+		// proto_library. (With a non-matching name it would add a duplicate;
+		// this test guards against silently accepting that.)
+		"proto/BUILD.bazel": `# keep package comment
+package(default_visibility = ["//visibility:private"])
+
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+# keep rule comment
+proto_library(
+    name = "proto_proto",
+    srcs = [],
+    tags = ["manual"],
+)
+`,
+		"proto/service.proto": "" +
+			"syntax = \"proto3\";\n" +
+			"package proto;\n" +
+			"message Ping {}\n",
+	})
+
+	out, err := runFix(t, ws)
+	require.NoError(t, err, "output: %s", out)
+
+	expected := `load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+# keep package comment
+package(default_visibility = ["//visibility:private"])
+
+# keep rule comment
+proto_library(
+    name = "proto_proto",
+    srcs = ["service.proto"],
+    tags = ["manual"],
+)
+
+go_proto_library(
+    name = "proto_go_proto",
+    importpath = "proto",
+    proto = ":proto_proto",
+)
+
+go_library(
+    name = "proto",
+    embed = [":proto_go_proto"],
+    importpath = "proto",
+)
+`
+	contents := readBuildFile(t, filepath.Join(ws, "proto"))
+	require.Equal(t, expected, contents)
+}
+
+func TestFix_RepoGazelleTargetIsPreferredOverBuiltinGazelle(t *testing.T) {
+	ws := repoGazelleStubWorkspace(t)
+
+	out, err := runFix(t, ws)
+	require.NoError(t, err, "output: %s", out)
+
+	args := testfs.ReadFileAsString(t, ws, "gazelle.args")
+	require.Equal(t, "", strings.TrimSpace(args),
+		"normal mode should invoke repo Gazelle without extra Gazelle args")
+}
+
+func TestFix_DiffPassesModeDiffToRepoGazelleTarget(t *testing.T) {
+	ws := repoGazelleStubWorkspace(t)
+
+	out, err := runFix(t, ws, "--diff")
+	require.NoError(t, err, "output: %s", out)
+
+	args := testfs.ReadFileAsString(t, ws, "gazelle.args")
+	require.Equal(t, "-mode=diff", strings.TrimSpace(args))
 }
 
 func TestFix_SkipsHiddenDirectories(t *testing.T) {
