@@ -7,6 +7,7 @@ import { TraceEvent } from "./trace_events";
 import { LinePlotModel, PanelModel, SectionModel, TrackModel } from "./trace_viewer_model";
 
 type LinePlotColorKey = "lightColor" | "darkColor";
+const FADED_EVENT_OPACITY = 0.45;
 
 type ThemeColors = {
   gridline: string;
@@ -80,9 +81,11 @@ export default class Panel {
 
   // If set, visually highlight this event to indicate that it is the current search match.
   highlightEvent?: { track: TrackModel; index: number };
+  highlightPathEventIndices = new Set<number>();
 
   private theme: ThemeColors;
   private eventColorCache = new Map<string, string>();
+  private eventFadedColorCache = new Map<string, string>();
 
   constructor(
     readonly model: PanelModel,
@@ -101,7 +104,10 @@ export default class Panel {
   }
 
   private buildEventColorCache() {
+    const style = getComputedStyle(document.documentElement);
+    const fadedChroma = style.getPropertyValue("--trace-event-faded-chroma").trim() || "24";
     this.eventColorCache.clear();
+    this.eventFadedColorCache.clear();
     for (const section of this.model.sections) {
       for (const track of section.tracks ?? []) {
         const eventIndices = track.eventIndices;
@@ -110,6 +116,7 @@ export default class Panel {
           const colorKey = thread.getColorKey(eventIndices[i]);
           if (!this.eventColorCache.has(colorKey)) {
             this.eventColorCache.set(colorKey, computeTraceEventColor(colorKey));
+            this.eventFadedColorCache.set(colorKey, computeTraceEventColor(colorKey, fadedChroma));
           }
         }
       }
@@ -489,6 +496,17 @@ export default class Panel {
       let modelWidth = dur[eventIndex];
       if (modelX + modelWidth < xMin) continue;
 
+      const matchesFilter = !lowerFilter || thread.matchesFilter(eventIndex, lowerFilter);
+      const isFocusedPathEvent = !matchesFilter && this.highlightPathEventIndices.has(eventIndex);
+      const colorKey = thread.getColorKey(eventIndex);
+      if (matchesFilter) {
+        this.ctx.fillStyle = this.eventColorCache.get(colorKey)!;
+      } else if (isFocusedPathEvent) {
+        this.ctx.fillStyle = this.eventFadedColorCache.get(colorKey)!;
+      } else {
+        this.ctx.fillStyle = this.theme.eventFiltered;
+      }
+
       // TODO: only apply the horizontal gap if there's an event just after us.
       let width = modelWidth * scale - constants.EVENT_HORIZONTAL_GAP;
       const x = modelX * scale - scrollX;
@@ -506,11 +524,6 @@ export default class Panel {
       }
       lastRenderedPixelRight = pixelRight;
 
-      if (lowerFilter && !thread.matchesFilter(eventIndex, lowerFilter)) {
-        this.ctx.fillStyle = this.theme.eventFiltered;
-      } else {
-        this.ctx.fillStyle = this.eventColorCache.get(thread.getColorKey(eventIndex))!;
-      }
       this.ctx.fillRect(x, y, width, constants.TRACK_HEIGHT);
 
       // If this event is the one currently selected via search, draw a border
@@ -526,6 +539,7 @@ export default class Panel {
         this.ctx.font = `${constants.EVENT_LABEL_FONT_SIZE} ${this.fontFamily}`;
         this.ctx.fillStyle = this.theme.eventLabelFont;
         this.ctx.save();
+        this.ctx.globalAlpha = matchesFilter ? 1 : FADED_EVENT_OPACITY;
         this.ctx.beginPath();
         this.ctx.rect(x, y, width, constants.TRACK_HEIGHT);
         this.ctx.clip();
