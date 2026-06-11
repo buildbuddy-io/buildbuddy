@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -1883,35 +1884,11 @@ func (ws *workspace) sync(ctx context.Context) error {
 		return err
 	}
 
-	if *pushedTag != "" && ws.shouldMergeBranches(action.GetTriggers()) {
-		return status.InvalidArgumentError("tags cannot be merged with base")
-	}
-
 	// If enabled, merge the target branch (if different from the
 	// pushed branch) so that the workflow can pick up any changes not yet
 	// incorporated into the pushed branch.
-	if ws.shouldMergeBranches(action.GetTriggers()) {
-		if err := ws.fetchTargetRef(ctx); err != nil {
-			return status.WrapError(err, "fetch target ref")
-		}
-		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
-		if _, err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
-			errMsg := err.Output
-			if _, err := git(ctx, ws.log, "merge", "--abort"); err != nil {
-				errMsg += "\n" + err.Output
-			}
-			// Make note of the merge conflict and abort. We'll run all actions and each
-			// one will just fail with the merge conflict error.
-			ws.setupError = status.FailedPreconditionErrorf(
-				"Merge conflict between branches %q and %q.\n\n%s",
-				*pushedBranch, *targetBranch, errMsg,
-			)
-		}
-		mergedCommitSHA, err := git(ctx, io.Discard, "rev-parse", "HEAD")
-		if err != nil {
-			return err
-		}
-		writeCommandSummary(ws.log, "Merged into the target branch %s. HEAD is now at %s.", *targetBranch, mergedCommitSHA)
+	if err := ws.mergeWithBaseIfRequested(ctx, action.GetTriggers()); err != nil {
+		return err
 	}
 
 	if len(*patchURIs) > 0 {
@@ -1930,15 +1907,103 @@ func (ws *workspace) sync(ctx context.Context) error {
 	return nil
 }
 
-func (ws *workspace) shouldMergeBranches(actionTriggers *config.Triggers) bool {
-	return actionTriggers.GetPullRequestTrigger().GetMergeWithBase() &&
+func (ws *workspace) mergeWithBaseIfRequested(ctx context.Context, actionTriggers *config.Triggers) error {
+	mergeRequested := actionTriggers.GetPullRequestTrigger().GetMergeWithBase() &&
 		ws.hasMultipleBranches()
+	if !mergeRequested {
+		return nil
+	}
+
+	if *pushedTag != "" && mergeRequested {
+		return status.InvalidArgumentError("tags cannot be merged with base")
+	}
+
+	if err := ws.fetchTargetRef(ctx); err != nil {
+		return status.WrapError(err, "fetch target ref")
+	}
+
+	if !ws.checkMergeBaseStaleness(ctx, actionTriggers) {
+		return nil
+	}
+
+	// TODO: Display merge commit in UI
+	targetRef := ws.targetRef()
+	if _, err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
+		errMsg := err.Output
+		if _, err := git(ctx, ws.log, "merge", "--abort"); err != nil {
+			errMsg += "\n" + err.Output
+		}
+		// Make note of the merge conflict and abort. We'll run all actions and each
+		// one will just fail with the merge conflict error.
+		ws.setupError = status.FailedPreconditionErrorf(
+			"Merge conflict between branches %q and %q.\n\n%s",
+			*pushedBranch, *targetBranch, errMsg,
+		)
+	}
+	mergedCommitSHA, err := git(ctx, io.Discard, "rev-parse", "HEAD")
+	if err != nil {
+		return err
+	}
+	writeCommandSummary(ws.log, "Merged into the target branch %s. HEAD is now at %s.", *targetBranch, mergedCommitSHA)
+	return nil
+}
+
+// Returns true if we should merge with the base branch.
+func (ws *workspace) checkMergeBaseStaleness(ctx context.Context, actionTriggers *config.Triggers) bool {
+	maxBaseAge := actionTriggers.GetPullRequestTrigger().GetMaxBaseAgeBeforeMerge()
+	if maxBaseAge == nil {
+		return true
+	}
+
+	mergeBase, err := ws.mergeBase(ctx)
+	if err != nil {
+		writeCommandSummary(ws.log, "Could not determine merge base; defaulting to merging with base.")
+		return true
+	}
+	mergeBaseTime, err := commitTimestamp(ctx, mergeBase)
+	if err != nil {
+		writeCommandSummary(ws.log, "Could not determine merge commit timestamp; defaulting to merging with base.")
+		return true
+	}
+	baseHeadTime, err := commitTimestamp(ctx, ws.targetRef())
+	if err != nil {
+		writeCommandSummary(ws.log, "Could not determine base head commit timestamp; defaulting to merging with base.")
+		return true
+	}
+	staleness := baseHeadTime.Sub(mergeBaseTime)
+	if staleness >= *maxBaseAge {
+		writeCommandSummary(ws.log, "Merging with target branch because the merge base is %s behind %s, exceeding the configured %s threshold.", staleness.Round(time.Second), *targetBranch, *maxBaseAge)
+		return true
+	}
+	writeCommandSummary(ws.log, "Skipping merge with target branch because the merge base is %s behind %s, within the configured %s threshold.", staleness.Round(time.Second), *targetBranch, *maxBaseAge)
+	return false
+}
+
+func (ws *workspace) mergeBase(ctx context.Context) (string, error) {
+	mergeBase, err := git(ctx, io.Discard, "merge-base", "HEAD", ws.targetRef())
+	return strings.TrimSpace(mergeBase), err
+}
+
+func commitTimestamp(ctx context.Context, ref string) (time.Time, error) {
+	out, err := git(ctx, io.Discard, "--no-pager", "show", "-s", "--format=%ct", ref)
+	if err != nil {
+		return time.Time{}, err
+	}
+	unixSeconds, parseErr := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
+	if parseErr != nil {
+		return time.Time{}, parseErr
+	}
+	return time.Unix(unixSeconds, 0), nil
 }
 
 func (ws *workspace) hasMultipleBranches() bool {
 	return *targetRepoURL != "" &&
 		*targetBranch != "" &&
 		(*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch)
+}
+
+func (ws *workspace) targetRef() string {
+	return fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
 }
 
 func (ws *workspace) fetchPushedRef(ctx context.Context) error {
