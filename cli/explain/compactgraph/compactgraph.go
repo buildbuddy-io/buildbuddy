@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -19,6 +20,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protodelim"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	spawnproto "github.com/buildbuddy-io/buildbuddy/proto/spawn"
 )
@@ -318,13 +320,33 @@ func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 				diffWG.Add(1)
 				go func() {
 					defer diffWG.Done()
-					result.spawnDiff.GetModified().TransitivelyInvalidated = flattenInvalidates(result.invalidates, isExecOutputPath(output))
+					impact := computeTransitiveImpact(result.invalidates, isExecOutputPath(output))
+					result.spawnDiff.GetModified().TransitivelyInvalidated = impact.invalidates
+					result.spawnDiff.GetModified().TransitivelyInvalidatedUncached = impact.invalidatesUncached
+					result.spawnDiff.GetModified().UncachedExecutionTime = durationpb.New(impact.uncachedExecutionTime)
 				}()
 			}
 			spawnDiffs = append(spawnDiffs, result.spawnDiff)
 		}
 	}
 	diffWG.Wait()
+
+	// Keep Modified diffs last and sort them by UncachedExecutionTime descending within that.
+	slices.SortStableFunc(
+		spawnDiffs,
+		func(a, b *spawn_diff.SpawnDiff) int {
+			_, aIsModified := a.Diff.(*spawn_diff.SpawnDiff_Modified)
+			_, bIsModified := b.Diff.(*spawn_diff.SpawnDiff_Modified)
+			if aIsModified && !bIsModified {
+				return 1
+			}
+			if !aIsModified && bIsModified {
+				return -1
+			}
+			aTime := a.GetModified().UncachedExecutionTime.AsDuration()
+			bTime := b.GetModified().UncachedExecutionTime.AsDuration()
+			return cmp.Compare(bTime, aTime)
+		})
 
 	return &spawn_diff.DiffResult{
 		SpawnDiffs:      spawnDiffs,
@@ -333,13 +355,24 @@ func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 	}, nil
 }
 
-// flattenInvalidates flattens a tree of Spawn nodes into a deduplicated map of mnemonic to count of transitively
-// invalidated spawns.
-// Mnemonics of spawns are suffixed with " (as tool)" if the invalidating spawn is a tool and the invalidated spawn is
-// not, that is, if the dependency path crosses an edge with an "exec" transition (ignoring "exec" transitions on
-// targets that are already in the "exec" configuration).
-func flattenInvalidates(invalidates []any, isTool bool) map[string]uint32 {
-	transitivelyInvalidated := make(map[string]uint32)
+type transitiveImpact struct {
+	// invalidates maps mnemonics of transitively invalidated spawns to the count of such spawns.
+	// Mnemonics of spawns are suffixed with " (as tool)" if the invalidating spawn is a tool and the invalidated spawn is
+	// not, that is, if the dependency path crosses an edge with an "exec" transition (ignoring "exec" transitions on
+	// targets that are already in the "exec" configuration).
+	invalidates map[string]uint32
+	// invalidatesUncached only counts those spawns that weren't disk or remote cache hits.
+	invalidatesUncached map[string]uint32
+	// uncachedExecutionTime is the total wall time spent executing the transitively invalidated spawns that weren't
+	// cache hits.
+	uncachedExecutionTime time.Duration
+}
+
+// computeTransitiveImpact computes the transitive impact of the given invalidated spawns.
+func computeTransitiveImpact(invalidates []any, isTool bool) transitiveImpact {
+	var impact transitiveImpact
+	impact.invalidates = make(map[string]uint32)
+	impact.invalidatesUncached = make(map[string]uint32)
 	spawnsSeen := make(map[*Spawn]struct{})
 	slicesSeen := make(map[*any]struct{})
 	toVisit := invalidates
@@ -354,7 +387,11 @@ func flattenInvalidates(invalidates []any, isTool bool) map[string]uint32 {
 				if isTool && !isExecOutputPath(n.PrimaryOutputPath()) {
 					suffix = " (as tool)"
 				}
-				transitivelyInvalidated[n.Mnemonic+suffix]++
+				impact.invalidates[n.Mnemonic+suffix]++
+				if !n.CacheHit {
+					impact.invalidatesUncached[n.Mnemonic+suffix]++
+					impact.uncachedExecutionTime += n.ExecutionTime
+				}
 			}
 		case []any:
 			// The invalidates argument and any slices it transitively references are reachable and not modified while
@@ -368,7 +405,7 @@ func flattenInvalidates(invalidates []any, isTool bool) map[string]uint32 {
 			log.Fatalf("unexpected type in invalidates: %T", n)
 		}
 	}
-	return transitivelyInvalidated
+	return impact
 }
 
 func diffSettings(old, new *globalSettings) []string {

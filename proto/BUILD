@@ -392,6 +392,7 @@ proto_library(
     srcs = ["spawn_diff.proto"],
     deps = [
         ":spawn_proto",
+        "@com_google_protobuf//:duration_proto",
     ],
 )
 
