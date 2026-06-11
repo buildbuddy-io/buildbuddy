@@ -112,7 +112,7 @@ require (
 	github.com/hashicorp/memberlist v0.5.1
 	github.com/hashicorp/serf v0.10.1
 	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa
-	github.com/jackc/pgx/v5 v5.9.2
+	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jhump/protoreflect v1.15.1
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/jsimonetti/rtnetlink v1.3.3
@@ -197,7 +197,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/clickhouse v0.7.0
 	gorm.io/driver/mysql v1.6.0
-	gorm.io/driver/postgres v1.5.2
+	gorm.io/driver/postgres v1.6.0
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
 	gvisor.dev/gvisor v0.0.0-20250503011706-39ed1f5ac29c
