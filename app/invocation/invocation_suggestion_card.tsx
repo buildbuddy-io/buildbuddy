@@ -94,7 +94,7 @@ export const getTimingDataSuggestion: SuggestionMatcher = ({ model }) => {
           For a more detailed timing profile, try using these flags:{" "}
           {missingFlags.map((flag) => (
             <>
-              <BazelFlag>{`--${recommendedOptions[flag] ? "" : "no"}${flag}`}</BazelFlag>{" "}
+              <CommonBazelFlag>{`--${recommendedOptions[flag] ? "" : "no"}${flag}`}</CommonBazelFlag>{" "}
             </>
           ))}
         </div>
@@ -220,8 +220,8 @@ const matchers: SuggestionMatcher[] = [
       message: (
         <>
           A "deadline exceeded" error was encountered, possibly due to large artifacts being downloaded or uploaded. If
-          you see this often, consider setting a higher value of <BazelFlag>--remote_timeout</BazelFlag>. We recommend a
-          value of 600 (10 minutes).
+          you see this often, consider setting a higher value of <CommonBazelFlag>--remote_timeout</CommonBazelFlag>. We
+          recommend a value of 600 (10 minutes).
         </>
       ),
       reason: (
@@ -412,7 +412,7 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Consider adding the Bazel flag <BazelFlag>{flag}</BazelFlag> to improve remote cache throughput.
+          Consider adding the Bazel flag <CommonBazelFlag>{flag}</CommonBazelFlag> to improve remote cache throughput.
         </>
       ),
       reason: (
@@ -450,8 +450,9 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Consider adding the Bazel flag <BazelFlag>--experimental_remote_cache_compression_threshold=100</BazelFlag> to
-          avoid inflating blobs smaller than 100 bytes with ZSTD compression.
+          Consider adding the Bazel flag{" "}
+          <CommonBazelFlag>--experimental_remote_cache_compression_threshold=100</CommonBazelFlag> to avoid inflating
+          blobs smaller than 100 bytes with ZSTD compression.
         </>
       ),
       reason: (
@@ -474,8 +475,8 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Consider setting the Bazel flag <BazelFlag>--jobs</BazelFlag> to allow more actions to execute in parallel,
-          which can significantly improve remote execution performance. We recommend starting with{" "}
+          Consider setting the Bazel flag <BuildBazelFlag>--jobs</BuildBazelFlag> to allow more actions to execute in
+          parallel, which can significantly improve remote execution performance. We recommend starting with{" "}
           <span className="inline-code">--jobs=50</span> and working your way up.
         </>
       ),
@@ -499,8 +500,8 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Consider setting the Bazel flag <BazelFlag>--experimental_remote_build_event_upload=minimal</BazelFlag> to
-          reduce the number of unnecessary cache uploads that Bazel might perform during a build.
+          Consider setting the Bazel flag <CommonBazelFlag>--experimental_remote_build_event_upload=minimal</CommonBazelFlag>
+          to reduce the number of unnecessary cache uploads that Bazel might perform during a build.
         </>
       ),
       reason: (
@@ -527,8 +528,9 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Consider adding the Bazel flag <BazelFlag>--nolegacy_important_outputs</BazelFlag>, which can significantly
-          reduce the payload size of the uploaded build event stream by eliminating duplicate file references.
+          Consider adding the Bazel flag <CommonBazelFlag>--nolegacy_important_outputs</CommonBazelFlag>, which can
+          significantly reduce the payload size of the uploaded build event stream by eliminating duplicate file
+          references.
         </>
       ),
       reason: (
@@ -566,9 +568,9 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       message: (
         <>
           <div>
-            Consider using the Bazel flag <BazelFlag>--modify_execution_info</BazelFlag> to selectively disable remote
-            capabilities for certain build actions, which can improve overall build performance. For iOS builds, we
-            recommend:
+            Consider using the Bazel flag <CommonBazelFlag>--modify_execution_info</CommonBazelFlag> to selectively
+            disable remote capabilities for certain build actions, which can improve overall build performance. For iOS
+            builds, we recommend:
           </div>
           <code>{recommendedFlag}</code>
         </>
@@ -601,7 +603,7 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Consider enabling <BazelFlag>--experimental_remote_cache_async</BazelFlag> to improve remote cache
+          Consider enabling <CommonBazelFlag>--remote_cache_async</CommonBazelFlag> to improve remote cache
           performance.
         </>
       ),
@@ -767,7 +769,12 @@ function buildLogRegex({
   };
 }
 
-function BazelFlag({ children }: { children: string }) {
+type BazelFlagProps = {
+  children: string;
+  section?: string;
+};
+
+function BazelFlag({ children, section = "" }: BazelFlagProps) {
   let flag = children.split("=")[0] || "";
   if (flag.startsWith("--no")) {
     flag = "--" + flag.substring("--no".length);
@@ -775,10 +782,18 @@ function BazelFlag({ children }: { children: string }) {
   return (
     <TextLink
       className="inline-code bazel-flag"
-      href={`https://docs.bazel.build/versions/main/command-line-reference.html#flag${flag}`}>
+      href={`https://bazel.build/reference/command-line-reference#${section}flag${flag}`}>
       {children}
     </TextLink>
   );
+}
+
+function CommonBazelFlag(props: Omit<BazelFlagProps, "section">) {
+  return <BazelFlag {...props} section="common_options-" />;
+}
+
+function BuildBazelFlag(props: Omit<BazelFlagProps, "section">) {
+  return <BazelFlag {...props} section="build-" />;
 }
 
 /**
