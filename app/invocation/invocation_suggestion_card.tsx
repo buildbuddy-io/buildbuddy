@@ -222,9 +222,8 @@ const matchers: SuggestionMatcher[] = [
           {isBESUploadFullyAsync && (
             <>
               {" "}
-              Note: Since this invocation was run with{" "}
-              <CommonBazelFlag>--bes_upload_mode=fully_async</CommonBazelFlag>, the Bazel server may need to live a bit
-              longer to finish uploading the results.
+              Note: Since this invocation was run with <CommonBazelFlag>--bes_upload_mode=fully_async</CommonBazelFlag>,
+              the Bazel server may need to live a bit longer to finish uploading the results.
             </>
           )}
         </>

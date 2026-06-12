@@ -47,7 +47,8 @@ describe("getSuggestions", () => {
     expect(messageChildren.some((child) => typeof child === "string" && child.includes("Note:"))).toBe(false);
     expect(
       messageChildren.some(
-        (child) => React.isValidElement<{ children?: string }>(child) && child.props.children === "--bes_upload_mode=fully_async"
+        (child) =>
+          React.isValidElement<{ children?: string }>(child) && child.props.children === "--bes_upload_mode=fully_async"
       )
     ).toBe(false);
   });
@@ -72,7 +73,8 @@ describe("getSuggestions", () => {
     expect(messageChildren.some((child) => typeof child === "string" && child.includes("Note:"))).toBe(true);
     expect(
       messageChildren.some(
-        (child) => React.isValidElement<{ children?: string }>(child) && child.props.children === "--bes_upload_mode=fully_async"
+        (child) =>
+          React.isValidElement<{ children?: string }>(child) && child.props.children === "--bes_upload_mode=fully_async"
       )
     ).toBe(true);
   });
