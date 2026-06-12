@@ -1102,6 +1102,38 @@ func TestRebalanceReplica(t *testing.T) {
 			},
 		},
 		{
+			// 3 zones in 3-1-2 distribution (6 replicas). The absolute-min
+			// zone (zone-b, count 1) has only one store and it already
+			// holds the replica, so zone-b can't accept a target. The best
+			// available target is in zone-c (count 2). Moving zone-a (3)
+			// → zone-c (2) would produce 2-1-3 — spread unchanged, and the
+			// next pass picks zone-c → zone-a and oscillates. The post-
+			// selection guard (sourceZoneCount - targetZoneCount >= 2)
+			// catches it: 3-2=1 < 2, so it falls through to the load-only
+			// fallback. With all loads at the mean, that bails too → nil.
+			desc:        "no-move-when-min-zone-has-no-available-target",
+			minReplicas: 6,
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 2,
+				// a1 (local), a2, a3 in zone-a; b1 in zone-b; c1, c2 in zone-c.
+				Replicas: replicas(2, "nhid-a1", "nhid-a2", "nhid-a3", "nhid-b1", "nhid-c1", "nhid-c2"),
+			},
+			usages: []*rfpb.StoreUsage{
+				usage("nhid-a1", "zone-a", 500, 100, 900),
+				usage("nhid-a2", "zone-a", 500, 100, 900),
+				usage("nhid-a3", "zone-a", 500, 100, 900),
+				// nhid-a4 is an available target in the over-full zone-a.
+				usage("nhid-a4", "zone-a", 500, 100, 900),
+				// zone-b has only one store, and it already holds the replica.
+				usage("nhid-b1", "zone-b", 500, 100, 900),
+				usage("nhid-c1", "zone-c", 500, 100, 900),
+				usage("nhid-c2", "zone-c", 500, 100, 900),
+				// nhid-c3 is an available target in zone-c (count 2).
+				usage("nhid-c3", "zone-c", 500, 100, 900),
+			},
+			expected: nil,
+		},
+		{
 			// 4 zones: 2 replicas in zone-a, 1 in zone-b, zone-c and
 			// zone-d are empty. targetMax=ceil(3/4)=1, targetMin=0.
 			// max=2>1 triggers zone move. Should move from zone-a to
