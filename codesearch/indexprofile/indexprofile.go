@@ -37,6 +37,11 @@ const (
 	PhasePebbleBatchCommit  Phase = "pebble_batch_commit"
 )
 
+// Phases recorded by the annotations package.
+const (
+	PhaseExtractAnnotations Phase = "extract_annotations"
+)
+
 type Counter string
 
 const (
