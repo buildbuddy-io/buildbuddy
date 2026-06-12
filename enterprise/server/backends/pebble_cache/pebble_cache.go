@@ -1516,56 +1516,44 @@ func (p *PebbleCache) userGroupID(ctx context.Context) string {
 	return user.GetGroupID()
 }
 
-func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string) {
-	groupID := p.userGroupID(ctx)
+func (p *PebbleCache) lookupPartitionID(remoteInstanceName, groupID string) string {
 	for _, pm := range p.partitionMappings {
 		// If the partition mapping doesn't have a group ID set, any group can
 		// write to it as long as the prefix matches.
 		if (pm.GroupID == "" || pm.GroupID == groupID) && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
-			return groupID, pm.PartitionID
+			return pm.PartitionID
 		}
 	}
-	return groupID, DefaultPartitionID
+	return DefaultPartitionID
 }
 
-func (p *PebbleCache) encryptionEnabled(ctx context.Context) (bool, error) {
+// activeEncryption returns the Encryption config to use for new file records,
+// or nil if encryption is not enabled for the caller.
+func (p *PebbleCache) activeEncryption(ctx context.Context) (*sgpb.Encryption, error) {
 	if !authutil.EncryptionEnabled(ctx, p.env.GetAuthenticator()) {
-		return false, nil
+		return nil, nil
 	}
 	if p.env.GetCrypter() == nil {
-		return false, status.FailedPreconditionError("encryption requested, but crypter not available")
+		return nil, status.FailedPreconditionError("encryption requested, but crypter not available")
 	}
-
-	return true, nil
+	ak, err := p.env.GetCrypter().ActiveKey(ctx)
+	if err != nil {
+		return nil, status.UnavailableErrorf("encryption key not available: %s", err)
+	}
+	return &sgpb.Encryption{KeyId: ak.GetEncryptionKeyId()}, nil
 }
 
-func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (*sgpb.FileRecord, error) {
+func (p *PebbleCache) makeFileRecord(groupID string, encryption *sgpb.Encryption, r *rspb.ResourceName) (*sgpb.FileRecord, error) {
 	rn := digest.ResourceNameFromProto(r)
 	if err := rn.Validate(); err != nil {
 		return nil, err
-	}
-
-	groupID, partID := p.lookupGroupAndPartitionID(ctx, rn.GetInstanceName())
-
-	encryptionEnabled, err := p.encryptionEnabled(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var encryption *sgpb.Encryption
-	if encryptionEnabled {
-		ak, err := p.env.GetCrypter().ActiveKey(ctx)
-		if err != nil {
-			return nil, status.UnavailableErrorf("encryption key not available: %s", err)
-		}
-		encryption = &sgpb.Encryption{KeyId: ak.GetEncryptionKeyId()}
 	}
 
 	return &sgpb.FileRecord{
 		Isolation: &sgpb.Isolation{
 			CacheType:          rn.GetCacheType(),
 			RemoteInstanceName: rn.GetInstanceName(),
-			PartitionId:        partID,
+			PartitionId:        p.lookupPartitionID(rn.GetInstanceName(), groupID),
 			GroupId:            groupID,
 		},
 		Digest:         rn.GetDigest(),
@@ -1630,7 +1618,11 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 	}
 	defer db.Close()
 
-	fileRecord, err := p.makeFileRecord(ctx, r)
+	encryption, err := p.activeEncryption(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fileRecord, err := p.makeFileRecord(p.userGroupID(ctx), encryption, r)
 	if err != nil {
 		return nil, err
 	}
@@ -1671,9 +1663,14 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 
 	p.metrics.findMissingDigestCount.Add(float64(len(resources)))
 
+	groupID := p.userGroupID(ctx)
+	encryption, err := p.activeEncryption(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var missing []*repb.Digest
 	for _, r := range resources {
-		err = p.findMissing(ctx, db, r)
+		err = p.findMissing(ctx, db, groupID, encryption, r)
 		if err != nil {
 			missing = append(missing, r.GetDigest())
 		}
@@ -1681,8 +1678,8 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 	return missing, nil
 }
 
-func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, r *rspb.ResourceName) error {
-	fileRecord, err := p.makeFileRecord(ctx, r)
+func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, groupID string, encryption *sgpb.Encryption, r *rspb.ResourceName) error {
+	fileRecord, err := p.makeFileRecord(groupID, encryption, r)
 	if err != nil {
 		return err
 	}
@@ -1754,11 +1751,16 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 	var mu sync.Mutex
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 
+	groupID := p.userGroupID(ctx)
+	encryption, err := p.activeEncryption(ctx)
+	if err != nil {
+		return nil, err
+	}
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(10)
 	for _, r := range resources {
 		eg.Go(func() error {
-			rc, err := p.reader(ctx, db, r, 0, 0)
+			rc, err := p.reader(ctx, db, groupID, encryption, r, 0, 0)
 			if err != nil {
 				if status.IsNotFoundError(err) || os.IsNotExist(err) {
 					return nil
@@ -1954,7 +1956,11 @@ func getSizeOnLocalDisk(key []byte, md *sgpb.FileMetadata, includeMetadata bool)
 }
 
 func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
-	fileRecord, err := p.makeFileRecord(ctx, r)
+	encryption, err := p.activeEncryption(ctx)
+	if err != nil {
+		return err
+	}
+	fileRecord, err := p.makeFileRecord(p.userGroupID(ctx), encryption, r)
 	if err != nil {
 		return err
 	}
@@ -2003,7 +2009,11 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 	}
 	defer db.Close()
 
-	rc, err := p.reader(ctx, db, r, uncompressedOffset, limit)
+	encryption, err := p.activeEncryption(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rc, err := p.reader(ctx, db, p.userGroupID(ctx), encryption, r, uncompressedOffset, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -2038,7 +2048,11 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 		}
 	}
 
-	fileRecord, err := p.makeFileRecord(ctx, r)
+	encryption, err := p.activeEncryption(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fileRecord, err := p.makeFileRecord(p.userGroupID(ctx), encryption, r)
 	if err != nil {
 		return nil, err
 	}
@@ -2102,12 +2116,7 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 	})
 
 	wc := interfaces.CommittedWriteCloser(cwc)
-	shouldEncrypt, err := p.encryptionEnabled(ctx)
-	if err != nil {
-		_ = wc.Close()
-		return nil, err
-	}
-	if shouldEncrypt {
+	if fileRecord.GetEncryption() != nil {
 		ewc, err := p.env.GetCrypter().NewEncryptor(ctx, fileRecord.GetDigest(), wc)
 		if err != nil {
 			_ = wc.Close()
@@ -2944,12 +2953,11 @@ func (p *PebbleCache) SupportsCompressor(compressor repb.Compressor_Value) bool 
 }
 
 func (p *PebbleCache) Partition(ctx context.Context, remoteInstanceName string) (string, error) {
-	_, partID := p.lookupGroupAndPartitionID(ctx, remoteInstanceName)
-	return partID, nil
+	return p.lookupPartitionID(remoteInstanceName, p.userGroupID(ctx)), nil
 }
 
-func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.ResourceName, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
-	fileRecord, err := p.makeFileRecord(ctx, r)
+func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, groupID string, encryption *sgpb.Encryption, r *rspb.ResourceName, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
+	fileRecord, err := p.makeFileRecord(groupID, encryption, r)
 	if err != nil {
 		return nil, err
 	}
@@ -2994,11 +3002,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 
 	shouldDecrypt := fileMetadata.EncryptionMetadata != nil
 	if shouldDecrypt {
-		encryptionEnabled, err := p.encryptionEnabled(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if !encryptionEnabled {
+		if encryption == nil {
 			return nil, status.NotFoundError("decryption key not available")
 		}
 	}

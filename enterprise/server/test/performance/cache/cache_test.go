@@ -11,14 +11,19 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/metacache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/mockmetadata"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockgcs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -28,10 +33,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/test/bufconn"
 
+	mdspb "github.com/buildbuddy-io/buildbuddy/proto/metadata_service"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
@@ -153,6 +161,46 @@ func getDistributedCache(t testing.TB, te environment.Env, c interfaces.Cache, l
 	require.NoError(t, dc.StartListening())
 	t.Cleanup(func() { dc.Shutdown(context.Background()) })
 	return dc
+}
+
+func getMetaCache(t testing.TB, te environment.Env) interfaces.Cache {
+	clock := clockwork.NewRealClock()
+
+	mockGCS := mockgcs.New(clock)
+	if err := mockGCS.SetBucketCustomTimeTTL(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	fs := filestore.New(filestore.WithGCSBlobstore(mockGCS, "one-bucket"))
+
+	mm, err := mockmetadata.NewServer(maxSizeBytes, fs)
+	require.NoError(t, err)
+
+	lis := bufconn.Listen(1024 * 1024)
+	srv, runServer := testenv.GRPCServer(te, lis)
+	mdspb.RegisterMetadataServiceServer(srv, mm)
+	t.Cleanup(srv.Stop)
+
+	conn, err := testenv.LocalGRPCConn(
+		te.GetServerContext(),
+		lis,
+		interceptors.GetUnaryClientIdentityInterceptor(te),
+		interceptors.GetStreamClientIdentityInterceptor(te),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	go runServer()
+
+	mc, err := metacache.New(te, metacache.Options{
+		Name:                        "MetaCache",
+		Clock:                       clock,
+		MetadataClient:              mdspb.NewMetadataServiceClient(conn),
+		FileStorer:                  fs,
+		MaxInlineFileSizeBytes:      1024,
+		MinBytesAutoZstdCompression: 100,
+		GCSTTLDays:                  1,
+	})
+	require.NoError(t, err)
+	return mc
 }
 
 func getPebbleCache(t testing.TB, te environment.Env) interfaces.Cache {
@@ -292,6 +340,7 @@ func getAllCaches(b *testing.B, te environment.Env) []*namedCache {
 		{getPebbleCache(b, te), "LocalPebble"},
 		{dpc, "DistPebble"},
 		{lpc, "LookasideDistPebble"},
+		{getMetaCache(b, te), "Meta"},
 		{getMigrationCache(b, te, getPebbleCache(b, te), getPebbleCache(b, te)), "LocalMigration"},
 		{getDistributedCache(b, te, getMigrationCache(b, te, getPebbleCache(b, te), getPebbleCache(b, te)), 0), "DistMigration"},
 	}
