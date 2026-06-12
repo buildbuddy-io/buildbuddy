@@ -6,7 +6,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/retry",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/util/alert",
         "//server/util/log",
+        "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
     ],
 )
