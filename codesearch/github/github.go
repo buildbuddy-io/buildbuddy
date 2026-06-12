@@ -75,9 +75,9 @@ func makeRepoMetadataDoc(repoURL *git.RepoURL, commitSHA, modulePath string) typ
 // Adds the contents of a single file from a git repo to the index. Each
 // file's tree-sitter annotations (imports, import_id, symbols) are extracted
 // and indexed; rctx supplies the repo-level context that resolves Go import
-// identities and may be nil when it is unavailable (symbols are still
-// extracted). Extraction errors are logged and skipped; they never fail
-// indexing.
+// identities and may be nil when it is unavailable, in which case symbols are
+// still extracted but Go import identities are not. Extraction errors are
+// logged and skipped; they never fail indexing.
 //
 // Will reject the update (and return an error) if the file is too large, is of an unsupported
 // mimetype, or contains invalid UTF-8 data.
@@ -108,22 +108,20 @@ func AddFileToIndex(w types.IndexWriter, rctx *annotations.RepoContext, repoURL 
 		schema.SHAField:      []byte(commitSHA),
 	}
 
-	{
-		// TODO: thread the indexing context through AddFileToIndex so a slow
-		// parse can be cancelled; the indexing path has none today.
-		ann, err := annotations.Extract(context.Background(), lang, filename, fileContent, rctx)
-		if err != nil {
-			log.Warningf("annotation extraction failed for %q: %s", filename, err)
-		} else if ann != nil {
-			if len(ann.Imports) > 0 {
-				fields[schema.ImportsField] = []byte(strings.Join(ann.Imports, " "))
-			}
-			if len(ann.ImportID) > 0 {
-				fields[schema.ImportIDField] = []byte(strings.Join(ann.ImportID, " "))
-			}
-			if len(ann.Symbols) > 0 {
-				fields[schema.SymbolsField] = []byte(strings.Join(ann.Symbols, " "))
-			}
+	// TODO: thread the indexing context through AddFileToIndex so a slow
+	// parse can be cancelled; the indexing path has none today.
+	ann, annErr := annotations.Extract(context.Background(), lang, filename, fileContent, rctx)
+	if annErr != nil {
+		log.Warningf("annotation extraction failed for %q: %s", filename, annErr)
+	} else if ann != nil {
+		if len(ann.Imports) > 0 {
+			fields[schema.ImportsField] = []byte(strings.Join(ann.Imports, " "))
+		}
+		if len(ann.ImportID) > 0 {
+			fields[schema.ImportIDField] = []byte(strings.Join(ann.ImportID, " "))
+		}
+		if len(ann.Symbols) > 0 {
+			fields[schema.SymbolsField] = []byte(strings.Join(ann.Symbols, " "))
 		}
 	}
 

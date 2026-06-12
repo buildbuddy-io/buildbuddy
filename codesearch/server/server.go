@@ -201,8 +201,12 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 	}
 	for _, commit := range commits {
 		for _, add := range commit.GetAddsAndUpdates() {
+			// Only overwrite on a successful parse: an unparsable or removed
+			// go.mod must not wipe the previously-resolved module path.
 			if add.GetFilepath() == "go.mod" {
-				modulePath = annotations.GoModulePath(add.GetContent())
+				if mp := annotations.GoModulePath(add.GetContent()); mp != "" {
+					modulePath = mp
+				}
 			}
 		}
 	}
@@ -231,6 +235,28 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 	log.Infof("finished incremental update on %s from %s to %s", repoURL, commits[0].GetSha(), commits[len(commits)-1].GetSha())
 
 	return &inpb.IndexResponse{}, nil
+}
+
+// moduleFromArchive returns the Go module path declared in the archive's root
+// go.mod, or "" if there is none. Archive entries are nested under a single
+// top-level directory, which is stripped to match the indexing loop.
+func moduleFromArchive(files []*zip.File) (string, error) {
+	for _, file := range files {
+		parts := strings.Split(file.Name, string(filepath.Separator))
+		if len(parts) > 1 && filepath.Join(parts[1:]...) == "go.mod" {
+			rc, err := file.Open()
+			if err != nil {
+				return "", err
+			}
+			buf, err := io.ReadAll(rc)
+			rc.Close()
+			if err != nil {
+				return "", err
+			}
+			return annotations.GoModulePath(buf), nil
+		}
+	}
+	return "", nil
 }
 
 func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
@@ -283,22 +309,9 @@ func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequ
 	// Read the module path from the archive's root go.mod up front, so every
 	// file is indexed with the repo context that resolves Go import
 	// identities. Archive filenames are repo-relative, so rctx has no root dir.
-	modulePath := ""
-	for _, file := range zipReader.File {
-		parts := strings.Split(file.Name, string(filepath.Separator))
-		if len(parts) > 1 && filepath.Join(parts[1:]...) == "go.mod" {
-			rc, err := file.Open()
-			if err != nil {
-				return nil, err
-			}
-			buf, err := io.ReadAll(rc)
-			rc.Close()
-			if err != nil {
-				return nil, err
-			}
-			modulePath = annotations.GoModulePath(buf)
-			break
-		}
+	modulePath, err := moduleFromArchive(zipReader.File)
+	if err != nil {
+		return nil, err
 	}
 	rctx := annotations.NewRepoContextWithGoModule("", modulePath)
 

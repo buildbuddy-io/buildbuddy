@@ -601,7 +601,7 @@ func main() { log.Print() }
 	assert.Equal(t, 1, len(matches), "the Print declaration is indexed as a symbol")
 }
 
-func TestAddFileToIndexNilRepoContextSkipsAnnotations(t *testing.T) {
+func TestAddFileToIndexNilRepoContextExtractsSymbolsNotImports(t *testing.T) {
 	ctx := context.Background()
 	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
@@ -617,9 +617,16 @@ func main() { log.Print() }
 	require.NoError(t, w.Flush())
 
 	r := index.NewReader(ctx, db, "testing-namespace", schema.GitHubFileSchema())
-	matches, err := r.RawQuery(`(:eq imports "go:github.com/example/repo/util/log")`)
+
+	// Symbols need no repo context, so they're still extracted.
+	matches, err := r.RawQuery(`(:eq symbols "main")`)
 	require.NoError(t, err)
-	assert.Empty(t, matches, "a nil RepoContext extracts no annotations")
+	assert.Equal(t, 1, len(matches), "symbols are extracted without a repo context")
+
+	// Go import identities need the module path from the context, so they're not.
+	matches, err = r.RawQuery(`(:eq imports "go:github.com/example/repo/util/log")`)
+	require.NoError(t, err)
+	assert.Empty(t, matches, "Go import identities are not extracted without a repo context")
 }
 
 func TestRepoMetadataRoundTrip(t *testing.T) {

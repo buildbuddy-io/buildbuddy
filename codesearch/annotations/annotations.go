@@ -101,22 +101,26 @@ type Result struct {
 
 // Extract parses the file with tree-sitter and returns its annotations. lang
 // is the lowercase enry-detected language name. Symbols are extracted for any
-// supported, parseable file. Import identities additionally require an in-repo
-// path (the file must live under the repo root) plus, for Go, module context
-// (go.mod); Java identity is taken from the file's own package declaration.
+// supported, parseable file — they need no repo context. Import identities
+// additionally require an in-repo path (the file must live under the repo
+// root) plus, for Go, module context (go.mod); Java identity is taken from the
+// file's own package declaration. A nil rctx is treated as an empty context:
+// symbols still extract, but import identities that depend on it do not.
 //
-// A nil result means there is nothing to extract — an unsupported language or
-// a missing repo context — and is not an error. A file of a supported
-// language always parses (tree-sitter is error-tolerant, marking unparseable
-// regions with ERROR nodes rather than failing), so it returns non-nil
-// annotations that may simply be empty. A non-nil error is reserved for the
-// genuinely unexpected: a parse interrupted via ctx cancellation. Callers
-// should not fail indexing on that error, but they should surface it rather
-// than silently dropping the file.
+// A nil result means there is nothing to extract — an unsupported language —
+// and is not an error. A file of a supported language always parses
+// (tree-sitter is error-tolerant, marking unparseable regions with ERROR
+// nodes rather than failing), so it returns non-nil annotations that may
+// simply be empty. A non-nil error is reserved for the genuinely unexpected:
+// a parse interrupted via ctx cancellation. Callers should not fail indexing
+// on that error, but they should surface it rather than silently dropping the
+// file.
 func Extract(ctx context.Context, lang, filename string, content []byte, rctx *RepoContext) (*Result, error) {
 	defer indexprofile.Timer(indexprofile.PhaseExtractAnnotations)()
 	if rctx == nil {
-		return nil, nil
+		// Symbols don't need repo context; an empty context yields symbols
+		// without import identities.
+		rctx = &RepoContext{}
 	}
 	switch lang {
 	case "go":
