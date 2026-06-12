@@ -37,3 +37,15 @@ describe("InvocationModel.getIsRBEEnabled", () => {
     expect(model.getIsRBEEnabled()).toBe(true);
   });
 });
+
+describe("InvocationModel.getMode", () => {
+  it("uses compilation_mode when present, otherwise defaults to fastbuild", () => {
+    const model = new InvocationModel(new invocation.Invocation());
+
+    expect(model.getMode()).toBe("fastbuild");
+
+    model.optionsMap.set("compilation_mode", "opt");
+
+    expect(model.getMode()).toBe("opt");
+  });
+});

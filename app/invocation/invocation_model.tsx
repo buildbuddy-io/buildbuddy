@@ -886,7 +886,7 @@ export default class InvocationModel {
   }
 
   getMode() {
-    return this.configuration?.makeVariable.COMPILATION_MODE || "Unknown mode";
+    return this.stringCommandLineOption("compilation_mode") || "fastbuild";
   }
 
   getDuration(completionTime: any, beginTime: any) {
