@@ -1,4 +1,13 @@
 actions:
+  - name: M
+    container_image: ubuntu-22.04
+    triggers:
+      pull_request:
+        branches:
+          - "*"
+        max_base_staleness_before_merge: 1h
+    steps:
+      - run: echo HI
   - name: Test
     container_image: ubuntu-22.04
     resource_requests:
