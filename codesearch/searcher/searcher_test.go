@@ -51,7 +51,8 @@ var sampleData = []struct {
 
 type constantScorer struct{}
 
-func (s constantScorer) Skip() bool { return false }
+func (s constantScorer) Skip() bool                            { return false }
+func (s constantScorer) Prepare(matches []types.DocumentMatch) {}
 func (s constantScorer) Score(docMatch types.DocumentMatch) float64 {
 	return 0.1
 }
@@ -60,7 +61,8 @@ type explicitScorer struct {
 	scores map[uint64]float64
 }
 
-func (s *explicitScorer) Skip() bool { return false }
+func (s *explicitScorer) Skip() bool                            { return false }
+func (s *explicitScorer) Prepare(matches []types.DocumentMatch) {}
 func (s *explicitScorer) Score(docMatch types.DocumentMatch) float64 {
 	return s.scores[docMatch.Docid()]
 }

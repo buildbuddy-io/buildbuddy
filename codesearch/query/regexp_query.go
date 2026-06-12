@@ -107,77 +107,130 @@ type fieldScorer struct {
 	fieldName string
 	weight    int
 	children  []*fieldScorer
+
+	// avgFieldLen maps each scored field to its mean length over the
+	// candidate set, computed by Prepare on the root scorer. It supplies
+	// the avgdl in BM25's per-field length normalization.
+	avgFieldLen map[string]float64
+}
+
+func (fs *fieldScorer) collectFieldNames(out map[string]bool) {
+	if fs.op == Match {
+		out[fs.fieldName] = true
+	}
+	for _, child := range fs.children {
+		child.collectFieldNames(out)
+	}
+}
+
+// Prepare computes per-field average lengths across the candidate set so
+// Score can normalize each field's term frequency against that field's own
+// typical length.
+func (fs *fieldScorer) Prepare(matches []types.DocumentMatch) {
+	names := make(map[string]bool)
+	fs.collectFieldNames(names)
+	sums := make(map[string]float64, len(names))
+	counts := make(map[string]int, len(names))
+	for _, m := range matches {
+		for name := range names {
+			if l := m.FieldLength(name); l > 0 {
+				sums[name] += float64(l)
+				counts[name]++
+			}
+		}
+	}
+	fs.avgFieldLen = make(map[string]float64, len(names))
+	for name, n := range counts {
+		fs.avgFieldLen[name] = sums[name] / float64(n)
+	}
 }
 
 func (fs *fieldScorer) Skip() bool {
 	return fs.op == Noop
 }
 
-func (fs *fieldScorer) scoreInternal(docMatch types.DocumentMatch) (matchCount, tokenCount int) {
-	// We adapt BM25 scoring to work with multiple fields by counting matches and tokens from each
-	// field, summing them up, then running BM25 on those numbers. Fields can be weighted - the
-	// counts from a field (both token and match) are duplicated `weight` times.
-	// This approach is meant to match the method described here:
-	// https://www.researchgate.net/publication/221613382_Simple_BM25_extension_to_multiple_weighted_fields
+// fieldScore returns the subtree's score: each matched field contributes
+// weight_f * sat(tf_f / B_f), where B_f = 1 - b + b*(len_f/avglen_f)
+// normalizes the field's length against that field's candidate-set average
+// and sat is BM25's saturating transform. Saturation is applied PER FIELD,
+// before weighting and summation, because fields have very different
+// term-frequency scales (content ngram frequencies run 10-100x filename
+// frequencies); pooling raw frequencies across fields would leave a short
+// field's evidence invisible inside an already-saturated pool. Fields are
+// weighted to mirror the method described here:
+// https://www.researchgate.net/publication/221613382_Simple_BM25_extension_to_multiple_weighted_fields
+func (fs *fieldScorer) fieldScore(docMatch types.DocumentMatch, avgLens map[string]float64) float64 {
 	switch fs.op {
 	case Match:
 		if docMatch == nil {
-			return 0, 0
+			return 0
 		}
 		posting := docMatch.Posting(fs.fieldName)
-		tokenCount = int(docMatch.FieldLength(fs.fieldName)) * fs.weight
 		if posting == nil {
-			return 0, tokenCount
+			return 0
 		}
-		matchCount = int(posting.Frequency()) * fs.weight
+		tf := float64(posting.Frequency())
+		if tf == 0 {
+			return 0
+		}
+		fieldLen := float64(docMatch.FieldLength(fs.fieldName))
 		// A field always holds at least as many tokens as any one term's
-		// occurrences, so matchCount is a lower bound on the true field
-		// length. Docs indexed before field lengths were stored report
-		// FieldLength 0; without this floor they'd skip BM25 length
-		// normalization entirely and outscore reindexed docs.
-		tokenCount = max(tokenCount, matchCount)
-		return matchCount, tokenCount
+		// occurrences, so tf is a lower bound on the true field length.
+		// Docs indexed before field lengths were stored report 0; without
+		// this floor they'd skip length normalization entirely and
+		// outscore reindexed docs.
+		if fieldLen < tf {
+			fieldLen = tf
+		}
+		norm := 1.0
+		if avg := avgLens[fs.fieldName]; avg > 0 {
+			norm = 1 - bm25B + bm25B*(fieldLen/avg)
+		}
+		return float64(fs.weight) * bm25Sat(tf/norm)
 	case Or:
-		// Sum up the matches of all children. Arguably, we could take the highest score,
-		// but it seems more useful to boost queries that match more terms.
-		matchCount = 0
-		tokenCount = 0
+		// Pool the children: a doc matching the term in several fields
+		// accumulates evidence from each.
+		total := 0.0
 		for _, child := range fs.children {
-			m, t := child.scoreInternal(docMatch)
-			matchCount += m
-			tokenCount += t
+			total += child.fieldScore(docMatch, avgLens)
 		}
-		return matchCount, tokenCount
+		return total
 	case And:
-		// Same as OR, but if any child scores 0, the overall score is 0.
-		matchCount = 0
-		tokenCount = 0
-
+		// Gate on any clause contributing nothing (AND semantics), summing
+		// the rest. Gating lives here, not in Score, so it holds at any
+		// nesting depth (e.g. an And nested under an Or).
+		total := 0.0
 		for _, child := range fs.children {
-			m, t := child.scoreInternal(docMatch)
-			if m == 0 {
-				return 0, 0
+			s := child.fieldScore(docMatch, avgLens)
+			if s == 0 {
+				return 0
 			}
-			matchCount += m
-			tokenCount += t
+			total += s
 		}
-		return matchCount, tokenCount
+		return total
 	case Noop:
-		return 1, 1
+		return 1
 	default:
 		log.Warningf("Unknown scorer operation %d", fs.op)
-		return 0, 0 // Should never happen
+		return 0 // Should never happen
 	}
 }
 
-func bm25Score(f_qi_d, D float64) float64 {
-	// See https://en.wikipedia.org/wiki/Okapi_BM25#The_ranking_function for
-	// the formula for BM25 scoring. k1 and b are left at "default" values here, and haven't been
-	// tuned. Query scoring passes a field-length based normalization value computed from
-	// the indexed fields that contributed to the score.
-	k1 := 1.2
-	b := 0.75
-	return (f_qi_d * (k1 + 1)) / (f_qi_d + k1*(1-b+b*D))
+const (
+	// Standard BM25 constants, untuned. See
+	// https://en.wikipedia.org/wiki/Okapi_BM25#The_ranking_function.
+	bm25K1 = 1.2
+	bm25B  = 0.75
+)
+
+// bm25Sat applies BM25's saturating transform to a length-normalized term
+// frequency. Per-field length normalization happens in fieldScore, so no
+// document-length term appears here.
+func bm25Sat(tf float64) float64 {
+	if tf <= 0 {
+		return 0
+	}
+	return (tf * (bm25K1 + 1)) / (tf + bm25K1)
 }
 
 func newNoopScorer() *fieldScorer {
@@ -221,8 +274,7 @@ func orScorers(a *fieldScorer, b *fieldScorer) *fieldScorer {
 }
 
 func (fs *fieldScorer) Score(docMatch types.DocumentMatch) float64 {
-	matchCount, tokenCount := fs.scoreInternal(docMatch)
-	return bm25Score(float64(matchCount), float64(tokenCount))
+	return fs.fieldScore(docMatch, fs.avgFieldLen)
 }
 
 func extractLine(buf []byte, lineNumber int) []byte {
