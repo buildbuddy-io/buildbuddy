@@ -37,9 +37,9 @@ go_test(
     srcs = ["ocifetcher_test.go"],
     deps = [
         ":ocifetcher",
+        "//enterprise/server/oci/ocicache",
         "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/testutil/testregistry",
-        "//enterprise/server/oci/ocicache",
         "//proto:capability_go_proto",
         "//proto:oci_fetcher_go_proto",
         "//proto:registry_go_proto",
