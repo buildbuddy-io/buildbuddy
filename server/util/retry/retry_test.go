@@ -186,11 +186,15 @@ func TestRetryDo(t *testing.T) {
 func TestRetryDoSkipsNonRetryableErrors(t *testing.T) {
 	ctx := context.Background()
 
+	originalErr := status.InternalError("oh no")
 	attempts := 0
 	_, err := retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (int, error) {
 		attempts += 1
-		return 0, retry.NonRetryableError(status.InternalError("oh no"))
+		// The first attempt returns a non-retryable error, so the retry loop
+		// should stop immediately and surface the original error.
+		return 0, retry.NonRetryableError(originalErr)
 	})
 	require.Error(t, err)
+	require.Same(t, originalErr, err)
 	require.Equal(t, 1, attempts)
 }
