@@ -3035,6 +3035,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 		if shouldDecrypt {
 			d, err := p.env.GetCrypter().NewDecryptor(ctx, fileMetadata.GetFileRecord().GetDigest(), reader, fileMetadata.GetEncryptionMetadata())
 			if err != nil {
+				_ = reader.Close()
 				return nil, status.UnavailableErrorf("decryptor not available: %s", err)
 			}
 			reader = d
@@ -3042,6 +3043,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 		if shouldDecompress {
 			dr, err := compression.NewZstdDecompressingReader(reader)
 			if err != nil {
+				_ = reader.Close()
 				return nil, err
 			}
 			reader = dr
