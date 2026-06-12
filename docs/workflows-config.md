@@ -272,6 +272,45 @@ actions:
     # ...
 ```
 
+## Merge with base
+
+By default, when workflows are triggered by `pull_request` events, the CI runner will merge
+the PR branch with the PR's base branch (i.e. main). This is controlled by
+`merge_with_base`, which defaults to `true`.
+
+This may help catch integration problems before merge,
+such as merge conflicts or tests that only fail when the PR is combined
+with recent changes on the base branch.
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: "Test"
+    triggers:
+      pull_request:
+        branches: ["main"]
+        merge_with_base: true # default
+    steps:
+      - run: "bazel test //..."
+```
+
+This behavior may hurt CI performance, because the base branch must be
+fetched on every run, and unrelated base branch changes that were merged
+into the git workspace may invalidate the Bazel cache and require rebuilds.
+This behavior can be disabled by setting `merge_with_base: false` or by setting
+`max_base_staleness_before_merge`.
+
+When `max_base_staleness_before_merge` is set, the CI runner will only merge the base branch into the PR branch when the PR's merge base is at least this stale relative to the base branch tip.
+
+For example, if `max_base_staleness_before_merge: "24h"`, the main branch tip is 1h old, and the merge base between
+the PR and main branch is 2h old, the PR is not considered stale and should not be merged with main.
+If the merge base was 26h old and 25h behind the main branch tip, the PR
+would be considered stale and should be merged with main.
+
+This can help balance churn in the git workspace, while still ensuring very stale PR branches
+are still merged with the base branch to instill higher merge confidence. Use a shorter duration when merge confidence is more important, and
+a longer duration when cache stability and reduced CI churn are more
+important.
+
 ## Ref pattern matching
 
 In `buildbuddy.yaml`, workflow triggers such as `push` and `pull_request`
@@ -424,6 +463,18 @@ That's it! Whenever any of the configured triggers are matched, one of
 the Mac executors in the `workflows` pool should execute the
 workflow, and BuildBuddy will publish the results to your branch.
 
+## Debugging
+
+### Unexpected cache misses
+
+If seeing unexpected cache misses from multiple runs of the same Workflow,
+check whether [merge with base](#merge-with-base) is pulling in frequent changes from the
+base branch. Even when the PR branch is unchanged, a new base branch tip can
+produce a different merged base, which can invalidate the Bazel cache
+and require rebuilds. See the [merge with base section](#merge-with-base) for more detail.
+
+If so, consider setting `max_base_staleness_before_merge`.
+
 ## buildbuddy.yaml schema
 
 ### `BuildBuddyConfig`
@@ -558,7 +609,12 @@ pushed.
   the main branch. However, the action will not be continuously re-run as
   changes are pushed to the base branch. For stronger protection against
   breaking the main branch, you may wish to use
-  [merge queues](#merge-queue-support).
+  [merge queues](#merge-queue-support). See
+  [Merge with base behavior](#merge-with-base).
+- **`max_base_staleness_before_merge`** (`duration`, optional): If set with
+  `merge_with_base: true`, merge with the base branch only when the merge base is at least
+  this stale relative to the base branch tip. See
+  [Merge with base](#merge-with-base) for more details.
 
 ### `ScheduleTrigger`
 

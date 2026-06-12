@@ -169,6 +169,22 @@ actions:
 `,
 	}
 
+	workspaceContentsWithStaleBaseMerge = map[string]string{
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+sh_binary(name = "exit", srcs = ["exit.sh"])`,
+		"exit.sh": `exit "$1"`,
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    triggers:
+      pull_request:
+        branches: [ "*" ]
+        max_base_staleness_before_merge: "24h"
+    bazel_commands:
+      - run :exit -- 0
+`,
+	}
+
 	workspaceContentsWithArtifactUploads = map[string]string{
 		"BUILD": `
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
@@ -1828,6 +1844,162 @@ func TestDisableBaseBranchMerging(t *testing.T) {
 
 	result := invokeRunner(t, runnerFlags, nil, wsPath)
 	checkRunnerResult(t, result)
+}
+
+func TestMergeWithBase_FetchDepth1(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	// workspaceContentsWithRunScript enables merge_with_base (the default) with no
+	// staleness threshold, so the runner should always merge with the base branch.
+	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithRunScript)
+	pushedRepoPath := testgit.MakeTempRepoClone(t, targetRepoPath)
+	// Create a PR branch with 2 commits.
+	testshell.Run(t, pushedRepoPath, `
+		git checkout -b pr-branch
+		touch feature1.sh
+		git add .
+		git commit -m "Add feature1.sh"
+		touch feature2.sh
+		git add .
+		git commit -m "Add feature2.sh"
+	`)
+	prCommitSHA := strings.TrimSpace(testshell.Run(t, pushedRepoPath, `git rev-parse HEAD`))
+	// Add a non-conflicting commit to master that the runner must merge in.
+	testshell.Run(t, targetRepoPath, `
+		touch base_change.sh
+		git add .
+		git commit -m "Add base_change.sh"
+	`)
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Print args",
+		"--trigger_event=pull_request",
+		"--pushed_repo_url=file://" + pushedRepoPath,
+		"--pushed_branch=pr-branch",
+		"--commit_sha=" + prCommitSHA,
+		"--target_repo_url=file://" + targetRepoPath,
+		"--target_branch=master",
+		// Set fetch depth=1. The runner should still fetch enough history to reach
+		// the merge base so that it can merge with the base branch.
+		"--git_fetch_depth=1",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	// The runner should not fail to find the merge base.
+	result := invokeRunner(t, runnerFlags, nil, wsPath)
+	checkRunnerResult(t, result)
+}
+
+func TestMergeWithBase_Skip_FreshPRBranch(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithStaleBaseMerge)
+	testshell.Run(t, repoPath, `
+		# Create a PR branch from the current master branch.
+		git checkout -b pr-branch
+
+		# Add a bad commit to master. Since it is within the configured stale
+		# threshold, it should not be merged into the PR branch.
+		git checkout master
+		echo 'exit 1' > exit.sh
+		git add .
+		git commit -m "Fail"
+	`)
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=pull_request",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=pr-branch",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	// The runner should skip merging with base because the PR branch is fresh.
+	result := invokeRunner(t, runnerFlags, nil, wsPath)
+	checkRunnerResult(t, result)
+}
+
+func TestMergeWithBase_Skip_FreshPRBranch_FetchDepth1(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithStaleBaseMerge)
+	pushedRepoPath := testgit.MakeTempRepoClone(t, targetRepoPath)
+	// Create a PR branch with 2 commits
+	testshell.Run(t, pushedRepoPath, `
+		git checkout -b pr-branch
+		touch feature1.sh
+		git add .
+		git commit -m "Add feature1.sh"
+		touch feature2.sh
+		git add .
+		git commit -m "Add feature2.sh"
+	`)
+	prCommitSHA := strings.TrimSpace(testshell.Run(t, pushedRepoPath, `git rev-parse HEAD`))
+	testshell.Run(t, targetRepoPath, `
+		# Add a bad commit to master. Since it is within the configured stale
+		# threshold, it should not be merged into the PR branch.
+		echo 'exit 1' > exit.sh
+		git add .
+		git commit -m "Fail"
+	`)
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=pull_request",
+		"--pushed_repo_url=file://" + pushedRepoPath,
+		"--pushed_branch=pr-branch",
+		"--commit_sha=" + prCommitSHA,
+		"--target_repo_url=file://" + targetRepoPath,
+		"--target_branch=master",
+		// Set fetch depth=1.
+		// The runner should still fetch the merge commit to determine whether to merge with base.
+		"--git_fetch_depth=1",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	// The runner should skip merging with base because the PR branch is fresh.
+	result := invokeRunner(t, runnerFlags, nil, wsPath)
+	checkRunnerResult(t, result)
+}
+
+func TestMergeWithBase_StaleBase(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, _ := makeGitRepo(t, workspaceContentsWithStaleBaseMerge)
+	oldCommitDate := time.Now().Add(-48 * time.Hour).Format(time.RFC3339)
+	testshell.Run(t, repoPath, fmt.Sprintf(`
+		GIT_AUTHOR_DATE=%[1]q GIT_COMMITTER_DATE=%[1]q git commit --amend --no-edit --date=%[1]q
+		git checkout -b pr-branch
+
+		# Add a bad commit to master. Since the PR branch is stale, it should be
+		# merged into the PR branch and cause the action to fail.
+		git checkout master
+		echo 'exit 1' > exit.sh
+		git add .
+		git commit -m "Fail"
+	`, oldCommitDate))
+	prCommitSHA := strings.TrimSpace(testshell.Run(t, repoPath, `git rev-parse pr-branch`))
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=pull_request",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=pr-branch",
+		"--commit_sha=" + prCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, nil, wsPath)
+	require.NotEqual(t, 0, result.ExitCode)
 }
 
 func TestFetchDepth1(t *testing.T) {
