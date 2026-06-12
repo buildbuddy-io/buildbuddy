@@ -1914,7 +1914,7 @@ func (ws *workspace) mergeWithBaseIfRequested(ctx context.Context, actionTrigger
 		return nil
 	}
 
-	if *pushedTag != "" && mergeRequested {
+	if *pushedTag != "" {
 		return status.InvalidArgumentError("tags cannot be merged with base")
 	}
 
@@ -1950,13 +1950,13 @@ func (ws *workspace) mergeWithBaseIfRequested(ctx context.Context, actionTrigger
 
 // Returns true if we should merge with the base branch.
 func (ws *workspace) checkMergeBaseStaleness(ctx context.Context, actionTriggers *config.Triggers) bool {
-	maxBaseAge := actionTriggers.GetPullRequestTrigger().GetMaxBaseAgeBeforeMerge()
-	if maxBaseAge == nil {
+	maxStaleness := actionTriggers.GetPullRequestTrigger().GetMaxBaseStalenessBeforeMerge()
+	if maxStaleness == nil {
 		return true
 	}
 
-	mergeBase, err := ws.mergeBase(ctx)
-	if err != nil {
+	mergeBase, cmdErr := ws.mergeBaseCommit(ctx)
+	if cmdErr != nil {
 		writeCommandSummary(ws.log, "Could not determine merge base; defaulting to merging with base.")
 		return true
 	}
@@ -1971,15 +1971,15 @@ func (ws *workspace) checkMergeBaseStaleness(ctx context.Context, actionTriggers
 		return true
 	}
 	staleness := baseHeadTime.Sub(mergeBaseTime)
-	if staleness >= *maxBaseAge {
-		writeCommandSummary(ws.log, "Merging with target branch because the merge base is %s behind %s, exceeding the configured %s threshold.", staleness.Round(time.Second), *targetBranch, *maxBaseAge)
+	if staleness >= *maxStaleness {
+		writeCommandSummary(ws.log, "Merging with target branch because the merge base is %s behind %s, exceeding the configured %s threshold.", staleness.Round(time.Second), *targetBranch, *maxStaleness)
 		return true
 	}
-	writeCommandSummary(ws.log, "Skipping merge with target branch because the merge base is %s behind %s, within the configured %s threshold.", staleness.Round(time.Second), *targetBranch, *maxBaseAge)
+	writeCommandSummary(ws.log, "Skipping merge with target branch because the merge base is %s behind %s, within the configured %s threshold.", staleness.Round(time.Second), *targetBranch, *maxStaleness)
 	return false
 }
 
-func (ws *workspace) mergeBase(ctx context.Context) (string, error) {
+func (ws *workspace) mergeBaseCommit(ctx context.Context) (string, *commandError) {
 	mergeBase, err := git(ctx, io.Discard, "merge-base", "HEAD", ws.targetRef())
 	return strings.TrimSpace(mergeBase), err
 }
