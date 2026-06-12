@@ -1745,6 +1745,11 @@ func (p *PebbleCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName)
 }
 
 func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	if spn.IsRecording() {
+		spn.SetAttributes(attribute.Int("num_resources", len(resources)))
+	}
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
