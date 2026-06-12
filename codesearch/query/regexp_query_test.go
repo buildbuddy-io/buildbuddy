@@ -229,6 +229,32 @@ func TestScoringMatchContentOnly(t *testing.T) {
 	assert.Equal(t, 2*bm25Sat(1), scorer.Score(docMatch))
 }
 
+func TestNestedAndGatingPreserved(t *testing.T) {
+	// An And nested under an Or must keep its zero-gating: a doc matching
+	// only one of the And's children contributes nothing, not a partial
+	// score. Guards against gating regressing if it lived only in Score.
+	nestedAnd := andScorers(
+		newFieldScorer(contentField, 1),
+		newFieldScorer(filenameField, 1),
+	)
+	scorer := orScorers(nestedAnd, newFieldScorer("other", 1))
+
+	// Matches contentField only; the And's filename child is absent, and the
+	// Or's other child is absent too, so the whole expression scores 0.
+	docMatch := matchWithFrequenciesAndLengths(
+		map[string]uint32{contentField: 1},
+		map[string]uint32{contentField: 1, filenameField: 1},
+	)
+	assert.Equal(t, 0.0, scorer.Score(docMatch))
+
+	// Matching both And children does contribute.
+	bothMatch := matchWithFrequenciesAndLengths(
+		map[string]uint32{contentField: 1, filenameField: 1},
+		map[string]uint32{contentField: 1, filenameField: 1},
+	)
+	assert.Greater(t, scorer.Score(bothMatch), 0.0)
+}
+
 func TestScoringLengthNormalization(t *testing.T) {
 	// Two docs with the same match count but different lengths: after
 	// Prepare computes the candidate-set average, each doc's field is scored

@@ -187,12 +187,25 @@ func (fs *fieldScorer) fieldScore(docMatch types.DocumentMatch, avgLens map[stri
 			norm = 1 - bm25B + bm25B*(fieldLen/avg)
 		}
 		return float64(fs.weight) * bm25Sat(tf/norm)
-	case Or, And:
-		// Sum the children. (And is only used for clause composition at
-		// the root; its gating happens in Score.)
+	case Or:
+		// Pool the children: a doc matching the term in several fields
+		// accumulates evidence from each.
 		total := 0.0
 		for _, child := range fs.children {
 			total += child.fieldScore(docMatch, avgLens)
+		}
+		return total
+	case And:
+		// Gate on any clause contributing nothing (AND semantics), summing
+		// the rest. Gating lives here, not in Score, so it holds at any
+		// nesting depth (e.g. an And nested under an Or).
+		total := 0.0
+		for _, child := range fs.children {
+			s := child.fieldScore(docMatch, avgLens)
+			if s == 0 {
+				return 0
+			}
+			total += s
 		}
 		return total
 	case Noop:
@@ -261,22 +274,7 @@ func orScorers(a *fieldScorer, b *fieldScorer) *fieldScorer {
 }
 
 func (fs *fieldScorer) Score(docMatch types.DocumentMatch) float64 {
-	switch fs.op {
-	case And:
-		// Sum the clauses, gating on any clause contributing nothing
-		// (AND semantics).
-		total := 0.0
-		for _, child := range fs.children {
-			s := child.fieldScore(docMatch, fs.avgFieldLen)
-			if s == 0 {
-				return 0
-			}
-			total += s
-		}
-		return total
-	default:
-		return fs.fieldScore(docMatch, fs.avgFieldLen)
-	}
+	return fs.fieldScore(docMatch, fs.avgFieldLen)
 }
 
 func extractLine(buf []byte, lineNumber int) []byte {

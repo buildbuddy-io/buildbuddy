@@ -115,6 +115,10 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
 		return nil, nil
 	}
 
+	// Prepare computes candidate-set statistics for scoring; do it after the
+	// guards above so a skipped scorer or count-only request pays nothing.
+	scorer.Prepare(matches)
+
 	// Scoring uses only index-side data (term frequencies and field lengths),
 	// so it is cheap enough to run on every match; the heap keeps just the
 	// docs that can make it into the requested result window.
@@ -146,10 +150,7 @@ func (c *CodeSearcher) Search(q types.Query, numResults, offset int) ([]types.Do
 		return nil, err
 	}
 
-	scorer := q.Scorer()
-	scorer.Prepare(docidMatches)
-
-	topDocIDs, err := c.scoreDocs(scorer, docidMatches, numResults, offset)
+	topDocIDs, err := c.scoreDocs(q.Scorer(), docidMatches, numResults, offset)
 	if err != nil {
 		return nil, err
 	}
