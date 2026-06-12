@@ -87,7 +87,7 @@ func New(env environment.Env, rootDirectory, scratchDirectory string) (*codesear
 		env:              env,
 		db:               db,
 		scratchDirectory: scratchDirectory,
-		repoLocks:        lockmap.New(),
+		repoLocks:        lockmap.New[string](),
 
 		kdb: kdb,
 		xs:  xs,
@@ -102,7 +102,7 @@ type codesearchServer struct {
 	db               *pebble.DB
 	scratchDirectory string
 
-	repoLocks lockmap.Locker
+	repoLocks lockmap.Locker[string]
 
 	// Kythe services.
 	kdb keyvalue.DB

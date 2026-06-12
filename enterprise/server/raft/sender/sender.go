@@ -50,7 +50,7 @@ type Sender struct {
 	// collide. proposeLocker still serializes proposes per range so that
 	// indices arrive in order on each range.
 	proposeSession *client.Session
-	proposeLocker  lockmap.Locker
+	proposeLocker  lockmap.Locker[uint64]
 }
 
 func New(rangeCache *rangecache.RangeCache, apiClient *client.APIClient) *Sender {
@@ -58,7 +58,7 @@ func New(rangeCache *rangecache.RangeCache, apiClient *client.APIClient) *Sender
 		rangeCache:     rangeCache,
 		apiClient:      apiClient,
 		proposeSession: client.NewSession(),
-		proposeLocker:  lockmap.New(),
+		proposeLocker:  lockmap.New[uint64](),
 	}
 }
 
@@ -491,7 +491,7 @@ func (s *Sender) setupProposeSessionForRange(rangeID uint64, batchCmd *rfpb.Batc
 	var lockStart time.Time
 	if batchCmd.GetSession() == nil {
 		lockStart = time.Now()
-		unlockFn = s.proposeLocker.Lock(strconv.FormatUint(rangeID, 10))
+		unlockFn = s.proposeLocker.Lock(rangeID)
 		batchCmd.Session = s.proposeSession.NextRequestSession()
 	}
 	// Stamp range ID once, on the first range lookup, and never

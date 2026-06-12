@@ -279,7 +279,7 @@ type Session struct {
 	refreshAt time.Time
 	mu        sync.Mutex
 
-	locker lockmap.Locker
+	locker lockmap.Locker[uint64]
 
 	maxSingleOpTimeout time.Duration
 }
@@ -304,7 +304,7 @@ func NewSessionWithClock(clock clockwork.Clock) *Session {
 		clock:              clock,
 		createdAt:          now,
 		refreshAt:          now.Add(*sessionLifetime),
-		locker:             lockmap.New(),
+		locker:             lockmap.New[uint64](),
 		maxSingleOpTimeout: config.SingleRaftOpTimeout(),
 	}
 }
@@ -341,7 +341,7 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 		}
 		// At most one SyncProposeLocal can be run for the same replica per session.
 		start := s.clock.Now()
-		unlockFn := s.locker.Lock(strconv.Itoa(int(rangeID)))
+		unlockFn := s.locker.Lock(rangeID)
 		spn.End()
 		defer func() {
 			unlockFn()

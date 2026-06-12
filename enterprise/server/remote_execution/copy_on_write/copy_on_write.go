@@ -110,7 +110,7 @@ type COWStore struct {
 	// chunkLock can be used to lock a single chunk, to synchronize simultaneous
 	// access on that chunk (i.e. two goroutines trying to initialize and copy a chunk
 	// at the same time).
-	chunkLock lockmap.Locker
+	chunkLock lockmap.Locker[int64]
 
 	// chunks is a mapping of chunk offset to the backing data store
 	chunks map[int64]*Mmap
@@ -222,7 +222,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks [
 		env:                env,
 		remoteInstanceName: opts.RemoteInstanceName,
 		remoteEnabled:      opts.RemoteEnabled,
-		chunkLock:          lockmap.New(),
+		chunkLock:          lockmap.New[int64](),
 		chunks:             chunkMap,
 		dirty:              make(map[int64]bool, 0),
 		partiallyMapped:    make(map[int64]bool, 0),
@@ -308,7 +308,7 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 		}
 	}
 
-	chunkUnlockFn := c.chunkLock.RLock(fmt.Sprintf("%d", chunkStartOffset))
+	chunkUnlockFn := c.chunkLock.RLock(chunkStartOffset)
 	defer chunkUnlockFn()
 
 	c.storeLock.RLock()
@@ -381,7 +381,7 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 }
 
 func (c *COWStore) readChunk(p []byte, readRelativeOffset int64, chunkStartOffset int64, readSize int) error {
-	chunkUnlockFn := c.chunkLock.RLock(fmt.Sprintf("%d", chunkStartOffset))
+	chunkUnlockFn := c.chunkLock.RLock(chunkStartOffset)
 	defer chunkUnlockFn()
 
 	c.storeLock.RLock()
@@ -484,7 +484,7 @@ func (c *COWStore) writeToChunk(p []byte, writeRelativeOffset int64, chunkStartO
 		c.updateUsageSummary("WriteToChunk", startTime)
 	}()
 
-	chunkUnlockFn := c.chunkLock.Lock(fmt.Sprintf("%d", chunkStartOffset))
+	chunkUnlockFn := c.chunkLock.Lock(chunkStartOffset)
 	defer chunkUnlockFn()
 
 	c.storeLock.RLock()
@@ -654,7 +654,7 @@ func (s *COWStore) calculateChunkSize(startOffset int64) int64 {
 }
 
 func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
-	chunkUnlockFn := s.chunkLock.Lock(fmt.Sprintf("%d", chunkStartOffset))
+	chunkUnlockFn := s.chunkLock.Lock(chunkStartOffset)
 	defer chunkUnlockFn()
 
 	s.storeLock.RLock()
@@ -806,7 +806,7 @@ func (s *COWStore) eagerFetchChunksInBackground() {
 }
 
 func (s *COWStore) fetchChunk(offset int64) error {
-	chunkUnlockFn := s.chunkLock.Lock(fmt.Sprintf("%d", offset))
+	chunkUnlockFn := s.chunkLock.Lock(offset)
 	defer chunkUnlockFn()
 
 	s.storeLock.RLock()
