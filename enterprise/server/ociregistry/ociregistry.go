@@ -32,8 +32,8 @@ import (
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	gcrname "github.com/google/go-containerregistry/pkg/name"
-	gcr "github.com/google/go-containerregistry/pkg/v1"
+	ctrname "github.com/google/go-containerregistry/pkg/name"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -82,7 +82,7 @@ var (
 // manifestResolveResult holds the outcome of a tag->digest resolution so it can be
 // shared across concurrent requests via singleflight.
 type manifestResolveResult struct {
-	hash          *gcr.Hash
+	hash          *ctr.Hash
 	exists        bool
 	contentLength string
 	contentType   string
@@ -265,7 +265,7 @@ func (r *registry) determineUpstreamRepository(ctx context.Context, req *http.Re
 	registrySubdomain, ok := isRegistryDomainRequest(req)
 	if !ok {
 		if repository == "" {
-			return gcrname.DefaultRegistry, nil
+			return ctrname.DefaultRegistry, nil
 		}
 		return repository, nil
 	}
@@ -301,7 +301,7 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 	// If the request is not for the DockerHub mirror, for now just return
 	// an OK response which tells the client that no auth is required. For now,
 	// we are only mirroring repositories that don't require auth.
-	if remoteRegistry != gcrname.DefaultRegistry {
+	if remoteRegistry != ctrname.DefaultRegistry {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("{}"))
 		return
@@ -337,7 +337,7 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 	}
 }
 
-func (r *registry) makeUpstreamRequest(ctx context.Context, method string, acceptHeaders []string, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*http.Response, error) {
+func (r *registry) makeUpstreamRequest(ctx context.Context, method string, acceptHeaders []string, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref ctrname.Reference) (*http.Response, error) {
 	var path string
 	switch ociResourceType {
 	case ocipb.OCIResourceType_BLOB:
@@ -366,18 +366,18 @@ func (r *registry) makeUpstreamRequest(ctx context.Context, method string, accep
 	return r.client.Do(upreq.WithContext(ctx))
 }
 
-func parseDockerContentDigestHeader(value string) (*gcr.Hash, error) {
+func parseDockerContentDigestHeader(value string) (*ctr.Hash, error) {
 	if value == "" {
 		return nil, nil
 	}
-	hash, err := gcr.NewHash(value)
+	hash, err := ctr.NewHash(value)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("could not parse %s header: %s", headerDockerContentDigest, err)
 	}
 	return &hash, nil
 }
 
-func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeaders []string, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (manifestResolveResult, error) {
+func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeaders []string, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref ctrname.Reference) (manifestResolveResult, error) {
 	headresp, err := r.makeUpstreamRequest(ctx, http.MethodHead, acceptHeaders, authorizationHeader, ociResourceType, ref)
 	if err != nil {
 		return manifestResolveResult{}, status.UnavailableErrorf("error making %s request to upstream registry: %s", http.MethodHead, err)
@@ -466,7 +466,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	acClient := r.env.GetActionCacheClient()
 
 	writeBody := inreq.Method == http.MethodGet
-	hash, err := gcr.NewHash(resolvedRef.Identifier())
+	hash, err := ctr.NewHash(resolvedRef.Identifier())
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error parsing resolved digest in %q: %s", resolvedRef.Context(), err), http.StatusInternalServerError)
 		return
@@ -511,7 +511,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 
 // fetchAndCache fetches a blob or manifest from the upstream registry and
 // writes it to the cache. The response body is not written to any client.
-func (r *registry) fetchAndCache(ctx context.Context, inreq *http.Request, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ociResourceType ocipb.OCIResourceType, resolvedRef gcrname.Reference, hash gcr.Hash, originalRef gcrname.Reference) error {
+func (r *registry) fetchAndCache(ctx context.Context, inreq *http.Request, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ociResourceType ocipb.OCIResourceType, resolvedRef ctrname.Reference, hash ctr.Hash, originalRef ctrname.Reference) error {
 	upresp, err := r.makeUpstreamRequest(ctx, http.MethodGet, inreq.Header.Values(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, resolvedRef)
 	if err != nil {
 		return status.UnavailableErrorf("error making GET request to upstream registry: %s", err)
@@ -537,19 +537,19 @@ func (r *registry) fetchAndCache(ctx context.Context, inreq *http.Request, bsCli
 	return ocicache.WriteBlobOrManifestToCacheAndWriter(ctx, upresp.Body, io.Discard, bsClient, acClient, resolvedRef.Context(), ociResourceType, hash, contentType, contentLength, originalRef)
 }
 
-func writeManifestMetadataToResponse(ctx context.Context, w http.ResponseWriter, hash gcr.Hash, mc *ocipb.OCIManifestContent) {
+func writeManifestMetadataToResponse(ctx context.Context, w http.ResponseWriter, hash ctr.Hash, mc *ocipb.OCIManifestContent) {
 	w.Header().Add(headerDockerContentDigest, hash.String())
 	w.Header().Add(headerContentLength, strconv.Itoa(len(mc.GetRaw())))
 	w.Header().Add(headerContentType, mc.GetContentType())
 }
 
-func writeBlobMetadataToResponse(ctx context.Context, w http.ResponseWriter, hash gcr.Hash, blobMetadata *ocipb.OCIBlobMetadata) {
+func writeBlobMetadataToResponse(ctx context.Context, w http.ResponseWriter, hash ctr.Hash, blobMetadata *ocipb.OCIBlobMetadata) {
 	w.Header().Add(headerDockerContentDigest, hash.String())
 	w.Header().Add(headerContentLength, strconv.FormatInt(blobMetadata.GetContentLength(), 10))
 	w.Header().Add(headerContentType, blobMetadata.GetContentType())
 }
 
-func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, ociResourceType ocipb.OCIResourceType, writeBody bool, originalRef gcrname.Reference) error {
+func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo ctrname.Repository, hash ctr.Hash, ociResourceType ocipb.OCIResourceType, writeBody bool, originalRef ctrname.Reference) error {
 	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
 		mc, err := ocicache.FetchManifestFromAC(ctx, acClient, repo, hash, originalRef)
 		if err != nil {
@@ -584,7 +584,7 @@ func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, b
 // The returned result also includes Content-Length and Content-Type from the
 // upstream HEAD response, which can be used to serve HEAD requests without a
 // second round-trip.
-func (r *registry) resolveTagToDigest(ctx context.Context, inreq *http.Request, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (manifestResolveResult, error) {
+func (r *registry) resolveTagToDigest(ctx context.Context, inreq *http.Request, ociResourceType ocipb.OCIResourceType, ref ctrname.Reference) (manifestResolveResult, error) {
 	// Only use the tag->digest cache for unauthenticated requests, since
 	// different auth tokens may have different access to manifests.
 	useTagDigestCache := inreq.Header.Get(headerAuthorization) == ""
@@ -626,7 +626,7 @@ func (r *registry) resolveTagToDigest(ctx context.Context, inreq *http.Request, 
 // tagDigestCacheKey builds a cache key for the tag->digest cache.
 // The key includes the full reference (repo + tag) and sorted accept headers,
 // since content negotiation can affect which manifest digest is returned.
-func tagDigestCacheKey(ref gcrname.Reference, acceptHeaders []string) string {
+func tagDigestCacheKey(ref ctrname.Reference, acceptHeaders []string) string {
 	sorted := make([]string, len(acceptHeaders))
 	copy(sorted, acceptHeaders)
 	sort.Strings(sorted)
@@ -639,16 +639,16 @@ func tagDigestCacheKey(ref gcrname.Reference, acceptHeaders []string) string {
 }
 
 func isDigest(identifier string) bool {
-	_, err := gcr.NewHash(identifier)
+	_, err := ctr.NewHash(identifier)
 	return err == nil
 }
 
-func parseReference(repository, identifier string) (gcrname.Reference, error) {
+func parseReference(repository, identifier string) (ctrname.Reference, error) {
 	joiner := ":"
 	if isDigest(identifier) {
 		joiner = "@"
 	}
-	ref, err := gcrname.ParseReference(repository + joiner + identifier)
+	ref, err := ctrname.ParseReference(repository + joiner + identifier)
 	if err != nil {
 		return nil, err
 	}

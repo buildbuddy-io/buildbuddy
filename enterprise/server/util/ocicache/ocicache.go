@@ -22,8 +22,8 @@ import (
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	gcrname "github.com/google/go-containerregistry/pkg/name"
-	gcr "github.com/google/go-containerregistry/pkg/v1"
+	ctrname "github.com/google/go-containerregistry/pkg/name"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -42,7 +42,7 @@ const (
 	cacheDigestFunction = repb.DigestFunction_SHA256
 )
 
-func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, originalRef gcrname.Reference) error {
+func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo ctrname.Repository, hash ctr.Hash, contentType string, originalRef ctrname.Reference) error {
 	arRN, err := manifestACKey(repo, hash)
 	if err != nil {
 		return err
@@ -76,19 +76,19 @@ func updateCacheEventMetric(ociResourceTypeLabel, cacheEventType string) {
 	}).Inc()
 }
 
-func manifestMiss(ctx context.Context, repo gcrname.Repository, hash gcr.Hash, originalRef gcrname.Reference) {
+func manifestMiss(ctx context.Context, repo ctrname.Repository, hash ctr.Hash, originalRef ctrname.Reference) {
 	log.CtxDebugf(ctx, "OCI cache manifest miss %s@%s (original ref %q)", repo, hash, originalRef)
 	updateCacheEventMetric(metrics.OCIManifestResourceTypeLabel, metrics.MissStatusLabel)
 }
 
-func manifestHit(ctx context.Context, repo gcrname.Repository, hash gcr.Hash, originalRef gcrname.Reference) {
+func manifestHit(ctx context.Context, repo ctrname.Repository, hash ctr.Hash, originalRef ctrname.Reference) {
 	log.CtxDebugf(ctx, "OCI cache manifest hit %s@%s (original ref %q)", repo, hash, originalRef)
 	updateCacheEventMetric(metrics.OCIManifestResourceTypeLabel, metrics.HitStatusLabel)
 }
 
 // FetchManifestFromAC fetches the given manifest from the AC if present.
 // TODO(dan) remote originalRef argument once we've debugged frequency of manifest cache misses.
-func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, originalRef gcrname.Reference) (*ocipb.OCIManifestContent, error) {
+func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, repo ctrname.Repository, hash ctr.Hash, originalRef ctrname.Reference) (*ocipb.OCIManifestContent, error) {
 	arRN, err := manifestACKey(repo, hash)
 	if err != nil {
 		manifestMiss(ctx, repo, hash, originalRef)
@@ -118,7 +118,7 @@ func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 	return mc, nil
 }
 
-func manifestACKey(repo gcrname.Repository, refhash gcr.Hash) (*digest.ACResourceName, error) {
+func manifestACKey(repo ctrname.Repository, refhash ctr.Hash) (*digest.ACResourceName, error) {
 	s := hash.Strings(
 		repo.RegistryStr(),
 		repo.RepositoryStr(),
@@ -148,7 +148,7 @@ func blobMetadataHit(ctx context.Context) {
 	updateCacheEventMetric(metrics.OCIBlobMetadataResourceTypeLabel, metrics.HitStatusLabel)
 }
 
-func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash) (*ocipb.OCIBlobMetadata, error) {
+func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo ctrname.Repository, hash ctr.Hash) (*ocipb.OCIBlobMetadata, error) {
 	arKey := &ocipb.OCIActionResultKey{
 		Registry:      repo.RegistryStr(),
 		Repository:    repo.RepositoryStr(),
@@ -218,7 +218,7 @@ func blobHit(ctx context.Context) {
 	updateCacheEventMetric(metrics.OCIBlobResourceTypeLabel, metrics.HitStatusLabel)
 }
 
-func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, hash gcr.Hash, contentLength int64) error {
+func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, hash ctr.Hash, contentLength int64) error {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -244,7 +244,7 @@ func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStre
 	return nil
 }
 
-func writeBlobMetadataToCache(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) error {
+func writeBlobMetadataToCache(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo ctrname.Repository, hash ctr.Hash, contentType string, contentLength int64) error {
 	blobMetadata := &ocipb.OCIBlobMetadata{
 		ContentLength: contentLength,
 		ContentType:   contentType,
@@ -293,7 +293,7 @@ func writeBlobMetadataToCache(ctx context.Context, bsClient bspb.ByteStreamClien
 	return cachetools.UploadActionResult(ctx, acClient, arRN, ar)
 }
 
-func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) error {
+func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo ctrname.Repository, hash ctr.Hash, contentType string, contentLength int64) error {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -315,7 +315,7 @@ func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStream
 //
 // Once contentLength bytes have been written, the blobUploader will commit the blob.
 // It is an error to attempt to Write after commit, and to write more than contentLength bytes.
-func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) (interfaces.CommittedWriteCloser, error) {
+func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo ctrname.Repository, hash ctr.Hash, contentType string, contentLength int64) (interfaces.CommittedWriteCloser, error) {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -350,8 +350,8 @@ type blobUploader struct {
 	bsClient bspb.ByteStreamClient
 	acClient repb.ActionCacheClient
 
-	repo          gcrname.Repository
-	hash          gcr.Hash
+	repo          ctrname.Repository
+	hash          ctr.Hash
 	contentType   string
 	contentLength int64
 
@@ -392,7 +392,7 @@ func (b *blobUploader) Close() error {
 // Any errors writing to the CAS will be logged and ignored.
 //
 // Closing the ReadThroughCacher closes the input ReadCloser and the underlying BlobUploader.
-func NewBlobReadThroughCacher(ctx context.Context, rc io.ReadCloser, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) (io.ReadCloser, error) {
+func NewBlobReadThroughCacher(ctx context.Context, rc io.ReadCloser, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo ctrname.Repository, hash ctr.Hash, contentType string, contentLength int64) (io.ReadCloser, error) {
 	cache, err := NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
 	if err != nil {
 		return nil, err
@@ -449,7 +449,7 @@ func (r *readThroughCacher) Close() error {
 	return err
 }
 
-func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64, originalRef gcrname.Reference) error {
+func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo ctrname.Repository, ociResourceType ocipb.OCIResourceType, hash ctr.Hash, contentType string, contentLength int64, originalRef ctrname.Reference) error {
 	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
 		if contentLength > maxManifestSize {
 			return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
@@ -473,10 +473,10 @@ func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader
 // deduplication. Two requests that resolve to the same BlobFetchKey
 // are safe to coalesce: one fetches from upstream while the others wait.
 type BlobFetchKey struct {
-	// repo is the string form of the gcrname.Repository
+	// repo is the string form of the ctrname.Repository
 	// (e.g. "index.docker.io/library/alpine").
 	repo string
-	// digest is the string form of the gcr.Hash
+	// digest is the string form of the ctr.Hash
 	// (e.g. "sha256:abc123").
 	digest string
 	// credsHash is a hash of the credentials used to fetch the blob.
@@ -487,7 +487,7 @@ type BlobFetchKey struct {
 
 // NewBlobFetchKey creates a BlobFetchKey from strongly-typed
 // go-containerregistry values and optional proto credentials.
-func NewBlobFetchKey(repo gcrname.Repository, digest gcr.Hash, creds *rgpb.Credentials) BlobFetchKey {
+func NewBlobFetchKey(repo ctrname.Repository, digest ctr.Hash, creds *rgpb.Credentials) BlobFetchKey {
 	var credsHash string
 	if creds == nil {
 		credsHash = hash.Strings("", "")

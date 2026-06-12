@@ -22,8 +22,8 @@ import (
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	gcrname "github.com/google/go-containerregistry/pkg/name"
-	gcr "github.com/google/go-containerregistry/pkg/v1"
+	ctrname "github.com/google/go-containerregistry/pkg/name"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -97,18 +97,18 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 	return s.dedupedFetchBlob(ctx, stream, digestRef, hash, size, req)
 }
 
-func parseBlobDigestRef(ref string) (gcrname.Digest, gcr.Hash, error) {
-	blobRef, err := gcrname.ParseReference(ref)
+func parseBlobDigestRef(ref string) (ctrname.Digest, ctr.Hash, error) {
+	blobRef, err := ctrname.ParseReference(ref)
 	if err != nil {
-		return gcrname.Digest{}, gcr.Hash{}, status.InvalidArgumentErrorf("invalid blob reference %q: %s", ref, err)
+		return ctrname.Digest{}, ctr.Hash{}, status.InvalidArgumentErrorf("invalid blob reference %q: %s", ref, err)
 	}
-	digestRef, ok := blobRef.(gcrname.Digest)
+	digestRef, ok := blobRef.(ctrname.Digest)
 	if !ok {
-		return gcrname.Digest{}, gcr.Hash{}, status.InvalidArgumentErrorf("blob reference must be a digest reference, got %q", ref)
+		return ctrname.Digest{}, ctr.Hash{}, status.InvalidArgumentErrorf("blob reference must be a digest reference, got %q", ref)
 	}
-	hash, err := gcr.NewHash(digestRef.DigestStr())
+	hash, err := ctr.NewHash(digestRef.DigestStr())
 	if err != nil {
-		return gcrname.Digest{}, gcr.Hash{}, status.InvalidArgumentErrorf("invalid blob digest in reference %q: %s", ref, err)
+		return ctrname.Digest{}, ctr.Hash{}, status.InvalidArgumentErrorf("invalid blob digest in reference %q: %s", ref, err)
 	}
 	return digestRef, hash, nil
 }
@@ -125,7 +125,7 @@ func (s *OCIFetcherServerProxy) fetchBlobMetadataSize(ctx context.Context, req *
 	return metaResp.GetSize(), nil
 }
 
-func (s *OCIFetcherServerProxy) dedupedFetchBlob(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef gcrname.Digest, hash gcr.Hash, size int64, req *ofpb.FetchBlobRequest) error {
+func (s *OCIFetcherServerProxy) dedupedFetchBlob(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef ctrname.Digest, hash ctr.Hash, size int64, req *ofpb.FetchBlobRequest) error {
 	// Deduplicate concurrent upstream fetches for the same blob+creds.
 	// The leader fetches from upstream and writes to local BSS.
 	// After the singleflight completes, all callers stream from local BSS.
@@ -152,7 +152,7 @@ func (s *OCIFetcherServerProxy) dedupedFetchBlob(ctx context.Context, stream ofp
 // fetchBlobFromUpstreamToLocalBS fetches a blob from the upstream OCIFetcher
 // and writes it to the local byte stream cache. It does not stream to any
 // caller; callers read from local BSS after this completes.
-func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToLocalBS(ctx context.Context, req *ofpb.FetchBlobRequest, hash gcr.Hash, size int64) error {
+func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToLocalBS(ctx context.Context, req *ofpb.FetchBlobRequest, hash ctr.Hash, size int64) error {
 	remoteStream, err := s.remote.FetchBlob(ctx, req)
 	if err != nil {
 		return err
@@ -185,7 +185,7 @@ func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToLocalBS(ctx context.Conte
 }
 
 // fetchBlobFromLocalBS reads a blob from the local byte stream cache.
-func fetchBlobFromLocalBS(ctx context.Context, bsClient bspb.ByteStreamClient, hash gcr.Hash, size int64, w io.Writer) error {
+func fetchBlobFromLocalBS(ctx context.Context, bsClient bspb.ByteStreamClient, hash ctr.Hash, size int64, w io.Writer) error {
 	blobDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: size,
@@ -196,7 +196,7 @@ func fetchBlobFromLocalBS(ctx context.Context, bsClient bspb.ByteStreamClient, h
 }
 
 // newLocalBSWriter creates a cache writer for writing a blob to local BS.
-func newLocalBSWriter(ctx context.Context, bsClient bspb.ByteStreamClient, hash gcr.Hash, size int64) (*cachetools.UploadWriter, error) {
+func newLocalBSWriter(ctx context.Context, bsClient bspb.ByteStreamClient, hash ctr.Hash, size int64) (*cachetools.UploadWriter, error) {
 	blobDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: size,

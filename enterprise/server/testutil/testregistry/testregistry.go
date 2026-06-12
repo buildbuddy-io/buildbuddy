@@ -31,7 +31,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
 
-	gcr "github.com/google/go-containerregistry/pkg/v1"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
 )
 
 const headerDockerContentDigest = "Docker-Content-Digest"
@@ -126,7 +126,7 @@ func remoteOpts(creds *BasicAuthCreds) []remote.Option {
 	}
 }
 
-func (r *Registry) Push(t *testing.T, image gcr.Image, imageName string, creds *BasicAuthCreds) string {
+func (r *Registry) Push(t *testing.T, image ctr.Image, imageName string, creds *BasicAuthCreds) string {
 	fullImageName := r.ImageAddress(imageName)
 	ref, err := name.ParseReference(fullImageName)
 	require.NoError(t, err)
@@ -135,7 +135,7 @@ func (r *Registry) Push(t *testing.T, image gcr.Image, imageName string, creds *
 	return fullImageName
 }
 
-func (r *Registry) PushIndex(t *testing.T, idx gcr.ImageIndex, imageName string, creds *BasicAuthCreds) string {
+func (r *Registry) PushIndex(t *testing.T, idx ctr.ImageIndex, imageName string, creds *BasicAuthCreds) string {
 	fullImageName := r.ImageAddress(imageName)
 	ref, err := name.ParseReference(fullImageName)
 	require.NoError(t, err)
@@ -144,7 +144,7 @@ func (r *Registry) PushIndex(t *testing.T, idx gcr.ImageIndex, imageName string,
 	return fullImageName
 }
 
-func (r *Registry) PushRandomImage(t *testing.T, creds *BasicAuthCreds) (string, gcr.Image) {
+func (r *Registry) PushRandomImage(t *testing.T, creds *BasicAuthCreds) (string, ctr.Image) {
 	files := map[string][]byte{}
 	buffer := bytes.Buffer{}
 	buffer.Grow(1024)
@@ -160,7 +160,7 @@ func (r *Registry) PushRandomImage(t *testing.T, creds *BasicAuthCreds) (string,
 	return r.Push(t, image, "test", creds), image
 }
 
-func (r *Registry) PushNamedImage(t *testing.T, imageName string, creds *BasicAuthCreds) (string, gcr.Image) {
+func (r *Registry) PushNamedImage(t *testing.T, imageName string, creds *BasicAuthCreds) (string, ctr.Image) {
 	files := map[string][]byte{
 		"/tmp/" + imageName: []byte(imageName),
 	}
@@ -169,7 +169,7 @@ func (r *Registry) PushNamedImage(t *testing.T, imageName string, creds *BasicAu
 	return r.Push(t, image, imageName, creds), image
 }
 
-func (r *Registry) PushNamedImageWithFiles(t *testing.T, imageName string, files map[string][]byte, creds *BasicAuthCreds) (string, gcr.Image) {
+func (r *Registry) PushNamedImageWithFiles(t *testing.T, imageName string, files map[string][]byte, creds *BasicAuthCreds) (string, ctr.Image) {
 	image, err := imageFromFiles(files)
 	require.NoError(t, err)
 	return r.Push(t, image, imageName, creds), image
@@ -177,7 +177,7 @@ func (r *Registry) PushNamedImageWithFiles(t *testing.T, imageName string, files
 
 // imageFromFiles reimplements crane.Image() but with proper permission added to each tar.Header.
 // This allows us to unpack the tarball locally without priviledged permission (i.e. sudo).
-func imageFromFiles(files map[string][]byte) (gcr.Image, error) {
+func imageFromFiles(files map[string][]byte) (ctr.Image, error) {
 	buf := bytes.Buffer{}
 	tw := tar.NewWriter(&buf)
 
@@ -218,9 +218,9 @@ func imageFromFiles(files map[string][]byte) (gcr.Image, error) {
 	return mutate.AppendLayers(empty.Image, layer)
 }
 
-func (r *Registry) PushNamedImageWithMultipleLayers(t *testing.T, imageName string, creds *BasicAuthCreds) (string, gcr.Image) {
+func (r *Registry) PushNamedImageWithMultipleLayers(t *testing.T, imageName string, creds *BasicAuthCreds) (string, ctr.Image) {
 	base := empty.Image
-	layers := make([]gcr.Layer, 0, 9)
+	layers := make([]ctr.Layer, 0, 9)
 	for i := 0; i < 9; i++ {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 128)
 		layer, err := crane.Layer(map[string][]byte{
@@ -244,7 +244,7 @@ func (r *Registry) Shutdown() error {
 // ImageFromRlocationpath returns an Image from an rlocationpath.
 // The rlocationpath should be set via x_defs in the BUILD file, and the
 // rlocationpath target should be an OCI image target (e.g. oci.pull)
-func ImageFromRlocationpath(t *testing.T, rlocationpath string) gcr.Image {
+func ImageFromRlocationpath(t *testing.T, rlocationpath string) ctr.Image {
 	indexPath, err := runfiles.Rlocation(rlocationpath)
 	require.NoError(t, err)
 	idx, err := layout.ImageIndexFromPath(indexPath)
@@ -261,18 +261,18 @@ func ImageFromRlocationpath(t *testing.T, rlocationpath string) gcr.Image {
 // bytesLayer implements partial.UncompressedLayer from raw bytes.
 type bytesLayer struct {
 	content   []byte
-	diffID    gcr.Hash
+	diffID    ctr.Hash
 	mediaType types.MediaType
 }
 
 // NewBytesLayer returns an image layer representing the given bytes.
 //
 // testtar.EntryBytes may be useful for constructing tarball contents.
-func NewBytesLayer(t *testing.T, b []byte) gcr.Layer {
+func NewBytesLayer(t *testing.T, b []byte) ctr.Layer {
 	sha := sha256.Sum256(b)
 	layer, err := partial.UncompressedToLayer(&bytesLayer{
 		mediaType: types.OCILayer,
-		diffID: gcr.Hash{
+		diffID: ctr.Hash{
 			Algorithm: "sha256",
 			Hex:       hex.EncodeToString(sha[:]),
 		},
@@ -283,7 +283,7 @@ func NewBytesLayer(t *testing.T, b []byte) gcr.Layer {
 }
 
 // DiffID implements partial.UncompressedLayer
-func (ul *bytesLayer) DiffID() (gcr.Hash, error) {
+func (ul *bytesLayer) DiffID() (ctr.Hash, error) {
 	return ul.diffID, nil
 }
 

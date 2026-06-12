@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -29,6 +28,7 @@ import (
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gproto "google.golang.org/protobuf/proto"
 )
@@ -774,7 +774,7 @@ func setupTestRegistry(t *testing.T, creds *testregistry.BasicAuthCreds) *testre
 }
 
 // imageMetadata extracts digest, size, and media type from an image.
-func imageMetadata(t *testing.T, img v1.Image) (digest string, size int64, mediaType string) {
+func imageMetadata(t *testing.T, img ctr.Image) (digest string, size int64, mediaType string) {
 	d, err := img.Digest()
 	require.NoError(t, err)
 	s, err := img.Size()
@@ -848,7 +848,7 @@ func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCI
 }
 
 // layerMetadata extracts size and media type from an image layer.
-func layerMetadata(t *testing.T, layer v1.Layer) (size int64, mediaType string) {
+func layerMetadata(t *testing.T, layer ctr.Layer) (size int64, mediaType string) {
 	s, err := layer.Size()
 	require.NoError(t, err)
 	mt, err := layer.MediaType()
@@ -857,7 +857,7 @@ func layerMetadata(t *testing.T, layer v1.Layer) (size int64, mediaType string) 
 }
 
 // layerData reads the compressed data from an image layer.
-func layerData(t *testing.T, layer v1.Layer) []byte {
+func layerData(t *testing.T, layer ctr.Layer) []byte {
 	rc, err := layer.Compressed()
 	require.NoError(t, err)
 	defer rc.Close()

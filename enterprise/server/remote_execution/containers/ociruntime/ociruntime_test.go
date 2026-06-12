@@ -51,7 +51,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
-	containerregistry "github.com/google/go-containerregistry/pkg/v1"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
@@ -1382,7 +1382,7 @@ func TestHighLayerCount(t *testing.T) {
 		t.Run(fmt.Sprintf("1And%dLayers", tc.layerCount), func(t *testing.T) {
 			// Create new layers on top of busybox
 			var lastContent string
-			var layers []containerregistry.Layer
+			var layers []ctr.Layer
 			for i := range tc.layerCount {
 				lastContent = fmt.Sprintf("layer %d", i)
 				content := []byte(lastContent)
@@ -1621,7 +1621,7 @@ func newImageStoreForTest(t *testing.T, layerDir string) *ociruntime.ImageStore 
 	return imageStore
 }
 
-func pushSingleLayerImage(t *testing.T, name string, layer containerregistry.Layer) string {
+func pushSingleLayerImage(t *testing.T, name string, layer ctr.Layer) string {
 	img, err := mutate.AppendLayers(empty.Image, layer)
 	require.NoError(t, err)
 	reg := testregistry.Run(t, testregistry.Opts{})
