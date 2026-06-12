@@ -16,6 +16,24 @@ function newInvocationModelWithBuildMetadata(metadata: Record<string, string>) {
   );
 }
 
+function newInvocationModelWithConfigurations(configurations: { cpu?: string; isTool?: boolean }[]) {
+  return new InvocationModel(
+    new invocation.Invocation({
+      event: configurations.map(
+        (configuration) =>
+          new invocation.InvocationEvent({
+            buildEvent: new build_event_stream.BuildEvent({
+              configuration: new build_event_stream.Configuration({
+                isTool: configuration.isTool,
+                makeVariable: configuration.cpu ? { TARGET_CPU: configuration.cpu } : {},
+              }),
+            }),
+          })
+      ),
+    })
+  );
+}
+
 describe("InvocationModel.getIsRBEEnabled", () => {
   it("uses REMOTE_EXECUTION_ENABLED build metadata from the BES stream", () => {
     const model = newInvocationModelWithBuildMetadata({ REMOTE_EXECUTION_ENABLED: "yes" });
@@ -35,6 +53,24 @@ describe("InvocationModel.getIsRBEEnabled", () => {
     model.optionsMap.set("remote_executor", "grpcs://remote.buildbuddy.io");
 
     expect(model.getIsRBEEnabled()).toBe(true);
+  });
+});
+
+describe("InvocationModel.getCPU", () => {
+  it("returns sorted target configuration CPUs and ignores tool configurations", () => {
+    const model = newInvocationModelWithConfigurations([
+      { cpu: "tool_cpu", isTool: true },
+      { cpu: "target_1_cpu" },
+      { cpu: "target_2_cpu" },
+    ]);
+
+    expect(model.getCPU()).toBe("target_1_cpu, target_2_cpu");
+  });
+
+  it("returns Unknown CPU when there are no target configuration CPUs", () => {
+    const model = newInvocationModelWithConfigurations([{ cpu: "tool_cpu", isTool: true }]);
+
+    expect(model.getCPU()).toBe("Unknown CPU");
   });
 });
 

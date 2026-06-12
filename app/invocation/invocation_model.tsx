@@ -57,7 +57,6 @@ export default class InvocationModel {
   childInvocationsConfigured: build_event_stream.ChildInvocationsConfigured[] = [];
   childInvocationCompletedByInvocationId = new Map<string, build_event_stream.IChildInvocationCompleted>();
   workspaceStatus?: build_event_stream.WorkspaceStatus;
-  configuration?: build_event_stream.Configuration;
   workspaceConfig?: build_event_stream.WorkspaceConfig;
   optionsParsed?: build_event_stream.OptionsParsed;
   unstructuredCommandLine?: build_event_stream.UnstructuredCommandLine;
@@ -81,6 +80,7 @@ export default class InvocationModel {
 
   execLogEntryPromise: Promise<tools.protos.ExecLogEntry[]> | undefined;
 
+  private targetConfigurations: build_event_stream.Configuration[] = [];
   private fileSetIDToFilesMap: Map<string, build_event_stream.File[]> = new Map();
 
   constructor(invocation: invocation.Invocation) {
@@ -155,7 +155,10 @@ export default class InvocationModel {
         );
       }
       if (buildEvent.configuration && buildEvent?.id?.configuration?.id != "none") {
-        this.configuration = buildEvent.configuration as build_event_stream.Configuration;
+        let configuration = buildEvent.configuration as build_event_stream.Configuration;
+        if (!configuration.isTool) {
+          this.targetConfigurations.push(configuration);
+        }
       }
       if (buildEvent.workspaceInfo) {
         this.workspaceConfig = buildEvent.workspaceInfo as build_event_stream.WorkspaceConfig;
@@ -882,7 +885,10 @@ export default class InvocationModel {
         return "darwin_arm64";
       }
     }
-    return this.configuration?.makeVariable.TARGET_CPU || "Unknown CPU";
+    let cpus = Array.from(
+      new Set(this.targetConfigurations.map((configuration) => configuration.makeVariable.TARGET_CPU).filter(Boolean))
+    ).sort();
+    return cpus.join(", ") || "Unknown CPU";
   }
 
   getMode() {
