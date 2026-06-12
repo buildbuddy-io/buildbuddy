@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/crypto/chacha20poly1305"
 
@@ -34,6 +35,23 @@ const (
 	nonceSize                    = chacha20poly1305.NonceSizeX
 	encryptedChunkOverhead       = nonceSize + chacha20poly1305.Overhead
 )
+
+// Don't use directly. Call getBuf and putBuf
+var bufPool = bytebufferpool.VariableSize(2 * (PlainTextChunkSize + encryptedChunkOverhead))
+
+func getBuf(size int) []byte {
+	buf := bufPool.Get(int64(size))
+	if len(buf) < size {
+		putBuf(buf)
+		return make([]byte, size)
+	}
+	clear(buf)
+	return buf
+}
+
+func putBuf(buf []byte) {
+	bufPool.Put(buf)
+}
 
 // An encryption key. Note that this is the "derived" key as described in
 // http://go/customer-managed-encryption.
@@ -89,10 +107,10 @@ func NewEncryptor(ctx context.Context, key *DerivedKey, digest *repb.Digest, w i
 		digest:   digest,
 		groupID:  groupID,
 		w:        w,
-		nonceBuf: make([]byte, nonceSize),
+		nonceBuf: getBuf(nonceSize),
 		// We allocate enough space to store an encrypted chunk so that we can
 		// do the encryption in place.
-		buf:    make([]byte, chunkSize+encryptedChunkOverhead),
+		buf:    getBuf(chunkSize + encryptedChunkOverhead),
 		bufCap: chunkSize,
 	}, nil
 }
@@ -159,7 +177,10 @@ func (e *Encryptor) Commit() error {
 }
 
 func (e *Encryptor) Close() error {
-	return e.w.Close()
+	err := e.w.Close()
+	putBuf(e.nonceBuf)
+	putBuf(e.buf)
+	return err
 }
 
 type Decryptor struct {
@@ -189,7 +210,7 @@ func NewDecryptor(ctx context.Context, key *DerivedKey, digest *repb.Digest, r i
 		digest:  digest,
 		groupID: groupID,
 		r:       r,
-		buf:     make([]byte, chunkSize+encryptedChunkOverhead),
+		buf:     getBuf(chunkSize + encryptedChunkOverhead),
 	}, nil
 }
 
@@ -258,5 +279,7 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 }
 
 func (d *Decryptor) Close() error {
-	return d.r.Close()
+	err := d.r.Close()
+	putBuf(d.buf)
+	return err
 }
