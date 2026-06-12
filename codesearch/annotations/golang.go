@@ -29,7 +29,14 @@ func goPackageImportPath(modulePath, relPath string) string {
 }
 
 func extractGo(ctx context.Context, filename string, content []byte, rctx *RepoContext) (*Result, error) {
-	tree, err := parseGo(ctx, content)
+	parser := sitter.NewParser()
+	// Close the parser only after the tree: the binding keeps the parser
+	// alive for the tree's lifetime, so freeing it first is a use-after-free.
+	// Defers run LIFO, so registering parser.Close before tree.Close gives
+	// the right order.
+	defer parser.Close()
+	parser.SetLanguage(golang.GetLanguage())
+	tree, err := parser.ParseCtx(ctx, nil, content)
 	if err != nil {
 		return nil, err
 	}
@@ -93,13 +100,6 @@ func extractGo(ctx context.Context, filename string, content []byte, rctx *RepoC
 		ann.ImportID = []string{goTerm(selfPath)}
 	}
 	return ann, nil
-}
-
-func parseGo(ctx context.Context, content []byte) (*sitter.Tree, error) {
-	parser := sitter.NewParser()
-	defer parser.Close() // the returned tree owns its data and outlives the parser
-	parser.SetLanguage(golang.GetLanguage())
-	return parser.ParseCtx(ctx, nil, content)
 }
 
 // goSymbolQuery captures declaration names: functions, methods, types

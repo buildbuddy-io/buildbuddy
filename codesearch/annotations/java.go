@@ -85,7 +85,11 @@ func isJavaTestFile(relPath string) bool {
 
 func extractJava(ctx context.Context, filename string, content []byte, rctx *RepoContext) (*Result, error) {
 	parser := sitter.NewParser()
-	defer parser.Close() // the tree owns its data and outlives the parser
+	// Close the parser only after the tree: the binding keeps the parser
+	// alive for the tree's lifetime, so freeing it first is a use-after-free.
+	// Defers run LIFO, so registering parser.Close before tree.Close gives
+	// the right order.
+	defer parser.Close()
 	parser.SetLanguage(java.GetLanguage())
 	tree, err := parser.ParseCtx(ctx, nil, content)
 	if err != nil {
