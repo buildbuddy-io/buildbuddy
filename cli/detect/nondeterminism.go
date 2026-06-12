@@ -74,7 +74,6 @@ type explainer interface {
 type osCommandRunner struct{}
 
 func (r osCommandRunner) Run(ctx context.Context, name string, args ...string) error {
-	log.Printf("Running %s", shlex.Quote(append([]string{name}, args...)...))
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
