@@ -7,8 +7,8 @@ export PACKAGEDIR=$$(dirname $(location {package})) &&
 export PATH=$$ROOTDIR/$$(dirname $(location {corepack})):$$ROOTDIR/$$(dirname $(NODE_PATH)):$$PATH &&
 cd $$PACKAGEDIR &&
 corepack enable &&
-yarn install &&
-yarn {command} &&
+corepack pnpm install  --config.confirmModulesPurge=false &&
+corepack pnpm {command} &&
 cd build &&
 tar -cvf ../build.tar * &&
 cd $$ROOTDIR &&
@@ -22,7 +22,7 @@ export BAZEL_BINDIR=. &&
 export PATH=$$(pwd)/$$(dirname $(location {corepack})):$$(pwd)/$$(dirname $(NODE_PATH)):$$PATH &&
 cd $$(dirname $(location {package})) &&
 corepack enable &&
-yarn install &&""" +
+corepack pnpm install --config.confirmModulesPurge=false &&""" +
 
     # To explain the complicated escaping here:
     # starlark resolves `\\` to a literal backslash, giving us `\$$@`
@@ -33,15 +33,15 @@ yarn install &&""" +
     # the bash process that runs the `cat` command then resolves `\$` to a
     # literal dollar sign, giving us `$@`
     #
-    # the bash process that runs the yarn command then resolves `$@` to the
-    # command line arguments, effectively forwarding them to yarn.
+    # the bash process that runs the pnpm command then resolves `$@` to the
+    # command line arguments, effectively forwarding them to pnpm.
     """
-yarn {command} \\$$@
+corepack pnpm {command} \\$$@
 EOF
 """
 )
 
-def yarn(name, srcs, package, command = "build", deps = [], corepack = Label("//rules/yarn:corepack"), node = Label("@nodejs_toolchains//:resolved_toolchain"), **kwargs):
+def pnpm(name, srcs, package, command = "build", deps = [], corepack = Label("//rules/pnpm:corepack"), node = Label("@nodejs_toolchains//:resolved_toolchain"), **kwargs):
     extension = ".tar"
     executable = False
     if command != "build":

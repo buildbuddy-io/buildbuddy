@@ -2,5 +2,11 @@ allowBuilds:
   core-js: true
   sharp: true
 
+minimumReleaseAge: 0
+
 overrides:
+  # sockjs is not necessary, since docusaurus' webpack-dev-server uses ws
+  # instead of sockjs
   webpack-dev-server@^5>sockjs: "-"
+  sharp: "0.35.1"
+  encoding-sniffer: "1.0.2"
