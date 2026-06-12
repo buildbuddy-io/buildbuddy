@@ -2,7 +2,7 @@ package ocimanifest
 
 import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	gcr "github.com/google/go-containerregistry/pkg/v1"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
 )
 
 // FindFirstImageManifest returns the first image descriptor in the index
@@ -13,7 +13,7 @@ import (
 //   - OS version and variant are identical if provided.
 //   - features and OS features of the required platform are subsets of those of
 //     the given platform.
-func FindFirstImageManifest(indexManifest gcr.IndexManifest, platform gcr.Platform) (*gcr.Descriptor, error) {
+func FindFirstImageManifest(indexManifest ctr.IndexManifest, platform ctr.Platform) (*ctr.Descriptor, error) {
 	matcher := platformMatcher(platform)
 	for _, manifest := range indexManifest.Manifests {
 		if !manifest.MediaType.IsImage() {
@@ -29,8 +29,8 @@ func FindFirstImageManifest(indexManifest gcr.IndexManifest, platform gcr.Platfo
 // platformMatcher creates Matcher that checks if the given descriptors' platform matches the required platforms.
 //
 // Adapted from matchesPlatform in https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
-func platformMatcher(required gcr.Platform) func(gcr.Descriptor) bool {
-	return func(desc gcr.Descriptor) bool {
+func platformMatcher(required ctr.Platform) func(ctr.Descriptor) bool {
+	return func(desc ctr.Descriptor) bool {
 		given := desc.Platform
 		// Required fields that must be identical.
 		if given.Architecture != required.Architecture || given.OS != required.OS {

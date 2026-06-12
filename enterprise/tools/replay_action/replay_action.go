@@ -54,9 +54,9 @@ import (
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	gcrname "github.com/google/go-containerregistry/pkg/name"
-	gcr "github.com/google/go-containerregistry/pkg/v1"
-	gcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
+	ctrname "github.com/google/go-containerregistry/pkg/name"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
+	ctrtypes "github.com/google/go-containerregistry/pkg/v1/types"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
@@ -894,16 +894,16 @@ func (r *Replayer) copyCachedContainerImage(ctx, srcCtx, targetCtx context.Conte
 	}
 	// Parse image
 	imageRefStr := strings.TrimPrefix(imageProp, "docker://")
-	imageRef, err := gcrname.ParseReference(imageRefStr)
+	imageRef, err := ctrname.ParseReference(imageRefStr)
 	if err != nil {
 		return status.WrapError(err, "parse image")
 	}
-	digestRef, ok := imageRef.(gcrname.Digest)
+	digestRef, ok := imageRef.(ctrname.Digest)
 	if !ok {
 		log.CtxWarningf(ctx, "Image %q does not include a digest - must be resolved via the remote registry. This will fail if the image is private and credentials aren't set.", imageProp)
 		return nil
 	}
-	hash, err := gcr.NewHash(digestRef.DigestStr())
+	hash, err := ctr.NewHash(digestRef.DigestStr())
 	if err != nil {
 		return fmt.Errorf("invalid digest %q: %s", digestRef.DigestStr(), err)
 	}
@@ -928,9 +928,9 @@ func (r *Replayer) copyCachedContainerImage(ctx, srcCtx, targetCtx context.Conte
 	// target platform, and copy that manifest to cache, since it's what the
 	// executor will use. Then proceed to use that manifest for copying layers.
 	var rawImageManifest []byte
-	mediaType := gcrtypes.MediaType(cachedManifest.GetContentType())
+	mediaType := ctrtypes.MediaType(cachedManifest.GetContentType())
 	if mediaType.IsIndex() {
-		indexManifest, err := gcr.ParseIndexManifest(bytes.NewReader(cachedManifest.GetRaw()))
+		indexManifest, err := ctr.ParseIndexManifest(bytes.NewReader(cachedManifest.GetRaw()))
 		if err != nil {
 			return fmt.Errorf("parse index manifest: %s", err)
 		}
@@ -959,13 +959,13 @@ func (r *Replayer) copyCachedContainerImage(ctx, srcCtx, targetCtx context.Conte
 	} else {
 		return fmt.Errorf("unexpected manifest type: %s", mediaType)
 	}
-	imageManifest, err := gcr.ParseManifest(bytes.NewReader(rawImageManifest))
+	imageManifest, err := ctr.ParseManifest(bytes.NewReader(rawImageManifest))
 	if err != nil {
 		return fmt.Errorf("parse image manifest: %s", err)
 	}
 
 	// Now that we've copied manifests, copy blobs.
-	copyBlob := func(hash gcr.Hash, contentLength int64, contentType string, label string) error {
+	copyBlob := func(hash ctr.Hash, contentLength int64, contentType string, label string) error {
 		pr, pw := io.Pipe()
 		defer pr.Close()
 		go func() {
@@ -983,7 +983,7 @@ func (r *Replayer) copyCachedContainerImage(ctx, srcCtx, targetCtx context.Conte
 
 	// Copy the config blob (if it's not inlined)
 	if len(imageManifest.Config.Data) == 0 && imageManifest.Config.Size > 0 {
-		configHash, err := gcr.NewHash(imageManifest.Config.Digest.String())
+		configHash, err := ctr.NewHash(imageManifest.Config.Digest.String())
 		if err != nil {
 			return fmt.Errorf("parse config digest: %s", err)
 		}
@@ -997,7 +997,7 @@ func (r *Replayer) copyCachedContainerImage(ctx, srcCtx, targetCtx context.Conte
 		if layer.Size <= 0 {
 			continue
 		}
-		layerHash, err := gcr.NewHash(layer.Digest.String())
+		layerHash, err := ctr.NewHash(layer.Digest.String())
 		if err != nil {
 			return fmt.Errorf("parse layer digest %q: %s", layer.Digest.String(), err)
 		}
@@ -1009,13 +1009,13 @@ func (r *Replayer) copyCachedContainerImage(ctx, srcCtx, targetCtx context.Conte
 	return eg.Wait()
 }
 
-func getImagePlatform(action *repb.Action) (gcr.Platform, error) {
+func getImagePlatform(action *repb.Action) (ctr.Platform, error) {
 	partialTask := &repb.ExecutionTask{Action: action}
 	props, err := platform.ParseProperties(partialTask)
 	if err != nil {
-		return gcr.Platform{}, err
+		return ctr.Platform{}, err
 	}
-	return gcr.Platform{
+	return ctr.Platform{
 		OS:           props.OS,
 		Architecture: props.Arch,
 	}, nil

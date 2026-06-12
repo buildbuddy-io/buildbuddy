@@ -31,8 +31,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
-	gcrname "github.com/google/go-containerregistry/pkg/name"
-	gcr "github.com/google/go-containerregistry/pkg/v1"
+	ctrname "github.com/google/go-containerregistry/pkg/name"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
@@ -136,7 +136,7 @@ func CredentialsFromProperties(props *platform.Properties) (Credentials, error) 
 func resolveWithDefaultKeychain(ref reference.Named) (Credentials, error) {
 	// TODO: parse the errors below and if they're 403/401 errors then return
 	// Unauthenticated/PermissionDenied
-	ctrRef, err := gcrname.ParseReference(ref.String())
+	ctrRef, err := ctrname.ParseReference(ref.String())
 	if err != nil {
 		log.Debugf("Failed to parse image ref %q: %s", ref.String(), err)
 		return Credentials{}, nil
@@ -235,7 +235,7 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 
 	log.CtxDebugf(ctx, "Authenticating with registry for %q", imageName)
 
-	imageRef, err := gcrname.ParseReference(imageName)
+	imageRef, err := ctrname.ParseReference(imageName)
 	if err != nil {
 		return status.InvalidArgumentErrorf("invalid image reference %q: %s", imageName, err)
 	}
@@ -259,10 +259,10 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 // ResolveImageDigest keeps an LRU cache that maps between canonical image names with tags
 // to image names with digests, to reduce the number of HEAD requests.
 func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (string, error) {
-	if imageRefWithDigest, err := gcrname.NewDigest(imageName); err == nil {
+	if imageRefWithDigest, err := ctrname.NewDigest(imageName); err == nil {
 		return imageRefWithDigest.String(), nil
 	}
-	tagRef, err := gcrname.ParseReference(imageName)
+	tagRef, err := ctrname.ParseReference(imageName)
 	if err != nil {
 		return "", status.InvalidArgumentErrorf("invalid image name %q", imageName)
 	}
@@ -284,11 +284,11 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 	return imageNameWithDigest, nil
 }
 
-func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials, useOCIFetcher bool) (gcr.Image, error) {
+func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials, useOCIFetcher bool) (ctr.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	imageRef, err := gcrname.ParseReference(imageName)
+	imageRef, err := ctrname.ParseReference(imageName)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imageName)
 	}
@@ -319,7 +319,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	return fetchImageFromCacheOrRemote(
 		ctx,
 		imageRef,
-		gcr.Platform{
+		ctr.Platform{
 			Architecture: platform.GetArch(),
 			OS:           platform.GetOs(),
 			Variant:      platform.GetVariant(),
@@ -338,12 +338,12 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 // then falls back to fetching from the upstream remote registry.
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
-func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) (gcr.Image, error) {
+func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef ctrname.Reference, platform ctr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) (ctr.Image, error) {
 	// When using OCIFetcher, skip the separate metadata request and just fetch
 	// the full manifest. The OCIFetcher server caches manifests, so this avoids
 	// an extra round trip.
 	if useCache && !useOCIFetcher {
-		var desc *gcr.Descriptor
+		var desc *ctr.Descriptor
 		digest, hasDigest := getDigest(digestOrTagRef)
 		// For now, we cannot bypass the registry for tag references,
 		// since cached manifest AC entries need the resolved digest as part of
@@ -381,7 +381,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 			// represent a complete manifest descriptor (the implementation of
 			// [puller.Head] only sets these fields as well).
 			if desc == nil {
-				desc = &gcr.Descriptor{
+				desc = &ctr.Descriptor{
 					Digest:    digest,
 					Size:      int64(len(mc.GetRaw())),
 					MediaType: types.MediaType(mc.GetContentType()),
@@ -443,7 +443,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 // fetchManifestMetadata makes a HEAD request for the manifest metadata using the puller.
 // This is only used when useOCIFetcher=false; when useOCIFetcher=true, we skip the
 // metadata request and fetch the full manifest directly via fetchManifest.
-func fetchManifestMetadata(ctx context.Context, digestOrTagRef gcrname.Reference, puller *remote.Puller) (*gcr.Descriptor, error) {
+func fetchManifestMetadata(ctx context.Context, digestOrTagRef ctrname.Reference, puller *remote.Puller) (*ctr.Descriptor, error) {
 	desc, err := puller.Head(ctx, digestOrTagRef)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
@@ -456,7 +456,7 @@ func fetchManifestMetadata(ctx context.Context, digestOrTagRef gcrname.Reference
 
 // fetchManifest fetches the manifest for the given image reference.
 // ociFetcherClient must be non-nil when useOCIFetcher is true.
-func fetchManifest(ctx context.Context, digestOrTagRef gcrname.Reference, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useOCIFetcher bool) (*gcr.Descriptor, []byte, error) {
+func fetchManifest(ctx context.Context, digestOrTagRef ctrname.Reference, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useOCIFetcher bool) (*ctr.Descriptor, []byte, error) {
 	if useOCIFetcher && ociFetcherClient == nil {
 		return nil, nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
 	}
@@ -469,11 +469,11 @@ func fetchManifest(ctx context.Context, digestOrTagRef gcrname.Reference, puller
 		if err != nil {
 			return nil, nil, err
 		}
-		digest, err := gcr.NewHash(resp.GetDigest())
+		digest, err := ctr.NewHash(resp.GetDigest())
 		if err != nil {
 			return nil, nil, status.InternalErrorf("invalid digest %q from OCI fetcher: %s", resp.GetDigest(), err)
 		}
-		return &gcr.Descriptor{
+		return &ctr.Descriptor{
 			Digest:    digest,
 			Size:      resp.GetSize(),
 			MediaType: types.MediaType(resp.GetMediaType()),
@@ -494,7 +494,7 @@ func fetchManifest(ctx context.Context, digestOrTagRef gcrname.Reference, puller
 // finds a child image matching the given platform (and fetches a manifest for it) if the given manifest is an index,
 // and otherwise returns an error.
 // ociFetcherClient must be non-nil when useOCIFetcher is true.
-func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) (gcr.Image, error) {
+func imageFromDescriptorAndManifest(ctx context.Context, repo ctrname.Repository, desc ctr.Descriptor, rawManifest []byte, platform ctr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) (ctr.Image, error) {
 	if useOCIFetcher && ociFetcherClient == nil {
 		return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
 	}
@@ -503,7 +503,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 	}
 
 	if desc.MediaType.IsIndex() {
-		indexManifest, err := gcr.ParseIndexManifest(bytes.NewReader(rawManifest))
+		indexManifest, err := ctr.ParseIndexManifest(bytes.NewReader(rawManifest))
 		if err != nil {
 			return nil, status.UnknownErrorf("error parsing index manifest: %s", err)
 		}
@@ -546,7 +546,7 @@ func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, c
 	remoteOpts := []remote.Option{
 		remote.WithContext(ctx),
 		remote.WithPlatform(
-			gcr.Platform{
+			ctr.Platform{
 				Architecture: platform.GetArch(),
 				OS:           platform.GetOs(),
 				Variant:      platform.GetVariant(),
@@ -581,19 +581,19 @@ func RuntimePlatform() *rgpb.Platform {
 
 // getDigest returns the digest from the given reference, if it contains one.
 // Otherwise, it returns (nil, false).
-func getDigest(ref gcrname.Reference) (gcr.Hash, bool) {
-	d, ok := ref.(gcrname.Digest)
+func getDigest(ref ctrname.Reference) (ctr.Hash, bool) {
+	d, ok := ref.(ctrname.Digest)
 	if !ok {
-		return gcr.Hash{}, false
+		return ctr.Hash{}, false
 	}
-	hash, err := gcr.NewHash(d.DigestStr())
+	hash, err := ctr.NewHash(d.DigestStr())
 	if err != nil {
-		return gcr.Hash{}, false
+		return ctr.Hash{}, false
 	}
 	return hash, true
 }
 
-func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) *imageFromRawManifest {
+func newImageFromRawManifest(ctx context.Context, repo ctrname.Repository, desc ctr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller, ociFetcherClient ofpb.OCIFetcherClient, credentials Credentials, useCache bool, useOCIFetcher bool) *imageFromRawManifest {
 	i := &imageFromRawManifest{
 		repo:             repo,
 		desc:             desc,
@@ -633,15 +633,15 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 	return i
 }
 
-var _ gcr.Image = (*imageFromRawManifest)(nil)
+var _ ctr.Image = (*imageFromRawManifest)(nil)
 
 // imageFromRawManifest implements the go-containerregistry Image interface.
 // It allows us to construct an Image from a raw manifest from either the cache
 // or an upstream remote registry.
 // It also allows us to read layers from and write layers to the cache.
 type imageFromRawManifest struct {
-	repo        gcrname.Repository
-	desc        gcr.Descriptor
+	repo        ctrname.Repository
+	desc        ctr.Descriptor
 	rawManifest []byte
 
 	ctx              context.Context
@@ -656,7 +656,7 @@ type imageFromRawManifest struct {
 	fetchRawConfigOnce func() ([]byte, error)
 }
 
-func (i *imageFromRawManifest) Digest() (gcr.Hash, error) {
+func (i *imageFromRawManifest) Digest() (ctr.Hash, error) {
 	return i.desc.Digest, nil
 }
 
@@ -664,12 +664,12 @@ func (i *imageFromRawManifest) RawManifest() ([]byte, error) {
 	return i.rawManifest, nil
 }
 
-func (i *imageFromRawManifest) Manifest() (*gcr.Manifest, error) {
+func (i *imageFromRawManifest) Manifest() (*ctr.Manifest, error) {
 	rawManifest, err := i.RawManifest()
 	if err != nil {
 		return nil, err
 	}
-	manifest, err := gcr.ParseManifest(bytes.NewReader(rawManifest))
+	manifest, err := ctr.ParseManifest(bytes.NewReader(rawManifest))
 	if err != nil {
 		return nil, err
 	}
@@ -691,28 +691,28 @@ func (i *imageFromRawManifest) RawConfigFile() ([]byte, error) {
 	return i.fetchRawConfigOnce()
 }
 
-func (i *imageFromRawManifest) ConfigFile() (*gcr.ConfigFile, error) {
+func (i *imageFromRawManifest) ConfigFile() (*ctr.ConfigFile, error) {
 	rawConfigFile, err := i.RawConfigFile()
 	if err != nil {
 		return nil, err
 	}
-	return gcr.ParseConfigFile(bytes.NewReader(rawConfigFile))
+	return ctr.ParseConfigFile(bytes.NewReader(rawConfigFile))
 }
 
-func (i *imageFromRawManifest) ConfigName() (gcr.Hash, error) {
+func (i *imageFromRawManifest) ConfigName() (ctr.Hash, error) {
 	manifest, err := i.Manifest()
 	if err != nil {
-		return gcr.Hash{}, err
+		return ctr.Hash{}, err
 	}
 	return manifest.Config.Digest, nil
 }
 
-func (i *imageFromRawManifest) Layers() ([]gcr.Layer, error) {
+func (i *imageFromRawManifest) Layers() ([]ctr.Layer, error) {
 	m, err := i.Manifest()
 	if err != nil {
 		return nil, err
 	}
-	layers := make([]gcr.Layer, 0, len(m.Layers))
+	layers := make([]ctr.Layer, 0, len(m.Layers))
 	for _, layerDesc := range m.Layers {
 		layer := newLayerFromDigest(
 			i.repo,
@@ -727,7 +727,7 @@ func (i *imageFromRawManifest) Layers() ([]gcr.Layer, error) {
 	return layers, nil
 }
 
-func (i *imageFromRawManifest) LayerByDigest(digest gcr.Hash) (gcr.Layer, error) {
+func (i *imageFromRawManifest) LayerByDigest(digest ctr.Hash) (ctr.Layer, error) {
 	return newLayerFromDigest(
 		i.repo,
 		digest,
@@ -737,7 +737,7 @@ func (i *imageFromRawManifest) LayerByDigest(digest gcr.Hash) (gcr.Layer, error)
 	), nil
 }
 
-func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error) {
+func (i *imageFromRawManifest) LayerByDiffID(diffID ctr.Hash) (ctr.Layer, error) {
 	digest, err := partial.DiffIDToBlob(i, diffID)
 	if err != nil {
 		return nil, err
@@ -751,40 +751,40 @@ func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error)
 	), nil
 }
 
-func newLayerFromDigest(repo gcrname.Repository, digest gcr.Hash, image *imageFromRawManifest, puller *remote.Puller, desc *gcr.Descriptor) *layerFromDigest {
+func newLayerFromDigest(repo ctrname.Repository, digest ctr.Hash, image *imageFromRawManifest, puller *remote.Puller, desc *ctr.Descriptor) *layerFromDigest {
 	return &layerFromDigest{
 		repo:   repo,
 		digest: digest,
 		image:  image,
 		puller: puller,
 		desc:   desc,
-		createRemoteLayer: sync.OnceValues(func() (gcr.Layer, error) {
+		createRemoteLayer: sync.OnceValues(func() (ctr.Layer, error) {
 			ref := repo.Digest(digest.String())
 			return puller.Layer(image.ctx, ref)
 		}),
 	}
 }
 
-var _ gcr.Layer = (*layerFromDigest)(nil)
+var _ ctr.Layer = (*layerFromDigest)(nil)
 
 // layerFromDigest implements the go-containerregistry Layer interface.
 // It allows us to read layers from and write layers to the cache.
 type layerFromDigest struct {
-	repo   gcrname.Repository
-	digest gcr.Hash
+	repo   ctrname.Repository
+	digest ctr.Hash
 	image  *imageFromRawManifest
 
 	puller *remote.Puller
-	desc   *gcr.Descriptor
+	desc   *ctr.Descriptor
 
-	createRemoteLayer func() (gcr.Layer, error)
+	createRemoteLayer func() (ctr.Layer, error)
 }
 
-func (l *layerFromDigest) Digest() (gcr.Hash, error) {
+func (l *layerFromDigest) Digest() (ctr.Hash, error) {
 	return l.digest, nil
 }
 
-func (l *layerFromDigest) DiffID() (gcr.Hash, error) {
+func (l *layerFromDigest) DiffID() (ctr.Hash, error) {
 	return partial.BlobToDiffID(l.image, l.digest)
 }
 
@@ -963,7 +963,7 @@ func isAnonymousUser(ctx context.Context) bool {
 // ports. For IP-address registries, it returns the raw IP. Returns
 // "[UNKNOWN]" if the reference cannot be parsed.
 func RegistryETLDPlusOne(imageRef string) string {
-	ref, err := gcrname.ParseReference(imageRef)
+	ref, err := ctrname.ParseReference(imageRef)
 	if err != nil {
 		return "[UNKNOWN]"
 	}

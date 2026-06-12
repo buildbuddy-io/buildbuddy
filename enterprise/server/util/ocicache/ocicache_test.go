@@ -22,8 +22,8 @@ import (
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	gcrname "github.com/google/go-containerregistry/pkg/name"
-	gcr "github.com/google/go-containerregistry/pkg/v1"
+	ctrname "github.com/google/go-containerregistry/pkg/name"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
 )
 
 func TestCacheSecret(t *testing.T) {
@@ -67,7 +67,7 @@ func TestCacheSecret(t *testing.T) {
 			require.NoError(t, err)
 
 			acClient := te.GetActionCacheClient()
-			ref, err := gcrname.ParseReference("buildbuddy.io/" + tc.imageName)
+			ref, err := ctrname.ParseReference("buildbuddy.io/" + tc.imageName)
 			require.NoError(t, err)
 
 			flags.Set(t, "oci.cache.secret", tc.writeSecret)
@@ -132,7 +132,7 @@ func TestManifestWithRecordActionResultOrigin(t *testing.T) {
 	require.NoError(t, err)
 
 	acClient := te.GetActionCacheClient()
-	ref, err := gcrname.ParseReference("buildbuddy.io/" + imageName)
+	ref, err := ctrname.ParseReference("buildbuddy.io/" + imageName)
 	require.NoError(t, err)
 
 	err = ocicache.WriteManifestToAC(ctx, raw, acClient, ref.Context(), hash, contentType, ref)
@@ -165,7 +165,7 @@ func TestManifestWrittenOnlyToAC(t *testing.T) {
 	require.NoError(t, err)
 
 	acClient := te.GetActionCacheClient()
-	ref, err := gcrname.ParseReference("buildbuddy.io/" + imageName)
+	ref, err := ctrname.ParseReference("buildbuddy.io/" + imageName)
 	require.NoError(t, err)
 
 	var out bytes.Buffer
@@ -270,7 +270,7 @@ func TestBlobUploader_PartialWriteFails(t *testing.T) {
 	blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
 }
 
-func blobDoesNotExist(t *testing.T, ctx context.Context, te *testenv.TestEnv, repo gcrname.Repository, hash gcr.Hash, contentLength int64) {
+func blobDoesNotExist(t *testing.T, ctx context.Context, te *testenv.TestEnv, repo ctrname.Repository, hash ctr.Hash, contentLength int64) {
 	bsClient := te.GetByteStreamClient()
 	acClient := te.GetActionCacheClient()
 	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
@@ -397,7 +397,7 @@ func TestReadThroughCacher_ReturnsEOF(t *testing.T) {
 	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 }
 
-func createLayer(t *testing.T, imageName string, filesize int64) ([]byte, gcrname.Repository, gcr.Hash, string) {
+func createLayer(t *testing.T, imageName string, filesize int64) ([]byte, ctrname.Repository, ctr.Hash, string) {
 	_, filebuf := testdigest.RandomCASResourceBuf(t, filesize)
 	filename, err := random.RandomString(32)
 	require.NoError(t, err)
@@ -405,7 +405,7 @@ func createLayer(t *testing.T, imageName string, filesize int64) ([]byte, gcrnam
 		"/tmp/" + filename: filebuf,
 	})
 	require.NoError(t, err)
-	imageRef, err := gcrname.ParseReference("buildbuddy.io/" + imageName)
+	imageRef, err := ctrname.ParseReference("buildbuddy.io/" + imageName)
 	require.NoError(t, err)
 	layers, err := image.Layers()
 	require.NoError(t, err)
@@ -425,7 +425,7 @@ func createLayer(t *testing.T, imageName string, filesize int64) ([]byte, gcrnam
 	return layerBuf, layerRef.Context(), hash, contentType
 }
 
-func fetchAndCheckBlob(t *testing.T, te *testenv.TestEnv, layerBuf []byte, repo gcrname.Repository, hash gcr.Hash, contentType string) {
+func fetchAndCheckBlob(t *testing.T, te *testenv.TestEnv, layerBuf []byte, repo ctrname.Repository, hash ctr.Hash, contentType string) {
 	contentLength := int64(len(layerBuf))
 	ctx := context.Background()
 	bsClient := te.GetByteStreamClient()
@@ -442,16 +442,16 @@ func fetchAndCheckBlob(t *testing.T, te *testenv.TestEnv, layerBuf []byte, repo 
 	require.Empty(t, cmp.Diff(layerBuf, out.Bytes()))
 }
 
-func mustRepo(t *testing.T, name string) gcrname.Repository {
+func mustRepo(t *testing.T, name string) ctrname.Repository {
 	t.Helper()
-	repo, err := gcrname.NewRepository(name)
+	repo, err := ctrname.NewRepository(name)
 	require.NoError(t, err)
 	return repo
 }
 
-func mustHash(t *testing.T, s string) gcr.Hash {
+func mustHash(t *testing.T, s string) ctr.Hash {
 	t.Helper()
-	h, err := gcr.NewHash(s)
+	h, err := ctr.NewHash(s)
 	require.NoError(t, err)
 	return h
 }

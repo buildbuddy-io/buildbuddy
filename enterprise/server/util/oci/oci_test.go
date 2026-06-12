@@ -43,7 +43,7 @@ import (
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
 )
 
 func TestCredentialsFromProto(t *testing.T) {
@@ -239,7 +239,7 @@ type resolveTestCase struct {
 
 	imageName     string
 	imageFiles    map[string][]byte
-	imagePlatform v1.Platform
+	imagePlatform ctr.Platform
 
 	args       resolveArgs
 	checkError func(error) bool
@@ -255,7 +255,7 @@ func TestResolve(t *testing.T) {
 			imageFiles: map[string][]byte{
 				"/name": []byte("resolving an existing image without credentials succeeds"),
 			},
-			imagePlatform: v1.Platform{
+			imagePlatform: ctr.Platform{
 				Architecture: runtime.GOARCH,
 				OS:           runtime.GOOS,
 			},
@@ -275,7 +275,7 @@ func TestResolve(t *testing.T) {
 			imageFiles: map[string][]byte{
 				"/name": []byte("resolving an invalid image name fails with invalid argument error"),
 			},
-			imagePlatform: v1.Platform{
+			imagePlatform: ctr.Platform{
 				Architecture: runtime.GOARCH,
 				OS:           runtime.GOOS,
 			},
@@ -296,7 +296,7 @@ func TestResolve(t *testing.T) {
 			imageFiles: map[string][]byte{
 				"/name": []byte("resolving an existing image without authorization fails"),
 			},
-			imagePlatform: v1.Platform{
+			imagePlatform: ctr.Platform{
 				Architecture: runtime.GOARCH,
 				OS:           runtime.GOOS,
 			},
@@ -331,7 +331,7 @@ func TestResolve(t *testing.T) {
 				"/name":    []byte("resolving a platform-specific image without including the variant succeeds"),
 				"/variant": []byte("v8"),
 			},
-			imagePlatform: v1.Platform{
+			imagePlatform: ctr.Platform{
 				Architecture: "arm64",
 				OS:           "linux",
 				Variant:      "v8",
@@ -356,7 +356,7 @@ func TestResolve(t *testing.T) {
 
 				index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
 					Add: pushedImage,
-					Descriptor: v1.Descriptor{
+					Descriptor: ctr.Descriptor{
 						Platform: &tc.imagePlatform,
 					},
 				})
@@ -403,7 +403,7 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 			imageFiles: map[string][]byte{
 				"/name": []byte("resolving an existing image without credentials succeeds"),
 			},
-			imagePlatform: v1.Platform{
+			imagePlatform: ctr.Platform{
 				Architecture: runtime.GOARCH,
 				OS:           runtime.GOOS,
 			},
@@ -424,7 +424,7 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 				"/name":    []byte("resolving a platform-specific image without including the variant succeeds"),
 				"/variant": []byte("v8"),
 			},
-			imagePlatform: v1.Platform{
+			imagePlatform: ctr.Platform{
 				Architecture: "arm64",
 				OS:           "linux",
 				Variant:      "v8",
@@ -456,7 +456,7 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 
 				index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
 					Add: pushedImage,
-					Descriptor: v1.Descriptor{
+					Descriptor: ctr.Descriptor{
 						Platform: &tc.imagePlatform,
 					},
 				})
@@ -504,7 +504,7 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 	}
 }
 
-func layerFiles(t *testing.T, layer v1.Layer) map[string][]byte {
+func layerFiles(t *testing.T, layer ctr.Layer) map[string][]byte {
 	rc, err := layer.Uncompressed()
 	require.NoError(t, err)
 	defer func() { err := rc.Close(); require.NoError(t, err) }()
@@ -661,7 +661,7 @@ func TestResolve_WithCache(t *testing.T) {
 			imageFiles: map[string][]byte{
 				"/name": []byte("resolving an existing image without credentials succeeds"),
 			},
-			imagePlatform: v1.Platform{
+			imagePlatform: ctr.Platform{
 				Architecture: runtime.GOARCH,
 				OS:           runtime.GOOS,
 			},
@@ -682,7 +682,7 @@ func TestResolve_WithCache(t *testing.T) {
 				"/name":    []byte("resolving a platform-specific image without including the variant succeeds"),
 				"/variant": []byte("v8"),
 			},
-			imagePlatform: v1.Platform{
+			imagePlatform: ctr.Platform{
 				Architecture: "arm64",
 				OS:           "linux",
 				Variant:      "v8",
@@ -712,7 +712,7 @@ func TestResolve_WithCache(t *testing.T) {
 
 			index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
 				Add: pushedImage,
-				Descriptor: v1.Descriptor{
+				Descriptor: ctr.Descriptor{
 					Platform: &tc.imagePlatform,
 				},
 			})
@@ -909,8 +909,8 @@ func TestResolve_Concurrency(t *testing.T) {
 	_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, imageName+"_image", nil)
 	pushedLayers, err := pushedImage.Layers()
 	require.NoError(t, err)
-	pushedDigestToFiles := make(map[v1.Hash]map[string][]byte, len(pushedLayers))
-	pushedDigestToDiffID := make(map[v1.Hash]v1.Hash, len(pushedLayers))
+	pushedDigestToFiles := make(map[ctr.Hash]map[string][]byte, len(pushedLayers))
+	pushedDigestToDiffID := make(map[ctr.Hash]ctr.Hash, len(pushedLayers))
 	for _, pushedLayer := range pushedLayers {
 		digest, err := pushedLayer.Digest()
 		require.NoError(t, err)
@@ -958,7 +958,7 @@ func TestResolve_Concurrency(t *testing.T) {
 	layerChan := make(chan layerResult, len(layers))
 	for _, layer := range layers {
 		layerWG.Add(1)
-		go func(layer v1.Layer) {
+		go func(layer ctr.Layer) {
 			defer layerWG.Done()
 			digest, digestErr := layer.Digest()
 			diffID, diffIDErr := layer.DiffID()
@@ -999,9 +999,9 @@ func TestResolve_Concurrency(t *testing.T) {
 }
 
 type layerResult struct {
-	digest        v1.Hash
+	digest        ctr.Hash
 	digestErr     error
-	diffID        v1.Hash
+	diffID        ctr.Hash
 	diffIDErr     error
 	compressed    []byte
 	compressedErr error
@@ -1350,7 +1350,7 @@ func TestResolveWithOCIFetcher(t *testing.T) {
 			imageFiles: map[string][]byte{
 				"/name": []byte("resolving an existing image without credentials succeeds"),
 			},
-			imagePlatform: v1.Platform{
+			imagePlatform: ctr.Platform{
 				Architecture: runtime.GOARCH,
 				OS:           runtime.GOOS,
 			},
@@ -1370,7 +1370,7 @@ func TestResolveWithOCIFetcher(t *testing.T) {
 			imageFiles: map[string][]byte{
 				"/name": []byte("resolving an invalid image name fails with invalid argument error"),
 			},
-			imagePlatform: v1.Platform{
+			imagePlatform: ctr.Platform{
 				Architecture: runtime.GOARCH,
 				OS:           runtime.GOOS,
 			},
@@ -1391,7 +1391,7 @@ func TestResolveWithOCIFetcher(t *testing.T) {
 			imageFiles: map[string][]byte{
 				"/name": []byte("resolving an existing image without authorization fails"),
 			},
-			imagePlatform: v1.Platform{
+			imagePlatform: ctr.Platform{
 				Architecture: runtime.GOARCH,
 				OS:           runtime.GOOS,
 			},
@@ -1426,7 +1426,7 @@ func TestResolveWithOCIFetcher(t *testing.T) {
 				"/name":    []byte("resolving a platform-specific image without including the variant succeeds"),
 				"/variant": []byte("v8"),
 			},
-			imagePlatform: v1.Platform{
+			imagePlatform: ctr.Platform{
 				Architecture: "arm64",
 				OS:           "linux",
 				Variant:      "v8",
@@ -1449,7 +1449,7 @@ func TestResolveWithOCIFetcher(t *testing.T) {
 
 			index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
 				Add: pushedImage,
-				Descriptor: v1.Descriptor{
+				Descriptor: ctr.Descriptor{
 					Platform: &tc.imagePlatform,
 				},
 			})
@@ -1498,7 +1498,7 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 			imageFiles: map[string][]byte{
 				"/name": []byte("resolving an existing image without credentials succeeds"),
 			},
-			imagePlatform: v1.Platform{
+			imagePlatform: ctr.Platform{
 				Architecture: runtime.GOARCH,
 				OS:           runtime.GOOS,
 			},
@@ -1519,7 +1519,7 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 				"/name":    []byte("resolving a platform-specific image without including the variant succeeds"),
 				"/variant": []byte("v8"),
 			},
-			imagePlatform: v1.Platform{
+			imagePlatform: ctr.Platform{
 				Architecture: "arm64",
 				OS:           "linux",
 				Variant:      "v8",
@@ -1549,7 +1549,7 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 
 			index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
 				Add: pushedImage,
-				Descriptor: v1.Descriptor{
+				Descriptor: ctr.Descriptor{
 					Platform: &tc.imagePlatform,
 				},
 			})
@@ -1624,8 +1624,8 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 	_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, imageName+"_image", nil)
 	pushedLayers, err := pushedImage.Layers()
 	require.NoError(t, err)
-	pushedDigestToFiles := make(map[v1.Hash]map[string][]byte, len(pushedLayers))
-	pushedDigestToDiffID := make(map[v1.Hash]v1.Hash, len(pushedLayers))
+	pushedDigestToFiles := make(map[ctr.Hash]map[string][]byte, len(pushedLayers))
+	pushedDigestToDiffID := make(map[ctr.Hash]ctr.Hash, len(pushedLayers))
 	for _, pushedLayer := range pushedLayers {
 		digest, err := pushedLayer.Digest()
 		require.NoError(t, err)
@@ -1681,7 +1681,7 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 	layerChan := make(chan layerResult, len(layers))
 	for _, layer := range layers {
 		layerWG.Add(1)
-		go func(layer v1.Layer) {
+		go func(layer ctr.Layer) {
 			defer layerWG.Done()
 			digest, digestErr := layer.Digest()
 			diffID, diffIDErr := layer.DiffID()

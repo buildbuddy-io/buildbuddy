@@ -25,8 +25,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
-	gcrname "github.com/google/go-containerregistry/pkg/name"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
@@ -34,10 +32,12 @@ import (
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	ctrname "github.com/google/go-containerregistry/pkg/name"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-func imageMetadata(t *testing.T, img v1.Image) (digest string, size int64, mediaType string) {
+func imageMetadata(t *testing.T, img ctr.Image) (digest string, size int64, mediaType string) {
 	d, err := img.Digest()
 	require.NoError(t, err)
 	s, err := img.Size()
@@ -272,7 +272,7 @@ type fetchResult struct {
 	err  error
 }
 
-func layerMetadata(t *testing.T, layer v1.Layer) (size int64, mediaType string) {
+func layerMetadata(t *testing.T, layer ctr.Layer) (size int64, mediaType string) {
 	s, err := layer.Size()
 	require.NoError(t, err)
 	mt, err := layer.MediaType()
@@ -280,7 +280,7 @@ func layerMetadata(t *testing.T, layer v1.Layer) (size int64, mediaType string) 
 	return s, string(mt)
 }
 
-func layerData(t *testing.T, layer v1.Layer) []byte {
+func layerData(t *testing.T, layer ctr.Layer) []byte {
 	rc, err := layer.Compressed()
 	require.NoError(t, err)
 	defer rc.Close()
@@ -290,9 +290,9 @@ func layerData(t *testing.T, layer v1.Layer) []byte {
 }
 
 func seedBlobCache(t *testing.T, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref string, data []byte, mediaType string) {
-	digestRef, ok := nameRef(t, ref).(gcrname.Digest)
+	digestRef, ok := nameRef(t, ref).(ctrname.Digest)
 	require.True(t, ok, "expected digest ref")
-	hash, err := v1.NewHash(digestRef.DigestStr())
+	hash, err := ctr.NewHash(digestRef.DigestStr())
 	require.NoError(t, err)
 	require.NoError(t, ocicache.WriteBlobToCache(
 		context.Background(),
@@ -306,8 +306,8 @@ func seedBlobCache(t *testing.T, bsClient bspb.ByteStreamClient, acClient repb.A
 	))
 }
 
-func nameRef(t *testing.T, ref string) gcrname.Reference {
-	nameRef, err := gcrname.ParseReference(ref)
+func nameRef(t *testing.T, ref string) ctrname.Reference {
+	nameRef, err := ctrname.ParseReference(ref)
 	require.NoError(t, err)
 	return nameRef
 }
