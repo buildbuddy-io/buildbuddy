@@ -25,6 +25,7 @@ var (
 	exclude  = flag.Slice("exclude", []string{}, "If set, exclude the given tool. Can be specified multiple times.")
 	force    = flag.Bool("force", false, "If true, run on all files, not just files changed since the diff base.")
 	diffBase = flag.String("diff_base", "", "If set, use the given git rev as the diff base when determining changed files.")
+	bazelArg = flag.Slice("bazel_arg", []string{}, "Additional argument to pass to nested bazel invocations (e.g. --bazel_arg=--config=linux-workflows). Can be specified multiple times.")
 
 	legacyAllFlag = flag.Bool("a", false, "Has no effect (kept for backwards compatibility but will be removed soon)")
 )
@@ -61,6 +62,10 @@ var (
 		{Name: "BuildFix", Run: runBBFix, WriteLock: true},
 		// Ensures that MODULE.bazel.lock is up to date.
 		{Name: "UpdateLockfile", Run: runBazelModDeps, WriteLock: true},
+		// Runs nogo static analysis (go vet, staticcheck, modernize, etc.)
+		// over all Go targets. Runs exclusively so that in fix mode it
+		// analyzes the sources written by the other tools.
+		{Name: "GoVet", Run: runNoGo, WriteLock: true},
 	}
 
 	// File extensions handled by prettier.
@@ -266,6 +271,61 @@ func runBazelModDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, fi
 		return fmt.Errorf("run bb mod deps: %w", err)
 	}
 	return nil
+}
+
+// runNoGo runs nogo static analysis by building all Go targets with nogo
+// enabled (--config=nogo, see shared.bazelrc). Regular builds skip nogo
+// entirely; here, analysis of unchanged packages - including all external
+// dependencies - is served from bazel's action cache, so only changed
+// packages are re-analyzed.
+//
+// nogo diagnostics can't be fixed automatically by this tool, so fix mode
+// behaves the same as check mode.
+func runNoGo(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	if !slices.ContainsFunc(files, affectsGoBuild) {
+		return nil
+	}
+	bazel, err := findBazelCommand()
+	if err != nil {
+		return err
+	}
+	// --keep_going so that diagnostics from all packages are reported in a
+	// single run rather than stopping at the first failing package.
+	args := []string{"build", "--config=nogo", "--keep_going"}
+	args = append(args, *bazelArg...)
+	args = append(args, "--", "//...")
+	cmd := exec.CommandContext(ctx, bazel, args...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("nogo static analysis found errors (these must be fixed manually)")
+	}
+	return nil
+}
+
+// affectsGoBuild returns whether a change to the given file can affect nogo
+// analysis results.
+func affectsGoBuild(file string) bool {
+	switch filepath.Base(file) {
+	case "BUILD", "BUILD.bazel", "go.mod", "go.sum":
+		return true
+	}
+	switch filepath.Ext(file) {
+	case ".go", ".proto", ".bzl", ".bazel", ".bazelrc":
+		return true
+	}
+	return false
+}
+
+// findBazelCommand returns a bazel-compatible executable from PATH, trying the
+// same candidates as buildfix.sh.
+func findBazelCommand() (string, error) {
+	for _, name := range []string{"bb", "bazelisk", "bazel"} {
+		if path, err := exec.LookPath(name); err == nil {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("could not find bb, bazelisk, or bazel in PATH")
 }
 
 func main() {

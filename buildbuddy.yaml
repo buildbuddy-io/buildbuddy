@@ -27,7 +27,9 @@ actions:
     # when running on push to master.
     git_fetch_depth: 0
     steps:
-      - run: "bazel run //tools/lint --config=linux-workflows"
+      # --bazel_arg makes the nested 'bazel build --config=nogo' (GoVet) use
+      # the same remote execution / caching config as the outer invocation.
+      - run: "bazel run //tools/lint --config=linux-workflows -- --bazel_arg=--config=linux-workflows"
     allow_concurrent_runs: false
   - name: Test (darwin_amd64)
     os: "darwin"

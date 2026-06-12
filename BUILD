@@ -1,6 +1,7 @@
 load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@bazel_gazelle//:def.bzl", "DEFAULT_LANGUAGES", "gazelle", "gazelle_binary")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@com_github_bazelbuild_buildtools//buildifier:def.bzl", "buildifier")
 load("@com_github_sluongng_nogo_analyzer//staticcheck:def.bzl", "ANALYZERS", "staticcheck_analyzers")
@@ -18,6 +19,31 @@ load("//rules/go/analyzer:def.bzl", "MODERNIZE_ANALYZERS")
 package(default_visibility = ["//visibility:public"])
 
 npm_link_all_packages(name = "node_modules")
+
+# Static analysis (nogo) is opt-in: when --enable_nogo is unset (the default),
+# the registered nogo target (//:nogo, see deps/toolchains.MODULE.bazel)
+# resolves to rules_go's no-op default_nogo, so no analyzers run during regular
+# builds - in particular, external dependencies are never analyzed just to
+# produce facts. Analysis runs at lint time instead: 'bazel run //tools/lint'
+# (the GoVet tool) builds all Go targets with --config=nogo, which sets this
+# flag and thereby enables //:vet.
+bool_flag(
+    name = "enable_nogo",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "nogo_enabled",
+    flag_values = {":enable_nogo": "true"},
+)
+
+alias(
+    name = "nogo",
+    actual = select({
+        ":nogo_enabled": ":vet",
+        "//conditions:default": "@io_bazel_rules_go//:default_nogo",
+    }),
+)
 
 # Rendered JSON result could be checked by doing:
 #   bazel build //:no_go_config
