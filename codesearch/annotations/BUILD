@@ -3,8 +3,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "annotations",
     srcs = [
-        "golang.go",
         "annotations.go",
+        "golang.go",
         "java.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/annotations",
