@@ -88,6 +88,7 @@ go_deps.module_override(
     ],
     path = "github.com/smacker/go-tree-sitter",
 )
+
 # Can remove this once https://github.com/go-gorm/gorm/pull/7717 is released.
 go_deps.module_override(
     patch_strip = 1,
@@ -95,6 +96,16 @@ go_deps.module_override(
         "@com_github_buildbuddy_io_buildbuddy//buildpatches:gorm.patch",
     ],
     path = "gorm.io/gorm",
+)
+
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
+        # Makes the encoding of facts deterministic.
+        # Can remove this once https://github.com/nishanths/exhaustive/pull/89 has been merged and released.
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:com_github_nishanths_exhaustive.patch",
+    ],
+    path = "github.com/nishanths/exhaustive",
 )
 
 # Go repos with custom directives

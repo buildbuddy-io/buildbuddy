@@ -409,7 +409,7 @@ require (
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/julianday v1.0.0 // indirect
-	github.com/nishanths/exhaustive v0.7.11 // indirect
+	github.com/nishanths/exhaustive v0.12.0 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/open-feature/flagd-schemas v0.2.13 // indirect
 	github.com/open-feature/flagd/core v0.13.2 // indirect
