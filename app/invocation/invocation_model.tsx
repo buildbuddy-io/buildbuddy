@@ -155,7 +155,7 @@ export default class InvocationModel {
         );
       }
       if (buildEvent.configuration && buildEvent?.id?.configuration?.id != "none") {
-        let configuration = buildEvent.configuration as build_event_stream.Configuration;
+        const configuration = buildEvent.configuration as build_event_stream.Configuration;
         if (!configuration.isTool) {
           this.targetConfigurations.push(configuration);
         }
@@ -885,7 +885,7 @@ export default class InvocationModel {
         return "darwin_arm64";
       }
     }
-    let cpus = Array.from(
+    const cpus = Array.from(
       new Set(this.targetConfigurations.map((configuration) => configuration.makeVariable.TARGET_CPU).filter(Boolean))
     ).sort();
     return cpus.join(", ") || "Unknown CPU";
