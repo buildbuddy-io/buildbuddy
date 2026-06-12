@@ -211,32 +211,49 @@ func (c *KeyCache) cacheGet(ck CacheKey) (*cacheEntry, bool) {
 }
 
 func (c *KeyCache) refreshKeyWithRetries(ctx context.Context, ck CacheKey, cacheError bool) (*crypter.DerivedKey, error) {
-	var lastErr error
 	opts := retry.DefaultOptions()
 	opts.Clock = c.clock
-	retrier := retry.New(ctx, opts)
-	for retrier.Next() {
-		key, md, err := c.refreshFn(ctx, ck)
-		if err == nil {
-			c.cacheAdd(ck, &cacheEntry{
-				expiresAfter: c.clock.Now().Add(*keyTTL),
-				keyMetadata:  md,
-				derivedKey:   key,
-			})
-		}
+
+	key, err := retry.Do(ctx, opts, func(ctx context.Context) (*crypter.DerivedKey, error) {
+		keyBytes, md, err := c.refreshFn(ctx, ck)
 		// TODO(vadim): figure out if there are other KMS errors we can treat as immediate failures
-		if err == nil || status.IsNotFoundError(err) {
-			return &crypter.DerivedKey{Key: key, Metadata: md}, err
+		if status.IsNotFoundError(err) {
+			return nil, retry.NonRetryableError(err)
+		} else if err != nil {
+			return nil, err
 		}
-		lastErr = err
+
+		c.cacheAdd(ck, &cacheEntry{
+			expiresAfter: c.clock.Now().Add(*keyTTL),
+			keyMetadata:  md,
+			derivedKey:   keyBytes,
+		})
+		return &crypter.DerivedKey{Key: keyBytes, Metadata: md}, nil
+	})
+	if err == nil {
+		return key, nil
+	}
+
+	if ctx.Err() != nil {
+		// Don't cache context errors because they don't indicate problems
+		// with the external service.
+		return nil, ctx.Err()
 	}
 	if cacheError {
 		c.cacheAdd(ck, &cacheEntry{
-			err:          lastErr,
+			err:          err,
 			expiresAfter: c.clock.Now().Add(c.errCacheTime),
 		})
 	}
-	return nil, status.UnavailableErrorf("exhausted attempts to refresh key, last error: %s", lastErr)
+	if status.IsNotFoundError(err) {
+		// Preserve the NotFound status so that callers can tell "key does
+		// not exist" apart from transient refresh failures. In particular,
+		// the app returns this error over the GetEncryptionKey RPC, and the
+		// proxy's KeyCache uses the NotFound status to decide that the
+		// refresh should not be retried (see the check above).
+		return nil, err
+	}
+	return nil, status.UnavailableErrorf("exhausted attempts to refresh key, last error: %s", err)
 }
 
 func (c *KeyCache) refreshKey(ctx context.Context, ck CacheKey, cacheError bool) (*crypter.DerivedKey, error) {
