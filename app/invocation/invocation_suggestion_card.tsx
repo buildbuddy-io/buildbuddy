@@ -225,11 +225,7 @@ const matchers: SuggestionMatcher[] = [
             to live a bit longer to finish uploading the results.
           </>
         ),
-        reason: (
-          <>
-            Shown because the build finished with a disconnected status.
-          </>
-        ),
+        reason: <>Shown because the build finished with a disconnected status.</>,
       };
     }
 
