@@ -36,7 +36,8 @@ const (
 	encryptedChunkOverhead       = nonceSize + chacha20poly1305.Overhead
 )
 
-// Don't use directly. Call getBuf and putBuf
+// Buffer pool for all the buffers in this package. Double the expected max
+// size, just to give some slack. Don't use directly. Call getBuf and putBuf.
 var bufPool = bytebufferpool.VariableSize(2 * (PlainTextChunkSize + encryptedChunkOverhead))
 
 func getBuf(size int) []byte {
@@ -45,6 +46,8 @@ func getBuf(size int) []byte {
 		putBuf(buf)
 		return make([]byte, size)
 	}
+	// clear adds some cost, but guarantees that we don't reuse data between
+	// (de)crypters.
 	clear(buf)
 	return buf
 }
@@ -178,8 +181,11 @@ func (e *Encryptor) Commit() error {
 
 func (e *Encryptor) Close() error {
 	err := e.w.Close()
-	putBuf(e.nonceBuf)
-	putBuf(e.buf)
+	if e.buf != nil {
+		putBuf(e.nonceBuf)
+		putBuf(e.buf)
+		e.buf, e.nonceBuf = nil, nil
+	}
 	return err
 }
 
@@ -280,6 +286,9 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 
 func (d *Decryptor) Close() error {
 	err := d.r.Close()
-	putBuf(d.buf)
+	if d.buf != nil {
+		putBuf(d.buf)
+		d.buf = nil
+	}
 	return err
 }
