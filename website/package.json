@@ -40,5 +40,11 @@
       "last 1 safari version"
     ]
   },
-  "packageManager": "yarn@4.14.1"
+	"devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "11.6.0",
+      "onFail": "download"
+    }
+  }
 }
