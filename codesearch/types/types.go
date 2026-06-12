@@ -13,6 +13,16 @@ const (
 
 	DocIDField   = "_id"
 	DeletesField = "_del"
+
+	// ImportsField holds the import-identity terms a document imports;
+	// ImportIDField holds the document's own import-identity terms.
+	ImportsField  = "imports"
+	ImportIDField = "import_id"
+
+	// SymbolsField holds the names the document declares (tree-sitter
+	// extracted, lowercased), so symbol-definition matches can be scored
+	// above usage and substring matches.
+	SymbolsField = "symbols"
 )
 
 func (ft FieldType) String() string {

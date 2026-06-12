@@ -3,9 +3,12 @@ package github
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/annotations"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -40,7 +43,7 @@ func TestLastIndexedCommit(t *testing.T) {
 	w, err := index.NewWriter(db, "testing-namespace")
 	require.NoError(t, err)
 
-	assert.NoError(t, SetLastIndexedCommitSha(w, repoURL, commitSHA))
+	assert.NoError(t, SetRepoMetadata(w, repoURL, commitSHA, ""))
 	require.NoError(t, w.Flush())
 
 	r := index.NewReader(ctx, db, "testing-namespace", schema.MetadataSchema())
@@ -60,7 +63,7 @@ func TestLastIndexedCommitUpdated(t *testing.T) {
 	w, err := index.NewWriter(db, "testing-namespace")
 	require.NoError(t, err)
 
-	assert.NoError(t, SetLastIndexedCommitSha(w, repoURL, commitSHA))
+	assert.NoError(t, SetRepoMetadata(w, repoURL, commitSHA, ""))
 	require.NoError(t, w.Flush())
 
 	r := index.NewReader(ctx, db, "testing-namespace", schema.MetadataSchema())
@@ -72,7 +75,7 @@ func TestLastIndexedCommitUpdated(t *testing.T) {
 	require.NoError(t, err)
 
 	commitSHA2 := "def456"
-	assert.NoError(t, SetLastIndexedCommitSha(w, repoURL, commitSHA2))
+	assert.NoError(t, SetRepoMetadata(w, repoURL, commitSHA2, ""))
 	require.NoError(t, w.Flush())
 
 	r = index.NewReader(ctx, db, "testing-namespace", schema.MetadataSchema())
@@ -97,7 +100,7 @@ func TestLastIndexedCommitUnset(t *testing.T) {
 	w, err := index.NewWriter(db, "testing-namespace")
 	require.NoError(t, err)
 
-	assert.NoError(t, SetLastIndexedCommitSha(w, repoURL, commitSHA))
+	assert.NoError(t, SetRepoMetadata(w, repoURL, commitSHA, ""))
 	require.NoError(t, w.Flush())
 
 	r = index.NewReader(ctx, db, "testing-namespace", schema.MetadataSchema())
@@ -119,7 +122,7 @@ func TestAddFileToIndex(t *testing.T) {
 	filepath := "foo/bar/baz.go"
 	fileContent := []byte("package foo\n\nfunc Bar() {}\n")
 
-	err = AddFileToIndex(w, repoURL, commitSHA, filepath, fileContent)
+	err = AddFileToIndex(w, nil, repoURL, commitSHA, filepath, fileContent)
 	require.NoError(t, err)
 	require.NoError(t, w.Flush())
 
@@ -147,7 +150,7 @@ func TestAddFileToIndexWrongMimeType(t *testing.T) {
 	filepath := "foo/bar/baz.gif"
 	fileContent := []byte{0x47, 0x49, 0x46, 0x38, 0x39, 0x61} // GIF file
 
-	err = AddFileToIndex(w, repoURL, commitSHA, filepath, fileContent)
+	err = AddFileToIndex(w, nil, repoURL, commitSHA, filepath, fileContent)
 	assert.Error(t, err)
 
 	r := index.NewReader(ctx, db, "testing-namespace", schema.GitHubFileSchema())
@@ -169,7 +172,7 @@ func TestAddFileToIndexInvalidUTF8(t *testing.T) {
 	filepath := "foo/bar/baz.go"
 	fileContent := []byte{0xF0, 0xA4, 0xAD} // invalid UTF-8
 
-	err = AddFileToIndex(w, repoURL, commitSHA, filepath, fileContent)
+	err = AddFileToIndex(w, nil, repoURL, commitSHA, filepath, fileContent)
 	assert.Error(t, err)
 
 	r := index.NewReader(ctx, db, "testing-namespace", schema.GitHubFileSchema())
@@ -182,7 +185,7 @@ func mustApplyCommit(t *testing.T, db *pebble.DB, commit *inpb.Commit) {
 	w, err := index.NewWriter(db, "testing-namespace")
 	require.NoError(t, err)
 
-	err = ProcessCommit(w, repoURL, commit)
+	err = ProcessCommit(w, nil, repoURL, commit)
 	require.NoError(t, err)
 	require.NoError(t, w.Flush())
 }
@@ -539,4 +542,106 @@ def456
 			},
 		},
 	}, result)
+}
+
+func writeRepoFile(t *testing.T, repoDir, relPath, content string) {
+	t.Helper()
+	fullPath := filepath.Join(repoDir, relPath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0755))
+	require.NoError(t, os.WriteFile(fullPath, []byte(content), 0644))
+}
+
+// indexRepoFile indexes a file the way the CLI's directory walk would: by its
+// absolute path, with a RepoContext rooted at repoDir.
+func indexRepoFile(t *testing.T, w *index.Writer, rctx *annotations.RepoContext, repoDir, relPath string) {
+	t.Helper()
+	fullPath := filepath.Join(repoDir, relPath)
+	content, err := os.ReadFile(fullPath)
+	require.NoError(t, err)
+	require.NoError(t, AddFileToIndex(w, rctx, repoURL, "sha1", fullPath, content))
+}
+
+func TestAddFileToIndexExtractsAnnotations(t *testing.T) {
+	ctx := context.Background()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	repoDir := testfs.MakeTempDir(t)
+
+	writeRepoFile(t, repoDir, "go.mod", "module github.com/example/repo\n\ngo 1.24\n")
+	writeRepoFile(t, repoDir, "util/log/log.go", "package log\n\nfunc Print() {}\n")
+	writeRepoFile(t, repoDir, "app/main.go", `package main
+
+import "github.com/example/repo/util/log"
+
+func main() { log.Print() }
+`)
+
+	rctx := annotations.NewRepoContext(repoDir)
+	w, err := index.NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+	for _, f := range []string{"go.mod", "util/log/log.go", "app/main.go"} {
+		indexRepoFile(t, w, rctx, repoDir, f)
+	}
+	require.NoError(t, w.Flush())
+
+	r := index.NewReader(ctx, db, "testing-namespace", schema.GitHubFileSchema())
+
+	// imports: app/main.go imports util/log's identity term.
+	matches, err := r.RawQuery(`(:eq imports "go:github.com/example/repo/util/log")`)
+	require.NoError(t, err)
+	assert.Equal(t, 1, len(matches), "the app file should match util/log's import identity")
+
+	// import_id: util/log declares its own identity.
+	matches, err = r.RawQuery(`(:eq import_id "go:github.com/example/repo/util/log")`)
+	require.NoError(t, err)
+	assert.Equal(t, 1, len(matches), "util/log declares its import identity")
+
+	// symbols: the declared function names are indexed.
+	matches, err = r.RawQuery(`(:eq symbols "print")`)
+	require.NoError(t, err)
+	assert.Equal(t, 1, len(matches), "the Print declaration is indexed as a symbol")
+}
+
+func TestAddFileToIndexNilRepoContextSkipsAnnotations(t *testing.T) {
+	ctx := context.Background()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
+	content := []byte(`package main
+
+import "github.com/example/repo/util/log"
+
+func main() { log.Print() }
+`)
+	w, err := index.NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+	require.NoError(t, AddFileToIndex(w, nil, repoURL, "sha1", "app/main.go", content))
+	require.NoError(t, w.Flush())
+
+	r := index.NewReader(ctx, db, "testing-namespace", schema.GitHubFileSchema())
+	matches, err := r.RawQuery(`(:eq imports "go:github.com/example/repo/util/log")`)
+	require.NoError(t, err)
+	assert.Empty(t, matches, "a nil RepoContext extracts no annotations")
+}
+
+func TestRepoMetadataRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
+	w, err := index.NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+	require.NoError(t, SetRepoMetadata(w, repoURL, "sha1", "github.com/example/repo"))
+	require.NoError(t, w.Flush())
+
+	r := index.NewReader(ctx, db, "testing-namespace", schema.MetadataSchema())
+	sha, err := GetLastIndexedCommitSha(r, repoURL)
+	require.NoError(t, err)
+	assert.Equal(t, "sha1", sha)
+
+	modulePath, err := GetRepoModulePath(r, repoURL)
+	require.NoError(t, err)
+	assert.Equal(t, "github.com/example/repo", modulePath)
+
+	// An unknown repo has no metadata: module path is empty, not an error.
+	modulePath, err = GetRepoModulePath(r, altRepoURL)
+	require.NoError(t, err)
+	assert.Empty(t, modulePath)
 }

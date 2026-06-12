@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/github",
     visibility = ["//visibility:public"],
     deps = [
+        "//codesearch/annotations",
         "//codesearch/indexprofile",
         "//codesearch/schema",
         "//codesearch/types",
@@ -24,6 +25,7 @@ go_test(
     srcs = ["github_test.go"],
     embed = [":github"],
     deps = [
+        "//codesearch/annotations",
         "//codesearch/index",
         "//codesearch/schema",
         "//proto:index_go_proto",

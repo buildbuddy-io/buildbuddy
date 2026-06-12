@@ -45,9 +45,16 @@ type RepoContext struct {
 func NewRepoContext(rootDir string) *RepoContext {
 	rc := &RepoContext{rootDir: rootDir}
 	if data, err := os.ReadFile(filepath.Join(rootDir, "go.mod")); err == nil {
-		rc.goModulePath = gomodfile.ModulePath(data)
+		rc.goModulePath = GoModulePath(data)
 	}
 	return rc
+}
+
+// GoModulePath parses the module path from go.mod content, returning "" if the
+// content is missing or unparsable. Useful for callers that hold go.mod bytes
+// directly (e.g. read from an archive) rather than a checkout on disk.
+func GoModulePath(goModContent []byte) string {
+	return gomodfile.ModulePath(goModContent)
 }
 
 // NewRepoContextWithGoModule returns a RepoContext with an explicit Go module

@@ -43,7 +43,7 @@ func bootstrapIndex(t *testing.T, ctx context.Context, server *codesearchServer,
 	require.NoError(t, err)
 	ru, err := git.ParseGitHubRepoURL(repoURL)
 	require.NoError(t, err)
-	github.SetLastIndexedCommitSha(iw, ru, sha)
+	github.SetRepoMetadata(iw, ru, sha, "")
 	err = iw.Flush()
 	require.NoError(t, err)
 }
