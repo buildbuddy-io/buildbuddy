@@ -2002,6 +2002,23 @@ func (ws *workspace) hasMultipleBranches() bool {
 		(*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch)
 }
 
+func (ws *workspace) mergeWithBaseRequested() bool {
+	if !ws.hasMultipleBranches() {
+		return false
+	}
+
+	// If the serialized action is not available, we conservatively assume a merge may be needed
+	// because the merge_with_base config is not readable yet (it's read from the repo after checkout).
+	if *serializedAction == "" {
+		return true
+	}
+	action, err := deserializeAction(*serializedAction)
+	if err != nil {
+		return true
+	}
+	return action.GetTriggers().GetPullRequestTrigger().GetMergeWithBase()
+}
+
 func (ws *workspace) targetRef() string {
 	return fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
 }
@@ -2023,13 +2040,11 @@ func (ws *workspace) fetchPushedRef(ctx context.Context) error {
 		}
 	}
 
-	// For pull requests, fetch the full history to ensure the merge base commit
-	// is fetched, so we can merge with base if requested.
-	// We must do this even if a shallow fetch depth was explicitly requested.
-	// TODO(Maggie): Only do this if merge_with_base is enabled
-	// If we serialize the action in serializedAction, we won't need to checkout
-	// the repo in the ci_runner to read the config
-	if ws.hasMultipleBranches() {
+	// If the pushed branch will be merged with the base branch, fetch the full
+	// history to ensure the merge base commit is fetched. We must
+	// do this even if a shallow fetch was explicitly requested, since
+	// otherwise the merge base may not be reachable and the merge would fail.
+	if ws.mergeWithBaseRequested() {
 		if fetchDepth != 0 {
 			writeCommandSummary(ws.log, "Fetching full history of %q instead of the requested depth %d, since it is needed to merge with the base branch.", refToFetch, fetchDepth)
 		}
