@@ -1,6 +1,7 @@
 package annotations_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,7 +23,7 @@ func testRepoContext(t *testing.T) (*annotations.RepoContext, string) {
 
 func extract(t *testing.T, rctx *annotations.RepoContext, rootDir, relPath, content string) *annotations.Result {
 	t.Helper()
-	ann, err := annotations.Extract("go", filepath.Join(rootDir, relPath), []byte(content), rctx)
+	ann, err := annotations.Extract(context.Background(), "go", filepath.Join(rootDir, relPath), []byte(content), rctx)
 	require.NoError(t, err)
 	return ann
 }
@@ -136,7 +137,7 @@ func { this is not valid go at all ((
 
 func TestUnsupportedLanguageReturnsNil(t *testing.T) {
 	rctx, dir := testRepoContext(t)
-	ann, err := annotations.Extract("python", filepath.Join(dir, "a.py"), []byte("import os\n"), rctx)
+	ann, err := annotations.Extract(context.Background(), "python", filepath.Join(dir, "a.py"), []byte("import os\n"), rctx)
 	require.NoError(t, err)
 	assert.Nil(t, ann)
 }
@@ -159,7 +160,7 @@ func DoThing() {}
 
 func TestFileOutsideRepoRootGetsNoImports(t *testing.T) {
 	rctx, _ := testRepoContext(t)
-	ann, err := annotations.Extract("go", filepath.Join(t.TempDir(), "b.go"), []byte("package b\n\nfunc Helper() {}\n"), rctx)
+	ann, err := annotations.Extract(context.Background(), "go", filepath.Join(t.TempDir(), "b.go"), []byte("package b\n\nfunc Helper() {}\n"), rctx)
 	require.NoError(t, err)
 	require.NotNil(t, ann)
 	assert.Empty(t, ann.Imports)
@@ -206,7 +207,7 @@ func NewGreeter() *Greeter { return &Greeter{} }
 
 func TestJavaSymbolsAndImports(t *testing.T) {
 	rctx, dir := testRepoContext(t)
-	ann, err := annotations.Extract("java", filepath.Join(dir, "src/main/java/com/example/build/RuleHelper.java"), []byte(`
+	ann, err := annotations.Extract(context.Background(), "java", filepath.Join(dir, "src/main/java/com/example/build/RuleHelper.java"), []byte(`
 package com.example.build;
 
 import com.example.build.util.Label;
@@ -265,7 +266,7 @@ func TestJavaTestFileGetsNoImportID(t *testing.T) {
 		"src/test/java/com/example/RuleHelperTest.java",
 		"javatests/com/example/Helpers.java",
 	} {
-		ann, err := annotations.Extract("java", filepath.Join(dir, name), []byte(`
+		ann, err := annotations.Extract(context.Background(), "java", filepath.Join(dir, name), []byte(`
 package com.example;
 public class X {}
 `), rctx)
@@ -274,4 +275,37 @@ public class X {}
 		assert.Empty(t, ann.ImportID, name)
 		assert.Equal(t, []string{"x"}, ann.Symbols, name)
 	}
+}
+
+func TestJavaImportIDSurvivesTestInRepoPath(t *testing.T) {
+	// Test-file detection must run on the repo-relative path, not the
+	// absolute one: a checkout under a directory named "tests" must not
+	// strip identity from every Java file under it.
+	root := filepath.Join(t.TempDir(), "tests", "myrepo")
+	require.NoError(t, os.MkdirAll(root, 0755))
+	rctx := annotations.NewRepoContext(root)
+
+	ann, err := annotations.Extract(context.Background(), "java",
+		filepath.Join(root, "src/main/java/com/example/Foo.java"), []byte(`
+package com.example;
+public class Foo {}
+`), rctx)
+	require.NoError(t, err)
+	require.NotNil(t, ann)
+	assert.Equal(t, []string{"java:com.example"}, ann.ImportID)
+}
+
+func TestJavaFileOutsideRepoRootGetsNoImportID(t *testing.T) {
+	rctx, _ := testRepoContext(t)
+	// A file outside the repo root has no in-repo identity, mirroring Go.
+	ann, err := annotations.Extract(context.Background(), "java",
+		filepath.Join(t.TempDir(), "Stray.java"), []byte(`
+package com.example;
+public class Stray {}
+`), rctx)
+	require.NoError(t, err)
+	require.NotNil(t, ann)
+	assert.Empty(t, ann.Imports)
+	assert.Empty(t, ann.ImportID)
+	assert.Equal(t, []string{"stray"}, ann.Symbols)
 }

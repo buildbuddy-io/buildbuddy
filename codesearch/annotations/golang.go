@@ -28,8 +28,8 @@ func goPackageImportPath(modulePath, relPath string) string {
 	return modulePath + "/" + dir
 }
 
-func extractGo(filename string, content []byte, rctx *RepoContext) (*Result, error) {
-	tree, err := parseGo(content)
+func extractGo(ctx context.Context, filename string, content []byte, rctx *RepoContext) (*Result, error) {
+	tree, err := parseGo(ctx, content)
 	if err != nil {
 		return nil, err
 	}
@@ -95,10 +95,11 @@ func extractGo(filename string, content []byte, rctx *RepoContext) (*Result, err
 	return ann, nil
 }
 
-func parseGo(content []byte) (*sitter.Tree, error) {
+func parseGo(ctx context.Context, content []byte) (*sitter.Tree, error) {
 	parser := sitter.NewParser()
+	defer parser.Close() // the returned tree owns its data and outlives the parser
 	parser.SetLanguage(golang.GetLanguage())
-	return parser.ParseCtx(context.Background(), nil, content)
+	return parser.ParseCtx(ctx, nil, content)
 }
 
 // goSymbolQuery captures declaration names: functions, methods, types

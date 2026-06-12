@@ -17,6 +17,7 @@
 package annotations
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -93,27 +94,28 @@ type Result struct {
 
 // Extract parses the file with tree-sitter and returns its annotations. lang
 // is the lowercase enry-detected language name. Symbols are extracted for any
-// supported language; import identities additionally require module context
-// (go.mod) and an in-repo path.
+// supported, parseable file. Import identities additionally require an in-repo
+// path (the file must live under the repo root) plus, for Go, module context
+// (go.mod); Java identity is taken from the file's own package declaration.
 //
 // A nil result means there is nothing to extract — an unsupported language or
 // a missing repo context — and is not an error. A file of a supported
 // language always parses (tree-sitter is error-tolerant, marking unparseable
 // regions with ERROR nodes rather than failing), so it returns non-nil
 // annotations that may simply be empty. A non-nil error is reserved for the
-// genuinely unexpected: a parse interrupted by context cancellation. Callers
+// genuinely unexpected: a parse interrupted via ctx cancellation. Callers
 // should not fail indexing on that error, but they should surface it rather
 // than silently dropping the file.
-func Extract(lang, filename string, content []byte, rctx *RepoContext) (*Result, error) {
+func Extract(ctx context.Context, lang, filename string, content []byte, rctx *RepoContext) (*Result, error) {
 	defer indexprofile.Timer(indexprofile.PhaseExtractAnnotations)()
 	if rctx == nil {
 		return nil, nil
 	}
 	switch lang {
 	case "go":
-		return extractGo(filename, content, rctx)
+		return extractGo(ctx, filename, content, rctx)
 	case "java":
-		return extractJava(filename, content, rctx)
+		return extractJava(ctx, filename, content, rctx)
 	default:
 		return nil, nil
 	}

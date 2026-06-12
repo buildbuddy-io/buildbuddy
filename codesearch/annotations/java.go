@@ -2,7 +2,6 @@ package annotations
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -67,26 +66,41 @@ func javaPackageOf(dotted string) string {
 	return strings.Join(segs[:n], ".")
 }
 
-// isJavaTestFile reports whether the file should be excluded from import-rank
-// identity (mirroring Go's _test.go exclusion).
-func isJavaTestFile(path string) bool {
-	return strings.Contains(path, "/test/") ||
-		strings.Contains(path, "/tests/") ||
-		strings.Contains(path, "/javatests/") ||
-		strings.HasSuffix(path, "Test.java") ||
-		strings.HasSuffix(path, "Tests.java")
+// isJavaTestFile reports whether the repo-relative path is a test file and so
+// should be excluded from import-rank identity (mirroring Go's _test.go
+// exclusion). The check is segment-based on the relative path: a conventional
+// test directory anywhere in the path, or a Test/Tests-suffixed name. This is
+// a heuristic — it misfires on a package legitimately named "test"
+// (com/example/test/Foo.java) — which is acceptable for a fuzzy ranking
+// signal. It must be passed the repo-relative path, not the absolute one, or
+// a checkout under e.g. /work/tests/... would misclassify every file.
+func isJavaTestFile(relPath string) bool {
+	for seg := range strings.SplitSeq(relPath, "/") {
+		if seg == "test" || seg == "tests" || seg == "javatests" {
+			return true
+		}
+	}
+	return strings.HasSuffix(relPath, "Test.java") || strings.HasSuffix(relPath, "Tests.java")
 }
 
-func extractJava(filename string, content []byte, rctx *RepoContext) (*Result, error) {
+func extractJava(ctx context.Context, filename string, content []byte, rctx *RepoContext) (*Result, error) {
 	parser := sitter.NewParser()
+	defer parser.Close() // the tree owns its data and outlives the parser
 	parser.SetLanguage(java.GetLanguage())
-	tree, err := parser.ParseCtx(context.Background(), nil, content)
+	tree, err := parser.ParseCtx(ctx, nil, content)
 	if err != nil {
 		return nil, err
 	}
 	defer tree.Close()
 
 	ann := &Result{Symbols: captureAll(javaSymbolQuery, tree, content)}
+
+	// Identity (imports/import_id) is only meaningful for files inside the
+	// repo; symbols are extracted regardless.
+	rel := rctx.relPath(filename)
+	if rel == "" {
+		return ann, nil
+	}
 
 	// Package and import names must keep their case: javaPackageOf depends
 	// on the lowercase-package / Capitalized-class convention to find the
@@ -112,7 +126,7 @@ func extractJava(filename string, content []byte, rctx *RepoContext) (*Result, e
 	}
 	ann.Imports = imports
 
-	if selfPkg != "" && !isJavaTestFile(filepath.ToSlash(filename)) {
+	if selfPkg != "" && !isJavaTestFile(rel) {
 		ann.ImportID = []string{javaTerm(selfPkg)}
 	}
 	return ann, nil
