@@ -7,7 +7,7 @@ import { User } from "../auth/user";
 import capabilities from "../capabilities/capabilities";
 import { TextLink } from "../components/link/link";
 import { bytes as formatBytes } from "../format/format";
-import InvocationModel from "./invocation_model";
+import InvocationModel, { InvocationStatus } from "./invocation_model";
 
 interface Props {
   suggestions: Suggestion[];
@@ -213,6 +213,26 @@ const matchers: SuggestionMatcher[] = [
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
     if (!buildLogs.includes("DEADLINE_EXCEEDED")) return null;
     if (model.optionsMap.get("remote_timeout") && Number(model.optionsMap.get("remote_timeout")) >= 600) return null;
+
+    if (model.invocation.invocationStatus === InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
+      return {
+        level: SuggestionLevel.ERROR,
+        message: (
+          <>
+            Bazel disconnected from BuildBuddy before finishing uploading the build results. This may have been caused
+            by a flaky network connection, Bazel crashing due to an OOM error, or Bazel being killed manually. If you
+            are setting <BazelFlag>--bes_upload_mode</BazelFlag> or similar to "fully_async", the Bazel server may need
+            to live a bit longer to finish uploading the results.
+          </>
+        ),
+        reason: (
+          <>
+            Shown because the build finished with a disconnected status.
+          </>
+        ),
+      };
+    }
+
     if (!model.isComplete() || model.invocation.success) return null;
 
     return {
