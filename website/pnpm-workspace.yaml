@@ -1,0 +1,6 @@
+allowBuilds:
+  core-js: true
+  sharp: true
+
+overrides:
+  webpack-dev-server@^5>sockjs: "-"
