@@ -1151,7 +1151,12 @@ export default class InvocationModel {
           entries.push(tools.protos.ExecLogEntry.decode(byteArray.subarray(offset, offset + length)));
           offset += length;
         }
-        console.log(entries);
+        if (rpcService.debuggingEnabled()) {
+          console.debug("Decoded execution log", {
+            bytes: body.byteLength,
+            entries: entries.length,
+          });
+        }
         return entries;
       });
 
