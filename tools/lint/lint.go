@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -20,12 +21,13 @@ import (
 )
 
 var (
-	fix      = flag.Bool("fix", false, "If true, attempt to fix lint errors automatically.")
-	tool     = flag.Slice("tool", []string{}, "If set, only run the given tool. Can be specified multiple times.")
-	exclude  = flag.Slice("exclude", []string{}, "If set, exclude the given tool. Can be specified multiple times.")
-	force    = flag.Bool("force", false, "If true, run on all files, not just files changed since the diff base.")
-	diffBase = flag.String("diff_base", "", "If set, use the given git rev as the diff base when determining changed files.")
-	bazelArg = flag.Slice("bazel_arg", []string{}, "Additional argument to pass to nested bazel invocations (e.g. --bazel_arg=--config=linux-workflows). Can be specified multiple times.")
+	fix        = flag.Bool("fix", false, "If true, attempt to fix lint errors automatically.")
+	tool       = flag.Slice("tool", []string{}, "If set, only run the given tool. Can be specified multiple times.")
+	exclude    = flag.Slice("exclude", []string{}, "If set, exclude the given tool. Can be specified multiple times.")
+	force      = flag.Bool("force", false, "If true, run on all files, not just files changed since the diff base.")
+	diffBase   = flag.String("diff_base", "", "If set, use the given git rev as the diff base when determining changed files.")
+	bazelArg   = flag.Slice("bazel_arg", []string{}, "Additional argument to pass to nested bazel invocations (e.g. --bazel_arg=--config=linux-workflows). Can be specified multiple times.")
+	nogoTarget = flag.Slice("nogo_target", []string{}, "Target patterns to analyze with the GoVet tool. Analyzes //... if unset. Can be specified multiple times.")
 
 	legacyAllFlag = flag.Bool("a", false, "Has no effect (kept for backwards compatibility but will be removed soon)")
 )
@@ -63,8 +65,10 @@ var (
 		// Ensures that MODULE.bazel.lock is up to date.
 		{Name: "UpdateLockfile", Run: runBazelModDeps, WriteLock: true},
 		// Runs nogo static analysis (go vet, staticcheck, modernize, etc.)
-		// over all Go targets. Runs exclusively so that in fix mode it
-		// analyzes the sources written by the other tools.
+		// over all Go targets. In fix mode, applies the suggested fixes
+		// emitted by nogo. Runs exclusively so that it analyzes the sources
+		// written by the other tools and so that nobody else writes the
+		// files it patches.
 		{Name: "GoVet", Run: runNoGo, WriteLock: true},
 	}
 
@@ -273,14 +277,25 @@ func runBazelModDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, fi
 	return nil
 }
 
+// nogoPatchLineRegexp matches the "patch -p1 < <path>/nogo.patch" hint that a
+// failing nogo validation action prints when an analyzer suggested a fix.
+// Only the part of the path below the output directory is captured: with
+// --experimental_output_paths=strip, actions see config-mapped paths
+// (bazel-out/cfg/bin/...) that don't exist on disk, so the patch is resolved
+// via the bazel-bin convenience symlink instead.
+// Bazel may emit \r\n line endings when it believes it's writing to a
+// terminal, hence the \r? before the end anchor.
+var nogoPatchLineRegexp = regexp.MustCompile(`(?m)^\$ patch -p1 < \S+?/bin/(\S+nogo\.patch)\r?$`)
+
 // runNoGo runs nogo static analysis by building all Go targets with nogo
 // enabled (--config=nogo, see shared.bazelrc). Regular builds skip nogo
 // entirely; here, analysis of unchanged packages - including all external
 // dependencies - is served from bazel's action cache, so only changed
 // packages are re-analyzed.
 //
-// nogo diagnostics can't be fixed automatically by this tool, so fix mode
-// behaves the same as check mode.
+// In fix mode, the suggested fixes emitted by nogo (nogo.patch files) are
+// applied to the workspace and the analysis is re-run to report any remaining
+// diagnostics that have no automatic fix.
 func runNoGo(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
 	if !slices.ContainsFunc(files, affectsGoBuild) {
 		return nil
@@ -289,18 +304,122 @@ func runNoGo(ctx context.Context, stdout, stderr io.Writer, fix bool, files []st
 	if err != nil {
 		return err
 	}
-	// --keep_going so that diagnostics from all packages are reported in a
-	// single run rather than stopping at the first failing package.
-	args := []string{"build", "--config=nogo", "--keep_going"}
-	args = append(args, *bazelArg...)
-	args = append(args, "--", "//...")
-	cmd := exec.CommandContext(ctx, bazel, args...)
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("nogo static analysis found errors (these must be fixed manually)")
+	runBuild := func(stderr io.Writer) error {
+		// --keep_going so that diagnostics from all packages are reported in
+		// a single run rather than stopping at the first failing package.
+		args := []string{"build", "--config=nogo", "--keep_going"}
+		if fix {
+			// Make sure the nogo.patch files referenced by validation
+			// failures are materialized in bazel-out, even when building
+			// with a remote cache and minimal downloads.
+			args = append(args,
+				"--output_groups=+nogo_fix",
+				"--remote_download_regex=.*_nogo/nogo.patch$",
+			)
+		}
+		args = append(args, *bazelArg...)
+		args = append(args, "--")
+		if len(*nogoTarget) > 0 {
+			args = append(args, *nogoTarget...)
+		} else {
+			args = append(args, "//...")
+		}
+		cmd := exec.CommandContext(ctx, bazel, args...)
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
+		return cmd.Run()
+	}
+	capture := lockingbuffer.New()
+	if err := runBuild(io.MultiWriter(stderr, capture)); err == nil {
+		return nil
+	}
+	if !fix {
+		return fmt.Errorf("nogo static analysis found errors - run ./buildfix.sh to attempt automatic fixes")
+	}
+	// Apply the fixes suggested by the failing validation actions.
+	var patchPaths []string
+	for _, m := range nogoPatchLineRegexp.FindAllStringSubmatch(capture.String(), -1) {
+		patchPath := filepath.Join("bazel-bin", m[1])
+		if !slices.Contains(patchPaths, patchPath) {
+			patchPaths = append(patchPaths, patchPath)
+		}
+	}
+	if len(patchPaths) == 0 {
+		return fmt.Errorf("nogo static analysis found errors with no automatic fixes")
+	}
+	patchedFiles, err := applyNogoPatches(ctx, stderr, patchPaths)
+	if err != nil {
+		return fmt.Errorf("apply nogo fixes: %w", err)
+	}
+	// Suggested fixes are not necessarily gofmt'd; format the patched files.
+	if err := runGoimports(ctx, io.Discard, stderr, true, patchedFiles); err != nil {
+		return fmt.Errorf("format nogo-fixed files: %w", err)
+	}
+	log.Infof("[GoVet] applied nogo fixes to: %s", strings.Join(patchedFiles, ", "))
+	// Re-run the analysis to report any remaining diagnostics.
+	if err := runBuild(stderr); err != nil {
+		return fmt.Errorf("nogo static analysis found errors that could not be fixed automatically")
 	}
 	return nil
+}
+
+// applyNogoPatches applies the given nogo.patch files (unified diffs with
+// paths relative to the workspace root) and returns the workspace-relative
+// paths of the files that were patched.
+//
+// A source file analyzed in multiple Go archives (e.g. a library and its
+// test) gets the same fix suggested in each archive's patch, so per-file
+// diffs are deduplicated before being applied. A diff that no longer applies
+// (e.g. because it overlaps with one already applied) is skipped with a
+// warning; the re-run of the analysis will report its diagnostics again.
+func applyNogoPatches(ctx context.Context, stderr io.Writer, patchPaths []string) ([]string, error) {
+	applied := make(map[string]bool)
+	var patchedFiles []string
+	for _, patchPath := range patchPaths {
+		patch, err := os.ReadFile(patchPath)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", patchPath, err)
+		}
+		for _, fileDiff := range splitFileDiffs(string(patch)) {
+			if applied[fileDiff] {
+				continue
+			}
+			applied[fileDiff] = true
+			cmd := exec.CommandContext(ctx, "git", "apply")
+			cmd.Stdin = strings.NewReader(fileDiff)
+			cmd.Stdout = io.Discard
+			cmd.Stderr = io.Discard
+			if err := cmd.Run(); err != nil {
+				log.Warningf("[GoVet] skipping a nogo fix from %s that no longer applies", patchPath)
+				continue
+			}
+			if file, ok := strings.CutPrefix(lines(fileDiff)[0], "--- a/"); ok && !slices.Contains(patchedFiles, file) {
+				patchedFiles = append(patchedFiles, file)
+			}
+		}
+	}
+	return patchedFiles, nil
+}
+
+// splitFileDiffs splits a concatenation of unified diffs into one diff per
+// file, each starting with a "--- a/<path>" header line.
+func splitFileDiffs(patch string) []string {
+	var diffs []string
+	var current []string
+	flush := func() {
+		if len(current) > 0 {
+			diffs = append(diffs, strings.Join(current, "\n")+"\n")
+		}
+	}
+	for _, line := range lines(patch) {
+		if strings.HasPrefix(line, "--- a/") {
+			flush()
+			current = nil
+		}
+		current = append(current, line)
+	}
+	flush()
+	return diffs
 }
 
 // affectsGoBuild returns whether a change to the given file can affect nogo
