@@ -219,7 +219,7 @@ const matchers: SuggestionMatcher[] = [
         level: SuggestionLevel.ERROR,
         message: (
           <>
-            Bazel disconnected from BuildBuddy before finishing uploading the build results. This may have been caused
+            Bazel disconnected from BuildBuddy before it finised uploading the build results. This may have been caused
             by a flaky network connection, Bazel crashing due to an OOM error, or Bazel being killed manually. If you
             are setting <BazelFlag>--bes_upload_mode</BazelFlag> or similar to "fully_async", the Bazel server may need
             to live a bit longer to finish uploading the results.
