@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"

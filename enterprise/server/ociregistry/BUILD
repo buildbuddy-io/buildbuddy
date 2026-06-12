@@ -9,7 +9,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/util/ocicache",
+        "//enterprise/server/oci/ocicache",
         "//enterprise/server/util/trafficstats",
         "//proto:ociregistry_go_proto",
         "//proto:remote_execution_go_proto",

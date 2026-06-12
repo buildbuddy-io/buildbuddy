@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "ocicache",
     srcs = ["ocicache.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache",
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache",
     deps = [
         "//proto:ociregistry_go_proto",
         "//proto:registry_go_proto",

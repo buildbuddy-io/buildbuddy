@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"

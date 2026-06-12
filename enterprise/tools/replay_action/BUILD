@@ -10,8 +10,8 @@ go_library(
     deps = [
         "//enterprise/server/backends/pebble_cache",
         "//enterprise/server/clientidentity",
+        "//enterprise/server/oci/ocicache",
         "//enterprise/server/remote_execution/operation",
-        "//enterprise/server/util/ocicache",
         "//enterprise/server/util/ocimanifest",
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",

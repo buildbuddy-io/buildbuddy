@@ -11,7 +11,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
