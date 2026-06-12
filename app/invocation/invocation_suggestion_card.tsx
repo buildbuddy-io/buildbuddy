@@ -500,7 +500,8 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Consider setting the Bazel flag <CommonBazelFlag>--experimental_remote_build_event_upload=minimal</CommonBazelFlag>
+          Consider setting the Bazel flag{" "}
+          <CommonBazelFlag>--experimental_remote_build_event_upload=minimal</CommonBazelFlag>
           to reduce the number of unnecessary cache uploads that Bazel might perform during a build.
         </>
       ),
