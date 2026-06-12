@@ -153,7 +153,7 @@ func TestCOW_ChunkFinalizer(t *testing.T) {
 
 	var mu sync.Mutex
 	var chunksFinalized []int64
-	err = cow.PrepareForSequentialExport(2, func(chunk *copy_on_write.Mmap) error {
+	err = cow.PrepareForFinalExport(2, func(chunk *copy_on_write.Mmap) error {
 		mu.Lock()
 		chunksFinalized = append(chunksFinalized, chunk.Offset)
 		mu.Unlock()
@@ -202,7 +202,7 @@ func TestCOW_ChunkFinalizerError(t *testing.T) {
 
 	t.Run("ErrorFromNonLastChunk", func(t *testing.T) {
 		cow := newStore(t)
-		err := cow.PrepareForSequentialExport(2, func(chunk *copy_on_write.Mmap) error {
+		err := cow.PrepareForFinalExport(2, func(chunk *copy_on_write.Mmap) error {
 			if chunk.Offset == 0 {
 				return finalizeErr
 			}
@@ -221,7 +221,7 @@ func TestCOW_ChunkFinalizerError(t *testing.T) {
 
 	t.Run("ErrorFromLastChunk", func(t *testing.T) {
 		cow := newStore(t)
-		err := cow.PrepareForSequentialExport(2, func(chunk *copy_on_write.Mmap) error {
+		err := cow.PrepareForFinalExport(2, func(chunk *copy_on_write.Mmap) error {
 			return finalizeErr
 		})
 		require.NoError(t, err)

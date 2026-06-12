@@ -2,7 +2,6 @@ package copy_on_write
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -87,8 +86,17 @@ type usageSummary struct {
 }
 
 // ChunkFinalizer is a function that should be called on a chunk after no more data
-// will be written to it. This is useful for sequential access patterns where we
-// can guarantee chunks previously written will not be touched again, and can be finalized.
+// will be written to it. This is useful for access patterns where we
+// can guarantee chunks previously written will not be touched again, and we
+// need to run some finalization logic (e.g. flushing to cache).
+//
+// WARNING: The finalizer can read chunk.Data(), but must not retain it after returning.
+// Data() returns the mmap-backed byte slice directly; it does not copy the
+// chunk contents in an effort to reduce expensive copies of a lot of data.
+// Once the finalizer returns, the finalizer worker may call
+// Unmap(), which releases that mmap and sets the chunk's data slice to nil.
+// Any retained slice would still point at memory that has been unmapped,
+// so reading or writing it after return is unsafe.
 type ChunkFinalizer func(*Mmap) error
 
 // COWStore To enable copy-on-write support for a file, it can be split into
@@ -178,7 +186,7 @@ type COWStore struct {
 	finalizeErrGroup *errgroup.Group
 	finalizeEgCtx    context.Context
 	finalizerCh      chan *Mmap
-	// Whether all chunks in the store have been finalized.
+	// Whether Finalize has been called and the store no longer accepts writes.
 	finalized bool
 }
 
@@ -462,6 +470,10 @@ func (c *COWStore) readChunk(p []byte, readRelativeOffset int64, chunkStartOffse
 }
 
 func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
+	if c.finalized {
+		return 0, status.FailedPreconditionError("COWStore is finalized")
+	}
+
 	if err := checkBounds("write", c.totalSizeBytes, p, off); err != nil {
 		return 0, err
 	}
@@ -553,8 +565,7 @@ func (c *COWStore) Sync() error {
 
 func (s *COWStore) Close() error {
 	// Close background goroutine eagerly fetching chunks
-	s.quitOnce.Do(func() { close(s.quitChan) })
-	s.eagerFetchEg.Wait()
+	s.stopEagerFetching()
 
 	var lastErr error
 	// TODO: maybe parallelize
@@ -648,8 +659,7 @@ func (s *COWStore) LimitMmappedChunks(maxMmappedChunks int64) error {
 	// Stop eager fetching chunks. With a limited LRU, it could cause unnecessary LRU churn.
 	// Note that eager fetching chunks acquires the storeLock, so we must stop this
 	// before acquiring the lock below.
-	s.quitOnce.Do(func() { close(s.quitChan) })
-	s.eagerFetchEg.Wait()
+	s.stopEagerFetching()
 
 	s.storeLock.Lock()
 	defer s.storeLock.Unlock()
@@ -665,24 +675,23 @@ func (s *COWStore) LimitMmappedChunks(maxMmappedChunks int64) error {
 	return nil
 }
 
-// PrepareForSequentialExport configures the store for sequential export writes,
-// where chunks are written in order and each chunk is guaranteed to be fully
-// written before the next chunk is started.
-//
-// The caller must ensure that WriteAt is not called concurrently with or after
-// Finalize(). Violating this contract may result in a send on a closed channel.
-func (s *COWStore) PrepareForSequentialExport(maxFinalizeConcurrency int, finalizer ChunkFinalizer) error {
+// PrepareForFinalExport configures the store for final export.
+// Each chunk is expected to only be written once. Once writes switch to another chunk,
+// the finalizer will be run on the previously written chunk. Any future writes to that chunk
+// will be ignored by the finalizer.
+func (s *COWStore) PrepareForFinalExport(maxFinalizeConcurrency int, finalizer ChunkFinalizer) error {
 	if maxFinalizeConcurrency <= 0 {
 		return status.InvalidArgumentErrorf("max finalize concurrency must be positive")
+	}
+	if finalizer == nil {
+		return status.InvalidArgumentErrorf("finalizer cannot be nil")
 	}
 
 	s.storeLock.Lock()
 
 	// During sequential export, we only need to fetch chunks that are being written to.
 	// Eager fetching chunks may be wasteful, so just disable it.
-	s.quitOnce.Do(func() { close(s.quitChan) })
-	s.eagerFetchEg.Wait()
-	s.eagerFetchStack = nil
+	s.stopEagerFetching()
 
 	// When sequentially exporting, we manually manage unmaps. Disable eviction.
 	s.mmapLRU = nil
@@ -698,6 +707,8 @@ func (s *COWStore) PrepareForSequentialExport(maxFinalizeConcurrency int, finali
 
 	s.storeLock.Unlock()
 
+	// Use a fixed worker pool instead of finalizing each chunk in a separate goroutine to avoid per-chunk
+	// goroutine allocation overhead.
 	for range maxFinalizeConcurrency {
 		eg.Go(s.processFinalizerQueue)
 	}
@@ -706,32 +717,38 @@ func (s *COWStore) PrepareForSequentialExport(maxFinalizeConcurrency int, finali
 
 func (s *COWStore) processFinalizerQueue() error {
 	for chunk := range s.finalizerCh {
-		if chunk == nil {
-			continue
-		}
-
-		// If one chunk failed to finalize, unmap the rest of the chunks.
+		// If one chunk failed to finalize, unmap the rest of the chunks,
+		// since we won't be able to use the exported snapshot anyway.
 		if s.finalizeEgCtx.Err() != nil {
 			chunk.Unmap()
 			continue
 		}
 
-		// Lock the chunk.
-		// This is especially necessary to ensure nothing releases the backing memory
-		// with Unmap() while the finalizer holds a reference to chunk.Data().
-		chunkUnlockFn := s.chunkLock.RLock(fmt.Sprintf("%d", chunk.Offset))
-		defer chunkUnlockFn()
+		if err := s.finalizeChunk(chunk); err != nil {
+			return err
+		}
 
-		if err := chunk.finalizeWrite(); err != nil {
-			return err
-		}
-		err := s.chunkFinalizer(chunk)
-		chunk.release()
-		chunk.Unmap()
-		if err != nil {
-			log.CtxErrorf(s.ctx, "failed to finalize chunk at offset %d: %s", chunk.Offset, err)
-			return err
-		}
+	}
+	return nil
+}
+
+// WARNING: The finalizer can read chunk.Data(), but must not retain it after returning.
+// Data() returns the mmap-backed byte slice directly; it does not copy the
+// chunk contents in an effort to reduce expensive copies of a lot of data.
+// Once the finalizer returns, the finalizer worker calls
+// Unmap(), which releases that mmap and sets the chunk's data slice to nil.
+// Any retained slice would still point at memory that has been unmapped,
+// so reading or writing it after return is unsafe.
+// If finalizers become async, explicit synchronization must be added.
+func (s *COWStore) finalizeChunk(chunk *Mmap) error {
+	if err := chunk.finalizeWrite(); err != nil {
+		return err
+	}
+	err := s.chunkFinalizer(chunk)
+	chunk.Unmap()
+	if err != nil {
+		log.CtxErrorf(s.ctx, "failed to finalize chunk at offset %d: %s", chunk.Offset, err)
+		return err
 	}
 	return nil
 }
@@ -752,15 +769,19 @@ func (s *COWStore) queueFinalizeChunk(chunkOffset int64) {
 	}
 
 	// Add the chunk to the queue to be finalized.
-	s.finalizerCh <- chunk
+	if s.finalizeEgCtx.Err() == nil {
+		s.finalizerCh <- chunk
+	}
 }
 
 // Finalize finalizes the last written chunk, closes the finalizer queue, and
 // waits for all in-flight finalizer workers to complete. It returns the first
 // error from any finalizer, if any.
 //
-// Finalize must only be called after all WriteAt calls have completed.
-// Calling WriteAt after or concurrently with Finalize is not safe.
+// Note: This function must be called after all WriteAt calls have completed.
+// There is currently no synchronization between concurrent WriteAt calls and Finalize,
+// because that is currently not possible.
+// If usage patterns change and they might be called concurrently, additional locking must be added.
 func (s *COWStore) Finalize() error {
 	if s.finalized || s.chunkFinalizer == nil {
 		return nil
@@ -771,21 +792,24 @@ func (s *COWStore) Finalize() error {
 	s.finalizeLastWrittenChunk()
 
 	close(s.finalizerCh)
+	s.finalized = true
 
 	// Wait for all in-flight finalizer workers to complete.
 	if err := s.finalizeErrGroup.Wait(); err != nil {
 		return err
 	}
 
-	// Unmap all chunks.
+	s.chunkFinalizer = nil
+
+	// Defensively unmap all chunks to avoid leaking memory.
+	// processFinalizerQueue unmaps all chunks that were written after PrepareForSequentialExport
+	// was called, but won't unmap chunks that had previously been mapped.
 	for _, chunk := range s.chunks {
 		if err := chunk.Unmap(); err != nil {
 			log.CtxWarningf(s.ctx, "failed to unmap chunk at offset %d: %s", chunk.Offset, err)
 		}
 	}
 
-	s.chunkFinalizer = nil
-	s.finalized = true
 	return nil
 }
 
@@ -1017,6 +1041,14 @@ func (c *COWStore) Finalized() bool {
 	return c.finalized
 }
 
+func (c *COWStore) stopEagerFetching() {
+	c.quitOnce.Do(func() {
+		close(c.quitChan)
+		c.eagerFetchEg.Wait()
+	})
+	c.eagerFetchStack = nil
+}
+
 // ConvertFileToCOW reads a file sequentially, splitting it into fixed size,
 // read-only chunks. Any newly created chunks will be written to dataDir. The
 // backing files are named according to their starting byte offset (in base 10).
@@ -1243,10 +1275,6 @@ type Mmap struct {
 	fetched    bool
 	closed     bool
 	lazyDigest *repb.Digest
-
-	// dataReferenced is set while external code holds a reference to the data.
-	// Unmap() will not release the backing memory while this is true.
-	dataReferenced bool
 }
 
 // NewLazyMmap returns an mmap that is set up only when the file is read or
@@ -1484,9 +1512,6 @@ func (m *Mmap) Unmap() error {
 
 // Note: caller is expected to hold the lock.
 func (m *Mmap) unmap() (unmapped bool, err error) {
-	if m.dataReferenced {
-		return false, errors.New("data is still being referenced")
-	}
 	if m.data == nil {
 		return false, nil
 	}
@@ -1566,15 +1591,7 @@ func (m *Mmap) Digest() (*repb.Digest, error) {
 // It sets dataReferenced=true to prevent Unmap() from releasing the backing memory while a caller
 // might still be using the data..
 func (m *Mmap) Data() []byte {
-	m.dataReferenced = true
 	return m.data
-}
-
-// release clears the external reference, allowing Unmap() to proceed.
-func (m *Mmap) release() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.dataReferenced = false
 }
 
 // MmapLRU limits the number of Mmap instances that can be mapped in memory at
