@@ -519,6 +519,23 @@ ts_jasmine_node_test(
     ],
 )
 
+ts_jasmine_node_test(
+    name = "invocation_suggestion_card_test",
+    srcs = ["invocation_suggestion_card_test.ts"],
+    deps = [
+        ":invocation_model",
+        ":invocation_suggestion_card",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//app/auth:user",
+        "//app/capabilities",
+        "//app/util:react",
+        "//proto:group_ts_proto",
+        "//proto:invocation_status_ts_proto",
+        "//proto:invocation_ts_proto",
+    ],
+)
+
 ts_library(
     name = "invocation_not_found",
     srcs = ["invocation_not_found.tsx"],
