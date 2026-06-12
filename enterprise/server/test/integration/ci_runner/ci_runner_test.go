@@ -1846,6 +1846,51 @@ func TestDisableBaseBranchMerging(t *testing.T) {
 	checkRunnerResult(t, result)
 }
 
+func TestMergeWithBase_FetchDepth1(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	// workspaceContentsWithRunScript enables merge_with_base (the default) with no
+	// staleness threshold, so the runner should always merge with the base branch.
+	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithRunScript)
+	pushedRepoPath := testgit.MakeTempRepoClone(t, targetRepoPath)
+	// Create a PR branch with 2 commits.
+	testshell.Run(t, pushedRepoPath, `
+		git checkout -b pr-branch
+		touch feature1.sh
+		git add .
+		git commit -m "Add feature1.sh"
+		touch feature2.sh
+		git add .
+		git commit -m "Add feature2.sh"
+	`)
+	prCommitSHA := strings.TrimSpace(testshell.Run(t, pushedRepoPath, `git rev-parse HEAD`))
+	// Add a non-conflicting commit to master that the runner must merge in.
+	testshell.Run(t, targetRepoPath, `
+		touch base_change.sh
+		git add .
+		git commit -m "Add base_change.sh"
+	`)
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Print args",
+		"--trigger_event=pull_request",
+		"--pushed_repo_url=file://" + pushedRepoPath,
+		"--pushed_branch=pr-branch",
+		"--commit_sha=" + prCommitSHA,
+		"--target_repo_url=file://" + targetRepoPath,
+		"--target_branch=master",
+		// Set fetch depth=1. The runner should still fetch enough history to reach
+		// the merge base so that it can merge with the base branch.
+		"--git_fetch_depth=1",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	// The runner should not fail to find the merge base.
+	result := invokeRunner(t, runnerFlags, nil, wsPath)
+	checkRunnerResult(t, result)
+}
+
 func TestMergeWithBase_Skip_FreshPRBranch(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithStaleBaseMerge)

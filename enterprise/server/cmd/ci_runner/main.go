@@ -2023,12 +2023,16 @@ func (ws *workspace) fetchPushedRef(ctx context.Context) error {
 		}
 	}
 
-	// If the merge commit has not been generated, fetch the full history
-	// to ensure the merge base commit is fetched, so we can manually merge the branches
+	// For pull requests, fetch the full history to ensure the merge base commit
+	// is fetched, so we can merge with base if requested.
+	// We must do this even if a shallow fetch depth was explicitly requested.
 	// TODO(Maggie): Only do this if merge_with_base is enabled
 	// If we serialize the action in serializedAction, we won't need to checkout
 	// the repo in the ci_runner to read the config
-	if ws.hasMultipleBranches() && *gitFetchDepth == smartFetchDepth {
+	if ws.hasMultipleBranches() {
+		if fetchDepth != 0 {
+			writeCommandSummary(ws.log, "Fetching full history of %q instead of the requested depth %d, since it is needed to merge with the base branch.", refToFetch, fetchDepth)
+		}
 		fetchDepth = 0
 	}
 
