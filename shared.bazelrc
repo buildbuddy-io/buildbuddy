@@ -88,6 +88,15 @@ common --test_env=GO_TEST_WRAP_TESTV=1
 # *: https://bazel.build/extending/rules#validation_actions
 common --experimental_use_validation_aspect=true
 
+# nogo static analysis (go vet, staticcheck, etc.) is opt-in so that regular
+# builds don't spend time analyzing every package - including all external
+# dependencies - on each nogo or analyzer change. It runs at lint time instead:
+# 'bazel run //tools/lint' (or CI's "Check style" workflow) performs a
+# 'bazel build --config=nogo' of all Go targets, which is incremental thanks
+# to bazel's action cache. To run it manually on specific targets:
+#   bazel build --config=nogo //server/...
+build:nogo --@com_github_buildbuddy_io_buildbuddy//:enable_nogo
+
 # Don't show cached test results in the test summary
 # We have many tests that can fill up the console with cached results.
 # If you prefer to see cached results, set this to 'short' in user.bazelrc file.

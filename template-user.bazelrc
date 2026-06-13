@@ -49,6 +49,7 @@
 #
 # Always build Go sources from protobuf
 # Always build nogo lint fix patches when available
+# (nogo only runs with --config=nogo, e.g. via 'bazel run //tools/lint')
 #common --output_groups=+go_generated_srcs,+nogo_fix
 # Download nogo patch files to bazel-out
 #common:remote-minimal --remote_download_regex=.*_nogo/nogo.patch$

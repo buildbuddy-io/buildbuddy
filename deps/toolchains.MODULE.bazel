@@ -35,7 +35,10 @@ register_toolchains(
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.from_file(go_mod = "@com_github_buildbuddy_io_buildbuddy//:go.mod")
-go_sdk.nogo(nogo = "@com_github_buildbuddy_io_buildbuddy//:vet")
+# //:nogo is a no-op unless --@com_github_buildbuddy_io_buildbuddy//:enable_nogo
+# is set (via --config=nogo). Static analysis runs at lint time
+# ('bazel run //tools/lint') rather than on every build.
+go_sdk.nogo(nogo = "@com_github_buildbuddy_io_buildbuddy//:nogo")
 use_repo(
     go_sdk,
     "go_toolchains",
