@@ -69,6 +69,11 @@ message Statistics {
 message RegisterCacheProxyRequest {
   CacheProxyNode node = 1;
   Statistics statistics = 2;
+
+  // When true, the proxy is shutting down cleanly and the server should
+  // remove this proxy from its registry immediately rather than waiting
+  // for the heartbeat staleness TTL.
+  bool shutting_down = 3;
 }
 
 // RegisterCacheProxyResponse is returned by the server once the proxy closes

@@ -334,6 +334,64 @@ func TestStreamHeartbeat_PersistsStatistics(t *testing.T) {
 	assert.Equal(t, int64(30), got.GetCasReadMisses())
 }
 
+func TestStreamHeartbeat_ShutDown(t *testing.T) {
+	// Two distinct Claims for the streaming user (read by the server-side
+	// auth goroutine) and the reader user (mutated by AuthContextWithJWT
+	// on the test goroutine), to avoid a race on the JWT field.
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	readerUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{"CP_KEY": streamUser})
+
+	// Register two proxies under the same group so we can confirm that
+	// only the one that sent ShuttingDown=true is removed.
+	keepStream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("CP_KEY"))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = keepStream.CloseSend()
+		_, _ = keepStream.CloseAndRecv()
+	})
+	require.NoError(t, keepStream.Send(&cppb.RegisterCacheProxyRequest{
+		Node: &cppb.CacheProxyNode{Host: "h-keep", ProxyId: "id-keep"},
+	}))
+
+	shutdownStream, err := client.RegisterAndStreamHeartbeat(ctxWithOutgoingAPIKey("CP_KEY"))
+	require.NoError(t, err)
+	require.NoError(t, shutdownStream.Send(&cppb.RegisterCacheProxyRequest{
+		Node: &cppb.CacheProxyNode{Host: "h-bye", ProxyId: "id-bye"},
+	}))
+
+	// stream.Send only buffers — the server-side recv→insertOrUpdateProxy
+	// runs on a separate goroutine, so we have to wait for the registry to
+	// reflect both heartbeats before sending the shutdown signal.
+	ctx := claims.AuthContextWithJWT(context.Background(), readerUser.(*claims.Claims), nil)
+	require.Eventually(t, func() bool {
+		resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
+		})
+		return err == nil && len(resp.GetCacheProxy()) == 2
+	}, 2*time.Second, 25*time.Millisecond, "both proxies should have registered")
+
+	// Now send ShuttingDown=true on the second stream only.
+	require.NoError(t, shutdownStream.Send(&cppb.RegisterCacheProxyRequest{
+		Node:         &cppb.CacheProxyNode{Host: "h-bye", ProxyId: "id-bye"},
+		ShuttingDown: true,
+	}))
+	_, err = shutdownStream.CloseAndRecv()
+	require.NoError(t, err)
+
+	// Wait for the registry to reflect the removal of only the shutting-down
+	// proxy. The other one must still be present.
+	require.Eventually(t, func() bool {
+		resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
+		})
+		if err != nil || len(resp.GetCacheProxy()) != 1 {
+			return false
+		}
+		return resp.GetCacheProxy()[0].GetNode().GetProxyId() == "id-keep"
+	}, 2*time.Second, 25*time.Millisecond, "only the shutting-down proxy should have been removed")
+}
+
 func TestStreamHeartbeat_Anonymous(t *testing.T) {
 	_, client := startGRPCRegistry(t, map[string]interfaces.UserInfo{})
 

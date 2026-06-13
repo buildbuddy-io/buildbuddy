@@ -107,7 +107,7 @@ func TestStreamHeartbeats_RegistersProxy(t *testing.T) {
 	// Run the stream loop in a goroutine; it returns once we cancel.
 	done := make(chan error, 1)
 	go func() {
-		done <- streamHeartbeats(streamCtx, client, node)
+		done <- streamHeartbeats(streamCtx, make(chan struct{}), client, node)
 	}()
 
 	// The initial heartbeat should make the proxy visible to GetCacheProxies
@@ -129,6 +129,56 @@ func TestStreamHeartbeats_RegistersProxy(t *testing.T) {
 	}
 }
 
+// TestStreamHeartbeats_ShutdownRemovesProxy verifies that closing
+// shutdownCh causes streamHeartbeats to send a final shutting_down=true
+// message that the server uses to drop the proxy from its registry
+// immediately, rather than waiting for the heartbeat staleness TTL.
+func TestStreamHeartbeats_ShutdownRemovesProxy(t *testing.T) {
+	// Two distinct Claims with the same group: one is owned by the server's
+	// auth map (read by the streaming RPC goroutine), the other backs the
+	// test goroutine's AuthContextWithJWT call, which mutates the JWT field
+	// on its argument and would race with a shared Claims struct.
+	streamUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	readerUser := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	registry, client := startTestRegistry(t, map[string]interfaces.UserInfo{testAPIKey: streamUser})
+
+	node := &cppb.CacheProxyNode{Host: "host-x", ProxyId: "proxy-x", Version: "v1"}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	streamCtx := outgoingCtx(ctx, testAPIKey)
+
+	shutdownCh := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- streamHeartbeats(streamCtx, shutdownCh, client, node)
+	}()
+
+	authedCtx := claims.AuthContextWithJWT(context.Background(), readerUser.(*claims.Claims), nil)
+	require.Eventually(t, func() bool {
+		resp, err := registry.GetCacheProxies(authedCtx, &cppb.GetCacheProxiesRequest{
+			RequestContext: groupReqContext(testGroupID),
+		})
+		return err == nil && len(resp.GetCacheProxy()) == 1
+	}, 2*time.Second, 25*time.Millisecond, "proxy should have registered")
+
+	close(shutdownCh)
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("streamHeartbeats did not return after shutdown signal")
+	}
+
+	// The shutdown message should have removed the proxy from the registry
+	// immediately — we shouldn't have to wait the staleness TTL.
+	resp, err := registry.GetCacheProxies(authedCtx, &cppb.GetCacheProxiesRequest{
+		RequestContext: groupReqContext(testGroupID),
+	})
+	require.NoError(t, err)
+	assert.Empty(t, resp.GetCacheProxy(), "shutting-down proxy should have been removed from registry")
+}
+
 func TestStreamHeartbeats_UnauthorizedReturnsError(t *testing.T) {
 	// Drive heartbeats fast so a buffered first-Send EOF surfaces quickly
 	// on the next tick.
@@ -143,7 +193,7 @@ func TestStreamHeartbeats_UnauthorizedReturnsError(t *testing.T) {
 	defer cancel()
 	streamCtx := outgoingCtx(ctx, "NOCAP_KEY")
 
-	err := streamHeartbeats(streamCtx, client, &cppb.CacheProxyNode{Host: "h", ProxyId: "id"})
+	err := streamHeartbeats(streamCtx, make(chan struct{}), client, &cppb.CacheProxyNode{Host: "h", ProxyId: "id"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "REGISTER_CACHE_PROXY", "expected capability error, got: %v", err)
 }
@@ -175,7 +225,7 @@ func TestStreamHeartbeats_UnreachableTarget(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- streamHeartbeats(context.Background(), client, &cppb.CacheProxyNode{Host: "h", ProxyId: "id"})
+		done <- streamHeartbeats(context.Background(), make(chan struct{}), client, &cppb.CacheProxyNode{Host: "h", ProxyId: "id"})
 	}()
 	select {
 	case err := <-done:
