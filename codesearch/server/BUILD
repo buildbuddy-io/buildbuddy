@@ -52,6 +52,7 @@ go_test(
     deps = [
         "//codesearch/github",
         "//codesearch/index",
+        "//codesearch/schema",
         "//proto:git_go_proto",
         "//proto:index_go_proto",
         "//proto:search_go_proto",
