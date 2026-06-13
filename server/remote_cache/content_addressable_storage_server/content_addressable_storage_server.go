@@ -1172,6 +1172,9 @@ func isComplete(children []*capb.DirectoryWithDigest) bool {
 func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
 	start := time.Now()
 	rsp, err := s.spliceBlob(ctx, req)
+	if err != nil {
+		log.CtxInfof(ctx, "SpliceBlob failed: %v", err)
+	}
 	metrics.SpliceBlobDurationUsec.With(prometheus.Labels{
 		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
 	}).Observe(float64(time.Since(start).Microseconds()))
@@ -1264,6 +1267,14 @@ func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, b
 // SplitBlob is used to get the digests of the chunks that make up a blob. Clients can then see if
 // any chunks are available locally to reduce download from the remote CAS.
 func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+	resp, err := s.splitBlob(ctx, req)
+	if err != nil {
+		log.CtxInfof(ctx, "SpliceBlob failed: %v", err)
+	}
+	return resp, err
+}
+
+func (s *ContentAddressableStorageServer) splitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
