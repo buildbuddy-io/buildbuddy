@@ -172,7 +172,11 @@ func handleIndex(args []string) {
 	for _, dir := range args {
 		repoURL := extractRepoURL(dir)
 		commitSHA := extractGitSHA(dir)
-		rctx := annotations.NewRepoContext(dir)
+		// We have a checkout on disk, so read the module path from go.mod at
+		// the repo root (absent/unparsable -> "", which disables Go import
+		// identities).
+		goMod, _ := os.ReadFile(filepath.Join(dir, "go.mod"))
+		rctx := annotations.NewRepoContext(dir, annotations.GoModulePath(goMod))
 		log.Printf("indexing dir: %q", dir)
 		stopWalk := indexprofile.Timer(indexprofile.PhaseWalk)
 		walkErr := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {

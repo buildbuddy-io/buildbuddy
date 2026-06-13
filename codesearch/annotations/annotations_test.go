@@ -1,7 +1,6 @@
 package annotations_test
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,21 +15,20 @@ const testModule = "github.com/example/Repo"
 func testRepoContext(t *testing.T) (*annotations.RepoContext, string) {
 	t.Helper()
 	dir := t.TempDir()
-	gomod := "module " + testModule + "\n\ngo 1.24\n"
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte(gomod), 0644))
-	return annotations.NewRepoContext(dir), dir
+	return annotations.NewRepoContext(dir, testModule), dir
 }
 
 func extract(t *testing.T, rctx *annotations.RepoContext, rootDir, relPath, content string) *annotations.Result {
 	t.Helper()
-	ann, err := annotations.Extract(context.Background(), "go", filepath.Join(rootDir, relPath), []byte(content), rctx)
+	ann, err := annotations.Extract(t.Context(), "go", filepath.Join(rootDir, relPath), []byte(content), rctx)
 	require.NoError(t, err)
 	return ann
 }
 
-func TestGoModulePathFromGoMod(t *testing.T) {
-	rctx, _ := testRepoContext(t)
-	assert.Equal(t, testModule, rctx.GoModulePath())
+func TestGoModulePath(t *testing.T) {
+	assert.Equal(t, testModule, annotations.GoModulePath([]byte("module "+testModule+"\n\ngo 1.24\n")))
+	assert.Empty(t, annotations.GoModulePath([]byte("not a valid go.mod")))
+	assert.Empty(t, annotations.GoModulePath(nil))
 }
 
 func TestGoSingleImport(t *testing.T) {
@@ -137,14 +135,32 @@ func { this is not valid go at all ((
 
 func TestUnsupportedLanguageReturnsNil(t *testing.T) {
 	rctx, dir := testRepoContext(t)
-	ann, err := annotations.Extract(context.Background(), "python", filepath.Join(dir, "a.py"), []byte("import os\n"), rctx)
+	ann, err := annotations.Extract(t.Context(), "python", filepath.Join(dir, "a.py"), []byte("import os\n"), rctx)
 	require.NoError(t, err)
 	assert.Nil(t, ann)
 }
 
+func TestGoWhitespaceIdentityTermsDropped(t *testing.T) {
+	rctx, dir := testRepoContext(t)
+	// A file in a directory with a space, importing another spaced in-repo
+	// package. Both identity terms would contain whitespace, which can't
+	// round-trip through the whitespace-tokenized keyword field, so they're
+	// dropped. Symbols (identifiers) are unaffected.
+	ann := extract(t, rctx, dir, "my pkg/helper.go", `package mypkg
+
+import "github.com/example/Repo/other dir"
+
+func DoThing() {}
+`)
+	require.NotNil(t, ann)
+	assert.Empty(t, ann.ImportID, "self identity derived from a spaced path is dropped")
+	assert.Empty(t, ann.Imports, "an imported spaced path is dropped")
+	assert.Equal(t, []string{"dothing"}, ann.Symbols, "symbols are still extracted")
+}
+
 func TestNoGoModDisablesGoImports(t *testing.T) {
 	dir := t.TempDir()
-	rctx := annotations.NewRepoContext(dir)
+	rctx := annotations.NewRepoContext(dir, "")
 	ann := extract(t, rctx, dir, "a/a.go", `package a
 
 import "github.com/example/Repo/util/log"
@@ -160,7 +176,7 @@ func DoThing() {}
 
 func TestFileOutsideRepoRootGetsNoImports(t *testing.T) {
 	rctx, _ := testRepoContext(t)
-	ann, err := annotations.Extract(context.Background(), "go", filepath.Join(t.TempDir(), "b.go"), []byte("package b\n\nfunc Helper() {}\n"), rctx)
+	ann, err := annotations.Extract(t.Context(), "go", filepath.Join(t.TempDir(), "b.go"), []byte("package b\n\nfunc Helper() {}\n"), rctx)
 	require.NoError(t, err)
 	require.NotNil(t, ann)
 	assert.Empty(t, ann.Imports)
@@ -207,7 +223,7 @@ func NewGreeter() *Greeter { return &Greeter{} }
 
 func TestJavaSymbolsAndImports(t *testing.T) {
 	rctx, dir := testRepoContext(t)
-	ann, err := annotations.Extract(context.Background(), "java", filepath.Join(dir, "src/main/java/com/example/build/RuleHelper.java"), []byte(`
+	ann, err := annotations.Extract(t.Context(), "java", filepath.Join(dir, "src/main/java/com/example/build/RuleHelper.java"), []byte(`
 package com.example.build;
 
 import com.example.build.util.Label;
@@ -266,7 +282,7 @@ func TestJavaTestFileGetsNoImportID(t *testing.T) {
 		"src/test/java/com/example/RuleHelperTest.java",
 		"javatests/com/example/Helpers.java",
 	} {
-		ann, err := annotations.Extract(context.Background(), "java", filepath.Join(dir, name), []byte(`
+		ann, err := annotations.Extract(t.Context(), "java", filepath.Join(dir, name), []byte(`
 package com.example;
 public class X {}
 `), rctx)
@@ -283,9 +299,9 @@ func TestJavaImportIDSurvivesTestInRepoPath(t *testing.T) {
 	// strip identity from every Java file under it.
 	root := filepath.Join(t.TempDir(), "tests", "myrepo")
 	require.NoError(t, os.MkdirAll(root, 0755))
-	rctx := annotations.NewRepoContext(root)
+	rctx := annotations.NewRepoContext(root, "")
 
-	ann, err := annotations.Extract(context.Background(), "java",
+	ann, err := annotations.Extract(t.Context(), "java",
 		filepath.Join(root, "src/main/java/com/example/Foo.java"), []byte(`
 package com.example;
 public class Foo {}
@@ -298,7 +314,7 @@ public class Foo {}
 func TestJavaFileOutsideRepoRootGetsNoImportID(t *testing.T) {
 	rctx, _ := testRepoContext(t)
 	// A file outside the repo root has no in-repo identity, mirroring Go.
-	ann, err := annotations.Extract(context.Background(), "java",
+	ann, err := annotations.Extract(t.Context(), "java",
 		filepath.Join(t.TempDir(), "Stray.java"), []byte(`
 package com.example;
 public class Stray {}
