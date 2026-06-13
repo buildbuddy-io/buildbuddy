@@ -451,19 +451,7 @@ type usageQuerier struct {
 
 // QueryUsage returns aggregate usage for the field and time window.
 func (q *usageQuerier) QueryUsage(ctx context.Context, field *usage_service.UsageField, groupID string, start, end time.Time) (int64, error) {
-	row := &struct {
-		Value int64
-	}{}
-	if err := q.dbh.NewQuery(ctx, "usage_alert_query_raw_usage").Raw(`
-		SELECT ifNull(`+field.OLAPExpression+`, 0) AS value
-		FROM RawUsage FINAL
-		WHERE group_id = ?
-		AND period_start >= ?
-		AND period_start < ?
-	`, groupID, start, end).Take(row); err != nil {
-		return 0, err
-	}
-	return row.Value, nil
+	return usage_service.QueryUsage(ctx, q.dbh, "usage_alert_query_raw_usage", field, groupID, start, end)
 }
 
 // metricDefinition maps an alerting metric to email display metadata.

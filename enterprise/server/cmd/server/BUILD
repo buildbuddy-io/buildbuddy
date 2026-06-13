@@ -78,6 +78,7 @@ go_library(
         "//enterprise/server/telemetry",
         "//enterprise/server/usage",
         "//enterprise/server/usage_service",
+        "//enterprise/server/usagelimits",
         "//enterprise/server/util/dsingleflight",
         "//enterprise/server/util/redisutil",
         "//enterprise/server/util/trafficstats",

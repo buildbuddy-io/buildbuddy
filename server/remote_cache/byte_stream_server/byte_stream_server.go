@@ -36,6 +36,7 @@ import (
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -182,9 +183,14 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 		return nil
 	}
 
-	// Check quota before reading - use digest size as expected transfer size
+	downloadSize := r.GetDigest().GetSizeBytes()
 	if qm := s.env.GetQuotaManager(); qm != nil {
-		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), r.GetDigest().GetSizeBytes()); err != nil {
+		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), downloadSize); err != nil {
+			return err
+		}
+	}
+	if ul := s.env.GetUsageLimiter(); ul != nil {
+		if err := ul.Check(ctx, usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES, downloadSize); err != nil {
 			return err
 		}
 	}
@@ -545,12 +551,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		return nil, err
 	}
 
-	// Check quota before writing - use digest size as expected upload size
-	if qm := s.env.GetQuotaManager(); qm != nil {
-		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), r.GetDigest().GetSizeBytes()); err != nil {
-			return nil, err
-		}
-	}
+	uploadSize := r.GetDigest().GetSizeBytes()
 
 	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
 	if err != nil {
@@ -560,6 +561,17 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		// Return already-exists error if the API key may not write so that
 		// higher-level code can detect and short-circuit this case.
 		return nil, status.AlreadyExistsError("The provided API Key does not have permission to write to the cache")
+	}
+
+	if qm := s.env.GetQuotaManager(); qm != nil {
+		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), uploadSize); err != nil {
+			return nil, err
+		}
+	}
+	if ul := s.env.GetUsageLimiter(); ul != nil {
+		if err := ul.Check(ctx, usagepb.UsageAlertingMetric_TOTAL_UPLOAD_SIZE_BYTES, uploadSize); err != nil {
+			return nil, err
+		}
 	}
 
 	casRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())

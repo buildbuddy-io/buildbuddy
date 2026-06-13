@@ -216,6 +216,24 @@ var UsageFields = []UsageField{
 	},
 }
 
+// QueryUsage returns aggregate usage for the field and time window.
+func QueryUsage(ctx context.Context, dbh interfaces.OLAPDBHandle, queryName string, field *UsageField, groupID string, start, end time.Time) (int64, error) {
+	row := &struct {
+		Value int64
+	}{}
+	// OLAPExpression comes from UsageFields, not user input.
+	if err := dbh.NewQuery(ctx, queryName).Raw(`
+		SELECT ifNull(`+field.OLAPExpression+`, 0) AS value
+		FROM "RawUsage" FINAL
+		WHERE group_id = ?
+		AND period_start >= ?
+		AND period_start < ?
+	`, groupID, start, end).Take(row); err != nil {
+		return 0, err
+	}
+	return row.Value, nil
+}
+
 // UsageFieldForAlertingMetric returns the Usage field mapped to an alerting metric.
 func UsageFieldForAlertingMetric(metric usagepb.UsageAlertingMetric_Value) (*UsageField, bool) {
 	for i := range UsageFields {
