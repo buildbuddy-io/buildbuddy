@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/annotations"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/indexprofile"
@@ -171,6 +172,7 @@ func handleIndex(args []string) {
 	for _, dir := range args {
 		repoURL := extractRepoURL(dir)
 		commitSHA := extractGitSHA(dir)
+		rctx := annotations.NewRepoContext(dir)
 		log.Printf("indexing dir: %q", dir)
 		stopWalk := indexprofile.Timer(indexprofile.PhaseWalk)
 		walkErr := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -200,7 +202,7 @@ func handleIndex(args []string) {
 				indexprofile.Add(indexprofile.CounterFilesRead, 1)
 				indexprofile.Add(indexprofile.CounterBytesRead, int64(len(buf)))
 
-				if err := github.AddFileToIndex(iw, repoURL, commitSHA, path, buf); err != nil {
+				if err := github.AddFileToIndex(iw, rctx, repoURL, commitSHA, path, buf); err != nil {
 					log.Infof("Skipping file %s: %s", path, err)
 				}
 			}
@@ -210,7 +212,7 @@ func handleIndex(args []string) {
 		if walkErr != nil {
 			log.Fatal(err.Error())
 		}
-		github.SetLastIndexedCommitSha(iw, repoURL, commitSHA)
+		github.SetRepoMetadata(iw, repoURL, commitSHA, rctx.GoModulePath())
 	}
 
 	if err := iw.Flush(); err != nil {

@@ -1,11 +1,15 @@
 package server
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -43,7 +47,7 @@ func bootstrapIndex(t *testing.T, ctx context.Context, server *codesearchServer,
 	require.NoError(t, err)
 	ru, err := git.ParseGitHubRepoURL(repoURL)
 	require.NoError(t, err)
-	github.SetLastIndexedCommitSha(iw, ru, sha)
+	github.SetRepoMetadata(iw, ru, sha, "")
 	err = iw.Flush()
 	require.NoError(t, err)
 }
@@ -907,4 +911,148 @@ func TestUsage_GeneratedBy(t *testing.T) {
 	assert.Empty(t, rsp.GetExtendedXrefsReply().GetOverriddenBy())
 	assert.Empty(t, rsp.GetExtendedXrefsReply().GetExtends())
 	assert.Empty(t, rsp.GetExtendedXrefsReply().GetExtendedBy())
+}
+
+func makeZip(t *testing.T, files map[string]string) []*zip.File {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, content := range files {
+		w, err := zw.Create(name)
+		require.NoError(t, err)
+		_, err = w.Write([]byte(content))
+		require.NoError(t, err)
+	}
+	require.NoError(t, zw.Close())
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	require.NoError(t, err)
+	return zr.File
+}
+
+func TestModuleFromArchive(t *testing.T) {
+	// Archive entries are nested under a single top-level directory, like the
+	// GitHub zipball, which moduleFromArchive strips.
+	mp, err := moduleFromArchive(makeZip(t, map[string]string{
+		"repo-abc123/go.mod":  "module github.com/example/repo\n\ngo 1.24\n",
+		"repo-abc123/main.go": "package main\n",
+	}))
+	require.NoError(t, err)
+	assert.Equal(t, "github.com/example/repo", mp)
+}
+
+func TestModuleFromArchiveNoGoMod(t *testing.T) {
+	mp, err := moduleFromArchive(makeZip(t, map[string]string{
+		"repo-abc123/main.go": "package main\n",
+	}))
+	require.NoError(t, err)
+	assert.Empty(t, mp)
+}
+
+func seedRepoMetadata(t *testing.T, ctx context.Context, server *codesearchServer, repoURLString, sha, modulePath string) {
+	t.Helper()
+	ns, err := server.getUserNamespace(ctx, "")
+	require.NoError(t, err)
+	iw, err := index.NewWriter(server.db, ns)
+	require.NoError(t, err)
+	ru, err := git.ParseGitHubRepoURL(repoURLString)
+	require.NoError(t, err)
+	require.NoError(t, github.SetRepoMetadata(iw, ru, sha, modulePath))
+	require.NoError(t, iw.Flush())
+}
+
+func importMatchCount(t *testing.T, ctx context.Context, server *codesearchServer, importTerm string) int {
+	t.Helper()
+	ns, err := server.getUserNamespace(ctx, "")
+	require.NoError(t, err)
+	r := index.NewReader(ctx, server.db, ns, schema.GitHubFileSchema())
+	matches, err := r.RawQuery(fmt.Sprintf(`(:eq imports %q)`, importTerm))
+	require.NoError(t, err)
+	return len(matches)
+}
+
+func storedModulePath(t *testing.T, ctx context.Context, server *codesearchServer, repoURLString string) string {
+	t.Helper()
+	ns, err := server.getUserNamespace(ctx, "")
+	require.NoError(t, err)
+	r := index.NewReader(ctx, server.db, ns, schema.MetadataSchema())
+	ru, err := git.ParseGitHubRepoURL(repoURLString)
+	require.NoError(t, err)
+	mp, err := github.GetRepoModulePath(r, ru)
+	require.NoError(t, err)
+	return mp
+}
+
+// appImportsLog is a Go file that imports the example repo's util/log package.
+const appImportsLog = `package main
+
+import "github.com/example/repo/util/log"
+
+func main() { log.Print() }
+`
+
+func TestIncrementalIndexResolvesGoImports(t *testing.T) {
+	ctx := context.Background()
+	server := mustMakeServer(t)
+	repo := "github.com/buildbuddy-io/buildbuddy"
+	seedRepoMetadata(t, ctx, server, repo, "old", "github.com/example/repo")
+
+	_, err := server.Index(ctx, &inpb.IndexRequest{
+		GitRepo:             &gitpb.GitRepo{RepoUrl: repo},
+		ReplacementStrategy: inpb.ReplacementStrategy_INCREMENTAL,
+		Update: &inpb.IncrementalUpdate{Commits: []*inpb.Commit{{
+			Sha: "new", ParentSha: "old",
+			AddsAndUpdates: []*inpb.File{
+				{Filepath: "app/main.go", Content: []byte(appImportsLog)},
+			},
+		}}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, importMatchCount(t, ctx, server, "go:github.com/example/repo/util/log"),
+		"the stored module path resolves Go import identities on incremental update")
+}
+
+func TestIncrementalIndexRefreshesModulePathFromGoMod(t *testing.T) {
+	ctx := context.Background()
+	server := mustMakeServer(t)
+	repo := "github.com/buildbuddy-io/buildbuddy"
+	// Seed a stale module path; the commit's go.mod should override it.
+	seedRepoMetadata(t, ctx, server, repo, "old", "stale/module")
+
+	_, err := server.Index(ctx, &inpb.IndexRequest{
+		GitRepo:             &gitpb.GitRepo{RepoUrl: repo},
+		ReplacementStrategy: inpb.ReplacementStrategy_INCREMENTAL,
+		Update: &inpb.IncrementalUpdate{Commits: []*inpb.Commit{{
+			Sha: "new", ParentSha: "old",
+			AddsAndUpdates: []*inpb.File{
+				{Filepath: "go.mod", Content: []byte("module github.com/example/repo\n\ngo 1.24\n")},
+				{Filepath: "app/main.go", Content: []byte(appImportsLog)},
+			},
+		}}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "github.com/example/repo", storedModulePath(t, ctx, server, repo),
+		"a commit touching go.mod refreshes the stored module path")
+	assert.Equal(t, 1, importMatchCount(t, ctx, server, "go:github.com/example/repo/util/log"),
+		"imports resolve against the refreshed module path, not the stale one")
+}
+
+func TestIncrementalIndexIgnoresUnparsableGoMod(t *testing.T) {
+	ctx := context.Background()
+	server := mustMakeServer(t)
+	repo := "github.com/buildbuddy-io/buildbuddy"
+	seedRepoMetadata(t, ctx, server, repo, "old", "github.com/example/repo")
+
+	_, err := server.Index(ctx, &inpb.IndexRequest{
+		GitRepo:             &gitpb.GitRepo{RepoUrl: repo},
+		ReplacementStrategy: inpb.ReplacementStrategy_INCREMENTAL,
+		Update: &inpb.IncrementalUpdate{Commits: []*inpb.Commit{{
+			Sha: "new", ParentSha: "old",
+			AddsAndUpdates: []*inpb.File{
+				{Filepath: "go.mod", Content: []byte("this is not a valid go.mod")},
+			},
+		}}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "github.com/example/repo", storedModulePath(t, ctx, server, repo),
+		"an unparsable go.mod must not wipe the stored module path")
 }

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/annotations"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/kythestorage"
@@ -191,18 +192,38 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 
 	commits = commits[firstIndexToProcess:]
 
+	// The module path was stored at full-reindex time; refresh it if a commit
+	// being processed modifies the root go.mod. Commit filenames are
+	// repo-relative, so the RepoContext has no root dir.
+	modulePath, err := github.GetRepoModulePath(r, repoURL)
+	if err != nil {
+		return nil, err
+	}
+	for _, commit := range commits {
+		for _, add := range commit.GetAddsAndUpdates() {
+			// Only overwrite on a successful parse: an unparsable or removed
+			// go.mod must not wipe the previously-resolved module path.
+			if add.GetFilepath() == "go.mod" {
+				if mp := annotations.GoModulePath(add.GetContent()); mp != "" {
+					modulePath = mp
+				}
+			}
+		}
+	}
+	rctx := annotations.NewRepoContextWithGoModule("", modulePath)
+
 	iw, err := index.NewWriter(css.db, req.GetNamespace())
 	if err != nil {
 		return nil, err
 	}
 
 	for _, commit := range commits {
-		if err := github.ProcessCommit(iw, repoURL, commit); err != nil {
+		if err := github.ProcessCommit(iw, rctx, repoURL, commit); err != nil {
 			return nil, status.InternalErrorf("failed to process commit %s: %v", commit.GetSha(), err)
 		}
 	}
 
-	err = github.SetLastIndexedCommitSha(iw, repoURL, commits[len(commits)-1].GetSha())
+	err = github.SetRepoMetadata(iw, repoURL, commits[len(commits)-1].GetSha(), modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to finalize update: %w", err)
 	}
@@ -214,6 +235,28 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 	log.Infof("finished incremental update on %s from %s to %s", repoURL, commits[0].GetSha(), commits[len(commits)-1].GetSha())
 
 	return &inpb.IndexResponse{}, nil
+}
+
+// moduleFromArchive returns the Go module path declared in the archive's root
+// go.mod, or "" if there is none. Archive entries are nested under a single
+// top-level directory, which is stripped to match the indexing loop.
+func moduleFromArchive(files []*zip.File) (string, error) {
+	for _, file := range files {
+		parts := strings.Split(file.Name, string(filepath.Separator))
+		if len(parts) > 1 && filepath.Join(parts[1:]...) == "go.mod" {
+			rc, err := file.Open()
+			if err != nil {
+				return "", err
+			}
+			buf, err := io.ReadAll(rc)
+			rc.Close()
+			if err != nil {
+				return "", err
+			}
+			return annotations.GoModulePath(buf), nil
+		}
+	}
+	return "", nil
 }
 
 func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
@@ -263,6 +306,15 @@ func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequ
 		return nil, err
 	}
 
+	// Read the module path from the archive's root go.mod up front, so every
+	// file is indexed with the repo context that resolves Go import
+	// identities. Archive filenames are repo-relative, so rctx has no root dir.
+	modulePath, err := moduleFromArchive(zipReader.File)
+	if err != nil {
+		return nil, err
+	}
+	rctx := annotations.NewRepoContextWithGoModule("", modulePath)
+
 	for _, file := range zipReader.File {
 		parts := strings.Split(file.Name, string(filepath.Separator))
 		if len(parts) == 1 {
@@ -285,14 +337,14 @@ func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequ
 			return nil, err
 		}
 
-		err = github.AddFileToIndex(iw, repoURL, commitSHA, filename, buf)
+		err = github.AddFileToIndex(iw, rctx, repoURL, commitSHA, filename, buf)
 		if err != nil {
 			log.Infof("File %s can't be indexed, skipping: %v", filename, err)
 			continue
 		}
 	}
 
-	if err := github.SetLastIndexedCommitSha(iw, repoURL, commitSHA); err != nil {
+	if err := github.SetRepoMetadata(iw, repoURL, commitSHA, modulePath); err != nil {
 		return nil, err
 	}
 

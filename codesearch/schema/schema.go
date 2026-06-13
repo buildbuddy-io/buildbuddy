@@ -13,14 +13,18 @@ var (
 	fieldNameRegex = regexp.MustCompile(`^([a-zA-Z0-9][a-zA-Z0-9_]*)$`)
 
 	// The following field names are used in the indexed docs.
-	IDField        = "id"
-	FilenameField  = "filename"
-	ContentField   = "content"
-	LanguageField  = "language"
-	OwnerField     = "owner"
-	RepoField      = "repo"
-	SHAField       = "sha"
-	LatestSHAField = "latest_sha"
+	IDField             = "id"
+	FilenameField       = "filename"
+	ContentField        = "content"
+	LanguageField       = "language"
+	OwnerField          = "owner"
+	RepoField           = "repo"
+	SHAField            = "sha"
+	LatestSHAField      = "latest_sha"
+	RepoModulePathField = "module_path"
+	ImportsField        = types.ImportsField
+	ImportIDField       = types.ImportIDField
+	SymbolsField        = types.SymbolsField
 
 	// TODO(jdelfino): Define CodeSchema and MetadataSchema types that implement the
 	// types.DocumentSchema interface. Then we can hide all the flexibility from the clients,
@@ -33,12 +37,19 @@ var (
 		MustFieldSchema(types.KeywordField, OwnerField, true),
 		MustFieldSchema(types.KeywordField, RepoField, true),
 		MustFieldSchema(types.KeywordField, SHAField, true),
+		MustFieldSchema(types.KeywordField, ImportsField, true),
+		MustFieldSchema(types.KeywordField, ImportIDField, true),
+		// Index-only (not stored): the posting lists are the signal.
+		MustFieldSchema(types.KeywordField, SymbolsField, false),
 	})
 	metadataSchema = NewDocumentSchema([]types.FieldSchema{
 		// Repository URL
 		MustFieldSchema(types.KeywordField, IDField, false),
 		// Last indexed commit SHA
 		MustFieldSchema(types.KeywordField, LatestSHAField, true),
+		// Go module path of the repo, for resolving import identities on
+		// incremental updates that have no checkout on disk.
+		MustFieldSchema(types.KeywordField, RepoModulePathField, true),
 	})
 )
 
