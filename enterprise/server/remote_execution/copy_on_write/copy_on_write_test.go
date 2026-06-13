@@ -138,6 +138,102 @@ func TestCOW_Basic(t *testing.T) {
 	testStore(t, s, "" /*=path*/)
 }
 
+func TestCOW_ChunkFinalizer(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	dataDir := testfs.MakeTempDir(t)
+	const chunkSizeBytes = 4
+	cow, err := copy_on_write.NewCOWStore(ctx, env, "test", nil, copy_on_write.COWOptions{
+		ChunkSizeBytes: chunkSizeBytes,
+		TotalSizeBytes: chunkSizeBytes * 3,
+		DataDir:        dataDir,
+	})
+	require.NoError(t, err)
+	defer cow.Close()
+
+	var mu sync.Mutex
+	var chunksFinalized []int64
+	err = cow.PrepareForFinalExport(2, func(chunk *copy_on_write.Mmap) error {
+		mu.Lock()
+		chunksFinalized = append(chunksFinalized, chunk.Offset)
+		mu.Unlock()
+		return nil
+	})
+	require.NoError(t, err)
+
+	// Write to the same chunk multiple times.
+	_, err = cow.WriteAt([]byte{1, 2}, 0)
+	require.NoError(t, err)
+	_, err = cow.WriteAt([]byte{3, 4}, 2)
+	require.NoError(t, err)
+
+	// Write to a different chunk. Skip one chunk.
+	_, err = cow.WriteAt([]byte{5, 6}, 8)
+	require.NoError(t, err)
+
+	require.NoError(t, cow.Finalize())
+
+	require.ElementsMatch(t, []int64{0, 8}, chunksFinalized)
+	require.True(t, cow.Finalized())
+
+	for _, c := range cow.SortedChunks() {
+		// All chunks should be unmapped
+		require.Empty(t, c.Data())
+	}
+}
+
+func TestCOW_ChunkFinalizerError(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	const chunkSizeBytes = 4
+
+	newStore := func(t *testing.T) *copy_on_write.COWStore {
+		cow, err := copy_on_write.NewCOWStore(ctx, env, "test", nil, copy_on_write.COWOptions{
+			ChunkSizeBytes: chunkSizeBytes,
+			TotalSizeBytes: chunkSizeBytes * 3,
+			DataDir:        testfs.MakeTempDir(t),
+		})
+		require.NoError(t, err)
+		t.Cleanup(func() { cow.Close() })
+		return cow
+	}
+
+	finalizeErr := fmt.Errorf("finalize error")
+
+	t.Run("ErrorFromNonLastChunk", func(t *testing.T) {
+		cow := newStore(t)
+		err := cow.PrepareForFinalExport(2, func(chunk *copy_on_write.Mmap) error {
+			if chunk.Offset == 0 {
+				return finalizeErr
+			}
+			return nil
+		})
+		require.NoError(t, err)
+
+		_, err = cow.WriteAt([]byte{1, 2}, 0)
+		require.NoError(t, err)
+
+		// Writing to the next chunk triggers finalization of chunk 0.
+		// Finalize should return the error.
+		cow.WriteAt([]byte{5, 6}, 8)
+		require.ErrorIs(t, cow.Finalize(), finalizeErr)
+	})
+
+	t.Run("ErrorFromLastChunk", func(t *testing.T) {
+		cow := newStore(t)
+		err := cow.PrepareForFinalExport(2, func(chunk *copy_on_write.Mmap) error {
+			return finalizeErr
+		})
+		require.NoError(t, err)
+
+		_, err = cow.WriteAt([]byte{1, 2}, 0)
+		require.NoError(t, err)
+
+		// Finalize() triggers finalization of the last written chunk and should return an error.
+		require.ErrorIs(t, cow.Finalize(), finalizeErr)
+	})
+}
+
 func TestCOW_Concurrency(t *testing.T) {
 	const chunkSizeBytes = 1024 * 512
 	const fileSizeBytes = chunkSizeBytes * 20
