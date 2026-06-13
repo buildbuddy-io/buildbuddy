@@ -991,7 +991,7 @@ func main() { log.Print() }
 `
 
 func TestIncrementalIndexResolvesGoImports(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	server := mustMakeServer(t)
 	repo := "github.com/buildbuddy-io/buildbuddy"
 	seedRepoMetadata(t, ctx, server, repo, "old", "github.com/example/repo")
@@ -1012,7 +1012,7 @@ func TestIncrementalIndexResolvesGoImports(t *testing.T) {
 }
 
 func TestIncrementalIndexRefreshesModulePathFromGoMod(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	server := mustMakeServer(t)
 	repo := "github.com/buildbuddy-io/buildbuddy"
 	// Seed a stale module path; the commit's go.mod should override it.
@@ -1037,7 +1037,7 @@ func TestIncrementalIndexRefreshesModulePathFromGoMod(t *testing.T) {
 }
 
 func TestIncrementalIndexIgnoresUnparsableGoMod(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	server := mustMakeServer(t)
 	repo := "github.com/buildbuddy-io/buildbuddy"
 	seedRepoMetadata(t, ctx, server, repo, "old", "github.com/example/repo")

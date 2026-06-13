@@ -562,7 +562,7 @@ func indexRepoFile(t *testing.T, w *index.Writer, rctx *annotations.RepoContext,
 }
 
 func TestAddFileToIndexExtractsAnnotations(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	db := mustOpenDB(t, testfs.MakeTempDir(t))
 	repoDir := testfs.MakeTempDir(t)
 
@@ -575,7 +575,7 @@ import "github.com/example/repo/util/log"
 func main() { log.Print() }
 `)
 
-	rctx := annotations.NewRepoContext(repoDir)
+	rctx := annotations.NewRepoContext(repoDir, "github.com/example/repo")
 	w, err := index.NewWriter(db, "testing-namespace")
 	require.NoError(t, err)
 	for _, f := range []string{"go.mod", "util/log/log.go", "app/main.go"} {
@@ -602,7 +602,7 @@ func main() { log.Print() }
 }
 
 func TestAddFileToIndexNilRepoContextExtractsSymbolsNotImports(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	content := []byte(`package main
@@ -630,7 +630,7 @@ func main() { log.Print() }
 }
 
 func TestRepoMetadataRoundTrip(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	w, err := index.NewWriter(db, "testing-namespace")

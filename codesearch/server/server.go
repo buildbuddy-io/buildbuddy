@@ -210,7 +210,7 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 			}
 		}
 	}
-	rctx := annotations.NewRepoContextWithGoModule("", modulePath)
+	rctx := annotations.NewRepoContext("", modulePath)
 
 	iw, err := index.NewWriter(css.db, req.GetNamespace())
 	if err != nil {
@@ -313,7 +313,7 @@ func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequ
 	if err != nil {
 		return nil, err
 	}
-	rctx := annotations.NewRepoContextWithGoModule("", modulePath)
+	rctx := annotations.NewRepoContext("", modulePath)
 
 	for _, file := range zipReader.File {
 		parts := strings.Split(file.Name, string(filepath.Separator))

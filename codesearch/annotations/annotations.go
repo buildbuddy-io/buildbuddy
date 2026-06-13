@@ -19,9 +19,9 @@ package annotations
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/indexprofile"
 
@@ -36,32 +36,21 @@ type RepoContext struct {
 	goModulePath string
 }
 
-// NewRepoContext returns a RepoContext for the repo rooted at rootDir,
-// reading repo-level metadata (currently just go.mod at the repo root) from
-// disk. Missing or unparsable metadata disables import-identity extraction
-// for the affected language rather than erroring; symbols are unaffected.
-// Callers without a checkout on disk (e.g. incremental updates from a git
-// diff) must use NewRepoContextWithGoModule instead.
-func NewRepoContext(rootDir string) *RepoContext {
-	rc := &RepoContext{rootDir: rootDir}
-	if data, err := os.ReadFile(filepath.Join(rootDir, "go.mod")); err == nil {
-		rc.goModulePath = GoModulePath(data)
-	}
-	return rc
+// NewRepoContext returns a RepoContext for a repo whose files are addressed
+// relative to rootDir (empty when filenames are already repo-relative, e.g.
+// server-side from an archive or git diff). goModulePath is the repo's Go
+// module path, or "" if it has none or is unknown; an empty module path
+// disables Go import-identity extraction (symbols and Java identity are
+// unaffected). The caller is responsible for sourcing the module path — from
+// go.mod on disk, an archive, or the repo metadata doc — via GoModulePath.
+func NewRepoContext(rootDir, goModulePath string) *RepoContext {
+	return &RepoContext{rootDir: rootDir, goModulePath: goModulePath}
 }
 
 // GoModulePath parses the module path from go.mod content, returning "" if the
-// content is missing or unparsable. Useful for callers that hold go.mod bytes
-// directly (e.g. read from an archive) rather than a checkout on disk.
+// content is missing or unparsable.
 func GoModulePath(goModContent []byte) string {
 	return gomodfile.ModulePath(goModContent)
-}
-
-// NewRepoContextWithGoModule returns a RepoContext with an explicit Go module
-// path (e.g. read from the repo metadata doc), for callers that don't have a
-// checkout on disk.
-func NewRepoContextWithGoModule(rootDir, goModulePath string) *RepoContext {
-	return &RepoContext{rootDir: rootDir, goModulePath: goModulePath}
 }
 
 func (rc *RepoContext) GoModulePath() string {
@@ -122,14 +111,39 @@ func Extract(ctx context.Context, lang, filename string, content []byte, rctx *R
 		// without import identities.
 		rctx = &RepoContext{}
 	}
+	var res *Result
+	var err error
 	switch lang {
 	case "go":
-		return extractGo(ctx, filename, content, rctx)
+		res, err = extractGo(ctx, filename, content, rctx)
 	case "java":
-		return extractJava(ctx, filename, content, rctx)
+		res, err = extractJava(ctx, filename, content, rctx)
 	default:
 		return nil, nil
 	}
+	if res != nil {
+		// Identity terms are stored in whitespace-tokenized keyword fields, so
+		// a term containing whitespace — e.g. a Go package in a directory with
+		// a space — would split into garbage tokens. Drop such terms; they
+		// aren't valid import paths anyway. (Symbols are identifiers and can't
+		// contain whitespace.)
+		res.Imports = dropWhitespaceTerms(res.Imports)
+		res.ImportID = dropWhitespaceTerms(res.ImportID)
+	}
+	return res, err
+}
+
+// dropWhitespaceTerms returns terms with any whitespace-containing entry
+// removed, so they can round-trip through the whitespace-tokenized keyword
+// fields that store identity terms.
+func dropWhitespaceTerms(terms []string) []string {
+	kept := terms[:0]
+	for _, t := range terms {
+		if !strings.ContainsFunc(t, unicode.IsSpace) {
+			kept = append(kept, t)
+		}
+	}
+	return kept
 }
 
 // mustCompileQuery compiles a tree-sitter query at package init; the pattern
