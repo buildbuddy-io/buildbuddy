@@ -775,6 +775,9 @@ func TestConfigAPI(t *testing.T) {
 
 	// Restore the key so we can test disabling encryption via the API.
 	kms.SetKey(groupKMSKeyID, groupKMSKey)
+	// The failed lookups above cached the NotFound errors; advance the clock
+	// past the error cache time so the next lookup attempts a fresh refresh.
+	clock.Advance(11 * time.Second)
 	_, err = pc.Get(apiKeyCtx, encryptedResource)
 	require.NoError(t, err)
 
