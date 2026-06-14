@@ -3,6 +3,7 @@ import AlertComponent from "../alert/alert";
 import authService, { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
 import CompareInvocationsComponent from "../compare/compare_invocations";
+import DebugMenu from "../debug/debug";
 import SetupComponent from "../docs/setup";
 import errorService from "../errors/error_service";
 import faviconService from "../favicon/favicon";
@@ -104,6 +105,7 @@ export default class RootComponent extends React.Component {
           <FooterComponent />
           <AlertComponent />
         </div>
+        <DebugMenu preferences={this.state.preferences} />
       </div>
     );
   }

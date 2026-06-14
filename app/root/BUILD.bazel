@@ -17,6 +17,7 @@ ts_library(
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/compare:compare_invocations",
+        "//app/debug",
         "//app/docs:setup",
         "//app/errors:error_service",
         "//app/favicon",
