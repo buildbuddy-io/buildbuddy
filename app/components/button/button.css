@@ -6,7 +6,7 @@
   font-family: inherit;
   border: 0;
   border-radius: 8px;
-  transition: border 200ms ease;
+  transition: background-color 200ms ease;
   cursor: pointer;
   box-sizing: border-box;
   text-align: center;
@@ -36,8 +36,9 @@
   stroke: var(--color-button-primary-text);
 }
 
-.filled-button:focus {
+.filled-button:focus-visible {
   outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
 }
 
 .filled-button.destructive {
@@ -46,7 +47,7 @@
 
 .filled-button:hover {
   background-color: var(--color-button-primary-hover);
-  box-shadow: 0 1px 3px var(--color-button-primary-active-shadow);
+  box-shadow: var(--shadow-1);
 }
 
 .filled-button.destructive:hover {
@@ -72,13 +73,14 @@
 
 .outlined-button {
   background: transparent;
-  border: 1px solid var(--color-button-outlined-border);
+  border: 1px solid var(--color-input-border);
   flex-shrink: 1;
   overflow: hidden;
 }
 
-.outlined-button:focus {
-  border: 1px solid var(--color-button-outlined-focus-border);
+.outlined-button:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
 }
 
 .outlined-button.destructive {
@@ -86,11 +88,10 @@
 }
 
 .outlined-button:hover:not(:active) {
-  transition: background-color 200ms ease;
   background: var(--color-button-outlined-hover-bg);
 }
 
-.outlined-button:hover:not(:focus) {
+.outlined-button:hover:not(:focus-visible) {
   border: 1px solid var(--color-button-outlined-hover-border);
 }
 
@@ -102,7 +103,7 @@
 .outlined-button.outlined-button.outlined-button[disabled],
 .outlined-button.outlined-button.outlined-button[disabled]:hover {
   background: transparent;
-  border: 1px solid var(--color-button-outlined-border);
+  border: 1px solid var(--color-input-border);
   cursor: not-allowed;
 }
 
@@ -136,7 +137,7 @@
   display: flex;
   border-radius: 8px;
   box-sizing: border-box;
-  border: 1px solid var(--color-button-outlined-border);
+  border: 1px solid var(--color-input-border);
 }
 
 .outlined-button-group > .outlined-button.outlined-button.outlined-button,
@@ -149,7 +150,7 @@
 .outlined-button-group > .outlined-button.outlined-button:not(:last-child):hover {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
-  border-right: 1px solid var(--color-button-outlined-border);
+  border-right: 1px solid var(--color-input-border);
 }
 
 .outlined-button-group > .outlined-button:not(:first-child) {

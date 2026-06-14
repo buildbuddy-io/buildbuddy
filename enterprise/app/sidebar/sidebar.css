@@ -15,7 +15,7 @@
 
 .dark .sidebar {
   background-color: var(--color-bg-primary);
-  border-right: 1px solid var(--color-shelf-border);
+  border-right: 1px solid var(--color-border-primary);
 }
 
 .sidebar {

@@ -30,9 +30,8 @@ ts_library(
 filegroup(
     name = "css",
     srcs = [
+        ":date_picker.css",
         ":filter.css",
-        ":react_date_range_base.css",
-        ":react_date_range_default_theme.css",
     ],
 )
 

@@ -16,9 +16,7 @@
 
   border-radius: 4px;
   background: var(--color-popup-bg);
-  box-shadow:
-    0 1px 3px var(--color-popup-shadow),
-    0 3px 5px var(--color-popup-shadow-alt);
+  box-shadow: var(--shadow-2);
 }
 
 .popup.anchor-right {

@@ -13,6 +13,7 @@ import {
   XCircle,
 } from "lucide-react";
 import capabilities from "../../../app/capabilities/capabilities";
+import { OutlinedButton } from "../../../app/components/button/button";
 import format from "../../../app/format/format";
 import router from "../../../app/router/router";
 import { invocation } from "../../../proto/invocation_ts_proto";
@@ -120,34 +121,38 @@ export default class HistoryInvocationStatCardComponent extends React.Component<
           </div>
           {this.props.type == invocation.AggType.REPO_URL_AGGREGATION_TYPE && capabilities.config.codeEditorEnabled && (
             <div className="actions">
-              <button
+              <OutlinedButton
+                className="small-button"
                 onClick={(e) => {
                   router.navigateTo("/code/" + format.formatGitUrl(this.props.invocationStat.name));
                   e.stopPropagation();
                 }}>
-                <CodeIcon /> Open in code editor
-              </button>
-              <button
+                <CodeIcon className="icon" /> Open in code editor
+              </OutlinedButton>
+              <OutlinedButton
+                className="small-button"
                 onClick={(e) => {
                   router.navigateTo("/code/" + format.formatGitUrl(this.props.invocationStat.name) + "/.bazelrc");
                   e.stopPropagation();
                 }}>
-                <Settings /> Edit .bazelrc
-              </button>
-              <button
+                <Settings className="icon" /> Edit .bazelrc
+              </OutlinedButton>
+              <OutlinedButton
+                className="small-button"
                 onClick={(e) => {
                   router.navigateTo("/code/" + format.formatGitUrl(this.props.invocationStat.name) + "/MODULE.bazel");
                   e.stopPropagation();
                 }}>
-                <Network /> Edit MODULE.bazel
-              </button>
-              <button
+                <Network className="icon" /> Edit MODULE.bazel
+              </OutlinedButton>
+              <OutlinedButton
+                className="small-button"
                 onClick={(e) => {
                   router.navigateTo("/code/" + format.formatGitUrl(this.props.invocationStat.name) + "/.bazelversion");
                   e.stopPropagation();
                 }}>
-                <Pencil /> Edit .bazelversion
-              </button>
+                <Pencil className="icon" /> Edit .bazelversion
+              </OutlinedButton>
             </div>
           )}
         </div>

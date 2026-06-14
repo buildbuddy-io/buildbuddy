@@ -1,3 +1,7 @@
+:root {
+  --color-border-focus: #2196f3;
+}
+
 @media (min-width: 997px) {
   .sign-up {
     padding: 8px 18px;
@@ -83,8 +87,8 @@ html[data-theme="dark"] .menu {
 
 .aa-Form:focus-within {
   box-shadow:
-    rgba(0, 0, 0, 0.1) 0 0 0 2px,
-    inset rgba(0, 0, 0, 0.1) 0 0 0 2px !important;
+    var(--color-border-focus) 0 0 0 2px,
+    inset var(--color-border-focus) 0 0 0 2px !important;
 }
 
 .dsla-search-wrapper {

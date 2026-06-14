@@ -3,9 +3,7 @@
 }
 
 .picker {
-  box-shadow:
-    0 4px 6px -1px var(--color-shadow-sm),
-    0 2px 4px -2px var(--color-shadow-sm);
+  box-shadow: var(--shadow-2);
   background-color: var(--color-picker-bg);
   color: var(--color-text-primary);
   max-width: 450px;

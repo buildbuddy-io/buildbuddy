@@ -17,6 +17,7 @@ ts_library(
         "//:node_modules/react-window",
         "//:node_modules/tslib",
         "//app/capabilities",
+        "//app/components/button",
         "//app/components/input",
         "//app/components/spinner",
         "//app/router",

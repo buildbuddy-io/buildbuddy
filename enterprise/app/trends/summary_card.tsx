@@ -71,7 +71,7 @@ export default class TrendsSummaryCard extends React.Component<Props> {
           {isAnyNonDateFilterSet(this.props.search) ? ", including filters" : ""})
         </div>
         <div className="trend-summary-block">
-          <a className="card trend-summary-group" href="#builds">
+          <a className="clickable card trend-summary-group" href="#builds">
             <div>
               <div className="trend-headline-stat">
                 <Hash size="27" className="icon"></Hash>
@@ -81,7 +81,7 @@ export default class TrendsSummaryCard extends React.Component<Props> {
                 this.renderChangeText(+this.props.currentPeriod.numBuilds, +this.props.previousPeriod.numBuilds)}
             </div>
           </a>
-          <a href="#cache" className="card trend-summary-group">
+          <a href="#cache" className="clickable card trend-summary-group">
             <div className="trend-headline-stat">
               <Package size="27" className="icon"></Package>
               <span className="trend-headline-text">{format.percent(cacheHitRate)}% AC hit rate</span>
@@ -97,7 +97,7 @@ export default class TrendsSummaryCard extends React.Component<Props> {
               </div>
             )}
           </a>
-          <a href="#savings" className="card trend-summary-group">
+          <a href="#savings" className="clickable card trend-summary-group">
             <div className="trend-headline-stat">
               <Cpu size="27" className="icon"></Cpu>
               <span className="trend-headline-text">
