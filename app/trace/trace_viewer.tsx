@@ -228,7 +228,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
       const zoomFactorRef = this.zoomFactorRefs[i];
       if (zoomFactorRef.current) {
         zoomFactorRef.current.innerText = zoomFactorString;
-        zoomFactorRef.current.style.display = roundedZoomFactor === 1 ? "none" : "inline-block";
+        zoomFactorRef.current.style.display = roundedZoomFactor === 1 ? "none" : "inline-flex";
       }
       const zoomOutButtonRef = this.zoomOutButtonRefs[i];
       if (zoomOutButtonRef.current) {
@@ -651,7 +651,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
                 style={{
                   bottom: `${constants.SCROLLBAR_SIZE}px`,
                 }}>
-                <span ref={this.zoomFactorRefs[i]} className="zoom-factor button" />
+                <span ref={this.zoomFactorRefs[i]} className="zoom-factor" />
                 <button
                   ref={this.zoomOutButtonRefs[i]}
                   className="button icon-button"

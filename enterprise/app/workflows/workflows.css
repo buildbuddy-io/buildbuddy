@@ -80,7 +80,7 @@
 }
 
 .workflows-page .repo-url {
-  background: var(--color-workflows-bg);
+  background: var(--color-bg-secondary);
   border-radius: 4px;
   padding: 4px 8px;
 }
@@ -198,7 +198,7 @@
   color: var(--color-hovercard-text);
   border-radius: 8px;
   padding: 12px;
-  box-shadow: 0 1px 3px var(--color-shadow-light);
+  box-shadow: var(--shadow-3);
   font-size: 14px;
   backdrop-filter: blur(3px);
 }
@@ -420,9 +420,7 @@
     box-shadow: none;
   }
   to {
-    box-shadow:
-      0 1px 3px rgba(0, 0, 0, 0.27),
-      0 3px 12px rgba(0, 0, 0, 0.05);
+    box-shadow: var(--shadow-2);
   }
 }
 
@@ -591,9 +589,7 @@
   color: var(--color-hovercard-text);
   border-radius: 8px;
   padding: 16px;
-  box-shadow:
-    0 3px 6px var(--color-shadow-tooltip),
-    0 3px 6px var(--color-shadow-tooltip-alt);
+  box-shadow: var(--shadow-3);
   pointer-events: none;
   z-index: 1;
 }

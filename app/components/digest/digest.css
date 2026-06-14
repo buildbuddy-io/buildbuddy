@@ -1,10 +1,15 @@
 .digest-component {
+  --color-digest-color-lightness: 80%;
+
   display: inline-flex;
   align-items: center;
-  color: var(--color-digest-hash-text);
-  background-color: var(--color-digest-hash-bg);
+  color: var(--color-text-primary);
   border-radius: 4px;
   overflow: hidden;
+}
+
+.dark .digest-component {
+  --color-digest-color-lightness: 35%;
 }
 
 .digest-component-hash {
@@ -42,6 +47,10 @@
   padding: 0 8px;
   display: inline-block;
   white-space: nowrap;
-  background-color: var(--color-digest-size-bg);
-  color: var(--color-digest-size-text);
+  background-color: var(--color-bg-tertiary);
+  color: inherit;
+}
+
+.dark .digest-component-size {
+  color: var(--color-gray-100);
 }

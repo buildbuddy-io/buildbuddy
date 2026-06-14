@@ -33,7 +33,7 @@
   color: var(--color-text-primary);
   background: var(--color-bg-primary);
   border-radius: 8px;
-  box-shadow: 0 1px 3px var(--color-shadow-strong);
+  box-shadow: var(--shadow-3);
   font-size: 14px;
   line-height: 1.4;
   max-width: 400px;

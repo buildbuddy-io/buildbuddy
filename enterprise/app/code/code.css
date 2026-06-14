@@ -14,16 +14,16 @@
 
 .code-highlight-modification {
   text-decoration: underline;
-  background-color: var(--color-purple-50-alt);
+  background-color: var(--color-purple-50);
   cursor: pointer;
-  border: 1px solid var(--color-purple-600-alt);
+  border: 1px solid var(--color-purple-600);
 }
 
 .code-highlight-reference {
   text-decoration: underline;
-  background-color: var(--color-amber-50-alt);
+  background-color: var(--color-amber-50);
   cursor: pointer;
-  border: 1px solid var(--color-amber-800-alt);
+  border: 1px solid var(--color-amber-800);
 }
 
 .code-search-xrefs {
@@ -35,7 +35,7 @@
 
 .code-search-xrefs-resize {
   height: 4px;
-  background-color: var(--color-gray-400-alt);
+  background-color: var(--color-gray-400);
   cursor: ns-resize;
   border-left: 2px solid var(--color-bg-secondary);
   border-right: 2px solid var(--color-bg-secondary);
@@ -43,8 +43,8 @@
 
 .xrefs-header {
   padding: 10px;
-  background-color: var(--color-blue-50-alt);
-  color: var(--color-blue-700-alt);
+  background-color: var(--color-blue-50);
+  color: var(--color-blue-700);
   font-size: 12px;
   line-height: 16px;
   font-weight: 600;
@@ -57,21 +57,21 @@
 
 .xrefs-file {
   cursor: pointer;
-  color: var(--color-blue-700-alt2);
+  color: var(--color-blue-700);
   font-size: 12px;
   padding: 5px 30px;
 }
 
 .xrefs-category {
-  background-color: var(--color-gray-50-alt2);
-  color: var(--color-gray-900-alt2);
+  background-color: var(--color-gray-50);
+  color: var(--color-gray-900);
   font-size: 12px;
   padding: 5px 10px;
 }
 
 .xrefs-snippet {
   font-family: monospace;
-  color: var(--color-gray-900-alt2);
+  color: var(--color-gray-900);
   font-size: 12px;
   line-height: 20px;
   padding: 0 40px 10px;
@@ -80,7 +80,7 @@
 
 .xrefs-snippet-line {
   padding: 0 10px 0 0;
-  color: var(--color-blue-700-alt2);
+  color: var(--color-blue-700);
 }
 
 .code-menu {
@@ -118,7 +118,7 @@
 .code-menu-logo .code-logo {
   height: 18px;
   margin-left: 4px;
-  stroke: var(--color-gray-600-alt);
+  stroke: var(--color-gray-600);
 }
 
 .code-menu-logo a {
@@ -469,11 +469,7 @@
   background-color: var(--color-bg-primary);
   padding: 8px 0;
   border-radius: 8px;
-  box-shadow:
-    0 0 0 1px #0000000f,
-    0 1px 1px -0.5px #0000000f,
-    0 3px 3px -1.5px #0000000f,
-    0 6px 6px -3px #0000000f;
+  box-shadow: var(--shadow-2);
 }
 
 .code-editor .context-menu div {

@@ -1,25 +1,9 @@
-.history a.text-link {
-  text-decoration: underline;
-}
-
 .history .top-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
   margin-bottom: 8px;
-  --gap: 8px;
-  margin-top: calc(-1 * var(--gap));
-  margin-right: calc(-1 * var(--gap));
-}
-
-.history .top-bar > * {
-  margin-right: var(--gap);
-  margin-top: var(--gap);
-}
-
-.history .breadcrumbs {
-  margin-bottom: 0;
+  gap: 8px;
 }
 
 .history .details.loading-details {
@@ -33,21 +17,4 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-}
-
-.history .actions button {
-  display: flex;
-  gap: 8px;
-  border-radius: 8px;
-  border: 1px solid #eee;
-  padding: 8px 16px;
-  background: transparent;
-  cursor: pointer;
-  align-items: center;
-}
-
-.history .actions svg {
-  color: #aaa;
-  width: 16px;
-  height: 16px;
 }
