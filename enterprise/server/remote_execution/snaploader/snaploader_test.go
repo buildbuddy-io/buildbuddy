@@ -73,6 +73,7 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 		originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
 		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, "", enableRemote, snaputil.ConvertToCOWConcurrency)
 		require.NoError(t, err)
+		t.Cleanup(func() { cowA.Close() })
 
 		// Overwrite a random range to simulate the disk being written to. This
 		// should create some dirty chunks.
@@ -189,6 +190,7 @@ func TestPackAndUnpackChunkedFiles_Immutability(t *testing.T) {
 		chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
 		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA, "", enableRemote, snaputil.ConvertToCOWConcurrency)
 		require.NoError(t, err)
+		t.Cleanup(func() { cowA.Close() })
 		// Overwrite a random range to simulate the disk being written to. This
 		// should create some dirty chunks.
 		writeRandomRange(t, cowA)
@@ -255,6 +257,7 @@ func TestNonMasterSnapshotsWithSnapshotID(t *testing.T) {
 		chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
 		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA, "", true, snaputil.ConvertToCOWConcurrency)
 		require.NoError(t, err)
+		t.Cleanup(func() { cowA.Close() })
 		writeRandomRange(t, cowA)
 		cacheSnapshotOptsA := makeFakeSnapshot(t, workDirA, remoteEnabled, map[string]*copy_on_write.COWStore{
 			"scratchfs": cowA,
@@ -315,6 +318,7 @@ func TestSnapshotVersioning(t *testing.T) {
 		chunkDirA := testfs.MakeDirAll(t, workDirA, "scratchfs_chunks")
 		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirA, "", true, snaputil.ConvertToCOWConcurrency)
 		require.NoError(t, err)
+		t.Cleanup(func() { cowA.Close() })
 		writeRandomRange(t, cowA)
 		snapshotA := makeFakeSnapshot(t, workDirA, remoteEnabled, map[string]*copy_on_write.COWStore{
 			"scratchfs": cowA,
@@ -356,6 +360,7 @@ func TestSnapshotVersioning(t *testing.T) {
 		chunkDirC := testfs.MakeDirAll(t, workDirC, "scratchfs_chunks")
 		cowC, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, chunkDirC, "", true, snaputil.ConvertToCOWConcurrency)
 		require.NoError(t, err)
+		t.Cleanup(func() { cowC.Close() })
 		writeRandomRange(t, cowC)
 		snapshotC := makeFakeSnapshot(t, workDirC, remoteEnabled, map[string]*copy_on_write.COWStore{
 			"scratchfs": cowC,
@@ -405,6 +410,7 @@ func TestRemoteSnapshotFetching(t *testing.T) {
 	originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
 	cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, "", true, snaputil.ConvertToCOWConcurrency)
 	require.NoError(t, err)
+	t.Cleanup(func() { cowA.Close() })
 	writeRandomRange(t, cowA)
 	task := &repb.ExecutionTask{}
 	keys, err := loader.SnapshotKeySet(ctx, task, "config-hash", "")
@@ -472,6 +478,7 @@ func TestRemoteSnapshotFetching_RemoteEviction(t *testing.T) {
 	originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
 	cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, "", true, snaputil.ConvertToCOWConcurrency)
 	require.NoError(t, err)
+	t.Cleanup(func() { cowA.Close() })
 	writeRandomRange(t, cowA)
 	task := &repb.ExecutionTask{}
 	keys, err := loader.SnapshotKeySet(ctx, task, "config-hash", "")
@@ -532,6 +539,7 @@ func TestCacheSnapshot_RemoteSaveEnsuresAllChunksAreCached(t *testing.T) {
 	originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
 	cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, "", true, snaputil.ConvertToCOWConcurrency)
 	require.NoError(t, err)
+	t.Cleanup(func() { cowA.Close() })
 	_, err = cowA.WriteAt([]byte("0123456789"), 0)
 	require.NoError(t, err)
 	task := &repb.ExecutionTask{}
@@ -554,6 +562,7 @@ func TestCacheSnapshot_RemoteSaveEnsuresAllChunksAreCached(t *testing.T) {
 	workDirB := testfs.MakeDirAll(t, workDir, "VM-B")
 	unpacked, err := loader.UnpackSnapshot(ctx, snap, workDirB)
 	require.NoError(t, err)
+	t.Cleanup(func() { closeAll(unpacked) })
 
 	// Simulate a chunk being evicted from the remote cache.
 	chunkedFiles := snap.GetChunkedFiles()
@@ -598,6 +607,7 @@ func TestGetSnapshot_CacheIsolation(t *testing.T) {
 		originalImagePath := makeRandomFile(t, workDirA, "scratchfs.ext4", fileSize)
 		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, "remote-A", enableRemote, snaputil.ConvertToCOWConcurrency)
 		require.NoError(t, err)
+		t.Cleanup(func() { cowA.Close() })
 		writeRandomRange(t, cowA)
 		optsA := makeFakeSnapshot(t, workDirA, enableRemote, map[string]*copy_on_write.COWStore{
 			"scratchfs": cowA,
@@ -650,6 +660,7 @@ func TestGetSnapshot_MixOfLocalAndRemoteChunks(t *testing.T) {
 		originalImagePath := makeRandomFile(t, workDirA, "test-file", fileSize)
 		cowA, err := copy_on_write.ConvertFileToCOW(ctx, env, originalImagePath, chunkSize, workDirA, instanceName, true /*remoteEnabled*/, snaputil.ConvertToCOWConcurrency)
 		require.NoError(t, err)
+		t.Cleanup(func() { cowA.Close() })
 		originalWriteBuf := []byte("0123456789")
 		_, err = cowA.WriteAt(originalWriteBuf, 0)
 		require.NoError(t, err)
@@ -674,6 +685,7 @@ func TestGetSnapshot_MixOfLocalAndRemoteChunks(t *testing.T) {
 		require.NoError(t, err)
 		unpacked, err := loader.UnpackSnapshot(ctx, snap, workDirB)
 		require.NoError(t, err)
+		t.Cleanup(func() { closeAll(unpacked) })
 		readBuf := make([]byte, 3)
 		disk := unpacked.ChunkedFiles["scratchfs"]
 		_, err = disk.ReadAt(readBuf, 1)
@@ -704,6 +716,7 @@ func TestGetSnapshot_MixOfLocalAndRemoteChunks(t *testing.T) {
 		require.NoError(t, err)
 		unpackedC, err := loader.UnpackSnapshot(ctx, snap, workDirC)
 		require.NoError(t, err)
+		t.Cleanup(func() { closeAll(unpackedC) })
 		readBufC := make([]byte, 4)
 		diskC := unpackedC.ChunkedFiles["scratchfs"]
 		_, err = diskC.ReadAt(readBufC, 2)
@@ -837,6 +850,7 @@ func mustUnpack(t *testing.T, ctx context.Context, loader snaploader.Loader, sna
 	require.NoError(t, err)
 	unpacked, err := loader.UnpackSnapshot(ctx, snap, outDir)
 	require.NoError(t, err)
+	t.Cleanup(func() { closeAll(unpacked) })
 
 	for _, path := range []string{
 		originalSnapshot.MemSnapshotPath,
@@ -862,6 +876,16 @@ func mustUnpack(t *testing.T, ctx context.Context, loader snaploader.Loader, sna
 		}
 	}
 	return unpacked
+}
+
+// closeAll closes all of the unpacked snapshot's chunked files. Each COWStore
+// spawns a background chunk-fetching goroutine that reads flag values, so
+// tests must close their stores before the cleanups registered by flags.Set
+// restore those flags.
+func closeAll(unpacked *snaploader.UnpackedSnapshot) {
+	for _, cow := range unpacked.ChunkedFiles {
+		cow.Close()
+	}
 }
 
 func mustReadStore(t *testing.T, store *copy_on_write.COWStore) []byte {
