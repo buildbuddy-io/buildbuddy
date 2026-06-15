@@ -43,8 +43,8 @@ class BazelBinResolverPlugin {
       if (request?.request?.includes("/bazel-bin/")) {
         // For now just try all supported config dirs and see if the file exists there.
         for (const configDir of configDirs) {
-          // Note: ROOTDIR (execution root dir) is set by the yarn() rule in
-          // //rules/yarn:index.bzl
+          // Note: ROOTDIR (execution root dir) is set by the pnpm() rule in
+          // //rules/pnpm:index.bzl
           const binPath = request.request.replace(/.*?\/bazel-bin\//, process.env["ROOTDIR"] + "/" + configDir + "/");
           let exists = false;
           try {

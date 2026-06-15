@@ -18,15 +18,15 @@
     "@docusaurus/plugin-ideal-image": "3.10.1",
     "@docusaurus/preset-classic": "3.10.1",
     "@docusaurus/theme-common": "3.10.1",
-    "@mdx-js/react": "^3.0.0",
-    "@types/react": "^18.3.12",
+    "@mdx-js/react": "^3.1.1",
+    "@types/react": "^18.3.31",
+    "clsx": "^2.1.1",
     "lucide-react": "^0.462.0",
-    "prism-react-renderer": "^2.4.0",
+    "prism-react-renderer": "^2.4.1",
     "react": "^18.3.1",
-    "react-dom": "^18.2.0",
-    "react-globe.gl": "^2.20.3",
+    "react-globe.gl": "^2.38.0",
     "react-twitter-widgets": "^1.11.0",
-    "typescript": "^5.7.2"
+    "typescript": "^5.9.3"
   },
   "browserslist": {
     "production": [
@@ -40,5 +40,11 @@
       "last 1 safari version"
     ]
   },
-  "packageManager": "yarn@4.14.1"
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "11.7.0",
+      "onFail": "download"
+    }
+  }
 }

@@ -247,7 +247,6 @@ go_sdk_tool(
 
 exports_files([
     "package.json",
-    "yarn.lock",
 ])
 
 copy_to_bin(
