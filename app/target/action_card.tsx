@@ -29,7 +29,6 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   };
 
   componentDidMount() {
-    console.log(this.props.buildEvent);
     this.fetchStdErr();
     this.fetchStdOut();
   }

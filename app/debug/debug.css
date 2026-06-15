@@ -1,0 +1,61 @@
+.debug-panel {
+  position: fixed;
+  right: 16px;
+  bottom: 8px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.5;
+  transition: opacity 120ms ease;
+}
+
+.debug-panel:hover,
+.debug-panel:focus-within {
+  opacity: 1;
+}
+
+.debug-panel .debug-panel-button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  border-radius: 6px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-1);
+}
+
+.debug-panel .debug-panel-button:hover {
+  background: var(--color-bg-hover);
+}
+
+.debug-panel .debug-panel-button .icon {
+  width: 16px;
+  height: 16px;
+  stroke: var(--color-text-primary);
+}
+
+.debug-panel-terminal-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+
+.debug-panel .debug-panel-button .debug-panel-terminal-base-icon {
+  width: 17px;
+  height: 17px;
+}
+
+.debug-panel .debug-panel-button .debug-panel-terminal-theme-icon {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 9px;
+  height: 9px;
+  padding: 1px;
+  border-radius: 50%;
+  background: var(--color-bg-primary);
+}

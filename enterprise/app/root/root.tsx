@@ -6,6 +6,7 @@ import capabilities from "../../../app/capabilities/capabilities";
 import CompareActionsComponent from "../../../app/compare/compare_actions";
 import CompareInvocationsComponent from "../../../app/compare/compare_invocations";
 import { OutlinedButton } from "../../../app/components/button/button";
+import DebugMenu from "../../../app/debug/debug";
 import SetupComponent from "../../../app/docs/setup";
 import errorService from "../../../app/errors/error_service";
 import faviconService from "../../../app/favicon/favicon";
@@ -495,6 +496,7 @@ export default class EnterpriseRootComponent extends React.Component {
           <AlertComponent />
           <PickerComponent />
           <ShortcutsComponent preferences={this.state.preferences} />
+          <DebugMenu preferences={this.state.preferences} />
         </div>
       </>
     );

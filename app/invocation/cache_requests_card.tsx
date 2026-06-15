@@ -530,7 +530,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         )}
         {this.isCompressedSizeColumnVisible() && (
           <div className={`compressed-size-column ${!result.compressor ? "uncompressed" : ""}`}>
-            {(console.log(result), result.compressor) ? (
+            {result.compressor ? (
               <>
                 <span>{renderCompressionSavings(result)}</span>
               </>
