@@ -1172,6 +1172,9 @@ func isComplete(children []*capb.DirectoryWithDigest) bool {
 func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
 	start := time.Now()
 	rsp, err := s.spliceBlob(ctx, req)
+	if err != nil {
+		log.CtxInfof(ctx, "SpliceBlob failed: %v", err)
+	}
 	metrics.SpliceBlobDurationUsec.With(prometheus.Labels{
 		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
 	}).Observe(float64(time.Since(start).Microseconds()))
@@ -1202,16 +1205,16 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 	}
 
 	if cf := req.GetChunkingFunction(); cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
-		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v", cf)
+		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v in request %v", cf, req.String())
 	}
 
 	if req.GetBlobDigest() == nil {
-		return nil, status.UnimplementedError("SpliceBlob with no blob_digest is not supported")
+		return nil, status.UnimplementedErrorf("SpliceBlob with no blob_digest is not supported. Request: %v", req.String())
 	}
 	if nDigests := len(req.GetChunkDigests()); nDigests == 0 {
-		return nil, status.InvalidArgumentError("chunk_digests cannot be empty")
+		return nil, status.InvalidArgumentErrorf("chunk_digests cannot be empty in request %v", req.String())
 	} else if nDigests == 1 {
-		return nil, status.UnimplementedError("SpliceBlob with only one chunk is not supported")
+		return nil, status.UnimplementedErrorf("SpliceBlob with only one chunk is not supported. Request: %v", req.String())
 	}
 
 	manifest := &chunking.Manifest{
@@ -1264,6 +1267,14 @@ func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, b
 // SplitBlob is used to get the digests of the chunks that make up a blob. Clients can then see if
 // any chunks are available locally to reduce download from the remote CAS.
 func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+	resp, err := s.splitBlob(ctx, req)
+	if err != nil {
+		log.CtxInfof(ctx, "SplitBlob failed: %v", err)
+	}
+	return resp, err
+}
+
+func (s *ContentAddressableStorageServer) splitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
@@ -1275,11 +1286,11 @@ func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *re
 
 	cf := req.GetChunkingFunction()
 	if cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
-		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v", cf)
+		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v in request %v", cf, req.String())
 	}
 
 	if req.GetBlobDigest() == nil {
-		return nil, status.InvalidArgumentError("blob_digest is required")
+		return nil, status.InvalidArgumentErrorf("blob_digest is required in request %v", req.String())
 	}
 
 	manifest, err := chunking.LoadManifest(ctx, s.cache, req.GetBlobDigest(), req.GetInstanceName(), req.GetDigestFunction())
