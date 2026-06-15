@@ -1497,13 +1497,10 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 }
 
 type multiWriteCloser struct {
-	ctx           context.Context
-	log           log.Logger
-	peerClosers   map[string]interfaces.CommittedWriteCloser
-	mu            *sync.Mutex
-	r             *rspb.ResourceName
-	listenAddr    string
-	totalNumPeers int
+	ctx         context.Context
+	log         log.Logger
+	peerClosers map[string]interfaces.CommittedWriteCloser
+	r           *rspb.ResourceName
 }
 
 func (mc *multiWriteCloser) Write(data []byte) (int, error) {
@@ -1585,8 +1582,6 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 		ctx:         ctx,
 		log:         c.log,
 		peerClosers: make(map[string]interfaces.CommittedWriteCloser, c.opts.ReplicationFactor),
-		mu:          &sync.Mutex{},
-		listenAddr:  c.opts.ListenAddr,
 		r:           r,
 	}
 	for peer, hintedHandoff := ps.GetNextPeerAndHandoff(); peer != ""; peer, hintedHandoff = ps.GetNextPeerAndHandoff() {
