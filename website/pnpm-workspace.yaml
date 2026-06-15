@@ -2,7 +2,7 @@ allowBuilds:
   core-js: true
   sharp: true
 
-minimumReleaseAge: 0
+minimumReleaseAge: 7
 
 overrides:
   # sockjs is not necessary, since docusaurus' webpack-dev-server uses ws
