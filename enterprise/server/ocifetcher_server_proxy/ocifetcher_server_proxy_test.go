@@ -16,12 +16,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -227,6 +229,65 @@ func TestFetchBlob_ForwardsRequestUnchanged(t *testing.T) {
 			require.Equal(t, blobData, collectBlobData(t, stream))
 			require.NotNil(t, remoteClient.fetchBlobRequest)
 			require.Empty(t, cmp.Diff(req, remoteClient.fetchBlobRequest, protocmp.Transform()))
+		})
+	}
+}
+
+func TestForwardsTrustedJWTFromAuthContext(t *testing.T) {
+	ctx := testauth.WithAuthenticatedUserInfo(
+		context.Background(),
+		testauth.User("US1", "GR1"),
+	)
+	jwt, ok := ctx.Value(authutil.ContextTokenStringKey).(string)
+	require.True(t, ok)
+	require.NotEmpty(t, jwt)
+
+	const (
+		imageRef = "example.com/repo:latest"
+		blobRef  = "example.com/repo@sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+	)
+	for _, tc := range []struct {
+		name string
+		call func(t *testing.T, proxy *OCIFetcherServerProxy)
+		md   func(upstream *recordingOCIFetcherServer) metadata.MD
+	}{
+		{
+			name: "FetchManifest",
+			call: func(t *testing.T, proxy *OCIFetcherServerProxy) {
+				_, err := proxy.FetchManifest(ctx, &ofpb.FetchManifestRequest{Ref: imageRef})
+				require.NoError(t, err)
+			},
+			md: func(upstream *recordingOCIFetcherServer) metadata.MD { return upstream.fetchManifestIncomingMD },
+		},
+		{
+			name: "FetchManifestMetadata",
+			call: func(t *testing.T, proxy *OCIFetcherServerProxy) {
+				_, err := proxy.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{Ref: imageRef})
+				require.NoError(t, err)
+			},
+			md: func(upstream *recordingOCIFetcherServer) metadata.MD { return upstream.fetchManifestMetadataIncomingMD },
+		},
+		{
+			name: "FetchBlobMetadata",
+			call: func(t *testing.T, proxy *OCIFetcherServerProxy) {
+				_, err := proxy.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{Ref: blobRef})
+				require.NoError(t, err)
+			},
+			md: func(upstream *recordingOCIFetcherServer) metadata.MD { return upstream.fetchBlobMetadataIncomingMD },
+		},
+		{
+			name: "FetchBlob",
+			call: func(t *testing.T, proxy *OCIFetcherServerProxy) {
+				err := proxy.FetchBlob(&ofpb.FetchBlobRequest{Ref: blobRef}, &recordingFetchBlobServer{ctx: ctx})
+				require.NoError(t, err)
+			},
+			md: func(upstream *recordingOCIFetcherServer) metadata.MD { return upstream.fetchBlobIncomingMD },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			proxy, upstream := runOCIFetcherProxyWithRecordingUpstream(ctx, t)
+			tc.call(t, proxy)
+			require.Equal(t, []string{jwt}, tc.md(upstream).Get(authutil.ContextTokenStringKey))
 		})
 	}
 }
@@ -847,6 +908,26 @@ func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCI
 	return ofpb.NewOCIFetcherClient(conn)
 }
 
+func runOCIFetcherProxyWithRecordingUpstream(ctx context.Context, t *testing.T) (*OCIFetcherServerProxy, *recordingOCIFetcherServer) {
+	upstreamEnv := testenv.GetTestEnv(t)
+	upstreamServer := &recordingOCIFetcherServer{}
+	upstreamGRPCServer, upstreamRunFunc, upstreamLis := testenv.RegisterLocalGRPCServer(t, upstreamEnv)
+	ofpb.RegisterOCIFetcherServer(upstreamGRPCServer, upstreamServer)
+	go upstreamRunFunc()
+	t.Cleanup(func() { upstreamGRPCServer.GracefulStop() })
+
+	upstreamConn, err := testenv.LocalGRPCConn(ctx, upstreamLis)
+	require.NoError(t, err)
+	t.Cleanup(func() { upstreamConn.Close() })
+
+	proxyEnv := testenv.GetTestEnv(t)
+	proxyEnv.SetOCIFetcherClient(ofpb.NewOCIFetcherClient(upstreamConn))
+	proxyEnv.SetLocalByteStreamClient(setupLocalBSClient(t))
+	proxy, err := New(proxyEnv)
+	require.NoError(t, err)
+	return proxy, upstreamServer
+}
+
 // layerMetadata extracts size and media type from an image layer.
 func layerMetadata(t *testing.T, layer ctr.Layer) (size int64, mediaType string) {
 	s, err := layer.Size()
@@ -908,6 +989,57 @@ func (c *recordingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.Fet
 
 func (c *recordingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
 	return &ofpb.FetchBlobMetadataResponse{Size: 5}, nil
+}
+
+type recordingOCIFetcherServer struct {
+	ofpb.UnimplementedOCIFetcherServer
+
+	fetchManifestIncomingMD         metadata.MD
+	fetchManifestMetadataIncomingMD metadata.MD
+	fetchBlobIncomingMD             metadata.MD
+	fetchBlobMetadataIncomingMD     metadata.MD
+}
+
+func (s *recordingOCIFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest) (*ofpb.FetchManifestResponse, error) {
+	s.fetchManifestIncomingMD, _ = metadata.FromIncomingContext(ctx)
+	return &ofpb.FetchManifestResponse{
+		Digest:    "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+		Size:      2,
+		MediaType: "application/vnd.docker.distribution.manifest.v2+json",
+		Manifest:  []byte("{}"),
+	}, nil
+}
+
+func (s *recordingOCIFetcherServer) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest) (*ofpb.FetchManifestMetadataResponse, error) {
+	s.fetchManifestMetadataIncomingMD, _ = metadata.FromIncomingContext(ctx)
+	return &ofpb.FetchManifestMetadataResponse{
+		Digest:    "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+		Size:      2,
+		MediaType: "application/vnd.docker.distribution.manifest.v2+json",
+	}, nil
+}
+
+func (s *recordingOCIFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	s.fetchBlobIncomingMD, _ = metadata.FromIncomingContext(stream.Context())
+	return stream.Send(&ofpb.FetchBlobResponse{Data: []byte("hello")})
+}
+
+func (s *recordingOCIFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest) (*ofpb.FetchBlobMetadataResponse, error) {
+	s.fetchBlobMetadataIncomingMD, _ = metadata.FromIncomingContext(ctx)
+	return &ofpb.FetchBlobMetadataResponse{Size: 5}, nil
+}
+
+type recordingFetchBlobServer struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *recordingFetchBlobServer) Send(*ofpb.FetchBlobResponse) error {
+	return nil
+}
+
+func (s *recordingFetchBlobServer) Context() context.Context {
+	return s.ctx
 }
 
 type fakeFetchBlobClient struct {
