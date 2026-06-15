@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -166,6 +167,10 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 		}
 		return status.NotFoundErrorf("bypassing registry, but blob %q not found in cache", digestRef)
 	}
+	if isAnonymousUser(ctx) {
+		log.CtxInfof(ctx, "Anonymous user request, skipping blob cache for %q", digestRef)
+		return s.streamBlobFromRemote(ctx, digestRef, req.GetCredentials(), stream)
+	}
 	return s.dedupedFetchBlob(ctx, stream, digestRef, hash, req.GetCredentials())
 }
 
@@ -185,6 +190,10 @@ func (s *ociFetcherServer) FetchBlobMetadata(ctx context.Context, req *ofpb.Fetc
 		return nil, err
 	}
 	repo := digestRef.Context()
+	if isAnonymousUser(ctx) {
+		log.CtxInfof(ctx, "Anonymous user request, skipping blob metadata cache for %q", digestRef)
+		return s.fetchBlobMetadataFromRemote(ctx, digestRef, req.GetCredentials())
+	}
 
 	accessKey := repoAccessKey(repo, req.GetCredentials())
 	if req.GetBypassRegistry() || s.accessProofCache.Contains(accessKey) {
@@ -225,6 +234,10 @@ func (s *ociFetcherServer) FetchManifest(ctx context.Context, req *ofpb.FetchMan
 	hash, err := s.resolveManifestDigest(ctx, imageRef, req.GetCredentials(), req.GetBypassRegistry())
 	if err != nil {
 		return nil, err
+	}
+	if isAnonymousUser(ctx) {
+		log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %q", imageRef)
+		return s.fetchManifestFromRemote(ctx, imageRef, req.GetCredentials())
 	}
 	if resp, err := s.fetchManifestFromCache(ctx, imageRef, hash); err == nil {
 		return resp, nil
@@ -296,6 +309,21 @@ func (s *ociFetcherServer) streamBlobFromCache(ctx context.Context, stream ofpb.
 		return err
 	}
 	return ocicache.FetchBlobFromCache(ctx, &grpcStreamWriter{stream: stream}, s.bsClient, hash, metadata.GetContentLength())
+}
+
+func (s *ociFetcherServer) streamBlobFromRemote(ctx context.Context, digestRef ctrname.Digest, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	rc, err := withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (io.ReadCloser, error) {
+		layer, err := puller.Layer(ctx, digestRef)
+		if err != nil {
+			return nil, err
+		}
+		return layer.Compressed()
+	})
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	return s.streamBlob(rc, stream)
 }
 
 func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef ctrname.Digest, hash ctr.Hash, creds *rgpb.Credentials) error {
@@ -561,15 +589,12 @@ func (s *ociFetcherServer) fetchManifestFromCache(ctx context.Context, imageRef 
 	}, nil
 }
 
-func (s *ociFetcherServer) fetchManifestFromRemoteWriteToCache(ctx context.Context, imageRef ctrname.Reference, hash ctr.Hash, creds *rgpb.Credentials) (*ofpb.FetchManifestResponse, error) {
+func (s *ociFetcherServer) fetchManifestFromRemote(ctx context.Context, imageRef ctrname.Reference, creds *rgpb.Credentials) (*ofpb.FetchManifestResponse, error) {
 	remoteDesc, err := withPullerRetry(ctx, s, imageRef, creds, func(puller *remote.Puller) (*remote.Descriptor, error) {
 		return puller.Get(ctx, imageRef)
 	})
 	if err != nil {
 		return nil, err
-	}
-	if err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, s.acClient, imageRef.Context(), hash, string(remoteDesc.MediaType), imageRef); err != nil {
-		log.CtxWarningf(ctx, "Error writing manifest to cache: %s", err)
 	}
 	return &ofpb.FetchManifestResponse{
 		Digest:    remoteDesc.Digest.String(),
@@ -577,6 +602,17 @@ func (s *ociFetcherServer) fetchManifestFromRemoteWriteToCache(ctx context.Conte
 		MediaType: string(remoteDesc.MediaType),
 		Manifest:  remoteDesc.Manifest,
 	}, nil
+}
+
+func (s *ociFetcherServer) fetchManifestFromRemoteWriteToCache(ctx context.Context, imageRef ctrname.Reference, hash ctr.Hash, creds *rgpb.Credentials) (*ofpb.FetchManifestResponse, error) {
+	resp, err := s.fetchManifestFromRemote(ctx, imageRef, creds)
+	if err != nil {
+		return nil, err
+	}
+	if err := ocicache.WriteManifestToAC(ctx, resp.GetManifest(), s.acClient, imageRef.Context(), hash, resp.GetMediaType(), imageRef); err != nil {
+		log.CtxWarningf(ctx, "Error writing manifest to cache: %s", err)
+	}
+	return resp, nil
 }
 
 // validateUnsupportedBypassRegistry is used by FetchManifestMetadata which does not support
@@ -662,6 +698,11 @@ func repoAccessKey(repo ctrname.Repository, creds *rgpb.Credentials) string {
 		return hash.Strings(repo.Name(), "", "")
 	}
 	return hash.Strings(repo.Name(), creds.GetUsername(), creds.GetPassword())
+}
+
+func isAnonymousUser(ctx context.Context) bool {
+	_, err := claims.ClaimsFromContext(ctx)
+	return authutil.IsAnonymousUserError(err)
 }
 
 func pullerKey(ref ctrname.Reference, creds *rgpb.Credentials) string {

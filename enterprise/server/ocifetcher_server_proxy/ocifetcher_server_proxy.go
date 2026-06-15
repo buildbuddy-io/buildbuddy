@@ -16,6 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
@@ -76,6 +78,11 @@ func (s *OCIFetcherServerProxy) FetchBlobMetadata(ctx context.Context, req *ofpb
 func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
 	ctx := stream.Context()
 
+	if isAnonymousUser(ctx) {
+		log.CtxInfof(ctx, "Anonymous user request, skipping local OCI blob cache for %q", req.GetRef())
+		return s.streamBlobFromUpstream(ctx, req, stream)
+	}
+
 	digestRef, hash, err := parseBlobDigestRef(req.GetRef())
 	if err != nil {
 		return err
@@ -95,6 +102,25 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 	}
 
 	return s.dedupedFetchBlob(ctx, stream, digestRef, hash, size, req)
+}
+
+func (s *OCIFetcherServerProxy) streamBlobFromUpstream(ctx context.Context, req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	remoteStream, err := s.remote.FetchBlob(ctx, req)
+	if err != nil {
+		return err
+	}
+	for {
+		resp, err := remoteStream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(resp); err != nil {
+			return status.WrapError(err, "send")
+		}
+	}
 }
 
 func parseBlobDigestRef(ref string) (ctrname.Digest, ctr.Hash, error) {
@@ -204,6 +230,11 @@ func newLocalBSWriter(ctx context.Context, bsClient bspb.ByteStreamClient, hash 
 	rn := digest.NewCASResourceName(blobDigest, "", cacheDigestFunction)
 	rn.SetCompressor(repb.Compressor_ZSTD)
 	return cachetools.NewUploadWriter(ctx, bsClient, rn)
+}
+
+func isAnonymousUser(ctx context.Context) bool {
+	_, err := claims.ClaimsFromContext(ctx)
+	return authutil.IsAnonymousUserError(err)
 }
 
 type grpcStreamWriter struct {

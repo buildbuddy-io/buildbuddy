@@ -1457,7 +1457,7 @@ func TestResolveWithOCIFetcher(t *testing.T) {
 
 			for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
 				pulledImage, err := newResolver(t, te).Resolve(
-					context.Background(),
+					contextWithUnverifiedJWT(&claims.Claims{UserID: "US123"}),
 					registry.ImageAddress(nameToResolve),
 					tc.args.platform,
 					tc.args.credentials,
@@ -1557,7 +1557,7 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 
 			for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
 				pulledImage, err := newResolver(t, te).Resolve(
-					context.Background(),
+					contextWithUnverifiedJWT(&claims.Claims{UserID: "US123"}),
 					registry.ImageAddress(nameToResolve),
 					tc.args.platform,
 					tc.args.credentials,

@@ -53,6 +53,10 @@ func TestNew_MissingLocalBSClient(t *testing.T) {
 	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
 }
 
+func authenticatedContext() context.Context {
+	return testauth.WithAuthenticatedUserInfo(context.Background(), &claims.Claims{UserID: "US123"})
+}
+
 // TestHappyPath tests successful FetchBlob, FetchBlobMetadata, FetchManifest,
 // FetchManifestMetadata calls with no credentials and with credentials.
 func TestHappyPath(t *testing.T) {
@@ -235,7 +239,7 @@ func TestFetchBlob_ForwardsRequestUnchanged(t *testing.T) {
 // the blob is written to the proxy's local BS cache and can be served from
 // there on a subsequent request.
 func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
-	ctx := context.Background()
+	ctx := authenticatedContext()
 
 	reg := setupTestRegistry(t, nil)
 	imageName, img := reg.PushNamedImage(t, "test-image", nil)
@@ -271,6 +275,79 @@ func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
 	require.NoError(t, err)
 	data2 := collectBlobData(t, stream2)
 	require.Equal(t, expectedData, data2)
+}
+
+func TestAnonymousRequestsSkipCache(t *testing.T) {
+	ctx := context.Background()
+
+	counter := testhttp.NewRequestCounter()
+	reg := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	})
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+	expectedDigest, _, _ := imageMetadata(t, img)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+	proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+
+	ref := imageName + "@" + digest.String()
+
+	for i := 0; i < 2; i++ {
+		counter.Reset()
+		resp, err := proxyClient.FetchManifest(ctx, &ofpb.FetchManifestRequest{Ref: imageName})
+		require.NoError(t, err)
+		require.Equal(t, expectedDigest, resp.GetDigest())
+		require.Greater(t, counter.Snapshot()[http.MethodGet+" /v2/test-image/manifests/latest"], 0)
+	}
+	counter.Reset()
+	resp, err := proxyClient.FetchManifest(authenticatedContext(), &ofpb.FetchManifestRequest{Ref: imageName})
+	require.NoError(t, err)
+	require.Equal(t, expectedDigest, resp.GetDigest())
+	require.Greater(t, counter.Snapshot()[http.MethodGet+" /v2/test-image/manifests/latest"], 0)
+
+	for i := 0; i < 2; i++ {
+		counter.Reset()
+		_, err := proxyClient.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{Ref: ref})
+		require.NoError(t, err)
+		require.NotEmpty(t, counter.Snapshot())
+	}
+	counter.Reset()
+	_, err = proxyClient.FetchBlobMetadata(authenticatedContext(), &ofpb.FetchBlobMetadataRequest{Ref: ref})
+	require.NoError(t, err)
+	require.NotEmpty(t, counter.Snapshot())
+
+	for i := 0; i < 2; i++ {
+		counter.Reset()
+		stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+		require.NoError(t, err)
+		require.Equal(t, expectedData, collectBlobData(t, stream))
+		require.Greater(t, counter.Snapshot()[http.MethodGet+" /v2/test-image/blobs/"+digest.String()], 0)
+	}
+	counter.Reset()
+	stream, err := proxyClient.FetchBlob(authenticatedContext(), &ofpb.FetchBlobRequest{Ref: ref})
+	require.NoError(t, err)
+	require.Equal(t, expectedData, collectBlobData(t, stream))
+	require.Greater(t, counter.Snapshot()[http.MethodGet+" /v2/test-image/blobs/"+digest.String()], 0)
+
+	err = reg.Shutdown()
+	require.NoError(t, err)
+
+	stream, err = proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+	require.NoError(t, err)
+	_, err = stream.Recv()
+	require.Error(t, err)
 }
 
 // TestBypassRegistry tests the bypass_registry flag crossed with server admin claims
@@ -702,7 +779,7 @@ func TestPrivateRegistryCacheHitsRequireValidCredentials(t *testing.T) {
 // the same blob are deduplicated: only one upstream FetchBlob RPC is made and
 // all callers receive the correct data.
 func TestFetchBlob_Singleflight(t *testing.T) {
-	ctx := context.Background()
+	ctx := authenticatedContext()
 
 	reg := setupTestRegistry(t, nil)
 	imageName, img := reg.PushNamedImage(t, "test-image", nil)
