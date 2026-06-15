@@ -17,6 +17,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gorm.io/gorm"
+
+	gormclickhouse "gorm.io/driver/clickhouse"
+	gormschema "gorm.io/gorm/schema"
 )
 
 var (
@@ -31,6 +34,45 @@ var (
 const (
 	projectionCommits = "projection_commits"
 )
+
+// NewGORMDialector returns a GORM ClickHouse dialector with BuildBuddy-specific
+// migration behavior.
+func NewGORMDialector(config gormclickhouse.Config) gorm.Dialector {
+	return clickhouseDialector{Dialector: gormclickhouse.New(config)}
+}
+
+type clickhouseDialector struct {
+	gorm.Dialector
+}
+
+func (d clickhouseDialector) Migrator(db *gorm.DB) gorm.Migrator {
+	return clickhouseMigrator{Migrator: d.Dialector.Migrator(db)}
+}
+
+type clickhouseMigrator struct {
+	gorm.Migrator
+}
+
+func (m clickhouseMigrator) MigrateColumn(value interface{}, field *gormschema.Field, columnType gorm.ColumnType) error {
+	// GORM v1.30 treats a non-nullable DB column and a field without a
+	// `not null` tag as drift toward nullable. ClickHouse columns are
+	// non-nullable unless their type is Nullable(...), and gorm-clickhouse does
+	// not emit Nullable(...) from Go zero-value fields, so the generic nullable
+	// check only produces repeated no-op MODIFY COLUMN statements.
+	return m.Migrator.MigrateColumn(value, field, clickhouseColumnType{wrappedColumnType: columnType})
+}
+
+type clickhouseColumnType struct {
+	wrappedColumnType
+}
+
+func (c clickhouseColumnType) Nullable() (bool, bool) {
+	return false, false
+}
+
+type wrappedColumnType interface {
+	gorm.ColumnType
+}
 
 // Making a new table? Please make sure you:
 // 1) Add your table in getAllTables()

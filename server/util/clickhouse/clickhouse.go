@@ -576,7 +576,7 @@ func Register(env *real_environment.RealEnv) error {
 		sqlDB.SetConnMaxLifetime(*connMaxLifetime)
 	}
 
-	db, err := gorm.Open(gormclickhouse.New(gormclickhouse.Config{
+	db, err := gorm.Open(schema.NewGORMDialector(gormclickhouse.Config{
 		Conn:                         sqlDB,
 		DontSupportEmptyDefaultValue: true,
 	}))

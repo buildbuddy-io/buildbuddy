@@ -16,6 +16,7 @@ go_test(
         "//server/testutil/testclickhouse",
         "//server/usage/sku",
         "//server/util/clickhouse/schema",
+        "//server/util/gormutil",
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
         "@com_github_clickhouse_clickhouse_go_v2//lib/column/orderedmap",
         "@com_github_stretchr_testify//assert",

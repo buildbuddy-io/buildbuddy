@@ -9,12 +9,28 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
+	"github.com/buildbuddy-io/buildbuddy/server/util/gormutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	gormclickhouse "gorm.io/driver/clickhouse"
 )
+
+func TestRunMigrations_DoesNotEmitNoopColumnChanges(t *testing.T) {
+	db := openClickHouseDB(t)
+
+	// Initial migrations create the schema from scratch.
+	require.NoError(t, schema.RunMigrations(db))
+
+	// A second migration should not produce any schema SQL. This catches GORM
+	// nullable drift where ClickHouse non-null columns are repeatedly rewritten
+	// to the same non-null type.
+	sqlStrings := make([]string, 0)
+	require.NoError(t, gormutil.RegisterLogSQLCallback(db, &sqlStrings))
+	require.NoError(t, schema.RunMigrations(db))
+	assert.Empty(t, sqlStrings)
+}
 
 func TestUsageViewMigration_CreateNoopAndReplace(t *testing.T) {
 	db := openClickHouseDB(t)
@@ -66,7 +82,7 @@ func openClickHouseDB(t *testing.T) *gorm.DB {
 	t.Cleanup(func() {
 		require.NoError(t, sqlDB.Close())
 	})
-	db, err := gorm.Open(gormclickhouse.New(gormclickhouse.Config{
+	db, err := gorm.Open(schema.NewGORMDialector(gormclickhouse.Config{
 		Conn:                         sqlDB,
 		DontSupportEmptyDefaultValue: true,
 	}))
