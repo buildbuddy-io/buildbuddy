@@ -205,7 +205,7 @@ func runClangFormat(ctx context.Context, stdout, stderr io.Writer, fix bool, fil
 }
 
 func runPrettier(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
-	// If either yarn.lock or .prettierrc have changed, run on all files.
+	// If either pnpm-lock.yaml or .prettierrc have changed, run on all files.
 	// Otherwise, run on changed files, filtering by extension.
 	if slices.Contains(files, "pnpm-lock.yaml") || slices.Contains(files, ".prettierrc") {
 		var err error
