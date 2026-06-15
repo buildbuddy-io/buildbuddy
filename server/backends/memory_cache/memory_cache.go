@@ -248,6 +248,15 @@ func (m *MemoryCache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompr
 
 func (m *MemoryCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	var buffer bytes.Buffer
+	// Presize to the known blob size so streamed frames don't trigger repeated
+	// reallocation/copy as the buffer grows (bytes.Buffer growth is the dominant
+	// allocator on this write path). Only safe for uncompressed writes, where
+	// the digest size equals the byte count.
+	if r.GetCompressor() == repb.Compressor_IDENTITY {
+		if size := r.GetDigest().GetSizeBytes(); size > 0 {
+			buffer.Grow(int(size))
+		}
+	}
 	wc := ioutil.NewCustomCommitWriteCloser(&buffer)
 	wc.SetCommitFn(func(int64) error {
 		// Locking and key prefixing are handled in SetDeprecated.
