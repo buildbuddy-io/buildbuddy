@@ -1,1 +1,0 @@
-"use strict";(globalThis.webpackChunkbuildbuddy_docs_website=globalThis.webpackChunkbuildbuddy_docs_website||[]).push([[8727],{49501(s){s.exports=JSON.parse('{"title":"Recent posts","items":[]}')}}]);

@@ -1,1 +1,0 @@
-"use strict";(globalThis.webpackChunkbuildbuddy_docs_website=globalThis.webpackChunkbuildbuddy_docs_website||[]).push([[674],{52890(s){s.exports=JSON.parse('{"blogBasePath":"/changelog","blogTitle":"Blog","authorsListPath":"/changelog/authors"}')}}]);
