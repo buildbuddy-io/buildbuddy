@@ -26,7 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"

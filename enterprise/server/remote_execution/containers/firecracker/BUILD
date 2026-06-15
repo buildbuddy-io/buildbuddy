@@ -149,7 +149,7 @@ go_test(
         "//enterprise/server/action_cache_server_proxy",
         "//enterprise/server/byte_stream_server_proxy",
         "//enterprise/server/clientidentity",
-        "//enterprise/server/ociregistry",
+        "//enterprise/server/oci/ociregistry",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/filecache",
