@@ -11,8 +11,10 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write/cow_cgo_testutil"
@@ -178,7 +180,7 @@ func TestCOW_ChunkFinalizer(t *testing.T) {
 
 	for _, c := range cow.SortedChunks() {
 		// All chunks should be unmapped
-		require.Empty(t, c.Data())
+		require.False(t, c.Mapped(), "chunk at offset %d should be unmapped", c.Offset)
 	}
 }
 
@@ -232,6 +234,93 @@ func TestCOW_ChunkFinalizerError(t *testing.T) {
 		// Finalize() triggers finalization of the last written chunk and should return an error.
 		require.ErrorIs(t, cow.Finalize(), finalizeErr)
 	})
+}
+
+func TestCOW_ChunkFinalizer_FirstWriteToNonZeroChunk(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	const chunkSizeBytes = 4
+	const numChunks = 3
+
+	// Build the store from a non-zero backing file so that all chunk offsets
+	// (including 0) are initialized.
+	content := bytes.Repeat([]byte{0xab}, chunkSizeBytes*numChunks)
+	path := makeTempFile(t, content)
+	dataDir := testfs.MakeTempDir(t)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, env, path, chunkSizeBytes, dataDir, "", false, snaputil.ConvertToCOWConcurrency)
+	require.NoError(t, err)
+	defer cow.Close()
+
+	var mu sync.Mutex
+	var chunksFinalized []int64
+	err = cow.PrepareForFinalExport(2, func(chunk *copy_on_write.Mmap) error {
+		mu.Lock()
+		chunksFinalized = append(chunksFinalized, chunk.Offset)
+		mu.Unlock()
+		return nil
+	})
+	require.NoError(t, err)
+
+	// Don't start writing from chunk 0.
+	_, err = cow.WriteAt([]byte{5, 6}, 2*chunkSizeBytes)
+	require.NoError(t, err)
+	require.NoError(t, cow.Finalize())
+
+	// Only the written chunk should be finalized. Chunk 0 was never written.
+	require.ElementsMatch(t, []int64{2 * chunkSizeBytes}, chunksFinalized)
+}
+
+func TestCOW_ChunkFinalizer_DrainOnError(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	const chunkSizeBytes = 4
+	const numChunks = 50
+	dataDir := testfs.MakeTempDir(t)
+	cow, err := copy_on_write.NewCOWStore(ctx, env, "test", nil, copy_on_write.COWOptions{
+		ChunkSizeBytes: chunkSizeBytes,
+		TotalSizeBytes: chunkSizeBytes * numChunks,
+		DataDir:        dataDir,
+	})
+	require.NoError(t, err)
+	defer cow.Close()
+
+	finalizeErr := fmt.Errorf("finalize error")
+	var count atomic.Int64
+	// Succeed for the first few chunks, then fail for all subsequent chunks to test
+	// error handling while some writes are still in progress.
+	err = cow.PrepareForFinalExport(4, func(chunk *copy_on_write.Mmap) error {
+		if count.Add(1) > 5 {
+			return finalizeErr
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	// Write to each chunk in order in a goroutine, with a watchdog timeout, so a
+	// deadlock on the finalizer queue surfaces as a test failure rather than
+	// hanging the whole package.
+	writeDone := make(chan struct{})
+	go func() {
+		defer close(writeDone)
+		for i := int64(0); i < numChunks; i++ {
+			_, err := cow.WriteAt([]byte{1, 2}, i*chunkSizeBytes)
+			require.NoError(t, err)
+		}
+	}()
+	select {
+	case <-writeDone:
+	case <-time.After(30 * time.Second):
+		t.Fatal("timed out writing chunks; producer likely deadlocked on the finalizer queue")
+	}
+
+	finalizeDone := make(chan error, 1)
+	go func() { finalizeDone <- cow.Finalize() }()
+	select {
+	case err := <-finalizeDone:
+		require.ErrorIs(t, err, finalizeErr)
+	case <-time.After(30 * time.Second):
+		t.Fatal("timed out finalizing; likely deadlocked draining the finalizer queue")
+	}
 }
 
 func TestCOW_Concurrency(t *testing.T) {
