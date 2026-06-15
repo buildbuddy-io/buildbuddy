@@ -1807,9 +1807,9 @@ func (p *PebbleCache) lookupPartitionID(remoteInstanceName, groupID string) stri
 	return DefaultPartitionID
 }
 
-// activeEncryption returns the Encryption config to use for new file records,
-// or nil if encryption is not enabled for the caller.
-func (p *PebbleCache) activeEncryption(ctx context.Context) (*sgpb.Encryption, error) {
+// activeEncryption selects the key metadata for file records and encryptors so
+// that a write uses the same key for both. It returns nil if encryption is disabled.
+func (p *PebbleCache) activeEncryption(ctx context.Context) (*sgpb.EncryptionMetadata, error) {
 	if !authutil.EncryptionEnabled(ctx, p.env.GetAuthenticator()) {
 		return nil, nil
 	}
@@ -1820,10 +1820,10 @@ func (p *PebbleCache) activeEncryption(ctx context.Context) (*sgpb.Encryption, e
 	if err != nil {
 		return nil, status.UnavailableErrorf("encryption key not available: %s", err)
 	}
-	return &sgpb.Encryption{KeyId: ak.GetEncryptionKeyId()}, nil
+	return ak, nil
 }
 
-func (p *PebbleCache) makeFileRecord(groupID string, encryption *sgpb.Encryption, rn *rspb.ResourceName) (*sgpb.FileRecord, error) {
+func (p *PebbleCache) makeFileRecord(groupID string, encryptionMetadata *sgpb.EncryptionMetadata, rn *rspb.ResourceName) (*sgpb.FileRecord, error) {
 	digestFunction := rn.GetDigestFunction()
 	if digestFunction == repb.DigestFunction_UNKNOWN {
 		digestFunction = repb.DigestFunction_SHA256
@@ -1832,6 +1832,10 @@ func (p *PebbleCache) makeFileRecord(groupID string, encryption *sgpb.Encryption
 		return nil, err
 	}
 
+	var encryption *sgpb.Encryption
+	if encryptionMetadata != nil {
+		encryption = &sgpb.Encryption{KeyId: encryptionMetadata.GetEncryptionKeyId()}
+	}
 	return &sgpb.FileRecord{
 		Isolation: &sgpb.Isolation{
 			CacheType:          rn.GetCacheType(),
@@ -1978,7 +1982,7 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 	return missing, nil
 }
 
-func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, groupID string, encryption *sgpb.Encryption, r *rspb.ResourceName) error {
+func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, groupID string, encryption *sgpb.EncryptionMetadata, r *rspb.ResourceName) error {
 	fileRecord, err := p.makeFileRecord(groupID, encryption, r)
 	if err != nil {
 		return err
@@ -2321,7 +2325,7 @@ func (p *PebbleCache) CreateReference(ctx context.Context, r *rspb.ResourceName)
 	// Commit only captures the blob's metadata instead of registering it in
 	// this cache.
 	rw := &referenceWriter{}
-	wc, err := p.wrapWriter(ctx, fileRecord, bw, shouldCompress, nil, func(md *sgpb.FileMetadata) error {
+	wc, err := p.wrapWriter(ctx, fileRecord, bw, shouldCompress, encryption, nil, func(md *sgpb.FileMetadata) error {
 		rw.md = md
 		return nil
 	})
@@ -2396,8 +2400,8 @@ func (p *PebbleCache) WriteReference(ctx context.Context, ref *refpb.Reference, 
 	// Ensure the encryption key the blob was written with matches this cache's
 	// current encryption key, to protect against edge cases around enabling or
 	// disabling encryption , or rotating encryption keys.
-	if refMD.GetEncryptionMetadata().GetEncryptionKeyId() != encryption.GetKeyId() {
-		return status.FailedPreconditionErrorf("reference encryption key %q does not match the active encryption key %q", refMD.GetEncryptionMetadata().GetEncryptionKeyId(), encryption.GetKeyId())
+	if refMD.GetEncryptionMetadata().GetEncryptionKeyId() != encryption.GetEncryptionKeyId() {
+		return status.FailedPreconditionErrorf("reference encryption key %q does not match the active encryption key %q", refMD.GetEncryptionMetadata().GetEncryptionKeyId(), encryption.GetEncryptionKeyId())
 	}
 	fileRecord, err := p.makeFileRecord(p.userGroupID(ctx), encryption, r)
 	if err != nil {
@@ -2716,7 +2720,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 		return nil, err
 	}
 
-	return p.newWrappedWriter(ctx, fileRecord, key, shouldCompress)
+	return p.newWrappedWriter(ctx, fileRecord, key, shouldCompress, encryption)
 }
 
 func (p *PebbleCache) autoZstdResource(r *rspb.ResourceName) (*rspb.ResourceName, bool) {
@@ -2769,7 +2773,7 @@ func (p *PebbleCache) blobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 // newWrappedWriter returns an interfaces.CommittedWriteCloser that writes
 // data to the storage tier appropriate for fileRecord and, on Commit, writes
 // the metadata for fileRecord.
-func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecord, key filestore.PebbleKey, shouldCompress bool) (interfaces.CommittedWriteCloser, error) {
+func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecord, key filestore.PebbleKey, shouldCompress bool, encryptionMetadata *sgpb.EncryptionMetadata) (interfaces.CommittedWriteCloser, error) {
 	var wcm interfaces.MetadataWriteCloser
 	if fileRecord.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
 		wcm = p.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
@@ -2792,7 +2796,7 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 	if err != nil {
 		return nil, err
 	}
-	return p.wrapWriter(ctx, fileRecord, wcm, shouldCompress, db.Close, func(md *sgpb.FileMetadata) error {
+	return p.wrapWriter(ctx, fileRecord, wcm, shouldCompress, encryptionMetadata, db.Close, func(md *sgpb.FileMetadata) error {
 		return p.writeMetadata(ctx, db, key, md)
 	})
 }
@@ -2801,8 +2805,7 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 // a commit hook that assembles the written blob's metadata and hands it to
 // commitFn, encryption (if enabled), and compression (if shouldCompress).
 // closeFn, if non-nil, is called when the returned writer is closed.
-func (p *PebbleCache) wrapWriter(ctx context.Context, fileRecord *sgpb.FileRecord, wcm interfaces.MetadataWriteCloser, shouldCompress bool, closeFn func() error, commitFn func(md *sgpb.FileMetadata) error) (interfaces.CommittedWriteCloser, error) {
-	var encryptionMetadata *sgpb.EncryptionMetadata
+func (p *PebbleCache) wrapWriter(ctx context.Context, fileRecord *sgpb.FileRecord, wcm interfaces.MetadataWriteCloser, shouldCompress bool, encryptionMetadata *sgpb.EncryptionMetadata, closeFn func() error, commitFn func(md *sgpb.FileMetadata) error) (interfaces.CommittedWriteCloser, error) {
 	cwc := ioutil.NewCustomCommitWriteCloser(wcm)
 	if closeFn != nil {
 		cwc.SetCloseFn(closeFn)
@@ -2826,8 +2829,8 @@ func (p *PebbleCache) wrapWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 	})
 
 	wc := interfaces.CommittedWriteCloser(cwc)
-	if fileRecord.GetEncryption() != nil {
-		ewc, err := p.env.GetCrypter().NewEncryptor(ctx, fileRecord.GetDigest(), wc)
+	if encryptionMetadata != nil {
+		ewc, err := p.env.GetCrypter().NewEncryptor(ctx, fileRecord.GetDigest(), wc, encryptionMetadata)
 		if err != nil {
 			_ = wc.Close()
 			return nil, status.UnavailableErrorf("encryptor not available: %s", err)
@@ -3704,7 +3707,7 @@ func (p *PebbleCache) Partition(ctx context.Context, remoteInstanceName string) 
 	return p.lookupPartitionID(remoteInstanceName, p.userGroupID(ctx)), nil
 }
 
-func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, groupID string, encryption *sgpb.Encryption, r *rspb.ResourceName, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, *sgpb.FileMetadata, error) {
+func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, groupID string, encryption *sgpb.EncryptionMetadata, r *rspb.ResourceName, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, *sgpb.FileMetadata, error) {
 	fileRecord, err := p.makeFileRecord(groupID, encryption, r)
 	if err != nil {
 		return nil, nil, err
