@@ -550,7 +550,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
 
   private renderOriginInvocation(result: cache.ScoreCard.Result) {
     if (!capabilities.config.actionResultOriginEnabled) {
-      return <span />;
+      return <span>&nbsp;</span>;
     }
     const isACHit =
       result.cacheType === resource.CacheType.AC &&
@@ -558,7 +558,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
       result.status?.code === 0;
 
     if (!isACHit || !result.originInvocationId) {
-      return <span />;
+      return <span>&nbsp;</span>;
     }
 
     const redacted = redactInvocationId(result.originInvocationId);

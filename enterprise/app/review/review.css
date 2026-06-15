@@ -43,7 +43,7 @@
 }
 
 .reviews .pr-rows .pr:nth-child(odd) > div {
-  background-color: var(--color-review-row-alt-bg);
+  background-color: var(--color-review-code-bg);
 }
 
 .reviews .pr-header {
@@ -350,7 +350,7 @@
   width: 100%;
   box-sizing: border-box;
   border-radius: 2px;
-  box-shadow: 0 0 4px var(--color-review-thread-shadow);
+  box-shadow: var(--shadow-1);
 }
 
 .pr-view .thread.user-replied {

@@ -45,6 +45,7 @@ genrule(
     srcs = [
         "//app/root:colors.css",
         "//app/root:root.css",
+        "//app/debug:debug.css",
         "//app/alert:alert.css",
         "//app/picker:picker.css",
         "//app/debug:debug.css",

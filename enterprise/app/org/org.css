@@ -48,19 +48,10 @@
   margin-right: 8px;
 }
 
-.organization-form input[type="text"] {
+.organization-form .text-input {
   display: block;
   width: 400px;
   max-width: 100%;
-  height: 40px;
-  font-family: inherit;
-  font-size: inherit;
-  padding: 16px;
-  box-sizing: border-box;
-  appearance: none;
-  -webkit-appearance: none;
-  border: 1px solid gray;
-  border-radius: 2px;
 }
 
 .organization-form .input-label-subtitle {
@@ -72,9 +63,10 @@
   display: flex;
   align-items: center;
   align-self: start;
-  background: var(--color-url-input-bg);
+  background: var(--color-bg-secondary);
   width: 400px;
   box-sizing: border-box;
+  border-radius: 8px;
 }
 
 .organization-form .url-input-row span {
@@ -82,7 +74,7 @@
   padding: 8px;
 }
 
-.organization-form .url-input-row input {
+.organization-form .url-input-row .text-input {
   width: 0;
   flex-grow: 1;
 }
@@ -91,7 +83,7 @@
   align-self: start;
 }
 
-.organization-form input[type="checkbox"] {
+.organization-form .checkbox-input {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
@@ -131,7 +123,7 @@
 }
 
 .organization-invite-link-container {
-  background: var(--color-form-input-bg-secondary);
+  background: var(--color-bg-secondary);
   border-radius: 8px;
   padding: 16px;
   display: inline-flex;
@@ -288,7 +280,7 @@
 }
 
 .org-members .org-members-list-item.editable:hover {
-  background-color: var(--color-members-hover-bg);
+  background-color: var(--color-button-outlined-hover-bg);
 }
 
 .org-members .org-members-list-item:first-child {

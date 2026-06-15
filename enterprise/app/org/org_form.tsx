@@ -2,6 +2,8 @@ import React from "react";
 import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import Banner from "../../../app/components/banner/banner";
+import Checkbox from "../../../app/components/checkbox/checkbox";
+import TextInput from "../../../app/components/input/input";
 import Select, { Option } from "../../../app/components/select/select";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { grp } from "../../../proto/group_ts_proto";
@@ -103,11 +105,10 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
           <label htmlFor="name" className="input-label">
             Organization name
           </label>
-          <input
+          <TextInput
             autoComplete="off"
             onFocus={this.onFocus.bind(this)}
             onChange={this.onChangeName.bind(this)}
-            type="text"
             name="name"
             value={request.name}
           />
@@ -124,11 +125,10 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
                 {window.location.port && `:${window.location.port}`}/join/
               </span>
             )}
-            <input
+            <TextInput
               autoComplete="off"
               onFocus={this.onFocus.bind(this)}
               onChange={this.onChangeUrlIdentifier.bind(this)}
-              type="text"
               name="urlIdentifier"
               value={request.urlIdentifier}
             />
@@ -171,11 +171,10 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
           </div>
         )}
         <label className="form-row input-label">
-          <input
+          <Checkbox
             autoComplete="off"
             onFocus={this.onFocus.bind(this)}
             onChange={this.onChange.bind(this)}
-            type="checkbox"
             name="autoPopulateFromOwnedDomain"
             checked={request.autoPopulateFromOwnedDomain}
           />
@@ -185,11 +184,10 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
         </label>
         {capabilities.invocationSharing && (
           <label className="form-row input-label">
-            <input
+            <Checkbox
               autoComplete="off"
               onFocus={this.onFocus.bind(this)}
               onChange={this.onChange.bind(this)}
-              type="checkbox"
               name="sharingEnabled"
               checked={request.sharingEnabled}
             />
@@ -201,11 +199,10 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
         )}
         {capabilities.userOwnedExecutors && (
           <label className="form-row input-label">
-            <input
+            <Checkbox
               autoComplete="off"
               onFocus={this.onFocus.bind(this)}
               onChange={this.onChange.bind(this)}
-              type="checkbox"
               name="useGroupOwnedExecutors"
               checked={request.useGroupOwnedExecutors}
             />
@@ -214,11 +211,10 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
         )}
         {capabilities.config.userOwnedKeysEnabled && (
           <label className="form-row input-label">
-            <input
+            <Checkbox
               autoComplete="off"
               onFocus={this.onFocus.bind(this)}
               onChange={this.onChange.bind(this)}
-              type="checkbox"
               name="userOwnedKeysEnabled"
               checked={request.userOwnedKeysEnabled}
             />
@@ -227,11 +223,10 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
         )}
         {capabilities.config.botSuggestionsEnabled && (
           <label className="form-row input-label">
-            <input
+            <Checkbox
               autoComplete="off"
               onFocus={this.onFocus.bind(this)}
               onChange={this.onChange.bind(this)}
-              type="checkbox"
               name="botSuggestionsEnabled"
               checked={request.botSuggestionsEnabled}
             />
@@ -240,11 +235,10 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
         )}
         {capabilities.config.codeSearchEnabled && this.props.user.codesearchAllowed && (
           <label className="form-row input-label">
-            <input
+            <Checkbox
               autoComplete="off"
               onFocus={this.onFocus.bind(this)}
               onChange={this.onChange.bind(this)}
-              type="checkbox"
               name="codeSearchEnabled"
               checked={request.codeSearchEnabled}
             />
@@ -253,11 +247,10 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
         )}
         {this.showAdvancedSettings() && (
           <label className="form-row input-label">
-            <input
+            <Checkbox
               autoComplete="off"
               onFocus={this.onFocus.bind(this)}
               onChange={this.onChange.bind(this)}
-              type="checkbox"
               name="developerOrgCreationEnabled"
               checked={request.developerOrgCreationEnabled}
             />
@@ -266,11 +259,10 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
         )}
         {this.showAdvancedSettings() && capabilities.config.workflowsEnabled && (
           <label className="form-row input-label">
-            <input
+            <Checkbox
               autoComplete="off"
               onFocus={this.onFocus.bind(this)}
               onChange={this.onChange.bind(this)}
-              type="checkbox"
               name="restrictCleanWorkflowRunsToAdmins"
               checked={request.restrictCleanWorkflowRunsToAdmins}
             />

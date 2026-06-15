@@ -4,13 +4,11 @@
   --color-trace-border: var(--color-gray-200);
   --color-trace-button-active-text: var(--color-black);
   --color-trace-button-bg: var(--color-overlay-gray-50-60);
-  --color-trace-button-focus: var(--color-blue-300);
   --color-trace-button-text: var(--color-gray-700);
-  --color-trace-event-filtered: var(--color-gray-300-alt);
+  --color-trace-event-filtered: var(--color-gray-300);
   --color-trace-event-highlight-stroke: var(--color-black);
   --color-trace-event-label-font: var(--color-gray-900);
   --color-trace-gridline: var(--color-blue-gray-100);
-  --color-trace-hovercard-shadow: var(--color-shadow-27);
   --color-trace-mouse-gridline: var(--color-blue-gray-200);
   --color-trace-mouse-timestamp-bg: var(--color-gray-300);
   --color-trace-scrollbar-bg: var(--color-gray-50);
@@ -21,7 +19,7 @@
   --color-trace-section-font: var(--color-gray-900);
   --color-trace-timestamp-header-bg: var(--color-blue-gray-50);
   --color-trace-timestamp-font: var(--color-gray-800);
-  --color-trace-zoom-factor-bg: var(--color-yellow-highlight);
+  --color-trace-zoom-factor-bg: var(--color-yellow-200);
 }
 
 .dark {
@@ -30,24 +28,21 @@
   --color-trace-border: var(--color-gray-900);
   --color-trace-button-active-text: var(--color-white);
   --color-trace-button-bg: var(--color-gray-900);
-  --color-trace-button-focus: var(--color-blue-400);
   --color-trace-button-text: var(--color-white);
   --color-trace-event-filtered: var(--color-gray-700);
   --color-trace-event-highlight-stroke: var(--color-white);
   --color-trace-event-label-font: var(--color-white);
   --color-trace-gridline: var(--color-gray-700);
-  --color-trace-hovercard-shadow: var(--color-shadow-40);
   --color-trace-mouse-gridline: var(--color-gray-500);
   --color-trace-mouse-timestamp-bg: var(--color-gray-700);
-  --color-trace-scrollbar-bg: var(--color-gray-900-alt3);
+  --color-trace-scrollbar-bg: var(--color-gray-900);
   --color-trace-scrollbar-corner: var(--color-gray-900);
   --color-trace-scrollbar-thumb: var(--color-gray-800);
   --color-trace-section-bg: var(--color-gray-800);
   --color-trace-section-border: var(--color-gray-700);
   --color-trace-section-font: var(--color-gray-200);
-  --color-trace-timestamp-header-bg: var(--color-gray-900-alt4);
+  --color-trace-timestamp-header-bg: var(--color-gray-900);
   --color-trace-timestamp-font: var(--color-gray-300);
-  --color-trace-zoom-factor-bg: var(--color-amber-800-alt);
 }
 
 .trace-viewer {
@@ -122,7 +117,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 1px 3px var(--color-shadow-lg);
+  box-shadow: var(--shadow-1);
   transition: 70ms ease-out;
   border: 1px solid transparent;
   box-sizing: border-box;
@@ -133,8 +128,9 @@
   opacity: 1;
 }
 
-.trace-viewer .button:focus {
-  border: 1px solid var(--color-trace-button-focus);
+.trace-viewer .button:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
 }
 
 .trace-viewer .button:active {
@@ -155,7 +151,7 @@
 
 .trace-viewer-hovercard {
   background: var(--color-hovercard-bg);
-  box-shadow: 0 1px 3px var(--color-trace-hovercard-shadow);
+  box-shadow: var(--shadow-3);
   padding: 8px;
   border-radius: 4px;
   font-size: 12px;
@@ -196,7 +192,14 @@
 
 .trace-viewer .zoom-factor {
   background: var(--color-trace-zoom-factor-bg);
-  padding: 6px 8px;
+  border-radius: 4px;
+  box-sizing: border-box;
+  color: var(--color-trace-button-active-text);
+  height: 32px;
+  opacity: 0.9;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
   margin-right: 4px;
   font-variant-numeric: tabular-nums;
   text-align: center;

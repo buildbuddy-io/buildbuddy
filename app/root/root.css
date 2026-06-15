@@ -11,11 +11,11 @@
 }
 
 .dark .menu {
-  border-bottom: 1px solid var(--color-shelf-border);
+  border-bottom: 1px solid var(--color-border-primary);
 }
 
 .dark .side-menu {
-  border: 1px solid var(--color-shelf-border);
+  border: 1px solid var(--color-border-primary);
 }
 
 h1,
@@ -208,7 +208,7 @@ button {
 
 .shelf {
   background-color: var(--color-bg-secondary);
-  border-bottom: 1px solid var(--color-shelf-border);
+  border-bottom: 1px solid var(--color-border-primary);
   padding: 32px 0;
   font-size: 14px;
 }
@@ -322,7 +322,7 @@ svg.icon.blue {
 }
 
 svg.icon.brown {
-  stroke: var(--color-brown-700-alt);
+  stroke: var(--color-brown-700);
 }
 
 svg.icon.purple {
@@ -378,7 +378,7 @@ svg.icon.yellow {
 }
 
 .tab:hover {
-  background: var(--color-bg-secondary);
+  background: var(--color-button-outlined-hover-bg);
 }
 
 .tab:active {
@@ -400,7 +400,7 @@ svg.icon.yellow {
 }
 
 .run {
-  box-shadow: 0px 0px 2px var(--color-overlay-dark-border);
+  box-shadow: var(--shadow-1);
   border-radius: 4px;
   margin-right: 8px;
   padding: 12px 32px 8px 32px;
@@ -452,18 +452,8 @@ svg.icon.yellow {
 
 /** Card **/
 
-body {
-  /* Shadow stacks based on: https://twitter.com/pixeljanitor/status/1735758919509684360 */
-  --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.05);
-  --shadow-4: 0px 0px 0px 1px rgba(0, 0, 0, 0.06), 0px 1px 1px -0.5px rgba(0, 0, 0, 0.06),
-    0px 3px 3px -1.5px rgba(0, 0, 0, 0.06), 0px 6px 6px -3px rgba(0, 0, 0, 0.06);
-  --shadow-6: 0px 0px 0px 1px rgba(0, 0, 0, 0.06), 0px 1px 1px -0.5px rgba(0, 0, 0, 0.06),
-    0px 3px 3px -1.5px rgba(0, 0, 0, 0.06), 0px 6px 6px -3px rgba(0, 0, 0, 0.06), 0px 8px 12px -6px rgba(0, 0, 0, 0.06),
-    0px 10px 24px -12px rgba(0, 0, 0, 0.06);
-}
-
 .card {
-  box-shadow: var(--shadow-4);
+  box-shadow: var(--shadow-1);
   margin: 32px 0;
   padding: 32px;
   border-radius: 8px;
@@ -473,12 +463,16 @@ body {
   background-color: var(--color-bg-card);
 }
 
-a.card:hover {
-  box-shadow: var(--shadow-6);
+.clickable.card {
+  transition: box-shadow 100ms ease-out;
+}
+
+.card.clickable:hover {
+  box-shadow: var(--shadow-2);
 }
 
 .card.selected-keyboard-shortcuts {
-  outline: 2px solid var(--color-blue-500);
+  outline: 2px solid var(--color-border-focus);
 }
 
 .card.card-success {
@@ -753,7 +747,7 @@ code button {
   font-size: 0.6em;
   font-weight: bold;
   outline: 0;
-  box-shadow: 0;
+  box-shadow: none;
   cursor: pointer;
   line-height: inherit;
   text-transform: uppercase;
@@ -1555,7 +1549,7 @@ code .comment {
   height: initial;
 }
 
-.sso input:focus {
+.sso input:focus-visible {
   outline: none;
   border: 3px solid var(--color-border-focus);
 }
@@ -1640,11 +1634,11 @@ code .comment {
 }
 
 .grid-block-neutral:hover {
-  background-color: var(--color-gray-700-alt);
+  background-color: var(--color-gray-700);
 }
 
 .grid-block-disconnected:hover {
-  background-color: var(--color-gray-400-alt2);
+  background-color: var(--color-gray-400);
 }
 
 .grid-block-in-progress:hover {
@@ -1699,7 +1693,7 @@ code .comment {
 
   margin-top: 0;
   padding: 12px 16px;
-  border: 0;
+  border: 1px solid var(--color-border-primary);
   box-shadow: none;
   border-radius: 0;
   color: var(--color-text-emphasis);
@@ -1740,9 +1734,15 @@ code .comment {
   margin-top: 4px;
   border-radius: 8px;
   border-top: 0;
-  box-shadow:
-    0px 1px 4px var(--color-overlay-dark),
-    0px 1px 6px var(--color-overlay-dark-subtle);
+  box-shadow: var(--shadow-1);
+}
+
+.dense .card.clickable:hover {
+  box-shadow: var(--shadow-1);
+}
+
+.dense .card.card-hover.clickable:hover {
+  box-shadow: var(--shadow-2);
 }
 
 .dense .card .details {

@@ -16,7 +16,6 @@ import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
 import Button from "../../../app/components/button/button";
-import LinkButton from "../../../app/components/button/link_button";
 import Link from "../../../app/components/link/link";
 import Spinner from "../../../app/components/spinner/spinner";
 import { Tooltip } from "../../../app/components/tooltip/tooltip";
@@ -706,36 +705,6 @@ export default class HistoryComponent extends React.Component<Props, State> {
                 <p>No builds matched the current filters or selected dates.</p>
                 <div>
                   <Button onClick={this.handleClearFiltersClicked.bind(this)}>Clear filters</Button>
-                </div>
-              </div>
-            </div>
-          )}
-        {!router.isFiltering() &&
-          !this.isAggregateView() &&
-          !this.state.loadingInvocations &&
-          !this.state.invocations?.length &&
-          this.isFilteredToWorkflows() && (
-            <div className="container narrow">
-              <div className="empty-state history">
-                <h2>No workflow runs yet!</h2>
-                {this.props.repo && (
-                  <p>
-                    Push commits or send pull requests to{" "}
-                    <a href={this.props.repo} target="_new" className="text-link">
-                      {format.formatGitUrl(this.props.repo)}
-                    </a>{" "}
-                    to trigger BuildBuddy workflows.
-                  </p>
-                )}
-                {!this.props.repo && <p>No repository URL was specified.</p>}
-                <p>
-                  By default, BuildBuddy will run <code className="inline-code">bazel test //...</code> on pushes to
-                  your main branch and on pull request branches.
-                </p>
-                <div>
-                  <LinkButton href="https://docs.buildbuddy.io/docs/workflows-config" target="_new">
-                    Learn more
-                  </LinkButton>
                 </div>
               </div>
             </div>

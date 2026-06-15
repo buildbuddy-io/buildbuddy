@@ -4,7 +4,9 @@
   display: flex;
 }
 .terminal.light-terminal {
+  --color-button-primary-text: var(--color-text-on-light-bg);
   background: var(--color-white);
+  color: var(--color-text-on-light-bg);
 }
 
 .terminal .terminal-search {
@@ -32,7 +34,7 @@
 .terminal .terminal-search-input {
   height: 32px;
   max-width: 180px;
-  border: 1px solid var(--color-gray-200);
+  margin-right: 4px;
   border-radius: 8px;
 }
 
@@ -66,20 +68,27 @@
   margin-left: auto;
 }
 
-.terminal button.terminal-action {
-  appearance: none;
-  background: none;
-  border: none;
-  background: none;
-  cursor: pointer;
+.terminal .terminal-action-divider {
+  width: 1px;
+  height: 32px;
+  margin: 0 4px;
+  background: var(--color-border-on-dark-bg);
+  flex-shrink: 0;
+}
 
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.terminal.light-terminal .terminal-action-divider {
+  background: var(--color-border-on-light-bg);
+}
+
+.terminal .terminal-action {
+  min-height: initial;
   width: 36px;
   height: 36px;
-  border-radius: 8px;
+  background: none;
+
+  &:focus-visible {
+    outline: none;
+  }
 }
 
 .terminal .terminal-action .icon {
@@ -91,18 +100,22 @@
   opacity: 0.3;
 }
 
+.terminal .terminal-action.terminal-action.terminal-action[disabled],
+.terminal .terminal-action.terminal-action.terminal-action[disabled]:hover {
+  background: none;
+}
+
 .terminal .terminal-action:hover:not(:disabled) {
   background: var(--color-overlay-light-subtle);
+  box-shadow: none;
 }
 .terminal.light-terminal .terminal-action:hover:not(:disabled) {
   background: var(--color-gray-200);
 }
 
-.terminal .terminal-action:focus:not(:disabled) {
-  border: 2px solid var(--color-overlay-light-subtle);
-}
-.terminal.light-terminal .terminal-action:focus:not(:disabled) {
-  border: 2px solid var(--color-gray-200);
+.terminal .terminal-action:focus-visible:not(:disabled) {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
 }
 
 .terminal .terminal-action:active:not(:disabled) {
@@ -159,7 +172,7 @@
   color: var(--color-terminal-text);
 }
 .terminal.light-terminal .terminal-line {
-  color: var(--color-gray-900);
+  color: var(--color-text-on-light-bg);
 }
 
 /* Scrollbars */

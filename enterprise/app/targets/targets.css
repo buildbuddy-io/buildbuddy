@@ -181,9 +181,9 @@
 
 .targets .trend-chart-hover {
   background: var(--color-targets-bg);
-  border: 1px solid var(--color-targets-border-alt);
+  border: 1px solid var(--color-input-border);
   border-radius: 4px;
   padding: 8px 12px;
   font-size: 12px;
-  box-shadow: 0 2px 8px var(--color-targets-shadow);
+  box-shadow: var(--shadow-3);
 }

@@ -4,6 +4,7 @@ import React from "react";
 import AutoSizer from "react-virtualized-auto-sizer";
 import { FixedSizeList } from "react-window";
 import capabilities from "../capabilities/capabilities";
+import Button from "../components/button/button";
 import TextInput from "../components/input/input";
 import Spinner from "../components/spinner/spinner";
 import router from "../router/router";
@@ -402,6 +403,12 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
                 onKeyPress={this.onSearchKeyPress.bind(this)}
                 spellCheck={false}
               />
+              <Button
+                title="Case sensitive"
+                className={`icon-button terminal-action ${this.state.searchQuery.caseSensitive ? "active" : ""}`}
+                onClick={this.onCaseSensitiveClick.bind(this)}>
+                <CaseSensitive className={`icon ${iconClass}`} />
+              </Button>
               <div className="search-result-count">
                 {content.matches?.length > 0 ? (
                   <span>
@@ -412,74 +419,69 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
                 )}
               </div>
               <div className="search-navigation">
-                <button
+                <Button
                   title="Previous match (Shift+Enter)"
                   disabled={content.matches.length <= 1}
-                  className={`terminal-action ${content.matches.length ? "active" : ""}`}
+                  className={`icon-button terminal-action ${content.matches.length ? "active" : ""}`}
                   onClick={this.onPreviousMatchClick.bind(this)}>
                   <ArrowUp className={`icon ${iconClass}`} />
-                </button>
-                <button
+                </Button>
+                <Button
                   title="Next match (Enter)"
                   disabled={content.matches.length <= 1}
-                  className={`terminal-action ${content.matches.length ? "active" : ""}`}
+                  className={`icon-button terminal-action ${content.matches.length ? "active" : ""}`}
                   onClick={this.onNextMatchClick.bind(this)}>
                   <ArrowDown className={`icon ${iconClass}`} />
-                </button>
-                <button
-                  title="Case sensitive"
-                  className={`terminal-action ${this.state.searchQuery.caseSensitive ? "active" : ""}`}
-                  onClick={this.onCaseSensitiveClick.bind(this)}>
-                  <CaseSensitive className={`icon ${iconClass}`} />
-                </button>
-                <button
+                </Button>
+                <Button
                   title="Clear search"
                   disabled={!this.state.searchQuery.match}
-                  className={`terminal-action ${this.state.searchQuery.match ? "active" : ""}`}
+                  className={`icon-button terminal-action ${this.state.searchQuery.match ? "active" : ""}`}
                   onClick={this.onClearSearchClick.bind(this)}>
                   <X className={`icon ${iconClass}`} />
-                </button>
+                </Button>
               </div>
             </div>
-            <button
+            <div className="terminal-action-divider" role="separator" />
+            <Button
               title="Wrap"
               onClick={this.onWrapClick.bind(this)}
-              className={`terminal-action ${this.getWrapPreference() ? "active" : ""}`}>
+              className={`icon-button terminal-action ${this.getWrapPreference() ? "active" : ""}`}>
               <WrapText className={`icon ${iconClass}`} />
-            </button>
+            </Button>
             {window.document.fullscreenEnabled && !window.document.fullscreenElement && (
-              <button
+              <Button
                 title="Full Screen"
-                onClick={(e) => this.terminalRef.current?.parentElement?.requestFullscreen()}
-                className="terminal-action active">
+                onClick={() => this.terminalRef.current?.parentElement?.requestFullscreen()}
+                className="icon-button terminal-action active">
                 <Expand className={`icon ${iconClass}`} />
-              </button>
+              </Button>
             )}
             {window.document.fullscreenEnabled && window.document.fullscreenElement && (
-              <button
+              <Button
                 title="Exit Full Screen"
-                onClick={(e) => window.document.exitFullscreen()}
-                className="terminal-action active">
+                onClick={() => window.document.exitFullscreen()}
+                className="icon-button terminal-action active">
                 <Shrink className={`icon ${iconClass}`} />
-              </button>
+              </Button>
             )}
-            <button
+            <Button
               title={this.state.copied ? "Copied" : "Copy"}
               onClick={this.onCopyClick.bind(this)}
-              className="terminal-action active">
+              className="icon-button terminal-action active">
               {this.state.copied ? <Check className={`icon ${iconClass}`} /> : <Copy className={`icon ${iconClass}`} />}
-            </button>
-            <button
+            </Button>
+            <Button
               title="Download"
               onClick={this.onDownloadClick.bind(this)}
-              className="terminal-action active"
+              className="icon-button terminal-action active"
               disabled={this.state.isLoadingFullLog}>
               {this.state.isLoadingFullLog ? (
                 <Spinner className={iconClass} />
               ) : (
                 <Download className={`icon ${iconClass}`} />
               )}
-            </button>
+            </Button>
           </div>
         </div>
         <div
