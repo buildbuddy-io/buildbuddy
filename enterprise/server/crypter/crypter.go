@@ -36,9 +36,8 @@ const (
 	encryptedChunkOverhead       = nonceSize + chacha20poly1305.Overhead
 )
 
-// Buffer pool for all the buffers in this package. Double the expected max
-// size, just to give some slack. Don't use directly. Call getBuf and putBuf.
-var bufPool = bytebufferpool.VariableSize(2 * (PlainTextChunkSize + encryptedChunkOverhead))
+// Buffer pool for all the buffers in this package.
+var bufPool = bytebufferpool.VariableSize(PlainTextChunkSize + encryptedChunkOverhead)
 
 func getBuf(size int) []byte {
 	buf := bufPool.Get(int64(size))
@@ -100,6 +99,9 @@ type Encryptor struct {
 }
 
 func NewEncryptor(ctx context.Context, key *DerivedKey, digest *repb.Digest, w interfaces.CommittedWriteCloser, groupID string, chunkSize int) (*Encryptor, error) {
+	if chunkSize > PlainTextChunkSize {
+		return nil, status.InvalidArgumentErrorf("chunkSize must be < %v. Was %v", PlainTextChunkSize, chunkSize)
+	}
 	ciph, err := getCipher(key.Key)
 	if err != nil {
 		return nil, err
@@ -207,6 +209,9 @@ type Decryptor struct {
 }
 
 func NewDecryptor(ctx context.Context, key *DerivedKey, digest *repb.Digest, r io.ReadCloser, groupID string, chunkSize int) (*Decryptor, error) {
+	if chunkSize > PlainTextChunkSize {
+		return nil, status.InvalidArgumentErrorf("chunkSize must be < %v. Was %v", PlainTextChunkSize, chunkSize)
+	}
 	ciph, err := getCipher(key.Key)
 	if err != nil {
 		return nil, err
