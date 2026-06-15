@@ -44,9 +44,9 @@ func TestExportAll_ReportsUsageForMultipleWindows(t *testing.T) {
 	// Write usage data to clickhouse.
 	rows := []*schema.RawUsage{
 		rawUsage("GR1", from, sku.BuildEventsBESCount, bazelLabels, 2),
-		rawUsage("GR1", from.Add(4*time.Minute), sku.BuildEventsBESCount, bazelLabels, 3),
-		rawUsage("GR2", from.Add(2*metronome.WindowSize), sku.RemoteCacheCASHits, internalLabels, 7),
-		rawUsage("GR2", from.Add(2*metronome.WindowSize+time.Minute), sku.RemoteCacheCASHits, internalLabels, 11),
+		rawUsage("GR1", from.Add(metronome.WindowSize), sku.BuildEventsBESCount, bazelLabels, 3),
+		rawUsage("GR2", from.Add(metronome.WindowSize), sku.RemoteCacheCASHits, internalLabels, 7),
+		rawUsage("GR2", from.Add(2*metronome.WindowSize), sku.RemoteCacheCASHits, internalLabels, 11),
 		// The to-timestamp is exclusive, so this event should not be reported.
 		rawUsage("GR3", to, sku.BuildEventsBESCount, bazelLabels, 100),
 	}
@@ -63,7 +63,25 @@ func TestExportAll_ReportsUsageForMultipleWindows(t *testing.T) {
 				PeriodEnd:   from.Add(metronome.WindowSize),
 				SKU:         sku.BuildEventsBESCount,
 				Labels:      bazelLabels,
-				Count:       5,
+				Count:       2,
+			},
+		},
+		{
+			{
+				GroupID:     "GR1",
+				PeriodStart: from.Add(metronome.WindowSize),
+				PeriodEnd:   from.Add(2 * metronome.WindowSize),
+				SKU:         sku.BuildEventsBESCount,
+				Labels:      bazelLabels,
+				Count:       3,
+			},
+			{
+				GroupID:     "GR2",
+				PeriodStart: from.Add(metronome.WindowSize),
+				PeriodEnd:   from.Add(2 * metronome.WindowSize),
+				SKU:         sku.RemoteCacheCASHits,
+				Labels:      internalLabels,
+				Count:       7,
 			},
 		},
 		{
@@ -73,7 +91,7 @@ func TestExportAll_ReportsUsageForMultipleWindows(t *testing.T) {
 				PeriodEnd:   from.Add(3 * metronome.WindowSize),
 				SKU:         sku.RemoteCacheCASHits,
 				Labels:      internalLabels,
-				Count:       18,
+				Count:       11,
 			},
 		},
 	}, client.reported)
@@ -85,7 +103,7 @@ func TestQueryUsageRows(t *testing.T) {
 
 	// Add data to clickhouse.
 	from := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
-	to := from.Add(5 * time.Minute)
+	to := from.Add(metronome.WindowSize)
 	bazelLabels := map[sku.LabelName]sku.LabelValue{
 		sku.Client: sku.ClientBazel,
 		sku.Origin: sku.OriginExternal,
@@ -96,38 +114,40 @@ func TestQueryUsageRows(t *testing.T) {
 	}
 	rows := []*schema.RawUsage{
 		// Events with the same skus and labels should be aggregated.
-		rawUsage("GR1", from, sku.BuildEventsBESCount, bazelLabels, 2),
-		rawUsage("GR1", from.Add(time.Minute), sku.BuildEventsBESCount, bazelLabels, 3),
+		// These events have different buffer IDs so that clickhouse's finalization does not de-duplicate them.
+		// This should not be possible because clickhouse should de-duplicate rows, but add test coverage just in case.
+		rawUsageWithBufferID("test-1:redis", "GR1", from, sku.BuildEventsBESCount, bazelLabels, 2),
+		rawUsageWithBufferID("test-2:redis", "GR1", from, sku.BuildEventsBESCount, bazelLabels, 3),
 		// The to-timestamp is exclusive, so this event should not be included.
 		rawUsage("GR1", to, sku.BuildEventsBESCount, bazelLabels, 100),
 		// Events with the same sku and different labels should be separate.
-		rawUsage("GR1", from.Add(2*time.Minute), sku.RemoteCacheCASHits, bazelLabels, 7),
-		rawUsage("GR1", from.Add(4*time.Minute), sku.RemoteCacheCASHits, internalLabels, 13),
+		rawUsage("GR1", from, sku.RemoteCacheCASHits, bazelLabels, 7),
+		rawUsage("GR1", from, sku.RemoteCacheCASHits, internalLabels, 13),
 		// Event from a different group.
-		rawUsage("GR2", from.Add(time.Minute), sku.BuildEventsBESCount, bazelLabels, 17),
+		rawUsage("GR2", from, sku.BuildEventsBESCount, bazelLabels, 17),
 		// Zero count rows do not affect positive aggregates.
-		rawUsage("GR1", from.Add(2*time.Minute), sku.BuildEventsBESCount, bazelLabels, 0),
-		rawUsage("GR1", from.Add(3*time.Minute), sku.RemoteCacheCASHits, bazelLabels, 0),
+		rawUsageWithBufferID("test-3:redis", "GR1", from, sku.BuildEventsBESCount, bazelLabels, 0),
+		rawUsageWithBufferID("test-4:redis", "GR1", from, sku.RemoteCacheCASHits, bazelLabels, 0),
 		// An aggregate whose rows sum to zero should not be included.
-		rawUsage("GR1", from.Add(3*time.Minute), sku.RemoteCacheCASDownloadedBytes, internalLabels, 0),
+		rawUsage("GR1", from, sku.RemoteCacheCASDownloadedBytes, internalLabels, 0),
 	}
 	require.NoError(t, env.GetOLAPDBHandle().FlushUsages(ctx, rows))
 
 	allGroups, err := queryUsageRows(ctx, env, nil, &window{from: from, to: to})
 	require.NoError(t, err)
 	require.ElementsMatch(t, []*schema.Usage{
-		{GroupID: "GR1", SKU: sku.BuildEventsBESCount, Labels: bazelLabels, Count: 5},
-		{GroupID: "GR1", SKU: sku.RemoteCacheCASHits, Labels: bazelLabels, Count: 7},
-		{GroupID: "GR1", SKU: sku.RemoteCacheCASHits, Labels: internalLabels, Count: 13},
-		{GroupID: "GR2", SKU: sku.BuildEventsBESCount, Labels: bazelLabels, Count: 17},
+		{GroupID: "GR1", PeriodStart: from, SKU: sku.BuildEventsBESCount, Labels: bazelLabels, Count: 5},
+		{GroupID: "GR1", PeriodStart: from, SKU: sku.RemoteCacheCASHits, Labels: bazelLabels, Count: 7},
+		{GroupID: "GR1", PeriodStart: from, SKU: sku.RemoteCacheCASHits, Labels: internalLabels, Count: 13},
+		{GroupID: "GR2", PeriodStart: from, SKU: sku.BuildEventsBESCount, Labels: bazelLabels, Count: 17},
 	}, allGroups)
 
 	gr1Only, err := queryUsageRows(ctx, env, []string{"GR1"}, &window{from: from, to: to})
 	require.NoError(t, err)
 	require.ElementsMatch(t, []*schema.Usage{
-		{GroupID: "GR1", SKU: sku.BuildEventsBESCount, Labels: bazelLabels, Count: 5},
-		{GroupID: "GR1", SKU: sku.RemoteCacheCASHits, Labels: bazelLabels, Count: 7},
-		{GroupID: "GR1", SKU: sku.RemoteCacheCASHits, Labels: internalLabels, Count: 13},
+		{GroupID: "GR1", PeriodStart: from, SKU: sku.BuildEventsBESCount, Labels: bazelLabels, Count: 5},
+		{GroupID: "GR1", PeriodStart: from, SKU: sku.RemoteCacheCASHits, Labels: bazelLabels, Count: 7},
+		{GroupID: "GR1", PeriodStart: from, SKU: sku.RemoteCacheCASHits, Labels: internalLabels, Count: 13},
 	}, gr1Only)
 }
 
@@ -141,12 +161,16 @@ func setupClickHouseEnv(t *testing.T) *real_environment.RealEnv {
 }
 
 func rawUsage(groupID string, periodStart time.Time, usageSKU sku.SKU, labels map[sku.LabelName]sku.LabelValue, count int64) *schema.RawUsage {
+	return rawUsageWithBufferID("test:redis", groupID, periodStart, usageSKU, labels, count)
+}
+
+func rawUsageWithBufferID(bufferID, groupID string, periodStart time.Time, usageSKU sku.SKU, labels map[sku.LabelName]sku.LabelValue, count int64) *schema.RawUsage {
 	return &schema.RawUsage{
 		GroupID:     groupID,
 		PeriodStart: periodStart,
 		SKU:         usageSKU,
 		Labels:      orderedmap.FromMap(labels),
-		BufferID:    "test:redis",
+		BufferID:    bufferID,
 		Count:       count,
 	}
 }

@@ -10,6 +10,7 @@ go_library(
     deps = [
         "//enterprise/server/backends/configsecrets",
         "//enterprise/server/billing/metronome",
+        "//enterprise/server/usage",
         "//server/config",
         "//server/real_environment",
         "//server/util/clickhouse",

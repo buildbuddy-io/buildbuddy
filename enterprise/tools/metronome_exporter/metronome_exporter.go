@@ -10,7 +10,7 @@
 //
 //	bazel run //enterprise/tools/metronome_exporter:metronome_exporter \
 //	  --from=2026-06-01T00:00:00Z \
-//	  --to=2026-06-01T01:05:00Z \
+//	  --to=2026-06-01T01:01:00Z \
 //	  --group_id=GR123 --group_id=GR456 \
 //	  --olap_database.data_source='clickhouse://default:password@clickhouse:9000/buildbuddy' \
 //	  --billing.metronome.api_key=$METRONOME_API_KEY
@@ -29,6 +29,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/billing/metronome"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
@@ -45,10 +46,12 @@ const (
 	// Refuse to export if --to is newer than (now - min_age).
 	// Prevents querying periods that may still be receiving writes.
 	//
-	// Usage is bucketed in Redis in 1-min increments, then flushed.
+	// Usage data might be buffered in redis for up to RedisKeyTTL. It then might take some additional time
+	// for the data to be flushed to clickhouse. We add some buffer to ensure all usage data for the period is flushed,
+	// before we try to export it to Metronome.
 	// Metronome ignores events with duplicate IDs, so if we flush partial usage data for a period, it can't be later amended
 	// if we receive more data for that period. This delay ensures all data is finalized before it's flushed.
-	minAge = 5 * time.Minute
+	minAge = usage.RedisKeyTTL + time.Minute
 )
 
 var (
@@ -172,7 +175,7 @@ func exportAll(ctx context.Context, env *real_environment.RealEnv, client usageR
 		for _, r := range rows {
 			events = append(events, metronome.UsageEvent{
 				GroupID:     r.GroupID,
-				PeriodStart: start,
+				PeriodStart: r.PeriodStart,
 				PeriodEnd:   end,
 				SKU:         r.SKU,
 				Labels:      r.Labels,
@@ -194,19 +197,22 @@ func exportAll(ctx context.Context, env *real_environment.RealEnv, client usageR
 	return nil
 }
 
-// Even though this returns a Usage struct, which is typically aggregated per minute, this query aggregates data over the entire window
-// and doesn't set PeriodStart.
-// The larger aggregation window is intended to reduce the number of Metronome events sent.
+// queryUsageRows returns per-minute usage rows in the window [from, to). The "Usage"
+// table is already aggregated by (group_id, period_start, sku, labels) — where
+// period_start is a one-minute bucket matching metronome.WindowSize — so this reads
+// those rows directly without re-aggregating.
 func queryUsageRows(ctx context.Context, env *real_environment.RealEnv, groups []string, w *window) ([]*olaptables.Usage, error) {
 	query := `
 		SELECT
 			group_id,
 			sku,
 			labels,
-			SUM(count) AS count
+			period_start,
+			count
 		FROM "Usage"
 		WHERE period_start >= ?
-			AND period_start < ?`
+			AND period_start < ?
+			AND count > 0`
 	args := []any{w.from, w.to}
 	if len(groups) > 0 {
 		query += `
@@ -214,12 +220,8 @@ func queryUsageRows(ctx context.Context, env *real_environment.RealEnv, groups [
 		args = append(args, groups)
 	}
 	query += `
-		GROUP BY
-			group_id,
-			sku,
-			labels
-		HAVING count > 0
 		ORDER BY
+			period_start,
 			group_id,
 			sku`
 	rq := env.GetOLAPDBHandle().NewQuery(ctx, "metronome_exporter_query_usage").Raw(query, args...)

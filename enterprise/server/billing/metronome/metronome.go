@@ -36,7 +36,7 @@ const (
 	//
 	// We include the period start and end timestamps in the transaction ID for deduplication.
 	// If this window size is changed, events will not be deduplicated correctly, and users may be over-billed.
-	WindowSize = 5 * time.Minute
+	WindowSize = 1 * time.Minute
 )
 
 func defaultRetryOptions() *retry.Options {
