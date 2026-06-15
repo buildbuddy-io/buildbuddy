@@ -60,7 +60,7 @@ go_library(
         "//enterprise/server/ip_rules_service",
         "//enterprise/server/mcp/mcpserver",
         "//enterprise/server/oci/ocifetcher",
-        "//enterprise/server/ociregistry",
+        "//enterprise/server/oci/ociregistry",
         "//enterprise/server/quota",
         "//enterprise/server/registry",
         "//enterprise/server/remote_execution/execution_server",

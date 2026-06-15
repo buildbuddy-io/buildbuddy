@@ -4,7 +4,7 @@
 
 Libraries for fetching, caching, mirroring, and materializing OCI images are currently spread across multiple packages:
 
-- [//enterprise/server/ociregistry](../ociregistry) provides an HTTP mirror for Docker Hub that caches blobs and manifests on read.
+- [//enterprise/server/oci/ociregistry](ociregistry) provides an HTTP mirror for Docker Hub that caches blobs and manifests on read.
 - [//enterprise/server/remote_execution/containers/ociruntime](../remote_execution/containers/ociruntime) has functions for writing OCI image layer tarballs to disk.
 - [//enterprise/server/util/oci](../util/oci) fetches blobs and manifests (caching on read) from remote registries and returning
   [go-containerregistry](https://github.com/google/go-containerregistry) Images.

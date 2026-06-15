@@ -6,7 +6,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "ociregistry",
     srcs = ["ociregistry.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry",
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociregistry",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/oci/ocicache",
