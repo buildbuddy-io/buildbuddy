@@ -8,5 +8,8 @@ overrides:
   # sockjs is not necessary, since docusaurus' webpack-dev-server uses ws
   # instead of sockjs
   webpack-dev-server@^5>sockjs: "-"
+  webpack-dev-server@^5>@types/sockjs: "-"
   sharp: "0.35.1"
   encoding-sniffer: "1.0.2"
+  "@docusaurus/bundler@^3>copy-webpack-plugin": "14.0.0"
+  "@docusaurus/bundler@^3>css-minimizer-webpack-plugin": "8.0.0"
