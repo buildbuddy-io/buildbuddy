@@ -89,14 +89,15 @@ go_deps.module_override(
     path = "github.com/smacker/go-tree-sitter",
 )
 
+# Comment out this patch until we fix gorm's schema problem wrt clickhouse and NOPs.
 # Can remove this once https://github.com/go-gorm/gorm/pull/7717 is released.
-go_deps.module_override(
-    patch_strip = 1,
-    patches = [
-        "@com_github_buildbuddy_io_buildbuddy//buildpatches:gorm.patch",
-    ],
-    path = "gorm.io/gorm",
-)
+# go_deps.module_override(
+#     patch_strip = 1,
+#     patches = [
+#         "@com_github_buildbuddy_io_buildbuddy//buildpatches:gorm.patch",
+#     ],
+#     path = "gorm.io/gorm",
+# )
 
 go_deps.module_override(
     patch_strip = 1,
