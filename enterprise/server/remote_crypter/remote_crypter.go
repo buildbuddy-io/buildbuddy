@@ -131,19 +131,20 @@ func (c *RemoteCrypter) GetEncryptionConfig(ctx context.Context, req *enpb.GetEn
 }
 
 func (c *RemoteCrypter) ActiveKey(ctx context.Context) (*sgpb.EncryptionMetadata, error) {
-	loadedKey, err := c.cache.EncryptionKey(ctx)
+	loadedKey, err := c.cache.ActiveEncryptionKey(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return loadedKey.Metadata, nil
 }
 
-func (c *RemoteCrypter) NewEncryptor(ctx context.Context, d *repb.Digest, w interfaces.CommittedWriteCloser) (interfaces.Encryptor, error) {
+// NewEncryptor creates an encryptor using the specified key metadata.
+func (c *RemoteCrypter) NewEncryptor(ctx context.Context, d *repb.Digest, w interfaces.CommittedWriteCloser, em *sgpb.EncryptionMetadata) (interfaces.Encryptor, error) {
 	u, err := c.authenticator.AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	loadedKey, err := c.cache.EncryptionKey(ctx)
+	loadedKey, err := c.cache.EncryptionKeyForMetadata(ctx, em)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +156,7 @@ func (c *RemoteCrypter) NewDecryptor(ctx context.Context, d *repb.Digest, r io.R
 	if err != nil {
 		return nil, err
 	}
-	loadedKey, err := c.cache.DecryptionKey(ctx, em)
+	loadedKey, err := c.cache.EncryptionKeyForMetadata(ctx, em)
 	if err != nil {
 		return nil, err
 	}

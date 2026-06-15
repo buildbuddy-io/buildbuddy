@@ -236,7 +236,9 @@ func TestEncryptDecrypt(t *testing.T) {
 	out := bytes.NewBuffer(nil)
 	for _, size := range []int64{1, 10, 100, 1000, 1000 * 1000} {
 		t.Run(fmt.Sprint(size), func(t *testing.T) {
-			e, err := crypter.newEncryptorWithChunkSize(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out), groupID, 1024)
+			md, err := crypter.ActiveKey(ctx)
+			require.NoError(t, err)
+			e, err := crypter.newEncryptorWithChunkSize(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out), md, groupID, 1024)
 			require.NoError(t, err)
 
 			testData := make([]byte, size)
@@ -279,7 +281,9 @@ func TestDecryptWrongGroup(t *testing.T) {
 	require.NoError(t, err)
 	out := bytes.NewBuffer(nil)
 
-	e, err := crypter.newEncryptorWithChunkSize(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out), groupID, 1024)
+	md, err := crypter.ActiveKey(ctx)
+	require.NoError(t, err)
+	e, err := crypter.newEncryptorWithChunkSize(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out), md, groupID, 1024)
 	require.NoError(t, err)
 
 	testData := make([]byte, 1000)
@@ -322,7 +326,9 @@ func TestDecryptWrongDigest(t *testing.T) {
 	require.NoError(t, err)
 	out := bytes.NewBuffer(nil)
 
-	e, err := crypter.newEncryptorWithChunkSize(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out), groupID, 1024)
+	md, err := crypter.ActiveKey(ctx)
+	require.NoError(t, err)
+	e, err := crypter.newEncryptorWithChunkSize(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out), md, groupID, 1024)
 	require.NoError(t, err)
 
 	testData := make([]byte, 1000)
@@ -383,7 +389,9 @@ func TestKeyLookup(t *testing.T) {
 		out := bytes.NewBuffer(nil)
 		ctx, err := auther.WithAuthenticatedUser(ctx, userID1)
 		require.NoError(t, err)
-		c, err := crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out))
+		md, err := crypter.ActiveKey(ctx)
+		require.NoError(t, err)
+		c, err := crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out), md)
 		require.NoError(t, err)
 		require.Equal(t, c.Metadata().GetEncryptionKeyId(), group1KeyID)
 		require.EqualValues(t, c.Metadata().GetVersion(), 1)
@@ -403,7 +411,9 @@ func TestKeyLookup(t *testing.T) {
 		out := bytes.NewBuffer(nil)
 		ctx, err := auther.WithAuthenticatedUser(ctx, userID2)
 		require.NoError(t, err)
-		c, err := crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out))
+		md, err := crypter.ActiveKey(ctx)
+		require.NoError(t, err)
+		c, err := crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out), md)
 		require.NoError(t, err)
 		require.Equal(t, c.Metadata().GetEncryptionKeyId(), group2KeyID)
 		require.EqualValues(t, c.Metadata().GetVersion(), 1)
@@ -423,7 +433,9 @@ func TestKeyLookup(t *testing.T) {
 	{
 		ctx, err := auther.WithAuthenticatedUser(ctx, userID1)
 		require.NoError(t, err)
-		c, err := crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(bytes.NewBuffer(nil)))
+		md, err := crypter.ActiveKey(ctx)
+		require.NoError(t, err)
+		c, err := crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(bytes.NewBuffer(nil)), md)
 		require.NoError(t, err)
 		user1MD := c.Metadata()
 
@@ -437,7 +449,7 @@ func TestKeyLookup(t *testing.T) {
 	{
 		ctx, err := auther.WithAuthenticatedUser(ctx, userID3)
 		require.NoError(t, err)
-		_, err = crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(bytes.NewBuffer(nil)))
+		_, err = crypter.ActiveKey(ctx)
 		require.True(t, status.IsNotFoundError(err))
 
 		ctx, err = auther.WithAuthenticatedUser(ctx, userID2)
@@ -451,7 +463,9 @@ func testEncrypt(ctx context.Context, t *testing.T, auther *testauth.TestAuthent
 	out := bytes.NewBuffer(nil)
 	ctx, err := auther.WithAuthenticatedUser(ctx, userID)
 	require.NoError(t, err)
-	c, err := crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out))
+	md, err := crypter.ActiveKey(ctx)
+	require.NoError(t, err)
+	c, err := crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out), md)
 	require.NoError(t, err)
 	require.Equal(t, c.Metadata().GetEncryptionKeyId(), expectedKeyID)
 	require.EqualValues(t, c.Metadata().GetVersion(), 1)
@@ -480,7 +494,6 @@ func testEncryptDecrypt(ctx context.Context, t *testing.T, auther *testauth.Test
 }
 
 func testKeyError(ctx context.Context, t *testing.T, auther *testauth.TestAuthenticator, crypter *Crypter, userID string, clock *clockwork.FakeClock) error {
-	out := bytes.NewBuffer(nil)
 	ctx, err := auther.WithAuthenticatedUser(ctx, userID)
 	require.NoError(t, err)
 
@@ -498,7 +511,7 @@ func testKeyError(ctx context.Context, t *testing.T, auther *testauth.TestAuthen
 			}
 		}
 	}()
-	_, err = crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out))
+	_, err = crypter.ActiveKey(ctx)
 	require.Error(t, err)
 	return err
 }

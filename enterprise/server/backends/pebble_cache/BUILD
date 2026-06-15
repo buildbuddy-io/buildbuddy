@@ -57,6 +57,7 @@ go_test(
         "//enterprise/server/crypter_service",
         "//enterprise/server/filestore",
         "//enterprise/server/raft/keys",
+        "//proto:encryption_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//proto:storage_go_proto",

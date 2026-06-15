@@ -305,11 +305,17 @@ func (c *KeyCache) loadKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*c
 	return loadedKey, nil
 }
 
-func (c *KeyCache) EncryptionKey(ctx context.Context) (*crypter.DerivedKey, error) {
+// ActiveEncryptionKey returns the active encryption key for the caller's group,
+// using the cache when possible and refreshing it if needed.
+func (c *KeyCache) ActiveEncryptionKey(ctx context.Context) (*crypter.DerivedKey, error) {
 	return c.loadKey(ctx, nil)
 }
 
-func (c *KeyCache) DecryptionKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*crypter.DerivedKey, error) {
+// EncryptionKeyForMetadata returns the key for the caller's group using the key
+// ID and version in encryption metadata, using the cache when possible and
+// refreshing it if needed. Use this after metadata has already been selected,
+// so callers do not perform another active key lookup.
+func (c *KeyCache) EncryptionKeyForMetadata(ctx context.Context, em *sgpb.EncryptionMetadata) (*crypter.DerivedKey, error) {
 	if em == nil {
 		return nil, status.FailedPreconditionError("encryption metadata cannot be nil")
 	}

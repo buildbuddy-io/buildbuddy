@@ -27,7 +27,7 @@ func setupAuth(t *testing.T, env *real_environment.RealEnv) context.Context {
 	return testauth.WithAuthenticatedUserInfo(t.Context(), user)
 }
 
-func TestEncryptionKey(t *testing.T) {
+func TestActiveEncryptionKey(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	env := testenv.GetTestEnv(t)
 	ctx := setupAuth(t, env)
@@ -50,21 +50,21 @@ func TestEncryptionKey(t *testing.T) {
 	cache := crypter_key_cache.New(env, refreshFn, clock)
 
 	// First call should trigger refresh
-	key, err := cache.EncryptionKey(ctx)
+	key, err := cache.ActiveEncryptionKey(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expectedKey, key.Key)
 	require.Equal(t, expectedMetadata, key.Metadata)
 	require.Equal(t, 1, refreshCount)
 
 	// Second call should use cache
-	key, err = cache.EncryptionKey(ctx)
+	key, err = cache.ActiveEncryptionKey(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expectedKey, key.Key)
 	require.Equal(t, expectedMetadata, key.Metadata)
 	require.Equal(t, 1, refreshCount) // No additional refresh
 }
 
-func TestDecryptionKey(t *testing.T) {
+func TestEncryptionKeyForMetadata(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	env := testenv.GetTestEnv(t)
 	ctx := setupAuth(t, env)
@@ -87,19 +87,19 @@ func TestDecryptionKey(t *testing.T) {
 	cache := crypter_key_cache.New(env, refreshFn, clock)
 
 	// Test nil metadata
-	_, err := cache.DecryptionKey(ctx, nil)
+	_, err := cache.EncryptionKeyForMetadata(ctx, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "encryption metadata cannot be nil")
 
 	// Test valid metadata
-	key, err := cache.DecryptionKey(ctx, inputMetadata)
+	key, err := cache.EncryptionKeyForMetadata(ctx, inputMetadata)
 	require.NoError(t, err)
 	require.Equal(t, expectedKey, key.Key)
 	require.Equal(t, inputMetadata, key.Metadata)
 	require.Equal(t, 1, refreshCount)
 
 	// Second call should use cache
-	key, err = cache.DecryptionKey(ctx, inputMetadata)
+	key, err = cache.EncryptionKeyForMetadata(ctx, inputMetadata)
 	require.NoError(t, err)
 	require.Equal(t, expectedKey, key.Key)
 	require.Equal(t, 1, refreshCount) // No additional refresh
@@ -137,12 +137,12 @@ func TestError(t *testing.T) {
 	}()
 
 	// First call should trigger refresh and cache the error
-	_, err := cache.EncryptionKey(ctx)
+	_, err := cache.ActiveEncryptionKey(ctx)
 	require.True(t, status.IsUnavailableError(err))
 	refreshCount.Store(0)
 
 	// Second call within error cache time should return cached error
-	_, err = cache.EncryptionKey(ctx)
+	_, err = cache.ActiveEncryptionKey(ctx)
 	require.True(t, status.IsUnavailableError(err))
 	require.Equal(t, int32(0), refreshCount.Load())
 }
@@ -160,12 +160,12 @@ func TestInvalidMetadata(t *testing.T) {
 
 	// Test metadata without key ID
 	metadata := &sgpb.EncryptionMetadata{Version: 1}
-	_, err := cache.DecryptionKey(ctx, metadata)
+	_, err := cache.EncryptionKeyForMetadata(ctx, metadata)
 	require.True(t, status.IsFailedPreconditionError(err))
 
 	// Test metadata without version
 	metadata = &sgpb.EncryptionMetadata{EncryptionKeyId: "key123"}
-	_, err = cache.DecryptionKey(ctx, metadata)
+	_, err = cache.EncryptionKeyForMetadata(ctx, metadata)
 	require.True(t, status.IsFailedPreconditionError(err))
 }
 
@@ -187,19 +187,19 @@ func TestNotFound(t *testing.T) {
 	cache := crypter_key_cache.NewWithOpts(env, refreshFn, clock, opts)
 
 	// NotFound errors should not be retried
-	_, err := cache.EncryptionKey(ctx)
+	_, err := cache.ActiveEncryptionKey(ctx)
 	require.True(t, status.IsNotFoundError(err))
 	require.Equal(t, int32(1), refreshCount.Load())
 
 	// A second call within the error cache time should be served from the
 	// error cache without another refresh.
-	_, err = cache.EncryptionKey(ctx)
+	_, err = cache.ActiveEncryptionKey(ctx)
 	require.True(t, status.IsNotFoundError(err))
 	require.Equal(t, int32(1), refreshCount.Load())
 
 	// Once the error cache entry expires, the key should be refreshed again.
 	clock.Advance(6 * time.Second)
-	_, err = cache.EncryptionKey(ctx)
+	_, err = cache.ActiveEncryptionKey(ctx)
 	require.True(t, status.IsNotFoundError(err))
 	require.Equal(t, int32(2), refreshCount.Load())
 }
@@ -236,7 +236,7 @@ func TestCanceledRefreshIsNotCached(t *testing.T) {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := cache.EncryptionKey(cancelCtx)
+		_, err := cache.ActiveEncryptionKey(cancelCtx)
 		errCh <- err
 	}()
 	require.Eventually(t, func() bool { return refreshCount.Load() == 1 }, 5*time.Second, 1*time.Millisecond)
@@ -246,7 +246,7 @@ func TestCanceledRefreshIsNotCached(t *testing.T) {
 	// Now let the refreshFn succeed. A subsequent refresh with a non-canceled
 	// ctx should return a valid key.
 	close(proceed)
-	key, err := cache.EncryptionKey(ctx)
+	key, err := cache.ActiveEncryptionKey(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expectedKey, key.Key)
 	require.Equal(t, expectedMetadata, key.Metadata)
@@ -281,12 +281,12 @@ func TestAlreadyCanceledContextDoesNotPoisonCache(t *testing.T) {
 
 		canceledCtx, cancel := context.WithCancel(ctx)
 		cancel()
-		_, err := cache.EncryptionKey(canceledCtx)
+		_, err := cache.ActiveEncryptionKey(canceledCtx)
 		require.Error(t, err)
 
 		// Make sure the earlier canceled lookup didn't wind up caching the ctx
 		// error or an invalid key.
-		key, err := cache.EncryptionKey(ctx)
+		key, err := cache.ActiveEncryptionKey(ctx)
 		require.NoError(t, err)
 		require.Equal(t, expectedKey, key.Key)
 		require.Equal(t, expectedMetadata, key.Metadata)
@@ -316,7 +316,7 @@ func TestRefreshScan(t *testing.T) {
 	cache.StartRefresher(quitChan)
 
 	// Load a key
-	_, err := cache.EncryptionKey(ctx)
+	_, err := cache.ActiveEncryptionKey(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, refreshCount)
 
@@ -362,7 +362,7 @@ func TestRaciness(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			key, err := cache.EncryptionKey(ctx)
+			key, err := cache.ActiveEncryptionKey(ctx)
 			require.NoError(t, err)
 			require.Equal(t, expectedKey, key.Key)
 		}()
@@ -373,7 +373,7 @@ func TestRaciness(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			key, err := cache.DecryptionKey(ctx, expectedMetadata)
+			key, err := cache.EncryptionKeyForMetadata(ctx, expectedMetadata)
 			require.NoError(t, err)
 			require.Equal(t, expectedKey, key.Key)
 		}()
