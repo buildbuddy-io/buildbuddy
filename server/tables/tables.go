@@ -159,7 +159,7 @@ type Invocation struct {
 	TotalUncachedActionExecUsec int64
 
 	DownloadThroughputBytesPerSecond int64
-	InvocationUUID                   []byte `gorm:"size:16;default:NULL;uniqueIndex:invocation_invocation_uuid;unique"`
+	InvocationUUID                   []byte `gorm:"size:16;default:NULL;uniqueIndex:invocation_invocation_uuid"`
 	Success                          bool
 	Attempt                          uint64 `gorm:"not null;default:0"`
 	RunID                            string
@@ -208,7 +208,7 @@ type Group struct {
 	// A unique URL segment that is displayed in group-related URLs.
 	// e.g. "example-org" in app.buildbuddy.com/join/example-org or
 	// "example-org.buildbuddy.com" if we support subdomains in the future.
-	URLIdentifier string `gorm:"default:NULL;unique;uniqueIndex:url_identifier_unique_index;"`
+	URLIdentifier string `gorm:"default:NULL;uniqueIndex:url_identifier_unique_index;"`
 
 	// The group ID -- a unique ID.
 	GroupID string `gorm:"primaryKey;"`
@@ -731,7 +731,7 @@ type Workflow struct {
 	Name        string
 	Username    string
 	AccessToken string `gorm:"size:4096"`
-	WebhookID   string `gorm:"default:NULL;unique;uniqueIndex:workflow_webhook_id_index;"`
+	WebhookID   string `gorm:"default:NULL;uniqueIndex:workflow_webhook_id_index;"`
 	Model
 	Perms int32 `gorm:"index:workflow_perms;default:NULL"`
 	// InstanceNameSuffix is appended to the remote instance name for CI runner
