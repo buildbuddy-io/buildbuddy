@@ -774,6 +774,7 @@ func (c *Cache) reader(ctx context.Context, md *sgpb.FileMetadata, r *rspb.Resou
 		if shouldDecrypt {
 			d, err := c.env.GetCrypter().NewDecryptor(ctx, md.GetFileRecord().GetDigest(), reader, md.GetEncryptionMetadata())
 			if err != nil {
+				_ = reader.Close()
 				return nil, status.UnavailableErrorf("decryptor not available: %s", err)
 			}
 			reader = d
@@ -781,6 +782,7 @@ func (c *Cache) reader(ctx context.Context, md *sgpb.FileMetadata, r *rspb.Resou
 		if shouldDecompress {
 			dr, err := compression.NewZstdDecompressingReader(reader)
 			if err != nil {
+				_ = reader.Close()
 				return nil, err
 			}
 			reader = dr
