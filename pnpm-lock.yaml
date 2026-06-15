@@ -203,6 +203,8 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+packageExtensionsChecksum: sha256-DvomcmG3OSl129TiJuxyeqVFqXXW5L3BchjT3Lk5//A=
+
 importers:
 
   .:
@@ -365,6 +367,10 @@ importers:
         version: 6.0.0
 
 packages:
+
+  '@babel/runtime@7.26.10':
+    resolution: {integrity: sha512-2WJMeRQPHKSPemqk/awGrAiuFfzBmOIPXKizAsVhWH9YJqLZ0H+HS4c8loHGgW6utJ3E/ejXQUsiGaQy2NZ9Fw==}
+    engines: {node: '>=6.9.0'}
 
   '@babel/runtime@7.27.0':
     resolution: {integrity: sha512-VtPOkrdPHZsKc/clNqyi9WUA8TINkZ4cGk63UUE3u4pmB2k+ZMQRDuIOagv8UVd6j7k0T3+RRIb7beKTebNbcw==}
@@ -847,6 +853,10 @@ packages:
 
 snapshots:
 
+  '@babel/runtime@7.26.10':
+    dependencies:
+      regenerator-runtime: 0.14.1
+
   '@babel/runtime@7.27.0':
     dependencies:
       regenerator-runtime: 0.14.1
@@ -1195,6 +1205,7 @@ snapshots:
 
   react-slider@2.0.6(react@18.3.1):
     dependencies:
+      '@babel/runtime': 7.26.10
       prop-types: 15.8.1
       react: 18.3.1
 
