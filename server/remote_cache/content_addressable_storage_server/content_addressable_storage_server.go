@@ -1205,16 +1205,16 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 	}
 
 	if cf := req.GetChunkingFunction(); cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
-		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v in request %v", cf, req.String())
+		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v in request %s", cf, req)
 	}
 
 	if req.GetBlobDigest() == nil {
-		return nil, status.UnimplementedErrorf("SpliceBlob with no blob_digest is not supported. Request: %v", req.String())
+		return nil, status.UnimplementedErrorf("SpliceBlob with no blob_digest is not supported. Request: %s", req)
 	}
 	if nDigests := len(req.GetChunkDigests()); nDigests == 0 {
-		return nil, status.InvalidArgumentErrorf("chunk_digests cannot be empty in request %v", req.String())
+		return nil, status.InvalidArgumentErrorf("chunk_digests cannot be empty in request %s", req)
 	} else if nDigests == 1 {
-		return nil, status.UnimplementedErrorf("SpliceBlob with only one chunk is not supported. Request: %v", req.String())
+		return nil, status.UnimplementedErrorf("SpliceBlob with only one chunk is not supported. Request: %s", req)
 	}
 
 	manifest := &chunking.Manifest{
@@ -1286,11 +1286,11 @@ func (s *ContentAddressableStorageServer) splitBlob(ctx context.Context, req *re
 
 	cf := req.GetChunkingFunction()
 	if cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
-		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v in request %v", cf, req.String())
+		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v in request %s", cf, req)
 	}
 
 	if req.GetBlobDigest() == nil {
-		return nil, status.InvalidArgumentErrorf("blob_digest is required in request %v", req.String())
+		return nil, status.InvalidArgumentErrorf("blob_digest is required in request %s", req)
 	}
 
 	manifest, err := chunking.LoadManifest(ctx, s.cache, req.GetBlobDigest(), req.GetInstanceName(), req.GetDigestFunction())
