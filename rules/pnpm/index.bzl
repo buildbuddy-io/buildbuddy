@@ -7,7 +7,7 @@ export PACKAGEDIR=$$(dirname $(location {package})) &&
 export PATH=$$ROOTDIR/$$(dirname $(location {corepack})):$$ROOTDIR/$$(dirname $(NODE_PATH)):$$PATH &&
 cd $$PACKAGEDIR &&
 corepack enable &&
-corepack pnpm install  --config.confirmModulesPurge=false &&
+corepack pnpm install --config.confirmModulesPurge=false &&
 corepack pnpm {command} &&
 cd build &&
 tar -cvf ../build.tar * &&
