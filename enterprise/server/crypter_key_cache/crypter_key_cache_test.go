@@ -180,12 +180,117 @@ func TestNotFound(t *testing.T) {
 		return nil, nil, status.NotFoundError("key not found")
 	}
 
-	cache := crypter_key_cache.New(env, refreshFn, clock)
+	opts := &crypter_key_cache.Opts{
+		KeyRefreshScanFrequency: time.Hour,
+		KeyErrCacheTime:         5 * time.Second,
+	}
+	cache := crypter_key_cache.NewWithOpts(env, refreshFn, clock, opts)
 
 	// NotFound errors should not be retried
 	_, err := cache.EncryptionKey(ctx)
 	require.True(t, status.IsNotFoundError(err))
 	require.Equal(t, int32(1), refreshCount.Load())
+
+	// A second call within the error cache time should be served from the
+	// error cache without another refresh.
+	_, err = cache.EncryptionKey(ctx)
+	require.True(t, status.IsNotFoundError(err))
+	require.Equal(t, int32(1), refreshCount.Load())
+
+	// Once the error cache entry expires, the key should be refreshed again.
+	clock.Advance(6 * time.Second)
+	_, err = cache.EncryptionKey(ctx)
+	require.True(t, status.IsNotFoundError(err))
+	require.Equal(t, int32(2), refreshCount.Load())
+}
+
+func TestCanceledRefreshIsNotCached(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	env := testenv.GetTestEnv(t)
+	ctx := setupAuth(t, env)
+
+	expectedKey := []byte("test-encryption-key")
+	expectedMetadata := &sgpb.EncryptionMetadata{
+		EncryptionKeyId: "key1",
+		Version:         1,
+	}
+
+	refreshCount := atomic.Int32{}
+	proceed := make(chan struct{})
+	refreshFn := func(ctx context.Context, ck crypter_key_cache.CacheKey) ([]byte, *sgpb.EncryptionMetadata, error) {
+		refreshCount.Add(1)
+		select {
+		case <-proceed:
+			return expectedKey, expectedMetadata, nil
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		}
+	}
+
+	// Note: the fake clock never advances in this test, so if a canceled
+	// refresh is incorrectly cached, the entry never expires and the second
+	// lookup below observes it.
+	cache := crypter_key_cache.New(env, refreshFn, clock)
+
+	// Start a lookup, then cancel its context while the refresh is in flight.
+	cancelCtx, cancel := context.WithCancel(ctx)
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := cache.EncryptionKey(cancelCtx)
+		errCh <- err
+	}()
+	require.Eventually(t, func() bool { return refreshCount.Load() == 1 }, 5*time.Second, 1*time.Millisecond)
+	cancel()
+	require.Error(t, <-errCh)
+
+	// Now let the refreshFn succeed. A subsequent refresh with a non-canceled
+	// ctx should return a valid key.
+	close(proceed)
+	key, err := cache.EncryptionKey(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedKey, key.Key)
+	require.Equal(t, expectedMetadata, key.Metadata)
+}
+
+func TestAlreadyCanceledContextDoesNotPoisonCache(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	env := testenv.GetTestEnv(t)
+	ctx := setupAuth(t, env)
+
+	expectedKey := []byte("test-encryption-key")
+	expectedMetadata := &sgpb.EncryptionMetadata{
+		EncryptionKeyId: "key1",
+		Version:         1,
+	}
+
+	refreshFn := func(ctx context.Context, ck crypter_key_cache.CacheKey) ([]byte, *sgpb.EncryptionMetadata, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
+		return expectedKey, expectedMetadata, nil
+	}
+
+	// There is some singleflighting happening internally, which involves some
+	// background goroutines. Run several iterations to try to trigger different
+	// race conditions.
+	for i := 0; i < 50; i++ {
+		// Use a fresh cache each iteration to ensure we initiate a new
+		// singleflighted request. Note that the cache TTL is effectively
+		// infinite since we never advance the clock.
+		cache := crypter_key_cache.New(env, refreshFn, clock)
+
+		canceledCtx, cancel := context.WithCancel(ctx)
+		cancel()
+		_, err := cache.EncryptionKey(canceledCtx)
+		require.Error(t, err)
+
+		// Make sure the earlier canceled lookup didn't wind up caching the ctx
+		// error or an invalid key.
+		key, err := cache.EncryptionKey(ctx)
+		require.NoError(t, err)
+		require.Equal(t, expectedKey, key.Key)
+		require.Equal(t, expectedMetadata, key.Metadata)
+	}
 }
 
 func TestRefreshScan(t *testing.T) {
