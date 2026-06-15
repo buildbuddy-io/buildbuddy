@@ -95,7 +95,7 @@ require (
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/go-redis/redis/extra/redisotel/v8 v8.11.5
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/go-sql-driver/mysql v1.10.0
+	github.com/go-sql-driver/mysql v1.8.1
 	github.com/gobwas/glob v0.2.3
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/cadvisor v0.56.2
@@ -125,7 +125,7 @@ require (
 	github.com/manifoldco/promptui v0.9.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mattn/go-shellwords v1.0.12
-	github.com/mattn/go-sqlite3 v1.14.22
+	github.com/mattn/go-sqlite3 v1.14.45
 	github.com/mdlayher/vsock v1.2.1
 	github.com/miekg/dns v1.1.61
 	github.com/mitchellh/go-ps v1.0.0
@@ -195,11 +195,11 @@ require (
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
-	gorm.io/driver/clickhouse v0.7.0
-	gorm.io/driver/mysql v1.6.0
-	gorm.io/driver/postgres v1.6.0
-	gorm.io/driver/sqlite v1.6.0
-	gorm.io/gorm v1.31.1
+	gorm.io/driver/clickhouse v0.6.0
+	gorm.io/driver/mysql v1.5.2
+	gorm.io/driver/postgres v1.5.3
+	gorm.io/driver/sqlite v1.5.2
+	gorm.io/gorm v1.25.2
 	gvisor.dev/gvisor v0.0.0-20250503011706-39ed1f5ac29c
 	k8s.io/api v0.35.3
 	k8s.io/apimachinery v0.35.3
@@ -449,7 +449,6 @@ require (
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	github.com/zeebo/assert v1.3.0 // indirect
 	gitlab.com/arm-research/smarter/smarter-device-manager v1.20.11 // indirect
 	go.mongodb.org/mongo-driver v1.14.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
