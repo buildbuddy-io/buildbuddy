@@ -26,11 +26,13 @@ import (
 )
 
 type pingServer struct {
-	lastClientIP string
+	lastClientIP   string
+	lastIncomingMD metadata.MD
 }
 
 func (p *pingServer) Ping(ctx context.Context, req *pspb.PingRequest) (*pspb.PingResponse, error) {
 	p.lastClientIP = clientip.Get(ctx)
+	p.lastIncomingMD, _ = metadata.FromIncomingContext(ctx)
 	return &pspb.PingResponse{
 		Tag: req.GetTag(),
 	}, nil
@@ -336,6 +338,70 @@ func TestTrustedClientIPInterceptor(t *testing.T) {
 			require.NoError(t, err)
 
 			assert.Equal(t, tc.wantIP, ps.lastClientIP)
+		})
+	}
+}
+
+func TestStripsInternalHeadersFromUntrustedCallers(t *testing.T) {
+	const internalHeader = authutil.InternalHeaderPrefix + "test"
+
+	for _, tc := range []struct {
+		name           string
+		clientIdentity string // sent in the client-identity header; "" sends none
+		wantStripped   bool
+	}{
+		{
+			name:           "untrusted caller without identity is stripped",
+			clientIdentity: "",
+			wantStripped:   true,
+		},
+		{
+			name:           "untrusted caller with unknown identity is stripped",
+			clientIdentity: "some-untrusted-client",
+			wantStripped:   true,
+		},
+		{
+			name:           "grpc-proxy identity is preserved",
+			clientIdentity: interfaces.ClientIdentityGRPCProxy,
+			wantStripped:   false,
+		},
+		{
+			name:           "app identity is preserved",
+			clientIdentity: interfaces.ClientIdentityApp,
+			wantStripped:   false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+
+			env := testenv.GetTestEnv(t)
+			env.SetClientIdentityService(&fakeClientIdentityService{})
+
+			grpcServer := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
+			ps := &pingServer{}
+			pspb.RegisterApiServer(grpcServer, ps)
+
+			lis, err := net.Listen("tcp", listenAddr)
+			require.NoError(t, err)
+			go func() { grpcServer.Serve(lis) }()
+			t.Cleanup(grpcServer.Stop)
+
+			conn, err := grpc.Dial(listenAddr, grpc.WithInsecure())
+			require.NoError(t, err)
+			t.Cleanup(func() { conn.Close() })
+
+			ctx := metadata.AppendToOutgoingContext(context.Background(), internalHeader, "spoofed")
+			if tc.clientIdentity != "" {
+				ctx = metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, tc.clientIdentity)
+			}
+			_, err = pspb.NewApiClient(conn).Ping(ctx, &pspb.PingRequest{Tag: 123})
+			require.NoError(t, err)
+
+			if tc.wantStripped {
+				assert.Empty(t, ps.lastIncomingMD.Get(internalHeader))
+			} else {
+				assert.Equal(t, []string{"spoofed"}, ps.lastIncomingMD.Get(internalHeader))
+			}
 		})
 	}
 }
