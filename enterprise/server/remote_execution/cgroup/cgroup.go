@@ -40,10 +40,17 @@ var (
 	// ErrV1NotSupported is returned when a function does not support cgroup V1.
 	ErrV1NotSupported = fmt.Errorf("cgroup v1 is not supported")
 
+	startingCgroup    string
+	startingCgroupErr error
+
 	// true if we've ever gotten EOPNOTSUPP when trying to read a PSI file. This
 	// can happen for some cloud platforms which have PSI disabled by default.
 	psiNotSupported atomic.Bool
 )
+
+func init() {
+	startingCgroup, startingCgroupErr = GetCurrent()
+}
 
 // GetCurrent returns the cgroup of which the current process is a member.
 //
@@ -74,6 +81,13 @@ func GetCurrent() (string, error) {
 	// Strip leading "/"
 	path = strings.TrimPrefix(path, string(os.PathSeparator))
 	return path, nil
+}
+
+// StartingCgroup returns the cgroup of which the current process was a member
+// when this package was initialized. This is useful when code later moves the
+// process into a child cgroup but still needs the original parent cgroup.
+func StartingCgroup() (string, error) {
+	return startingCgroup, startingCgroupErr
 }
 
 // Setup configures the cgroup at the given path with the given settings.
@@ -447,6 +461,27 @@ func ReadMemoryEvents(dir string) (map[string]int64, error) {
 // be an absolute path, including the /sys/fs/cgroup prefix.
 func ReadMemoryCurrent(dir string) (int64, error) {
 	return readInt64FromFile(filepath.Join(dir, "memory.current"))
+}
+
+// ReadMemoryMax reads the "memory.max" file under the given cgroup directory
+// and returns the memory limit in bytes. It returns nil when memory.max contains
+// "max". The directory should be an absolute path to a directory containing a
+// memory.max file; production cgroup paths should include the /sys/fs/cgroup
+// prefix.
+func ReadMemoryMax(dir string) (*int64, error) {
+	b, err := os.ReadFile(filepath.Join(dir, "memory.max"))
+	if err != nil {
+		return nil, err
+	}
+	s := strings.TrimSpace(string(b))
+	if s == "max" {
+		return nil, nil
+	}
+	maxBytes, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	return &maxBytes, nil
 }
 
 // ReadPidsEvents reads the "pids.events" file under the given cgroup
