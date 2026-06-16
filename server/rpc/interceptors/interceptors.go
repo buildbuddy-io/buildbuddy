@@ -274,6 +274,81 @@ func identityStreamServerInterceptor(env environment.Env) grpc.StreamServerInter
 	}
 }
 
+// trustedInternalClients are the client identities permitted to set
+// authutil.InternalHeaderPrefix headers. A request from any other caller (most
+// importantly, one with no validated client identity) has those headers
+// stripped.
+var trustedInternalClients = map[string]struct{}{
+	interfaces.ClientIdentityApp:        {},
+	interfaces.ClientIdentityExecutor:   {},
+	interfaces.ClientIdentityCacheProxy: {},
+	interfaces.ClientIdentityGRPCProxy:  {},
+}
+
+func isTrustedInternalClient(env environment.Env, ctx context.Context) bool {
+	cis := env.GetClientIdentityService()
+	if cis == nil {
+		return false
+	}
+	si, err := cis.IdentityFromContext(ctx)
+	if err != nil || si == nil {
+		return false
+	}
+	_, ok := trustedInternalClients[si.Client]
+	return ok
+}
+
+// stripInternalHeadersFromContext removes every incoming metadata header with
+// the authutil.InternalHeaderPrefix prefix unless the request comes from a
+// trusted internal client (verified via its client identity). Those headers
+// carry internal trust signals (e.g. the resolved client IP) that only trusted
+// peers may set, so stripping them from untrusted callers prevents spoofing.
+//
+// This must run after the identity interceptor (which validates the client
+// identity) and before any interceptor that reads an internal header.
+func stripInternalHeadersFromContext(env environment.Env, ctx context.Context) context.Context {
+	if isTrustedInternalClient(env, ctx) {
+		return ctx
+	}
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ctx
+	}
+	// Fast path for the common case (no internal header present): scan keys
+	// without allocating, and only build a filtered copy if there's a match.
+	// Incoming metadata keys are already lowercased by gRPC.
+	hasInternal := false
+	for k := range md {
+		if strings.HasPrefix(k, authutil.InternalHeaderPrefix) {
+			hasInternal = true
+			break
+		}
+	}
+	if !hasInternal {
+		return ctx
+	}
+	filtered := make(metadata.MD, len(md))
+	for k, v := range md {
+		if strings.HasPrefix(k, authutil.InternalHeaderPrefix) {
+			continue
+		}
+		filtered[k] = v
+	}
+	return metadata.NewIncomingContext(ctx, filtered)
+}
+
+func stripInternalHeadersUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
+	return contextReplacingUnaryServerInterceptor(func(ctx context.Context) context.Context {
+		return stripInternalHeadersFromContext(env, ctx)
+	})
+}
+
+func stripInternalHeadersStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
+	return contextReplacingStreamServerInterceptor(func(ctx context.Context) context.Context {
+		return stripInternalHeadersFromContext(env, ctx)
+	})
+}
+
 // requestIDStreamInterceptor is a server interceptor that inserts a request ID
 // into the context if one is not already present.
 func requestIDStreamServerInterceptor() grpc.StreamServerInterceptor {
@@ -572,9 +647,9 @@ func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnarySer
 		unaryRecoveryInterceptor(),
 		copyHeadersUnaryServerInterceptor(),
 		propagateRequestMetadataToSpanUnaryServerInterceptor(),
-		// identity must run before clientIP so that a trusted proxy's asserted
-		// client IP can be honored.
+		// Check client-identity early so it can be used in later interceptors.
 		identityUnaryServerInterceptor(env),
+		stripInternalHeadersUnaryServerInterceptor(env),
 		clientIPUnaryServerInterceptor(env),
 		subdomainUnaryServerInterceptor(),
 		requestIDUnaryServerInterceptor(),
@@ -600,9 +675,9 @@ func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamS
 		streamRecoveryInterceptor(),
 		copyHeadersStreamServerInterceptor(),
 		propagateRequestMetadataToSpanStreamServerInterceptor(),
-		// identity must run before clientIP so that a trusted proxy's asserted
-		// client IP can be honored.
+		// Check client-identity early so it can be used in later interceptors.
 		identityStreamServerInterceptor(env),
+		stripInternalHeadersStreamServerInterceptor(env),
 		clientIPStreamServerInterceptor(env),
 		subdomainStreamServerInterceptor(),
 		requestIDStreamServerInterceptor(),

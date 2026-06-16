@@ -42,6 +42,14 @@ const (
 	// The context key under which client-identity information is stored.
 	ClientIdentityHeaderName = "x-buildbuddy-client-identity"
 
+	// InternalHeaderPrefix marks gRPC metadata headers that carry internal
+	// trust signals (e.g. the resolved client IP) which only trusted internal
+	// clients may set. The gRPC server strips any incoming header with this
+	// prefix from callers that don't present a trusted client identity, so
+	// external callers can't spoof them. Headers signed/verified on their own
+	// (like the client identity header) don't use this prefix.
+	InternalHeaderPrefix = "x-buildbuddy-internal-"
+
 	// The context key under which auth headers are stored.
 	authHeadersKey = "auth-headers"
 
