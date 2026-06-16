@@ -224,12 +224,11 @@ The following configuration options are supported:
   errors. If your remote command is not idempotent (such as if you're running
   a deploy command), you should set this to true to disable retries.
 
-In order to run the CLI with debug logs enabled, you can add `--verbose=1` between
-`bb` and `remote`. Note that this is a different syntax from the rest of the
-Remote Bazel flags, which go after `remote`.
+In order to run the CLI with debug logs enabled, set the `BB_VERBOSE=1`
+environment variable.
 
 ```bash
-bb --verbose=1 remote build //...
+BB_VERBOSE=1 bb remote build //...
 ```
 
 #### Authorization
@@ -276,11 +275,11 @@ not using `--script` and using the syntax `bb remote <bazel command>` (like `bb 
 
 #### Speeding up the CLI
 
-For more details on CLI performance, run Remote Bazel with `--verbose=1` to see
+For more details on CLI performance, run Remote Bazel with `BB_VERBOSE=1` to see
 where the CLI is spending its time.
 
 ```bash
-bb --verbose=1 remote build //...
+BB_VERBOSE=1 bb remote build //...
 ```
 
 Often, performance can be improved by skipping time-intensive remote git operations.

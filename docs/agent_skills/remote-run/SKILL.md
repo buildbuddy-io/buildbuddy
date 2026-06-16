@@ -24,6 +24,9 @@ Instead of running bazel commands locally with `bazel`, run them on a remote run
 For example, you should replace the command `bazel build :target` with `bb remote build :target`.
 `bazel run :target` should be replaced with `bb remote run :target`.
 
+Drop the `bazel` word entirely. The verb (`build`, `test`, `run`) comes directly after `remote`.
+Never write `bb remote bazel build :target` — that is incorrect.
+
 You should preserve any bazel startup flags and options.
 `bazel --output_base=X test :target --config=Y` should become `bb remote --output_base=X test :target --config=Y`.
 
@@ -64,6 +67,12 @@ By default, the remote runner will match the local architecture.
 
 You can configure the image of the remote runner with `--container_image=docker://<URL>`.
 
+To run on a specific executor pool, set the `Pool` platform property with `--runner_exec_properties=Pool=<POOL_NAME>`
+(for example, `--runner_exec_properties=Pool=ios`). Do not add an `x-buildbuddy-platform.` prefix to platform properties
+set via `--runner_exec_properties` — `--runner_exec_properties=x-buildbuddy-platform.Pool=ios` is incorrect. (That prefix
+is only used with header flags like `--remote_run_header`.) For a self-hosted executor pool, also pass
+`--runner_exec_properties=use-self-hosted-executors=true`.
+
 If a remote runner is corrupted and you want a clean one, you can set `--runner_exec_properties=salt=<VALUE>`. Just make sure
 you preserve this flag if you want future runs to resume from this new runner.
 
@@ -72,6 +81,11 @@ you preserve this flag if you want future runs to resume from this new runner.
 We strongly recommend not setting these and using the defaults unless absolutely necessary. Only suggest increasing resources if the logs explicitly report OOM errors or disk exhaustion.
 
 You can request more resources for the remote runner with `--runner_exec_properties=EstimatedCPU=X`, `--runner_exec_properties=EstimatedFreeDiskBytes=XGB` and `EstimatedMemory=XGB`.
+
+## Debug logs
+
+To run a command with debug logs enabled, set the `BB_VERBOSE=1` environment variable
+(for example, `BB_VERBOSE=1 bb remote build :target`). There is no `--verbose` flag.
 
 ## Auth
 
