@@ -113,22 +113,30 @@ type PullRequestTrigger struct {
 	Branches []string `yaml:"branches"`
 	// NOTE: If nil, defaults to true.
 	MergeWithBase *bool `yaml:"merge_with_base"`
-	// If set, merge with the base branch only when the merge base is at least
-	// this stale relative to the base branch tip.
+	// MergeBaseInterval only applies if MergeWithBase is enabled.
 	//
-	// i.e. If max_base_staleness_before_merge=24h:
-	// If the main branch tip is 1h old, and the merge base between the
-	// PR and main branch is 2h old, the PR is not considered stale and should
-	// not be merged with main.
-	// If the merge base was 26h old, and 25h behind the main branch tip, the PR
-	// would be considered stale and should be merged with main.
+	// MergeBaseInterval controls which base branch commit the PR is merged with.
+	// When unset, the runner merges with the current base branch tip.
 	//
-	// This can be used to minimize churn in CI if merging with base constantly pulls
-	// in new diffs and requires rebuilds, but ensures very stale PR branches are still merged
-	// to catch merge issues from very stale PR branches.
+	// When set, instead of merging with the tip, the runner merges with the
+	// oldest base branch commit after the most recent interval boundary: the
+	// current time floored to a multiple of this interval, in UTC. If there are
+	// no base branch commits after the boundary, the runner merges with the base
+	// branch tip. This keeps the merged result stable once the base advances
+	// within an interval so that repeated runs of the same PR hit a warm Bazel
+	// cache, while still periodically advancing the base branch to catch
+	// integration issues.
 	//
-	// If MergeWithBase is disabled, this does nothing.
-	MaxBaseStalenessBeforeMerge *time.Duration `yaml:"max_base_staleness_before_merge"`
+	// For example, if set to 3h, the base advances at 00:00, 03:00, 06:00, ... UTC,
+	// and all runs within the same 3h window merge with the first base branch
+	// commit after the window boundary.
+	//
+	// If the PR's merge base is already newer than this commit, the merge with
+	// base is skipped.
+	//
+	// Must be at most maxMergeBaseInterval; larger values are rejected so that
+	// PRs are not merged with an overly stale base.
+	MergeBaseInterval *time.Duration `yaml:"merge_base_interval"`
 	// If MergeWithBase is enabled, determines whether the CI runner should manually
 	// merge the pushed and target branches. If this is disabled, the runner
 	// will try to use the merge commit SHA provided by the CI provider as a
@@ -141,8 +149,28 @@ func (t *PullRequestTrigger) GetMergeWithBase() bool {
 	return t.MergeWithBase == nil || *t.MergeWithBase
 }
 
-func (t *PullRequestTrigger) GetMaxBaseStalenessBeforeMerge() *time.Duration {
-	return t.MaxBaseStalenessBeforeMerge
+// maxMergeBaseInterval is the largest allowed merge base interval. Larger
+// configured values are rejected so that PRs are not merged with an overly
+// stale base branch commit.
+const maxMergeBaseInterval = 3 * time.Hour
+
+// GetMergeBaseInterval returns the configured merge base interval. If
+// MergeWithBase is set and this is nil, merge with the base branch tip.
+//
+// Returns an error if the configured interval is non-positive or larger than
+// maxMergeBaseInterval.
+func (t *PullRequestTrigger) GetMergeBaseInterval() (*time.Duration, error) {
+	if t.MergeBaseInterval == nil {
+		return nil, nil
+	}
+	interval := *t.MergeBaseInterval
+	if interval <= 0 {
+		return nil, fmt.Errorf("merge_base_interval must be positive, got %s", interval)
+	}
+	if interval > maxMergeBaseInterval {
+		return nil, fmt.Errorf("merge_base_interval must be at most %s, got %s", maxMergeBaseInterval, interval)
+	}
+	return &interval, nil
 }
 
 func (t *PullRequestTrigger) GetForceManualMerge() bool {

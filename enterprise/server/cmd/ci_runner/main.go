@@ -17,7 +17,6 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -1922,13 +1921,18 @@ func (ws *workspace) mergeWithBaseIfRequested(ctx context.Context, actionTrigger
 		return status.WrapError(err, "fetch target ref")
 	}
 
-	if !ws.checkMergeBaseStaleness(ctx, actionTriggers) {
+	// Determine which base branch commit to merge with, based on the configured
+	// merge base interval.
+	mergeBase, err := ws.mergeBaseCommit(ctx, actionTriggers)
+	if err != nil {
+		return err
+	}
+	if mergeBase == "" {
 		return nil
 	}
 
 	// TODO: Display merge commit in UI
-	targetRef := ws.targetRef()
-	if _, err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
+	if _, err := git(ctx, ws.log, "merge", "--no-edit", mergeBase); err != nil && !isAlreadyUpToDate(err) {
 		errMsg := err.Output
 		if _, err := git(ctx, ws.log, "merge", "--abort"); err != nil {
 			errMsg += "\n" + err.Output
@@ -1940,60 +1944,73 @@ func (ws *workspace) mergeWithBaseIfRequested(ctx context.Context, actionTrigger
 			*pushedBranch, *targetBranch, errMsg,
 		)
 	}
-	mergedCommitSHA, err := git(ctx, io.Discard, "rev-parse", "HEAD")
-	if err != nil {
-		return err
+	mergedCommitSHA, cmdErr := git(ctx, io.Discard, "rev-parse", "HEAD")
+	if cmdErr != nil {
+		return cmdErr
 	}
 	writeCommandSummary(ws.log, "Merged into the target branch %s. HEAD is now at %s.", *targetBranch, mergedCommitSHA)
 	return nil
 }
 
-// Returns true if we should merge with the base branch.
-func (ws *workspace) checkMergeBaseStaleness(ctx context.Context, actionTriggers *config.Triggers) bool {
-	maxStaleness := actionTriggers.GetPullRequestTrigger().GetMaxBaseStalenessBeforeMerge()
-	if maxStaleness == nil {
-		return true
+// mergeBaseCommit returns the base branch commit that the PR should be merged
+// with, or an empty string if the merge with base should be skipped.
+//
+// When no merge base interval is configured, the runner merges with the current
+// base branch tip. When an interval is configured, the runner instead merges
+// with the oldest base branch commit in the current interval (UTC).
+// If there are no base branch commits in the interval, the runner merges with
+// the base branch tip.
+func (ws *workspace) mergeBaseCommit(ctx context.Context, actionTriggers *config.Triggers) (string, error) {
+	interval, err := actionTriggers.GetPullRequestTrigger().GetMergeBaseInterval()
+	if err != nil {
+		return "", err
 	}
+	if interval == nil {
+		// No interval configured: merge with the current base branch tip.
+		return ws.targetRef(), nil
+	}
+	cutoff := time.Now().UTC().Truncate(*interval)
 
-	mergeBase, cmdErr := ws.mergeBaseCommit(ctx)
+	// Find the oldest base branch commit after the cutoff.
+	out, cmdErr := git(ctx, io.Discard, "--no-pager", "rev-list", "--reverse", "--after="+cutoff.Format(time.RFC3339), ws.targetRef())
 	if cmdErr != nil {
-		writeCommandSummary(ws.log, "Could not determine merge base; defaulting to merging with base.")
-		return true
+		writeCommandSummary(ws.log, "Could not determine the oldest %s commit after %s; defaulting to merging with the %s tip: %s", *targetBranch, cutoff.Format(time.RFC3339), *targetBranch, cmdErr.Output)
+		return ws.targetRef(), nil
 	}
-	mergeBaseTime, err := commitTimestamp(ctx, mergeBase)
-	if err != nil {
-		writeCommandSummary(ws.log, "Could not determine merge commit timestamp; defaulting to merging with base.")
-		return true
+	mergeBase, baseDescription := ws.targetRef(), fmt.Sprintf("%s tip", *targetBranch)
+	if commits := strings.Fields(out); len(commits) > 0 {
+		mergeBase = commits[0]
+		baseDescription = fmt.Sprintf("oldest %s commit after %s", *targetBranch, cutoff.Format(time.RFC3339))
+	} else {
+		writeCommandSummary(ws.log, "No %s commits found after %s; using the %s tip.", *targetBranch, cutoff.Format(time.RFC3339), *targetBranch)
 	}
-	baseHeadTime, err := commitTimestamp(ctx, ws.targetRef())
-	if err != nil {
-		writeCommandSummary(ws.log, "Could not determine base head commit timestamp; defaulting to merging with base.")
-		return true
+
+	inHistory, ancErr := ws.isAncestor(ctx, mergeBase, "HEAD")
+	if ancErr != nil {
+		writeCommandSummary(ws.log, "Could not determine whether the %s (%s) is already in the PR's history: %s", baseDescription, mergeBase, ancErr)
 	}
-	staleness := baseHeadTime.Sub(mergeBaseTime)
-	if staleness >= *maxStaleness {
-		writeCommandSummary(ws.log, "Merging with target branch because the merge base is %s behind %s, exceeding the configured %s threshold.", staleness.Round(time.Second), *targetBranch, *maxStaleness)
-		return true
+	if inHistory {
+		writeCommandSummary(ws.log, "Skipping merge with %s: the PR's merge base is already at or newer than the %s (%s).", *targetBranch, baseDescription, mergeBase)
+		return "", nil
 	}
-	writeCommandSummary(ws.log, "Skipping merge with target branch because the merge base is %s behind %s, within the configured %s threshold.", staleness.Round(time.Second), *targetBranch, *maxStaleness)
-	return false
+
+	writeCommandSummary(ws.log, "Merging with %s: %s (%s).", *targetBranch, baseDescription, mergeBase)
+	return mergeBase, nil
 }
 
-func (ws *workspace) mergeBaseCommit(ctx context.Context) (string, *commandError) {
-	mergeBase, err := git(ctx, io.Discard, "merge-base", "HEAD", ws.targetRef())
-	return strings.TrimSpace(mergeBase), err
-}
-
-func commitTimestamp(ctx context.Context, ref string) (time.Time, error) {
-	out, err := git(ctx, io.Discard, "--no-pager", "show", "-s", "--format=%ct", ref)
-	if err != nil {
-		return time.Time{}, err
+// isAncestor reports whether the ancestor commit is an ancestor of (or equal
+// to) the descendant commit.
+func (ws *workspace) isAncestor(ctx context.Context, ancestor, descendant string) (bool, error) {
+	_, err := git(ctx, io.Discard, "merge-base", "--is-ancestor", ancestor, descendant)
+	if err == nil {
+		return true, nil
 	}
-	unixSeconds, parseErr := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
-	if parseErr != nil {
-		return time.Time{}, parseErr
+	// Exit code 1 specifically means "not an ancestor"; any other code is a
+	// real error.
+	if getExitCode(err) == 1 {
+		return false, nil
 	}
-	return time.Unix(unixSeconds, 0), nil
+	return false, err
 }
 
 func (ws *workspace) hasMultipleBranches() bool {

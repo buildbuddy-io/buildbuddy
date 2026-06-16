@@ -293,23 +293,60 @@ actions:
       - run: "bazel test //..."
 ```
 
-This behavior may hurt CI performance, because the base branch must be
-fetched on every run, and unrelated base branch changes that were merged
-into the git workspace may invalidate the Bazel cache and require rebuilds.
-This behavior can be disabled by setting `merge_with_base: false` or by setting
-`max_base_staleness_before_merge`.
+By default, the PR is merged with the current base branch tip. This may hurt CI
+performance if the base branch tip advances frequently. Merging in
+unrelated base branch changes may invalidate the Bazel cache and require
+rebuilds, even when the PR branch itself is unchanged. This behavior can be
+disabled by setting `merge_with_base: false`, or made less frequent by setting
+`merge_base_interval`.
 
-When `max_base_staleness_before_merge` is set, the CI runner will only merge the base branch into the PR branch when the PR's merge base is at least this stale relative to the base branch tip.
+### Merge base interval
 
-For example, if `max_base_staleness_before_merge: "24h"`, the main branch tip is 1h old, and the merge base between
-the PR and main branch is 2h old, the PR is not considered stale and should not be merged with main.
-If the merge base was 26h old and 25h behind the main branch tip, the PR
-would be considered stale and should be merged with main.
+When `merge_base_interval` is set, instead of merging with the base branch tip,
+the CI runner merges with the oldest base branch commit in the
+interval boundary (UTC). If there are no base branch commits in the interval, the runner merges
+with the base branch tip.
 
-This can help balance churn in the git workspace, while still ensuring very stale PR branches
-are still merged with the base branch to instill higher merge confidence. Use a shorter duration when merge confidence is more important, and
-a longer duration when cache stability and reduced CI churn are more
-important.
+Because every run within the same interval merges with the same base branch
+commit, repeated runs of an unchanged PR produce the same merged result and hit
+a warm Bazel cache, while the base still advances once per interval to catch
+integration issues.
+
+For example, with `merge_base_interval: "3h"`, the base advances at 00:00, 03:00,
+06:00, ... UTC, and all runs within the same 3h window merge with the first base
+branch commit after the window boundary:
+
+- The interval boundary is [09:00 UTC, 12:00 UTC].
+- Main is pushed at 08:00 UTC (commit ABC). This commit is outside the current interval.
+- Main is pushed at 09:05 UTC (commit DEF). This commit is the oldest commit in the current interval.
+- Main is pushed at 10:00 UTC (commit GHI). This commit is in the current interval, but is not the oldest commit in the interval..
+- Main is pushed at 12:05 UTC (commit JKL). This commit is in the next interval.
+- A PR Workflow runs at 09:30 UTC. It merges with the oldest base branch commit in the current interval (commit DEF).
+- A PR Workflow runs at 10:45 UTC. Even though Main has advanced to commit GHI, it merges with the oldest base branch commit in the current interval (commit GHI).
+  This lets it reuse the cache from the earlier PR run.
+- A run at 12:15 UTC is in the next interval, so it merges with commit JKL.
+  This helps keep the PR reasonably up to date with the base branch.
+
+With a shorter interval like `1h`, the base advances at the top of each hour.
+
+If the PR's merge base is already newer than the computed commit, the merge is
+skipped.
+
+`merge_base_interval` is capped at `3h` so that PRs are not merged with an overly
+stale base, which would also have the negative side effect of keeping stale
+artifacts in the cache longer. Use a shorter interval when merge confidence is
+more important, and a longer interval when cache stability and reduced CI churn
+are more important.
+
+### Interaction with merge queues
+
+Merge with base is still useful when your repo uses merge queues. Merging with base on
+`pull_request` workflows can catch PR-specific issues earlier, before the PR
+reaches the merge queue.
+
+Workflows that run on merge queue branches themselves
+do not need `merge_with_base`, since the merge queue commit should already be
+merged with the base branch.
 
 ## Ref pattern matching
 
@@ -473,7 +510,7 @@ base branch. Even when the PR branch is unchanged, a new base branch tip can
 produce a different merged base, which can invalidate the Bazel cache
 and require rebuilds. See the [merge with base section](#merge-with-base) for more detail.
 
-If so, consider setting `max_base_staleness_before_merge`.
+If so, consider setting `merge_base_interval`.
 
 ## buildbuddy.yaml schema
 
@@ -611,10 +648,10 @@ pushed.
   breaking the main branch, you may wish to use
   [merge queues](#merge-queue-support). See
   [Merge with base behavior](#merge-with-base).
-- **`max_base_staleness_before_merge`** (`duration`, optional): If set with
-  `merge_with_base: true`, merge with the base branch only when the merge base is at least
-  this stale relative to the base branch tip. See
-  [Merge with base](#merge-with-base) for more details.
+- **`merge_base_interval`** (`duration`, optional): If set with
+  `merge_with_base: true`, merge with the oldest base branch commit in the current interval (UTC)
+  instead of the base branch tip, improving cache stability across runs.
+  Capped at `3h`. See [Merge base interval](#merge-base-interval) for more details.
 
 ### `ScheduleTrigger`
 
