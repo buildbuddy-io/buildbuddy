@@ -140,17 +140,34 @@ func (h *identityHeader) get() (string, error) {
 	return h.header, nil
 }
 
-func attestClientIP(ctx context.Context, idHeader *identityHeader, md metadata.MD) (context.Context, error) {
-	clientIP := clientip.Get(ctx)
-	if clientIP == "" {
-		return ctx, nil
+// ctxWithClientIP overwrites the outgoing client-IP header with the IP this
+// proxy resolved (clientip.Get) and attaches a grpc-proxy identity that attests
+// to it. Any client-supplied client-IP header is stripped first: the proxy is
+// the sole authority for this value, so a caller can't smuggle an allowed IP
+// past the backend's IP-rule checks. The caller's other headers are forwarded by
+// the server's metadata-propagation interceptor (see GetForwardingServerOption).
+//
+// This composes across proxy hops without trusting raw headers: each hop's
+// clientIP interceptor only honors an incoming client-IP header when it carries
+// a verified grpc-proxy identity, so clientip.Get already reflects an upstream
+// proxy's attested IP, and we re-attest it here.
+func ctxWithClientIP(ctx context.Context, idHeader *identityHeader) (context.Context, error) {
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if !ok {
+		md = metadata.MD{}
 	}
 
+	// Never trust a client-supplied client-IP header; we set it ourselves below.
+	delete(md, clientip.HeaderName)
+
+	clientIP := clientip.Get(ctx)
+	if clientIP == "" {
+		return metadata.NewOutgoingContext(ctx, md), nil
+	}
 	md.Set(clientip.HeaderName, clientIP)
 
-	// Attach the grpc-proxy identity that attests to the client IP. We use Set
-	// rather than append so an identity header that's somehow already present
-	// can't produce a duplicate, which the backend would reject.
+	// Attach the grpc-proxy identity that attests to the client IP. Set (not
+	// append) so a duplicate identity header can't be produced.
 	if idHeader != nil {
 		header, err := idHeader.get()
 		if err != nil {
@@ -159,24 +176,6 @@ func attestClientIP(ctx context.Context, idHeader *identityHeader, md metadata.M
 		md.Set(authutil.ClientIdentityHeaderName, header)
 	}
 	return metadata.NewOutgoingContext(ctx, md), nil
-}
-
-// ctxWithClientIP augments the outgoing metadata with the resolved client IP and
-// a grpc-proxy identity that attests to it. It deliberately only adds to the
-// existing outgoing metadata rather than copying the incoming metadata: the
-// caller's headers are forwarded by the server's metadata-propagation
-// interceptor (see GetForwardingServerOption), and this proxy must not attest to
-// a client IP it didn't resolve itself, so a client-supplied client-IP header is
-// left untouched.
-func ctxWithClientIP(ctx context.Context, idHeader *identityHeader) (context.Context, error) {
-	md, ok := metadata.FromOutgoingContext(ctx)
-	if !ok {
-		md = metadata.MD{}
-	}
-	if len(md.Get(clientip.HeaderName)) > 0 {
-		return ctx, nil
-	}
-	return attestClientIP(ctx, idHeader, md)
 }
 
 func newDirector(env environment.Env) proxy.StreamDirector {
@@ -201,16 +200,7 @@ func newDirector(env environment.Env) proxy.StreamDirector {
 }
 
 // GetForwardingServerOption returns a gRPC server option that proxies unknown
-// RPCs to the configured app.proxy_targets, asserting the original client's IP so
-// the backend's IP-rule enforcement sees the real caller rather than this proxy.
-//
-// The forwarding handler only adds the client IP + identity to the outgoing
-// metadata; it does NOT copy the incoming metadata. The server it's installed on
-// must therefore propagate the caller's headers (auth, request metadata, etc.)
-// into the outgoing context itself — e.g. via interceptors.PropagateMetadata*
-// with proxy_util.HeadersToPropagate (as the cache proxy does). Enabling
-// app.proxy_targets on a server without such propagation will forward requests
-// with the caller's auth headers stripped.
+// RPCs to the configured app.proxy_targets.
 func GetForwardingServerOption(env environment.Env) grpc.ServerOption {
 	if len(*proxyTargets) == 0 {
 		return nil

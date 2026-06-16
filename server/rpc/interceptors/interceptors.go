@@ -119,7 +119,8 @@ func addClientIPToContext(ctx context.Context, env environment.Env) context.Cont
 	// is trusted, as verified by its clientidentity.
 	if cis := env.GetClientIdentityService(); cis != nil {
 		if si, err := cis.IdentityFromContext(ctx); err == nil && si != nil && si.Client == interfaces.ClientIdentityGRPCProxy {
-			if hdrs := metadata.ValueFromIncomingContext(ctx, clientip.HeaderName); len(hdrs) > 0 {
+			// Require exactly one value: a trusted proxy sets a single header.
+			if hdrs := metadata.ValueFromIncomingContext(ctx, clientip.HeaderName); len(hdrs) == 1 {
 				return context.WithValue(ctx, clientip.ContextKey, hdrs[0])
 			}
 		}

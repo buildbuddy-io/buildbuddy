@@ -107,15 +107,30 @@ func TestCtxWithClientIP(t *testing.T) {
 		}
 	})
 
-	t.Run("existing client IP header is left untouched and not attested", func(t *testing.T) {
+	t.Run("client-supplied client IP header is overwritten with the resolved IP", func(t *testing.T) {
 		idHeader := newIdentityHeader(&fakeIdentityService{header: identity})
+		// Simulate an attacker pre-setting the client-IP header to a spoofed value.
 		ctx := metadata.AppendToOutgoingContext(ctxWithResolvedClientIP(clientIP), clientip.HeaderName, "9.9.9.9")
 		ctx, err := ctxWithClientIP(ctx, idHeader)
 		require.NoError(t, err)
 
 		md, ok := metadata.FromOutgoingContext(ctx)
 		require.True(t, ok)
-		require.Equal(t, []string{"9.9.9.9"}, md.Get(clientip.HeaderName))
+		// The spoofed value is stripped and replaced with the proxy-resolved IP.
+		require.Equal(t, []string{clientIP}, md.Get(clientip.HeaderName))
+		require.Equal(t, []string{identity}, md.Get(authutil.ClientIdentityHeaderName))
+	})
+
+	t.Run("client-supplied client IP is stripped when no IP is resolved", func(t *testing.T) {
+		idHeader := newIdentityHeader(&fakeIdentityService{header: identity})
+		// Spoofed header present, but the proxy resolved no client IP of its own.
+		ctx := metadata.AppendToOutgoingContext(context.Background(), clientip.HeaderName, "9.9.9.9")
+		ctx, err := ctxWithClientIP(ctx, idHeader)
+		require.NoError(t, err)
+
+		md, ok := metadata.FromOutgoingContext(ctx)
+		require.True(t, ok)
+		require.Empty(t, md.Get(clientip.HeaderName))
 		require.Empty(t, md.Get(authutil.ClientIdentityHeaderName))
 	})
 

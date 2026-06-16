@@ -7,7 +7,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
-	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"google.golang.org/grpc/metadata"
 )
@@ -28,7 +27,6 @@ var (
 		usageutil.OriginHeaderName,
 		bazel_request.RequestMetadataKey,
 		cdc.ChunkedHeaderName,
-		clientip.HeaderName,
 	}
 )
 
