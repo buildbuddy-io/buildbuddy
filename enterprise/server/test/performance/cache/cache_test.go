@@ -178,6 +178,7 @@ func getMetaCache(t testing.TB, te environment.Env) interfaces.Cache {
 	lis := bufconn.Listen(1024 * 1024)
 	srv, runServer := testenv.GRPCServer(te, lis)
 	mdspb.RegisterMetadataServiceServer(srv, mm)
+	go runServer()
 	t.Cleanup(srv.Stop)
 
 	conn, err := testenv.LocalGRPCConn(
@@ -188,7 +189,6 @@ func getMetaCache(t testing.TB, te environment.Env) interfaces.Cache {
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	go runServer()
 
 	mc, err := metacache.New(te, metacache.Options{
 		Name:                        "MetaCache",
