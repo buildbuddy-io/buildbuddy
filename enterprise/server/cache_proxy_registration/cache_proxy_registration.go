@@ -148,13 +148,6 @@ func Register(env *real_environment.RealEnv) error {
 func run(ctx context.Context, shutdownCh <-chan struct{}, env environment.Env, target, apiKey string, node *cppb.CacheProxyNode) {
 	ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey)
 	for {
-		// If shutdown was signalled while we were between connection
-		// attempts, exit immediately without re-dialing.
-		select {
-		case <-shutdownCh:
-			return
-		default:
-		}
 		conn, err := grpc_client.DialInternalWithPoolSize(env, target, 1)
 		if err == nil {
 			client := cppb.NewCacheProxyRegistryClient(conn)
