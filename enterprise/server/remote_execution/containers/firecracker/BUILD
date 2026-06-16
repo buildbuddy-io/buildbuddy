@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "containeropts.go",
         "firecracker.go",
+        "sequential_snapshot_export_monitor.go",
     ],
     data = select({
         "//platforms/configs:linux_x86_64": [
@@ -87,6 +88,19 @@ go_library(
         "@org_golang_google_protobuf//types/known/timestamppb",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",
+    ],
+)
+
+go_test(
+    name = "sequential_snapshot_export_monitor_test",
+    srcs = ["sequential_snapshot_export_monitor_test.go"],
+    embed = [":firecracker"],
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
+    deps = [
+        "//enterprise/server/remote_execution/copy_on_write",
+        "@com_github_stretchr_testify//require",
     ],
 )
 

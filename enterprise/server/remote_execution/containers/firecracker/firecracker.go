@@ -3328,12 +3328,23 @@ func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetai
 		metrics.Stage: "create_snapshot",
 	}).Dec()
 
-	// By default, mmapped chunks are managed by the executor-wide shared LRU.
-	//
-	// When exporting snapshots, we should limit the number of chunks mmapped at a time.
-	// Snapshots are exported sequentially, so we don't want recently touched chunks to stay mmapped longer than necessary.
-	if err := c.memoryStore.LimitMmappedChunks(c.snapshotWriteMaxMmappedChunks()); err != nil {
-		return status.WrapError(err, "set limited LRU for snapshot export")
+	c.memoryStore.DisableLRUEviction()
+
+	var writeMonitor *memorySnapshotWriteMonitor
+	if c.memorySnapshotExportVBD != nil {
+		writeConcurrency := int(math.Max(snaputil.WriteSnapshotChunkConcurrency, float64(c.vmConfig.GetNumCpus())))
+		var err error
+		writeMonitor, err = newMemorySnapshotWriteMonitor(ctx, c.env, c.memoryStore, c.snapshotKeySet.GetBranchKey().GetInstanceName(), snapshotDetails.saveRemoteSnapshot, snapshotDetails.saveLocalSnapshot, writeConcurrency)
+		if err != nil {
+			return status.WrapError(err, "create memory snapshot write monitor")
+		}
+		c.memoryStore.SetOnWrite(writeMonitor.OnWrite)
+		defer func() {
+			c.memoryStore.SetOnWrite(nil)
+			if err := wrapMonitorErr(writeMonitor.Finish()); err != nil {
+				log.CtxWarningf(ctx, "Memory snapshot write monitor failed; snapshot chunks will be cached after export: %s", err)
+			}
+		}()
 	}
 
 	machineStart := time.Now()

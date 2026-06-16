@@ -85,6 +85,20 @@ type usageSummary struct {
 	totalDuration time.Duration
 }
 
+// WriteEvent describes a completed write to the COWStore.
+type WriteEvent struct {
+	// Offset is the absolute offset within the whole COWStore.
+	Offset int64
+	// Length is the number of bytes written.
+	Length int64
+	// ChunkOffset is the absolute start offset of the chunk within the COWStore.
+	ChunkOffset int64
+}
+
+// OnWrite is called after each successful chunk-level write. Events never span
+// a COW chunk boundary.
+type OnWrite func(WriteEvent)
+
 // COWStore To enable copy-on-write support for a file, it can be split into
 // chunks of equal size. Just before a chunk is first written to, the chunk is first
 // copied, and the write is then applied to the copy.
@@ -160,6 +174,8 @@ type COWStore struct {
 
 	// LRU used to limit the number of chunks that can be mmapped at once.
 	mmapLRU *MmapLRU
+
+	onWrite OnWrite
 }
 
 type COWOptions struct {
@@ -464,10 +480,18 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 			writeSize = len(p)
 		}
 
-		nw, err := c.writeToChunk(p, chunkRelativeOffset, chunkOffset, writeSize)
-		n += nw
-		if err != nil {
-			return n, err
+			nw, err := c.writeToChunk(p, chunkRelativeOffset, chunkOffset, writeSize)
+			n += nw
+			if err != nil {
+				return n, err
+			}
+			if nw > 0 {
+				writeOffset := off + int64(n-nw)
+				c.notifyWrite(WriteEvent{
+					Offset:      writeOffset,
+					Length:      int64(nw),
+				ChunkOffset: chunkOffset,
+			})
 		}
 		p = p[writeSize:]
 		chunkOffset += c.chunkSizeBytes
@@ -522,8 +546,7 @@ func (c *COWStore) Sync() error {
 
 func (s *COWStore) Close() error {
 	// Close background goroutine eagerly fetching chunks
-	s.quitOnce.Do(func() { close(s.quitChan) })
-	s.eagerFetchEg.Wait()
+	s.StopEagerFetch()
 
 	var lastErr error
 	// TODO: maybe parallelize
@@ -601,6 +624,55 @@ func (s *COWStore) ChunkSizeBytes() int64 {
 	return s.chunkSizeBytes
 }
 
+// SetOnWrite sets a callback that is invoked after successful chunk-level
+// writes. It must not be called concurrently with WriteAt.
+func (s *COWStore) SetOnWrite(onWrite OnWrite) {
+	s.onWrite = onWrite
+}
+
+func (s *COWStore) notifyWrite(event WriteEvent) {
+	if s.onWrite != nil {
+		s.onWrite(event)
+	}
+}
+
+// Chunk returns the chunk with the given chunk start offset, or nil for a hole.
+func (s *COWStore) Chunk(chunkOffset int64) *Mmap {
+	s.storeLock.RLock()
+	defer s.storeLock.RUnlock()
+	return s.chunks[chunkOffset]
+}
+
+// StopEagerFetch stops background eager fetching for this store.
+func (s *COWStore) StopEagerFetch() {
+	s.quitOnce.Do(func() {
+		close(s.quitChan)
+		s.eagerFetchEg.Wait()
+	})
+	s.eagerFetchStack = nil
+}
+
+// DisableLRUEviction disables automatic LRU-driven unmapping for this store.
+// This is useful for sequential export paths where the caller manages chunk
+// lifetime explicitly. It does not unmap currently mapped chunks because
+// snapshot export is likely to touch them again soon; the export monitor will
+// unmap each chunk after it knows Firecracker has moved past it.
+func (s *COWStore) DisableLRUEviction() {
+	s.StopEagerFetch()
+
+	s.storeLock.Lock()
+	lru := s.mmapLRU
+	for _, chunk := range s.chunks {
+		chunk.disableLRUEviction()
+	}
+	s.mmapLRU = nil
+	s.storeLock.Unlock()
+
+	if lru != nil && !lru.isShared {
+		lru.Close()
+	}
+}
+
 // LimitMmappedChunks limits how many chunks can be mmapped at once.
 // This is useful when exporting a snapshot sequentially, when we don't want
 // recently touched chunks to stay mmapped longer than necessary. Existing
@@ -617,8 +689,7 @@ func (s *COWStore) LimitMmappedChunks(maxMmappedChunks int64) error {
 	// Stop eager fetching chunks. With a limited LRU, it could cause unnecessary LRU churn.
 	// Note that eager fetching chunks acquires the storeLock, so we must stop this
 	// before acquiring the lock below.
-	s.quitOnce.Do(func() { close(s.quitChan) })
-	s.eagerFetchEg.Wait()
+	s.StopEagerFetch()
 
 	s.storeLock.Lock()
 	defer s.storeLock.Unlock()
@@ -630,7 +701,6 @@ func (s *COWStore) LimitMmappedChunks(maxMmappedChunks int64) error {
 		chunk.lru = lru
 	}
 	s.mmapLRU = lru
-	s.eagerFetchStack = nil
 	return nil
 }
 
@@ -1305,6 +1375,16 @@ func (m *Mmap) Unmap() error {
 	return nil
 }
 
+func (m *Mmap) disableLRUEviction() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.lru != nil {
+		m.lru.Remove(m)
+	}
+	m.lru = nil
+}
+
 // Note: caller is expected to hold the lock.
 func (m *Mmap) unmap() (unmapped bool, err error) {
 	if m.data == nil {
@@ -1507,6 +1587,10 @@ func (ml *MmapLRU) processEviction(m *Mmap) {
 	// the LRU lock, in order to avoid deadlocks.
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if m.lru != ml {
+		return
+	}
 
 	ml.mu.Lock()
 	lruContains := ml.lru.Contains(ml.key(m))
