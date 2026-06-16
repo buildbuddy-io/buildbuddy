@@ -30,6 +30,13 @@ var (
 const (
 	ingestPath                = "/v1/ingest"
 	MaxEventsPerIngestRequest = 100
+
+	// Caution: Do not change this value!
+	// Each Metronome event should cover a window of this size, aligned to the nearest interval of this duration.
+	//
+	// We include the period start and end timestamps in the transaction ID for deduplication.
+	// If this window size is changed, events will not be deduplicated correctly, and users may be over-billed.
+	WindowSize = 1 * time.Minute
 )
 
 func defaultRetryOptions() *retry.Options {
@@ -47,6 +54,7 @@ func defaultRetryOptions() *retry.Options {
 type UsageEvent struct {
 	GroupID     string
 	PeriodStart time.Time
+	PeriodEnd   time.Time
 	SKU         sku.SKU
 	Labels      map[sku.LabelName]sku.LabelValue
 	Count       int64
@@ -129,10 +137,19 @@ func encodeEvent(e UsageEvent) (*MetronomeEvent, error) {
 	if e.GroupID == "" {
 		return nil, status.InvalidArgumentError("group ID is required")
 	}
+	if !IsWindowAligned(e.PeriodStart) || !IsWindowAligned(e.PeriodEnd) {
+		return nil, status.InvalidArgumentErrorf("period start and end [%s, %s] must be aligned to window size %s", e.PeriodStart, e.PeriodEnd, WindowSize)
+	}
+	if e.PeriodEnd.Sub(e.PeriodStart) != WindowSize {
+		return nil, status.InvalidArgumentErrorf("[%s, %s] must be of window size %s", e.PeriodStart, e.PeriodEnd, WindowSize)
+	}
+
 	properties := map[string]string{
-		"group_id": e.GroupID,
-		"sku":      e.SKU.String(),
-		"count":    strconv.FormatInt(e.Count, 10),
+		"group_id":     e.GroupID,
+		"sku":          e.SKU.String(),
+		"count":        strconv.FormatInt(e.Count, 10),
+		"period_start": e.PeriodStart.UTC().Format(time.RFC3339),
+		"period_end":   e.PeriodEnd.UTC().Format(time.RFC3339),
 	}
 	for k, v := range e.Labels {
 		properties[k] = v
@@ -158,6 +175,7 @@ func transactionID(e UsageEvent) string {
 	writeField(e.GroupID)
 	writeField(region.ConfiguredAppRegion())
 	writeField(e.PeriodStart.UTC().Format(time.RFC3339))
+	writeField(e.PeriodEnd.UTC().Format(time.RFC3339))
 	writeField(e.SKU.String())
 	keys := make([]string, 0, len(e.Labels))
 	for k := range e.Labels {
@@ -244,4 +262,8 @@ func errorForStatusCode(statusCode int, body string) error {
 		return status.UnavailableError(message)
 	}
 	return status.InternalError(message)
+}
+
+func IsWindowAligned(t time.Time) bool {
+	return t.Truncate(WindowSize).Equal(t)
 }

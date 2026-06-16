@@ -58,14 +58,14 @@ const (
 	// to Redis itself.
 	periodSettlingTime = 10 * time.Second
 
-	// redisKeyTTL defines how long usage keys have to live before they are
+	// RedisKeyTTL defines how long usage keys have to live before they are
 	// deleted automatically by Redis.
 	//
 	// Keys should live for at least 2 usage periods since periods
 	// aren't finalized until the period is past, plus some wiggle room for Redis
 	// latency. We add a few more periods on top of that, in case
 	// flushing fails due to transient errors.
-	redisKeyTTL = 5 * periodDuration
+	RedisKeyTTL = 5 * periodDuration
 
 	// Redis storage layout for buffered usage counts:
 	//
@@ -252,11 +252,11 @@ func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc
 	// Increment the hash values
 	encodedCollection := usageutil.EncodeCollection(collection)
 	countsKey := countsRedisKey(t, encodedCollection)
-	if err := ut.env.GetMetricsCollector().IncrementCountsWithExpiry(ctx, countsKey, counts, redisKeyTTL); err != nil {
+	if err := ut.env.GetMetricsCollector().IncrementCountsWithExpiry(ctx, countsKey, counts, RedisKeyTTL); err != nil {
 		return status.WrapError(err, "increment counts in redis")
 	}
 	// Add the collection hash to the set of collections with usage
-	if err := ut.env.GetMetricsCollector().SetAddWithExpiry(ctx, collectionsRedisKey(t), redisKeyTTL, encodedCollection); err != nil {
+	if err := ut.env.GetMetricsCollector().SetAddWithExpiry(ctx, collectionsRedisKey(t), RedisKeyTTL, encodedCollection); err != nil {
 		return status.WrapError(err, "add collection hash to set in redis")
 	}
 
@@ -315,12 +315,12 @@ func (ut *tracker) IncrementOLAP(ctx context.Context, labels sku.Labels, skuCoun
 		if count <= 0 {
 			continue
 		}
-		if err := ut.env.GetMetricsCollector().IncrementCountWithExpiry(ctx, countsKey, usageSKU.String(), count, redisKeyTTL); err != nil {
+		if err := ut.env.GetMetricsCollector().IncrementCountWithExpiry(ctx, countsKey, usageSKU.String(), count, RedisKeyTTL); err != nil {
 			return status.WrapError(err, "increment OLAP count in redis")
 		}
 	}
 	// Add the OLAP collection to the set of collections with usage.
-	if err := ut.env.GetMetricsCollector().SetAddWithExpiry(ctx, collectionsKey, redisKeyTTL, encodedOLAPCollection); err != nil {
+	if err := ut.env.GetMetricsCollector().SetAddWithExpiry(ctx, collectionsKey, RedisKeyTTL, encodedOLAPCollection); err != nil {
 		return status.WrapError(err, "add OLAP collection to set in redis")
 	}
 	return nil
@@ -640,7 +640,7 @@ func (ut *tracker) currentPeriod() period {
 }
 
 func (ut *tracker) oldestWritablePeriod() period {
-	return periodStartingAt(ut.clock.Now().Add(-redisKeyTTL))
+	return periodStartingAt(ut.clock.Now().Add(-RedisKeyTTL))
 }
 
 func (ut *tracker) lastSettledPeriod() period {
