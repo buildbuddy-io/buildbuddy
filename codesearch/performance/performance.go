@@ -36,6 +36,8 @@ const (
 	TOTAL_DOCS_SCORED_COUNT
 
 	TOTAL_SEARCH_DURATION
+
+	SIGNAL_RESOLVE_DURATION
 )
 
 func (l label) String() string {
@@ -72,6 +74,8 @@ func (l label) String() string {
 		return "TOTAL_DOCS_SCORED_COUNT"
 	case TOTAL_SEARCH_DURATION:
 		return "TOTAL_SEARCH_DURATION"
+	case SIGNAL_RESOLVE_DURATION:
+		return "SIGNAL_RESOLVE_DURATION"
 	default:
 		return "UNKNOWN_PERFORMANCE_LABEL"
 	}
@@ -154,6 +158,9 @@ func (t *Tracker) PrettyPrint() {
 	}
 	if t.Get(REMOVE_DELETED_DOCS_COUNT) > 0 {
 		log.Printf("Filtered %d deleted docs in %s", t.Get(REMOVE_DELETED_DOCS_COUNT), time.Duration(t.Get(REMOVE_DELETED_DOCS_DURATION)))
+	}
+	if t.Get(SIGNAL_RESOLVE_DURATION) > 0 {
+		log.Printf("Resolved scoring signals in %s", time.Duration(t.Get(SIGNAL_RESOLVE_DURATION)))
 	}
 	log.Printf("Scored %d docs in %s", t.Get(TOTAL_DOCS_SCORED_COUNT), time.Duration(t.Get(TOTAL_SCORING_DURATION)))
 	log.Printf("Completed search in %s", time.Duration(t.Get(TOTAL_SEARCH_DURATION)))

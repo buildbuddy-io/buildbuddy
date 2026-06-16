@@ -28,6 +28,7 @@ go_test(
         "//codesearch/annotations",
         "//codesearch/index",
         "//codesearch/schema",
+        "//codesearch/types",
         "//proto:index_go_proto",
         "//server/testutil/testfs",
         "//server/util/git",

@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/annotations"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -651,4 +652,80 @@ func TestRepoMetadataRoundTrip(t *testing.T) {
 	modulePath, err = GetRepoModulePath(r, altRepoURL)
 	require.NoError(t, err)
 	assert.Empty(t, modulePath)
+}
+
+// importSignalsByFilename resolves the import in-degree signal for every
+// document and keys it by base filename for easy assertions.
+func importSignalsByFilename(t *testing.T, r *index.Reader) map[string]float64 {
+	t.Helper()
+	matches, err := r.RawQuery("(:all)")
+	require.NoError(t, err)
+	require.NoError(t, r.ResolveSignals(matches, types.SignalImportInDegree))
+
+	signals := make(map[string]float64, len(matches))
+	for _, m := range matches {
+		doc := r.GetStoredDocument(m.Docid())
+		name := filepath.Base(string(doc.Field(schema.FilenameField).Contents()))
+		if name == "" {
+			continue
+		}
+		signals[name] = m.Signal(types.SignalImportInDegree)
+	}
+	return signals
+}
+
+func TestImportInDegreeSignal(t *testing.T) {
+	ctx := t.Context()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+	repoDir := testfs.MakeTempDir(t)
+
+	writeRepoFile(t, repoDir, "go.mod", "module github.com/example/repo\n\ngo 1.24\n")
+	writeRepoFile(t, repoDir, "util/log/log.go", "package log\n\nfunc Print() {}\n")
+	app := `package main
+
+import "github.com/example/repo/util/log"
+
+func main() { log.Print() }
+`
+	writeRepoFile(t, repoDir, "app1/main.go", app)
+	writeRepoFile(t, repoDir, "app2/main.go", app)
+
+	rctx := annotations.NewRepoContext(repoDir, "github.com/example/repo")
+	w, err := index.NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+	for _, f := range []string{"go.mod", "util/log/log.go", "app1/main.go", "app2/main.go"} {
+		indexRepoFile(t, w, rctx, repoDir, f)
+	}
+	require.NoError(t, w.Flush())
+
+	// In-degree = number of documents importing a doc's identity. util/log is
+	// imported by both apps; nothing imports the apps. The signal is resolved
+	// by reading each doc's stored import_id field and counting the imports
+	// posting list for its terms.
+	r := index.NewReader(ctx, db, "testing-namespace", schema.GitHubFileSchema())
+	signals := importSignalsByFilename(t, r)
+	assert.Equal(t, 2.0, signals["log.go"])
+	assert.Equal(t, 0.0, signals["main.go"])
+
+	// Incremental update: app2 stops importing util/log. The stale posting
+	// counts toward in-degree until CompactDeletes runs (documented inflation).
+	writeRepoFile(t, repoDir, "app2/main.go", "package main\n\nfunc main() {}\n")
+	w, err = index.NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+	indexRepoFile(t, w, rctx, repoDir, "app2/main.go")
+	require.NoError(t, w.Flush())
+
+	r = index.NewReader(ctx, db, "testing-namespace", schema.GitHubFileSchema())
+	signals = importSignalsByFilename(t, r)
+	assert.Equal(t, 2.0, signals["log.go"], "deleted doc inflates in-degree until compaction")
+
+	// Compaction brings in-degree down to the single live importer.
+	w, err = index.NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+	require.NoError(t, w.CompactDeletes())
+	require.NoError(t, w.Flush())
+
+	r = index.NewReader(ctx, db, "testing-namespace", schema.GitHubFileSchema())
+	signals = importSignalsByFilename(t, r)
+	assert.Equal(t, 1.0, signals["log.go"])
 }

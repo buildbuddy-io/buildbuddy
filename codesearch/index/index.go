@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -901,6 +902,82 @@ func (r *Reader) populateFieldLengths(docMatches map[uint64]*docMatch) error {
 	return nil
 }
 
+// ResolveSignals computes the named per-document scoring signals and attaches
+// them to the matches, where scorers read them via DocumentMatch.Signal.
+// Implements types.SignalResolver. Resolution is requested explicitly (and
+// typically over a bounded rerank window) so queries that don't score on
+// signals pay nothing.
+//
+// SignalImportInDegree is a document's import in-degree: the number of
+// documents whose imports field references one of this document's import_id
+// terms, summed over those terms. import_id is read from the stored field (a
+// single key per doc) and the count is the cardinality of each term's posting
+// list in the imports field, memoized per call. Counts include not-yet-
+// compacted deleted docs, acceptable for a fuzzy ranking signal.
+func (r *Reader) ResolveSignals(matches []types.DocumentMatch, names ...string) error {
+	for _, name := range names {
+		if name != types.SignalImportInDegree {
+			return status.InvalidArgumentErrorf("unknown scoring signal %q", name)
+		}
+	}
+	if len(names) == 0 || len(matches) == 0 {
+		return nil
+	}
+
+	start := time.Now()
+	defer func() {
+		if tracker := performance.TrackerFromContext(r.ctx); tracker != nil {
+			tracker.Add(performance.SIGNAL_RESOLVE_DURATION, int64(time.Since(start)))
+		}
+	}()
+
+	// The in-degree of an import_id term is the number of docs that import it,
+	// i.e. the cardinality of its posting list in the imports field. Memoized
+	// because popular terms recur across the match set.
+	inDegrees := make(map[string]float64)
+	importInDegree := func(importID string) (float64, error) {
+		var total float64
+		for term := range strings.FieldsSeq(importID) {
+			d, ok := inDegrees[term]
+			if !ok {
+				pl, closer, err := getPostingListReadOnly(r.db, r.namespace, term, types.ImportsField)
+				if err != nil {
+					return 0, err
+				}
+				d = float64(pl.GetCardinality())
+				closer.Close()
+				inDegrees[term] = d
+			}
+			total += d
+		}
+		return total, nil
+	}
+
+	for _, m := range matches {
+		dm, ok := m.(*docMatch)
+		if !ok {
+			continue
+		}
+		fields, err := r.getStoredFields(dm.docid, types.ImportIDField)
+		if err != nil {
+			return err
+		}
+		f, ok := fields[types.ImportIDField]
+		if !ok {
+			continue // no import_id for this doc (e.g. non-Go, test file, deleted)
+		}
+		total, err := importInDegree(string(f.Contents()))
+		if err != nil {
+			return err
+		}
+		if dm.signals == nil {
+			dm.signals = make(map[string]float64, 1)
+		}
+		dm.signals[types.SignalImportInDegree] = total
+	}
+	return nil
+}
+
 // TODO(jdelfino): We can't know if the document exists or not until we fetch the fields, but we
 // also want to fetch lazily, to avoid unnecessary fetches. This results in missing document
 // errors surfacing way downstream, in code that probably doesn't expect the document to be able to
@@ -1074,6 +1151,7 @@ type docMatch struct {
 	docid           uint64
 	matchedPostings map[string]types.Posting
 	fieldLengths    map[string]uint32
+	signals         map[string]float64
 }
 
 type matchPosting struct {
@@ -1101,6 +1179,10 @@ func (dm *docMatch) Posting(fieldName string) types.Posting {
 
 func (dm *docMatch) FieldLength(fieldName string) uint32 {
 	return dm.fieldLengths[fieldName]
+}
+
+func (dm *docMatch) Signal(name string) float64 {
+	return dm.signals[name]
 }
 
 type lazyDoc struct {
