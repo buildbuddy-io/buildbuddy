@@ -63,6 +63,11 @@ var (
 	// How long to wait before retrying after a failed connection or stream.
 	retryInterval = 5 * time.Second
 
+	// Upper bound on how long the health checker's shutdown function will
+	// block waiting for the goodbye message to flush. We don't want to
+	// hold up app shutdown if the stream is wedged.
+	shutdownGoodbyeTimeout = time.Second
+
 	// Limits on the labels reported at registration. Registration fails if a
 	// key or value is longer than maxLabelLen, or if there are more than
 	// maxLabels labels.
@@ -116,37 +121,55 @@ func Register(env *real_environment.RealEnv) error {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	env.GetHealthChecker().RegisterShutdownFunction(func(context.Context) error {
+	// shutdownCh signals the run goroutine to send a final
+	// shutting_down=true message before closing the stream, so the app can
+	// drop us from its registry immediately rather than waiting for the
+	// staleness TTL. doneCh lets the shutdown function wait for that
+	// goodbye to actually flush before we hard-cancel ctx.
+	shutdownCh := make(chan struct{})
+	doneCh := make(chan struct{})
+	env.GetHealthChecker().RegisterShutdownFunction(func(shutdownCtx context.Context) error {
+		close(shutdownCh)
+		select {
+		case <-doneCh:
+		case <-shutdownCtx.Done():
+		case <-time.After(shutdownGoodbyeTimeout):
+		}
 		cancel()
 		return nil
 	})
-	go run(ctx, env, *appTarget, *apiKey, node)
+	go func() {
+		defer close(doneCh)
+		run(ctx, shutdownCh, env, *appTarget, *apiKey, node)
+	}()
 	return nil
 }
 
-func run(ctx context.Context, env environment.Env, target, apiKey string, node *cppb.CacheProxyNode) {
+func run(ctx context.Context, shutdownCh <-chan struct{}, env environment.Env, target, apiKey string, node *cppb.CacheProxyNode) {
 	ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey)
 	for {
 		conn, err := grpc_client.DialInternalWithPoolSize(env, target, 1)
 		if err == nil {
 			client := cppb.NewCacheProxyRegistryClient(conn)
-			if err := streamHeartbeats(ctx, client, node); err != nil && ctx.Err() == nil {
+			if err := streamHeartbeats(ctx, shutdownCh, client, node); err != nil && ctx.Err() == nil {
 				log.Warningf("Cache Proxy registration stream failed, will retry in %s: %s", retryInterval, err)
 			}
 			_ = conn.Close()
 		} else if ctx.Err() == nil {
 			log.Warningf("Cache Proxy registration: dial %q failed, will retry in %s: %s", target, retryInterval, err)
 		}
-		if sleepWithContext(ctx, retryInterval) {
+		if sleepUntilShutdown(ctx, shutdownCh, retryInterval) {
 			return
 		}
 	}
 }
 
 // streamHeartbeats opens the registration stream, sends an initial heartbeat
-// plus one every heartbeatInterval, and returns when the stream breaks or
-// ctx is cancelled.
-func streamHeartbeats(ctx context.Context, client cppb.CacheProxyRegistryClient, node *cppb.CacheProxyNode) error {
+// plus one every heartbeatInterval, and returns when the stream breaks,
+// ctx is cancelled, or shutdownCh is closed. On a clean shutdown signal it
+// also sends a final shutting_down=true message so the server can drop us
+// from its registry immediately instead of waiting for the staleness TTL.
+func streamHeartbeats(ctx context.Context, shutdownCh <-chan struct{}, client cppb.CacheProxyRegistryClient, node *cppb.CacheProxyNode) error {
 	stream, cleanup, err := openStream(ctx, client, node)
 	if err != nil {
 		return err
@@ -163,6 +186,17 @@ func streamHeartbeats(ctx context.Context, client cppb.CacheProxyRegistryClient,
 			// RegisterCacheProxyResponse on EOF, but we don't care about
 			// its contents.
 			stream.CloseAndRecv()
+			return nil
+		case <-shutdownCh:
+			// Best-effort goodbye. If the send fails the server will
+			// eventually drop us via the staleness TTL anyway.
+			if err := sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node, ShuttingDown: true}); err == nil {
+				// Send succeeded; close the stream cleanly. On send
+				// failure (io.EOF) sendHeartbeat has already drained
+				// the trailer via its own CloseAndRecv, so we skip it
+				// here to avoid the redundant call.
+				stream.CloseAndRecv()
+			}
 			return nil
 		case <-ticker.C:
 			req := &cppb.RegisterCacheProxyRequest{Node: node, Statistics: collectStatistics()}
@@ -309,9 +343,11 @@ func getProxyHostID() string {
 	return hostid.GetFailsafeHostID(dir)
 }
 
-func sleepWithContext(ctx context.Context, d time.Duration) (cancelled bool) {
+func sleepUntilShutdown(ctx context.Context, shutdownCh <-chan struct{}, d time.Duration) (cancelled bool) {
 	select {
 	case <-ctx.Done():
+		return true
+	case <-shutdownCh:
 		return true
 	case <-time.After(d):
 		return false

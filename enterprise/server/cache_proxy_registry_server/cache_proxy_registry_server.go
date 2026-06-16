@@ -166,6 +166,14 @@ func (s *CacheProxyRegistryServer) RegisterAndStreamHeartbeat(stream cppb.CacheP
 				log.CtxInfof(ctx, "Rejecting cache proxy heartbeat from group %q: missing proxy_id", groupID)
 				return status.InvalidArgumentError("registration request missing proxy_id")
 			}
+			if req.GetShuttingDown() {
+				log.CtxInfof(ctx, "Cache proxy %q (group %q) signalled shutdown; removing from registry", node.GetProxyId(), groupID)
+				if err := s.removeProxy(ctx, groupID, node.GetProxyId()); err != nil {
+					log.CtxWarningf(ctx, "Could not remove shutting-down cache proxy %q (group %q): %s", node.GetProxyId(), groupID, err)
+					return err
+				}
+				return stream.SendAndClose(&cppb.RegisterCacheProxyResponse{})
+			}
 			if err := s.insertOrUpdateProxy(ctx, groupID, node, req.GetStatistics()); err != nil {
 				log.CtxInfof(ctx, "Closing cache proxy registration stream for proxy %q (group %q): could not store registration: %s", node.GetProxyId(), groupID, err)
 				return err
@@ -199,6 +207,10 @@ func (s *CacheProxyRegistryServer) insertOrUpdateProxy(ctx context.Context, grou
 		return err
 	}
 	return s.rdb.HSet(ctx, redisKeyForCacheProxies(groupID), node.GetProxyId(), b).Err()
+}
+
+func (s *CacheProxyRegistryServer) removeProxy(ctx context.Context, groupID, proxyID string) error {
+	return s.rdb.HDel(ctx, redisKeyForCacheProxies(groupID), proxyID).Err()
 }
 
 func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cppb.GetCacheProxiesRequest) (*cppb.GetCacheProxiesResponse, error) {
