@@ -231,5 +231,32 @@ var MeterProvider = sync.OnceValue(func() metric.MeterProvider {
 		alert.UnexpectedEvent("Error creating prometheus metrics exporter")
 		return noop.NewMeterProvider()
 	}
-	return sdkmetric.NewMeterProvider(sdkmetric.WithReader(exporter))
+	// Override otelgrpc's default 16-bucket histograms for client-side RPC
+	// metrics with coarser bucket sets. The defaults explode cardinality
+	// through the cross product of (rpc_service, rpc_method,
+	// rpc_grpc_status_code, instance) × 16 buckets × 5 histogram families.
+	// The metrics are named `rpc.{client,server}.{duration, request.size, response.size, requests_per_rpc, responses_per_rpc}`
+	durationView := sdkmetric.NewView(
+		sdkmetric.Instrument{Name: "rpc.client.duration"},
+		sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+			Boundaries: []float64{5, 25, 100, 500, 1000, 5000, 10000, 30000}, // in ms
+		}},
+	)
+	sizeView := sdkmetric.NewView(
+		sdkmetric.Instrument{Name: "rpc.client.*.size"},
+		sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+			// 1KiB, 32KiB, 1MiB, 4MiB, 8MiB
+			Boundaries: []float64{1024, 32768, 1048576, 4194304, 8388608},
+		}},
+	)
+	perRPCView := sdkmetric.NewView(
+		sdkmetric.Instrument{Name: "rpc.client.*_per_rpc"},
+		sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+			Boundaries: []float64{1, 10, 100, 1000},
+		}},
+	)
+	return sdkmetric.NewMeterProvider(
+		sdkmetric.WithReader(exporter),
+		sdkmetric.WithView(durationView, sizeView, perRPCView),
+	)
 })
