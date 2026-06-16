@@ -138,6 +138,39 @@ func TestCOW_Basic(t *testing.T) {
 	testStore(t, s, "" /*=path*/)
 }
 
+func TestCOW_OnWriteHook(t *testing.T) {
+	ctx := t.Context()
+	env := testenv.GetTestEnv(t)
+	dataDir := testfs.MakeTempDir(t)
+
+	chunkSizeBytes := int64(4)
+	cow, err := copy_on_write.NewCOWStore(ctx, env, "test", nil, copy_on_write.COWOptions{
+		ChunkSizeBytes: chunkSizeBytes,
+		TotalSizeBytes: chunkSizeBytes * 4,
+		DataDir:        dataDir,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cow.Close()) })
+
+	var events []copy_on_write.WriteEvent
+	cow.SetOnWrite(func(event copy_on_write.WriteEvent) {
+		events = append(events, event)
+	})
+
+	// Write to the first, third, fourth chunks (skip chunk 2).
+	n, err := cow.WriteAt([]byte{1}, 2)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	n, err = cow.WriteAt([]byte{1, 2, 3, 4, 5}, 10)
+	require.NoError(t, err)
+	require.Equal(t, 5, n)
+	require.Equal(t, []copy_on_write.WriteEvent{
+		{Offset: 2, Length: 1, ChunkOffset: 0},
+		{Offset: 10, Length: 2, ChunkOffset: 2},
+		{Offset: 12, Length: 3, ChunkOffset: 3},
+	}, events)
+}
+
 func TestCOW_Concurrency(t *testing.T) {
 	const chunkSizeBytes = 1024 * 512
 	const fileSizeBytes = chunkSizeBytes * 20
