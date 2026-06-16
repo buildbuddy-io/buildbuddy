@@ -49,6 +49,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
@@ -1928,6 +1929,83 @@ func getCrypterEnv(t *testing.T) (*testenv.TestEnv, string) {
 	err = crypter_service.Register(env)
 	require.NoError(t, err)
 	return env, kmsDir
+}
+
+type testCrypter struct {
+	enpb.UnimplementedEncryptionServiceServer
+	activeKeyFunc func(ctx context.Context) (*sgpb.EncryptionMetadata, error)
+}
+
+func (c *testCrypter) SetEncryptionConfig(ctx context.Context, req *enpb.SetEncryptionConfigRequest) (*enpb.SetEncryptionConfigResponse, error) {
+	return &enpb.SetEncryptionConfigResponse{}, nil
+}
+func (c *testCrypter) GetEncryptionConfig(ctx context.Context, req *enpb.GetEncryptionConfigRequest) (*enpb.GetEncryptionConfigResponse, error) {
+	return &enpb.GetEncryptionConfigResponse{Enabled: true}, nil
+}
+
+func (c *testCrypter) ActiveKey(ctx context.Context) (*sgpb.EncryptionMetadata, error) {
+	return c.activeKeyFunc(ctx)
+}
+
+func (c *testCrypter) NewEncryptor(ctx context.Context, d *repb.Digest, w interfaces.CommittedWriteCloser, em *sgpb.EncryptionMetadata) (interfaces.Encryptor, error) {
+	return &metadataOnlyEncryptor{
+		CommittedWriteCloser: w,
+		md:                   em,
+	}, nil
+}
+
+func (c *testCrypter) NewDecryptor(ctx context.Context, d *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata) (interfaces.Decryptor, error) {
+	return r, nil
+}
+
+type metadataOnlyEncryptor struct {
+	interfaces.CommittedWriteCloser
+
+	md *sgpb.EncryptionMetadata
+}
+
+func (e *metadataOnlyEncryptor) Metadata() *sgpb.EncryptionMetadata {
+	return e.md
+}
+
+func TestEncryptionUsesSameKeyForFileRecordAndEncryptor(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+
+	userID := "US123"
+	groupID := "GR123"
+	user := testauth.User(userID, groupID)
+	user.CacheEncryptionEnabled = true
+	auther := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{userID: user})
+	te.SetAuthenticator(auther)
+	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
+	require.NoError(t, err)
+
+	var nKeysGenerated atomic.Int64
+	crypter := &testCrypter{
+		activeKeyFunc: func(ctx context.Context) (*sgpb.EncryptionMetadata, error) {
+			// Return a new key every time ActiveKey is called.
+			return &sgpb.EncryptionMetadata{
+				EncryptionKeyId: fmt.Sprintf("EK%d", nKeysGenerated.Add(1)),
+			}, nil
+		},
+	}
+	te.SetCrypter(crypter)
+
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+		RootDirectory: testfs.MakeTempDir(t),
+		Partitions: []disk.Partition{{
+			ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: 1_000_000_000,
+		}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, pc.Set(ctx, rn, buf))
+
+	// Make sure the Set operation used only one encryption key.
+	require.Equal(t, int64(1), nKeysGenerated.Load())
 }
 
 func TestEncryption(t *testing.T) {

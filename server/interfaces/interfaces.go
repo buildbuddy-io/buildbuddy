@@ -1595,7 +1595,7 @@ type Crypter interface {
 
 	ActiveKey(ctx context.Context) (*sgpb.EncryptionMetadata, error)
 
-	NewEncryptor(ctx context.Context, d *repb.Digest, w CommittedWriteCloser) (Encryptor, error)
+	NewEncryptor(ctx context.Context, d *repb.Digest, w CommittedWriteCloser, em *sgpb.EncryptionMetadata) (Encryptor, error)
 	NewDecryptor(ctx context.Context, d *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata) (Decryptor, error)
 
 	enpb.EncryptionServiceServer
