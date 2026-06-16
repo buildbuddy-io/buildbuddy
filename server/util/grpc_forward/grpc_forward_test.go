@@ -1,13 +1,18 @@
 package grpc_forward
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 func cleanup() {
@@ -42,4 +47,116 @@ func TestGetConnectionPool_DedupesConcurrentDialsForSameTarget(t *testing.T) {
 	for _, pool := range pools[1:] {
 		require.Same(t, pools[0], pool)
 	}
+}
+
+// fakeIdentityService records IdentityHeader calls and returns a canned header.
+type fakeIdentityService struct {
+	mu         sync.Mutex
+	calls      int
+	lastClient string
+	header     string
+}
+
+func (f *fakeIdentityService) IdentityHeader(si *interfaces.ClientIdentity, _ time.Duration) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	f.lastClient = si.Client
+	return f.header, nil
+}
+
+func (f *fakeIdentityService) AddIdentityToContext(ctx context.Context) (context.Context, error) {
+	return ctx, nil
+}
+
+func (f *fakeIdentityService) ValidateIncomingIdentity(ctx context.Context) (context.Context, error) {
+	return ctx, nil
+}
+
+func (f *fakeIdentityService) IdentityFromContext(context.Context) (*interfaces.ClientIdentity, error) {
+	return nil, nil
+}
+
+func ctxWithResolvedClientIP(ip string) context.Context {
+	return context.WithValue(context.Background(), clientip.ContextKey, ip)
+}
+
+func TestCtxWithClientIP(t *testing.T) {
+	const clientIP = "1.2.3.4"
+	const identity = "signed-grpc-proxy-header"
+
+	t.Run("attaches client IP and identity", func(t *testing.T) {
+		idHeader := newIdentityHeader(&fakeIdentityService{header: identity})
+		ctx, err := ctxWithClientIP(ctxWithResolvedClientIP(clientIP), idHeader)
+		require.NoError(t, err)
+
+		md, ok := metadata.FromOutgoingContext(ctx)
+		require.True(t, ok)
+		require.Equal(t, []string{clientIP}, md.Get(clientip.HeaderName))
+		require.Equal(t, []string{identity}, md.Get(authutil.ClientIdentityHeaderName))
+	})
+
+	t.Run("no client IP attaches nothing", func(t *testing.T) {
+		idHeader := newIdentityHeader(&fakeIdentityService{header: identity})
+		ctx, err := ctxWithClientIP(context.Background(), idHeader)
+		require.NoError(t, err)
+
+		if md, ok := metadata.FromOutgoingContext(ctx); ok {
+			require.Empty(t, md.Get(clientip.HeaderName))
+			require.Empty(t, md.Get(authutil.ClientIdentityHeaderName))
+		}
+	})
+
+	t.Run("client-supplied client IP header is overwritten with the resolved IP", func(t *testing.T) {
+		idHeader := newIdentityHeader(&fakeIdentityService{header: identity})
+		// Simulate an attacker pre-setting the client-IP header to a spoofed value.
+		ctx := metadata.AppendToOutgoingContext(ctxWithResolvedClientIP(clientIP), clientip.HeaderName, "9.9.9.9")
+		ctx, err := ctxWithClientIP(ctx, idHeader)
+		require.NoError(t, err)
+
+		md, ok := metadata.FromOutgoingContext(ctx)
+		require.True(t, ok)
+		// The spoofed value is stripped and replaced with the proxy-resolved IP.
+		require.Equal(t, []string{clientIP}, md.Get(clientip.HeaderName))
+		require.Equal(t, []string{identity}, md.Get(authutil.ClientIdentityHeaderName))
+	})
+
+	t.Run("client-supplied client IP is stripped when no IP is resolved", func(t *testing.T) {
+		idHeader := newIdentityHeader(&fakeIdentityService{header: identity})
+		// Spoofed header present, but the proxy resolved no client IP of its own.
+		ctx := metadata.AppendToOutgoingContext(context.Background(), clientip.HeaderName, "9.9.9.9")
+		ctx, err := ctxWithClientIP(ctx, idHeader)
+		require.NoError(t, err)
+
+		md, ok := metadata.FromOutgoingContext(ctx)
+		require.True(t, ok)
+		require.Empty(t, md.Get(clientip.HeaderName))
+		require.Empty(t, md.Get(authutil.ClientIdentityHeaderName))
+	})
+
+	t.Run("nil identity service sets IP without identity", func(t *testing.T) {
+		ctx, err := ctxWithClientIP(ctxWithResolvedClientIP(clientIP), newIdentityHeader(nil))
+		require.NoError(t, err)
+
+		md, ok := metadata.FromOutgoingContext(ctx)
+		require.True(t, ok)
+		require.Equal(t, []string{clientIP}, md.Get(clientip.HeaderName))
+		require.Empty(t, md.Get(authutil.ClientIdentityHeaderName))
+	})
+}
+
+func TestIdentityHeaderMintsGRPCProxyIdentityAndCaches(t *testing.T) {
+	fake := &fakeIdentityService{header: "signed"}
+	idHeader := newIdentityHeader(fake)
+
+	h1, err := idHeader.get()
+	require.NoError(t, err)
+	require.Equal(t, "signed", h1)
+
+	h2, err := idHeader.get()
+	require.NoError(t, err)
+	require.Equal(t, "signed", h2)
+
+	require.Equal(t, 1, fake.calls, "header should be minted once and reused within the TTL")
+	require.Equal(t, interfaces.ClientIdentityGRPCProxy, fake.lastClient)
 }
