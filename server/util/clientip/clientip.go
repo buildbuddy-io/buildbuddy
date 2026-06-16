@@ -9,11 +9,12 @@ import (
 
 const ContextKey = "clientIP"
 
-// HeaderName is the gRPC metadata key used by a trusted forwarding proxy to
-// assert the original caller's client IP. It is only honored by the backend
-// when accompanied by a verified ClientIdentityGRPCProxy client identity;
-// untrusted callers cannot use it to spoof their IP.
-const HeaderName = "x-buildbuddy-client-ip"
+// HeaderName is the gRPC metadata key a trusted forwarding proxy uses to assert
+// the original caller's client IP. Its "x-buildbuddy-internal-" prefix marks it
+// as an internal-only trust header: the gRPC server strips any such header from
+// untrusted callers (see the interceptors package), and the backend only honors
+// this one when it carries a verified ClientIdentityGRPCProxy client identity.
+const HeaderName = "x-buildbuddy-internal-client-ip"
 
 var (
 	trustXForwardedForHeader = flag.Bool("auth.trust_xforwardedfor_header", false, "If true, client IP information will be retrieved from the X-Forwarded-For header. Should only be enabled if the BuildBuddy server is only accessible behind a trusted proxy.")
