@@ -91,8 +91,8 @@ type WriteEvent struct {
 	Offset int64
 	// Length is the number of bytes written.
 	Length int64
-	// ChunkOffset is the offset of the chunk within the COWStore.
-	ChunkOffset int64
+	// ChunkIndex is the index of the chunk within the COWStore.
+	ChunkIndex int64
 }
 
 // OnWrite is called after each successful chunk-level write. Events never span
@@ -481,8 +481,8 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 		writeOffset := off + int64(n)
 		// The byte offset of the write (relative to the start of the current chunk).
 		chunkRelativeOffset := (off + int64(n)) % c.chunkSizeBytes
-		// Offset of the chunk in the COWStore.
-		chunkOffset := writeOffset / c.chunkSizeBytes
+		// Index of the chunk in the COWStore.
+		chunkIndex := writeOffset / c.chunkSizeBytes
 		writeSize := int(c.chunkSizeBytes - chunkRelativeOffset)
 		if writeSize > len(p) {
 			writeSize = len(p)
@@ -495,9 +495,9 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 		}
 		if nw > 0 {
 			c.notifyWrite(WriteEvent{
-				Offset:      writeOffset,
-				Length:      int64(nw),
-				ChunkOffset: chunkOffset,
+				Offset:     writeOffset,
+				Length:     int64(nw),
+				ChunkIndex: chunkIndex,
 			})
 		}
 		p = p[writeSize:]
@@ -631,9 +631,9 @@ func (s *COWStore) ChunkSizeBytes() int64 {
 	return s.chunkSizeBytes
 }
 
-// SetOnWrite sets a callback that is invoked after successful
+// SetWriteCallback sets a callback that is invoked after successful
 // writes. It must not be called concurrently with WriteAt.
-func (s *COWStore) SetOnWrite(onWrite OnWrite) {
+func (s *COWStore) SetWriteCallback(onWrite OnWrite) {
 	s.onWrite = onWrite
 }
 
@@ -656,8 +656,11 @@ func (s *COWStore) StopEagerFetch() {
 // This is useful for paths where the caller manages chunk
 // lifetime explicitly (e.g. sequential snapshot export).
 // It does not unmap currently mapped chunks because the chunks are likely to
-// be touched again soon. The caller shoud manage chunk unmapping.
+// be touched again soon. The caller should manage chunk unmapping.
 func (s *COWStore) DisableLRUEviction() {
+	// Disable background eager fetching. Callers of this method
+	// manage chunk access explicitly, and eager fetch can fetch chunks outside of
+	// the expected pattern, causing untracked cache/network I/O.
 	s.StopEagerFetch()
 
 	s.storeLock.Lock()

@@ -153,7 +153,7 @@ func TestCOW_OnWriteHook(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, cow.Close()) })
 
 	var events []copy_on_write.WriteEvent
-	cow.SetOnWrite(func(event copy_on_write.WriteEvent) {
+	cow.SetWriteCallback(func(event copy_on_write.WriteEvent) {
 		events = append(events, event)
 	})
 
@@ -165,9 +165,9 @@ func TestCOW_OnWriteHook(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 5, n)
 	require.Equal(t, []copy_on_write.WriteEvent{
-		{Offset: 2, Length: 1, ChunkOffset: 0},
-		{Offset: 10, Length: 2, ChunkOffset: 2},
-		{Offset: 12, Length: 3, ChunkOffset: 3},
+		{Offset: 2, Length: 1, ChunkIndex: 0},
+		{Offset: 10, Length: 2, ChunkIndex: 2},
+		{Offset: 12, Length: 3, ChunkIndex: 3},
 	}, events)
 }
 
@@ -424,6 +424,65 @@ func TestCOW_MmapLRUDoesNotDeadlock(t *testing.T) {
 		t, metrics.COWSnapshotMemoryMappedBytes,
 		prometheus.Labels{metrics.FileName: filepath.Base(chunkDir)})
 	require.Equal(t, float64(0), n)
+}
+
+func TestCOW_DisableLRUEviction_PreventsSharedLRUEviction(t *testing.T) {
+	chunkSizeBytes := int64(32 * 1024 * 1024)
+	lruSizeBytes := 2 * chunkSizeBytes
+
+	// Set the size of the shared LRU.
+	flags.Set(t, "executor.mmap_memory_bytes", lruSizeBytes)
+	err := resources.Configure(true /*=enableSnapshotSharing*/)
+	require.NoError(t, err)
+	copy_on_write.ResetSharedLRUForTest()
+	copy_on_write.ResetMmmapedBytesMetricForTest()
+
+	ctx := t.Context()
+	env := testenv.GetTestEnv(t)
+
+	disabledDataDir := testfs.MakeTempDir(t)
+	disabledCOW, err := copy_on_write.NewCOWStore(ctx, env, "disabled", nil, copy_on_write.COWOptions{
+		ChunkSizeBytes: chunkSizeBytes,
+		TotalSizeBytes: chunkSizeBytes,
+		DataDir:        disabledDataDir,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, disabledCOW.Close()) })
+
+	// Write to a chunk, which should add it to the shared LRU.
+	n, err := disabledCOW.WriteAt([]byte{1}, 0)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	// Disable the shared LRU for the store. The chunk should be removed from the shared LRU.
+	disabledCOW.DisableLRUEviction()
+
+	// Initialize a new store, that puts pressure on the shared LRU to begin evicting chunks.
+	pressureDataDir := testfs.MakeTempDir(t)
+	pressureCOW, err := copy_on_write.NewCOWStore(ctx, env, "pressure", nil, copy_on_write.COWOptions{
+		ChunkSizeBytes: chunkSizeBytes,
+		TotalSizeBytes: 2 * chunkSizeBytes,
+		DataDir:        pressureDataDir,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, pressureCOW.Close()) })
+
+	for off := int64(0); off < 2*chunkSizeBytes; off += chunkSizeBytes {
+		n, err := pressureCOW.WriteAt([]byte{1}, off)
+		require.NoError(t, err)
+		require.Equal(t, 1, n)
+	}
+
+	// Closing the shared LRU waits for any queued eviction workers. If the
+	// disabled store's chunk is still tracked by the LRU, the pressure store's
+	// second chunk queues it for eviction and this call lets that eviction run.
+	copy_on_write.ResetSharedLRUForTest()
+
+	// The chunk from the first store should not have been evicted, despite
+	// being mapped before the pressure store's chunks.
+	disabledLabels := prometheus.Labels{metrics.FileName: filepath.Base(disabledDataDir)}
+	mappedBytes := testmetrics.GaugeValueForLabels(t, metrics.COWSnapshotMemoryMappedBytes, disabledLabels)
+	require.Equal(t, float64(chunkSizeBytes), mappedBytes)
 }
 
 func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
