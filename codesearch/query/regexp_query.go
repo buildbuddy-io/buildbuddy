@@ -23,6 +23,12 @@ const (
 	// Find a way to specify them from the indexer / searcher?
 	filenameField = "filename"
 	contentField  = "content"
+
+	// allSQuery is what RegexpQuery compiles a pattern to when it can't
+	// extract any ngrams from it (e.g. the pattern is shorter than the
+	// minimum ngram length, or matches too generally). Such a clause doesn't
+	// filter the candidate set at all.
+	allSQuery = "(:all)"
 )
 
 var (
@@ -106,7 +112,15 @@ type fieldScorer struct {
 	op        scorerOp
 	fieldName string
 	weight    int
+	matcher   *dfa.Regexp
 	children  []*fieldScorer
+
+	// filteredByIndex is true when this matcher contributed real ngrams to
+	// the squery, meaning the index already filtered the candidate set
+	// through it. Only then does a missing posting prove a doc doesn't
+	// match; for unindexable patterns (too short/general to produce ngrams)
+	// a missing posting just means "unverified".
+	filteredByIndex bool
 
 	// avgFieldLen maps each scored field to its mean length over the
 	// candidate set, computed by Prepare on the root scorer. It supplies
@@ -167,6 +181,15 @@ func (fs *fieldScorer) fieldScore(docMatch types.DocumentMatch, avgLens map[stri
 		}
 		posting := docMatch.Posting(fs.fieldName)
 		if posting == nil {
+			if !fs.filteredByIndex {
+				// Candidates were never filtered through this matcher's
+				// ngrams, so a missing posting means "unverified", not "no
+				// match". Contribute neutral evidence so an And doesn't
+				// veto the doc, and let Rescore make the exact call.
+				return float64(fs.weight) * bm25Sat(1)
+			}
+			// The index filtered candidates through this matcher's ngrams,
+			// so a missing posting means the doc truly doesn't match.
 			return 0
 		}
 		tf := float64(posting.Frequency())
@@ -239,11 +262,13 @@ func newNoopScorer() *fieldScorer {
 	}
 }
 
-func newFieldScorer(fieldName string, weight int) *fieldScorer {
+func newFieldScorer(fieldName string, weight int, matcher *dfa.Regexp, filteredByIndex bool) *fieldScorer {
 	return &fieldScorer{
-		op:        Match,
-		fieldName: fieldName,
-		weight:    weight,
+		op:              Match,
+		fieldName:       fieldName,
+		weight:          weight,
+		matcher:         matcher,
+		filteredByIndex: filteredByIndex,
 	}
 }
 
@@ -275,6 +300,67 @@ func orScorers(a *fieldScorer, b *fieldScorer) *fieldScorer {
 
 func (fs *fieldScorer) Score(docMatch types.DocumentMatch) float64 {
 	return fs.fieldScore(docMatch, fs.avgFieldLen)
+}
+
+// rescoreFieldScore mirrors fieldScore, but computes exact match counts by
+// running the field matchers against the stored document contents instead of
+// approximating with index-side term frequencies.
+func (fs *fieldScorer) rescoreFieldScore(docMatch types.DocumentMatch, doc types.Document, avgLens map[string]float64) float64 {
+	switch fs.op {
+	case Match:
+		if fs.matcher == nil {
+			// A matcher-less scorer has nothing to verify against the stored
+			// document (e.g. exact keyword-field lookups, which produce no
+			// trigram false positives, and whose fields aren't stored), so
+			// the index-side score is already the exact score.
+			return fs.fieldScore(docMatch, avgLens)
+		}
+		contents := doc.Field(fs.fieldName).Contents()
+		tf := float64(len(match(fs.matcher.Clone(), contents)))
+		if tf == 0 {
+			return 0
+		}
+		fieldLen := 0.0
+		if docMatch != nil {
+			fieldLen = float64(docMatch.FieldLength(fs.fieldName))
+		}
+		// Same floor as fieldScore: docs indexed before field lengths were
+		// stored report FieldLength 0.
+		if fieldLen < tf {
+			fieldLen = tf
+		}
+		norm := 1.0
+		if avg := avgLens[fs.fieldName]; avg > 0 {
+			norm = 1 - bm25B + bm25B*(fieldLen/avg)
+		}
+		return float64(fs.weight) * bm25Sat(tf/norm)
+	case Or:
+		total := 0.0
+		for _, child := range fs.children {
+			total += child.rescoreFieldScore(docMatch, doc, avgLens)
+		}
+		return total
+	case And:
+		// Gate at any depth, mirroring fieldScore.
+		total := 0.0
+		for _, child := range fs.children {
+			s := child.rescoreFieldScore(docMatch, doc, avgLens)
+			if s == 0 {
+				return 0
+			}
+			total += s
+		}
+		return total
+	case Noop:
+		return 1
+	default:
+		log.Warningf("Unknown scorer operation %d", fs.op)
+		return 0 // Should never happen
+	}
+}
+
+func (fs *fieldScorer) Rescore(docMatch types.DocumentMatch, doc types.Document) float64 {
+	return fs.rescoreFieldScore(docMatch, doc, fs.avgFieldLen)
 }
 
 func extractLine(buf []byte, lineNumber int) []byte {
@@ -407,9 +493,13 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 			return nil, status.InvalidArgumentError(err.Error())
 		}
 		sClauses = append(sClauses, subQ)
+		fileMatchRe, err := dfa.Compile(filename)
+		if err != nil {
+			return nil, status.InvalidArgumentError(err.Error())
+		}
 		// Weight 2 because explicit filename matches should be more impactful to ranking than
 		// non-explicit filename matches.
-		scorer = andScorers(scorer, newFieldScorer(filenameField, 2))
+		scorer = andScorers(scorer, newFieldScorer(filenameField, 2, fileMatchRe, subQ != allSQuery))
 	}
 
 	q, lang := filters.ExtractLanguageFilter(q)
@@ -434,6 +524,11 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 		if err != nil {
 			return nil, err
 		}
+		// The term scorers below cover all terms at once (via an OR'd
+		// matcher), so a field counts as index-filtered if any term
+		// contributed real ngrams for it.
+		contentFiltered := false
+		filenameFiltered := false
 		for _, qTerm := range queryTerms {
 			expr := flagString + strings.TrimSuffix(strings.TrimPrefix(qTerm, `"`), `"`)
 			syn, err := syntax.Parse(expr, syntax.Perl)
@@ -444,6 +539,8 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 			// field in the schema.
 			subQContent := RegexpQuery(syn, token.WithMaxNgramLength(6), token.WithLowerCase(true)).SQuery(contentField)
 			subQFilename := RegexpQuery(syn).SQuery(filenameField)
+			contentFiltered = contentFiltered || subQContent != allSQuery
+			filenameFiltered = filenameFiltered || subQFilename != allSQuery
 			sClauses = append(sClauses, "(:or "+subQContent+" "+subQFilename+")")
 		}
 
@@ -457,8 +554,8 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 			orScorers(
 				// Weight 2 because content matches should be more important than non-explicit
 				// filename matches.
-				newFieldScorer(contentField, 2),
-				newFieldScorer(filenameField, 1),
+				newFieldScorer(contentField, 2, re, contentFiltered),
+				newFieldScorer(filenameField, 1, re, filenameFiltered),
 			))
 		contentMatcher = re
 

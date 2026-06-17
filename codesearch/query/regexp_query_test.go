@@ -4,10 +4,27 @@ import (
 	"context"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+var testSchema = schema.NewDocumentSchema(
+	[]types.FieldSchema{
+		schema.MustFieldSchema(types.KeywordField, "id", true),
+		schema.MustFieldSchema(types.TrigramField, "filename", true),
+		schema.MustFieldSchema(types.SparseNgramField, "content", true),
+	},
+)
+
+func newTestDocument(t *testing.T, fieldMap map[string][]byte) types.Document {
+	doc, err := testSchema.MakeDocument(fieldMap)
+	if err != nil {
+		t.Fatalf("failed to create test document: %v", err)
+	}
+	return doc
+}
 
 type testPosting struct {
 	docid     uint64
@@ -238,10 +255,10 @@ func TestNestedAndGatingPreserved(t *testing.T) {
 	// only one of the And's children contributes nothing, not a partial
 	// score. Guards against gating regressing if it lived only in Score.
 	nestedAnd := andScorers(
-		newFieldScorer(contentField, 1),
-		newFieldScorer(filenameField, 1),
+		newFieldScorer(contentField, 1, nil, true),
+		newFieldScorer(filenameField, 1, nil, true),
 	)
-	scorer := orScorers(nestedAnd, newFieldScorer("other", 1))
+	scorer := orScorers(nestedAnd, newFieldScorer("other", 1, nil, true))
 
 	// Matches contentField only; the And's filename child is absent, and the
 	// Or's other child is absent too, so the whole expression scores 0.
@@ -282,6 +299,8 @@ func TestScoringLengthNormalization(t *testing.T) {
 	)
 	scorer.Prepare([]types.DocumentMatch{short, long}) // avg content len = 2.5
 
+	// Each doc's content tf is normalized by its content length relative
+	// to the candidate average: B = 1 - b + b*(len/avg).
 	shortNorm := 1 - bm25B + bm25B*(1.0/2.5)
 	longNorm := 1 - bm25B + bm25B*(4.0/2.5)
 	assert.InDelta(t, 2*bm25Sat(1.0/shortNorm), scorer.Score(short), 1e-9)
@@ -300,11 +319,10 @@ func TestScoringMissingFieldLengthsFloorsAtMatchCount(t *testing.T) {
 	scorer := q.Scorer()
 	require.NotNil(t, scorer)
 
-	docMatch := matchWithFrequenciesAndLengths(
+	noLengths := matchWithFrequenciesAndLengths(
 		map[string]uint32{contentField: 1},
 		nil,
 	)
-	noLengths := docMatch
 	withLengths := matchWithFrequenciesAndLengths(
 		map[string]uint32{contentField: 1},
 		map[string]uint32{contentField: 4},
@@ -410,10 +428,11 @@ func TestScorerWithOnlyOneMatch(t *testing.T) {
 	assert.Equal(t, 0.0, scorer.Score(docMatch))
 }
 
-func TestScorerWithShortFilePathNoMatch(t *testing.T) {
-	// A short token - fewer than 3 characters - will match everything in the trigram
-	// index, so we must ensure that the scorer will score non-matches as 0 so they are filtered out
-	// later.
+func TestScorerWithShortFilePathDefersToRescore(t *testing.T) {
+	// A short filename pattern - fewer than 3 characters - produces no
+	// trigrams, so the index cannot filter candidates by it. The cheap scorer
+	// must not veto such docs (it has no evidence either way); Rescore checks
+	// the real filename and separates matches from non-matches.
 	ctx := context.Background()
 	q, err := NewReQuery(ctx, "filepath:zo foo")
 	require.NoError(t, err)
@@ -425,5 +444,50 @@ func TestScorerWithShortFilePathNoMatch(t *testing.T) {
 		map[string]uint32{contentField: 1},
 		map[string]uint32{contentField: 1, filenameField: 1},
 	)
-	assert.Equal(t, 0.0, scorer.Score(docMatch))
+	assert.Greater(t, scorer.Score(docMatch), 0.0)
+
+	nonMatchingDoc := newTestDocument(t, map[string][]byte{
+		"id":       []byte("1"),
+		"filename": []byte("bar.txt"),
+		"content":  []byte("foo"),
+	})
+	assert.Equal(t, 0.0, scorer.Rescore(docMatch, nonMatchingDoc))
+
+	matchingDoc := newTestDocument(t, map[string][]byte{
+		"id":       []byte("2"),
+		"filename": []byte("zoo.txt"),
+		"content":  []byte("foo"),
+	})
+	assert.Greater(t, scorer.Rescore(docMatch, matchingDoc), 0.0)
+}
+
+func TestRescoreDropsTrigramFalsePositive(t *testing.T) {
+	// A doc can carry all of a term's ngrams without containing the term;
+	// Rescore runs the real matcher over the stored content and rejects it.
+	ctx := context.Background()
+	q, err := NewReQuery(ctx, "fields")
+	require.NoError(t, err)
+
+	scorer := q.Scorer()
+	require.NotNil(t, scorer)
+
+	docMatch := matchWithFrequenciesAndLengths(
+		map[string]uint32{contentField: 1},
+		map[string]uint32{contentField: 1, filenameField: 1},
+	)
+	assert.Greater(t, scorer.Score(docMatch), 0.0)
+
+	falsePositive := newTestDocument(t, map[string][]byte{
+		"id":       []byte("1"),
+		"filename": []byte("bar.txt"),
+		"content":  []byte("fie elder ldside"), // ngrams without the term
+	})
+	assert.Equal(t, 0.0, scorer.Rescore(docMatch, falsePositive))
+
+	realMatch := newTestDocument(t, map[string][]byte{
+		"id":       []byte("2"),
+		"filename": []byte("baz.txt"),
+		"content":  []byte("func Fields(s string)"),
+	})
+	assert.Greater(t, scorer.Rescore(docMatch, realMatch), 0.0)
 }
