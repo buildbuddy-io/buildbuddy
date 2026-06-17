@@ -56,8 +56,9 @@ const (
 )
 
 const (
-	CASErrorMessage    = "CAS expected value did not match"
-	TxnNotFoundMessage = "Transaction not found"
+	CASErrorMessage      = "CAS expected value did not match"
+	TxnNotFoundMessage   = "Transaction not found"
+	TxnRolledBackMessage = "Transaction rolled back"
 )
 
 // Key constants (some of these have to be vars because of how they are made.
@@ -78,10 +79,8 @@ var (
 	// The last rangeID that was generated.
 	LastRangeIDKey = keys.MakeKey(SystemPrefix, []byte("last_range_id-"))
 
-	// A prefix to prepend to transaction records. Transaction Records were written
-	// by the transaction coordinator when the transaction state changes. They
-	// were used to recover stuck transactions. They are different from shard-specific
-	// transaction entries written by replicas when preparing the transactions.
+	// A prefix to prepend to transaction records. These records live in the
+	// meta range and track the global txn decision.
 	TxnRecordPrefix = keys.MakeKey(SystemPrefix, []byte("txn-record-"))
 
 	// A prefix to prepend to session keys
@@ -107,8 +106,14 @@ var (
 	// When this local range was set up.
 	LocalRangeSetupTimeKey = keys.MakeKey(LocalPrefix, []byte("range_initialization_time"))
 
-	// A prefix to prepend to transactions.
+	// A prefix to prepend to participant-local prepared transaction state. The
+	// key is LocalTransactionPrefix + txid, and the value is the marshaled
+	// prepare BatchCmdRequest used to reload prepared state after restart.
 	LocalTransactionPrefix = keys.MakeKey(LocalPrefix, []byte("txn-"))
+
+	// A prefix to prepend to participant-local rollback markers for the
+	// transaction.
+	LocalTxnRollbackMarkerPrefix = keys.MakeKey(LocalPrefix, []byte("rollback-txn-"))
 )
 
 // Error constants -- sender recognizes these errors.

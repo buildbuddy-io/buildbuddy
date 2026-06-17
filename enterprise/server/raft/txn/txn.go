@@ -74,7 +74,8 @@ func (tc *Coordinator) RunTxnWithProto(ctx context.Context, txnProto *rfpb.TxnRe
 		CreatedAtUsec: time.Now().UnixMicro(),
 	}
 
-	if err := tc.WriteTxnRecord(ctx, txnRecord); err != nil {
+	pendingBytes, err := tc.writeTxnRecord(ctx, txnRecord)
+	if err != nil {
 		return err
 	}
 
@@ -109,23 +110,28 @@ func (tc *Coordinator) RunTxnWithProto(ctx context.Context, txnProto *rfpb.TxnRe
 
 	txnRecord.Op = operation
 	txnRecord.TxnState = rfpb.TxnRecord_PREPARED
-	if err := tc.WriteTxnRecord(ctx, txnRecord); err != nil {
-		return status.WrapErrorf(err, "failed to write txn record (txid=%q)", txnID)
+	matched, currentRecord, err := tc.casTxnRecord(ctx, pendingBytes, txnRecord)
+	if err != nil {
+		return status.WrapErrorf(err, "failed to write txn decision (txid=%q)", txnID)
 	}
-
-	for _, stmt := range txnProto.GetStatements() {
-		// Finalize each statement.
-		if err := tc.finalizeTxn(ctx, txnID, operation, stmt); err != nil {
-			if isTxnNotFoundError(err) && operation == rfpb.FinalizeOperation_ROLLBACK {
-				// if there is error during preparation for this range, then txn not found is expected during rollback.
-				continue
-			}
-			return status.WrapErrorf(err, "failed to finalize statement in txn(%q) for range_id:%d, operation: %s", txnID, stmt.GetRange().GetRangeId(), operation)
+	if !matched {
+		if currentRecord == nil {
+			return status.FailedPreconditionErrorf("txn record was deleted before decision (txid=%q)", txnID)
 		}
+		if err := tc.finalizeTxnRecord(ctx, currentRecord); err != nil {
+			return err
+		}
+		if prepareError != nil {
+			return prepareError
+		}
+		if currentRecord.GetOp() != operation {
+			return status.FailedPreconditionErrorf("txn decision already written (txid=%q, op=%s)", txnID, currentRecord.GetOp())
+		}
+		return nil
 	}
 
-	if err := tc.deleteTxnRecord(ctx, txnID); err != nil {
-		return status.WrapErrorf(err, "failed to delete txn record (txid=%q)", txnID)
+	if err := tc.finalizeTxnRecord(ctx, txnRecord); err != nil {
+		return err
 	}
 	if prepareError != nil {
 		return prepareError
@@ -185,11 +191,11 @@ func (tc *Coordinator) deleteTxnRecord(ctx context.Context, txnID []byte) error 
 	return rbuilder.NewBatchResponseFromProto(rsp).AnyError()
 }
 
-func (tc *Coordinator) WriteTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
+func (tc *Coordinator) writeTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord) ([]byte, error) {
 	key := keys.MakeKey(constants.TxnRecordPrefix, txnRecord.GetTxnRequest().GetTransactionId())
 	buf, err := proto.Marshal(txnRecord)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	batch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -198,13 +204,59 @@ func (tc *Coordinator) WriteTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRe
 		},
 	}).ToProto()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	rsp, err := tc.sender().SyncPropose(ctx, key, batch)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return rbuilder.NewBatchResponseFromProto(rsp).AnyError()
+	if err := rbuilder.NewBatchResponseFromProto(rsp).AnyError(); err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
+func (tc *Coordinator) WriteTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
+	_, err := tc.writeTxnRecord(ctx, txnRecord)
+	return err
+}
+
+func (tc *Coordinator) casTxnRecord(ctx context.Context, expectedValue []byte, txnRecord *rfpb.TxnRecord) (bool, *rfpb.TxnRecord, error) {
+	key := keys.MakeKey(constants.TxnRecordPrefix, txnRecord.GetTxnRequest().GetTransactionId())
+	buf, err := proto.Marshal(txnRecord)
+	if err != nil {
+		return false, nil, err
+	}
+	batch, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
+		Kv: &rfpb.KV{
+			Key:   key,
+			Value: buf,
+		},
+		ExpectedValue: expectedValue,
+	}).ToProto()
+	if err != nil {
+		return false, nil, err
+	}
+	rsp, err := tc.sender().SyncPropose(ctx, key, batch)
+	if err != nil {
+		return false, nil, err
+	}
+	casRsp, err := rbuilder.NewBatchResponseFromProto(rsp).CASResponse(0)
+	if err == nil {
+		return true, nil, nil
+	}
+	if !status.IsFailedPreconditionError(err) || casRsp == nil {
+		return false, nil, err
+	}
+	kv := casRsp.GetKv()
+	if len(kv.GetValue()) == 0 {
+		return false, nil, nil
+	}
+	currentRecord := &rfpb.TxnRecord{}
+	if unmarshalErr := proto.Unmarshal(kv.GetValue(), currentRecord); unmarshalErr != nil {
+		return false, nil, unmarshalErr
+	}
+	return false, currentRecord, nil
 }
 
 func isConflictKeyError(err error) bool {
@@ -280,16 +332,16 @@ func (tc *Coordinator) processTxnRecords(ctx context.Context) {
 	if !tc.store.HasReplicaAndIsLeader(constants.MetaRangeID) {
 		return
 	}
-	txnRecords, err := tc.FetchTxnRecords(ctx, false /*=includeLive*/)
+	txnRecords, err := tc.fetchTxnRecords(ctx, false /*=includeLive*/)
 	if err != nil {
 		log.Warningf("Failed to fetch txn records: %s", err)
 	}
 
 	errCount := 0
 	for _, txnRecord := range txnRecords {
-		txnID := txnRecord.GetTxnRequest().GetTransactionId()
-		if err := tc.ProcessTxnRecord(ctx, txnRecord); err != nil {
-			log.Warningf("Failed to processTxnRecord for txn (%q): %s, statements: %+v", txnID, err, txnRecord.GetTxnRequest().GetStatements())
+		txnID := txnRecord.record.GetTxnRequest().GetTransactionId()
+		if err := tc.processTxnRecord(ctx, txnRecord.record, txnRecord.raw); err != nil {
+			log.Warningf("Failed to processTxnRecord for txn (%q): %s, statements: %+v", txnID, err, txnRecord.record.GetTxnRequest().GetStatements())
 			errCount++
 		} else {
 			log.Debugf("Successfully processed txn record %q", txnID)
@@ -306,7 +358,12 @@ func (tc *Coordinator) processTxnRecords(ctx context.Context) {
 	}
 }
 
-func (tc *Coordinator) FetchTxnRecords(ctx context.Context, includeLive bool) ([]*rfpb.TxnRecord, error) {
+type fetchedTxnRecord struct {
+	record *rfpb.TxnRecord
+	raw    []byte
+}
+
+func (tc *Coordinator) fetchTxnRecords(ctx context.Context, includeLive bool) ([]*fetchedTxnRecord, error) {
 	start, end := keys.Range(constants.TxnRecordPrefix)
 
 	batchReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
@@ -333,7 +390,7 @@ func (tc *Coordinator) FetchTxnRecords(ctx context.Context, includeLive bool) ([
 	if len(scanRsp.GetKvs()) == 0 {
 		return nil, nil
 	}
-	txnRecords := make([]*rfpb.TxnRecord, 0, len(scanRsp.GetKvs()))
+	txnRecords := make([]*fetchedTxnRecord, 0, len(scanRsp.GetKvs()))
 	for _, kv := range scanRsp.GetKvs() {
 		txnRecord := &rfpb.TxnRecord{}
 		if err := proto.Unmarshal(kv.GetValue(), txnRecord); err != nil {
@@ -345,7 +402,22 @@ func (tc *Coordinator) FetchTxnRecords(ctx context.Context, includeLive bool) ([
 			// This txn record is created very recently; skip processing
 			continue
 		}
-		txnRecords = append(txnRecords, txnRecord)
+		txnRecords = append(txnRecords, &fetchedTxnRecord{
+			record: txnRecord,
+			raw:    kv.GetValue(),
+		})
+	}
+	return txnRecords, nil
+}
+
+func (tc *Coordinator) FetchTxnRecords(ctx context.Context, includeLive bool) ([]*rfpb.TxnRecord, error) {
+	fetched, err := tc.fetchTxnRecords(ctx, includeLive)
+	if err != nil {
+		return nil, err
+	}
+	txnRecords := make([]*rfpb.TxnRecord, 0, len(fetched))
+	for _, txnRecord := range fetched {
+		txnRecords = append(txnRecords, txnRecord.record)
 	}
 	return txnRecords, nil
 }
@@ -354,31 +426,49 @@ func isTxnNotFoundError(err error) bool {
 	return status.IsNotFoundError(err) && strings.Contains(err.Error(), constants.TxnNotFoundMessage)
 }
 
-func (tc *Coordinator) ProcessTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
+func (tc *Coordinator) finalizeTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
 	txnID := txnRecord.GetTxnRequest().GetTransactionId()
-	if txnRecord.GetTxnState() == rfpb.TxnRecord_PENDING {
-		// The transaction is not fully prepared. Let's rollback all the statements.
-		for _, statement := range txnRecord.GetTxnRequest().GetStatements() {
-			err := tc.finalizeTxn(ctx, txnID, rfpb.FinalizeOperation_ROLLBACK, statement)
-			if err != nil && !isTxnNotFoundError(err) {
-				// if the statement is not prepared, we will get NotFound Error when we rollback and this is fine.
-				return status.WrapErrorf(err, "failed to rollback pending statement on range %d", statement.GetRange().GetRangeId())
-			}
-		}
-	} else if txnRecord.GetTxnState() == rfpb.TxnRecord_PREPARED {
-		// The transaction is prepared, but not fully finalized. Let's finalize
-		// all the prepared statements.
-		if txnRecord.GetOp() == rfpb.FinalizeOperation_UNKNOWN_OPERATION {
-			return status.InvalidArgumentError("unexpected txnRecord.op")
-		}
+	if txnRecord.GetOp() == rfpb.FinalizeOperation_UNKNOWN_OPERATION {
+		return status.InvalidArgumentError("unexpected txnRecord.op")
+	}
 
-		for _, stmt := range txnRecord.GetTxnRequest().GetStatements() {
-			err := tc.finalizeTxn(ctx, txnID, txnRecord.GetOp(), stmt)
-			if err != nil && !isTxnNotFoundError(err) {
-				// if the statement is already finalized, we will get NotFound Error when we finalize and this is fine.
-				return status.WrapErrorf(err, "failed to finalize prepared statement on range %d, operation=%s", stmt.GetRange().GetRangeId(), txnRecord.GetOp())
-			}
+	for _, stmt := range txnRecord.GetTxnRequest().GetStatements() {
+		err := tc.finalizeTxn(ctx, txnID, txnRecord.GetOp(), stmt)
+		if err != nil && !isTxnNotFoundError(err) {
+			return status.WrapErrorf(err, "failed to finalize statement on range %d, operation=%s", stmt.GetRange().GetRangeId(), txnRecord.GetOp())
 		}
 	}
 	return tc.deleteTxnRecord(ctx, txnID)
+}
+
+func (tc *Coordinator) processTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord, raw []byte) error {
+	if txnRecord.GetTxnState() == rfpb.TxnRecord_PENDING {
+		rollbackRecord := proto.Clone(txnRecord).(*rfpb.TxnRecord)
+		rollbackRecord.TxnState = rfpb.TxnRecord_PREPARED
+		rollbackRecord.Op = rfpb.FinalizeOperation_ROLLBACK
+
+		matched, currentRecord, err := tc.casTxnRecord(ctx, raw, rollbackRecord)
+		if err != nil {
+			return status.WrapError(err, "failed to write rollback decision")
+		}
+		if !matched {
+			if currentRecord == nil {
+				return nil
+			}
+			return tc.finalizeTxnRecord(ctx, currentRecord)
+		}
+		return tc.finalizeTxnRecord(ctx, rollbackRecord)
+	}
+	if txnRecord.GetTxnState() == rfpb.TxnRecord_PREPARED {
+		return tc.finalizeTxnRecord(ctx, txnRecord)
+	}
+	return status.InvalidArgumentErrorf("unexpected txnRecord.state %s", txnRecord.GetTxnState())
+}
+
+func (tc *Coordinator) ProcessTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
+	raw, err := proto.Marshal(txnRecord)
+	if err != nil {
+		return err
+	}
+	return tc.processTxnRecord(ctx, txnRecord, raw)
 }

@@ -766,3 +766,143 @@ func TestRecoverRollbackTxnRetryMatrix(t *testing.T) {
 		})
 	}
 }
+
+func TestStalePendingJanitorHelpsCommit(t *testing.T) {
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	ctx := context.Background()
+	sf.StartShard(t, ctx, stores...)
+
+	userKey := []byte("PTdefault/f11")
+	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   userKey,
+			Value: []byte("before"),
+		},
+	}).ToProto()
+	require.NoError(t, err)
+	writeRsp, err := s1.Sender().SyncPropose(ctx, userKey, writeReq)
+	require.NoError(t, err)
+	require.NoError(t, rbuilder.NewBatchResponseFromProto(writeRsp).AnyError())
+
+	metaKey := keys.MakeKey(constants.SystemPrefix, []byte("stale-pending-commit"))
+	metaStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	metaRD := metaStore.GetRange(1)
+	dataStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	dataRD := dataStore.GetRange(2)
+
+	dataBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   userKey,
+			Value: []byte("after"),
+		},
+	})
+	metaBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   metaKey,
+			Value: []byte("committed"),
+		},
+	})
+
+	tb := rbuilder.NewTxn()
+	tb.AddStatement().SetRangeDescriptor(dataRD).SetBatch(dataBatch)
+	tb.AddStatement().SetRangeDescriptor(metaRD).SetBatch(metaBatch)
+	txnProto, err := tb.ToProto()
+	require.NoError(t, err)
+
+	clock := clockwork.NewFakeClock()
+	tc := txn.NewCoordinator(s1, s1.APIClient(), clock)
+	for _, stmt := range txnProto.GetStatements() {
+		require.NoError(t, tc.PrepareStatement(ctx, txnProto.GetTransactionId(), stmt))
+	}
+
+	stalePendingRecord := &rfpb.TxnRecord{
+		TxnRequest:    txnProto,
+		TxnState:      rfpb.TxnRecord_PENDING,
+		CreatedAtUsec: clock.Now().UnixMicro(),
+	}
+	require.NoError(t, tc.WriteTxnRecord(ctx, stalePendingRecord))
+
+	commitRecord := proto.Clone(stalePendingRecord).(*rfpb.TxnRecord)
+	commitRecord.TxnState = rfpb.TxnRecord_PREPARED
+	commitRecord.Op = rfpb.FinalizeOperation_COMMIT
+	require.NoError(t, tc.WriteTxnRecord(ctx, commitRecord))
+
+	require.NoError(t, tc.ProcessTxnRecord(ctx, stalePendingRecord))
+
+	verifyTxnRecordNotExist(t, ctx, s1.Sender(), txnProto.GetTransactionId())
+	verifyDirectReadValue(t, ctx, s1.Sender(), userKey, []byte("after"))
+	verifyDirectReadValue(t, ctx, s1.Sender(), metaKey, []byte("committed"))
+}
+
+func TestRollbackNotFoundPreventsLatePrepare(t *testing.T) {
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	ctx := context.Background()
+	sf.StartShard(t, ctx, stores...)
+
+	userKey := []byte("PTdefault/f11")
+	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   userKey,
+			Value: []byte("before"),
+		},
+	}).ToProto()
+	require.NoError(t, err)
+	writeRsp, err := s1.Sender().SyncPropose(ctx, userKey, writeReq)
+	require.NoError(t, err)
+	require.NoError(t, rbuilder.NewBatchResponseFromProto(writeRsp).AnyError())
+
+	metaKey := keys.MakeKey(constants.SystemPrefix, []byte("rollback-marker-late-prepare"))
+	metaStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	metaRD := metaStore.GetRange(1)
+	dataStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	dataRD := dataStore.GetRange(2)
+
+	dataBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   userKey,
+			Value: []byte("after"),
+		},
+	})
+	metaBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   metaKey,
+			Value: []byte("late-prepare"),
+		},
+	})
+
+	tb := rbuilder.NewTxn()
+	tb.AddStatement().SetRangeDescriptor(dataRD).SetBatch(dataBatch)
+	tb.AddStatement().SetRangeDescriptor(metaRD).SetBatch(metaBatch)
+	txnProto, err := tb.ToProto()
+	require.NoError(t, err)
+
+	clock := clockwork.NewFakeClock()
+	coordinator := txn.NewCoordinator(s1, s1.APIClient(), clock)
+	require.NoError(t, coordinator.PrepareStatement(ctx, txnProto.GetTransactionId(), txnProto.GetStatements()[0]))
+
+	txnRecord := &rfpb.TxnRecord{
+		TxnRequest:    txnProto,
+		TxnState:      rfpb.TxnRecord_PENDING,
+		CreatedAtUsec: clock.Now().UnixMicro(),
+	}
+	require.NoError(t, coordinator.WriteTxnRecord(ctx, txnRecord))
+
+	require.NoError(t, coordinator.ProcessTxnRecord(ctx, txnRecord))
+	verifyTxnRecordNotExist(t, ctx, s1.Sender(), txnProto.GetTransactionId())
+	verifyDirectReadValue(t, ctx, s1.Sender(), userKey, []byte("before"))
+	verifyDirectReadNotFound(t, ctx, s1.Sender(), metaKey)
+
+	// B is a normal write that would prepare successfully if rollback had not
+	// written a participant-local marker for this txid.
+	err = coordinator.PrepareStatement(ctx, txnProto.GetTransactionId(), txnProto.GetStatements()[1])
+	require.Error(t, err)
+	verifyDirectReadNotFound(t, ctx, s1.Sender(), metaKey)
+}

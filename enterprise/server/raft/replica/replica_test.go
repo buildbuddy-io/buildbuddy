@@ -1097,7 +1097,7 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
 	}
 
-	wb := repl.DB().NewBatch()
+	wb := repl.DB().NewIndexedBatch()
 	txid := []byte("TX1")
 	cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -1150,7 +1150,7 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 	}
 
 	// Prepare a transaction before recovering from snapshot
-	wb2 := repl2.DB().NewBatch()
+	wb2 := repl2.DB().NewIndexedBatch()
 	txid2 := []byte("TX2")
 	cmd2, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -1405,7 +1405,7 @@ func TestTransactionPrepareAndCommit(t *testing.T) {
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl.Replica)
 
-	wb := repl.DB().NewBatch()
+	wb := repl.DB().NewIndexedBatch()
 	txid := []byte("TX1")
 	cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -1419,7 +1419,7 @@ func TestTransactionPrepareAndCommit(t *testing.T) {
 	require.NoError(t, wb.Commit(pebble.Sync))
 	require.NoError(t, wb.Close())
 
-	wb = repl.DB().NewBatch()
+	wb = repl.DB().NewIndexedBatch()
 	txid2 := []byte("TX2")
 	badCmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -1474,7 +1474,7 @@ func TestTransactionLockingMappedRange(t *testing.T) {
 	}
 	writeLocalRangeDescriptor(t, em, repl.Replica, rd)
 
-	wb := repl.DB().NewBatch()
+	wb := repl.DB().NewIndexedBatch()
 	txid := []byte("TX1")
 	rd.End = keys.Key("b")
 	rd.Generation = 2
@@ -1509,7 +1509,7 @@ func TestTransactionLockingMappedRange(t *testing.T) {
 
 	// cannot write to [a, c) in a txn
 	{
-		wb = repl.DB().NewBatch()
+		wb = repl.DB().NewIndexedBatch()
 		txid2 := []byte("TX2")
 		badCmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
@@ -1543,7 +1543,7 @@ func TestTransactionLockingMappedRange(t *testing.T) {
 
 	// should be able to write to [a, c) in a txn
 	{
-		wb = repl.DB().NewBatch()
+		wb = repl.DB().NewIndexedBatch()
 		txid2 := []byte("TX2")
 		badCmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
@@ -1572,7 +1572,7 @@ func TestTransactionPrepareAndRollback(t *testing.T) {
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl.Replica)
 
-	wb := repl.DB().NewBatch()
+	wb := repl.DB().NewIndexedBatch()
 	txid := []byte("TX1")
 	cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -1586,12 +1586,110 @@ func TestTransactionPrepareAndRollback(t *testing.T) {
 	require.NoError(t, wb.Commit(pebble.Sync))
 	require.NoError(t, wb.Close())
 
-	err = repl.RollbackTransaction(txid)
+	wb = repl.DB().NewIndexedBatch()
+	err = repl.RollbackTransaction(wb, txid, time.Now().UnixMicro())
 	require.NoError(t, err)
+	require.NoError(t, wb.Commit(pebble.Sync))
+	require.NoError(t, wb.Close())
 
 	buf, _, err := repl.DB().Get([]byte("foo"))
 	require.Error(t, err)
 	require.Nil(t, buf)
+}
+
+func TestRollbackMarkerSurvivesRestartAndRejectsPrepare(t *testing.T) {
+	txid := []byte("TX1")
+	em := newEntryMaker(t)
+	var leaser pebble.Leaser
+
+	{
+		repl := testutil.NewTestingReplica(t, 1, 1)
+		leaser = repl.Leaser()
+		require.NotNil(t, repl)
+
+		stopc := make(chan struct{})
+		_, err := repl.Open(stopc)
+		require.NoError(t, err)
+
+		writeDefaultRangeDescriptor(t, em, repl.Replica)
+
+		wb := repl.DB().NewIndexedBatch()
+		err = repl.RollbackTransaction(wb, txid, time.Now().UnixMicro())
+		require.NoError(t, err)
+		require.NoError(t, wb.Commit(pebble.Sync))
+		require.NoError(t, wb.Close())
+
+		err = repl.Close()
+		require.NoError(t, err)
+	}
+
+	{
+		repl := testutil.NewTestingReplicaWithLeaser(t, 1, 1, leaser)
+		require.NotNil(t, repl)
+		t.Cleanup(func() {
+			err := repl.Close()
+			require.NoError(t, err)
+		})
+
+		stopc := make(chan struct{})
+		_, err := repl.Open(stopc)
+		require.NoError(t, err)
+
+		wb := repl.DB().NewIndexedBatch()
+		cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("foo"),
+				Value: []byte("bar"),
+			},
+		}).ToProto()
+		_, err = repl.PrepareTransaction(wb, txid, cmd)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), constants.TxnRolledBackMessage)
+		require.NoError(t, wb.Close())
+	}
+}
+
+func TestRollbackMarkerGCFiltersByTimestamp(t *testing.T) {
+	repl := testutil.NewTestingReplica(t, 1, 1)
+	require.NotNil(t, repl)
+	t.Cleanup(func() {
+		err := repl.Close()
+		require.NoError(t, err)
+	})
+
+	stopc := make(chan struct{})
+	_, err := repl.Open(stopc)
+	require.NoError(t, err)
+
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
+
+	now := time.Now()
+	oldTxid := []byte("old-tx")
+	newTxid := []byte("new-tx")
+	wb := repl.DB().NewIndexedBatch()
+	require.NoError(t, repl.RollbackTransaction(wb, oldTxid, now.Add(-4*24*time.Hour).UnixMicro()))
+	require.NoError(t, repl.RollbackTransaction(wb, newTxid, now.UnixMicro()))
+	require.NoError(t, wb.Commit(pebble.Sync))
+	require.NoError(t, wb.Close())
+
+	hasMarkers, err := repl.HasTxnRollbackMarkersBefore(now.Add(-3 * 24 * time.Hour).UnixMicro())
+	require.NoError(t, err)
+	require.True(t, hasMarkers)
+
+	batch := rbuilder.NewBatchBuilder().Add(&rfpb.DeleteTxnRollbackMarkersBeforeRequest{
+		CutoffUsec: now.Add(-3 * 24 * time.Hour).UnixMicro(),
+	})
+	entry := em.makeEntry(batch)
+	writeRsp, err := repl.Update([]dbsm.Entry{entry})
+	require.NoError(t, err)
+	require.NoError(t, rbuilder.NewBatchResponse(writeRsp[0].Result.Data).AnyError())
+
+	_, err = directRead(t, repl, keys.MakeKey(constants.LocalTxnRollbackMarkerPrefix, oldTxid))
+	require.Error(t, err)
+
+	_, err = directRead(t, repl, keys.MakeKey(constants.LocalTxnRollbackMarkerPrefix, newTxid))
+	require.NoError(t, err)
 }
 
 func TestTransactionsSurviveRestart(t *testing.T) {
@@ -1614,7 +1712,7 @@ func TestTransactionsSurviveRestart(t *testing.T) {
 		em := newEntryMaker(t)
 		writeDefaultRangeDescriptor(t, em, repl.Replica)
 
-		wb := repl.DB().NewBatch()
+		wb := repl.DB().NewIndexedBatch()
 		cmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
 				Key:   []byte("foo"),

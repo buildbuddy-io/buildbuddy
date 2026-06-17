@@ -79,6 +79,7 @@ var (
 	zombieNodeScanInterval        = flag.Duration("cache.raft.zombie_node_scan_interval", 30*time.Second, "Check if one replica is a zombie every this often. 0 to disable.")
 	replicaScanInterval           = flag.Duration("cache.raft.replica_scan_interval", 1*time.Minute, "The interval we wait to check if the replicas need to be queued for replication")
 	clientSessionTTL              = flag.Duration("cache.raft.client_session_ttl", 24*time.Hour, "The duration we keep the sessions stored.")
+	txnRollbackMarkerRetention    = flag.Duration("cache.raft.txn_rollback_marker_retention", 3*24*time.Hour, "How long participant-local txn rollback markers are retained before startup GC. Must exceed the longest possible coordinator lifetime so no late prepare can arrive after a marker is deleted. 0 disables startup GC.")
 	enableDriver                  = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
 	enableTxnCleanup              = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
 	enableRegistryPreload         = flag.Bool("cache.raft.enable_registry_preload", false, "If true, preload the registry on start-up")
@@ -937,6 +938,12 @@ func (s *Store) Start() error {
 		s.deleteSessionWorker.Start(s.egCtx)
 		return nil
 	})
+	if *txnRollbackMarkerRetention > 0 {
+		s.eg.Go(func() error {
+			s.gcTxnRollbackMarkersAfterStartup(s.egCtx, *txnRollbackMarkerRetention)
+			return nil
+		})
+	}
 	s.eg.Go(func() error {
 		s.setupPartitions(s.egCtx)
 		return nil
@@ -2867,6 +2874,85 @@ func (w *replicaWorker) Start(ctx context.Context) {
 			}
 		}
 	}
+}
+
+type txnRollbackMarkerGCWorker struct {
+	store   *Store
+	session *client.Session
+}
+
+func (s *Store) gcTxnRollbackMarkersAfterStartup(ctx context.Context, retention time.Duration) {
+	for !s.ReplicasInitDone() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.clock.After(time.Second):
+		}
+	}
+
+	worker := &txnRollbackMarkerGCWorker{
+		store:   s,
+		session: client.NewSessionWithClock(s.clock),
+	}
+	// Safety assumption behind deleting markers: a rollback marker fences late
+	// prepares for its txid, so it is only safe to delete once no coordinator
+	// can still retry a PrepareTransaction for that txid. We approximate that
+	// with `retention` rather than a hard proof. This is safe because a
+	// coordinator's prepares are bounded by request/RPC deadlines (seconds to
+	// minutes), far below the default retention (days). Note the marker's
+	// timestamp is the first rollback-apply time and is not refreshed on deduped
+	// retries, so retention is measured from then. If coordinators could ever
+	// run longer than `retention`, this GC would need a stronger bound (e.g. an
+	// applied-index proof that no older prepare can still apply).
+	cutoffUsec := s.clock.Now().Add(-retention).UnixMicro()
+	if err := worker.gcOnce(ctx, cutoffUsec); err != nil {
+		s.log.Warningf("txn rollback marker startup GC failed: %s", err)
+	}
+}
+
+func (w *txnRollbackMarkerGCWorker) gcOnce(ctx context.Context, cutoffUsec int64) error {
+	var gcErr error
+	w.store.replicas.Range(func(key, value any) bool {
+		repl, ok := value.(*replica.Replica)
+		if !ok {
+			return true
+		}
+		// Only the leader prechecks and proposes the delete, which then applies
+		// on all replicas. The precheck is exact: the leader holds every
+		// committed marker (leader completeness), so a follower can only lag,
+		// never hold a marker the leader is missing.
+		if !w.store.HasReplicaAndIsLeader(repl.RangeID()) {
+			return true
+		}
+		if err := w.gcReplica(ctx, repl, cutoffUsec); err != nil {
+			w.store.log.Warningf("txn rollback marker GC failed for range %d: %s", repl.RangeID(), err)
+			gcErr = err
+		}
+		return true
+	})
+	return gcErr
+}
+
+func (w *txnRollbackMarkerGCWorker) gcReplica(ctx context.Context, repl *replica.Replica, cutoffUsec int64) error {
+	hasMarkers, err := repl.HasTxnRollbackMarkersBefore(cutoffUsec)
+	if err != nil {
+		return err
+	}
+	if !hasMarkers {
+		return nil
+	}
+	batch := rbuilder.NewBatchBuilder().Add(&rfpb.DeleteTxnRollbackMarkersBeforeRequest{
+		CutoffUsec: cutoffUsec,
+	})
+	request, err := batch.ToProto()
+	if err != nil {
+		return err
+	}
+	rsp, err := w.session.SyncProposeLocal(ctx, w.store.NodeHost(), repl.RangeID(), request)
+	if err != nil {
+		return err
+	}
+	return rbuilder.NewBatchResponseFromProto(rsp).AnyError()
 }
 
 type deleteSessionWorker struct {
