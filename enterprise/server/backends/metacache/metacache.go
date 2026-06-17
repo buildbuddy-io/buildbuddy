@@ -377,6 +377,7 @@ func (c *Cache) readerForStorage(ctx context.Context, storage *sgpb.StorageMetad
 		return nil, status.InvalidArgumentErrorf("Unsupported storage metadata: %+v", storage)
 	}
 }
+
 func (c *Cache) writerForRecord(ctx context.Context, fileRecord *sgpb.FileRecord, sizeHint int64) (interfaces.MetadataWriteCloser, error) {
 	if sizeHint < c.opts.MaxInlineFileSizeBytes {
 		// This returns a interfaces.MetadataWriteCloser, so
@@ -542,6 +543,9 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (cm *interfa
 func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) (digests []*repb.Digest, resultErr error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
+	if spn.IsRecording() {
+		spn.SetAttributes(attribute.Int("num_resources", len(resources)))
+	}
 
 	start := c.opts.Clock.Now()
 	defer c.recordMetrics("FindMissing", resultErr, start)
@@ -602,6 +606,12 @@ func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]by
 }
 
 func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m map[*repb.Digest][]byte, resultErr error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	if spn.IsRecording() {
+		spn.SetAttributes(attribute.Int("num_resources", len(resources)))
+	}
+
 	start := c.opts.Clock.Now()
 	defer c.recordMetrics("GetMulti", resultErr, start)
 
