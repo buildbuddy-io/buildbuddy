@@ -168,10 +168,10 @@ func (fs *fieldScorer) Skip() bool {
 // normalizes the field's length against that field's candidate-set average
 // and sat is BM25's saturating transform. Saturation is applied PER FIELD,
 // before weighting and summation, because fields have very different
-// term-frequency scales (content ngram frequencies run 10-100x filename
-// frequencies); pooling raw frequencies across fields would leave a short
-// field's evidence invisible inside an already-saturated pool. Fields are
-// weighted to mirror the method described here:
+// term-frequency scales (content ngram frequencies run 10-100x symbol or
+// filename frequencies); pooling raw frequencies across fields would leave a
+// short field's evidence invisible inside an already-saturated pool. Fields
+// are weighted to mirror the method described here:
 // https://www.researchgate.net/publication/221613382_Simple_BM25_extension_to_multiple_weighted_fields
 func (fs *fieldScorer) fieldScore(docMatch types.DocumentMatch, avgLens map[string]float64) float64 {
 	switch fs.op {
@@ -467,6 +467,30 @@ func expressionToSquery(expr string, fieldName string) (string, error) {
 	return RegexpQuery(syn).SQuery(fieldName), nil
 }
 
+// symbolsWeight is the BM25 field weight for symbol-definition matches: an
+// identifier-shaped query term additionally matches the symbols field (the
+// tree-sitter extracted declaration names) at this weight, so a file that
+// declares the queried name scores above files that merely use it. Documents
+// indexed without the field contribute no symbols postings, so this is safe
+// against older indexes.
+const symbolsWeight = 2
+
+// identifierTerm reports whether the query term is a bare identifier (word
+// characters only, no regex metacharacters), returning it lowercased to match
+// the keyword tokenizer's normalization.
+func identifierTerm(qTerm string) (string, bool) {
+	term := strings.TrimSuffix(strings.TrimPrefix(qTerm, `"`), `"`)
+	if term == "" {
+		return "", false
+	}
+	for _, r := range term {
+		if r != '_' && (r < '0' || r > '9') && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
+			return "", false
+		}
+	}
+	return strings.ToLower(term), true
+}
+
 func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 	subLog := log.NamedSubLogger("regexp-query")
 	subLog.Infof("raw query: [%s]", q)
@@ -524,6 +548,7 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 		if err != nil {
 			return nil, err
 		}
+		hasIdentifierTerm := false
 		// The term scorers below cover all terms at once (via an OR'd
 		// matcher), so a field counts as index-filtered if any term
 		// contributed real ngrams for it.
@@ -541,7 +566,15 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 			subQFilename := RegexpQuery(syn).SQuery(filenameField)
 			contentFiltered = contentFiltered || subQContent != allSQuery
 			filenameFiltered = filenameFiltered || subQFilename != allSQuery
-			sClauses = append(sClauses, "(:or "+subQContent+" "+subQFilename+")")
+			clause := subQContent + " " + subQFilename
+			if id, ok := identifierTerm(qTerm); ok {
+				// Scoring evidence only: any doc whose symbols contain the
+				// term also matches the content ngram clause, so the candidate
+				// set is unchanged.
+				clause += fmt.Sprintf(" (:eq %s %s)", types.SymbolsField, strconv.Quote(id))
+				hasIdentifierTerm = true
+			}
+			sClauses = append(sClauses, "(:or "+clause+")")
 		}
 
 		// Build a content matcher that will match any of the query terms.
@@ -550,13 +583,22 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 			return nil, err
 		}
 
-		scorer = andScorers(scorer,
-			orScorers(
-				// Weight 2 because content matches should be more important than non-explicit
-				// filename matches.
-				newFieldScorer(contentField, 2, re, contentFiltered),
-				newFieldScorer(filenameField, 1, re, filenameFiltered),
-			))
+		contentScorer := orScorers(
+			// Weight 2 because content matches should be more important than non-explicit
+			// filename matches.
+			newFieldScorer(contentField, 2, re, contentFiltered),
+			newFieldScorer(filenameField, 1, re, filenameFiltered),
+		)
+		if hasIdentifierTerm {
+			// Declaring the queried name is the strongest content evidence.
+			// No matcher: keyword-field postings are exact, and the field is
+			// not stored, so Rescore reuses the index-side score.
+			contentScorer = orScorers(
+				newFieldScorer(types.SymbolsField, symbolsWeight, nil, true),
+				contentScorer,
+			)
+		}
+		scorer = andScorers(scorer, contentScorer)
 		contentMatcher = re
 
 	}

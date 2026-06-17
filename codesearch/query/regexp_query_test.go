@@ -226,11 +226,29 @@ func TestUngroupedTerms(t *testing.T) {
 	require.NoError(t, err)
 
 	squery := string(q.SQuery())
-	assert.Contains(t, squery, `(:and (:or (:eq content "grp") (:eq filename "grp")) (:or (:eq content "trm") (:eq filename "trm")))`)
+	// Each bare-identifier term also matches the symbols field (scoring
+	// evidence only; it doesn't narrow the candidate set).
+	assert.Contains(t, squery, `(:and (:or (:eq content "grp") (:eq filename "grp") (:eq symbols "grp")) (:or (:eq content "trm") (:eq filename "trm") (:eq symbols "trm")))`)
 
 	contentMatcher := q.TestOnlyContentMatcher()
 	assert.NotNil(t, contentMatcher)
 	assert.Contains(t, contentMatcher.String(), "(grp)|(trm)")
+}
+
+func TestSymbolsClauseOnlyForIdentifiers(t *testing.T) {
+	ctx := context.Background()
+
+	// A bare identifier additionally matches the symbols field, lowercased to
+	// match the keyword tokenizer.
+	q, err := NewReQuery(ctx, "Println")
+	require.NoError(t, err)
+	assert.Contains(t, string(q.SQuery()), `(:eq symbols "println")`)
+
+	// A term with regex metacharacters isn't a symbol name, so no symbols
+	// clause is added.
+	q, err = NewReQuery(ctx, "Pri.tln")
+	require.NoError(t, err)
+	assert.NotContains(t, string(q.SQuery()), "(:eq symbols")
 }
 
 func TestScoringMatchContentOnly(t *testing.T) {
