@@ -3,6 +3,7 @@ package registry
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"regexp"
 	"strings"
 
@@ -58,7 +59,7 @@ func githubModule(path string) ([]byte, int, error) {
 		return nil, status, nil
 	}
 
-	moduleSnippet := []byte(`module(name="` + repo + `", version="` + version + `")`)
+	moduleSnippet := []byte(`module(name="` + html.EscapeString(repo) + `", version="` + html.EscapeString(version) + `")`)
 
 	if moduleRegex.Match(body) {
 		moduleSnippet = moduleRegex.ReplaceAll(body, moduleSnippet)
