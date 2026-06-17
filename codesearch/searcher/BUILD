@@ -9,6 +9,7 @@ go_library(
         "//codesearch/performance",
         "//codesearch/types",
         "//server/util/log",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 
