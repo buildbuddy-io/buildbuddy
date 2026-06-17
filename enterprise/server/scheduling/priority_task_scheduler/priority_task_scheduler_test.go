@@ -100,6 +100,57 @@ func TestTaskQueue_MultipleGroups(t *testing.T) {
 	require.Nil(t, q.Dequeue())
 }
 
+func TestTaskQueue_GlobalQoS(t *testing.T) {
+	ctx := t.Context()
+	q := newTaskQueue(clockwork.NewRealClock())
+
+	q.Enqueue(ctx, newTaskReservationRequest("low1", testGroupID1, 1001))
+	q.Enqueue(ctx, newTaskReservationRequest("normal2a", testGroupID2, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("normal3", testGroupID3, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("normal2b", testGroupID2, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("low4", "group4", 1001))
+
+	require.Equal(t, "normal2a", q.Dequeue().GetTaskId())
+	require.Equal(t, "normal3", q.Dequeue().GetTaskId())
+	require.Equal(t, "normal2b", q.Dequeue().GetTaskId())
+	require.ElementsMatch(t, []string{"low1", "low4"}, []string{
+		q.Dequeue().GetTaskId(),
+		q.Dequeue().GetTaskId(),
+	})
+	require.Nil(t, q.Dequeue())
+}
+
+func TestTaskQueue_GlobalQoSThreshold(t *testing.T) {
+	ctx := t.Context()
+	q := newTaskQueue(clockwork.NewRealClock())
+
+	q.Enqueue(ctx, newTaskReservationRequest("low", testGroupID1, 1001))
+	q.Enqueue(ctx, newTaskReservationRequest("normal", testGroupID2, 1000))
+
+	require.Equal(t, "normal", q.Dequeue().GetTaskId())
+	require.Equal(t, "low", q.Dequeue().GetTaskId())
+	require.Nil(t, q.Dequeue())
+}
+
+func TestTaskQueueIterator_GlobalQoS(t *testing.T) {
+	ctx := t.Context()
+	q := newTaskQueue(clockwork.NewRealClock())
+
+	q.Enqueue(ctx, newTaskReservationRequest("low1", testGroupID1, 1001))
+	q.Enqueue(ctx, newTaskReservationRequest("normal2", testGroupID2, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("normal3", testGroupID3, 0))
+	q.Enqueue(ctx, newTaskReservationRequest("low4", "group4", 1001))
+
+	it := q.Iterator()
+	require.Equal(t, "normal2", it.Next().GetTaskId())
+	require.Equal(t, "normal3", it.Next().GetTaskId())
+	require.ElementsMatch(t, []string{"low1", "low4"}, []string{
+		it.Next().GetTaskId(),
+		it.Next().GetTaskId(),
+	})
+	require.Nil(t, it.Next())
+}
+
 func TestTaskQueue_DedupesTasks(t *testing.T) {
 	ctx := t.Context()
 	q := newTaskQueue(clockwork.NewRealClock())

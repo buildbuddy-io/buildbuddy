@@ -1043,8 +1043,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 }
 
 func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) error {
-	// Enforce a priority range of -1000 to 1000 for now so that we have some
-	// flexibility to assign different meanings to priority values later on.
+	// Priority values above 1000 are accepted and may be treated as low-QoS
+	// by executors.
 	if req.GetExecutionPolicy().GetPriority() > capabilities_server.MaxExecutionPriority || req.GetExecutionPolicy().GetPriority() < capabilities_server.MinExecutionPriority {
 		return status.InvalidArgumentErrorf("invalid execution priority %d; priority values must be between %d and %d (inclusive)", req.GetExecutionPolicy().GetPriority(), capabilities_server.MinExecutionPriority, capabilities_server.MaxExecutionPriority)
 	}

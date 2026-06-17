@@ -17,7 +17,7 @@ import (
 
 const (
 	MinExecutionPriority = -1000
-	MaxExecutionPriority = 1000
+	MaxExecutionPriority = 2147483647 // math.MaxInt32
 )
 
 var (

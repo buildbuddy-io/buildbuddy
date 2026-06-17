@@ -48,6 +48,8 @@ var (
 	roundTaskCpuSize        = flag.Bool("executor.round_task_cpu_size", false, "If true, round tasks' CPU sizes up to the nearest whole number.")
 )
 
+const globalQoSLowPriorityThreshold = 1000
+
 var shuttingDownLogOnce sync.Once
 
 type queuedTask struct {
@@ -89,22 +91,15 @@ func (t *taskQueueIterator) Next() *queuedTask {
 	// Rotate through group queues until we find one that we haven't exhausted,
 	// then return the next task from that group queue.
 	for {
-		currentPQ := t.nextGroupQueue
-
-		// Rotate
-		t.nextGroupQueue = t.nextGroupQueue.Next()
-		if t.nextGroupQueue == nil {
-			t.nextGroupQueue = t.q.pqs.Front()
+		currentPQ := t.nextGroupQueueByQoS()
+		if currentPQ == nil {
+			return nil
 		}
-
-		// Lazily copy the group queue.
-		if _, ok := t.groupIterators[currentPQ]; !ok {
-			t.groupIterators[currentPQ] = currentPQ.Value.(*groupPriorityQueue).Clone()
-		}
+		t.nextGroupQueue = t.q.nextGroupQueueAfter(currentPQ)
 
 		// Pop from the iterator's copy of the group queue to get the next task
 		// in the iteration.
-		if groupIterator := t.groupIterators[currentPQ]; groupIterator.Len() > 0 {
+		if groupIterator := t.groupIterator(currentPQ); groupIterator.Len() > 0 {
 			numPopped := currentPQ.Value.(*groupPriorityQueue).Len() - groupIterator.Len()
 			t.current = &queuePosition{
 				GroupQueue: currentPQ,
@@ -115,6 +110,34 @@ func (t *taskQueueIterator) Next() *queuedTask {
 			return el
 		}
 	}
+}
+
+func (t *taskQueueIterator) groupIterator(el *list.Element) *groupPriorityQueue {
+	if _, ok := t.groupIterators[el]; !ok {
+		t.groupIterators[el] = el.Value.(*groupPriorityQueue).Clone()
+	}
+	return t.groupIterators[el]
+}
+
+func (t *taskQueueIterator) nextGroupQueueByQoS() *list.Element {
+	if t.nextGroupQueue == nil {
+		return nil
+	}
+	var firstLowPriorityGroup *list.Element
+	currentPQ := t.nextGroupQueue
+	for range t.q.pqs.Len() {
+		groupIterator := t.groupIterator(currentPQ)
+		if task, ok := groupIterator.Peek(); ok {
+			if !isLowQoSTask(task) {
+				return currentPQ
+			}
+			if firstLowPriorityGroup == nil {
+				firstLowPriorityGroup = currentPQ
+			}
+		}
+		currentPQ = t.q.nextGroupQueueAfter(currentPQ)
+	}
+	return firstLowPriorityGroup
 }
 
 // Current returns the current iteration index as a reference to an element in
@@ -145,6 +168,42 @@ func newTaskQueue(clock clockwork.Clock) *taskQueue {
 		currentPQ:   nil,
 		taskIDs:     make(map[string]struct{}),
 	}
+}
+
+func isLowQoSTask(task *queuedTask) bool {
+	return task.GetSchedulingMetadata().GetPriority() > globalQoSLowPriorityThreshold
+}
+
+func (t *taskQueue) nextGroupQueueAfter(el *list.Element) *list.Element {
+	if el == nil || t.pqs.Len() == 0 {
+		return nil
+	}
+	next := el.Next()
+	if next == nil {
+		next = t.pqs.Front()
+	}
+	return next
+}
+
+func (t *taskQueue) nextGroupQueueByQoS(start *list.Element) *list.Element {
+	if start == nil {
+		return nil
+	}
+	var firstLowPriorityGroup *list.Element
+	currentPQ := start
+	for range t.pqs.Len() {
+		pq := currentPQ.Value.(*groupPriorityQueue)
+		if task, ok := pq.Peek(); ok {
+			if !isLowQoSTask(task) {
+				return currentPQ
+			}
+			if firstLowPriorityGroup == nil {
+				firstLowPriorityGroup = currentPQ
+			}
+		}
+		currentPQ = t.nextGroupQueueAfter(currentPQ)
+	}
+	return firstLowPriorityGroup
 }
 
 func (t *taskQueue) GetAll(ctx context.Context) []*scpb.EnqueueTaskReservationRequest {
@@ -221,9 +280,14 @@ func (t *taskQueue) headRef() *queuePosition {
 	if t.currentPQ == nil {
 		return nil
 	}
+	groupQueue := t.nextGroupQueueByQoS(t.currentPQ)
+	if groupQueue == nil {
+		return nil
+	}
 	return &queuePosition{
-		GroupQueue: t.currentPQ,
-		Index:      0,
+		GroupQueue:        groupQueue,
+		Index:             0,
+		AdvanceGroupQueue: true,
 	}
 }
 
@@ -244,6 +308,8 @@ func (t *taskQueue) Dequeue() *queuedTask {
 // groupPriorityQueue. This is fine for now, because we don't support custom
 // resources in multi-tenant scenarios yet.
 func (t *taskQueue) DequeueAt(pos *queuePosition) *queuedTask {
+	nextPQ := t.nextGroupQueueAfter(pos.GroupQueue)
+
 	// Remove from the group queue.
 	pq := pos.GroupQueue.Value.(*groupPriorityQueue)
 	req, ok := pq.RemoveAt(pos.Index)
@@ -256,11 +322,8 @@ func (t *taskQueue) DequeueAt(pos *queuePosition) *queuedTask {
 
 	// Rotate to the next group queue but only if we're doing a normal dequeue,
 	// removing from the head of the taskQueue, as opposed to skipping ahead.
-	if pos.GroupQueue == t.currentPQ && pos.Index == 0 {
-		t.currentPQ = t.currentPQ.Next()
-		if t.currentPQ == nil {
-			t.currentPQ = t.pqs.Front()
-		}
+	if pos.Index == 0 && (pos.AdvanceGroupQueue || pos.GroupQueue == t.currentPQ) {
+		t.currentPQ = nextPQ
 	}
 
 	// Remove the group queue from the rotation if it's empty.
@@ -269,6 +332,8 @@ func (t *taskQueue) DequeueAt(pos *queuePosition) *queuedTask {
 		if t.pqs.Front() == nil {
 			// List is empty; clear currentPQ.
 			t.currentPQ = nil
+		} else if t.currentPQ == pos.GroupQueue {
+			t.currentPQ = t.pqs.Front()
 		}
 		delete(t.pqByGroupID, pq.groupID)
 	}
@@ -284,10 +349,11 @@ func (t *taskQueue) DequeueAt(pos *queuePosition) *queuedTask {
 }
 
 func (t *taskQueue) Peek(ctx context.Context) *queuedTask {
-	if t.currentPQ == nil {
+	pos := t.headRef()
+	if pos == nil {
 		return nil
 	}
-	pq, ok := t.currentPQ.Value.(*groupPriorityQueue)
+	pq, ok := pos.GroupQueue.Value.(*groupPriorityQueue)
 	if !ok {
 		// Why would this ever happen?
 		log.CtxError(ctx, "not a *groupPriorityQueue!??!")
@@ -840,6 +906,8 @@ type queuePosition struct {
 	GroupQueue *list.Element
 	// The index of the task within the GroupQueue.
 	Index int
+	// Whether dequeuing this task should advance the group queue rotation.
+	AdvanceGroupQueue bool
 }
 
 // getNextSchedulableTask returns the next task that can be scheduled, and a
@@ -867,12 +935,18 @@ func (q *PriorityTaskScheduler) getNextSchedulableTask(ctx context.Context) (*qu
 	// This ensures that when tasks skip ahead in the queue, they don't delay
 	// the start time of other tasks that have been waiting for longer.
 	reservedResources := q.resourcesUsed.Clone()
+	skippedTasks := false
 	iterator := q.q.Iterator()
 	for task := iterator.Next(); task != nil; task = iterator.Next() {
 		canFit := q.canFitTask(task, reservedResources)
 		if canFit {
-			return task, iterator.Current()
+			ref := iterator.Current()
+			if !skippedTasks {
+				ref.AdvanceGroupQueue = true
+			}
+			return task, ref
 		}
+		skippedTasks = true
 		reservedResources.Add(q.taskResourceCounts(task.GetTaskSize()))
 
 		// If all resources are reserved, short circuit - none of the remaining
