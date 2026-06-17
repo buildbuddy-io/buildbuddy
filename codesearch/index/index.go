@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -801,10 +802,17 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
 		return nil, err
 	}
 	defer iter.Close()
-	defer func() {
-		r.recordIterStats(iter, docField)
-	}()
+	defer r.recordIterStats(iter, docField)
+	return r.getStoredFieldsWithIter(iter, docID, fieldNames...)
+}
 
+// getStoredFieldsWithIter reads stored fields for a single doc using the
+// provided iterator, letting callers reuse one iterator across many docs. The
+// iterator must cover the doc's key range; when fieldNames are given each is
+// looked up with an exact SeekGE (so any iterator spanning the keys works),
+// but the no-fieldNames full-scan branch requires the iterator to be bounded
+// to this doc. The caller owns the iterator, including recording its stats.
+func (r *Reader) getStoredFieldsWithIter(iter *pebble.Iterator, docID uint64, fieldNames ...string) (map[string]types.Field, error) {
 	if len(fieldNames) > 0 {
 		fieldNames = slices.Clone(fieldNames)
 		slices.Sort(fieldNames)
@@ -897,6 +905,110 @@ func (r *Reader) populateFieldLengths(docMatches map[uint64]*docMatch) error {
 			return err
 		}
 		docMatches[t.docID].fieldLengths = fieldLengths
+	}
+	return nil
+}
+
+// ResolveSignals computes the named per-document scoring signals and attaches
+// them to the matches, where scorers read them via DocumentMatch.Signal.
+// Implements types.SignalResolver. Resolution is requested explicitly (and
+// typically over a bounded rerank window) so queries that don't score on
+// signals pay nothing.
+//
+// SignalImportInDegree is a document's import in-degree: the number of
+// documents whose imports field references one of this document's import_id
+// terms, summed over those terms. import_id is read from the stored field (a
+// single key per doc) and the count is the cardinality of each term's posting
+// list in the imports field, memoized per call. Counts include not-yet-
+// compacted deleted docs, acceptable for a fuzzy ranking signal.
+//
+// The per-term sum equals the true distinct-importer count only because a doc
+// today has a single import_id term (golang.go, java.go). If multi-identity
+// docs ever appear, an importer referencing two of a doc's terms would be
+// counted once per term; correctly de-duplicating it means unioning the
+// terms' posting lists and taking the union's cardinality instead of summing.
+func (r *Reader) ResolveSignals(matches []types.DocumentMatch, names ...string) error {
+	for _, name := range names {
+		if name != types.SignalImportInDegree {
+			return status.InvalidArgumentErrorf("unknown scoring signal %q", name)
+		}
+	}
+	if len(names) == 0 || len(matches) == 0 {
+		return nil
+	}
+
+	start := time.Now()
+	defer func() {
+		if tracker := performance.TrackerFromContext(r.ctx); tracker != nil {
+			tracker.Add(performance.SIGNAL_RESOLVE_DURATION, int64(time.Since(start)))
+		}
+	}()
+
+	// The in-degree of an import_id term is the number of docs that import it,
+	// i.e. the cardinality of its posting list in the imports field. Memoized
+	// because popular terms recur across the match set.
+	inDegrees := make(map[string]float64)
+	importInDegree := func(docID uint64, importID string) (float64, error) {
+		var total float64
+		terms := 0
+		for term := range strings.FieldsSeq(importID) {
+			terms++
+			d, ok := inDegrees[term]
+			if !ok {
+				pl, closer, err := getPostingListReadOnly(r.db, r.namespace, term, types.ImportsField)
+				if err != nil {
+					return 0, err
+				}
+				d = float64(pl.GetCardinality())
+				closer.Close()
+				inDegrees[term] = d
+			}
+			total += d
+		}
+		if terms > 1 {
+			// Tripwire for the single-identity assumption above: summing per
+			// term over-counts an importer that references more than one of a
+			// doc's terms. If this ever fires, switch to unioning the terms'
+			// posting lists and counting the union (see the doc comment).
+			log.Warningf("import in-degree: doc %d has %d import_id terms; count may over-count importers", docID, terms)
+		}
+		return total, nil
+	}
+
+	// One iterator reused across every match's import_id lookup, bounded to
+	// this namespace's stored-doc keyspace. Stats are recorded once here (not
+	// per call) because iter.Stats() is cumulative over the iterator's life.
+	iter, err := r.db.NewIter(&pebble.IterOptions{
+		LowerBound: r.storedFieldKey(0, ""),
+		UpperBound: fmt.Appendf(nil, "%s:doc:\xff", r.namespace),
+	})
+	if err != nil {
+		return err
+	}
+	defer iter.Close()
+	defer r.recordIterStats(iter, docField)
+
+	for _, m := range matches {
+		dm, ok := m.(*docMatch)
+		if !ok {
+			continue
+		}
+		fields, err := r.getStoredFieldsWithIter(iter, dm.docid, types.ImportIDField)
+		if err != nil {
+			return err
+		}
+		f, ok := fields[types.ImportIDField]
+		if !ok {
+			continue // no import_id for this doc (e.g. non-Go, test file, deleted)
+		}
+		total, err := importInDegree(dm.docid, string(f.Contents()))
+		if err != nil {
+			return err
+		}
+		if dm.signals == nil {
+			dm.signals = make(map[string]float64, 1)
+		}
+		dm.signals[types.SignalImportInDegree] = total
 	}
 	return nil
 }
@@ -1074,6 +1186,7 @@ type docMatch struct {
 	docid           uint64
 	matchedPostings map[string]types.Posting
 	fieldLengths    map[string]uint32
+	signals         map[string]float64
 }
 
 type matchPosting struct {
@@ -1101,6 +1214,10 @@ func (dm *docMatch) Posting(fieldName string) types.Posting {
 
 func (dm *docMatch) FieldLength(fieldName string) uint32 {
 	return dm.fieldLengths[fieldName]
+}
+
+func (dm *docMatch) Signal(name string) float64 {
+	return dm.signals[name]
 }
 
 type lazyDoc struct {

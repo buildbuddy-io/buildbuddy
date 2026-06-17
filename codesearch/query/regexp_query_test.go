@@ -48,6 +48,10 @@ func (m testDocumentMatch) FieldLength(fieldName string) uint32 {
 	return m.fieldLengths[fieldName]
 }
 
+func (m testDocumentMatch) Signal(name string) float64 {
+	return 0
+}
+
 func matchWithFrequencies(freqs map[string]uint32) types.DocumentMatch {
 	return matchWithFrequenciesAndLengths(freqs, freqs)
 }

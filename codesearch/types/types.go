@@ -14,8 +14,10 @@ const (
 	DocIDField   = "_id"
 	DeletesField = "_del"
 
-	// ImportsField holds the import-identity terms a document imports;
-	// ImportIDField holds the document's own import-identity terms.
+	// ImportsField holds the import-identity terms a document imports.
+	// ImportIDField holds the document's own import-identity terms; it is
+	// known to the index so its value can be carried in the per-doc stats
+	// record and resolved into scoring signals at query time.
 	ImportsField  = "imports"
 	ImportIDField = "import_id"
 
@@ -23,6 +25,10 @@ const (
 	// extracted, lowercased), so symbol-definition matches can be scored
 	// above usage and substring matches.
 	SymbolsField = "symbols"
+
+	// SignalImportInDegree is the number of documents whose ImportsField
+	// contains one of this document's ImportIDField terms.
+	SignalImportInDegree = "import_indegree"
 )
 
 func (ft FieldType) String() string {
@@ -77,6 +83,18 @@ type DocumentMatch interface {
 	FieldNames() []string
 	Posting(fieldName string) Posting
 	FieldLength(fieldName string) uint32
+	// Signal returns the named per-document scoring signal, or 0 if the
+	// signal is absent or has not been resolved. Signals are attached to
+	// matches by a SignalResolver before scoring.
+	Signal(name string) float64
+}
+
+// SignalResolver computes per-document scoring signals for a set of matches
+// and attaches them so scorers can read them via DocumentMatch.Signal.
+// Resolution is requested explicitly so queries that don't score on signals
+// pay nothing. Implemented by index.Reader.
+type SignalResolver interface {
+	ResolveSignals(matches []DocumentMatch, names ...string) error
 }
 
 type Tokenizer interface {
