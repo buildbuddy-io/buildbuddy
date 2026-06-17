@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -56,6 +58,16 @@ type queuedTask struct {
 	// WorkerQueuedTimestamp is the timestamp at which the task was added to
 	// the local queue.
 	WorkerQueuedTimestamp time.Time
+}
+
+type activeTaskResourceUsage struct {
+	resources            *resourceCounts
+	estimatedReleaseTime time.Time
+}
+
+type activeTaskRelease struct {
+	resources *resourceCounts
+	at        time.Time
 }
 
 type groupPriorityQueue struct {
@@ -369,6 +381,7 @@ type PriorityTaskScheduler struct {
 	activeCancelFuncsCount  atomic.Int64
 	resourceCapacity        *resourceCounts
 	resourcesUsed           *resourceCounts
+	resourcesUsedByTask     map[string]*activeTaskResourceUsage
 	customResourceParents   map[string]string
 	customResourceChildren  map[string][]string
 	exclusiveTaskScheduling bool
@@ -423,6 +436,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 			CPUMillis: 0,
 			Custom:    customResourcesUsed,
 		},
+		resourcesUsedByTask:     make(map[string]*activeTaskResourceUsage),
 		customResourceParents:   customResourceParents,
 		customResourceChildren:  customResourceChildren,
 		exclusiveTaskScheduling: *exclusiveTaskScheduling,
@@ -656,20 +670,13 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	q.activeCancelFuncsCount.Add(1)
 	if size := res.GetTaskSize(); size != nil {
-		q.resourcesUsed.RAMBytes += size.GetEstimatedMemoryBytes()
-		q.resourcesUsed.CPUMillis += size.GetEstimatedMilliCpu()
-		for _, r := range size.GetCustomResources() {
-			if _, ok := q.resourcesUsed.Custom[r.GetName()]; ok {
-				q.resourcesUsed.Custom[r.GetName()] += customResource(r.GetValue())
-			}
+		resources := q.taskResourceCounts(size)
+		q.resourcesUsed.Add(resources)
+		q.resourcesUsedByTask[res.GetTaskId()] = &activeTaskResourceUsage{
+			resources:            resources,
+			estimatedReleaseTime: q.estimatedReleaseTime(size),
 		}
-		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.resourcesUsed.RAMBytes))
-		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.resourcesUsed.CPUMillis))
-		for name := range q.resourcesUsed.Custom {
-			metrics.RemoteExecutionAssignedCustomResources.With(prometheus.Labels{
-				metrics.CustomResourceNameLabel: name,
-			}).Set(float64(q.customResourceUsed(q.resourcesUsed, name)) / 1e6)
-		}
+		q.updateResourceMetrics()
 		log.CtxDebugf(q.rootContext, "Claimed task resources. Queue stats: %s", q.stats())
 	}
 }
@@ -677,21 +684,25 @@ func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationReques
 func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	q.activeCancelFuncsCount.Add(-1)
 	if size := res.GetTaskSize(); size != nil {
-		q.resourcesUsed.RAMBytes -= size.GetEstimatedMemoryBytes()
-		q.resourcesUsed.CPUMillis -= size.GetEstimatedMilliCpu()
-		for _, r := range size.GetCustomResources() {
-			if _, ok := q.resourcesUsed.Custom[r.GetName()]; ok {
-				q.resourcesUsed.Custom[r.GetName()] -= customResource(r.GetValue())
-			}
+		resources, ok := q.resourcesUsedByTask[res.GetTaskId()]
+		if ok {
+			q.resourcesUsed.Sub(resources.resources)
+			delete(q.resourcesUsedByTask, res.GetTaskId())
+		} else {
+			q.resourcesUsed.Sub(q.taskResourceCounts(size))
 		}
-		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.resourcesUsed.RAMBytes))
-		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.resourcesUsed.CPUMillis))
-		for name := range q.resourcesUsed.Custom {
-			metrics.RemoteExecutionAssignedCustomResources.With(prometheus.Labels{
-				metrics.CustomResourceNameLabel: name,
-			}).Set(float64(q.customResourceUsed(q.resourcesUsed, name)) / 1e6)
-		}
+		q.updateResourceMetrics()
 		log.CtxDebugf(q.rootContext, "Released task resources. Queue stats: %s", q.stats())
+	}
+}
+
+func (q *PriorityTaskScheduler) updateResourceMetrics() {
+	metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.resourcesUsed.RAMBytes))
+	metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.resourcesUsed.CPUMillis))
+	for name := range q.resourcesUsed.Custom {
+		metrics.RemoteExecutionAssignedCustomResources.With(prometheus.Labels{
+			metrics.CustomResourceNameLabel: name,
+		}).Set(float64(q.customResourceUsed(q.resourcesUsed, name)) / 1e6)
 	}
 }
 
@@ -713,6 +724,71 @@ func (q *PriorityTaskScheduler) stats() string {
 		q.resourcesUsed.RAMBytes, q.resourceCapacity.RAMBytes, ramBytesRemaining,
 		customResourcesDesc,
 		q.activeCancelFuncsCount.Load(), q.q.Len())
+}
+
+func taskEstimatedExecutionDuration(size *scpb.TaskSize) time.Duration {
+	if size.GetEstimatedExecutionDuration() == nil {
+		return 0
+	}
+	duration := size.GetEstimatedExecutionDuration().AsDuration()
+	if duration <= 0 {
+		return 0
+	}
+	return duration
+}
+
+func (q *PriorityTaskScheduler) estimatedReleaseTime(size *scpb.TaskSize) time.Time {
+	duration := taskEstimatedExecutionDuration(size)
+	if duration <= 0 {
+		return time.Time{}
+	}
+	return q.clock.Now().Add(duration)
+}
+
+func (q *PriorityTaskScheduler) activeTaskReleasesAfter(now time.Time) []activeTaskRelease {
+	releases := make([]activeTaskRelease, 0, len(q.resourcesUsedByTask))
+	for _, usage := range q.resourcesUsedByTask {
+		if usage.estimatedReleaseTime.IsZero() || !usage.estimatedReleaseTime.After(now) {
+			continue
+		}
+		releases = append(releases, activeTaskRelease{
+			resources: usage.resources,
+			at:        usage.estimatedReleaseTime,
+		})
+	}
+	sort.Slice(releases, func(i, j int) bool {
+		return releases[i].at.Before(releases[j].at)
+	})
+	return releases
+}
+
+func (q *PriorityTaskScheduler) earliestStartTime(task *queuedTask, reservedResources *resourceCounts, now time.Time) (time.Time, bool) {
+	if q.canFitTask(task, reservedResources) {
+		return now, true
+	}
+	reservedResources = reservedResources.Clone()
+	for _, release := range q.activeTaskReleasesAfter(now) {
+		reservedResources.Sub(release.resources)
+		if q.canFitTask(task, reservedResources) {
+			return release.at, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func (q *PriorityTaskScheduler) canBackfillWithoutDelayingSkippedTasks(task *queuedTask, skippedStartTimes []time.Time, now time.Time) bool {
+	if len(skippedStartTimes) == 0 {
+		return false
+	}
+	if !q.canFitTask(task, q.resourcesUsed) {
+		return false
+	}
+	duration := taskEstimatedExecutionDuration(task.GetTaskSize())
+	if duration <= 0 {
+		return false
+	}
+	estimatedFinishTime := now.Add(duration)
+	return !slices.ContainsFunc(skippedStartTimes, estimatedFinishTime.After)
 }
 
 // canFitTask returns whether the task can fit, given the resource capacity and
@@ -867,17 +943,30 @@ func (q *PriorityTaskScheduler) getNextSchedulableTask(ctx context.Context) (*qu
 	// This ensures that when tasks skip ahead in the queue, they don't delay
 	// the start time of other tasks that have been waiting for longer.
 	reservedResources := q.resourcesUsed.Clone()
+	now := q.clock.Now()
+	var skippedStartTimes []time.Time
+	skippedStartTimesKnown := true
 	iterator := q.q.Iterator()
 	for task := iterator.Next(); task != nil; task = iterator.Next() {
 		canFit := q.canFitTask(task, reservedResources)
 		if canFit {
 			return task, iterator.Current()
 		}
+		if skippedStartTimesKnown && q.canBackfillWithoutDelayingSkippedTasks(task, skippedStartTimes, now) {
+			return task, iterator.Current()
+		}
+		startTime, ok := q.earliestStartTime(task, reservedResources, now)
+		if ok {
+			skippedStartTimes = append(skippedStartTimes, startTime)
+		} else {
+			skippedStartTimesKnown = false
+		}
 		reservedResources.Add(q.taskResourceCounts(task.GetTaskSize()))
 
 		// If all resources are reserved, short circuit - none of the remaining
-		// tasks will be able to schedule.
-		if q.resourcesAllGTE(reservedResources, q.resourceCapacity) {
+		// tasks will be able to schedule unless they have a known short enough
+		// duration to finish before the skipped tasks can start.
+		if q.resourcesAllGTE(reservedResources, q.resourceCapacity) && !skippedStartTimesKnown {
 			break
 		}
 	}
@@ -1126,5 +1215,14 @@ func (r *resourceCounts) Add(other *resourceCounts) {
 	r.CPUMillis += other.CPUMillis
 	for k, v := range other.Custom {
 		r.Custom[k] += v
+	}
+}
+
+// Sub mutates the resourceCounts object, subtracting the given counts from it.
+func (r *resourceCounts) Sub(other *resourceCounts) {
+	r.RAMBytes -= other.RAMBytes
+	r.CPUMillis -= other.CPUMillis
+	for k, v := range other.Custom {
+		r.Custom[k] -= v
 	}
 }

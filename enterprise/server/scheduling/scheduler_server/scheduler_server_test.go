@@ -755,6 +755,32 @@ func enqueueTaskReservation(ctx context.Context, t *testing.T, env environment.E
 	return taskID
 }
 
+func TestGetMostAccurateTaskSize_PreservesEstimatedExecutionDuration(t *testing.T) {
+	duration := durationpb.New(7 * time.Second)
+	handle := &executorHandle{
+		registration: &scpb.ExecutionNode{
+			AssignableMemoryBytes: 10_000,
+			AssignableMilliCpu:    10_000,
+		},
+	}
+	size := handle.getMostAccurateTaskSize(&scpb.EnqueueTaskReservationRequest{
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			TaskSize: &scpb.TaskSize{
+				EstimatedMemoryBytes:       100,
+				EstimatedMilliCpu:          100,
+				EstimatedExecutionDuration: duration,
+			},
+			MeasuredTaskSize: &scpb.TaskSize{
+				EstimatedMemoryBytes: 200,
+				EstimatedMilliCpu:    200,
+			},
+			RequestedTaskSize: &scpb.TaskSize{},
+		},
+	})
+
+	require.Equal(t, 7*time.Second, size.GetEstimatedExecutionDuration().AsDuration())
+}
+
 func TestExecutorReEnqueue_NoLeaseID(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 

@@ -210,6 +210,27 @@ func TestDispatch(t *testing.T) {
 	assert.Equal(t, iid, task.GetRequestMetadata().GetToolInvocationId(), "invocation ID should be passed along")
 }
 
+func TestDispatch_SetsEstimatedExecutionDurationFromActionTimeout(t *testing.T) {
+	env, _, _ := setupEnv(t)
+	ctx := context.Background()
+	s := env.GetRemoteExecutionService()
+
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	action := &repb.Action{
+		Timeout: durationpb.New(7 * time.Second),
+	}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString())
+	require.NoError(t, err)
+
+	sched := env.GetSchedulerService().(*schedulerServerMock)
+	require.Len(t, sched.scheduleReqs, 1)
+	require.Equal(t, 7*time.Second, sched.scheduleReqs[0].GetMetadata().GetTaskSize().GetEstimatedExecutionDuration().AsDuration())
+}
+
 func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
 	env, _, _ := setupEnv(t)
 

@@ -561,6 +561,9 @@ func (h *executorHandle) getMostAccurateTaskSize(req *scpb.EnqueueTaskReservatio
 	requestedSize := req.GetSchedulingMetadata().GetRequestedTaskSize()
 	size.CustomResources = requestedSize.GetCustomResources()
 	size.EstimatedFreeDiskBytes = requestedSize.GetEstimatedFreeDiskBytes()
+	if duration := req.GetSchedulingMetadata().GetTaskSize().GetEstimatedExecutionDuration(); duration != nil {
+		size.EstimatedExecutionDuration = duration
+	}
 
 	return size
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -304,6 +305,121 @@ func TestPriorityTaskScheduler_QueueSkipping_LargeCustomResourceTasksNotIndefini
 		execution2.ScheduledTask.GetExecutionTask().GetExecutionId(),
 	}
 	require.ElementsMatch(t, []string{gpuSmall1TaskID, gpuLargeTaskID}, startedTaskIDs)
+}
+
+func TestPriorityTaskScheduler_QueueSkipping_KnownShortTaskCanBackfillWithoutDelay(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		duration   time.Duration
+		shouldSkip bool
+	}{
+		{
+			name:       "short task skips",
+			duration:   time.Second,
+			shouldSkip: true,
+		},
+		{
+			name:       "long task waits",
+			duration:   11 * time.Second,
+			shouldSkip: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			env.SetClock(clockwork.NewFakeClockAt(time.Unix(123, 0)))
+			env.SetRemoteExecutionClient(&FakeExecutionClient{})
+
+			flags.Set(t, "executor.millicpu", 30_000)
+			flags.Set(t, "executor.memory_bytes", 64_000_000_000)
+			flags.Set(t, "executor.custom_resources", []resources.CustomResource{
+				{Name: "gpu", Value: 2.0},
+			})
+			err := resources.Configure(false /*=mmapLRUEnabled*/)
+			require.NoError(t, err)
+
+			executor := NewFakeExecutor()
+			runnerPool := &FakeRunnerPool{}
+			leaser := NewFakeTaskLeaser()
+
+			scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+			require.NoError(t, err)
+			scheduler.Start()
+			ctx := context.Background()
+			t.Cleanup(func() {
+				err := scheduler.Stop()
+				require.NoError(t, err)
+				assert.NoError(t, scheduler.Shutdown(ctx))
+			})
+
+			gpuSize := func(gpus float32, duration time.Duration) *scpb.TaskSize {
+				return &scpb.TaskSize{
+					EstimatedMilliCpu:          1000,
+					EstimatedMemoryBytes:       1000,
+					CustomResources:            []*scpb.CustomResource{{Name: "gpu", Value: gpus}},
+					EstimatedExecutionDuration: durationpb.New(duration),
+				}
+			}
+			enqueue := func(taskID string, size *scpb.TaskSize) {
+				_, err := scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+					TaskId:             taskID,
+					TaskSize:           size,
+					SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: size},
+				})
+				require.NoError(t, err)
+			}
+			waitForStart := func(taskID string) *FakeExecution {
+				select {
+				case execution := <-executor.StartedExecutions:
+					require.Equal(t, taskID, execution.ScheduledTask.GetExecutionTask().GetExecutionId())
+					return execution
+				case <-time.After(time.Second):
+					require.FailNowf(t, "timed out waiting for task to start", "task %q did not start", taskID)
+					return nil
+				}
+			}
+			requireNoStart := func() {
+				select {
+				case execution := <-executor.StartedExecutions:
+					require.FailNowf(t, "no task should have started", "task %q started", execution.ScheduledTask.GetExecutionTask().GetExecutionId())
+				case <-time.After(100 * time.Millisecond):
+				}
+			}
+
+			gpuSmall1TaskID := fakeTaskID("gpu-small-1")
+			gpuLargeTaskID := fakeTaskID("gpu-large")
+			gpuSmall2TaskID := fakeTaskID("gpu-small-2")
+
+			enqueue(gpuSmall1TaskID, gpuSize(1.0, 10*time.Second))
+			execution1 := waitForStart(gpuSmall1TaskID)
+
+			enqueue(gpuLargeTaskID, gpuSize(2.0, time.Minute))
+			enqueue(gpuSmall2TaskID, gpuSize(1.0, test.duration))
+
+			if test.shouldSkip {
+				execution2 := waitForStart(gpuSmall2TaskID)
+				require.Equal(t, 1, scheduler.q.Len())
+
+				execution2.Complete()
+				requireNoStart()
+
+				execution1.Complete()
+				execution3 := waitForStart(gpuLargeTaskID)
+				execution3.Complete()
+				return
+			}
+
+			requireNoStart()
+			require.Equal(t, 2, scheduler.q.Len())
+
+			execution1.Complete()
+			execution2 := waitForStart(gpuLargeTaskID)
+			require.Equal(t, 1, scheduler.q.Len())
+			execution2.Complete()
+
+			execution3 := waitForStart(gpuSmall2TaskID)
+			execution3.Complete()
+		})
+	}
 }
 
 func TestPriorityTaskScheduler_CustomResourceParentAccountingCeil(t *testing.T) {

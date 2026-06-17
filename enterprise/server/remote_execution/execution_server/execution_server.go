@@ -955,6 +955,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	defaultTaskSize := tasksize.Default(executionTask)
 	requestedTaskSize := tasksize.Requested(executionTask)
 	taskSize := tasksize.ApplyLimits(ctx, s.env.GetExperimentFlagProvider(), command, props, tasksize.Override(defaultTaskSize, requestedTaskSize))
+	taskSize.EstimatedExecutionDuration = action.GetTimeout()
 	measuredSize := s.taskSizer.Get(ctx, command, props)
 	var predictedSize *scpb.TaskSize
 	if measuredSize == nil {

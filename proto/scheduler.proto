@@ -148,6 +148,10 @@ message TaskSize {
   // be configured with enough custom resource capacity to satisfy all of the
   // resource requests in this list.
   repeated CustomResource custom_resources = 4;
+
+  // Optional wall-clock execution duration estimate. Executors may use this for
+  // conservative local backfilling; unset means the task duration is unknown.
+  google.protobuf.Duration estimated_execution_duration = 9;
 }
 
 // CgroupSettings defines Linux cgroup2 options for an execution.
