@@ -24,6 +24,8 @@ sidebar_label: App
 
 - `default_to_dense_mode` Enables Dense UI mode by default.
 
+- `auto_login_enabled` Automatically starts the default login flow from the login page when there is a single public OIDC provider.
+
 ## Example section
 
 ```yaml title="config.yaml"
