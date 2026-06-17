@@ -22,6 +22,7 @@ const (
 	// gRPC metadata header constants.
 	ClientHeaderName            = "x-buildbuddy-client"
 	OriginHeaderName            = "x-buildbuddy-origin"
+	ProxyHeaderName             = "x-buildbuddy-proxy"
 	SkipUsageTrackingHeaderName = "x-buildbuddy-skip-tracking"
 
 	// Client label constants.
@@ -37,6 +38,12 @@ var (
 	// The server name to record in usage.  This will be used for the "client" usage label when sending RPCS
 	// and the "server" usage label when a usage-generating request terminates at this server.
 	serverName string
+
+	// The proxy type ("internal" or "external") to record in usage. This is set
+	// on cache proxies and used for the "proxy" usage label so that
+	// BuildBuddy-run and customer-run proxy traffic can be billed separately. It
+	// is empty on servers that are not cache proxies.
+	proxyType string
 )
 
 func DisableUsageTracking(ctx context.Context) context.Context {
@@ -50,12 +57,14 @@ func DisableUsageTracking(ctx context.Context) context.Context {
 func LabelsForUsageRecording(ctx context.Context, server string) (*tables.UsageLabels, sku.Labels, error) {
 	origin := originLabel(ctx)
 	client := clientLabel(ctx)
+	proxy := proxyLabel(ctx)
 	primaryDBLabels := &tables.UsageLabels{
 		Origin: origin,
 		Client: client,
 		Server: server,
+		Proxy:  proxy,
 	}
-	olapLabels := make(sku.Labels, 3)
+	olapLabels := make(sku.Labels, 4)
 	if origin != "" {
 		olapLabels[sku.Origin] = sku.LabelValue(origin)
 	}
@@ -64,6 +73,9 @@ func LabelsForUsageRecording(ctx context.Context, server string) (*tables.UsageL
 	}
 	if server != "" {
 		olapLabels[sku.Server] = sku.LabelValue(server)
+	}
+	if proxy != "" {
+		olapLabels[sku.Proxy] = sku.LabelValue(proxy)
 	}
 	return primaryDBLabels, olapLabels, nil
 }
@@ -103,6 +115,19 @@ func ServerName() string {
 	return serverName
 }
 
+// SetProxyType sets the proxy type ("internal" or "external") recorded for the
+// "proxy" usage label on cache proxies.
+func SetProxyType(value string) {
+	proxyType = value
+}
+
+// ProxyType returns the proxy type ("internal" or "external") configured for
+// this server, or "" if it is not a cache proxy. It is recorded for the "proxy"
+// usage label and propagated on outgoing requests via AddUsageHeadersToContext.
+func ProxyType() string {
+	return proxyType
+}
+
 func CollectionFromRPCContext(ctx context.Context) *Collection {
 	groupID := interfaces.AuthAnonymousUser
 	if claims, err := claims.ClaimsFromContext(ctx); err == nil {
@@ -113,16 +138,20 @@ func CollectionFromRPCContext(ctx context.Context) *Collection {
 		Server:  ServerName(),
 		Client:  clientLabel(ctx),
 		Origin:  originLabel(ctx),
+		Proxy:   ProxyType(),
 	}
 	return c
 }
 
-func AddUsageHeadersToContext(ctx context.Context, client string, origin string) context.Context {
+func AddUsageHeadersToContext(ctx context.Context, client string, origin string, proxy string) context.Context {
 	if client != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, ClientHeaderName, client)
 	}
 	if origin != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, OriginHeaderName, origin)
+	}
+	if proxy != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, ProxyHeaderName, proxy)
 	}
 	return ctx
 }
@@ -147,6 +176,22 @@ func clientLabel(ctx context.Context) string {
 	return ""
 }
 
+func proxyLabel(ctx context.Context) string {
+	vals := metadata.ValueFromIncomingContext(ctx, ProxyHeaderName)
+	if len(vals) == 0 {
+		return ""
+	}
+	// The proxy label is read from an untrusted incoming header but feeds into
+	// usage/billing labels, so only let known proxy types through. Record any
+	// other value as "unknown" rather than passing it through.
+	switch vals[0] {
+	case sku.ProxyInternal, sku.ProxyExternal:
+		return vals[0]
+	default:
+		return sku.ProxyUnknown
+	}
+}
+
 // A Collection consists of all of the fields that we currently use to identify
 // different types of usage--these fields are ultimately written out to the
 // `Usages` table as `UsageLabels`, where they determine cost bucketing.
@@ -157,6 +202,7 @@ type Collection struct {
 	Origin  string
 	Server  string
 	Client  string
+	Proxy   string
 }
 
 func (c *Collection) UsageLabels() *tables.UsageLabels {
@@ -164,6 +210,7 @@ func (c *Collection) UsageLabels() *tables.UsageLabels {
 		Origin: c.Origin,
 		Client: c.Client,
 		Server: c.Server,
+		Proxy:  c.Proxy,
 	}
 }
 
@@ -181,6 +228,9 @@ func EncodeCollection(c *Collection) string {
 	if c.Server != "" {
 		s += "&server=" + url.QueryEscape(c.Server)
 	}
+	if c.Proxy != "" {
+		s += "&proxy=" + url.QueryEscape(c.Proxy)
+	}
 	return s
 }
 
@@ -197,6 +247,7 @@ func DecodeCollection(s string) (*Collection, url.Values, error) {
 		Origin:  q.Get("origin"),
 		Client:  q.Get("client"),
 		Server:  q.Get("server"),
+		Proxy:   q.Get("proxy"),
 	}
 	return c, q, nil
 }

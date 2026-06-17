@@ -70,6 +70,10 @@ const (
 	Server LabelName = "server"
 	// Origin identifies internal vs. external traffic origin.
 	Origin LabelName = "origin"
+	// Proxy identifies whether usage was reported by a BuildBuddy-run
+	// ("internal") or customer-run ("external") cache proxy. It is unset for
+	// usage that was not reported by a cache proxy.
+	Proxy LabelName = "proxy"
 	// OS identifies the operating system for execution usage.
 	OS LabelName = "os"
 	// Arch identifies the machine architecture for execution usage.
@@ -109,6 +113,9 @@ const (
 	ServerCacheProxy        LabelValue = "cache-proxy"
 	OriginExternal          LabelValue = "external"
 	OriginInternal          LabelValue = "internal"
+	ProxyExternal           LabelValue = "external"
+	ProxyInternal           LabelValue = "internal"
+	ProxyUnknown            LabelValue = "unknown"
 	OSLinux                 LabelValue = "linux"
 	OSMac                   LabelValue = "mac"
 	OSWindows               LabelValue = "windows"

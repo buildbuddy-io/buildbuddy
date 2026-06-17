@@ -832,6 +832,11 @@ type UsageLabels struct {
 	// Server describes the type of server that ultimately handled generating
 	// the response, for example "cache-proxy" or "app".
 	Server string `gorm:"not null;default:''"`
+
+	// Proxy describes whether the usage was reported by a BuildBuddy-run
+	// ("internal") or customer-run ("external") cache proxy. It is empty for
+	// usage that was not reported by a cache proxy.
+	Proxy string `gorm:"not null;default:''"`
 }
 
 // Usage holds usage counter values for a group during a particular time period.

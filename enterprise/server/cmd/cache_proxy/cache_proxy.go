@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -78,6 +79,8 @@ var (
 	serverType = flag.String("server_type", "cache-proxy", "The server type to match on health checks")
 
 	remoteCache = flag.String("cache_proxy.remote_cache", "grpcs://remote.buildbuddy.dev", "The backing remote cache.")
+
+	proxyType = flag.String("cache_proxy.proxy_type", sku.ProxyExternal, "Whether this is a BuildBuddy-run (\"internal\") or customer-run (\"external\") cache proxy. Used for usage tracking/billing.")
 )
 
 func main() {
@@ -138,6 +141,10 @@ func main() {
 		log.Fatal(err.Error())
 	}
 	usageutil.SetServerName("cache-proxy")
+	if *proxyType != sku.ProxyInternal && *proxyType != sku.ProxyExternal {
+		log.Fatalf("Invalid --cache_proxy.proxy_type %q: must be %q or %q", *proxyType, sku.ProxyInternal, sku.ProxyExternal)
+	}
+	usageutil.SetProxyType(*proxyType)
 
 	env.SetListenAddr(*listen)
 	if err := ssl.Register(env); err != nil {

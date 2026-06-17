@@ -248,6 +248,7 @@ func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc
 		Origin:  labels.Origin,
 		Client:  labels.Client,
 		Server:  labels.Server,
+		Proxy:   labels.Proxy,
 	}
 	// Increment the hash values
 	encodedCollection := usageutil.EncodeCollection(collection)
@@ -611,6 +612,7 @@ func (ut *tracker) flushCountsToPrimaryDB(ctx context.Context, groupID string, p
 				AND origin = ?
 				AND client = ?
 				AND server = ?
+				AND proxy = ?
 			`+dbh.SelectForUpdateModifier(),
 			tu.Region,
 			tu.GroupID,
@@ -618,6 +620,7 @@ func (ut *tracker) flushCountsToPrimaryDB(ctx context.Context, groupID string, p
 			tu.Origin,
 			tu.Client,
 			tu.Server,
+			tu.Proxy,
 		).Take(&tables.Usage{})
 		if err != nil && !db.IsRecordNotFound(err) {
 			return err
