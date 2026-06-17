@@ -214,7 +214,7 @@ func Validate(d *repb.Digest, digestFunction repb.DigestFunction_Value) error {
 		if IsEmptyHash(d, digestFunction) {
 			return nil
 		}
-		return status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
+		return status.InvalidArgumentError("Invalid (zero-length) hash")
 	}
 	hash := d.GetHash()
 	if expected := hashLength(digestFunction); len(hash) != expected {
