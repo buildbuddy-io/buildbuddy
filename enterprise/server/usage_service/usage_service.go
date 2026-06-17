@@ -332,7 +332,7 @@ func (s *usageService) GetUsageInternal(ctx context.Context, g *tables.Group, re
 		end = addCalendarMonths(start, 1)
 	}
 
-	usages, err := s.scanUsages(ctx, g.GroupID, start, end)
+	usages, err := s.scanUsages(ctx, g.GroupID, start, end, req.GetUseOlap())
 	if err != nil {
 		return nil, err
 	}
@@ -519,8 +519,11 @@ func (s *usageService) countUsageAlertingRules(ctx context.Context, dbh interfac
 	return row.Count, nil
 }
 
-func (s *usageService) scanUsages(ctx context.Context, groupID string, start, end time.Time) ([]*usagepb.Usage, error) {
-	if s.readFromOLAPDB {
+func (s *usageService) scanUsages(ctx context.Context, groupID string, start, end time.Time, useOLAP bool) ([]*usagepb.Usage, error) {
+	if s.readFromOLAPDB || useOLAP {
+		if s.olapdbh == nil {
+			return nil, status.FailedPreconditionError("OLAP DB handle must be configured for usage OLAP reads")
+		}
 		return s.scanOLAPUsages(ctx, groupID, start, end)
 	}
 	return s.scanPrimaryDBUsages(ctx, groupID, start, end)
