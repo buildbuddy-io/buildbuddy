@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -60,6 +61,7 @@ const (
 	defaultMaxInlineFileSizeBytes      = int64(1024)
 	defaultMinBytesAutoZstdCompression = int64(100)
 	defaultMaxWriteGoroutines          = 10
+	defaultMaxReadGoroutines           = 10
 )
 
 type Options struct {
@@ -74,6 +76,7 @@ type Options struct {
 	MaxInlineFileSizeBytes      int64
 
 	MaxWriteGoroutines int
+	MaxReadGoroutines  int
 
 	MetadataBackend string
 
@@ -152,6 +155,9 @@ func setOptionDefaults(opts *Options) {
 	}
 	if opts.MaxWriteGoroutines == 0 {
 		opts.MaxWriteGoroutines = defaultMaxWriteGoroutines
+	}
+	if opts.MaxReadGoroutines == 0 {
+		opts.MaxReadGoroutines = defaultMaxReadGoroutines
 	}
 	if opts.Clock == nil {
 		opts.Clock = clockwork.NewRealClock()
@@ -613,6 +619,10 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 	start := c.opts.Clock.Now()
 	defer c.recordMetrics("GetMulti", resultErr, start)
 
+	if len(resources) == 0 {
+		return map[*repb.Digest][]byte{}, nil
+	}
+
 	encryption, err := c.activeEncryption(ctx)
 	if err != nil {
 		return nil, err
@@ -643,32 +653,46 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 		keyToMetadata[k] = md
 	}
 
-	foundMap := make(map[*repb.Digest][]byte, len(resources))
-	for _, r := range resources {
-		k := keyFromResourceName(r)
-		md, ok := keyToMetadata[k]
-		if !ok {
-			continue
-		}
-		rc, err := c.reader(ctx, md, r, 0, 0, encryption)
-		if err != nil {
-			if status.IsNotFoundError(err) || os.IsNotExist(err) {
-				continue
+	var foundMu sync.Mutex
+	foundMap := make(map[*repb.Digest][]byte, len(keyToMetadata))
+	eg, ctx := errgroup.WithContext(ctx)
+	numChunks := c.opts.MaxReadGoroutines
+	chunkSize := (len(resources) + numChunks - 1) / numChunks
+	for chunk := range slices.Chunk(resources, int(chunkSize)) {
+		eg.Go(func() error {
+			for _, r := range chunk {
+				k := keyFromResourceName(r)
+				md, ok := keyToMetadata[k]
+				if !ok {
+					continue
+				}
+				rc, err := c.reader(ctx, md, r, 0, 0, encryption)
+				if err != nil {
+					if status.IsNotFoundError(err) || os.IsNotExist(err) {
+						continue
+					}
+					return err
+				}
+				buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(r, maxReadBufferSize)))
+				_, copyErr := io.Copy(buf, rc)
+				closeErr := rc.Close()
+				if copyErr != nil {
+					log.Warningf("[%s] GetMulti encountered error when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), copyErr)
+					continue
+				}
+				if closeErr != nil {
+					log.Warningf("[%s] GetMulti cannot close reader when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), closeErr)
+					continue
+				}
+				foundMu.Lock()
+				foundMap[r.GetDigest()] = buf.Bytes()
+				foundMu.Unlock()
 			}
-			return nil, err
-		}
-		buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(r, maxReadBufferSize)))
-		_, copyErr := io.Copy(buf, rc)
-		closeErr := rc.Close()
-		if copyErr != nil {
-			log.Warningf("[%s] GetMulti encountered error when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), copyErr)
-			continue
-		}
-		if closeErr != nil {
-			log.Warningf("[%s] GetMulti cannot close reader when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), closeErr)
-			continue
-		}
-		foundMap[r.GetDigest()] = buf.Bytes()
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
 	}
 	return foundMap, nil
 }

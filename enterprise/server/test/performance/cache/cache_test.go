@@ -163,6 +163,25 @@ func getDistributedCache(t testing.TB, te environment.Env, c interfaces.Cache, l
 	return dc
 }
 
+type slowGcs struct {
+	filestore.PebbleGCSStorage
+}
+
+// time.Sleep can't reliably sleep for less than 1ms, so use a busy loop
+// instead.
+func busyLoop(dur time.Duration) {
+	start := time.Now()
+	for time.Since(start) < dur {
+	}
+}
+
+func (slow *slowGcs) Reader(ctx context.Context, blobName string, offset, limit int64) (io.ReadCloser, error) {
+	// GCS takes 30-40ms to open a reader. We don't have to wait that long to
+	// reproduce slowness in benchmarks
+	busyLoop(time.Millisecond)
+	return slow.PebbleGCSStorage.Reader(ctx, blobName, offset, limit)
+}
+
 func getMetaCache(t testing.TB, te environment.Env) interfaces.Cache {
 	clock := clockwork.NewRealClock()
 
@@ -170,7 +189,7 @@ func getMetaCache(t testing.TB, te environment.Env) interfaces.Cache {
 	if err := mockGCS.SetBucketCustomTimeTTL(context.Background(), 1); err != nil {
 		t.Fatal(err)
 	}
-	fs := filestore.New(filestore.WithGCSBlobstore(mockGCS, "one-bucket"))
+	fs := filestore.New(filestore.WithGCSBlobstore(&slowGcs{mockGCS}, "one-bucket"))
 
 	mm, err := mockmetadata.NewServer(maxSizeBytes, fs)
 	require.NoError(t, err)
