@@ -508,6 +508,8 @@ func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (contains bo
 }
 
 func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (cm *interfaces.CacheMetadata, resultErr error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	start := c.opts.Clock.Now()
 	defer c.recordMetrics("Metadata", resultErr, start)
 
