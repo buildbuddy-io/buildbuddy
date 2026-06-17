@@ -53,6 +53,7 @@ func (t *RegistryServer) RegisterHandlers(mux interfaces.HttpServeMux) {
 
 		if len(pathPaths) > 3 && pathPaths[1] == "modules" && strings.Contains(pathPaths[3], "-github.") {
 			buf, status, err := handleGitHub(path)
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(status)
 			if err != nil {
 				log.Errorf("error serving github module %s: %s", path, err)
