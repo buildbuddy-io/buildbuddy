@@ -2,6 +2,7 @@ package distributed_client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -631,26 +632,27 @@ func (r *distributedCacheReader) Close() error {
 }
 
 type streamWriteCloser struct {
-	cancelFunc        context.CancelFunc
-	sender            rpcutil.Sender[*dcpb.WriteRequest, *dcpb.WriteResponse]
-	r                 *rspb.ResourceName
-	handoffPeer       string
-	sendTimeoutCause  error
-	closeTimeoutCause error
-	alreadyExists     bool
+	cancelFunc    context.CancelFunc
+	sender        rpcutil.Sender[*dcpb.WriteRequest, *dcpb.WriteResponse]
+	r             *rspb.ResourceName
+	peer          string
+	handoffPeer   string
+	alreadyExists bool
 }
 
 func (wc *streamWriteCloser) send(req *dcpb.WriteRequest) error {
-	err := wc.sender.SendWithTimeoutCause(req, *peerWriteTimeout, wc.sendTimeoutCause)
-	if status.IsDeadlineExceededError(err) {
+	err := wc.sender.SendWithTimeoutCause(req, *peerWriteTimeout, context.DeadlineExceeded)
+	if errors.Is(err, context.DeadlineExceeded) {
+		err = status.DeadlineExceededErrorf("timed out sending distributed cache write to peer %q for %s", wc.peer, ResourceIsolationString(wc.r))
 		wc.cancelFunc()
 	}
 	return err
 }
 
 func (wc *streamWriteCloser) closeAndRecv() (*dcpb.WriteResponse, error) {
-	rsp, err := wc.sender.CloseAndRecvWithTimeoutCause(*peerWriteTimeout, wc.closeTimeoutCause)
-	if status.IsDeadlineExceededError(err) {
+	rsp, err := wc.sender.CloseAndRecvWithTimeoutCause(*peerWriteTimeout, context.DeadlineExceeded)
+	if errors.Is(err, context.DeadlineExceeded) {
+		err = status.DeadlineExceededErrorf("timed out finalizing distributed cache write to peer %q for %s", wc.peer, ResourceIsolationString(wc.r))
 		wc.cancelFunc()
 	}
 	return rsp, err
@@ -731,14 +733,12 @@ func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 		return nil, err
 	}
 
-	resourceStr := ResourceIsolationString(r)
 	wc := &streamWriteCloser{
-		cancelFunc:        cancel,
-		sender:            rpcutil.NewSender[*dcpb.WriteRequest, *dcpb.WriteResponse](ctx, stream),
-		handoffPeer:       handoffPeer,
-		r:                 r,
-		sendTimeoutCause:  status.DeadlineExceededErrorf("timed out sending distributed cache write to peer %q for %s", peer, resourceStr),
-		closeTimeoutCause: status.DeadlineExceededErrorf("timed out finalizing distributed cache write to peer %q for %s", peer, resourceStr),
+		cancelFunc:  cancel,
+		sender:      rpcutil.NewSender[*dcpb.WriteRequest, *dcpb.WriteResponse](ctx, stream),
+		peer:        peer,
+		handoffPeer: handoffPeer,
+		r:           r,
 	}
 	return ioutil.NewDoubleBufferWriter(ctx, wc, c.bufPool, digest.SafeBufferSize(r, writeBufSizeBytes), writeBufSizeBytes), nil
 }
