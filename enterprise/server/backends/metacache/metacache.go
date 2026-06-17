@@ -373,10 +373,35 @@ func (c *Cache) readerForStorage(ctx context.Context, storage *sgpb.StorageMetad
 	case storage.GetInlineMetadata() != nil:
 		return c.opts.FileStorer.InlineReader(storage.GetInlineMetadata(), offset, limit)
 	case storage.GetGcsMetadata() != nil:
+		// return &asyncReader{
+		// 	rf: sync.OnceValues(func() (io.ReadCloser, error) {
+		// 		return c.opts.FileStorer.BlobReader(ctx, storage.GetGcsMetadata(), offset, limit)
+		// 	}),
+		// }, nil
 		return c.opts.FileStorer.BlobReader(ctx, storage.GetGcsMetadata(), offset, limit)
 	default:
 		return nil, status.InvalidArgumentErrorf("Unsupported storage metadata: %+v", storage)
 	}
+}
+
+type asyncReader struct {
+	rf func() (io.ReadCloser, error)
+}
+
+func (ar *asyncReader) Read(buf []byte) (int, error) {
+	r, err := ar.rf()
+	if err != nil {
+		return 0, err
+	}
+	return r.Read(buf)
+}
+
+func (ar *asyncReader) Close() error {
+	r, err := ar.rf()
+	if err != nil {
+		return err
+	}
+	return r.Close()
 }
 
 func (c *Cache) writerForRecord(ctx context.Context, fileRecord *sgpb.FileRecord, sizeHint int64) (interfaces.MetadataWriteCloser, error) {
@@ -643,32 +668,44 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 		keyToMetadata[k] = md
 	}
 
+	var foundMu sync.Mutex
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.SetLimit(10)
 	for _, r := range resources {
 		k := keyFromResourceName(r)
 		md, ok := keyToMetadata[k]
 		if !ok {
 			continue
 		}
-		rc, err := c.reader(ctx, md, r, 0, 0, encryption)
-		if err != nil {
-			if status.IsNotFoundError(err) || os.IsNotExist(err) {
-				continue
+		eg.Go(func() error {
+			// start := time.Now()
+			rc, err := c.reader(ctx, md, r, 0, 0, encryption)
+			// fmt.Println("reader took:", time.Since(start))
+			if err != nil {
+				if status.IsNotFoundError(err) || os.IsNotExist(err) {
+					return nil
+				}
+				return err
 			}
-			return nil, err
-		}
-		buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(r, maxReadBufferSize)))
-		_, copyErr := io.Copy(buf, rc)
-		closeErr := rc.Close()
-		if copyErr != nil {
-			log.Warningf("[%s] GetMulti encountered error when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), copyErr)
-			continue
-		}
-		if closeErr != nil {
-			log.Warningf("[%s] GetMulti cannot close reader when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), closeErr)
-			continue
-		}
-		foundMap[r.GetDigest()] = buf.Bytes()
+			buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(r, maxReadBufferSize)))
+			// start = time.Now()
+			_, copyErr := io.Copy(buf, rc)
+			// fmt.Println("read took:", time.Since(start))
+			closeErr := rc.Close()
+			if copyErr != nil {
+				log.Warningf("[%s] GetMulti encountered error when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), copyErr)
+				return nil
+			}
+			if closeErr != nil {
+				log.Warningf("[%s] GetMulti cannot close reader when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), closeErr)
+				return nil
+			}
+			foundMu.Lock()
+			foundMap[r.GetDigest()] = buf.Bytes()
+			foundMu.Unlock()
+			return nil
+		})
 	}
 	return foundMap, nil
 }
