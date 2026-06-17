@@ -910,10 +910,9 @@ func (r *Reader) populateFieldLengths(docMatches map[uint64]*docMatch) error {
 }
 
 // ResolveSignals computes the named per-document scoring signals and attaches
-// them to the matches, where scorers read them via DocumentMatch.Signal.
-// Implements types.SignalResolver. Resolution is requested explicitly (and
-// typically over a bounded rerank window) so queries that don't score on
-// signals pay nothing.
+// them to the matches, where scorers read them via DocumentMatch.Signal. Part
+// of types.IndexReader. Resolution is requested explicitly (and typically over
+// a bounded rerank window) so queries that don't score on signals pay nothing.
 //
 // SignalImportInDegree is a document's import in-degree: the number of
 // documents whose imports field references one of this document's import_id
