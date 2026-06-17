@@ -253,23 +253,24 @@ func (c *Cache) lookupPartitionID(remoteInstanceName, groupID string) string {
 	return DefaultPartitionID
 }
 
-func (c *Cache) makeFileRecord(groupID string, encryption *sgpb.Encryption, pr *rspb.ResourceName) (*sgpb.FileRecord, error) {
-	r := digest.ResourceNameFromProto(pr)
-	if err := r.Validate(); err != nil {
+func (c *Cache) makeFileRecord(groupID string, encryption *sgpb.Encryption, r *rspb.ResourceName) (*sgpb.FileRecord, error) {
+	digestFunction := r.GetDigestFunction()
+	if digestFunction == repb.DigestFunction_UNKNOWN {
+		digestFunction = repb.DigestFunction_SHA256
+	}
+	if err := digest.Validate(r.GetDigest(), digestFunction); err != nil {
 		return nil, err
 	}
-
-	partID := c.lookupPartitionID(r.GetInstanceName(), groupID)
 
 	return &sgpb.FileRecord{
 		Isolation: &sgpb.Isolation{
 			CacheType:          r.GetCacheType(),
 			RemoteInstanceName: r.GetInstanceName(),
-			PartitionId:        partID,
+			PartitionId:        c.lookupPartitionID(r.GetInstanceName(), groupID),
 			GroupId:            groupID,
 		},
 		Digest:         r.GetDigest(),
-		DigestFunction: r.GetDigestFunction(),
+		DigestFunction: digestFunction,
 		Compressor:     r.GetCompressor(),
 		Encryption:     encryption,
 	}, nil

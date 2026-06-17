@@ -1543,9 +1543,12 @@ func (p *PebbleCache) activeEncryption(ctx context.Context) (*sgpb.Encryption, e
 	return &sgpb.Encryption{KeyId: ak.GetEncryptionKeyId()}, nil
 }
 
-func (p *PebbleCache) makeFileRecord(groupID string, encryption *sgpb.Encryption, r *rspb.ResourceName) (*sgpb.FileRecord, error) {
-	rn := digest.ResourceNameFromProto(r)
-	if err := rn.Validate(); err != nil {
+func (p *PebbleCache) makeFileRecord(groupID string, encryption *sgpb.Encryption, rn *rspb.ResourceName) (*sgpb.FileRecord, error) {
+	digestFunction := rn.GetDigestFunction()
+	if digestFunction == repb.DigestFunction_UNKNOWN {
+		digestFunction = repb.DigestFunction_SHA256
+	}
+	if err := digest.Validate(rn.GetDigest(), digestFunction); err != nil {
 		return nil, err
 	}
 
@@ -1557,7 +1560,7 @@ func (p *PebbleCache) makeFileRecord(groupID string, encryption *sgpb.Encryption
 			GroupId:            groupID,
 		},
 		Digest:         rn.GetDigest(),
-		DigestFunction: rn.GetDigestFunction(),
+		DigestFunction: digestFunction,
 		Compressor:     rn.GetCompressor(),
 		Encryption:     encryption,
 	}, nil
