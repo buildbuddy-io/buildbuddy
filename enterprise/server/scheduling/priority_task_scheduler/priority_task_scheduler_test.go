@@ -306,6 +306,101 @@ func TestPriorityTaskScheduler_QueueSkipping_LargeCustomResourceTasksNotIndefini
 	require.ElementsMatch(t, []string{gpuSmall1TaskID, gpuLargeTaskID}, startedTaskIDs)
 }
 
+func TestPriorityTaskScheduler_CustomResourceParentAccountingCeil(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionClient(&FakeExecutionClient{})
+
+	flags.Set(t, "executor.millicpu", 30_000)
+	flags.Set(t, "executor.memory_bytes", 64_000_000_000)
+	flags.Set(t, "executor.custom_resources", []resources.CustomResource{
+		{Name: "apple_simulator", Value: 2.0},
+		{Name: "sim_version_26_5", Value: 2.0, Parent: "apple_simulator", ParentAccounting: "ceil"},
+		{Name: "sim_version_18_0", Value: 2.0, Parent: "apple_simulator", ParentAccounting: "ceil"},
+	})
+	err := resources.Configure(false /*=mmapLRUEnabled*/)
+	require.NoError(t, err)
+
+	executor := NewFakeExecutor()
+	runnerPool := &FakeRunnerPool{}
+	leaser := NewFakeTaskLeaser()
+
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	require.NoError(t, err)
+	scheduler.Start()
+	ctx := context.Background()
+	t.Cleanup(func() {
+		err := scheduler.Stop()
+		require.NoError(t, err)
+		assert.NoError(t, scheduler.Shutdown(ctx))
+	})
+
+	simSize := func(name string, value float32) *scpb.TaskSize {
+		return &scpb.TaskSize{
+			EstimatedMilliCpu:    1000,
+			EstimatedMemoryBytes: 1000,
+			CustomResources:      []*scpb.CustomResource{{Name: name, Value: value}},
+		}
+	}
+	enqueue := func(taskID string, size *scpb.TaskSize) {
+		_, err := scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+			TaskId:             taskID,
+			TaskSize:           size,
+			SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: size},
+		})
+		require.NoError(t, err)
+	}
+	waitForStart := func(taskID string) *FakeExecution {
+		select {
+		case execution := <-executor.StartedExecutions:
+			require.Equal(t, taskID, execution.ScheduledTask.GetExecutionTask().GetExecutionId())
+			return execution
+		case <-time.After(1 * time.Second):
+			require.FailNowf(t, "timed out waiting for task to start", "task %q did not start", taskID)
+			return nil
+		}
+	}
+	requireNoStart := func() {
+		select {
+		case execution := <-executor.StartedExecutions:
+			require.FailNowf(t, "no task should have started", "task %q started", execution.ScheduledTask.GetExecutionTask().GetExecutionId())
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
+	sim26UIID := fakeTaskID("sim-26-5-ui")
+	sim26Small1ID := fakeTaskID("sim-26-5-small-1")
+	sim26Small2ID := fakeTaskID("sim-26-5-small-2")
+	sim18SmallID := fakeTaskID("sim-18-0-small")
+
+	// 1 + 0.1 + 0.1 for the same simulator version should consume 2 parent
+	// simulator slots after summing and ceiling the version bucket.
+	enqueue(sim26UIID, simSize("sim_version_26_5", 1.0))
+	sim26UI := waitForStart(sim26UIID)
+	enqueue(sim26Small1ID, simSize("sim_version_26_5", 0.1))
+	sim26Small1 := waitForStart(sim26Small1ID)
+	enqueue(sim26Small2ID, simSize("sim_version_26_5", 0.1))
+	sim26Small2 := waitForStart(sim26Small2ID)
+
+	// A different simulator version would need a third parent simulator slot,
+	// so it should wait.
+	enqueue(sim18SmallID, simSize("sim_version_18_0", 0.1))
+	requireNoStart()
+	require.Equal(t, 1, scheduler.q.Len())
+
+	// Dropping from 1.2 to 1.1 still rounds to 2 parent simulator slots.
+	sim26Small1.Complete()
+	requireNoStart()
+	require.Equal(t, 1, scheduler.q.Len())
+
+	// Dropping to 1.0 rounds to 1 parent simulator slot, leaving room for the
+	// 18.0 simulator version bucket.
+	sim26Small2.Complete()
+	sim18Small := waitForStart(sim18SmallID)
+
+	sim26UI.Complete()
+	sim18Small.Complete()
+}
+
 func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
 	for _, test := range []struct {
 		name string

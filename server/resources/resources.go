@@ -193,8 +193,10 @@ func GetAllocatedCPUMillis() int64 {
 
 // Struct version of scpb.CustomResource (for YAML configuration).
 type CustomResource struct {
-	Name  string  `yaml:"name" json:"name"`
-	Value float64 `yaml:"value" json:"value"`
+	Name             string  `yaml:"name" json:"name"`
+	Value            float64 `yaml:"value" json:"value"`
+	Parent           string  `yaml:"parent" json:"parent"`
+	ParentAccounting string  `yaml:"parent_accounting" json:"parent_accounting"`
 }
 
 func GetAllocatedCustomResources() ([]*scpb.CustomResource, error) {
@@ -211,6 +213,36 @@ func GetAllocatedCustomResources() ([]*scpb.CustomResource, error) {
 		})
 	}
 	return out, nil
+}
+
+func GetCustomResourceParentMap() (map[string]string, error) {
+	resourceNames := make(map[string]struct{}, len(*customResources))
+	for _, r := range *customResources {
+		if strings.Contains(r.Name, ".") {
+			return nil, status.InvalidArgumentError("Custom resource names may not contain periods")
+		}
+		resourceNames[r.Name] = struct{}{}
+	}
+
+	parentByChild := make(map[string]string)
+	for _, r := range *customResources {
+		if r.Parent == "" {
+			continue
+		}
+		if _, ok := resourceNames[r.Parent]; !ok {
+			return nil, status.InvalidArgumentErrorf("Custom resource %q parent %q is not configured", r.Name, r.Parent)
+		}
+		if r.Parent == r.Name {
+			return nil, status.InvalidArgumentErrorf("Custom resource %q cannot be its own parent", r.Name)
+		}
+		switch r.ParentAccounting {
+		case "", "ceil":
+			parentByChild[r.Name] = r.Parent
+		default:
+			return nil, status.InvalidArgumentErrorf("Custom resource %q has unsupported parent_accounting %q", r.Name, r.ParentAccounting)
+		}
+	}
+	return parentByChild, nil
 }
 
 func GetK8sNodeName() string {

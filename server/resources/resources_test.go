@@ -74,3 +74,51 @@ func TestConfigure(t *testing.T) {
 		})
 	}
 }
+
+func TestGetCustomResourceParentMap(t *testing.T) {
+	flags.Set(t, "executor.custom_resources", []resources.CustomResource{
+		{Name: "apple_simulator", Value: 2},
+		{Name: "sim_version_26_5", Value: 2, Parent: "apple_simulator", ParentAccounting: "ceil"},
+		{Name: "sim_version_18_0", Value: 2, Parent: "apple_simulator"},
+	})
+
+	parentMap, err := resources.GetCustomResourceParentMap()
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"sim_version_26_5": "apple_simulator",
+		"sim_version_18_0": "apple_simulator",
+	}, parentMap)
+}
+
+func TestGetCustomResourceParentMap_Invalid(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		resources []resources.CustomResource
+	}{
+		{
+			name: "missing parent",
+			resources: []resources.CustomResource{
+				{Name: "sim_version_26_5", Value: 2, Parent: "apple_simulator"},
+			},
+		},
+		{
+			name: "self parent",
+			resources: []resources.CustomResource{
+				{Name: "apple_simulator", Value: 2, Parent: "apple_simulator"},
+			},
+		},
+		{
+			name: "unsupported parent accounting",
+			resources: []resources.CustomResource{
+				{Name: "apple_simulator", Value: 2},
+				{Name: "sim_version_26_5", Value: 2, Parent: "apple_simulator", ParentAccounting: "floor"},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			flags.Set(t, "executor.custom_resources", test.resources)
+			_, err := resources.GetCustomResourceParentMap()
+			require.Error(t, err)
+		})
+	}
+}

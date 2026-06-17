@@ -369,6 +369,8 @@ type PriorityTaskScheduler struct {
 	activeCancelFuncsCount  atomic.Int64
 	resourceCapacity        *resourceCounts
 	resourcesUsed           *resourceCounts
+	customResourceParents   map[string]string
+	customResourceChildren  map[string][]string
 	exclusiveTaskScheduling bool
 }
 
@@ -390,6 +392,14 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 	for _, r := range customResourcesAllocated {
 		customResourcesCapacity[r.GetName()] = customResource(r.GetValue())
 		customResourcesUsed[r.GetName()] = 0
+	}
+	customResourceParents, err := resources.GetCustomResourceParentMap()
+	if err != nil {
+		return nil, err
+	}
+	customResourceChildren := make(map[string][]string)
+	for child, parent := range customResourceParents {
+		customResourceChildren[parent] = append(customResourceChildren[parent], child)
 	}
 	rootContext, rootCancel := context.WithCancel(context.Background())
 	qes := &PriorityTaskScheduler{
@@ -413,6 +423,8 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 			CPUMillis: 0,
 			Custom:    customResourcesUsed,
 		},
+		customResourceParents:   customResourceParents,
+		customResourceChildren:  customResourceChildren,
 		exclusiveTaskScheduling: *exclusiveTaskScheduling,
 	}
 	qes.rootContext = qes.enrichContext(qes.rootContext)
@@ -653,10 +665,10 @@ func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationReques
 		}
 		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.resourcesUsed.RAMBytes))
 		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.resourcesUsed.CPUMillis))
-		for name, count := range q.resourcesUsed.Custom {
+		for name := range q.resourcesUsed.Custom {
 			metrics.RemoteExecutionAssignedCustomResources.With(prometheus.Labels{
 				metrics.CustomResourceNameLabel: name,
-			}).Set(float64(count) / 1e6)
+			}).Set(float64(q.customResourceUsed(q.resourcesUsed, name)) / 1e6)
 		}
 		log.CtxDebugf(q.rootContext, "Claimed task resources. Queue stats: %s", q.stats())
 	}
@@ -674,10 +686,10 @@ func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequ
 		}
 		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.resourcesUsed.RAMBytes))
 		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.resourcesUsed.CPUMillis))
-		for name, count := range q.resourcesUsed.Custom {
+		for name := range q.resourcesUsed.Custom {
 			metrics.RemoteExecutionAssignedCustomResources.With(prometheus.Labels{
 				metrics.CustomResourceNameLabel: name,
-			}).Set(float64(count) / 1e6)
+			}).Set(float64(q.customResourceUsed(q.resourcesUsed, name)) / 1e6)
 		}
 		log.CtxDebugf(q.rootContext, "Released task resources. Queue stats: %s", q.stats())
 	}
@@ -687,8 +699,9 @@ func (q *PriorityTaskScheduler) stats() string {
 	cpuMillisRemaining := q.resourceCapacity.CPUMillis - q.resourcesUsed.CPUMillis
 	ramBytesRemaining := q.resourceCapacity.RAMBytes - q.resourcesUsed.RAMBytes
 	var customResourcesStrs []string
-	for k, v := range q.resourcesUsed.Custom {
-		customResourcesStrs = append(customResourcesStrs, fmt.Sprintf("%s: %s of %s allocated (%s remaining)", k, v, q.resourceCapacity.Custom[k], q.resourceCapacity.Custom[k]-v))
+	for k := range q.resourcesUsed.Custom {
+		used := q.customResourceUsed(q.resourcesUsed, k)
+		customResourcesStrs = append(customResourcesStrs, fmt.Sprintf("%s: %s of %s allocated (%s remaining)", k, used, q.resourceCapacity.Custom[k], q.resourceCapacity.Custom[k]-used))
 	}
 	customResourcesDesc := ""
 	if len(customResourcesStrs) > 0 {
@@ -725,16 +738,24 @@ func (q *PriorityTaskScheduler) canFitTask(res *queuedTask, reservedResources *r
 		return false
 	}
 
+	affectedCustomResources := make(map[string]struct{}, len(size.GetCustomResources()))
 	for _, r := range size.GetCustomResources() {
-		reserved, ok := reservedResources.Custom[r.GetName()]
-		if !ok {
+		if _, ok := q.resourceCapacity.Custom[r.GetName()]; !ok {
 			// The scheduler server should never send us tasks that require
 			// resources we haven't set up in the config.
 			alert.UnexpectedEvent("missing_custom_resource", "Task requested custom resource %q which is not configured for this executor", r.GetName())
 			continue
 		}
-		available := q.resourceCapacity.Custom[r.GetName()] - reserved
-		if customResource(r.GetValue()) > available {
+		affectedCustomResources[r.GetName()] = struct{}{}
+		if parent, ok := q.customResourceParents[r.GetName()]; ok {
+			affectedCustomResources[parent] = struct{}{}
+		}
+	}
+	candidateResources := reservedResources.Clone()
+	candidateResources.Add(q.taskResourceCounts(size))
+	for name := range affectedCustomResources {
+		capacity := q.resourceCapacity.Custom[name]
+		if q.customResourceUsed(candidateResources, name) > capacity {
 			return false
 		}
 	}
@@ -856,7 +877,7 @@ func (q *PriorityTaskScheduler) getNextSchedulableTask(ctx context.Context) (*qu
 
 		// If all resources are reserved, short circuit - none of the remaining
 		// tasks will be able to schedule.
-		if reservedResources.AllGTE(q.resourceCapacity) {
+		if q.resourcesAllGTE(reservedResources, q.resourceCapacity) {
 			break
 		}
 	}
@@ -1021,18 +1042,27 @@ func (q *PriorityTaskScheduler) HasExcessCapacity() bool {
 // subtracted over time.
 type customResourceCount int64
 
+const customResourceUnit = customResourceCount(1e6)
+
 func customResource(value float32) customResourceCount {
 	// Represent the value as an integer value up to the 6th decimal place. This
 	// is a deterministic transformation that avoids accumulating errors over
 	// time (because each float value is mapped to the same integer every time,
 	// and integer arithmetic is exact), while also providing reasonably high
 	// precision.
-	millionths := int64(value * 1e6)
+	millionths := int64(value * float32(customResourceUnit))
 	return customResourceCount(millionths)
 }
 
+func ceilCustomResource(value customResourceCount) customResourceCount {
+	if value <= 0 {
+		return 0
+	}
+	return ((value + customResourceUnit - 1) / customResourceUnit) * customResourceUnit
+}
+
 func (c customResourceCount) String() string {
-	return fmt.Sprintf("%.2f", float64(c)/1e6)
+	return fmt.Sprintf("%.2f", float64(c)/float64(customResourceUnit))
 }
 
 // resourceCounts is a general-purpose struct holding a count of each resource
@@ -1060,6 +1090,29 @@ func (q *PriorityTaskScheduler) taskResourceCounts(res *scpb.TaskSize) *resource
 	}
 }
 
+func (q *PriorityTaskScheduler) customResourceUsed(res *resourceCounts, name string) customResourceCount {
+	used := res.Custom[name]
+	for _, child := range q.customResourceChildren[name] {
+		used += ceilCustomResource(res.Custom[child])
+	}
+	return used
+}
+
+func (q *PriorityTaskScheduler) resourcesAllGTE(a, b *resourceCounts) bool {
+	if a.RAMBytes < b.RAMBytes {
+		return false
+	}
+	if a.CPUMillis < b.CPUMillis {
+		return false
+	}
+	for k, v := range b.Custom {
+		if q.customResourceUsed(a, k) < v {
+			return false
+		}
+	}
+	return true
+}
+
 // Clone returns a deep copy of the resourceCounts object.
 func (r *resourceCounts) Clone() *resourceCounts {
 	clone := *r
@@ -1074,21 +1127,4 @@ func (r *resourceCounts) Add(other *resourceCounts) {
 	for k, v := range other.Custom {
 		r.Custom[k] += v
 	}
-}
-
-// AllGTE returns true if all resource counts are greater than or equal to the
-// other resource counts.
-func (r *resourceCounts) AllGTE(other *resourceCounts) bool {
-	if r.RAMBytes < other.RAMBytes {
-		return false
-	}
-	if r.CPUMillis < other.CPUMillis {
-		return false
-	}
-	for k, v := range r.Custom {
-		if v < other.Custom[k] {
-			return false
-		}
-	}
-	return true
 }
