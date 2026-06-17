@@ -579,6 +579,8 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 }
 
 func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) (res []byte, resultErr error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	start := c.opts.Clock.Now()
 	defer c.recordMetrics("Get", resultErr, start)
 
@@ -594,6 +596,8 @@ func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) (res []byte, resu
 }
 
 func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	data, err := c.Get(ctx, r)
 	if err != nil {
 		return nil, nil, err
