@@ -200,7 +200,10 @@ func isLowerHex(s string) bool {
 }
 
 func (r *ResourceName) Validate() error {
-	d := r.rn.GetDigest()
+	return Validate(r.GetDigest(), r.GetDigestFunction())
+}
+
+func Validate(d *repb.Digest, digestFunction repb.DigestFunction_Value) error {
 	if d == nil {
 		return status.InvalidArgumentError("Invalid (nil) Digest")
 	}
@@ -208,15 +211,15 @@ func (r *ResourceName) Validate() error {
 		return status.InvalidArgumentErrorf("Invalid (negative) digest size")
 	}
 	if d.GetSizeBytes() == int64(0) {
-		if r.IsEmpty() {
+		if IsEmptyHash(d, digestFunction) {
 			return nil
 		}
-		return status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
+		return status.InvalidArgumentError("Invalid (zero-length) hash")
 	}
 	hash := d.GetHash()
-	if expected := hashLength(r.GetDigestFunction()); len(hash) != expected {
+	if expected := hashLength(digestFunction); len(hash) != expected {
 		return status.InvalidArgumentErrorf("Invalid length hash. Expected len %v for %s function. Got %v",
-			expected, r.GetDigestFunction().String(), len(hash))
+			expected, digestFunction.String(), len(hash))
 	}
 	if !isLowerHex(hash) {
 		return status.InvalidArgumentError("Hash isn't all lower case hex characters.")
