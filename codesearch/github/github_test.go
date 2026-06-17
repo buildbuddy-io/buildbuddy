@@ -654,9 +654,10 @@ func TestRepoMetadataRoundTrip(t *testing.T) {
 	assert.Empty(t, modulePath)
 }
 
-// importSignalsByFilename resolves the import in-degree signal for every
-// document and keys it by base filename for easy assertions.
-func importSignalsByFilename(t *testing.T, r *index.Reader) map[string]float64 {
+// importSignalsByPath resolves the import in-degree signal for every document
+// and keys it by repo-relative path, so files that share a base name (e.g.
+// app1/main.go and app2/main.go) stay distinct.
+func importSignalsByPath(t *testing.T, r *index.Reader, repoDir string) map[string]float64 {
 	t.Helper()
 	matches, err := r.RawQuery("(:all)")
 	require.NoError(t, err)
@@ -665,11 +666,9 @@ func importSignalsByFilename(t *testing.T, r *index.Reader) map[string]float64 {
 	signals := make(map[string]float64, len(matches))
 	for _, m := range matches {
 		doc := r.GetStoredDocument(m.Docid())
-		name := filepath.Base(string(doc.Field(schema.FilenameField).Contents()))
-		if name == "" {
-			continue
-		}
-		signals[name] = m.Signal(types.SignalImportInDegree)
+		rel, err := filepath.Rel(repoDir, string(doc.Field(schema.FilenameField).Contents()))
+		require.NoError(t, err)
+		signals[rel] = m.Signal(types.SignalImportInDegree)
 	}
 	return signals
 }
@@ -703,9 +702,10 @@ func main() { log.Print() }
 	// by reading each doc's stored import_id field and counting the imports
 	// posting list for its terms.
 	r := index.NewReader(ctx, db, "testing-namespace", schema.GitHubFileSchema())
-	signals := importSignalsByFilename(t, r)
-	assert.Equal(t, 2.0, signals["log.go"])
-	assert.Equal(t, 0.0, signals["main.go"])
+	signals := importSignalsByPath(t, r, repoDir)
+	assert.Equal(t, 2.0, signals["util/log/log.go"])
+	assert.Equal(t, 0.0, signals["app1/main.go"])
+	assert.Equal(t, 0.0, signals["app2/main.go"])
 
 	// Incremental update: app2 stops importing util/log. The stale posting
 	// counts toward in-degree until CompactDeletes runs (documented inflation).
@@ -716,8 +716,8 @@ func main() { log.Print() }
 	require.NoError(t, w.Flush())
 
 	r = index.NewReader(ctx, db, "testing-namespace", schema.GitHubFileSchema())
-	signals = importSignalsByFilename(t, r)
-	assert.Equal(t, 2.0, signals["log.go"], "deleted doc inflates in-degree until compaction")
+	signals = importSignalsByPath(t, r, repoDir)
+	assert.Equal(t, 2.0, signals["util/log/log.go"], "deleted doc inflates in-degree until compaction")
 
 	// Compaction brings in-degree down to the single live importer.
 	w, err = index.NewWriter(db, "testing-namespace")
@@ -726,6 +726,6 @@ func main() { log.Print() }
 	require.NoError(t, w.Flush())
 
 	r = index.NewReader(ctx, db, "testing-namespace", schema.GitHubFileSchema())
-	signals = importSignalsByFilename(t, r)
-	assert.Equal(t, 1.0, signals["log.go"])
+	signals = importSignalsByPath(t, r, repoDir)
+	assert.Equal(t, 1.0, signals["util/log/log.go"])
 }
