@@ -8,6 +8,14 @@ container_pull(
 )
 
 container_pull(
+    name = "buildbuddy_go_image_base_arm64",
+    architecture = "arm64",
+    digest = "sha256:132e45ca8641cb01068ea8c8ca3f7358493e9469b1650fdffcd878c6efa174fe",
+    registry = "gcr.io",
+    repository = "distroless/cc-debian13",
+)
+
+container_pull(
     name = "bazel_image_base",
     digest = "sha256:8bb82ccf73085b71159ce05d2cc6030cbaa927b403c04774f0b22f37ab4fd78a",
     registry = "gcr.io",

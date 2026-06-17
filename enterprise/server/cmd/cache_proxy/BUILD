@@ -80,7 +80,13 @@ container_image(
         "@platforms//cpu:arm64": "arm64",
         "//conditions:default": "amd64",
     }),
-    base = "@buildbuddy_go_image_base//image",
+    # Base layers (libc, dynamic linker, etc.) are architecture-specific, so the
+    # base image must match the target architecture. Setting `architecture`
+    # above only stamps the image config metadata; it does not swap these layers.
+    base = select({
+        "@platforms//cpu:arm64": "@buildbuddy_go_image_base_arm64//image",
+        "//conditions:default": "@buildbuddy_go_image_base//image",
+    }),
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
