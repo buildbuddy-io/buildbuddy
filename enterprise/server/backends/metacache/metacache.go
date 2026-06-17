@@ -31,6 +31,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	mdpb "github.com/buildbuddy-io/buildbuddy/proto/metadata"
@@ -377,6 +378,7 @@ func (c *Cache) readerForStorage(ctx context.Context, storage *sgpb.StorageMetad
 		return nil, status.InvalidArgumentErrorf("Unsupported storage metadata: %+v", storage)
 	}
 }
+
 func (c *Cache) writerForRecord(ctx context.Context, fileRecord *sgpb.FileRecord, sizeHint int64) (interfaces.MetadataWriteCloser, error) {
 	if sizeHint < c.opts.MaxInlineFileSizeBytes {
 		// This returns a interfaces.MetadataWriteCloser, so
@@ -450,11 +452,7 @@ func (c *Cache) writerWithImmediateCommit(ctx context.Context, r *rspb.ResourceN
 func (c *Cache) writer(ctx context.Context, r *rspb.ResourceName, sizeHint int64, fn writeMetadataFn) (interfaces.CommittedWriteCloser, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	if spn.IsRecording() {
-		spn.SetAttributes(
-			attribute.String("digest_hash", r.GetDigest().GetHash()),
-			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
-	}
+	setSingleResourceTraceAttributes(spn, r)
 	// If data is not already compressed, return a writer that will compress
 	// it before writing.
 	// N.B. We only compress data *over* a given size, because compressing
@@ -509,6 +507,9 @@ func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (contains bo
 func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (cm *interfaces.CacheMetadata, resultErr error) {
 	start := c.opts.Clock.Now()
 	defer c.recordMetrics("Metadata", resultErr, start)
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	setSingleResourceTraceAttributes(spn, r)
 
 	encryption, err := c.activeEncryption(ctx)
 	if err != nil {
@@ -540,11 +541,11 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (cm *interfa
 }
 
 func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) (digests []*repb.Digest, resultErr error) {
-	ctx, spn := tracing.StartSpan(ctx)
-	defer spn.End()
-
 	start := c.opts.Clock.Now()
 	defer c.recordMetrics("FindMissing", resultErr, start)
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	setMultiResourceTraceAttributes(spn, resources)
 
 	encryption, err := c.activeEncryption(ctx)
 	if err != nil {
@@ -577,6 +578,9 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) (res []byte, resultErr error) {
 	start := c.opts.Clock.Now()
 	defer c.recordMetrics("Get", resultErr, start)
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	setSingleResourceTraceAttributes(spn, r)
 
 	rc, err := c.Reader(ctx, r, 0, 0)
 	if err != nil {
@@ -602,6 +606,10 @@ func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]by
 }
 
 func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m map[*repb.Digest][]byte, resultErr error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	setMultiResourceTraceAttributes(spn, resources)
+
 	start := c.opts.Clock.Now()
 	defer c.recordMetrics("GetMulti", resultErr, start)
 
@@ -826,11 +834,7 @@ func (c *Cache) reader(ctx context.Context, md *sgpb.FileMetadata, r *rspb.Resou
 func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, uncompressedLimit int64) (rc io.ReadCloser, resultErr error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	if spn.IsRecording() {
-		spn.SetAttributes(
-			attribute.String("digest_hash", r.GetDigest().GetHash()),
-			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
-	}
+	setSingleResourceTraceAttributes(spn, r)
 
 	encryption, err := c.activeEncryption(ctx)
 	if err != nil {
@@ -878,6 +882,20 @@ func (c *Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func setSingleResourceTraceAttributes(spn trace.Span, r *rspb.ResourceName) {
+	if spn.IsRecording() {
+		spn.SetAttributes(
+			attribute.String("digest_hash", r.GetDigest().GetHash()),
+			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
+	}
+}
+
+func setMultiResourceTraceAttributes(spn trace.Span, resources []*rspb.ResourceName) {
+	if spn.IsRecording() {
+		spn.SetAttributes(attribute.Int("num_resources", len(resources)))
 	}
 }
 
