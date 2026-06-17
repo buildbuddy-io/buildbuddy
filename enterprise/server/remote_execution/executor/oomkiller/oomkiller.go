@@ -23,16 +23,14 @@ package oomkiller
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/elastic/gosigar"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -114,11 +112,27 @@ type MemorySnapshot struct {
 	AvailableBytes int64
 }
 
-// MemoryMonitor reads executor memory usage. Implementations should
-// prefer cgroup scoped values over host scoped values.
+// MemoryMonitor reads executor memory usage.
 type MemoryMonitor interface {
 	// Snapshot reads current executor memory usage.
 	Snapshot(ctx context.Context) (*MemorySnapshot, error)
+}
+
+// NewMemoryMonitor returns the default executor memory monitor.
+func NewMemoryMonitor(_ string) MemoryMonitor {
+	return resourcesMemoryMonitor{}
+}
+
+type resourcesMemoryMonitor struct{}
+
+func (resourcesMemoryMonitor) Snapshot(_ context.Context) (*MemorySnapshot, error) {
+	limitBytes := resources.GetAllocatedRAMBytes()
+	availableBytes := resources.GetSysFreeRAMBytes()
+	return &MemorySnapshot{
+		UsedBytes:      max(int64(0), limitBytes-availableBytes),
+		LimitBytes:     limitBytes,
+		AvailableBytes: availableBytes,
+	}, nil
 }
 
 type killer struct {
@@ -477,76 +491,4 @@ func taskName(task KillableTask) string {
 		return s.String()
 	}
 	return fmt.Sprintf("%T", task)
-}
-
-// NewMemoryMonitor returns the default executor memory monitor. It reads the
-// parent cgroup of tasksCgroupParent when tasks run in child cgroups, and
-// otherwise falls back to the executor's starting cgroup or system memory.
-func NewMemoryMonitor(tasksCgroupParent string) MemoryMonitor {
-	fallback := &systemMemoryMonitor{}
-	if tasksCgroupParent != "" {
-		return &cgroupMemoryMonitor{
-			dir:      cgroup.ParentPath(filepath.Join(cgroup.RootPath, tasksCgroupParent)),
-			fallback: fallback,
-		}
-	}
-	startingCgroup, err := cgroup.StartingCgroup()
-	if err != nil {
-		return fallback
-	}
-	return &cgroupMemoryMonitor{
-		dir:      filepath.Join(cgroup.RootPath, startingCgroup),
-		fallback: fallback,
-	}
-}
-
-type systemMemoryMonitor struct{}
-
-func (m *systemMemoryMonitor) Snapshot(ctx context.Context) (*MemorySnapshot, error) {
-	mem := gosigar.Mem{}
-	if err := mem.Get(); err != nil {
-		return nil, fmt.Errorf("get system memory: %w", err)
-	}
-	limitBytes := int64(mem.Total)
-	// gosigar ActualFree corresponds to available memory, including reclaimable
-	// cache, which is the signal we want for deciding whether to kill work.
-	availableBytes := int64(mem.ActualFree)
-	if limitBytes <= 0 {
-		return nil, fmt.Errorf("system memory is not configured")
-	}
-	usedBytes := max(int64(0), limitBytes-availableBytes)
-	return &MemorySnapshot{
-		UsedBytes:      usedBytes,
-		LimitBytes:     limitBytes,
-		AvailableBytes: availableBytes,
-	}, nil
-}
-
-type cgroupMemoryMonitor struct {
-	dir          string
-	fallback     MemoryMonitor
-	fallbackOnce sync.Once
-}
-
-func (m *cgroupMemoryMonitor) Snapshot(ctx context.Context) (*MemorySnapshot, error) {
-	maxBytes, err := cgroup.ReadMemoryMax(m.dir)
-	if err != nil {
-		return nil, fmt.Errorf("read cgroup memory max for %q: %w", m.dir, err)
-	}
-	if maxBytes == nil {
-		m.fallbackOnce.Do(func() {
-			log.CtxWarningf(ctx, "Executor OOM killer cgroup %q has no memory limit; falling back to system memory", m.dir)
-		})
-		return m.fallback.Snapshot(ctx)
-	}
-	limitBytes := *maxBytes
-	usedBytes, err := cgroup.ReadMemoryCurrent(m.dir)
-	if err != nil {
-		return nil, fmt.Errorf("read cgroup memory usage for %q: %w", m.dir, err)
-	}
-	return &MemorySnapshot{
-		UsedBytes:      usedBytes,
-		LimitBytes:     limitBytes,
-		AvailableBytes: max(int64(0), limitBytes-usedBytes),
-	}, nil
 }

@@ -1,8 +1,6 @@
 package cgroup
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -163,29 +161,6 @@ func TestParseIOStats(t *testing.T) {
 		{Maj: 259, Min: 1, Rbytes: 688128, Wbytes: 0, Rios: 21, Wios: 0, Dbytes: 0, Dios: 0},
 		{Maj: 9, Min: 0, Rbytes: 3952640, Wbytes: 0, Rios: 48, Wios: 0, Dbytes: 0, Dios: 0},
 	}, stats, protocmp.Transform()))
-}
-
-func TestReadMemoryMax(t *testing.T) {
-	for _, testCase := range []struct {
-		name             string
-		contents         string
-		expectedMaxBytes *int64
-	}{
-		{name: "numeric limit", contents: "1000\n", expectedMaxBytes: new(int64(1000))},
-		{name: "numeric zero limit", contents: "0\n", expectedMaxBytes: new(int64(0))},
-		{name: "unlimited", contents: "max\n", expectedMaxBytes: nil},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			dir := t.TempDir()
-
-			// ReadMemoryMax preserves numeric limits, including zero, and uses
-			// nil only for the kernel's "max" unlimited value.
-			require.NoError(t, os.WriteFile(filepath.Join(dir, "memory.max"), []byte(testCase.contents), 0644))
-			maxBytes, err := ReadMemoryMax(dir)
-			require.NoError(t, err)
-			require.Equal(t, testCase.expectedMaxBytes, maxBytes)
-		})
-	}
 }
 
 func TestParentPath(t *testing.T) {

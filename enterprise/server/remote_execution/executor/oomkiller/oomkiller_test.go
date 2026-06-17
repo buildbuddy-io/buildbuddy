@@ -2,8 +2,6 @@ package oomkiller
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -479,59 +477,6 @@ func TestNewRejectsInvalidMemoryUsageThreshold(t *testing.T) {
 	}
 }
 
-func TestCgroupMemoryMonitorReturnsErrorOnMemoryLimitReadFailure(t *testing.T) {
-	ctx := t.Context()
-	monitor, fallback := newTestCgroupMemoryMonitor(t.TempDir())
-
-	snapshot, err := monitor.Snapshot(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "read cgroup memory max")
-	require.Nil(t, snapshot)
-	require.Equal(t, 0, fallback.snapshotCount())
-}
-
-func TestCgroupMemoryMonitorFallsBackForUnlimitedCgroup(t *testing.T) {
-	ctx := t.Context()
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "memory.max"), []byte("max\n"), 0644))
-	monitor, fallback := newTestCgroupMemoryMonitor(dir)
-
-	snapshot, err := monitor.Snapshot(ctx)
-	require.NoError(t, err)
-	require.Equal(t, fallback.snapshot, snapshot)
-	require.Equal(t, 1, fallback.snapshotCount())
-}
-
-func TestCgroupMemoryMonitorReadsCgroupSnapshot(t *testing.T) {
-	for _, testCase := range []struct {
-		name                   string
-		max                    string
-		current                string
-		expectedUsedBytes      int64
-		expectedLimitBytes     int64
-		expectedAvailableBytes int64
-	}{
-		{name: "positive limit", max: "1000\n", current: "250\n", expectedUsedBytes: 250, expectedLimitBytes: 1000, expectedAvailableBytes: 750},
-		{name: "zero limit", max: "0\n", current: "250\n", expectedUsedBytes: 250, expectedLimitBytes: 0, expectedAvailableBytes: 0},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			dir := t.TempDir()
-			require.NoError(t, os.WriteFile(filepath.Join(dir, "memory.max"), []byte(testCase.max), 0644))
-			require.NoError(t, os.WriteFile(filepath.Join(dir, "memory.current"), []byte(testCase.current), 0644))
-			monitor, fallback := newTestCgroupMemoryMonitor(dir)
-
-			// Numeric memory.max values are cgroup limits, including zero; only
-			// the string "max" means unlimited and should use the fallback.
-			snapshot, err := monitor.Snapshot(t.Context())
-			require.NoError(t, err)
-			require.Equal(t, testCase.expectedUsedBytes, snapshot.UsedBytes)
-			require.Equal(t, testCase.expectedLimitBytes, snapshot.LimitBytes)
-			require.Equal(t, testCase.expectedAvailableBytes, snapshot.AvailableBytes)
-			require.Equal(t, 0, fallback.snapshotCount())
-		})
-	}
-}
-
 type fakeMemoryMonitor struct {
 	mu        sync.Mutex
 	snapshot  *MemorySnapshot
@@ -672,12 +617,4 @@ func newTestKiller(t testing.TB, ctx context.Context, monitor *fakeMemoryMonitor
 		}
 	})
 	return oomKiller
-}
-
-func newTestCgroupMemoryMonitor(dir string) (*cgroupMemoryMonitor, *fakeMemoryMonitor) {
-	fallback := &fakeMemoryMonitor{snapshot: &MemorySnapshot{UsedBytes: 1, LimitBytes: 2, AvailableBytes: 1}}
-	return &cgroupMemoryMonitor{
-		dir:      dir,
-		fallback: fallback,
-	}, fallback
 }
