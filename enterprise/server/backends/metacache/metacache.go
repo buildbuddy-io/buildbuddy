@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"math"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -671,41 +673,46 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 	var foundMu sync.Mutex
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(10)
-	for _, r := range resources {
-		k := keyFromResourceName(r)
-		md, ok := keyToMetadata[k]
-		if !ok {
-			continue
-		}
+	chunkSize := math.Ceil(float64(len(resources)) / 10)
+	for chunk := range slices.Chunk(resources, int(chunkSize)) {
 		eg.Go(func() error {
-			// start := time.Now()
-			rc, err := c.reader(ctx, md, r, 0, 0, encryption)
-			// fmt.Println("reader took:", time.Since(start))
-			if err != nil {
-				if status.IsNotFoundError(err) || os.IsNotExist(err) {
-					return nil
+			for _, r := range chunk {
+				k := keyFromResourceName(r)
+				md, ok := keyToMetadata[k]
+				if !ok {
+					continue
 				}
-				return err
+				// start := time.Now()
+				rc, err := c.reader(ctx, md, r, 0, 0, encryption)
+				// fmt.Println("reader took:", time.Since(start))
+				if err != nil {
+					if status.IsNotFoundError(err) || os.IsNotExist(err) {
+						continue
+					}
+					return err
+				}
+				buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(r, maxReadBufferSize)))
+				// start = time.Now()
+				_, copyErr := io.Copy(buf, rc)
+				// fmt.Println("read took:", time.Since(start))
+				closeErr := rc.Close()
+				if copyErr != nil {
+					log.Warningf("[%s] GetMulti encountered error when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), copyErr)
+					continue
+				}
+				if closeErr != nil {
+					log.Warningf("[%s] GetMulti cannot close reader when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), closeErr)
+					continue
+				}
+				foundMu.Lock()
+				foundMap[r.GetDigest()] = buf.Bytes()
+				foundMu.Unlock()
 			}
-			buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(r, maxReadBufferSize)))
-			// start = time.Now()
-			_, copyErr := io.Copy(buf, rc)
-			// fmt.Println("read took:", time.Since(start))
-			closeErr := rc.Close()
-			if copyErr != nil {
-				log.Warningf("[%s] GetMulti encountered error when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), copyErr)
-				return nil
-			}
-			if closeErr != nil {
-				log.Warningf("[%s] GetMulti cannot close reader when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), closeErr)
-				return nil
-			}
-			foundMu.Lock()
-			foundMap[r.GetDigest()] = buf.Bytes()
-			foundMu.Unlock()
 			return nil
 		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
 	}
 	return foundMap, nil
 }
