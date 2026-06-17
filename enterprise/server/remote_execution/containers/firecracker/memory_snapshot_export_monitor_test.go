@@ -2,33 +2,35 @@ package firecracker
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/stretchr/testify/require"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 func TestMemorySnapshotExportMonitor(t *testing.T) {
-	started := make(chan int64, 2)
+	cached := make(chan int64, 2)
 	m := newMonitor(t)
+	m.tracker.chunkSizeBytes = 1
 	m.cacheChunkFn = func(ctx context.Context, chunkOffset int64) error {
-		started <- chunkOffset
+		cached <- chunkOffset
 		return nil
 	}
-	m.startUploadWorkers(2)
 
-	// Queue chunks to be cached.
-	m.chunkUploads <- 0
-	m.chunkUploads <- 1
-
-	require.Eventually(t, func() bool {
-		return len(started) == 2
-	}, time.Second, 10*time.Millisecond)
+	m.OnWrite(copy_on_write.WriteEvent{Offset: 0, Length: 1, ChunkIndex: 0})
+	m.OnWrite(copy_on_write.WriteEvent{Offset: 1, Length: 1, ChunkIndex: 1})
 
 	require.NoError(t, m.Finish())
+
+	require.Eventually(t, func() bool {
+		cachedElements := []int64{<-cached, <-cached}
+		slices.Sort(cachedElements)
+		return slices.Equal([]int64{0, 1}, cachedElements)
+	}, 1*time.Second, 100*time.Millisecond)
 }
 
 func newMonitor(t *testing.T) *memorySnapshotExportMonitor {

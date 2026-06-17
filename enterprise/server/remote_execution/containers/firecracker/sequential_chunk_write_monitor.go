@@ -76,8 +76,11 @@ func (t *sequentialChunkWriteTracker) Finish() error {
 	// After the last write, there is no subsequent write to trigger finalization
 	// of the last chunk. Finalize it here.
 	chunkOffset := t.currentChunkOffset()
+	if err := t.finalizeChunk(chunkOffset); err != nil {
+		return err
+	}
 	t.haveCurrentChunk = false
-	return t.finalizeChunk(chunkOffset)
+	return nil
 }
 
 func (t *sequentialChunkWriteTracker) currentChunkOffset() int64 {

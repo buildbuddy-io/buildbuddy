@@ -111,6 +111,13 @@ func (m *memorySnapshotExportMonitor) run() error {
 			return m.egCtx.Err()
 		case event, ok := <-m.events:
 			if !ok {
+				// If the chan is closed, all writes have completed and we can safely
+				// finalize the tracker, which should only be called after all writes have
+				// been sequentially observed.
+				if err := m.tracker.Finish(); err != nil {
+					log.CtxWarningf(m.egCtx, "Failed to finalize sequential chunk write tracker: %s", err)
+					return err
+				}
 				return nil
 			}
 			if err := m.tracker.Observe(event); err != nil {
@@ -123,12 +130,8 @@ func (m *memorySnapshotExportMonitor) run() error {
 // Finish signals that no more write events will arrive and waits for queued
 // uploads to finish.
 func (m *memorySnapshotExportMonitor) Finish() error {
-	if err := m.tracker.Finish(); err != nil {
-		log.CtxWarningf(m.egCtx, "Failed to finalize sequential chunk write tracker: %s", err)
-		// All chunks must be cached for a snapshot to be valid, so if the final cache write fails,
-		// abort writing other chunks.
-		m.cancel()
-	}
+	// Don't finalize the tracker here, because events are added to the tracker in the background,
+	// and finalizing the tracker should only happen after all events have been observed
 	close(m.events)
 	err := m.eg.Wait()
 
