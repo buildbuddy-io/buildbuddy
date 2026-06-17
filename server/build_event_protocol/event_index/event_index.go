@@ -178,6 +178,14 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 		if target != nil && reason == bespb.Aborted_SKIPPED {
 			target.Status = cmnpb.Status_SKIPPED
 		}
+
+		// INCOMPLETE means "incomplete due to an earlier build failure" and
+		// it's not very useful to show these in the UI (the earlier build
+		// failure itself is more useful), so don't return these to the UI.
+		if reason == bespb.Aborted_INCOMPLETE {
+			return
+		}
+
 		// TODO: the UI might rely on the Aborted event to render the invocation
 		// pattern in some cases. Remove this dependency and then stop adding
 		// Aborted events to the TopLevelEvents list, since these may appear a
