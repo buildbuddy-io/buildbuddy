@@ -13,6 +13,9 @@ message GetUsageRequest {
   // The usage period to be fetched, as a UTC month in "YYYY-MM" format.
   // If empty, the current usage period will be returned.
   string usage_period = 2;
+
+  // If true, query usage data from the OLAP DB for this request.
+  bool use_olap = 3;
 }
 
 message GetUsageResponse {
