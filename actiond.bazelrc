@@ -38,3 +38,11 @@ common:actiond --remote_download_toplevel
 # The actiond vsock bridge/guest is sensitive to high stream concurrency; keep
 # the job count modest for stability.
 common:actiond --jobs=4
+
+# Convenience: build/test pure-Go targets via actiond. Disables cgo (so packages
+# with no real cgo on linux/amd64 don't emit empty .cgo tree artifacts, which
+# actiond currently drops) and skips nogo validation. cgo-REQUIRED targets
+# (go-tree-sitter, sqlite) cannot build under this config.
+common:actiond-pure --config=actiond
+common:actiond-pure --@io_bazel_rules_go//go/config:pure
+common:actiond-pure --norun_validations
