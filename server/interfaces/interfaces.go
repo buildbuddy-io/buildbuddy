@@ -919,6 +919,12 @@ type WebhookData struct {
 	// Ex: "acmedev123"
 	PullRequestApprover string
 
+	// PullRequestAction is the action of the pull_request event that produced
+	// this data, if applicable. It is used to filter pull_request triggers by
+	// type (see config.PullRequestTrigger.Types).
+	// Ex: "opened", "synchronize", "ready_for_review"
+	PullRequestAction string
+
 	// ChangedFiles is the list of files changed by branch push events. Only
 	// populated for branch push events.
 	ChangedFiles []string

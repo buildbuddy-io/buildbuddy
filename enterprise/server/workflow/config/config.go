@@ -109,8 +109,18 @@ type PushTrigger struct {
 	Tags     []string `yaml:"tags"`
 }
 
+// defaultPullRequestTypes are the pull_request actions that trigger a
+// pull_request trigger when "types" is not specified. This matches the default
+// behavior of GitHub Actions' pull_request trigger ("edited" is included
+// because the webhook only emits it for base-branch changes).
+var defaultPullRequestTypes = []string{"opened", "synchronize", "reopened", "edited"}
+
 type PullRequestTrigger struct {
 	Branches []string `yaml:"branches"`
+	// Types optionally restricts the trigger to specific pull_request actions
+	// (e.g. "ready_for_review"). If empty, the default set of actions is used:
+	// opened, synchronize, reopened, and base-branch edits.
+	Types []string `yaml:"types"`
 	// NOTE: If nil, defaults to true.
 	MergeWithBase *bool `yaml:"merge_with_base"`
 	// If MergeWithBase is enabled, determines whether the CI runner should manually
@@ -127,6 +137,16 @@ func (t *PullRequestTrigger) GetMergeWithBase() bool {
 
 func (t *PullRequestTrigger) GetForceManualMerge() bool {
 	return t.GetMergeWithBase() && (t.ForceManualMergeWithBase == nil || *t.ForceManualMergeWithBase)
+}
+
+// matchesAction returns whether the trigger should fire for the given
+// pull_request action. An empty action (e.g. a pull_request_review re-run that
+// carries no action) only matches triggers using the default type set.
+func (t *PullRequestTrigger) matchesAction(action string) bool {
+	if len(t.Types) > 0 {
+		return slices.Contains(t.Types, action)
+	}
+	return action == "" || slices.Contains(defaultPullRequestTypes, action)
 }
 
 type ScheduleTrigger struct {
@@ -438,8 +458,10 @@ func GetDefault(targetRepoDefaultBranch string) *BuildBuddyConfig {
 }
 
 // MatchesAnyTrigger returns whether the action is triggered by the event
-// published to the given branch or tag.
-func MatchesAnyTrigger(action *Action, event, branch, tag string) bool {
+// published to the given branch or tag. prAction is the pull_request action
+// (e.g. "opened", "ready_for_review") for pull_request events, and is empty for
+// other events.
+func MatchesAnyTrigger(action *Action, event, branch, tag, prAction string) bool {
 	// If action was manually or automatically (via schedule) dispatched, always run it
 	if event == webhook_data.EventName.ManualDispatch || event == webhook_data.EventName.ScheduledDispatch {
 		return true
@@ -457,7 +479,7 @@ func MatchesAnyTrigger(action *Action, event, branch, tag string) bool {
 	}
 
 	if prCfg := action.Triggers.PullRequest; prCfg != nil && event == webhook_data.EventName.PullRequest {
-		return matchesAnyPattern(prCfg.Branches, branch)
+		return matchesAnyPattern(prCfg.Branches, branch) && prCfg.matchesAction(prAction)
 	}
 	return false
 }

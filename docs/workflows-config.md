@@ -552,6 +552,13 @@ pushed.
   wants to merge a branch _into_ the `main` branch or any branch prefixed with
   `release/`. Branch patterns are matched using the rules described in
   [Ref pattern matching](#ref-pattern-matching)
+- **`types`** (`string` list): The pull request actions that trigger the
+  workflow. The supported values are `opened`, `synchronize`, `reopened`,
+  `edited` (base-branch changes only), and `ready_for_review`. If unset, the
+  trigger fires on `opened`, `synchronize`, `reopened`, and base-branch edits.
+  Set this to scope the workflow to specific pull_request actions — for example
+  `[ "ready_for_review" ]` to run only when a draft PR is marked ready for
+  review.
 - **`merge_with_base`** (`boolean`, default: `true`): Whether to merge the
   base branch into the PR branch before running the workflow action. This
   can help ensure that the changes in the PR branch do not conflict with

@@ -10,6 +10,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/stretchr/testify/assert"
+
+	gh "github.com/google/go-github/v59/github"
 )
 
 func webhookRequest(t *testing.T, eventType string, payload []byte) *http.Request {
@@ -85,6 +87,7 @@ func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 		TargetBranch:            "main",
 		PullRequestAuthor:       "test",
 		PullRequestNumber:       37,
+		PullRequestAction:       "opened",
 	}, data)
 }
 
@@ -118,4 +121,55 @@ func TestParseRequest_InvalidEvent_Error(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, data)
+}
+
+func pullRequestEvent(action string) *gh.PullRequestEvent {
+	repo := &gh.Repository{
+		CloneURL:      gh.String("https://github.com/test/repo.git"),
+		DefaultBranch: gh.String("main"),
+		Private:       gh.Bool(false),
+	}
+	return &gh.PullRequestEvent{
+		Action: gh.String(action),
+		PullRequest: &gh.PullRequest{
+			Number: gh.Int(7),
+			User:   &gh.User{Login: gh.String("author")},
+			Head: &gh.PullRequestBranch{
+				Ref:  gh.String("feature"),
+				SHA:  gh.String("deadbeef"),
+				Repo: repo,
+			},
+			Base: &gh.PullRequestBranch{
+				Ref:  gh.String("main"),
+				Repo: repo,
+			},
+		},
+	}
+}
+
+func TestParseWebhookData_ReadyForReview_IsPullRequestEventWithAction(t *testing.T) {
+	data, err := github.ParseWebhookData(pullRequestEvent("ready_for_review"))
+
+	assert.NoError(t, err)
+	assert.Equal(t, &interfaces.WebhookData{
+		EventName:               "pull_request",
+		PushedRepoURL:           "https://github.com/test/repo.git",
+		PushedBranch:            "feature",
+		SHA:                     "deadbeef",
+		TargetRepoURL:           "https://github.com/test/repo.git",
+		TargetRepoDefaultBranch: "main",
+		IsTargetRepoPublic:      true,
+		TargetBranch:            "main",
+		PullRequestAuthor:       "author",
+		PullRequestNumber:       7,
+		PullRequestAction:       "ready_for_review",
+	}, data)
+}
+
+func TestParseWebhookData_PullRequestOpened_RecordsAction(t *testing.T) {
+	data, err := github.ParseWebhookData(pullRequestEvent("opened"))
+
+	assert.NoError(t, err)
+	assert.Equal(t, "pull_request", data.EventName)
+	assert.Equal(t, "opened", data.PullRequestAction)
 }
