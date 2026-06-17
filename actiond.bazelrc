@@ -1,0 +1,40 @@
+# Build BuildBuddy hermetically through a local actiond VM worker
+# (github.com/hermeticbuild/actiond). actiond presents a local Remote Execution
+# API endpoint; each action runs in an empty chroot inside a Linux microVM.
+#
+# Usage (note the SHA256 startup flag — actiond does not support BLAKE3):
+#   bazel --digest_function=SHA256 build --config=actiond //cli/cmd/bb:bb
+# or use the wrapper which sets that for you:
+#   tools/actiond/build.sh //cli/cmd/bb:bb
+#
+# Start the worker first (see github.com/hermeticbuild/actiond). It must listen
+# on 127.0.0.1:8980. A coreutils-capable runtime is required because BuildBuddy
+# genrules assume a POSIX userspace (actiond's stock runtime ships only
+# glibc+bash); see notes in the actiond worktree.
+
+# Hermetic toolchains: target musl so the toolchains_musl CC toolchain (shipped
+# as action inputs) is used instead of the autodetected host gcc, which is
+# absent from actiond's empty chroot. The actiond exec platform is ALSO musl so
+# exec-config (tool) cgo actions are hermetic too.
+common:actiond --platforms=//platforms:linux_x86_64_musl
+common:actiond --extra_execution_platforms=//platforms:actiond_linux_x86_64
+
+# Point Bazel at the local actiond worker; execute everything remotely.
+common:actiond --remote_executor=grpc://127.0.0.1:8980
+common:actiond --remote_cache=grpc://127.0.0.1:8980
+common:actiond --spawn_strategy=remote
+common:actiond --genrule_strategy=remote
+common:actiond --remote_local_fallback=false
+common:actiond --remote_upload_local_results=false
+# actiond does not support compressed CAS blobs yet.
+common:actiond --noremote_cache_compression
+common:actiond --remote_timeout=600
+common:actiond --remote_retries=8
+common:actiond --remote_retry_max_delay=5s
+# actiond runs no Build Event Service; keep telemetry off for these builds.
+common:actiond --bes_backend=
+common:actiond --bes_results_url=
+common:actiond --remote_download_toplevel
+# The actiond vsock bridge/guest is sensitive to high stream concurrency; keep
+# the job count modest for stability.
+common:actiond --jobs=4
