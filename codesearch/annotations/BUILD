@@ -4,6 +4,7 @@ go_library(
     name = "annotations",
     srcs = [
         "annotations.go",
+        "cpp.go",
         "golang.go",
         "java.go",
         "python.go",
@@ -15,6 +16,8 @@ go_library(
     deps = [
         "//codesearch/indexprofile",
         "@com_github_smacker_go_tree_sitter//:go-tree-sitter",
+        "@com_github_smacker_go_tree_sitter//c",
+        "@com_github_smacker_go_tree_sitter//cpp",
         "@com_github_smacker_go_tree_sitter//golang",
         "@com_github_smacker_go_tree_sitter//java",
         "@com_github_smacker_go_tree_sitter//javascript",
@@ -30,6 +33,7 @@ go_test(
     name = "annotations_test",
     srcs = [
         "annotations_test.go",
+        "cpp_test.go",
         "python_test.go",
         "rust_test.go",
         "typescript_test.go",
