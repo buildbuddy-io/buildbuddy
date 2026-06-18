@@ -7,6 +7,7 @@ go_library(
         "golang.go",
         "java.go",
         "python.go",
+        "rust.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/annotations",
     visibility = ["//visibility:public"],
@@ -16,6 +17,7 @@ go_library(
         "@com_github_smacker_go_tree_sitter//golang",
         "@com_github_smacker_go_tree_sitter//java",
         "@com_github_smacker_go_tree_sitter//python",
+        "@com_github_smacker_go_tree_sitter//rust",
         "@org_golang_x_mod//modfile",
     ],
 )
@@ -25,6 +27,7 @@ go_test(
     srcs = [
         "annotations_test.go",
         "python_test.go",
+        "rust_test.go",
     ],
     deps = [
         ":annotations",
