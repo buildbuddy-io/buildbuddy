@@ -261,9 +261,6 @@ func (s *InputSet) String() string {
 	return fmt.Sprintf("set:(direct=%v, transitive=%v)", s.DirectEntries, s.TransitiveSets)
 }
 
-// newInputSet creates an InputSet from the given direct entries and transitive sets and computes its shallow path and
-// content hashes from those of its elements. The hashes depend on the order of both the direct entries and the
-// transitive sets, so callers must pass them in a deterministic order.
 func newInputSet(directEntries []Input, transitiveSets []*InputSet) *InputSet {
 	pathHash := sha256.New()
 	pathHash.Write([]byte{transitivePaths})
