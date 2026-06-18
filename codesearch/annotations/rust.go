@@ -61,21 +61,17 @@ func rustModulePath(relPath string) string {
 }
 
 // isRustTestFile reports whether the repo-relative path / module path is a test
-// file and so should be excluded from import-rank identity. The check is a
-// heuristic: a conventional `tests` path segment, a filename containing `_test`
-// or `test_`, or a module path ending in `::tests`.
+// file and so should be excluded from import-rank identity. Rust unit tests
+// live inline (`#[cfg(test)] mod tests`), so the only file-level conventions
+// are an integration-test `tests/` directory and a `tests` module (a tests.rs
+// file or tests/mod.rs, whose module path ends in `::tests`). A filename
+// heuristic isn't needed and would misfire on ordinary names like
+// latest_handler.rs / my_testbed.rs.
 func isRustTestFile(relPath, modulePath string) bool {
 	for seg := range strings.SplitSeq(relPath, "/") {
 		if seg == "tests" {
 			return true
 		}
-	}
-	base := relPath
-	if i := strings.LastIndex(base, "/"); i >= 0 {
-		base = base[i+1:]
-	}
-	if strings.Contains(base, "_test") || strings.Contains(base, "test_") {
-		return true
 	}
 	return strings.HasSuffix(modulePath, "::tests")
 }
@@ -118,7 +114,9 @@ func rustResolveUse(use, selfModule string) []string {
 	}
 
 	// Grouped import: split off the `{...}` suffix and expand each member
-	// against the shared prefix.
+	// against the shared prefix. Members may themselves be groups
+	// (`a::{b, c::{d, e}}`), so split on top-level commas and recurse rather
+	// than splitting the whole inner string naively.
 	if open := strings.Index(use, "{"); open >= 0 && strings.HasSuffix(use, "}") {
 		prefix := strings.TrimSuffix(strings.TrimSpace(use[:open]), "::")
 		inner := use[open+1 : len(use)-1]
@@ -127,7 +125,7 @@ func rustResolveUse(use, selfModule string) []string {
 		if base := rustResolvePath(prefix, selfModule); base != "" {
 			terms = append(terms, rustTerm(base))
 		}
-		for member := range strings.SplitSeq(inner, ",") {
+		for _, member := range splitTopLevelCommas(inner) {
 			member = strings.TrimSpace(member)
 			if member == "" || member == "self" {
 				continue
@@ -136,9 +134,7 @@ func rustResolveUse(use, selfModule string) []string {
 			if prefix != "" {
 				full = prefix + "::" + member
 			}
-			if resolved := rustResolvePath(full, selfModule); resolved != "" {
-				terms = append(terms, rustTerm(resolved))
-			}
+			terms = append(terms, rustResolveUse(full, selfModule)...)
 		}
 		return terms
 	}
@@ -165,11 +161,32 @@ func rustResolveUse(use, selfModule string) []string {
 	return nil
 }
 
+// splitTopLevelCommas splits on commas that aren't nested inside `{...}`, so a
+// grouped-use member that is itself a group stays intact for recursion.
+func splitTopLevelCommas(s string) []string {
+	var parts []string
+	depth, start := 0, 0
+	for i, r := range s {
+		switch r {
+		case '{':
+			depth++
+		case '}':
+			depth--
+		case ',':
+			if depth == 0 {
+				parts = append(parts, s[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(parts, s[start:])
+}
+
 // rustResolvePath maps a single `::`-joined path to a crate-relative module
 // path string (no `rust:` prefix). `crate::` is stripped; `self::x` resolves
-// to selfModule + x; `super::x` resolves to selfModule's parent + x. External
-// crate paths pass through verbatim (harmless, like Java external imports).
-// Returns "" if nothing meaningful remains.
+// to selfModule + x; each leading `super::` climbs one parent of selfModule.
+// External crate paths pass through verbatim (harmless, like Java external
+// imports). Returns "" if nothing meaningful remains.
 func rustResolvePath(path, selfModule string) string {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -186,15 +203,26 @@ func rustResolvePath(path, selfModule string) string {
 			return rest
 		}
 		return selfModule + "::" + rest
-	case path == "super":
-		return rustParentModule(selfModule)
-	case strings.HasPrefix(path, "super::"):
-		rest := strings.TrimPrefix(path, "super::")
-		parent := rustParentModule(selfModule)
-		if parent == "" {
-			return rest
+	case path == "super" || strings.HasPrefix(path, "super::"):
+		// Climb one module per leading `super::`, so chains like
+		// `super::super::x` reach the right ancestor.
+		mod := selfModule
+		for path == "super" || strings.HasPrefix(path, "super::") {
+			mod = rustParentModule(mod)
+			if path == "super" {
+				path = ""
+				break
+			}
+			path = strings.TrimPrefix(path, "super::")
 		}
-		return parent + "::" + rest
+		switch {
+		case path == "":
+			return mod
+		case mod == "":
+			return path
+		default:
+			return mod + "::" + path
+		}
 	default:
 		return path
 	}

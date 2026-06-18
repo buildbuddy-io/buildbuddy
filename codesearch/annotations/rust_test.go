@@ -147,3 +147,36 @@ fn it_works() {}
 	assert.Empty(t, ann.ImportID)
 	assert.Equal(t, []string{"it_works"}, ann.Symbols)
 }
+
+func TestRustNonTestFilenameKeepsImportID(t *testing.T) {
+	dir := t.TempDir()
+	// "latest_handler" contains "test_" but is not a test file; it must keep
+	// its identity so it stays in the reverse-import graph.
+	ann := extractRust(t, dir, "src/latest_handler.rs", `pub fn f() {}`)
+	assert.Equal(t, []string{"rust:latest_handler"}, ann.ImportID)
+}
+
+func TestRustNestedGroupedImport(t *testing.T) {
+	dir := t.TempDir()
+	// A nested group must expand to the real edges, not junk like
+	// `rust:a::c::{d`.
+	ann := extractRust(t, dir, "src/foo/bar.rs", `
+use crate::a::{b, c::{d, e}};
+
+pub fn f() {}
+`)
+	assert.ElementsMatch(t,
+		[]string{"rust:a", "rust:a::b", "rust:a::c", "rust:a::c::d", "rust:a::c::e"},
+		ann.Imports)
+}
+
+func TestRustSuperChainImport(t *testing.T) {
+	dir := t.TempDir()
+	// In module a::b::c, `super::super::x` climbs two parents to a::x.
+	ann := extractRust(t, dir, "src/a/b/c.rs", `
+use super::super::widget;
+
+pub fn f() {}
+`)
+	assert.Equal(t, []string{"rust:a::widget"}, ann.Imports)
+}
