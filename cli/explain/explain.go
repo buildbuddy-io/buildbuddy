@@ -38,7 +38,7 @@ import (
 
 const (
 	explainCmdUsage = `
-usage: bb explain [--old {FILE | INVOCATION_ID}] [--new {FILE | INVOCATION_ID}] [--output_format {text|json|proto}]
+usage: bb explain [--old {FILE | INVOCATION_ID}] [--new {FILE | INVOCATION_ID}] [--output_format {text|json|proto}] [--nondeterministic_only]
 
 Displays a human-readable, structural diff of two compact execution logs, either
 obtained from the given invocations or located at the given file paths.
@@ -49,6 +49,9 @@ build is used as the "old" log.
 
 Use the --execution_log_compact_file flag to have Bazel produce a compact
 execution log and upload it to the BuildBuddy BES backend.
+
+Pass --nondeterministic_only to restrict the output to non-deterministic spawns,
+i.e. spawns whose outputs or exit code changed even though their inputs didn't.
 
 Output formats:
   text   Unstructured output (default)
@@ -81,13 +84,14 @@ func (m MapFlag) Set(s string) error {
 }
 
 var (
-	explainCmd   = flag.NewFlagSet("explain", flag.ContinueOnError)
-	Flags        = explainCmd
-	oldLog       = explainCmd.String("old", "", "Path to a compact execution log or invocation ID of a build to consider as the baseline for the diff.")
-	newLog       = explainCmd.String("new", "", "Path to a compact execution log or invocation ID of a build to compare against the baseline.")
-	verbose      = explainCmd.Bool("verbose", false, "Print more detailed execution information.")
-	apiTarget    = explainCmd.String("target", "", "The API target to use for fetching logs instead of the last --bes_backend.")
-	outputFormat = explainCmd.String("output_format", "text", "Output format: text, json, or proto.")
+	explainCmd       = flag.NewFlagSet("explain", flag.ContinueOnError)
+	Flags            = explainCmd
+	oldLog           = explainCmd.String("old", "", "Path to a compact execution log or invocation ID of a build to consider as the baseline for the diff.")
+	newLog           = explainCmd.String("new", "", "Path to a compact execution log or invocation ID of a build to compare against the baseline.")
+	verbose          = explainCmd.Bool("verbose", false, "Print more detailed execution information.")
+	apiTarget        = explainCmd.String("target", "", "The API target to use for fetching logs instead of the last --bes_backend.")
+	outputFormat     = explainCmd.String("output_format", "text", "Output format: text, json, or proto.")
+	nondeterministic = explainCmd.Bool("nondeterministic_only", false, "Only show non-deterministic spawns, i.e. spawns whose outputs or exit code changed even though their inputs didn't.")
 
 	profilePaths = make(MapFlag)
 )
@@ -144,6 +148,9 @@ func HandleExplain(args []string) (int, error) {
 	diffResult, err := Diff(*oldLog, *newLog)
 	if err != nil {
 		return -1, err
+	}
+	if *nondeterministic {
+		diffResult.SpawnDiffs = FilterNondeterministicSpawns(diffResult.SpawnDiffs)
 	}
 	switch *outputFormat {
 	case "text":
@@ -212,6 +219,33 @@ func Diff(oldPath, newPath string) (*spawn_diff.DiffResult, error) {
 		return nil, err
 	}
 	return compactgraph.Diff(oldGraph, newGraph)
+}
+
+// FilterNondeterministicSpawns returns only those spawn diffs that represent
+// non-deterministic spawns, i.e. spawns whose outputs or exit code changed even
+// though their inputs didn't.
+func FilterNondeterministicSpawns(diffs []*spawn_diff.SpawnDiff) []*spawn_diff.SpawnDiff {
+	var filtered []*spawn_diff.SpawnDiff
+	for _, d := range diffs {
+		if isNondeterministic(d) {
+			filtered = append(filtered, d)
+		}
+	}
+	return filtered
+}
+
+// isNondeterministic reports whether the spawn diff records a change in output
+// contents (non-hermetic outputs) or exit code (flaky action). The diff engine
+// only emits these diffs when the spawn's inputs were unchanged (see
+// compactgraph.diffSpawns), so their presence means the spawn is non-deterministic.
+func isNondeterministic(d *spawn_diff.SpawnDiff) bool {
+	for _, sd := range d.GetModified().GetDiffs() {
+		switch sd.Diff.(type) {
+		case *spawn_diff.Diff_OutputContents, *spawn_diff.Diff_ExitCode:
+			return true
+		}
+	}
+	return false
 }
 
 var uuidPattern = regexp.MustCompile("^(?:.*/invocation/)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$")

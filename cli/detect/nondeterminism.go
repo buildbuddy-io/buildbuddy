@@ -188,6 +188,11 @@ func (c *checker) Run(ctx context.Context) error {
 	if explainErr != nil {
 		return errors.Join(buildErr, explainErr)
 	}
+	// Both builds run the same command on the same sources, so only spawns whose
+	// outputs or exit code changed despite unchanged inputs are genuinely
+	// non-deterministic. Other diffs (e.g. changed inputs) are downstream effects
+	// whose root cause is itself reported as a non-deterministic spawn.
+	diff.SpawnDiffs = explain.FilterNondeterministicSpawns(diff.GetSpawnDiffs())
 	if len(diff.GetSpawnDiffs()) == 0 {
 		log.Print("\n\n\033[32mNo nondeterminism detected.\033[0m\n\n")
 		return buildErr

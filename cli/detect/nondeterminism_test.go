@@ -65,7 +65,7 @@ func TestParseBazelCommand(t *testing.T) {
 }
 
 func TestRunReturnsDetectionError(t *testing.T) {
-	diff := &spawn_diff.DiffResult{SpawnDiffs: []*spawn_diff.SpawnDiff{{TargetLabel: "//foo:bar"}}}
+	diff := &spawn_diff.DiffResult{SpawnDiffs: []*spawn_diff.SpawnDiff{nondeterministicSpawnDiff("//foo:bar")}}
 	explainer := &fakeExplainer{diff: diff}
 	runner := &fakeRunner{}
 	c := &checker{
@@ -84,6 +84,47 @@ func TestRunReturnsDetectionError(t *testing.T) {
 	require.Equal(t, []string{"build", "shutdown", "clean", "build", "shutdown", "clean"}, bazelCommands(runner.runs))
 	assert.Equal(t, 1, explainer.writeCalls)
 	assert.Same(t, diff, explainer.wroteDiff)
+}
+
+// nondeterministicSpawnDiff returns a spawn diff that the detector should treat
+// as non-determinism: an exit code change despite unchanged inputs.
+func nondeterministicSpawnDiff(label string) *spawn_diff.SpawnDiff {
+	return &spawn_diff.SpawnDiff{
+		TargetLabel: label,
+		Diff: &spawn_diff.SpawnDiff_Modified{Modified: &spawn_diff.Modified{
+			Diffs: []*spawn_diff.Diff{{
+				Diff: &spawn_diff.Diff_ExitCode{ExitCode: &spawn_diff.IntDiff{Old: 0, New: 1}},
+			}},
+		}},
+	}
+}
+
+func TestRunIgnoresDeterministicDiffs(t *testing.T) {
+	// A spawn whose inputs changed is a downstream effect, not non-determinism.
+	diff := &spawn_diff.DiffResult{SpawnDiffs: []*spawn_diff.SpawnDiff{{
+		TargetLabel: "//foo:bar",
+		Diff: &spawn_diff.SpawnDiff_Modified{Modified: &spawn_diff.Modified{
+			Diffs: []*spawn_diff.Diff{{
+				Diff: &spawn_diff.Diff_InputContents{InputContents: &spawn_diff.FileSetDiff{}},
+			}},
+		}},
+	}}}
+	explainer := &fakeExplainer{diff: diff}
+	runner := &fakeRunner{}
+	c := &checker{
+		opts: options{
+			bazelArgs:     bazelArgsForTest(t, "build", "//foo:bar"),
+			besBackend:    defaultBESBackend,
+			besResultsURL: defaultBESResultsURL,
+		},
+		runner:    runner,
+		explainer: explainer,
+	}
+
+	require.NoError(t, c.Run(context.Background()))
+
+	require.Len(t, runner.runs, 2)
+	assert.Equal(t, 0, explainer.writeCalls)
 }
 
 func TestRunReturnsNilWhenNoDiffs(t *testing.T) {
