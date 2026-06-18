@@ -8,6 +8,7 @@ go_library(
         "java.go",
         "python.go",
         "rust.go",
+        "typescript.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/annotations",
     visibility = ["//visibility:public"],
@@ -16,8 +17,11 @@ go_library(
         "@com_github_smacker_go_tree_sitter//:go-tree-sitter",
         "@com_github_smacker_go_tree_sitter//golang",
         "@com_github_smacker_go_tree_sitter//java",
+        "@com_github_smacker_go_tree_sitter//javascript",
         "@com_github_smacker_go_tree_sitter//python",
         "@com_github_smacker_go_tree_sitter//rust",
+        "@com_github_smacker_go_tree_sitter//typescript/tsx",
+        "@com_github_smacker_go_tree_sitter//typescript/typescript",
         "@org_golang_x_mod//modfile",
     ],
 )
@@ -28,6 +32,7 @@ go_test(
         "annotations_test.go",
         "python_test.go",
         "rust_test.go",
+        "typescript_test.go",
     ],
     deps = [
         ":annotations",
