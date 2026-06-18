@@ -246,6 +246,7 @@ go_sdk_tool(
 )
 
 exports_files([
+    ".swcrc",
     "package.json",
 ])
 
