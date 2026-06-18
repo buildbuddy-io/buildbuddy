@@ -118,6 +118,8 @@ func Extract(ctx context.Context, lang, filename string, content []byte, rctx *R
 		res, err = extractGo(ctx, filename, content, rctx)
 	case "java":
 		res, err = extractJava(ctx, filename, content, rctx)
+	case "python":
+		res, err = extractPython(ctx, filename, content, rctx)
 	default:
 		return nil, nil
 	}
