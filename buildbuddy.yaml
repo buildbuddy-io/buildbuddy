@@ -130,6 +130,9 @@ actions:
       pull_request:
         branches:
           - "*"
+        types:
+          - opened
+          - ready_for_review
     user: buildbuddy
     steps:
       - run: |
