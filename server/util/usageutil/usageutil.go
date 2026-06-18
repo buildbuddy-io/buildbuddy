@@ -39,8 +39,8 @@ var (
 	// and the "server" usage label when a usage-generating request terminates at this server.
 	serverName string
 
-	// The proxy type ("internal" or "external") to record in usage. This is set
-	// on cache proxies and used for the "proxy" usage label so that
+	// The proxy type ("buildbuddy" or "customer") to record in usage. This is
+	// set on cache proxies and used for the "proxy" usage label so that
 	// BuildBuddy-run and customer-run proxy traffic can be billed separately. It
 	// is empty on servers that are not cache proxies.
 	proxyType string
@@ -115,8 +115,8 @@ func ServerName() string {
 	return serverName
 }
 
-// SetProxyType sets the proxy type ("internal" or "external") recorded for the
-// "proxy" usage label on cache proxies.
+// SetProxyType sets the proxy type ("buildbuddy" or "customer") recorded for
+// the "proxy" usage label on cache proxies.
 func SetProxyType(value string) {
 	proxyType = value
 }
@@ -185,7 +185,7 @@ func proxyLabel(ctx context.Context) string {
 	// usage/billing labels, so only let known proxy types through. Record any
 	// other value as "unknown" rather than passing it through.
 	switch vals[0] {
-	case sku.ProxyInternal, sku.ProxyExternal:
+	case sku.ProxyBuildBuddy, sku.ProxyCustomer:
 		return vals[0]
 	default:
 		return sku.ProxyUnknown

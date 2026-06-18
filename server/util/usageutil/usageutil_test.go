@@ -83,23 +83,23 @@ func TestLabels(t *testing.T) {
 			},
 		},
 		{
-			Name:        "ProxyHeaderExternal",
-			ProxyHeader: sku.ProxyExternal,
-			Expected:    &tables.UsageLabels{Proxy: "external"},
+			Name:        "ProxyHeaderCustomer",
+			ProxyHeader: sku.ProxyCustomer,
+			Expected:    &tables.UsageLabels{Proxy: "customer"},
 			ExpectedOLAP: sku.Labels{
-				sku.Proxy: sku.ProxyExternal,
+				sku.Proxy: sku.ProxyCustomer,
 			},
 		},
 		{
-			Name:         "ProxyHeaderInternalWithOriginAndClient",
+			Name:         "ProxyHeaderBuildBuddyWithOriginAndClient",
 			MDHeader:     &repb.RequestMetadata{ToolDetails: &repb.ToolDetails{ToolName: "bazel"}},
 			OriginHeader: "external",
-			ProxyHeader:  sku.ProxyInternal,
-			Expected:     &tables.UsageLabels{Origin: "external", Client: "bazel", Proxy: "internal"},
+			ProxyHeader:  sku.ProxyBuildBuddy,
+			Expected:     &tables.UsageLabels{Origin: "external", Client: "bazel", Proxy: "buildbuddy"},
 			ExpectedOLAP: sku.Labels{
 				sku.Origin: sku.OriginExternal,
 				sku.Client: sku.ClientBazel,
-				sku.Proxy:  sku.ProxyInternal,
+				sku.Proxy:  sku.ProxyBuildBuddy,
 			},
 		},
 		{
@@ -151,7 +151,7 @@ func TestEncodeDecodeCollection(t *testing.T) {
 		},
 		{
 			Name:       "ProxyOnly",
-			Collection: &usageutil.Collection{GroupID: "GR1", Proxy: "external"},
+			Collection: &usageutil.Collection{GroupID: "GR1", Proxy: "customer"},
 		},
 		{
 			Name: "AllFields",
@@ -160,7 +160,7 @@ func TestEncodeDecodeCollection(t *testing.T) {
 				Origin:  "internal",
 				Client:  "bazel",
 				Server:  "cache-proxy",
-				Proxy:   "internal",
+				Proxy:   "buildbuddy",
 			},
 		},
 	} {
@@ -178,13 +178,13 @@ func TestEncodeDecodeCollection(t *testing.T) {
 // (CollectionFromRPCContext), emits it as a header (AddUsageHeadersToContext),
 // and the app reads it back into usage labels (LabelsForUsageRecording).
 func TestProxyHeaderPropagation(t *testing.T) {
-	usageutil.SetProxyType(sku.ProxyExternal)
+	usageutil.SetProxyType(sku.ProxyCustomer)
 	t.Cleanup(func() { usageutil.SetProxyType("") })
 
 	// Proxy side: the collection captured for an incoming request should pick up
 	// the proxy's configured type.
 	c := usageutil.CollectionFromRPCContext(t.Context())
-	require.Equal(t, sku.ProxyExternal, c.Proxy)
+	require.Equal(t, sku.ProxyCustomer, c.Proxy)
 
 	// Proxy side: the proxy type is emitted as an outgoing header.
 	ctx := usageutil.AddUsageHeadersToContext(t.Context(), c.Client, c.Origin, c.Proxy)
@@ -193,8 +193,8 @@ func TestProxyHeaderPropagation(t *testing.T) {
 	// App side: the header is read back into the recorded usage labels.
 	labels, olapLabels, err := usageutil.LabelsForUsageRecording(ctx, "app")
 	require.NoError(t, err)
-	require.Equal(t, sku.ProxyExternal, labels.Proxy)
-	require.Equal(t, sku.ProxyExternal, olapLabels[sku.Proxy])
+	require.Equal(t, sku.ProxyCustomer, labels.Proxy)
+	require.Equal(t, sku.ProxyCustomer, olapLabels[sku.Proxy])
 }
 
 func TestLabelPropagation(t *testing.T) {

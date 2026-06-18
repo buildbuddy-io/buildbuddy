@@ -834,7 +834,7 @@ type UsageLabels struct {
 	Server string `gorm:"not null;default:''"`
 
 	// Proxy describes whether the usage was reported by a BuildBuddy-run
-	// ("internal") or customer-run ("external") cache proxy. It is empty for
+	// ("buildbuddy") or customer-run ("customer") cache proxy. It is empty for
 	// usage that was not reported by a cache proxy.
 	Proxy string `gorm:"not null;default:''"`
 }

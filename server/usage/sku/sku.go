@@ -71,7 +71,7 @@ const (
 	// Origin identifies internal vs. external traffic origin.
 	Origin LabelName = "origin"
 	// Proxy identifies whether usage was reported by a BuildBuddy-run
-	// ("internal") or customer-run ("external") cache proxy. It is unset for
+	// ("buildbuddy") or customer-run ("customer") cache proxy. It is unset for
 	// usage that was not reported by a cache proxy.
 	Proxy LabelName = "proxy"
 	// OS identifies the operating system for execution usage.
@@ -113,16 +113,19 @@ const (
 	ServerCacheProxy        LabelValue = "cache-proxy"
 	OriginExternal          LabelValue = "external"
 	OriginInternal          LabelValue = "internal"
-	ProxyExternal           LabelValue = "external"
-	ProxyInternal           LabelValue = "internal"
-	ProxyUnknown            LabelValue = "unknown"
-	OSLinux                 LabelValue = "linux"
-	OSMac                   LabelValue = "mac"
-	OSWindows               LabelValue = "windows"
-	ArchX86_64              LabelValue = "x86_64"
-	ArchArm64               LabelValue = "arm64"
-	SelfHostedFalse         LabelValue = "false"
-	SelfHostedTrue          LabelValue = "true"
+	// ProxyBuildBuddy and ProxyCustomer are the values for the Proxy label,
+	// identifying BuildBuddy-run vs. customer-run cache proxies. ProxyUnknown is
+	// recorded when the proxy type cannot be determined.
+	ProxyBuildBuddy LabelValue = "buildbuddy"
+	ProxyCustomer   LabelValue = "customer"
+	ProxyUnknown    LabelValue = "unknown"
+	OSLinux         LabelValue = "linux"
+	OSMac           LabelValue = "mac"
+	OSWindows       LabelValue = "windows"
+	ArchX86_64      LabelValue = "x86_64"
+	ArchArm64       LabelValue = "arm64"
+	SelfHostedFalse LabelValue = "false"
+	SelfHostedTrue  LabelValue = "true"
 )
 
 // GetOSLabel returns the low-cardinality OS label for an execution platform OS.
