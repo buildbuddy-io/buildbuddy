@@ -240,6 +240,9 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 	if h.shouldFlushSynchronously() {
 		log.CtxInfof(ctx, "hit_tracker_client.enqueue after worker shutdown, sending RPC synchronously")
 		// Note: no need to mess with client/origin headers here, they're forwarded along from the incoming ctx.
+		// The proxy label is this proxy's own configured value rather than something
+		// from the incoming ctx, so set it explicitly.
+		ctx = usageutil.AddUsageHeadersToContext(ctx, "", "", usageutil.ProxyType())
 		ctx = ip_rules_enforcer.SetBypassIPRules(ctx)
 		if _, err := h.client.Track(ctx, &hitpb.TrackRequest{Hits: []*hitpb.CacheHit{hit}, Server: usageutil.ServerName()}); err != nil {
 			log.CtxWarningf(ctx, "Error sending HitTrackerService.Track RPC: %v", err)
@@ -419,7 +422,7 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 	if err != nil {
 		log.CtxWarningf(ctx, "Error decoding collection for remote usage tracking key %s: %v", hitsToSend.encodedCollection, err)
 	}
-	ctx = usageutil.AddUsageHeadersToContext(ctx, c.Client, c.Origin)
+	ctx = usageutil.AddUsageHeadersToContext(ctx, c.Client, c.Origin, c.Proxy)
 	ctx = ip_rules_enforcer.SetBypassIPRules(ctx)
 	trackRequest := hitpb.TrackRequest{Hits: hitsToSend.hits, Server: usageutil.ServerName()}
 	groupID := c.GroupID
