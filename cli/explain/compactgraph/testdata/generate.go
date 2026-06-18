@@ -1063,6 +1063,55 @@ echo $$FOO >> $@
 			changedArgs:   []string{"--action_env=FOO=new"},
 			bazelVersions: []string{"8.1.0"},
 		},
+		{
+			// A spawn whose only difference is the content of a param file (the
+			// command line and all other inputs are identical). This exercises
+			// the diffing of param files, which are split out from the regular
+			// inputs of a spawn.
+			name: "param_file_contents",
+			baseline: `
+-- MODULE.bazel --
+-- rules/BUILD --
+-- rules/defs.bzl --
+def _param_file_impl(ctx):
+    out = ctx.actions.declare_file(ctx.attr.name)
+    out_args = ctx.actions.args()
+    out_args.add(out)
+    param_args = ctx.actions.args()
+    param_args.add_all(ctx.attr.contents)
+    # Force the contents into a param file regardless of command line length so
+    # that the only change between builds is the param file's content.
+    param_args.use_param_file("@%s", use_always = True)
+    param_args.set_param_file_format("multiline")
+    ctx.actions.run_shell(
+        outputs = [out],
+        arguments = [out_args, param_args],
+        command = "touch $1",
+        mnemonic = "ParamFileGen",
+    )
+    return [DefaultInfo(files = depset([out]))]
+
+param_file = rule(
+    _param_file_impl,
+    attrs = {"contents": attr.string_list()},
+)
+-- pkg/BUILD --
+load("//rules:defs.bzl", "param_file")
+param_file(
+    name = "gen",
+    contents = ["old"],
+)
+`,
+			changes: `
+-- pkg/BUILD --
+load("//rules:defs.bzl", "param_file")
+param_file(
+    name = "gen",
+    contents = ["new"],
+)
+`,
+			bazelVersions: []string{"8.1.0"},
+		},
 	} {
 		if toGenerate != nil && !toGenerate[tc.name] {
 			continue

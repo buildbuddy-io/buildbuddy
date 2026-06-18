@@ -261,20 +261,35 @@ func (s *InputSet) String() string {
 	return fmt.Sprintf("set:(direct=%v, transitive=%v)", s.DirectEntries, s.TransitiveSets)
 }
 
-func protoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[uint32]Input) *InputSet {
+func newInputSet(directEntries []Input, transitiveSets []*InputSet) *InputSet {
 	pathHash := sha256.New()
 	pathHash.Write([]byte{transitivePaths})
 
 	contentHash := sha256.New()
 	contentHash.Write([]byte{inputSetContent})
 
+	for _, input := range directEntries {
+		pathHash.Write(input.ShallowPathHash())
+		contentHash.Write(input.ShallowContentHash())
+	}
+	for _, set := range transitiveSets {
+		pathHash.Write(set.ShallowPathHash())
+		contentHash.Write(set.ShallowContentHash())
+	}
+
+	return &InputSet{
+		DirectEntries:      directEntries,
+		TransitiveSets:     transitiveSets,
+		shallowPathHash:    pathHash.Sum(nil),
+		shallowContentHash: contentHash.Sum(nil),
+	}
+}
+
+func protoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[uint32]Input) *InputSet {
 	directInputs := make([]Input, 0, len(s.InputIds)+len(s.FileIds)+len(s.DirectoryIds)+len(s.UnresolvedSymlinkIds))
 	addInputs := func(ids []uint32) {
 		for _, id := range ids {
-			input := previousInputs[id]
-			directInputs = append(directInputs, input)
-			pathHash.Write(input.ShallowPathHash())
-			contentHash.Write(input.ShallowContentHash())
+			directInputs = append(directInputs, previousInputs[id])
 		}
 	}
 	addInputs(s.InputIds)
@@ -284,18 +299,10 @@ func protoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[uint32]I
 
 	transitiveSets := make([]*InputSet, 0, len(s.TransitiveSetIds))
 	for _, id := range s.TransitiveSetIds {
-		set := previousInputs[id].(*InputSet)
-		transitiveSets = append(transitiveSets, set)
-		pathHash.Write(set.ShallowPathHash())
-		contentHash.Write(set.ShallowContentHash())
+		transitiveSets = append(transitiveSets, previousInputs[id].(*InputSet))
 	}
 
-	return &InputSet{
-		DirectEntries:      directInputs,
-		TransitiveSets:     transitiveSets,
-		shallowPathHash:    pathHash.Sum(nil),
-		shallowContentHash: contentHash.Sum(nil),
-	}
+	return newInputSet(directInputs, transitiveSets)
 }
 
 type SymlinkEntrySet struct {
@@ -745,8 +752,8 @@ func drainParamFiles(set *InputSet) *InputSet {
 	if len(paramFiles) == 0 {
 		return emptyInputSet
 	}
-	set.DirectEntries = nonParamFiles
-	return &InputSet{DirectEntries: paramFiles}
+	*set = *newInputSet(nonParamFiles, set.TransitiveSets)
+	return newInputSet(paramFiles, nil)
 }
 
 func isSourcePath(path string) bool {
