@@ -22,13 +22,19 @@ import (
 // keeps any `src/` prefix. TS and JS share the `ts:` family because they import
 // each other freely.
 
-// Functions, methods, and variable declarators have identical shapes in both
-// grammars; class names differ (JS: identifier, TS: type_identifier), so the
-// class clause lives in each grammar's query.
+// Functions, methods, and top-level variable declarators have identical shapes
+// in both grammars; class names differ (JS: identifier, TS: type_identifier),
+// so the class clause lives in each grammar's query. Variable declarators are
+// scoped to top-level and exported declarations so that locals inside function
+// bodies (loop counters, temporaries) don't flood the symbol index — per the
+// Symbols contract, only names a file *declares* about itself count.
 const tsSymbolQueryCommon = `
 	(function_declaration name: (identifier) @sym)
 	(method_definition name: (property_identifier) @sym)
-	(variable_declarator name: (identifier) @sym)
+	(program (lexical_declaration (variable_declarator name: (identifier) @sym)))
+	(program (variable_declaration (variable_declarator name: (identifier) @sym)))
+	(export_statement (lexical_declaration (variable_declarator name: (identifier) @sym)))
+	(export_statement (variable_declaration (variable_declarator name: (identifier) @sym)))
 `
 
 // tsSymbolQueryJS is the JavaScript-grammar query: the JS grammar has no
@@ -48,9 +54,13 @@ const tsSymbolQueryTS = tsSymbolQueryCommon + `
 	(enum_declaration name: (identifier) @sym)
 `
 
-// Static import/export specs: `import ... from "spec"`, `export ... from
-// "spec"`. The `source` field is a string literal.
-const tsImportQuery = `
+// Import specifiers come from static `import`/`export ... from "spec"` (the
+// `source` field), dynamic `import("spec")` (an (import) node as the call
+// target), and `require("spec")`. The call_expression arm captures the callee
+// (@fn) so non-import calls can be filtered out in tsImportSpecs — the query
+// language alone can't restrict it to `require`, and a bare f("string") would
+// otherwise forge a phantom import edge.
+const tsImportPattern = `
 	(import_statement source: (string) @spec)
 	(export_statement source: (string) @spec)
 	(call_expression
@@ -63,9 +73,9 @@ var (
 	tsSymbolQuery  = mustCompileQuery(tsSymbolQueryTS, typescript.GetLanguage())
 	jsSymbolQuery  = mustCompileQuery(tsSymbolQueryJS, javascript.GetLanguage())
 
-	tsxImportQuery = mustCompileQuery(tsImportQuery, tsx.GetLanguage())
-	tsImportQuery2 = mustCompileQuery(tsImportQuery, typescript.GetLanguage())
-	jsImportQuery  = mustCompileQuery(tsImportQuery, javascript.GetLanguage())
+	tsxImportQuery = mustCompileQuery(tsImportPattern, tsx.GetLanguage())
+	tsImportQuery  = mustCompileQuery(tsImportPattern, typescript.GetLanguage())
+	jsImportQuery  = mustCompileQuery(tsImportPattern, javascript.GetLanguage())
 )
 
 // tsGrammar returns the tree-sitter language and the matching symbol/import
@@ -75,7 +85,7 @@ func tsGrammar(lang string) (*sitter.Language, *sitter.Query, *sitter.Query) {
 	case "tsx":
 		return tsx.GetLanguage(), tsxSymbolQuery, tsxImportQuery
 	case "typescript":
-		return typescript.GetLanguage(), tsSymbolQuery, tsImportQuery2
+		return typescript.GetLanguage(), tsSymbolQuery, tsImportQuery
 	default: // "javascript", "jsx"
 		return javascript.GetLanguage(), jsSymbolQuery, jsImportQuery
 	}
@@ -140,6 +150,45 @@ func tsStringLiteral(s string) string {
 	return s
 }
 
+// tsImportSpecs returns the raw import-specifier string-literal node texts from
+// a parsed file: the source of static import/export statements, the argument of
+// dynamic import("..."), and the argument of require("..."). The callee name
+// (@fn) is never returned, and any other f("string") call is skipped so it
+// can't forge a phantom import edge.
+func tsImportSpecs(q *sitter.Query, tree *sitter.Tree, content []byte) []string {
+	qc := sitter.NewQueryCursor()
+	defer qc.Close()
+	qc.Exec(q, tree.RootNode())
+
+	var specs []string
+	for {
+		m, ok := qc.NextMatch()
+		if !ok {
+			break
+		}
+		var fn, spec string
+		haveFn, haveSpec := false, false
+		for _, c := range m.Captures {
+			switch q.CaptureNameForId(c.Index) {
+			case "fn":
+				fn, haveFn = c.Node.Content(content), true
+			case "spec":
+				spec, haveSpec = c.Node.Content(content), true
+			}
+		}
+		if !haveSpec {
+			continue
+		}
+		// A named-function call counts only when it's require(...); dynamic
+		// import(...) matches the (import) alternative and has no @fn.
+		if haveFn && fn != "require" {
+			continue
+		}
+		specs = append(specs, spec)
+	}
+	return specs
+}
+
 func extractTypeScript(ctx context.Context, lang, filename string, content []byte, rctx *RepoContext) (*Result, error) {
 	grammar, symbolQuery, importQuery := tsGrammar(lang)
 
@@ -182,7 +231,7 @@ func extractTypeScript(ctx context.Context, lang, filename string, content []byt
 	}
 
 	var imports []string
-	for _, raw := range captureAllRaw(importQuery, tree, content) {
+	for _, raw := range tsImportSpecs(importQuery, tree, content) {
 		spec := tsStringLiteral(raw)
 		if spec == "" {
 			continue

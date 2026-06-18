@@ -41,18 +41,20 @@ enum Mode { Strict, Lenient }
 export const DefaultName = "World";
 `)
 	// Declarations only, source order, lowercased. Interface/type/enum are
-	// TypeScript-only and captured by the richer TS query.
+	// TypeScript-only and captured by the richer TS query. `local` (a const
+	// inside greet's body) is NOT captured — only top-level/exported declarators.
 	assert.Equal(t, []string{
 		"greet",   // function
-		"local",   // const declarator inside the function
 		"greeter", // class
 		"greet",   // method (class body; interface method signatures are
 		// a distinct node type and not captured)
 		"speaker",     // interface (TS only)
 		"salutation",  // type alias (TS only)
 		"mode",        // enum (TS only)
-		"defaultname", // const declarator
+		"defaultname", // const declarator (top-level, exported)
 	}, ann.Symbols)
+	assert.NotContains(t, ann.Symbols, "local",
+		"locals inside function bodies are not symbols")
 }
 
 func TestJSSymbols(t *testing.T) {
@@ -126,8 +128,15 @@ const a = require("./util/log");
 async function f() {
 	const b = await import("./util/log");
 }
+register("./components/Button");
+parseInt("10");
 `)
 	assert.Contains(t, ann.Imports, "ts:src/util/log")
+	// The callee name is never an import term, and a non-import f("string")
+	// call must not forge a phantom edge.
+	assert.NotContains(t, ann.Imports, "ts:require")
+	assert.NotContains(t, ann.Imports, "ts:src/components/button")
+	assert.NotContains(t, ann.Imports, "ts:10")
 }
 
 func TestTSTestFileGetsNoImportID(t *testing.T) {
