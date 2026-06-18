@@ -296,7 +296,7 @@ func TestCodeSearchAction(t *testing.T) {
 	assert.Contains(t, action.Steps[0].Run, ghURL)
 }
 
-func TestGetMergeBaseInterval(t *testing.T) {
+func TestGetMergeWithBaseInterval(t *testing.T) {
 	dur := func(d time.Duration) *time.Duration { return &d }
 	for _, test := range []struct {
 		name     string
@@ -312,8 +312,8 @@ func TestGetMergeBaseInterval(t *testing.T) {
 		{name: "negative rejected", interval: dur(-1 * time.Hour), wantErr: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			trigger := &config.PullRequestTrigger{MergeBaseInterval: test.interval}
-			got, err := trigger.GetMergeBaseInterval()
+			trigger := &config.PullRequestTrigger{MergeWithBaseInterval: test.interval}
+			got, err := trigger.GetMergeWithBaseInterval()
 			if test.wantErr {
 				require.Error(t, err)
 				return

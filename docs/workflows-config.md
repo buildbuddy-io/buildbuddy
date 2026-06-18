@@ -275,7 +275,7 @@ actions:
 ## Merge with base
 
 By default, when workflows are triggered by `pull_request` events, the CI runner will merge
-the PR branch with the PR's base branch (i.e. main). This is controlled by
+the PR branch with the PR's base branch (e.g. main). This is controlled by
 `merge_with_base`, which defaults to `true`.
 
 This may help catch integration problems before merge,
@@ -298,41 +298,39 @@ performance if the base branch tip advances frequently. Merging in
 unrelated base branch changes may invalidate the Bazel cache and require
 rebuilds, even when the PR branch itself is unchanged. This behavior can be
 disabled by setting `merge_with_base: false`, or made less frequent by setting
-`merge_base_interval`.
+`merge_with_base_interval`.
 
-### Merge base interval
+### Merge with base interval
 
-When `merge_base_interval` is set, instead of merging with the base branch tip,
-the CI runner merges with the oldest base branch commit in the
-interval boundary (UTC). If there are no base branch commits in the interval, the runner merges
-with the base branch tip.
+When `merge_with_base_interval` is set, the CI runner merges with the oldest base branch commit within the interval,
+rather than the base branch tip.
 
-Because every run within the same interval merges with the same base branch
-commit, repeated runs of an unchanged PR produce the same merged result and hit
-a warm Bazel cache, while the base still advances once per interval to catch
-integration issues.
+The intention is that multiple CI runs within an interval will all merge with the same commit, even
+if the base branch tip has advanced. Repeated runs of an unchanged PR will produce the same merged result and hit a warm Bazel cache.
 
-For example, with `merge_base_interval: "3h"`, the base advances at 00:00, 03:00,
+The runner will still merge with the base branch tip once per interval, keeping the PR reasonably up to date with the base branch to catch integration issues.
+
+If the PR's merge base is already newer than the compute commit, the merge is skipped.
+And if the interval contains no base branch commits, it falls back to the tip.
+
+For example, with `merge_with_base_interval: "3h"`, the base advances at 00:00, 03:00,
 06:00, ... UTC, and all runs within the same 3h window merge with the first base
 branch commit after the window boundary:
 
 - The interval boundary is [09:00 UTC, 12:00 UTC].
-- Main is pushed at 08:00 UTC (commit ABC). This commit is outside the current interval.
-- Main is pushed at 09:05 UTC (commit DEF). This commit is the oldest commit in the current interval.
-- Main is pushed at 10:00 UTC (commit GHI). This commit is in the current interval, but is not the oldest commit in the interval..
-- Main is pushed at 12:05 UTC (commit JKL). This commit is in the next interval.
-- A PR Workflow runs at 09:30 UTC. It merges with the oldest base branch commit in the current interval (commit DEF).
-- A PR Workflow runs at 10:45 UTC. Even though Main has advanced to commit GHI, it merges with the oldest base branch commit in the current interval (commit GHI).
+- Main is pushed at 08:00 UTC (commit `a`). This commit is outside the current interval.
+- Main is pushed at 09:05 UTC (commit `b`). This commit is the oldest commit in the current interval.
+- Main is pushed at 10:00 UTC (commit `c`). This commit is in the current interval, but is not the oldest commit in the interval.
+- Main is pushed at 12:05 UTC (commit `d`). This commit is in the next interval.
+- A PR Workflow runs at 09:30 UTC. It merges with the oldest base branch commit in the current interval (commit `b`).
+- A PR Workflow runs at 10:45 UTC. Even though Main has advanced to commit `c`, it merges with the oldest base branch commit in the current interval (commit `c`).
   This lets it reuse the cache from the earlier PR run.
-- A run at 12:15 UTC is in the next interval, so it merges with commit JKL.
+- A run at 12:15 UTC is in the next interval, so it merges with commit `d`.
   This helps keep the PR reasonably up to date with the base branch.
 
-With a shorter interval like `1h`, the base advances at the top of each hour.
+With a shorter interval like `1h`, the base advances at the start of each hour.
 
-If the PR's merge base is already newer than the computed commit, the merge is
-skipped.
-
-`merge_base_interval` is capped at `3h` so that PRs are not merged with an overly
+`merge_with_base_interval` is capped at `3h` so that PRs are not merged with an overly
 stale base, which would also have the negative side effect of keeping stale
 artifacts in the cache longer. Use a shorter interval when merge confidence is
 more important, and a longer interval when cache stability and reduced CI churn
@@ -347,6 +345,8 @@ reaches the merge queue.
 Workflows that run on merge queue branches themselves
 do not need `merge_with_base`, since the merge queue commit should already be
 merged with the base branch.
+
+Also, merge queue workflows can only be triggered on `push` events, where `merge_with_base` is not supported.
 
 ## Ref pattern matching
 
@@ -500,7 +500,7 @@ That's it! Whenever any of the configured triggers are matched, one of
 the Mac executors in the `workflows` pool should execute the
 workflow, and BuildBuddy will publish the results to your branch.
 
-## Debugging
+## Troubleshooting
 
 ### Unexpected cache misses
 
@@ -510,7 +510,7 @@ base branch. Even when the PR branch is unchanged, a new base branch tip can
 produce a different merged base, which can invalidate the Bazel cache
 and require rebuilds. See the [merge with base section](#merge-with-base) for more detail.
 
-If so, consider setting `merge_base_interval`.
+If so, consider setting `merge_with_base_interval`.
 
 ## buildbuddy.yaml schema
 
@@ -648,10 +648,10 @@ pushed.
   breaking the main branch, you may wish to use
   [merge queues](#merge-queue-support). See
   [Merge with base behavior](#merge-with-base).
-- **`merge_base_interval`** (`duration`, optional): If set with
+- **`merge_with_base_interval`** (`duration`, optional): If set with
   `merge_with_base: true`, merge with the oldest base branch commit in the current interval (UTC)
   instead of the base branch tip, improving cache stability across runs.
-  Capped at `3h`. See [Merge base interval](#merge-base-interval) for more details.
+  Capped at `3h`. See [Merge with base interval](#merge-with-base-interval) for more details.
 
 ### `ScheduleTrigger`
 

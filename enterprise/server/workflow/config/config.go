@@ -113,9 +113,9 @@ type PullRequestTrigger struct {
 	Branches []string `yaml:"branches"`
 	// NOTE: If nil, defaults to true.
 	MergeWithBase *bool `yaml:"merge_with_base"`
-	// MergeBaseInterval only applies if MergeWithBase is enabled.
+	// MergeWithBaseInterval only applies if MergeWithBase is enabled.
 	//
-	// MergeBaseInterval controls which base branch commit the PR is merged with.
+	// MergeWithBaseInterval controls which base branch commit the PR is merged with.
 	// When unset, the runner merges with the current base branch tip.
 	//
 	// When set, instead of merging with the tip, the runner merges with the
@@ -134,9 +134,9 @@ type PullRequestTrigger struct {
 	// If the PR's merge base is already newer than this commit, the merge with
 	// base is skipped.
 	//
-	// Must be at most maxMergeBaseInterval; larger values are rejected so that
+	// Must be at most maxMergeWithBaseInterval; larger values are rejected so that
 	// PRs are not merged with an overly stale base.
-	MergeBaseInterval *time.Duration `yaml:"merge_base_interval"`
+	MergeWithBaseInterval *time.Duration `yaml:"merge_with_base_interval"`
 	// If MergeWithBase is enabled, determines whether the CI runner should manually
 	// merge the pushed and target branches. If this is disabled, the runner
 	// will try to use the merge commit SHA provided by the CI provider as a
@@ -149,26 +149,26 @@ func (t *PullRequestTrigger) GetMergeWithBase() bool {
 	return t.MergeWithBase == nil || *t.MergeWithBase
 }
 
-// maxMergeBaseInterval is the largest allowed merge base interval. Larger
+// maxMergeWithBaseInterval is the largest allowed merge with base interval. Larger
 // configured values are rejected so that PRs are not merged with an overly
 // stale base branch commit.
-const maxMergeBaseInterval = 3 * time.Hour
+const maxMergeWithBaseInterval = 3 * time.Hour
 
-// GetMergeBaseInterval returns the configured merge base interval. If
+// GetMergeWithBaseInterval returns the configured merge with base interval. If
 // MergeWithBase is set and this is nil, merge with the base branch tip.
 //
 // Returns an error if the configured interval is non-positive or larger than
-// maxMergeBaseInterval.
-func (t *PullRequestTrigger) GetMergeBaseInterval() (*time.Duration, error) {
-	if t.MergeBaseInterval == nil {
+// maxMergeWithBaseInterval.
+func (t *PullRequestTrigger) GetMergeWithBaseInterval() (*time.Duration, error) {
+	if t.MergeWithBaseInterval == nil {
 		return nil, nil
 	}
-	interval := *t.MergeBaseInterval
+	interval := *t.MergeWithBaseInterval
 	if interval <= 0 {
-		return nil, fmt.Errorf("merge_base_interval must be positive, got %s", interval)
+		return nil, fmt.Errorf("merge_with_base_interval must be positive, got %s", interval)
 	}
-	if interval > maxMergeBaseInterval {
-		return nil, fmt.Errorf("merge_base_interval must be at most %s, got %s", maxMergeBaseInterval, interval)
+	if interval > maxMergeWithBaseInterval {
+		return nil, fmt.Errorf("merge_with_base_interval must be at most %s, got %s", maxMergeWithBaseInterval, interval)
 	}
 	return &interval, nil
 }

@@ -1922,7 +1922,7 @@ func (ws *workspace) mergeWithBaseIfRequested(ctx context.Context, actionTrigger
 	}
 
 	// Determine which base branch commit to merge with, based on the configured
-	// merge base interval.
+	// merge with base interval.
 	mergeBase, err := ws.mergeBaseCommit(ctx, actionTriggers)
 	if err != nil {
 		return err
@@ -1955,13 +1955,13 @@ func (ws *workspace) mergeWithBaseIfRequested(ctx context.Context, actionTrigger
 // mergeBaseCommit returns the base branch commit that the PR should be merged
 // with, or an empty string if the merge with base should be skipped.
 //
-// When no merge base interval is configured, the runner merges with the current
+// When no merge with base interval is configured, the runner merges with the current
 // base branch tip. When an interval is configured, the runner instead merges
 // with the oldest base branch commit in the current interval (UTC).
 // If there are no base branch commits in the interval, the runner merges with
 // the base branch tip.
 func (ws *workspace) mergeBaseCommit(ctx context.Context, actionTriggers *config.Triggers) (string, error) {
-	interval, err := actionTriggers.GetPullRequestTrigger().GetMergeBaseInterval()
+	interval, err := actionTriggers.GetPullRequestTrigger().GetMergeWithBaseInterval()
 	if err != nil {
 		return "", err
 	}

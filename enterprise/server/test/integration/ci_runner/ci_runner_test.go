@@ -179,7 +179,7 @@ actions:
     triggers:
       pull_request:
         branches: [ "*" ]
-        merge_base_interval: "3h"
+        merge_with_base_interval: "3h"
     bazel_commands:
       - run :exit -- 0
 `,
@@ -1849,7 +1849,7 @@ func TestDisableBaseBranchMerging(t *testing.T) {
 func TestMergeWithBase_FetchDepth1(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	// workspaceContentsWithRunScript enables merge_with_base (the default) with no
-	// merge_base_interval, so the runner should always merge with the base branch tip.
+	// merge_with_base_interval, so the runner should always merge with the base branch tip.
 	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithRunScript)
 	pushedRepoPath := testgit.MakeTempRepoClone(t, targetRepoPath)
 	// Create a PR branch with 2 commits.
