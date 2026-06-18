@@ -122,6 +122,34 @@ func TestRunIgnoresExpectedNondeterminism(t *testing.T) {
 	assert.Equal(t, 0, explainer.writeCalls)
 }
 
+func TestRunReportsGenuineAlongsideExpectedNondeterminism(t *testing.T) {
+	// An expected spawn sharing a build with a genuine non-deterministic spawn
+	// should still report detection and print only the genuine spawn.
+	expected := nondeterministicSpawnDiff("//foo:expected")
+	expected.GetModified().Expected = true
+	genuine := nondeterministicSpawnDiff("//foo:genuine")
+	diff := &spawn_diff.DiffResult{SpawnDiffs: []*spawn_diff.SpawnDiff{expected, genuine}}
+	explainer := &fakeExplainer{diff: diff}
+	runner := &fakeRunner{}
+	c := &checker{
+		opts: options{
+			bazelArgs:     bazelArgsForTest(t, "build", "//foo:bar"),
+			besBackend:    defaultBESBackend,
+			besResultsURL: defaultBESResultsURL,
+		},
+		runner:    runner,
+		explainer: explainer,
+	}
+
+	err := c.Run(context.Background())
+	require.ErrorIs(t, err, errNondeterminismDetected)
+
+	require.Len(t, runner.runs, 2)
+	assert.Equal(t, 1, explainer.writeCalls)
+	require.Len(t, explainer.wroteDiff.GetSpawnDiffs(), 1)
+	assert.Equal(t, "//foo:genuine", explainer.wroteDiff.GetSpawnDiffs()[0].GetTargetLabel())
+}
+
 func TestRunIgnoresDeterministicDiffs(t *testing.T) {
 	// A spawn whose inputs changed is a downstream effect, not non-determinism.
 	diff := &spawn_diff.DiffResult{SpawnDiffs: []*spawn_diff.SpawnDiff{{

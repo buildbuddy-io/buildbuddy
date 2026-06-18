@@ -192,8 +192,12 @@ func (c *checker) Run(ctx context.Context) error {
 	// non-deterministic. Other diffs (e.g. changed inputs) are downstream effects
 	// whose root cause is itself reported as a non-deterministic spawn.
 	diff.SpawnDiffs = explain.FilterNondeterministicSpawns(diff.GetSpawnDiffs())
-	// Ignore spawns with expected non-determinism, e.g. timestamps in test
-	// outputs, which bb explain also hides unless --verbose is passed.
+	// Ignore spawns whose non-determinism is marked as expected, mirroring the
+	// default (non-verbose) behavior of bb explain. Unlike bb explain, detect has
+	// no --verbose override, so this suppression is unconditional. Note that the
+	// expected flag is set for all TestRunner output-content diffs, not just
+	// timestamp diffs (see compactgraph.diffSpawns), so genuinely flaky test
+	// outputs are suppressed too.
 	diff.SpawnDiffs = filterExpectedSpawns(diff.GetSpawnDiffs())
 	if len(diff.GetSpawnDiffs()) == 0 {
 		log.Print("\n\n\033[32mNo nondeterminism detected.\033[0m\n\n")
@@ -207,8 +211,9 @@ func (c *checker) Run(ctx context.Context) error {
 	return errors.Join(buildErr, errNondeterminismDetected)
 }
 
-// filterExpectedSpawns drops spawns whose non-determinism is expected and thus
-// shouldn't be flagged, e.g. timestamps in test outputs.
+// filterExpectedSpawns drops spawns whose non-determinism is marked as expected
+// by bb explain (e.g. all TestRunner output-content diffs) and thus shouldn't be
+// flagged.
 func filterExpectedSpawns(diffs []*sdpb.SpawnDiff) []*sdpb.SpawnDiff {
 	var filtered []*sdpb.SpawnDiff
 	for _, d := range diffs {
