@@ -8,8 +8,8 @@ import (
 )
 
 var (
-	githubPathPartRegex             = regexp.MustCompile(`^[A-Za-z0-9._!%'"()<>-]*$`)
-	moduleRegex                     = regexp.MustCompile(`(?s)module\(.*?\)`)
+	githubPathPartRegex = regexp.MustCompile(`^[A-Za-z0-9._!%'"()<>-]*$`)
+	moduleRegex         = regexp.MustCompile(`(?s)module\(.*?\)`)
 
 	// Character class for backslash and quote
 	starlarkStringEscapedCharacters = regexp.MustCompile("[\\\\\"]")
@@ -28,13 +28,13 @@ func handleGitHub(path string) ([]byte, int, error) {
 }
 
 func parseGithubRequest(path string) (string, string, string, string, error) {
- // "/modules/repo/version/.*" -> "", "modules/repo/version/.*"
+	// "/modules/repo/version/.*" -> "", "modules/repo/version/.*"
 	_, remainingPath, _ := strings.Cut(path, "/")
- // "modules/repo/version/.*" -> "modules", "repo/version/.*"
+	// "modules/repo/version/.*" -> "modules", "repo/version/.*"
 	_, remainingPath, _ = strings.Cut(remainingPath, "/")
- // "repo/version/.*" -> "repo", "version/.*"
+	// "repo/version/.*" -> "repo", "version/.*"
 	repo, version, _ := strings.Cut(remainingPath, "/")
- // "version/.*" -> "version", ".*"
+	// "version/.*" -> "version", ".*"
 	version, _, _ = strings.Cut(version, "/")
 	if !githubPathPartRegex.MatchString(repo) || !githubPathPartRegex.MatchString(version) {
 		return "", "", "", "", fmt.Errorf("Invalid path: %s", path)
