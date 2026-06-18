@@ -205,9 +205,16 @@ func (fs *fieldScorer) fieldScore(docMatch types.DocumentMatch, avgLens map[stri
 		if fieldLen < tf {
 			fieldLen = tf
 		}
+		// The symbols field is exempt from length normalization: declaring a
+		// name makes a file the definition regardless of how many other
+		// symbols it declares, so a large definition file (e.g. a 2000-line
+		// class) shouldn't have its declaration score divided down the way
+		// content matches are.
 		norm := 1.0
-		if avg := avgLens[fs.fieldName]; avg > 0 {
-			norm = 1 - bm25B + bm25B*(fieldLen/avg)
+		if fs.fieldName != types.SymbolsField {
+			if avg := avgLens[fs.fieldName]; avg > 0 {
+				norm = 1 - bm25B + bm25B*(fieldLen/avg)
+			}
 		}
 		return float64(fs.weight) * bm25Sat(tf/norm)
 	case Or:
@@ -483,6 +490,11 @@ func identifierTerm(qTerm string) (string, bool) {
 	if term == "" {
 		return "", false
 	}
+	// Identifiers can't start with a digit, so an all-numeric term (e.g.
+	// "12345") isn't a symbol name; reject it rather than emit a dead clause.
+	if c := term[0]; c >= '0' && c <= '9' {
+		return "", false
+	}
 	for _, r := range term {
 		if r != '_' && (r < '0' || r > '9') && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
 			return "", false
@@ -567,7 +579,11 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 			contentFiltered = contentFiltered || subQContent != allSQuery
 			filenameFiltered = filenameFiltered || subQFilename != allSQuery
 			clause := subQContent + " " + subQFilename
-			if id, ok := identifierTerm(qTerm); ok {
+			// The symbols field is lowercased at index time and the symbols
+			// scorer has no matcher to re-verify during rescore, so it can't
+			// honor case. Skip it for case-sensitive queries rather than award
+			// a case-blind boost to a mismatched declaration.
+			if id, ok := identifierTerm(qTerm); ok && !caseSensitive {
 				// Scoring evidence only: any doc whose symbols contain the
 				// term also matches the content ngram clause, so the candidate
 				// set is unchanged.

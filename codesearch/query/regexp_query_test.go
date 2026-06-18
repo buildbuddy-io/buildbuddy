@@ -226,9 +226,10 @@ func TestUngroupedTerms(t *testing.T) {
 	require.NoError(t, err)
 
 	squery := string(q.SQuery())
-	// Each bare-identifier term also matches the symbols field (scoring
-	// evidence only; it doesn't narrow the candidate set).
-	assert.Contains(t, squery, `(:and (:or (:eq content "grp") (:eq filename "grp") (:eq symbols "grp")) (:or (:eq content "trm") (:eq filename "trm") (:eq symbols "trm")))`)
+	// case:y is case-sensitive, so no symbols clause is added (the symbols
+	// index is case-folded); the symbols-clause path is covered by
+	// TestSymbolsClauseOnlyForIdentifiers.
+	assert.Contains(t, squery, `(:and (:or (:eq content "grp") (:eq filename "grp")) (:or (:eq content "trm") (:eq filename "trm")))`)
 
 	contentMatcher := q.TestOnlyContentMatcher()
 	assert.NotNil(t, contentMatcher)
@@ -324,6 +325,67 @@ func TestScoringLengthNormalization(t *testing.T) {
 	assert.InDelta(t, 2*bm25Sat(1.0/shortNorm), scorer.Score(short), 1e-9)
 	assert.InDelta(t, 2*bm25Sat(1.0/longNorm), scorer.Score(long), 1e-9)
 	assert.Greater(t, scorer.Score(short), scorer.Score(long))
+}
+
+func TestSymbolsFieldNotLengthNormalized(t *testing.T) {
+	// Unlike the content field (see TestScoringLengthNormalization), the
+	// symbols field is exempt from length normalization: declaring a name
+	// makes a file the definition regardless of how many other symbols it
+	// declares, so two docs that both declare the queried name score the same
+	// on it even when one is a much larger file.
+	ctx := context.Background()
+	q, err := NewReQuery(ctx, "foo")
+	require.NoError(t, err)
+
+	scorer := q.Scorer()
+	require.NotNil(t, scorer)
+
+	few := matchWithFrequenciesAndLengths(
+		map[string]uint32{types.SymbolsField: 1},
+		map[string]uint32{types.SymbolsField: 3},
+	)
+	many := matchWithFrequenciesAndLengths(
+		map[string]uint32{types.SymbolsField: 1},
+		map[string]uint32{types.SymbolsField: 300},
+	)
+	scorer.Prepare([]types.DocumentMatch{few, many}) // avg symbols len = 151.5
+
+	assert.Greater(t, scorer.Score(few), 0.0)
+	assert.Equal(t, scorer.Score(few), scorer.Score(many),
+		"a symbol declaration scores the same regardless of the file's symbol count")
+}
+
+func TestSymbolDeclarerOutranksUser(t *testing.T) {
+	// The weight-2 symbols boost should lift a file that DECLARES the queried
+	// name above one that merely USES it more often.
+	ctx := context.Background()
+	q, err := NewReQuery(ctx, "foo")
+	require.NoError(t, err)
+	scorer := q.Scorer()
+	require.NotNil(t, scorer)
+
+	declarer := matchWithFrequenciesAndLengths(
+		map[string]uint32{contentField: 1, types.SymbolsField: 1},
+		map[string]uint32{contentField: 4, filenameField: 1, types.SymbolsField: 6},
+	)
+	user := matchWithFrequenciesAndLengths(
+		map[string]uint32{contentField: 4},
+		map[string]uint32{contentField: 4, filenameField: 1},
+	)
+	scorer.Prepare([]types.DocumentMatch{declarer, user})
+
+	assert.Greater(t, scorer.Score(declarer), scorer.Score(user),
+		"a file declaring the symbol should outrank one that only uses it")
+}
+
+func TestCaseSensitiveQueryHasNoSymbolsClause(t *testing.T) {
+	// A case-sensitive query can't use the case-folded symbols index (the
+	// symbols scorer has no matcher to re-verify case during rescore), so no
+	// symbols clause is emitted — contrast TestSymbolsClauseOnlyForIdentifiers.
+	ctx := context.Background()
+	q, err := NewReQuery(ctx, "Println case:yes")
+	require.NoError(t, err)
+	assert.NotContains(t, string(q.SQuery()), "(:eq symbols")
 }
 
 func TestScoringMissingFieldLengthsFloorsAtMatchCount(t *testing.T) {
