@@ -108,30 +108,30 @@ func HandleExplain(args []string) (int, error) {
 	if profilePaths["cpu"] != "" {
 		f, err := os.Create(profilePaths["cpu"])
 		if err != nil {
-			log.Fatal("Could not create CPU profile: ", err)
+			return -1, fmt.Errorf("could not create CPU profile: %v", err)
 		}
 		defer f.Close()
 		if err := pprof.StartCPUProfile(f); err != nil {
-			log.Fatal("Could not start CPU profile: ", err)
+			return -1, fmt.Errorf("could not start CPU profile: %v", err)
 		}
 		defer pprof.StopCPUProfile()
 	}
 	if *newLog == "" {
 		newId, err := flaghistory.GetPreviousFlag(flaghistory.InvocationIDFlagName)
 		if err != nil {
-			log.Fatal("Could not get invocation ID of the last build, please specify --new: ", err)
+			return -1, fmt.Errorf("could not get invocation ID of the last build, please specify --new: %v", err)
 		}
 		if newId == "" {
-			log.Fatal("No previous build to compare against, please specify --new")
+			return -1, fmt.Errorf("no previous build to compare against, please specify --new")
 		}
 		*newLog = newId
 		if *oldLog == "" {
 			oldId, err := flaghistory.GetNthPreviousFlag(flaghistory.InvocationIDFlagName, 2)
 			if err != nil {
-				log.Fatal("Could not get invocation ID of the build before the last, please specify --old: ", err)
+				return -1, fmt.Errorf("could not get invocation ID of the build before the last, please specify --old: %v", err)
 			}
 			if oldId == "" {
-				log.Fatal("No previous build to compare against, please specify --old")
+				return -1, fmt.Errorf("no previous build to compare against, please specify --old")
 			}
 			*oldLog = oldId
 		}
@@ -171,7 +171,7 @@ func HandleExplain(args []string) (int, error) {
 		}
 		f, err := os.Create(p)
 		if err != nil {
-			log.Fatalf("Could not create %s profile: %s", profile, err)
+			return -1, fmt.Errorf("could not create %s profile: %v", profile, err)
 		}
 		defer f.Close()
 		if profile == "heap" || profile == "alloc" {
@@ -179,7 +179,7 @@ func HandleExplain(args []string) (int, error) {
 			runtime.GC()
 		}
 		if err := pprof.Lookup(profile).WriteTo(f, 0); err != nil {
-			log.Fatalf("Could not write %s profile: %s", profile, err)
+			return -1, fmt.Errorf("could not write %s profile: %v", profile, err)
 		}
 	}
 	return 0, nil
