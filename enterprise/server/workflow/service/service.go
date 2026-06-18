@@ -567,7 +567,7 @@ func (ws *workflowService) filterActions(ctx context.Context, wf *tables.Workflo
 	filteredActions := make([]*config.Action, 0, len(actions))
 	for _, a := range actions {
 		matchesActionName := len(actionFilter) == 0 || config.MatchesAnyActionName(a, actionFilter)
-		matchesTrigger := config.MatchesAnyTrigger(a, wd.EventName, wd.TargetBranch, wd.PushedTag)
+		matchesTrigger := config.MatchesAnyTrigger(a, wd.EventName, wd.TargetBranch, wd.PushedTag, wd.PullRequestAction)
 		if matchesActionName && matchesTrigger {
 			filteredActions = append(filteredActions, a)
 		}

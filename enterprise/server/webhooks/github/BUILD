@@ -27,6 +27,7 @@ go_test(
         "//enterprise/server/webhooks/github/test_data",
         "//server/interfaces",
         "//server/testutil/testenv",
+        "@com_github_google_go_github_v59//github",
         "@com_github_stretchr_testify//assert",
     ],
 )
