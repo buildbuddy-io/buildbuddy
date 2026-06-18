@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain"
@@ -235,23 +236,23 @@ func (c *checker) runBuild(ctx context.Context, buildNumber int, outputBase, com
 	if err != nil {
 		return err
 	}
-	runErr := c.runner.Run(ctx, "bazel", args...)
-	cleanupErr := removeOutputBase(outputBase)
-	if cleanupErr != nil {
-		log.Warnf("Failed to remove Bazel output base %s: %s", outputBase, cleanupErr)
-	}
-	if runErr != nil {
-		return fmt.Errorf("uncached build %d: %w", buildNumber, runErr)
-	}
-	return nil
+
+	defer c.cleanupBazel(outputBase)
+	return c.runner.Run(ctx, "bazel", args...)
 }
 
-func removeOutputBase(outputBase string) error {
-	log.Printf("Removing Bazel output base %s", outputBase)
-	if err := os.RemoveAll(outputBase); err != nil {
-		return err
+func (c *checker) cleanupBazel(outputBase string) {
+	// Use a non-cancelled context to ensure the cleanup happens.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	log.Printf("Cleaning up output base %s", outputBase)
+	if err := c.runner.Run(shutdownCtx, "bazel", "--output_base="+outputBase, "shutdown"); err != nil {
+		log.Warnf("Failed to shut down Bazel server for output base %s: %s", outputBase, err)
 	}
-	return nil
+	if err := c.runner.Run(shutdownCtx, "bazel", "--output_base="+outputBase, "clean", "--expunge"); err != nil {
+		log.Warnf("Failed to clean up Bazel output base %s: %s", outputBase, err)
+	}
 }
 
 func addBazelFlags(baseArgs *arg.BazelArgs, outputBase, compactLogPath, besBackend, besResultsURL string) ([]string, error) {
@@ -273,6 +274,7 @@ func addBazelFlags(baseArgs *arg.BazelArgs, outputBase, compactLogPath, besBacke
 		// We don't disable the repository cache because it validates digests on hits, so it can't get poisoned with non-determinism.
 		"--repo_contents_cache=",
 		"--disk_cache=",
+		"--noexperimental_convenience_symlinks",
 		"--execution_log_compact_file=" + compactLogPath,
 	} {
 		if err := clonedArgs.Append(flag); err != nil {
