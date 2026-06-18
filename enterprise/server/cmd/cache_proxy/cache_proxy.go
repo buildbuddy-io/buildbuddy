@@ -80,7 +80,7 @@ var (
 
 	remoteCache = flag.String("cache_proxy.remote_cache", "grpcs://remote.buildbuddy.dev", "The backing remote cache.")
 
-	proxyType = flag.String("cache_proxy.proxy_type", sku.ProxyCustomer, "Whether this is a BuildBuddy-run (\"buildbuddy\") or customer-run (\"customer\") cache proxy. Used for usage tracking/billing.")
+	proxyType = flag.String("cache_proxy.proxy_type", sku.ProxyBuildBuddy, "Whether this is a BuildBuddy-run (\"buildbuddy\") or customer-run (\"customer\") cache proxy. Used for usage tracking/billing.")
 )
 
 func main() {
