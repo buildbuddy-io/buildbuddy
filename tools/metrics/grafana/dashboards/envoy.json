@@ -237,7 +237,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(container_spec_cpu_quota{region=\"${region}\", namespace=\"projectcontour\", container=\"envoy\"}) by (pod) / sum(container_spec_cpu_period{region=\"us-sjc\", namespace=\"projectcontour\", container=\"envoy\"}) by (pod)",
+          "expr": "sum(container_spec_cpu_quota{region=\"${region}\", namespace=\"projectcontour\", container=\"envoy\"}) by (pod) / sum(container_spec_cpu_period{region=\"${region}\", namespace=\"projectcontour\", container=\"envoy\"}) by (pod)",
           "hide": false,
           "instant": false,
           "legendFormat": "{{pod}} limit",
