@@ -47,17 +47,18 @@ var cppSymbolQuery = mustCompileQuery(`
 	(type_definition declarator: (type_identifier) @sym)
 `, cpp.GetLanguage())
 
-// cIncludeQuery captures the path argument of #include directives, both
-// "quoted" (string_literal) and <bracketed> (system_lib_string) forms.
-var cIncludeQuery = mustCompileQuery(`
+// cIncludePattern captures the path argument of #include directives, both
+// "quoted" (string_literal) and <bracketed> (system_lib_string) forms. The C
+// and C++ grammars share the pattern but need separately-compiled queries.
+const cIncludePattern = `
 	(preproc_include path: (string_literal) @inc)
 	(preproc_include path: (system_lib_string) @inc)
-`, c.GetLanguage())
+`
 
-var cppIncludeQuery = mustCompileQuery(`
-	(preproc_include path: (string_literal) @inc)
-	(preproc_include path: (system_lib_string) @inc)
-`, cpp.GetLanguage())
+var (
+	cIncludeQuery   = mustCompileQuery(cIncludePattern, c.GetLanguage())
+	cppIncludeQuery = mustCompileQuery(cIncludePattern, cpp.GetLanguage())
+)
 
 // cTerm formats an include path (or basename) as an identity term.
 func cTerm(p string) string {
@@ -146,7 +147,13 @@ func extractCpp(ctx context.Context, lang, filename string, content []byte, rctx
 	ann.Imports = imports
 
 	if !isCTestFile(rel) {
-		ann.ImportID = []string{selfPath, selfBase}
+		// For a repo-root file the path and basename are identical; emit the
+		// term once so its posting-list frequency isn't doubled.
+		if selfPath == selfBase {
+			ann.ImportID = []string{selfPath}
+		} else {
+			ann.ImportID = []string{selfPath, selfBase}
+		}
 	}
 	return ann, nil
 }

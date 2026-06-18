@@ -78,6 +78,14 @@ struct Bar {};
 	assert.Equal(t, []string{"c:src/foo/bar.h", "c:bar.h"}, ann.ImportID)
 }
 
+func TestCRootFileImportIDNotDuplicated(t *testing.T) {
+	rctx, dir := testRepoContext(t)
+	// At the repo root the path and basename are identical; the identity term
+	// must appear once, not twice.
+	ann := extractLang(t, rctx, "c", dir, "main.c", `int main() { return 0; }`)
+	assert.Equal(t, []string{"c:main.c"}, ann.ImportID)
+}
+
 func TestCQuotedIncludeRecordsPathAndBasename(t *testing.T) {
 	rctx, dir := testRepoContext(t)
 	ann := extractLang(t, rctx, "c", dir, "src/main.c", `
