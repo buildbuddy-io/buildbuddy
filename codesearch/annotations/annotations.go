@@ -120,6 +120,8 @@ func Extract(ctx context.Context, lang, filename string, content []byte, rctx *R
 		res, err = extractJava(ctx, filename, content, rctx)
 	case "python":
 		res, err = extractPython(ctx, filename, content, rctx)
+	case "rust":
+		res, err = extractRust(ctx, filename, content, rctx)
 	default:
 		return nil, nil
 	}
