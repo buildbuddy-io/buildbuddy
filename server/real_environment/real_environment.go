@@ -66,6 +66,7 @@ type RealEnv struct {
 	invocationSearchService              interfaces.InvocationSearchService
 	invocationStatService                interfaces.InvocationStatService
 	usageService                         interfaces.UsageService
+	notificationService                  interfaces.NotificationService
 	usageTracker                         interfaces.UsageTracker
 	splashPrinter                        interfaces.SplashPrinter
 	actionCacheClient                    repb.ActionCacheClient
@@ -238,6 +239,13 @@ func (r *RealEnv) GetUsageService() interfaces.UsageService {
 }
 func (r *RealEnv) SetUsageService(s interfaces.UsageService) {
 	r.usageService = s
+}
+
+func (r *RealEnv) GetNotificationService() interfaces.NotificationService {
+	return r.notificationService
+}
+func (r *RealEnv) SetNotificationService(s interfaces.NotificationService) {
+	r.notificationService = s
 }
 
 func (r *RealEnv) GetUsageTracker() interfaces.UsageTracker {

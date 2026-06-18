@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/mcp/mcpserver"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/notification"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
@@ -130,6 +131,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	if err := usage_service.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
+	notification.Register(env)
 
 	if err := api.Register(env); err != nil {
 		log.Fatalf("%v", err)

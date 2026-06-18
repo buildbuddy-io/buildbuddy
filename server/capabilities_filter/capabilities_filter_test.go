@@ -185,6 +185,18 @@ func TestAllowedRPCs(t *testing.T) {
 			Allowed:      true,
 		},
 		{
+			Name:         "SendNotification_NonAdmin_NotAllowed",
+			RPC:          buildBuddyServicePrefix + "SendNotification",
+			Capabilities: []cappb.Capability{},
+			Allowed:      false,
+		},
+		{
+			Name:         "SendNotification_Admin_Allowed",
+			RPC:          buildBuddyServicePrefix + "SendNotification",
+			Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
+			Allowed:      true,
+		},
+		{
 			Name: "ServerAdminOnly_NonServerAdmin_NotAllowed",
 			RPC:  buildBuddyServicePrefix + "ApplyBucket",
 			// Note: this user is an org admin but not a server admin.

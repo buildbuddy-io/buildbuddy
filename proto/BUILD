@@ -675,6 +675,7 @@ proto_library(
         ":index_proto",
         ":invocation_proto",
         ":iprules_proto",
+        ":notification_proto",
         ":quota_proto",
         ":repo_proto",
         ":resource_proto",
@@ -691,6 +692,14 @@ proto_library(
         ":workflow_proto",
         ":workspace_proto",
         ":zip_proto",
+    ],
+)
+
+proto_library(
+    name = "notification_proto",
+    srcs = ["notification.proto"],
+    deps = [
+        ":context_proto",
     ],
 )
 
@@ -1497,6 +1506,7 @@ go_proto_library(
         ":index_go_proto",
         ":invocation_go_proto",
         ":iprules_go_proto",
+        ":notification_go_proto",
         ":quota_go_proto",
         ":repo_go_proto",
         ":resource_go_proto",
@@ -1513,6 +1523,15 @@ go_proto_library(
         ":workflow_go_proto",
         ":workspace_go_proto",
         ":zip_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "notification_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/notification",
+    proto = ":notification_proto",
+    deps = [
+        ":context_go_proto",
     ],
 )
 
@@ -2220,6 +2239,14 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "notification_ts_proto",
+    proto = ":notification_proto",
+    deps = [
+        ":context_ts_proto",
+    ],
+)
+
+ts_proto_library(
     name = "usage_ts_proto",
     proto = ":usage_proto",
     deps = [
@@ -2427,6 +2454,7 @@ ts_proto_library(
         ":index_ts_proto",
         ":invocation_ts_proto",
         ":iprules_ts_proto",
+        ":notification_ts_proto",
         ":quota_ts_proto",
         ":repo_ts_proto",
         ":runner_ts_proto",
