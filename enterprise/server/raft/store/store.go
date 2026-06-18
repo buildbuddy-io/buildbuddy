@@ -2881,6 +2881,9 @@ type txnRollbackMarkerGCWorker struct {
 	session *client.Session
 }
 
+// gcTxnRollbackMarkersAfterStartup sweeps expired rollback markers once, after
+// replicas finish initializing. Markers created while the process runs are not
+// collected until the next restart, so storage is bounded only across restarts.
 func (s *Store) gcTxnRollbackMarkersAfterStartup(ctx context.Context, retention time.Duration) {
 	for !s.ReplicasInitDone() {
 		select {

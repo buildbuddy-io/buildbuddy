@@ -302,6 +302,10 @@ func (tc *Coordinator) finalizeTxn(ctx context.Context, txnID []byte, op rfpb.Fi
 		return err
 	}
 	batchProto.Session = tc.txnRequestSession(txnID, "finalize/"+op.String())
+	// Proposer-stamped finalize time. On ROLLBACK the replica records this as the
+	// rollback marker's retention timestamp; kept separate from the session so
+	// marker GC does not depend on session lifetime semantics.
+	batchProto.TxnFinalizedAtUsec = tc.clock.Now().UnixMicro()
 
 	if op == rfpb.FinalizeOperation_COMMIT {
 		for _, hook := range stmt.GetHooks() {
@@ -465,7 +469,11 @@ func (tc *Coordinator) processTxnRecord(ctx context.Context, txnRecord *rfpb.Txn
 	return status.InvalidArgumentErrorf("unexpected txnRecord.state %s", txnRecord.GetTxnState())
 }
 
-func (tc *Coordinator) ProcessTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
+// ProcessTxnRecordForTest fences the decision CAS on the marshaled bytes of the
+// passed record (the production janitor, processTxnRecords, uses the raw scanned
+// bytes). This lets a test drive a specific, possibly stale janitor view — e.g.
+// processing a PENDING snapshot of a record that is already PREPARED on disk.
+func (tc *Coordinator) ProcessTxnRecordForTest(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
 	raw, err := proto.Marshal(txnRecord)
 	if err != nil {
 		return err

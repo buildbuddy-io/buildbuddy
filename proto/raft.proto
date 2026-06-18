@@ -327,6 +327,14 @@ message BatchCmdRequest {
   // writes will be allowed; it will be unlocked when the transaction is
   // committed or rolled back.
   bool lock_mapped_range = 7;
+
+  // Wall-clock time (micros) at which the coordinator/janitor issued this
+  // finalize, stamped by the proposer so it is deterministic across replicas.
+  // On ROLLBACK it becomes the participant-local rollback marker's retention
+  // timestamp (see RollbackTransaction); startup GC deletes markers this old.
+  // Kept separate from `session` so marker retention does not depend on session
+  // lifetime semantics.
+  int64 txn_finalized_at_usec = 8;
 }
 
 message BatchCmdResponse {

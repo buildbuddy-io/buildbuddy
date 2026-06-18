@@ -510,7 +510,13 @@ func (sm *Replica) CommitTransaction(txid []byte) error {
 	return nil
 }
 
-func (sm *Replica) RollbackTransaction(wb pebble.Batch, txid []byte, createdAtUsec int64) error {
+// RollbackTransaction releases any prepared state for txid and writes a
+// participant-local rollback marker that fences future PrepareTransaction calls
+// for txid. finalizedAtUsec is the marker's retention timestamp and must be a
+// real (positive) proposer-stamped time: startup GC only deletes markers whose
+// timestamp is positive and at or before its cutoff, so a non-positive value is
+// never collected (safe — fencing is preserved, never prematurely dropped).
+func (sm *Replica) RollbackTransaction(wb pebble.Batch, txid []byte, finalizedAtUsec int64) error {
 	markerKey := keys.MakeKey(constants.LocalTxnRollbackMarkerPrefix, txid)
 	txn, ok := sm.prepared[string(txid)]
 	if ok {
@@ -525,10 +531,10 @@ func (sm *Replica) RollbackTransaction(wb pebble.Batch, txid []byte, createdAtUs
 			return err
 		}
 	}
-	return wb.Set(sm.replicaLocalKey(markerKey), uint64ToBytes(uint64(createdAtUsec)), nil /*ignored write options*/)
+	return wb.Set(sm.replicaLocalKey(markerKey), uint64ToBytes(uint64(finalizedAtUsec)), nil /*ignored write options*/)
 }
 
-func rollbackMarkerCreatedAtUsec(val []byte) (int64, error) {
+func rollbackMarkerFinalizedAtUsec(val []byte) (int64, error) {
 	if len(val) != uint64EncodingSizeBytes {
 		return 0, status.InvalidArgumentErrorf("rollback marker timestamp has length %d, expected %d", len(val), uint64EncodingSizeBytes)
 	}
@@ -542,11 +548,8 @@ func (sm *Replica) HasTxnRollbackMarkersBefore(cutoffUsec int64) (bool, error) {
 	}
 	defer db.Close()
 
-	wb := db.NewIndexedBatch()
-	defer wb.Close()
-
 	start, end := keys.Range(sm.replicaLocalKey(constants.LocalTxnRollbackMarkerPrefix))
-	iter, err := wb.NewIter(&pebble.IterOptions{
+	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: start,
 		UpperBound: end,
 	})
@@ -556,12 +559,14 @@ func (sm *Replica) HasTxnRollbackMarkersBefore(cutoffUsec int64) (bool, error) {
 	defer iter.Close()
 
 	for iter.First(); iter.Valid(); iter.Next() {
-		createdAtUsec, err := rollbackMarkerCreatedAtUsec(iter.Value())
+		finalizedAtUsec, err := rollbackMarkerFinalizedAtUsec(iter.Value())
 		if err != nil {
 			sm.log.Errorf("unable to parse rollback marker %q: %s", iter.Key(), err)
 			continue
 		}
-		if createdAtUsec <= cutoffUsec {
+		// Skip non-positive timestamps so a marker never expires before its real
+		// finalize time; see RollbackTransaction.
+		if finalizedAtUsec > 0 && finalizedAtUsec <= cutoffUsec {
 			return true, nil
 		}
 	}
@@ -581,12 +586,14 @@ func (sm *Replica) deleteTxnRollbackMarkersBefore(wb pebble.Batch, req *rfpb.Del
 
 	cutoffUsec := req.GetCutoffUsec()
 	for iter.First(); iter.Valid(); iter.Next() {
-		createdAtUsec, err := rollbackMarkerCreatedAtUsec(iter.Value())
+		finalizedAtUsec, err := rollbackMarkerFinalizedAtUsec(iter.Value())
 		if err != nil {
 			sm.log.Errorf("unable to parse rollback marker %q: %s", iter.Key(), err)
 			continue
 		}
-		if createdAtUsec <= cutoffUsec {
+		// Skip non-positive timestamps so a marker never expires before its real
+		// finalize time; see RollbackTransaction.
+		if finalizedAtUsec > 0 && finalizedAtUsec <= cutoffUsec {
 			if err := wb.Delete(iter.Key(), nil /* ignore write options */); err != nil {
 				return nil, err
 			}
@@ -1563,7 +1570,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 				batchRsp.Status = statusProto(err)
 			}
 		case rfpb.FinalizeOperation_ROLLBACK:
-			if err := sm.RollbackTransaction(wb, txid, batchReq.GetSession().GetCreatedAtUsec()); err != nil {
+			if err := sm.RollbackTransaction(wb, txid, batchReq.GetTxnFinalizedAtUsec()); err != nil {
 				batchRsp.Status = statusProto(err)
 			}
 		default:
