@@ -528,10 +528,10 @@ func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[
 		contentHash.Write(repoMappingManifest.ShallowContentHash())
 	}
 
-	binary.Write(contentHash, binary.LittleEndian, uint64(len(r.EmptyFiles)))
+	_ = binary.Write(contentHash, binary.LittleEndian, uint64(len(r.EmptyFiles)))
 	internedEmptyFiles := make([]string, 0, len(r.EmptyFiles))
 	for _, emptyFilePath := range r.EmptyFiles {
-		binary.Write(contentHash, binary.LittleEndian, uint64(len(emptyFilePath)))
+		_ = binary.Write(contentHash, binary.LittleEndian, uint64(len(emptyFilePath)))
 		contentHash.Write([]byte(emptyFilePath))
 		// Bazel emits an empty file for each parent of a directory with a Python file in it. This typically results in
 		// many duplicated paths across Python runfiles trees. Interning them reduces the retained memory to be roughly

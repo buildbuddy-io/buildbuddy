@@ -181,7 +181,6 @@ func HandleExplain(args []string) (int, error) {
 		if err := pprof.Lookup(profile).WriteTo(f, 0); err != nil {
 			log.Fatalf("Could not write %s profile: %s", profile, err)
 		}
-		f.Close()
 	}
 	return 0, nil
 }
@@ -202,13 +201,11 @@ func Diff(oldPath, newPath string) (*spawn_diff.DiffResult, error) {
 	var oldGraph *compactgraph.CompactGraph
 	readsEG.Go(func() (err error) {
 		oldGraph, err = compactgraph.ReadCompactLog(oldSource)
-		oldSource.Close()
 		return err
 	})
 	var newGraph *compactgraph.CompactGraph
 	readsEG.Go(func() (err error) {
 		newGraph, err = compactgraph.ReadCompactLog(newSource)
-		newSource.Close()
 		return err
 	})
 	if err := readsEG.Wait(); err != nil {
@@ -266,7 +263,7 @@ func openLog(pathOrId string) (io.ReadCloser, error) {
 			out.Close()
 		}
 	}()
-	return in, err
+	return in, nil
 }
 
 func getExecLogResource(ctx context.Context, conn *grpc_client.ClientConnPool, invocationId string) (*digest.CASResourceName, error) {
