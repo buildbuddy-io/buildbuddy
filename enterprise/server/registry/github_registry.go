@@ -28,20 +28,14 @@ func handleGitHub(path string) ([]byte, int, error) {
 }
 
 func parseGithubRequest(path string) (string, string, string, string, error) {
-	repo := ""
-	version := ""
-	remainingPath := path
-	for _, v := range []*string{nil, nil, &repo, &version} {
-		var part string
-		var found bool
-		part, remainingPath, found = strings.Cut(remainingPath, "/")
-		if v != nil {
-			*v = part
-		}
-		if !found {
-			break
-		}
-	}
+ // "/modules/repo/version/.*" -> "", "modules/repo/version/.*"
+	_, remainingPath, _ := strings.Cut(path, "/")
+ // "modules/repo/version/.*" -> "modules", "repo/version/.*"
+	_, remainingPath, _ = strings.Cut(remainingPath, "/")
+ // "repo/version/.*" -> "repo", "version/.*"
+	repo, version, _ := strings.Cut(remainingPath, "/")
+ // "version/.*" -> "version", ".*"
+	version, _, _ = strings.Cut(version, "/")
 	if !githubPathPartRegex.MatchString(repo) || !githubPathPartRegex.MatchString(version) {
 		return "", "", "", "", fmt.Errorf("Invalid path: %s", path)
 	}
