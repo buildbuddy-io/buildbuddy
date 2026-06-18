@@ -3,6 +3,7 @@ package compactgraph
 import (
 	"bufio"
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -45,7 +46,10 @@ type globalSettings struct {
 // ReadCompactLog reads a compact execution log from the given reader and returns the graph of spawns, the hash function
 // used to compute the file digests, and an error if any.
 func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
-	diffEG := errgroup.Group{}
+	// WithContext lets the producer below observe an early return of the consumer (e.g. on an unsupported log): without
+	// cancellation, the producer would block forever trying to send into the buffered channel once it fills up and
+	// diffEG.Wait would deadlock.
+	diffEG, ctx := errgroup.WithContext(context.Background())
 
 	// A size > 1 shows noticeable performance improvements in benchmarks. Larger sizes don't show relevant further
 	// improvements.
@@ -69,7 +73,11 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 			if err != nil {
 				return err
 			}
-			entries <- &entry
+			select {
+			case entries <- &entry:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 		return nil
 	})

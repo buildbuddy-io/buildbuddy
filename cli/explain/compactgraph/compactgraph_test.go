@@ -1,18 +1,22 @@
 package compactgraph_test
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
 	"path"
 	"testing"
+	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protodelim"
 )
 
 func TestJavaNoopImplChange_7_3_1(t *testing.T) {
@@ -831,6 +835,68 @@ func TestChainOfLocalChanges(t *testing.T) {
 			assert.Equal(t, d.GetEnv().GetOldChanged(), map[string]string{"FOO": "old"})
 			assert.Equal(t, d.GetEnv().GetNewChanged(), map[string]string{"FOO": "new"})
 		}
+	}
+}
+
+func TestParamFileContents(t *testing.T) {
+	spawnDiffs := diffLogs(t, "param_file_contents", "8.1.0")
+	require.Len(t, spawnDiffs, 1)
+
+	sd := spawnDiffs[0]
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/gen$", sd.PrimaryOutput)
+	assert.Equal(t, "//pkg:gen", sd.TargetLabel)
+	assert.Equal(t, "ParamFileGen", sd.Mnemonic)
+	assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+	assert.False(t, sd.GetModified().GetExpected())
+	require.Len(t, sd.GetModified().GetDiffs(), 1)
+	d := sd.GetModified().Diffs[0]
+	require.IsType(t, &spawn_diff.Diff_ParamFileContents{}, d.Diff)
+	require.Len(t, d.GetParamFileContents().GetFileDiffs(), 1)
+	fd := d.GetParamFileContents().GetFileDiffs()[0]
+	assert.Regexp(t, `-[0-9]+\.params$`, fd.GetLogicalPath())
+	assert.NotNil(t, fd.GetOldFile().GetDigest())
+	assert.NotNil(t, fd.GetNewFile().GetDigest())
+	assert.NotEqual(t, fd.GetOldFile().GetDigest().GetHash(), fd.GetNewFile().GetDigest().GetHash())
+}
+
+func TestReadCompactLogUnsupportedDoesNotHang(t *testing.T) {
+	// An unsupported log makes the consumer goroutine return early. This is a
+	// regression test for a deadlock in which the producer goroutine would block
+	// forever once the internal entry channel filled up, so that ReadCompactLog
+	// never returned the error.
+	var buf bytes.Buffer
+	w, err := zstd.NewWriter(&buf)
+	require.NoError(t, err)
+	var marshalOpts protodelim.MarshalOptions
+	// The invocation entry triggers the early return.
+	_, err = marshalOpts.MarshalTo(w, &spawn.ExecLogEntry{
+		Type: &spawn.ExecLogEntry_Invocation_{Invocation: &spawn.ExecLogEntry_Invocation{
+			SiblingRepositoryLayout: true,
+			HashFunctionName:        "SHA-256",
+		}},
+	})
+	require.NoError(t, err)
+	// Add far more entries than the internal channel buffer (size 100) holds so
+	// that the producer is guaranteed to block on a send.
+	for i := 1; i <= 500; i++ {
+		_, err = marshalOpts.MarshalTo(w, &spawn.ExecLogEntry{
+			Id:   uint32(i),
+			Type: &spawn.ExecLogEntry_File_{File: &spawn.ExecLogEntry_File{Path: "file"}},
+		})
+		require.NoError(t, err)
+	}
+	require.NoError(t, w.Close())
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := compactgraph.ReadCompactLog(bytes.NewReader(buf.Bytes()))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.ErrorContains(t, err, "sibling_repository_layout")
+	case <-time.After(30 * time.Second):
+		t.Fatal("ReadCompactLog did not return; the producer goroutine likely deadlocked")
 	}
 }
 
