@@ -29,8 +29,8 @@ go_test(
     name = "ocifetcher_server_proxy_test",
     size = "medium",
     srcs = ["ocifetcher_server_proxy_test.go"],
-    embed = [":ocifetcher_server_proxy"],
     deps = [
+        ":ocifetcher_server_proxy",
         "//enterprise/server/experiments",
         "//enterprise/server/oci/ocifetcher",
         "//enterprise/server/testutil/enterprise_testenv",

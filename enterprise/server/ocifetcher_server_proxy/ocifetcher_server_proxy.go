@@ -30,7 +30,7 @@ import (
 
 const (
 	cacheDigestFunction          = repb.DigestFunction_SHA256
-	useLocalOCIFetcherExperiment = "cache_proxy.use_local_oci_fetcher"
+	UseLocalOCIFetcherExperiment = "cache_proxy.use_local_oci_fetcher"
 )
 
 type OCIFetcherServerProxy struct {
@@ -60,13 +60,13 @@ func Register(env *real_environment.RealEnv) error {
 
 func New(env environment.Env) (*SwitchingOCIFetcherServer, error) {
 	if env.GetOCIFetcherClient() == nil {
-		return nil, status.FailedPreconditionError("An OCIFetcherClient is required to enable the OCIFetcherServerProxy")
+		return nil, status.FailedPreconditionError("An OCIFetcherClient is required to enable the SwitchingOCIFetcherServer")
 	}
 	if env.GetLocalByteStreamClient() == nil {
-		return nil, status.FailedPreconditionError("A LocalByteStreamClient is required to enable the OCIFetcherServerProxy")
+		return nil, status.FailedPreconditionError("A LocalByteStreamClient is required to enable the SwitchingOCIFetcherServer")
 	}
 	if env.GetLocalActionCacheClient() == nil {
-		return nil, status.FailedPreconditionError("A LocalActionCacheClient is required to enable the OCIFetcherServerProxy")
+		return nil, status.FailedPreconditionError("A LocalActionCacheClient is required to enable the SwitchingOCIFetcherServer")
 	}
 	local, err := ocifetcher.NewServer(env.GetLocalByteStreamClient(), env.GetLocalActionCacheClient())
 	if err != nil {
@@ -84,7 +84,7 @@ func New(env environment.Env) (*SwitchingOCIFetcherServer, error) {
 }
 
 func (s *SwitchingOCIFetcherServer) backend(ctx context.Context) ofpb.OCIFetcherServer {
-	if fp := s.env.GetExperimentFlagProvider(); fp != nil && fp.Boolean(ctx, useLocalOCIFetcherExperiment, false) {
+	if fp := s.env.GetExperimentFlagProvider(); fp != nil && fp.Boolean(ctx, UseLocalOCIFetcherExperiment, false) {
 		return s.local
 	}
 	return s.proxy

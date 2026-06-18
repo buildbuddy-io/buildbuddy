@@ -37,28 +37,49 @@ import (
 	gproto "google.golang.org/protobuf/proto"
 )
 
-const useLocalOCIFetcherExperiment = "cache_proxy.use_local_oci_fetcher"
+func TestNew_MissingClients(t *testing.T) {
+	for _, tc := range []struct {
+		name                      string
+		setOCIFetcherClient       bool
+		setLocalByteStreamClient  bool
+		setLocalActionCacheClient bool
+	}{
+		{
+			name:                      "MissingOCIFetcherClient",
+			setLocalByteStreamClient:  true,
+			setLocalActionCacheClient: true,
+		},
+		{
+			name:                      "MissingLocalByteStreamClient",
+			setOCIFetcherClient:       true,
+			setLocalActionCacheClient: true,
+		},
+		{
+			name:                     "MissingLocalActionCacheClient",
+			setOCIFetcherClient:      true,
+			setLocalByteStreamClient: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := testenv.GetTestEnv(t)
 
-func TestNew_MissingOCIFetcherClient(t *testing.T) {
-	env := testenv.GetTestEnv(t)
-	localBSClient, localACClient := setupLocalCacheClients(t)
-	env.SetLocalByteStreamClient(localBSClient)
-	env.SetLocalActionCacheClient(localACClient)
-	// Don't set OCIFetcherClient
+			if tc.setOCIFetcherClient {
+				_, bsClient, acClient := setupCacheEnv(t)
+				env.SetOCIFetcherClient(runOCIFetcherServer(ctx, t, bsClient, acClient))
+			}
+			localBSClient, localACClient := setupLocalCacheClients(t)
+			if tc.setLocalByteStreamClient {
+				env.SetLocalByteStreamClient(localBSClient)
+			}
+			if tc.setLocalActionCacheClient {
+				env.SetLocalActionCacheClient(localACClient)
+			}
 
-	_, err := ocifetcher_server_proxy.New(env)
-	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
-}
-
-func TestNew_MissingLocalBSClient(t *testing.T) {
-	env := testenv.GetTestEnv(t)
-	// Set a dummy OCIFetcherClient but no LocalByteStreamClient
-	ctx := context.Background()
-	_, bsClient, acClient := setupCacheEnv(t)
-	env.SetOCIFetcherClient(runOCIFetcherServer(ctx, t, bsClient, acClient))
-
-	_, err := ocifetcher_server_proxy.New(env)
-	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
+			_, err := ocifetcher_server_proxy.New(env)
+			require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
+		})
+	}
 }
 
 func TestSwitchingOCIFetcherServer_RoutesByExperiment(t *testing.T) {
@@ -106,7 +127,7 @@ func TestSwitchingOCIFetcherServer_RoutesByExperiment(t *testing.T) {
 		env.SetLocalByteStreamClient(localBSClient)
 		env.SetLocalActionCacheClient(localACClient)
 		testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-			useLocalOCIFetcherExperiment: {
+			ocifetcher_server_proxy.UseLocalOCIFetcherExperiment: {
 				State:          memprovider.Enabled,
 				DefaultVariant: "true",
 				Variants: map[string]any{
