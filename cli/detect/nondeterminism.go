@@ -188,11 +188,7 @@ func (c *checker) Run(ctx context.Context) error {
 	if explainErr != nil {
 		return errors.Join(buildErr, explainErr)
 	}
-	// Both builds run the same command on the same sources, so only spawns whose
-	// outputs or exit code changed despite unchanged inputs are genuinely
-	// non-deterministic. Other diffs (e.g. changed inputs) are downstream effects
-	// whose root cause is itself reported as a non-deterministic spawn.
-	diff.SpawnDiffs = explain.FilterNondeterministicSpawns(diff.GetSpawnDiffs())
+	diff.SpawnDiffs = nondeterministicSpawns(diff.GetSpawnDiffs())
 	if len(diff.GetSpawnDiffs()) == 0 {
 		log.Print("\n\n\033[32mNo nondeterminism detected.\033[0m\n\n")
 		return buildErr
@@ -203,6 +199,33 @@ func (c *checker) Run(ctx context.Context) error {
 		log.Warnf("Failed to print text bb explain output: %s", err)
 	}
 	return errors.Join(buildErr, errNondeterminismDetected)
+}
+
+// nondeterministicSpawns reduces the diff to spawns that represent genuine
+// non-determinism. Both builds run the same command on the same sources, so:
+//   - A spawn that ran in only one of the builds (old-only/new-only) is a sign
+//     of some non-determinism it analysis time. Unexpected but worth flagging.
+//   - A modified spawn is non-deterministic only if its outputs or exit code
+//     changed despite unchanged inputs (see explain.IsNondeterministic).
+//
+// Spawns whose non-determinism is expected (e.g. timestamps in test outputs) are
+// dropped, mirroring bb explain, which also hides them unless --verbose is passed.
+func nondeterministicSpawns(diffs []*sdpb.SpawnDiff) []*sdpb.SpawnDiff {
+	var filtered []*sdpb.SpawnDiff
+	for _, d := range diffs {
+		if d.GetModified().GetExpected() {
+			continue
+		}
+		switch d.GetDiff().(type) {
+		case *sdpb.SpawnDiff_OldOnly, *sdpb.SpawnDiff_NewOnly:
+			filtered = append(filtered, d)
+		case *sdpb.SpawnDiff_Modified:
+			if explain.IsNondeterministic(d) {
+				filtered = append(filtered, d)
+			}
+		}
+	}
+	return filtered
 }
 
 func newArtifacts() (*artifacts, error) {

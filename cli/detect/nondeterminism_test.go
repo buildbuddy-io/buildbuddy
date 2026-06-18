@@ -99,6 +99,56 @@ func nondeterministicSpawnDiff(label string) *spawn_diff.SpawnDiff {
 	}
 }
 
+func TestRunReportsActionGraphNondeterminism(t *testing.T) {
+	// A spawn that ran in only one of the two identical builds is genuine
+	// non-determinism even without an output or exit-code diff.
+	diff := &spawn_diff.DiffResult{SpawnDiffs: []*spawn_diff.SpawnDiff{{
+		TargetLabel: "//foo:bar",
+		Diff:        &spawn_diff.SpawnDiff_NewOnly{NewOnly: &spawn_diff.NewOnly{}},
+	}}}
+	explainer := &fakeExplainer{diff: diff}
+	runner := &fakeRunner{}
+	c := &checker{
+		opts: options{
+			bazelArgs:     bazelArgsForTest(t, "build", "//foo:bar"),
+			besBackend:    defaultBESBackend,
+			besResultsURL: defaultBESResultsURL,
+		},
+		runner:    runner,
+		explainer: explainer,
+	}
+
+	err := c.Run(context.Background())
+	require.ErrorIs(t, err, errNondeterminismDetected)
+
+	require.Len(t, runner.runs, 2)
+	assert.Equal(t, 1, explainer.writeCalls)
+}
+
+func TestRunIgnoresExpectedNondeterminism(t *testing.T) {
+	// A non-deterministic spawn marked as expected (e.g. timestamps in test
+	// outputs) shouldn't be flagged as non-determinism.
+	spawn := nondeterministicSpawnDiff("//foo:bar")
+	spawn.GetModified().Expected = true
+	diff := &spawn_diff.DiffResult{SpawnDiffs: []*spawn_diff.SpawnDiff{spawn}}
+	explainer := &fakeExplainer{diff: diff}
+	runner := &fakeRunner{}
+	c := &checker{
+		opts: options{
+			bazelArgs:     bazelArgsForTest(t, "build", "//foo:bar"),
+			besBackend:    defaultBESBackend,
+			besResultsURL: defaultBESResultsURL,
+		},
+		runner:    runner,
+		explainer: explainer,
+	}
+
+	require.NoError(t, c.Run(context.Background()))
+
+	require.Len(t, runner.runs, 2)
+	assert.Equal(t, 0, explainer.writeCalls)
+}
+
 func TestRunIgnoresDeterministicDiffs(t *testing.T) {
 	// A spawn whose inputs changed is a downstream effect, not non-determinism.
 	diff := &spawn_diff.DiffResult{SpawnDiffs: []*spawn_diff.SpawnDiff{{

@@ -150,7 +150,7 @@ func HandleExplain(args []string) (int, error) {
 		return -1, err
 	}
 	if *nondeterministic {
-		diffResult.SpawnDiffs = FilterNondeterministicSpawns(diffResult.SpawnDiffs)
+		diffResult.SpawnDiffs = filterNondeterministicSpawns(diffResult.SpawnDiffs)
 	}
 	switch *outputFormat {
 	case "text":
@@ -221,24 +221,28 @@ func Diff(oldPath, newPath string) (*spawn_diff.DiffResult, error) {
 	return compactgraph.Diff(oldGraph, newGraph)
 }
 
-// FilterNondeterministicSpawns returns only those spawn diffs that represent
+// filterNondeterministicSpawns returns only those spawn diffs that represent
 // non-deterministic spawns, i.e. spawns whose outputs or exit code changed even
 // though their inputs didn't.
-func FilterNondeterministicSpawns(diffs []*spawn_diff.SpawnDiff) []*spawn_diff.SpawnDiff {
+func filterNondeterministicSpawns(diffs []*spawn_diff.SpawnDiff) []*spawn_diff.SpawnDiff {
 	var filtered []*spawn_diff.SpawnDiff
 	for _, d := range diffs {
-		if isNondeterministic(d) {
+		if IsNondeterministic(d) {
 			filtered = append(filtered, d)
 		}
 	}
 	return filtered
 }
 
-// isNondeterministic reports whether the spawn diff records a change in output
+// IsNondeterministic reports whether the spawn diff records a change in output
 // contents (non-hermetic outputs) or exit code (flaky action). The diff engine
 // only emits these diffs when the spawn's inputs were unchanged (see
 // compactgraph.diffSpawns), so their presence means the spawn is non-deterministic.
-func isNondeterministic(d *spawn_diff.SpawnDiff) bool {
+//
+// Note that this only considers modified spawns: spawns that ran in only one of
+// the two logs (old-only/new-only) are not classified as non-deterministic here,
+// as they are expected when diffing two unrelated builds.
+func IsNondeterministic(d *spawn_diff.SpawnDiff) bool {
 	for _, sd := range d.GetModified().GetDiffs() {
 		switch sd.Diff.(type) {
 		case *spawn_diff.Diff_OutputContents, *spawn_diff.Diff_ExitCode:
