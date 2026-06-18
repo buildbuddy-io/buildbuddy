@@ -9,6 +9,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/oci/ocicache",
+        "//enterprise/server/oci/ocifetcher",
         "//proto:oci_fetcher_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
@@ -30,6 +31,7 @@ go_test(
     srcs = ["ocifetcher_server_proxy_test.go"],
     embed = [":ocifetcher_server_proxy"],
     deps = [
+        "//enterprise/server/experiments",
         "//enterprise/server/oci/ocifetcher",
         "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/testutil/testregistry",
@@ -47,6 +49,8 @@ go_test(
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
+        "@com_github_open_feature_go_sdk//openfeature",
+        "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",

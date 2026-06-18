@@ -69,6 +69,7 @@ type RealEnv struct {
 	usageTracker                         interfaces.UsageTracker
 	splashPrinter                        interfaces.SplashPrinter
 	actionCacheClient                    repb.ActionCacheClient
+	localActionCacheClient               repb.ActionCacheClient
 	byteStreamClient                     bspb.ByteStreamClient
 	localByteStreamClient                bspb.ByteStreamClient
 	pooledByteStreamClient               interfaces.PooledByteStreamClient
@@ -301,6 +302,12 @@ func (r *RealEnv) SetActionCacheClient(a repb.ActionCacheClient) {
 }
 func (r *RealEnv) GetActionCacheClient() repb.ActionCacheClient {
 	return r.actionCacheClient
+}
+func (r *RealEnv) SetLocalActionCacheClient(a repb.ActionCacheClient) {
+	r.localActionCacheClient = a
+}
+func (r *RealEnv) GetLocalActionCacheClient() repb.ActionCacheClient {
+	return r.localActionCacheClient
 }
 
 func (r *RealEnv) SetByteStreamClient(b bspb.ByteStreamClient) {

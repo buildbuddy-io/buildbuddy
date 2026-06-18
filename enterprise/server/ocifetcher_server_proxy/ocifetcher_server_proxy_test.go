@@ -1,4 +1,4 @@
-package ocifetcher_server_proxy
+package ocifetcher_server_proxy_test
 
 import (
 	"context"
@@ -8,7 +8,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ocifetcher_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -20,6 +22,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -33,12 +37,16 @@ import (
 	gproto "google.golang.org/protobuf/proto"
 )
 
+const useLocalOCIFetcherExperiment = "cache_proxy.use_local_oci_fetcher"
+
 func TestNew_MissingOCIFetcherClient(t *testing.T) {
 	env := testenv.GetTestEnv(t)
-	env.SetLocalByteStreamClient(setupLocalBSClient(t))
+	localBSClient, localACClient := setupLocalCacheClients(t)
+	env.SetLocalByteStreamClient(localBSClient)
+	env.SetLocalActionCacheClient(localACClient)
 	// Don't set OCIFetcherClient
 
-	_, err := New(env)
+	_, err := ocifetcher_server_proxy.New(env)
 	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
 }
 
@@ -49,8 +57,78 @@ func TestNew_MissingLocalBSClient(t *testing.T) {
 	_, bsClient, acClient := setupCacheEnv(t)
 	env.SetOCIFetcherClient(runOCIFetcherServer(ctx, t, bsClient, acClient))
 
-	_, err := New(env)
+	_, err := ocifetcher_server_proxy.New(env)
 	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
+}
+
+func TestSwitchingOCIFetcherServer_RoutesByExperiment(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("DefaultRoutesToProxyOCIFetcher", func(t *testing.T) {
+		remoteClient := &recordingManifestMetadataOCIFetcherClient{
+			response: &ofpb.FetchManifestMetadataResponse{
+				Digest:    "sha256:proxy",
+				Size:      123,
+				MediaType: "application/vnd.proxy.manifest.v1+json",
+			},
+		}
+		env := testenv.GetTestEnv(t)
+		env.SetOCIFetcherClient(remoteClient)
+		localBSClient, localACClient := setupLocalCacheClients(t)
+		env.SetLocalByteStreamClient(localBSClient)
+		env.SetLocalActionCacheClient(localACClient)
+
+		server, err := ocifetcher_server_proxy.New(env)
+		require.NoError(t, err)
+
+		resp, err := server.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{Ref: "example.com/repo:tag"})
+		require.NoError(t, err)
+		require.Empty(t, cmp.Diff(remoteClient.response, resp, protocmp.Transform()))
+		require.Equal(t, int32(1), remoteClient.fetchManifestMetadataCount.Load())
+	})
+
+	t.Run("ExperimentRoutesToLocalOCIFetcher", func(t *testing.T) {
+		flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
+		reg := setupTestRegistry(t, nil)
+		imageName, img := reg.PushNamedImage(t, "test-image", nil)
+		expectedDigest, expectedSize, expectedMediaType := imageMetadata(t, img)
+
+		remoteClient := &recordingManifestMetadataOCIFetcherClient{
+			response: &ofpb.FetchManifestMetadataResponse{
+				Digest:    "sha256:proxy",
+				Size:      123,
+				MediaType: "application/vnd.proxy.manifest.v1+json",
+			},
+		}
+		env := testenv.GetTestEnv(t)
+		env.SetOCIFetcherClient(remoteClient)
+		localBSClient, localACClient := setupLocalCacheClients(t)
+		env.SetLocalByteStreamClient(localBSClient)
+		env.SetLocalActionCacheClient(localACClient)
+		testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+			useLocalOCIFetcherExperiment: {
+				State:          memprovider.Enabled,
+				DefaultVariant: "true",
+				Variants: map[string]any{
+					"true": true,
+				},
+			},
+		})
+		require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+		fp, err := experiments.NewFlagProvider(t.Name())
+		require.NoError(t, err)
+		env.SetExperimentFlagProvider(fp)
+
+		server, err := ocifetcher_server_proxy.New(env)
+		require.NoError(t, err)
+
+		resp, err := server.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{Ref: imageName})
+		require.NoError(t, err)
+		require.Equal(t, expectedDigest, resp.GetDigest())
+		require.Equal(t, expectedSize, resp.GetSize())
+		require.Equal(t, expectedMediaType, resp.GetMediaType())
+		require.Equal(t, int32(0), remoteClient.fetchManifestMetadataCount.Load())
+	})
 }
 
 // TestHappyPath tests successful FetchBlob, FetchBlobMetadata, FetchManifest,
@@ -794,15 +872,15 @@ func setupCacheEnv(t *testing.T) (*testenv.TestEnv, bspb.ByteStreamClient, repb.
 	return te, te.GetByteStreamClient(), te.GetActionCacheClient()
 }
 
-// setupLocalBSClient creates a standalone local BS cache env and returns
-// a ByteStream client connected to it.
-func setupLocalBSClient(t *testing.T) bspb.ByteStreamClient {
+// setupLocalCacheClients creates a standalone local cache env and returns
+// ByteStream and ActionCache clients connected to it.
+func setupLocalCacheClients(t *testing.T) (bspb.ByteStreamClient, repb.ActionCacheClient) {
 	te := testenv.GetTestEnv(t)
 	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityApp)
 	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
 	testcache.Setup(t, te, lis)
 	go runServer()
-	return te.GetByteStreamClient()
+	return te.GetByteStreamClient(), te.GetActionCacheClient()
 }
 
 // runOCIFetcherServer creates an OCIFetcher server and returns a client connected to it.
@@ -831,9 +909,11 @@ func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteSt
 func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCIFetcherClient) ofpb.OCIFetcherClient {
 	env := testenv.GetTestEnv(t)
 	env.SetOCIFetcherClient(remoteClient)
-	env.SetLocalByteStreamClient(setupLocalBSClient(t))
+	localBSClient, localACClient := setupLocalCacheClients(t)
+	env.SetLocalByteStreamClient(localBSClient)
+	env.SetLocalActionCacheClient(localACClient)
 
-	proxy, err := New(env)
+	proxy, err := ocifetcher_server_proxy.New(env)
 	require.NoError(t, err)
 
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
@@ -887,6 +967,28 @@ func (c *countingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.Fetc
 
 func (c *countingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
 	return c.inner.FetchBlobMetadata(ctx, req, opts...)
+}
+
+type recordingManifestMetadataOCIFetcherClient struct {
+	response                   *ofpb.FetchManifestMetadataResponse
+	fetchManifestMetadataCount atomic.Int32
+}
+
+func (c *recordingManifestMetadataOCIFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
+	return nil, status.UnimplementedError("not implemented")
+}
+
+func (c *recordingManifestMetadataOCIFetcherClient) FetchManifestMetadata(ctx context.Context, req *ofpb.FetchManifestMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestMetadataResponse, error) {
+	c.fetchManifestMetadataCount.Add(1)
+	return c.response, nil
+}
+
+func (c *recordingManifestMetadataOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.FetchBlobRequest, opts ...grpc.CallOption) (ofpb.OCIFetcher_FetchBlobClient, error) {
+	return nil, status.UnimplementedError("not implemented")
+}
+
+func (c *recordingManifestMetadataOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	return nil, status.UnimplementedError("not implemented")
 }
 
 type recordingOCIFetcherClient struct {
