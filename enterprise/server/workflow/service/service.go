@@ -1403,6 +1403,10 @@ func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) 
 
 // fetchWorkflowConfig returns the BuildBuddyConfig from the repo, or the
 // default BuildBuddyConfig if that setting is enabled.
+//
+// It returns nil (the "do nothing" signal) when there are no actions to run:
+// the repo has no buildbuddy.yaml, isn't using the default config, and
+// no additional settings (like codesearch) contribute actions.
 func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider interfaces.GitProvider, workflow *tables.Workflow, webhookData *interfaces.WebhookData) (*config.BuildBuddyConfig, error) {
 	workflowRef := webhookData.SHA
 	if workflowRef == "" {
@@ -1427,10 +1431,14 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider 
 	} else {
 		if status.IsNotFoundError(err) {
 			if workflow.GitRepository != nil && !workflow.GitRepository.UseDefaultWorkflowConfig {
-				return nil, nil
+				// The repo has no buildbuddy.yaml and isn't using the default
+				// config, so the user has no actions of their own. Start from an
+				// empty config rather than bailing out, so that codesearch
+				// indexing actions can still be appended below if enabled.
+				c = &config.BuildBuddyConfig{}
+			} else {
+				c = config.GetDefault(webhookData.TargetRepoDefaultBranch)
 			}
-
-			c = config.GetDefault(webhookData.TargetRepoDefaultBranch)
 		} else {
 			return nil, err
 		}
@@ -1438,6 +1446,13 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider 
 
 	if err := ws.addCodesearchActionsIfEnabled(ctx, c, workflow, webhookData); err != nil {
 		return nil, err
+	}
+
+	// If there are no actions to run, return nil to signal "do nothing", which
+	// callers distinguish from a config with actions (e.g. to clean up orphaned
+	// scheduled runs).
+	if len(c.Actions) == 0 {
+		return nil, nil
 	}
 	return c, nil
 }

@@ -872,6 +872,56 @@ func TestWebhook_NoWorkflowConfig_NOP(t *testing.T) {
 	require.Zero(t, len(execClient.executeRequests))
 }
 
+func TestWebhook_NoWorkflowConfig_CodesearchEnabled_StartsIndexing(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	flags.Set(t, "remote_execution.enable_codesearch_indexing", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+
+	// Enable codesearch indexing for the group.
+	g, err := te.GetUserDB().GetGroupByID(ctx, gid)
+	require.NoError(t, err)
+	g.URLIdentifier = "mustbeset"
+	g.CodeSearchEnabled = true
+	_, err = te.GetUserDB().UpdateGroup(ctx, g)
+	require.NoError(t, err)
+
+	// `useDefaultWorkflowConfig` is false and the repo has no buildbuddy.yaml, so
+	// the user has no workflow actions of their own. But codesearch indexing is
+	// enabled, so a push should still trigger the codesearch indexing action.
+	repo := createWorkflow(t, te, repoURL, gid, false /*useDefaultWorkflowConfig*/)
+
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:               "push",
+		TargetRepoURL:           "https://github.com/acme-inc/acme",
+		TargetBranch:            "main",
+		TargetRepoDefaultBranch: "main",
+		PushedRepoURL:           "https://github.com/acme-inc/acme",
+		PushedBranch:            "main",
+		SHA:                     "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic:      true,
+	}
+	// Do not return a buildbuddy.yaml config file in the repo contents.
+	provider.FileContents = map[string]string{}
+
+	err = te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	// Expect exactly the codesearch indexing action to be dispatched.
+	execReq := execClient.NextExecuteRequest()
+	require.Equal(t, config.CSIncrementalUpdateName, getExecutedActionName(t, ctx, te, execReq.Payload))
+}
+
 func TestWebhook_FailedToStart_PublishesStatus(t *testing.T) {
 	ctx := context.Background()
 	u, lis := testhttp.NewServer(t)
