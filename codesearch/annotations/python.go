@@ -35,11 +35,19 @@ var pyImportQuery = mustCompileQuery(`
 `, python.GetLanguage())
 
 // pyFromPairQuery yields one (module, name) match per imported name of a
-// `from a.b import c, d` statement; @from is shared across the matches.
+// `from a.b import c, d` statement; @from is shared across the matches. An
+// aliased name (`import c as d`) is an aliased_import node; capture its inner
+// dotted_name so @name holds c, not the whole `c as d` — otherwise the
+// py:a.b.c submodule edge would be lost (plain `import a.b.c as d` already
+// handles this in pyImportQuery). A single imported name parses as a
+// one-segment dotted_name, so no bare (identifier) alternative is needed.
 var pyFromPairQuery = mustCompileQuery(`
 	(import_from_statement
 		module_name: [(dotted_name) (relative_import)] @from
-		name: [(dotted_name) (identifier)] @name)
+		name: [
+			(dotted_name) @name
+			(aliased_import name: (dotted_name) @name)
+		])
 `, python.GetLanguage())
 
 // pyFromModuleQuery captures just the from-module, covering wildcard imports

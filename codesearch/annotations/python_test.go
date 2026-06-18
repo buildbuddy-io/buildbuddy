@@ -63,6 +63,15 @@ from app.db.models import User
 	assert.Equal(t, []string{"py:app.main"}, ann.ImportID)
 }
 
+func TestPythonAliasedFromImport(t *testing.T) {
+	dir := t.TempDir()
+	// `from a.b import c as d` still records the submodule candidate py:a.b.c
+	// (the imported name c), not just the parent package py:a.b.
+	ann := extractPy(t, dir, "app/main.py", "from app.db import models as m\n")
+	assert.Contains(t, ann.Imports, "py:app.db")
+	assert.Contains(t, ann.Imports, "py:app.db.models")
+}
+
 func TestPythonRelativeImports(t *testing.T) {
 	dir := t.TempDir()
 	ann := extractPy(t, dir, "pkg/sub/mod.py", `from . import helper
