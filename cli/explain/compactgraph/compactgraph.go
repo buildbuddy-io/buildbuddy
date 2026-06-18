@@ -80,6 +80,10 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 		interner := newInterner()
 		previousInputs := make(map[uint32]Input)
 		previousInputs[0] = emptyInputSet
+		// The workspace status files (produced by Bazel's workspace status action when stamping is enabled) are not
+		// emitted as a spawn in the execution log even though other spawns consume them. They are collected here so
+		// that a synthetic spawn producing them can be added once the log has been fully read.
+		var stableStatusFile, volatileStatusFile *File
 		for entry := range entries {
 			switch entry.Type.(type) {
 			case *spawnproto.ExecLogEntry_Invocation_:
@@ -92,6 +96,12 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 			case *spawnproto.ExecLogEntry_File_:
 				file := protoToFile(entry.GetFile(), cg.settings.hashFunction)
 				previousInputs[entry.Id] = file
+				switch file.Path() {
+				case stableStatusFilePath:
+					stableStatusFile = file
+				case volatileStatusFilePath:
+					volatileStatusFile = file
+				}
 			case *spawnproto.ExecLogEntry_UnresolvedSymlink_:
 				symlink := protoToSymlink(entry.GetUnresolvedSymlink())
 				previousInputs[entry.Id] = symlink
@@ -134,6 +144,7 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 				log.Fatalf("unexpected entry type: %T", entry.Type)
 			}
 		}
+		addWorkspaceStatusActionSpawn(cg, stableStatusFile, volatileStatusFile)
 		return nil
 	})
 
@@ -182,6 +193,45 @@ func addRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) Input {
 	}
 	cg.spawns[tree.Path()] = s
 	return output
+}
+
+// Exec-root-relative paths of the files produced by Bazel's workspace status action when stamping is enabled.
+const (
+	stableStatusFilePath   = "bazel-out/stable-status.txt"
+	volatileStatusFilePath = "bazel-out/volatile-status.txt"
+)
+
+// Bazel's real mnemonic for the workspace status action. It is unique to that action, which is never emitted to the
+// execution log, so it is safe to reuse for the synthetic spawn without conflicting with any logged spawn.
+const workspaceStatusActionMnemonic = "BazelWorkspaceStatusAction"
+
+// addWorkspaceStatusActionSpawn injects a synthetic spawn that produces the workspace status files (stable-status.txt
+// and volatile-status.txt) collected while reading the log. Bazel populates these files via its workspace status
+// action when stamping is enabled (e.g. --stamp), but doesn't emit that action to the execution log even though stamped
+// spawns consume the files. Without this synthetic producer, changes to the status files - in particular the volatile
+// build timestamp, which changes on every build - would be reported on each consuming spawn instead of being
+// attributed to a single non-hermetic root cause.
+func addWorkspaceStatusActionSpawn(cg *CompactGraph, stableStatusFile, volatileStatusFile *File) {
+	var outputs []Input
+	if stableStatusFile != nil {
+		outputs = append(outputs, stableStatusFile)
+	}
+	if volatileStatusFile != nil {
+		outputs = append(outputs, volatileStatusFile)
+	}
+	if len(outputs) == 0 {
+		return
+	}
+	s := &Spawn{
+		Mnemonic:   workspaceStatusActionMnemonic,
+		Inputs:     emptyInputSet,
+		Tools:      emptyInputSet,
+		ParamFiles: emptyInputSet,
+		Outputs:    outputs,
+	}
+	for _, output := range outputs {
+		cg.spawns[output.Path()] = s
+	}
 }
 
 func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
