@@ -40,6 +40,7 @@ func TestAddBazelFlags(t *testing.T) {
 		"--noremote_accept_cached",
 		"--repo_contents_cache=",
 		"--disk_cache=",
+		"--noexperimental_convenience_symlinks",
 		"--execution_log_compact_file=/tmp/log.pb.zst",
 		"//foo:bar",
 	}, args)
@@ -80,7 +81,7 @@ func TestRunReturnsDetectionError(t *testing.T) {
 	err := c.Run(context.Background())
 	require.ErrorIs(t, err, errNondeterminismDetected)
 
-	require.Len(t, runner.runs, 2)
+	require.Equal(t, []string{"build", "shutdown", "build", "shutdown"}, bazelCommands(runner.runs))
 	assert.Equal(t, 1, explainer.writeCalls)
 	assert.Same(t, diff, explainer.wroteDiff)
 }
@@ -100,7 +101,7 @@ func TestRunReturnsNilWhenNoDiffs(t *testing.T) {
 
 	require.NoError(t, c.Run(context.Background()))
 
-	require.Len(t, runner.runs, 2)
+	require.Equal(t, []string{"build", "shutdown", "build", "shutdown"}, bazelCommands(runner.runs))
 	assert.Equal(t, 0, explainer.writeCalls)
 }
 
@@ -110,10 +111,16 @@ func TestRemovesOutputBaseAfterEachRun(t *testing.T) {
 	defer os.RemoveAll(a.tempDir)
 
 	var runner fakeRunner
+	var buildRuns int
 	runner.onRun = func(ctx context.Context, call commandCall) error {
+		command, _ := parser.GetBazelCommandAndIndex(call.args)
+		if command == "shutdown" {
+			return nil
+		}
+		buildRuns++
 		outputBase := outputBaseFromArgs(t, call.args)
 		require.NoError(t, os.MkdirAll(filepath.Join(outputBase, "execroot"), 0755))
-		if len(runner.runs) == 2 {
+		if buildRuns == 2 {
 			require.NoDirExists(t, filepath.Join(a.tempDir, "output_base_1"))
 		}
 		return nil
@@ -129,7 +136,7 @@ func TestRemovesOutputBaseAfterEachRun(t *testing.T) {
 
 	require.NoError(t, c.runBuilds(context.Background(), a))
 
-	require.Len(t, runner.runs, 2)
+	require.Equal(t, []string{"build", "shutdown", "build", "shutdown"}, bazelCommands(runner.runs))
 	require.NoDirExists(t, filepath.Join(a.tempDir, "output_base_1"))
 	require.NoDirExists(t, filepath.Join(a.tempDir, "output_base_2"))
 }
@@ -150,6 +157,15 @@ func outputBaseFromArgs(t *testing.T, args []string) string {
 	}
 	require.FailNow(t, "missing --output_base arg", "args: %v", args)
 	return ""
+}
+
+func bazelCommands(calls []commandCall) []string {
+	var commands []string
+	for _, call := range calls {
+		command, _ := parser.GetBazelCommandAndIndex(call.args)
+		commands = append(commands, command)
+	}
+	return commands
 }
 
 type commandCall struct {

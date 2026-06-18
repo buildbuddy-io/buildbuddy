@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -236,6 +237,9 @@ func (c *checker) runBuild(ctx context.Context, buildNumber int, outputBase, com
 		return err
 	}
 	runErr := c.runner.Run(ctx, "bazel", args...)
+	if err := c.shutdownBazel(ctx, outputBase); err != nil {
+		log.Warnf("Failed to shut down Bazel server for output base %s: %s", outputBase, err)
+	}
 	cleanupErr := removeOutputBase(outputBase)
 	if cleanupErr != nil {
 		log.Warnf("Failed to remove Bazel output base %s: %s", outputBase, cleanupErr)
@@ -246,12 +250,53 @@ func (c *checker) runBuild(ctx context.Context, buildNumber int, outputBase, com
 	return nil
 }
 
+func (c *checker) shutdownBazel(ctx context.Context, outputBase string) error {
+	log.Printf("Shutting down Bazel server for output base %s", outputBase)
+	return c.runner.Run(ctx, "bazel", "--output_base="+outputBase, "shutdown")
+}
+
 func removeOutputBase(outputBase string) error {
 	log.Printf("Removing Bazel output base %s", outputBase)
 	if err := os.RemoveAll(outputBase); err != nil {
-		return err
+		log.Warnf("Failed to remove Bazel output base %s; retrying after making it writable: %s", outputBase, err)
+		if chmodErr := makeWritableRecursive(outputBase); chmodErr != nil {
+			return fmt.Errorf("make output base writable: %w", chmodErr)
+		}
+		if err := os.RemoveAll(outputBase); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+func makeWritableRecursive(path string) error {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.Mode()&fs.ModeSymlink != 0 {
+		return nil
+	}
+	if info.IsDir() {
+		// Directories need user read and execute permissions so we can enumerate
+		// them, plus write permission so their children can be removed.
+		if err := os.Chmod(path, info.Mode().Perm()|0700); err != nil {
+			return err
+		}
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return err
+		}
+		var joinedErr error
+		for _, entry := range entries {
+			joinedErr = errors.Join(joinedErr, makeWritableRecursive(filepath.Join(path, entry.Name())))
+		}
+		return joinedErr
+	}
+	return os.Chmod(path, info.Mode().Perm()|0200)
 }
 
 func addBazelFlags(baseArgs *arg.BazelArgs, outputBase, compactLogPath, besBackend, besResultsURL string) ([]string, error) {
@@ -273,6 +318,7 @@ func addBazelFlags(baseArgs *arg.BazelArgs, outputBase, compactLogPath, besBacke
 		// We don't disable the repository cache because it validates digests on hits, so it can't get poisoned with non-determinism.
 		"--repo_contents_cache=",
 		"--disk_cache=",
+		"--noexperimental_convenience_symlinks",
 		"--execution_log_compact_file=" + compactLogPath,
 	} {
 		if err := clonedArgs.Append(flag); err != nil {
