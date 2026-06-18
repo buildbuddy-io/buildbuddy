@@ -66,6 +66,7 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
         src = ":%s_commonjs.js" % name,
         out = ":%s_commonjs.test.js" % name,
         allow_symlink = True,
+        testonly = 1,
     )
 
     jasmine_test(
