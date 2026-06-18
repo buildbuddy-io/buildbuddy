@@ -81,7 +81,7 @@ func TestRunReturnsDetectionError(t *testing.T) {
 	err := c.Run(context.Background())
 	require.ErrorIs(t, err, errNondeterminismDetected)
 
-	require.Equal(t, []string{"build", "shutdown", "build", "shutdown"}, bazelCommands(runner.runs))
+	require.Equal(t, []string{"build", "shutdown", "clean", "build", "shutdown", "clean"}, bazelCommands(runner.runs))
 	assert.Equal(t, 1, explainer.writeCalls)
 	assert.Same(t, diff, explainer.wroteDiff)
 }
@@ -101,7 +101,7 @@ func TestRunReturnsNilWhenNoDiffs(t *testing.T) {
 
 	require.NoError(t, c.Run(context.Background()))
 
-	require.Equal(t, []string{"build", "shutdown", "build", "shutdown"}, bazelCommands(runner.runs))
+	require.Equal(t, []string{"build", "shutdown", "clean", "build", "shutdown", "clean"}, bazelCommands(runner.runs))
 	assert.Equal(t, 0, explainer.writeCalls)
 }
 
@@ -117,8 +117,12 @@ func TestRemovesOutputBaseAfterEachRun(t *testing.T) {
 		if command == "shutdown" {
 			return nil
 		}
-		buildRuns++
 		outputBase := outputBaseFromArgs(t, call.args)
+		if command == "clean" {
+			return os.RemoveAll(outputBase)
+		}
+
+		buildRuns++
 		require.NoError(t, os.MkdirAll(filepath.Join(outputBase, "execroot"), 0755))
 		if buildRuns == 2 {
 			require.NoDirExists(t, filepath.Join(a.tempDir, "output_base_1"))
@@ -136,7 +140,7 @@ func TestRemovesOutputBaseAfterEachRun(t *testing.T) {
 
 	require.NoError(t, c.runBuilds(context.Background(), a))
 
-	require.Equal(t, []string{"build", "shutdown", "build", "shutdown"}, bazelCommands(runner.runs))
+	require.Equal(t, []string{"build", "shutdown", "clean", "build", "shutdown", "clean"}, bazelCommands(runner.runs))
 	require.NoDirExists(t, filepath.Join(a.tempDir, "output_base_1"))
 	require.NoDirExists(t, filepath.Join(a.tempDir, "output_base_2"))
 }
