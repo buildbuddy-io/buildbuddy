@@ -1,6 +1,7 @@
 package compactgraph_test
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
@@ -11,8 +12,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protodelim"
 )
 
 func TestJavaNoopImplChange_7_3_1(t *testing.T) {
@@ -871,4 +874,74 @@ func digest(content string) *spawn.Digest {
 		SizeBytes:        int64(len(content)),
 		HashFunctionName: "SHA-256",
 	}
+}
+
+func writeCompactLog(t *testing.T, entries []*spawn.ExecLogEntry) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	w, err := zstd.NewWriter(&buf)
+	require.NoError(t, err)
+	var marshalOpts protodelim.MarshalOptions
+	for _, e := range entries {
+		_, err := marshalOpts.MarshalTo(w, e)
+		require.NoError(t, err)
+	}
+	require.NoError(t, w.Close())
+	return buf.Bytes()
+}
+
+// statusLog builds a minimal compact log that contains only the two workspace
+// status files (as a stamped build would), from which ReadCompactLog
+// synthesizes the workspace status action that produces them.
+func statusLog(t *testing.T, stableHash, volatileHash string) *compactgraph.CompactGraph {
+	t.Helper()
+	entries := []*spawn.ExecLogEntry{
+		{Type: &spawn.ExecLogEntry_Invocation_{Invocation: &spawn.ExecLogEntry_Invocation{HashFunctionName: "SHA-256"}}},
+		{Id: 1, Type: &spawn.ExecLogEntry_File_{File: &spawn.ExecLogEntry_File{
+			Path: "bazel-out/stable-status.txt", Digest: &spawn.Digest{Hash: stableHash},
+		}}},
+		{Id: 2, Type: &spawn.ExecLogEntry_File_{File: &spawn.ExecLogEntry_File{
+			Path: "bazel-out/volatile-status.txt", Digest: &spawn.Digest{Hash: volatileHash},
+		}}},
+	}
+	g, err := compactgraph.ReadCompactLog(bytes.NewReader(writeCompactLog(t, entries)))
+	require.NoError(t, err)
+	return g
+}
+
+func TestWorkspaceStatusActionVolatileOnlyChangeIsExpected(t *testing.T) {
+	// Only the volatile status file (e.g. the build timestamp) changed: this is
+	// expected noise that should be hidden unless --verbose is passed.
+	result, err := compactgraph.Diff(
+		statusLog(t, "stable-aaa", "volatile-111"),
+		statusLog(t, "stable-aaa", "volatile-222"),
+	)
+	require.NoError(t, err)
+	require.Len(t, result.GetSpawnDiffs(), 1)
+	sd := result.GetSpawnDiffs()[0]
+	assert.Equal(t, "BazelWorkspaceStatusAction", sd.GetMnemonic())
+	m := sd.GetModified()
+	require.NotNil(t, m)
+	assert.True(t, m.GetExpected(), "a volatile-only status change should be expected")
+	require.Len(t, m.GetDiffs(), 1)
+	oc := m.GetDiffs()[0].GetOutputContents()
+	require.NotNil(t, oc)
+	require.Len(t, oc.GetFileDiffs(), 1)
+	assert.Equal(t, "bazel-out/volatile-status.txt", oc.GetFileDiffs()[0].GetLogicalPath())
+}
+
+func TestWorkspaceStatusActionStableChangeIsNotExpected(t *testing.T) {
+	// The stable status file changed, which is a meaningful change and should be
+	// reported by default.
+	result, err := compactgraph.Diff(
+		statusLog(t, "stable-aaa", "volatile-111"),
+		statusLog(t, "stable-bbb", "volatile-222"),
+	)
+	require.NoError(t, err)
+	require.Len(t, result.GetSpawnDiffs(), 1)
+	m := result.GetSpawnDiffs()[0].GetModified()
+	require.NotNil(t, m)
+	assert.False(t, m.GetExpected(), "a stable status change should not be expected")
+	require.Len(t, m.GetDiffs(), 1)
+	assert.Len(t, m.GetDiffs()[0].GetOutputContents().GetFileDiffs(), 2)
 }

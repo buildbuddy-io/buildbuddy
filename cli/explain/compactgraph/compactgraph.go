@@ -719,6 +719,18 @@ func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(str
 		if new.Mnemonic == "TestRunner" {
 			// Test action outputs are usually non-reproducible due to timestamps in the test.log and test.xml files.
 			m.Expected = true
+		} else if new.Mnemonic == workspaceStatusActionMnemonic {
+			// The volatile status file (e.g. the build timestamp) changes on essentially every build, so a diff
+			// limited to it is expected noise. A change to the stable status file is meaningful, so don't mark the
+			// diff as expected in that case.
+			stableChanged := false
+			for _, fileDiff := range outputContentsDiffs {
+				if fileDiff.LogicalPath == stableStatusFilePath {
+					stableChanged = true
+					break
+				}
+			}
+			m.Expected = !stableChanged
 		}
 		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_OutputContents{
 			OutputContents: &spawn_diff.FileSetDiff{FileDiffs: outputContentsDiffs},

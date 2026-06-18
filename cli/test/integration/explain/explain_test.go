@@ -40,6 +40,9 @@ func assertExpectedDiff(t *testing.T, result *spawn_diff.DiffResult) {
 	assert.Equal(t, "bazel-out/stable-status.txt", sd.GetPrimaryOutput())
 	m := sd.GetModified()
 	require.NotNil(t, m, "expected the workspace status action to be modified")
+	// stable-status.txt changed (not just the volatile file), so this is a
+	// meaningful change that is reported rather than treated as expected noise.
+	assert.False(t, m.GetExpected())
 	require.Len(t, m.GetDiffs(), 1)
 	oc := m.GetDiffs()[0].GetOutputContents()
 	require.NotNil(t, oc, "expected an output contents diff (the status files changed)")
