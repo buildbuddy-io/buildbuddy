@@ -752,9 +752,10 @@ func drainParamFiles(set *InputSet) *InputSet {
 	if len(paramFiles) == 0 {
 		return emptyInputSet
 	}
-	set.DirectEntries = nonParamFiles
-	// Compute the shallow hashes for the returned set: without them, the nil hashes of any two non-empty param file
-	// sets would compare equal and param file path or content changes would never be reported.
+	// Rebuild both sets so their shallow hashes stay consistent with their trimmed entries: the param file set needs
+	// non-nil hashes to be diffable at all, and dropping the param files from set (the spawn's Inputs) lets
+	// param-file-only changes short-circuit instead of needlessly flattening.
+	*set = *newInputSet(nonParamFiles, set.TransitiveSets)
 	return newInputSet(paramFiles, nil)
 }
 
