@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -728,6 +729,129 @@ func TestBackfill(t *testing.T) {
 			readAndCompareDigest(t, ctx, baseCache, r)
 		}
 	}
+}
+
+// writeFailingCache wraps a Cache whose writes always fail, simulating a
+// backfill destination peer that is unwritable.
+type writeFailingCache struct {
+	interfaces.Cache
+}
+
+func (w *writeFailingCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	return nil, status.UnavailableError("induced write failure")
+}
+
+// TestBackfillCopiesToAllMissingPeers verifies that when a digest is missing
+// from more than one preferred peer, the backfill copies it to *every* missing
+// peer, not just the first.
+func TestBackfillCopiesToAllMissingPeers(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:    3,
+		Nodes:                []string{peer1, peer2, peer3},
+		DisableLocalLookup:   true,
+		RPCHeartbeatInterval: 100 * time.Millisecond,
+	}
+
+	// peer1 holds the blob; peer2 and peer3 are missing it.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	_ = startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	_ = startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, peer1)
+	waitForReady(t, peer2)
+	waitForReady(t, peer3)
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, memoryCache1.Set(ctx, rn, buf))
+
+	// Build a peer set whose last-used peer is peer1 (the source), leaving
+	// peer2 and peer3 as backfill targets.
+	ps := peerset.New([]string{peer2, peer3, peer1}, nil)
+	for p := ps.GetNextPeer(); p != ""; p = ps.GetNextPeer() {
+	}
+	dc1.backfillPeers(ctx, dc1.getBackfillOrders(rn, ps))
+
+	for i, baseCache := range []interfaces.Cache{memoryCache2, memoryCache3} {
+		exists, err := baseCache.Contains(ctx, rn)
+		require.NoError(t, err)
+		require.True(t, exists, "blob was not backfilled to destination %d", i)
+		readAndCompareDigest(t, ctx, baseCache, rn)
+	}
+}
+
+// TestBackfillContinuesWhenOnePeerFails verifies that a failed copy to one
+// backfill destination does not prevent the copy to a healthy destination.
+func TestBackfillContinuesWhenOnePeerFails(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:    3,
+		Nodes:                []string{peer1, peer2, peer3},
+		DisableLocalLookup:   true,
+		RPCHeartbeatInterval: 100 * time.Millisecond,
+	}
+
+	// peer1 holds the blob, peer2 is a healthy target, and peer3 always fails
+	// writes.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	_ = startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	_ = startNewDCache(t, env, config3, &writeFailingCache{Cache: memoryCache3})
+
+	waitForReady(t, peer1)
+	waitForReady(t, peer2)
+	waitForReady(t, peer3)
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, memoryCache1.Set(ctx, rn, buf))
+
+	ps := peerset.New([]string{peer2, peer3, peer1}, nil)
+	for p := ps.GetNextPeer(); p != ""; p = ps.GetNextPeer() {
+	}
+	// The copy to peer3 fails, but that failure is swallowed (logged) and must
+	// not prevent the copy to the healthy peer2. backfillPeers blocks until
+	// both copies finish, so the assertions below are deterministic.
+	dc1.backfillPeers(ctx, dc1.getBackfillOrders(rn, ps))
+
+	exists, err := memoryCache2.Contains(ctx, rn)
+	require.NoError(t, err)
+	require.True(t, exists, "healthy peer was not backfilled despite a sibling failure")
+	readAndCompareDigest(t, ctx, memoryCache2, rn)
+
+	// Confirm the induced failure actually took effect (otherwise the test
+	// above would pass vacuously).
+	exists, err = memoryCache3.Contains(ctx, rn)
+	require.NoError(t, err)
+	require.False(t, exists, "blob should not have been written to the failing peer")
 }
 
 func TestCopyFileDoesNotMutateResourceNameCompressor(t *testing.T) {
