@@ -50,9 +50,8 @@ build is used as the "old" log.
 Use the --execution_log_compact_file flag to have Bazel produce a compact
 execution log and upload it to the BuildBuddy BES backend.
 
-Pass --nondeterministic_only to restrict the output to non-deterministic spawns:
-spawns whose outputs or exit code changed even though their inputs didn't, or
-that ran in only one of the two builds.
+Pass --nondeterministic_only to restrict the output to non-deterministic spawns,
+i.e. spawns whose outputs or exit code changed even though their inputs didn't.
 
 Output formats:
   text   Unstructured output (default)
@@ -92,7 +91,7 @@ var (
 	verbose          = explainCmd.Bool("verbose", false, "Print more detailed execution information.")
 	apiTarget        = explainCmd.String("target", "", "The API target to use for fetching logs instead of the last --bes_backend.")
 	outputFormat     = explainCmd.String("output_format", "text", "Output format: text, json, or proto.")
-	nondeterministic = explainCmd.Bool("nondeterministic_only", false, "Only show non-deterministic spawns: those whose outputs or exit code changed even though their inputs didn't, or that ran in only one of the two builds.")
+	nondeterministic = explainCmd.Bool("nondeterministic_only", false, "Only show non-deterministic spawns, i.e. spawns whose outputs or exit code changed even though their inputs didn't.")
 
 	profilePaths = make(MapFlag)
 )
@@ -228,39 +227,26 @@ func Diff(oldPath, newPath string, nondeterministicOnly bool) (*spawn_diff.DiffR
 	return result, nil
 }
 
-// filterNondeterministicSpawns reduces the diff to the spawns that represent
-// genuine non-determinism, assuming both logs come from building the same
-// sources with the same command:
-//   - A spawn that ran in only one of the two builds (old-only/new-only) is a
-//     sign of non-determinism at analysis time.
-//   - A modified spawn is non-deterministic only if its outputs or exit code
-//     changed despite unchanged inputs (see isNondeterministic).
-//
-// Spawns whose non-determinism is expected (e.g. timestamps in test outputs)
-// are dropped, just as WriteText hides them unless verbose is set.
+// filterNondeterministicSpawns reduces the diff to the modified spawns that
+// represent genuine non-determinism, i.e. whose outputs or exit code changed
+// even though their inputs didn't (see isNondeterministic). Spawns whose
+// non-determinism is expected (e.g. timestamps in test outputs) are dropped.
 func filterNondeterministicSpawns(diffs []*spawn_diff.SpawnDiff) []*spawn_diff.SpawnDiff {
 	var filtered []*spawn_diff.SpawnDiff
 	for _, d := range diffs {
 		if d.GetModified().GetExpected() {
 			continue
 		}
-		switch d.GetDiff().(type) {
-		case *spawn_diff.SpawnDiff_OldOnly, *spawn_diff.SpawnDiff_NewOnly:
+		if isNondeterministic(d) {
 			filtered = append(filtered, d)
-		case *spawn_diff.SpawnDiff_Modified:
-			if isNondeterministic(d) {
-				filtered = append(filtered, d)
-			}
 		}
 	}
 	return filtered
 }
 
 // isNondeterministic reports whether a modified spawn diff records a change in
-// output contents (non-hermetic outputs) or exit code (flaky action). The diff
-// engine only emits these diffs when the spawn's inputs were unchanged (see
-// compactgraph.diffSpawns), so their presence means the spawn is
-// non-deterministic.
+// output contents (non-hermetic outputs) or exit code (flaky action) without a
+// corresponding change in inputs.
 func isNondeterministic(d *spawn_diff.SpawnDiff) bool {
 	for _, sd := range d.GetModified().GetDiffs() {
 		switch sd.Diff.(type) {

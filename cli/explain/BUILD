@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 package(default_visibility = ["//cli:__subpackages__"])
 
@@ -25,15 +25,5 @@ go_library(
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
-    ],
-)
-
-go_test(
-    name = "explain_test",
-    srcs = ["explain_test.go"],
-    embed = [":explain"],
-    deps = [
-        "//proto:spawn_diff_go_proto",
-        "@com_github_stretchr_testify//assert",
     ],
 )
