@@ -64,6 +64,7 @@ go_test(
         "//server/util/grpc_client",
         "//server/util/kubediscovery",
         "//server/util/log",
+        "//server/util/peerset",
         "//server/util/prefix",
         "//server/util/proto",
         "//server/util/status",
