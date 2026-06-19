@@ -1154,80 +1154,42 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 		actionFilter              []string
 		codesearchEnabledForGroup bool
 		codesearchFlagEnabled     bool
-		kytheFlagEnabled          bool
 		expectedActions           []string
 	}{
 		{
-			name:                      "no action filter, kythe disabled",
+			name:                      "no action filter, codesearch disabled for group",
 			actionFilter:              nil,
 			codesearchEnabledForGroup: false,
 			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
 			expectedActions:           []string{"Test all targets"},
 		},
 		{
-			name:                      "no action filter, kythe enabled",
+			name:                      "no action filter, codesearch enabled",
 			actionFilter:              nil,
 			codesearchEnabledForGroup: true,
 			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{"Test all targets", config.CSIncrementalUpdateName, config.KytheActionName},
-		},
-		{
-			name:                      "action filter, kythe disabled",
-			actionFilter:              []string{"Test all targets"},
-			codesearchEnabledForGroup: false,
-			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{"Test all targets"},
-		},
-		{
-			name:                      "action filter, kythe enabled",
-			actionFilter:              []string{"Test all targets"},
-			codesearchEnabledForGroup: true,
-			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{"Test all targets"},
-		},
-		{
-			name:                      "kythe-only action filter",
-			actionFilter:              []string{config.KytheActionName},
-			codesearchEnabledForGroup: true,
-			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{config.KytheActionName},
-		},
-		{
-			name:                      "all codesearch action filter",
-			actionFilter:              []string{config.CSIncrementalUpdateName, config.KytheActionName},
-			codesearchEnabledForGroup: true,
-			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{config.CSIncrementalUpdateName, config.KytheActionName},
-		},
-		{
-			name:                      "no action filter, cs indexing only enabled",
-			actionFilter:              nil,
-			codesearchEnabledForGroup: true,
-			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          false,
 			expectedActions:           []string{"Test all targets", config.CSIncrementalUpdateName},
 		},
 		{
-			name:                      "all codesearch action filter, cs indexing only enabled",
-			actionFilter:              []string{config.CSIncrementalUpdateName, config.KytheActionName},
+			name:                      "action filter excludes codesearch",
+			actionFilter:              []string{"Test all targets"},
 			codesearchEnabledForGroup: true,
 			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          false,
+			expectedActions:           []string{"Test all targets"},
+		},
+		{
+			name:                      "codesearch-only action filter",
+			actionFilter:              []string{config.CSIncrementalUpdateName},
+			codesearchEnabledForGroup: true,
+			codesearchFlagEnabled:     true,
 			expectedActions:           []string{config.CSIncrementalUpdateName},
 		},
 		{
-			name:                      "all codesearch action filter, kythe indexing only enabled",
-			actionFilter:              []string{config.CSIncrementalUpdateName, config.KytheActionName},
+			name:                      "codesearch indexing flag disabled",
+			actionFilter:              nil,
 			codesearchEnabledForGroup: true,
 			codesearchFlagEnabled:     false,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{config.KytheActionName},
+			expectedActions:           []string{"Test all targets"},
 		},
 	}
 
@@ -1240,7 +1202,6 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 		require.NoError(t, err)
 
 		flags.Set(t, "remote_execution.enable_codesearch_indexing", tc.codesearchFlagEnabled)
-		flags.Set(t, "remote_execution.enable_kythe_indexing", tc.kytheFlagEnabled)
 
 		workflowID := te.GetWorkflowService().GetLegacyWorkflowIDForGitRepository(gid, repoURL)
 		rsp, err := bbClient.ExecuteWorkflow(ctx, &wfpb.ExecuteWorkflowRequest{
