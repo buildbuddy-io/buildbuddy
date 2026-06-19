@@ -82,12 +82,15 @@ func TestRunReturnsDetectionError(t *testing.T) {
 	require.ErrorIs(t, err, errNondeterminismDetected)
 
 	require.Equal(t, []string{"build", "shutdown", "clean", "build", "shutdown", "clean"}, bazelCommands(runner.runs))
+	assert.True(t, explainer.nondeterministicOnly, "detector should request only non-deterministic spawns")
 	assert.Equal(t, 1, explainer.writeCalls)
 	assert.Same(t, diff, explainer.wroteDiff)
 }
 
-// nondeterministicSpawnDiff returns a spawn diff that the detector should treat
-// as non-determinism: an exit code change despite unchanged inputs.
+// nondeterministicSpawnDiff returns a representative non-deterministic spawn
+// diff, i.e. what explain.Diff returns for --nondeterministic_only: an exit code
+// change despite unchanged inputs. The classification itself is tested in the
+// cli/explain package; the detector just reports whatever explain.Diff surfaces.
 func nondeterministicSpawnDiff(label string) *spawn_diff.SpawnDiff {
 	return &spawn_diff.SpawnDiff{
 		TargetLabel: label,
@@ -97,84 +100,6 @@ func nondeterministicSpawnDiff(label string) *spawn_diff.SpawnDiff {
 			}},
 		}},
 	}
-}
-
-func TestRunReportsActionGraphNondeterminism(t *testing.T) {
-	// A spawn that ran in only one of the two identical builds is genuine
-	// non-determinism even without an output or exit-code diff.
-	diff := &spawn_diff.DiffResult{SpawnDiffs: []*spawn_diff.SpawnDiff{{
-		TargetLabel: "//foo:bar",
-		Diff:        &spawn_diff.SpawnDiff_NewOnly{NewOnly: &spawn_diff.NewOnly{}},
-	}}}
-	explainer := &fakeExplainer{diff: diff}
-	runner := &fakeRunner{}
-	c := &checker{
-		opts: options{
-			bazelArgs:     bazelArgsForTest(t, "build", "//foo:bar"),
-			besBackend:    defaultBESBackend,
-			besResultsURL: defaultBESResultsURL,
-		},
-		runner:    runner,
-		explainer: explainer,
-	}
-
-	err := c.Run(context.Background())
-	require.ErrorIs(t, err, errNondeterminismDetected)
-
-	require.Len(t, runner.runs, 2)
-	assert.Equal(t, 1, explainer.writeCalls)
-}
-
-func TestRunIgnoresExpectedNondeterminism(t *testing.T) {
-	// A non-deterministic spawn marked as expected (e.g. timestamps in test
-	// outputs) shouldn't be flagged as non-determinism.
-	spawn := nondeterministicSpawnDiff("//foo:bar")
-	spawn.GetModified().Expected = true
-	diff := &spawn_diff.DiffResult{SpawnDiffs: []*spawn_diff.SpawnDiff{spawn}}
-	explainer := &fakeExplainer{diff: diff}
-	runner := &fakeRunner{}
-	c := &checker{
-		opts: options{
-			bazelArgs:     bazelArgsForTest(t, "build", "//foo:bar"),
-			besBackend:    defaultBESBackend,
-			besResultsURL: defaultBESResultsURL,
-		},
-		runner:    runner,
-		explainer: explainer,
-	}
-
-	require.NoError(t, c.Run(context.Background()))
-
-	require.Len(t, runner.runs, 2)
-	assert.Equal(t, 0, explainer.writeCalls)
-}
-
-func TestRunIgnoresDeterministicDiffs(t *testing.T) {
-	// A spawn whose inputs changed is a downstream effect, not non-determinism.
-	diff := &spawn_diff.DiffResult{SpawnDiffs: []*spawn_diff.SpawnDiff{{
-		TargetLabel: "//foo:bar",
-		Diff: &spawn_diff.SpawnDiff_Modified{Modified: &spawn_diff.Modified{
-			Diffs: []*spawn_diff.Diff{{
-				Diff: &spawn_diff.Diff_InputContents{InputContents: &spawn_diff.FileSetDiff{}},
-			}},
-		}},
-	}}}
-	explainer := &fakeExplainer{diff: diff}
-	runner := &fakeRunner{}
-	c := &checker{
-		opts: options{
-			bazelArgs:     bazelArgsForTest(t, "build", "//foo:bar"),
-			besBackend:    defaultBESBackend,
-			besResultsURL: defaultBESResultsURL,
-		},
-		runner:    runner,
-		explainer: explainer,
-	}
-
-	require.NoError(t, c.Run(context.Background()))
-
-	require.Len(t, runner.runs, 2)
-	assert.Equal(t, 0, explainer.writeCalls)
 }
 
 func TestRunReturnsNilWhenNoDiffs(t *testing.T) {
@@ -286,13 +211,15 @@ func (r *fakeRunner) Run(ctx context.Context, name string, args ...string) error
 }
 
 type fakeExplainer struct {
-	diff       *spawn_diff.DiffResult
-	diffErr    error
-	writeCalls int
-	wroteDiff  *spawn_diff.DiffResult
+	diff                 *spawn_diff.DiffResult
+	diffErr              error
+	nondeterministicOnly bool
+	writeCalls           int
+	wroteDiff            *spawn_diff.DiffResult
 }
 
-func (e *fakeExplainer) Diff(oldLog, newLog string) (*spawn_diff.DiffResult, error) {
+func (e *fakeExplainer) Diff(oldLog, newLog string, nondeterministicOnly bool) (*spawn_diff.DiffResult, error) {
+	e.nondeterministicOnly = nondeterministicOnly
 	return e.diff, e.diffErr
 }
 

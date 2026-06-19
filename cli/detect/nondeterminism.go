@@ -68,7 +68,7 @@ type commandRunner interface {
 }
 
 type explainer interface {
-	Diff(oldLog, newLog string) (*sdpb.DiffResult, error)
+	Diff(oldLog, newLog string, nondeterministicOnly bool) (*sdpb.DiffResult, error)
 	WriteText(w io.Writer, diff *sdpb.DiffResult, verbose bool)
 }
 
@@ -102,8 +102,8 @@ type artifacts struct {
 
 type explainRunner struct{}
 
-func (explainRunner) Diff(oldLog, newLog string) (*sdpb.DiffResult, error) {
-	return explain.Diff(oldLog, newLog)
+func (explainRunner) Diff(oldLog, newLog string, nondeterministicOnly bool) (*sdpb.DiffResult, error) {
+	return explain.Diff(oldLog, newLog, nondeterministicOnly)
 }
 
 func (explainRunner) WriteText(w io.Writer, diff *sdpb.DiffResult, verbose bool) {
@@ -188,7 +188,6 @@ func (c *checker) Run(ctx context.Context) error {
 	if explainErr != nil {
 		return errors.Join(buildErr, explainErr)
 	}
-	diff.SpawnDiffs = nondeterministicSpawns(diff.GetSpawnDiffs())
 	if len(diff.GetSpawnDiffs()) == 0 {
 		log.Print("\n\n\033[32mNo nondeterminism detected.\033[0m\n\n")
 		return buildErr
@@ -199,33 +198,6 @@ func (c *checker) Run(ctx context.Context) error {
 		log.Warnf("Failed to print text bb explain output: %s", err)
 	}
 	return errors.Join(buildErr, errNondeterminismDetected)
-}
-
-// nondeterministicSpawns reduces the diff to spawns that represent genuine
-// non-determinism. Both builds run the same command on the same sources, so:
-//   - A spawn that ran in only one of the builds (old-only/new-only) is a sign
-//     of some non-determinism it analysis time. Unexpected but worth flagging.
-//   - A modified spawn is non-deterministic only if its outputs or exit code
-//     changed despite unchanged inputs (see explain.IsNondeterministic).
-//
-// Spawns whose non-determinism is expected (e.g. timestamps in test outputs) are
-// dropped, mirroring bb explain, which also hides them unless --verbose is passed.
-func nondeterministicSpawns(diffs []*sdpb.SpawnDiff) []*sdpb.SpawnDiff {
-	var filtered []*sdpb.SpawnDiff
-	for _, d := range diffs {
-		if d.GetModified().GetExpected() {
-			continue
-		}
-		switch d.GetDiff().(type) {
-		case *sdpb.SpawnDiff_OldOnly, *sdpb.SpawnDiff_NewOnly:
-			filtered = append(filtered, d)
-		case *sdpb.SpawnDiff_Modified:
-			if explain.IsNondeterministic(d) {
-				filtered = append(filtered, d)
-			}
-		}
-	}
-	return filtered
 }
 
 func newArtifacts() (*artifacts, error) {
@@ -319,7 +291,9 @@ func (c *checker) runExplainDiff(ctx context.Context, a *artifacts) (*sdpb.DiffR
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	diff, err := c.explainer.Diff(a.oldLog, a.newLog)
+	// Both builds run the same command on the same sources, so restrict the diff
+	// to spawns that represent genuine non-determinism.
+	diff, err := c.explainer.Diff(a.oldLog, a.newLog, true /* nondeterministicOnly */)
 	if err != nil {
 		return nil, fmt.Errorf("run bb explain: %w", err)
 	}
