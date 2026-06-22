@@ -12487,6 +12487,21 @@
               {
                 "matcher": {
                   "id": "byName",
+                  "options": "p25 queue length"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "pink",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
                   "options": "p50 queue length"
                 },
                 "properties": [
@@ -12618,6 +12633,18 @@
               "queryType": "randomWalk",
               "range": true,
               "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "quantile(\n    0.25,\n    sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
+              "interval": "",
+              "legendFormat": "p25 queue length",
+              "range": true,
+              "refId": "H"
             },
             {
               "datasource": {
