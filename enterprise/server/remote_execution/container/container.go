@@ -495,19 +495,38 @@ type VM interface {
 	VMConfig() *fcpb.VMConfiguration
 }
 
+// imageFetchStatus classifies an image-pull error into its status label (a value
+// for the existing status label on image_fetch_duration_usec) and whether it
+// should log at INFO rather than WARNING. The label keys off the gRPC code
+// mapped from the HTTP status by ocifetcher.RegistryStatusError; "error" means
+// an unclassified/server-side failure, the bucket to treat as a real bug.
+// Expected client errors and cancellations log at INFO; rate limiting (429) and
+// real failures stay loud at WARNING.
+func imageFetchStatus(err error) (label string, atInfo bool) {
+	switch {
+	case err == nil:
+		return metrics.OCIFetcherStatusOK, false
+	case errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err):
+		return metrics.OCIFetcherStatusTimeout, false
+	case errors.Is(err, context.Canceled) || status.IsCanceledError(err):
+		return metrics.OCIFetcherStatusCanceled, true
+	case status.IsUnauthenticatedError(err):
+		return "unauthenticated", true // HTTP 401: missing/invalid creds
+	case status.IsPermissionDeniedError(err):
+		return "permission_denied", true // HTTP 403: creds lack access
+	case status.IsNotFoundError(err):
+		return "not_found", true // HTTP 404: image/tag does not exist
+	case status.IsResourceExhaustedError(err):
+		return "rate_limited", false // HTTP 429: registry rate limiting
+	default:
+		return metrics.OCIFetcherStatusError, false
+	}
+}
+
 // RecordImageFetchMetrics records the image fetch duration histogram.
 // Counts are available via the histogram's _count suffix.
 func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCreds, useOCIFetcher bool, err error, duration time.Duration) {
-	statusLabel := metrics.OCIFetcherStatusOK
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err) {
-			statusLabel = metrics.OCIFetcherStatusTimeout
-		} else if errors.Is(err, context.Canceled) || status.IsCanceledError(err) {
-			statusLabel = metrics.OCIFetcherStatusCanceled
-		} else {
-			statusLabel = metrics.OCIFetcherStatusError
-		}
-	}
+	statusLabel, _ := imageFetchStatus(err)
 	labels := prometheus.Labels{
 		metrics.IsolationTypeLabel:           isolation,
 		metrics.ImageFetchRegistryLabel:      registry,
@@ -524,9 +543,14 @@ func LogImagePullError(ctx context.Context, imageRef, isolation, trigger string,
 	if err == nil {
 		return
 	}
-	log.CtxWarningf(ctx,
-		"image_pull_error: image=%q registry=%s isolation=%s trigger=%s use_oci_fetcher=%v duration=%s err=%s",
-		imageRef, oci.RegistryETLDPlusOne(imageRef), isolation, trigger, useOCIFetcher, duration, err)
+	statusLabel, atInfo := imageFetchStatus(err)
+	logf := log.CtxWarningf
+	if atInfo {
+		logf = log.CtxInfof
+	}
+	logf(ctx,
+		"image_pull_error: image=%q registry=%s isolation=%s trigger=%s use_oci_fetcher=%v status=%s duration=%s err=%s",
+		imageRef, oci.RegistryETLDPlusOne(imageRef), isolation, trigger, useOCIFetcher, statusLabel, duration, err)
 }
 
 // PullImageIfNecessary pulls the image configured for the container if it

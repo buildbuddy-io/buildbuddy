@@ -308,7 +308,7 @@ func TestResolve(t *testing.T) {
 					Os:   runtime.GOOS,
 				},
 			},
-			checkError: status.IsPermissionDeniedError,
+			checkError: status.IsUnauthenticatedError, // 401
 			opts: testregistry.Opts{
 				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 					if r.Method == "GET" {
@@ -1098,7 +1098,7 @@ func TestResolveImageDigest_TagDoesNotExist(t *testing.T) {
 		oci.Credentials{},
 	)
 	require.Error(t, err)
-	require.True(t, status.IsUnavailableError(err), "expected UnavailableError, got: %v", err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got: %v", err)
 }
 
 func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
@@ -1332,13 +1332,12 @@ func TestResolveWithOCIFetcher_NoClient(t *testing.T) {
 // validating basic image resolution scenarios:
 //   - Resolving an existing image without credentials succeeds and returns correct layer contents
 //   - Resolving an invalid image name returns InvalidArgumentError
-//   - Resolving an image without proper authorization returns PermissionDeniedError
+//   - Resolving an image without proper authorization returns an auth error (Unauthenticated for 401)
 //   - Resolving a platform-specific image matches the correct variant even when not explicitly specified
 //
 // Both direct image references and index references are tested for each scenario.
 func TestResolveWithOCIFetcher(t *testing.T) {
-	// Helper to check for auth errors - OCIFetcher returns Unauthenticated for 401 errors,
-	// while the direct puller path returns PermissionDenied. Accept either.
+	// Accept either auth error: 401 maps to Unauthenticated, 403 to PermissionDenied.
 	isAuthError := func(err error) bool {
 		return status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err)
 	}

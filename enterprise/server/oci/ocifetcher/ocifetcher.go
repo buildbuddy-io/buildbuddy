@@ -718,13 +718,30 @@ func withPullerRetry[T any](
 	}
 	if err != nil {
 		s.evictPuller(ref, creds)
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return zero, status.UnauthenticatedErrorf("not authorized to access resource: %s", err)
-		}
-		return zero, status.UnavailableErrorf("could not fetch from remote registry: %s", err)
+		return zero, RegistryStatusError(err, "could not fetch from remote registry")
 	}
 
 	return result, nil
+}
+
+// RegistryStatusError maps an error from a remote registry call to a gRPC status
+// error based on its HTTP status code, so callers can distinguish expected user
+// errors from real failures.
+func RegistryStatusError(err error, msg string) error {
+	var t *transport.Error
+	if errors.As(err, &t) {
+		switch t.StatusCode {
+		case http.StatusUnauthorized:
+			return status.UnauthenticatedErrorf("%s: %s", msg, err)
+		case http.StatusForbidden:
+			return status.PermissionDeniedErrorf("%s: %s", msg, err)
+		case http.StatusNotFound:
+			return status.NotFoundErrorf("%s: %s", msg, err)
+		case http.StatusTooManyRequests:
+			return status.ResourceExhaustedErrorf("%s: %s", msg, err)
+		}
+	}
+	return status.UnavailableErrorf("%s: %s", msg, err)
 }
 
 type grpcStreamWriter struct {
