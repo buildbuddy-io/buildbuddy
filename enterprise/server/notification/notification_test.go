@@ -113,6 +113,35 @@ func TestSendNotificationRequiresNotificationCapability(t *testing.T) {
 	assert.True(t, status.IsInvalidArgumentError(err))
 }
 
+func TestNondeterminismDetected(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+		"APIKEY1": apiKeyUser("AK1", "GR1", cappb.Capability_SEND_NOTIFICATION),
+	})
+	env.SetAuthenticator(auth)
+	createGroup(t, ctx, env.GetDBHandle(), "GR1", "Acme", "acme")
+	createAdminRecipient(t, ctx, env.GetDBHandle(), "GR1", "UA1", "Admin", "One", " admin1@example.com ")
+	sender := &fakeEmailSender{}
+	service := New(env, sender)
+	req := &npb.SendNotificationRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: "GR1"},
+		Event: &npb.SendNotificationRequest_NondeterminismDetected{
+			NondeterminismDetected: &npb.NondeterminismDetected{
+				BuildInvocationIds: []string{"INV1", "INV2"},
+				ParentInvocationId: "INV0",
+			},
+		},
+	}
+
+	_, err := service.SendNotification(auth.AuthContextFromAPIKey(ctx, "APIKEY1"), req)
+	assert.NoError(t, err)
+
+	assert.Equal(t, 1, len(sender.messages))
+	assert.Equal(t, "Nondeterminism detected in your build", sender.messages[0].Subject)
+	assert.Equal(t, "<p>Hi Acme team,</p>\n<p>BuildBuddy detected nondeterminism in your repository. Running the same command twice produced different outputs.</p>\n<p><a href=\"http://localhost:8080/invocation/INV0\">See the affected actions.</a></p>", sender.messages[0].Body)
+}
+
 func apiKeyUser(apiKeyID, groupID string, caps ...cappb.Capability) *claims.Claims {
 	u := user("", groupID, caps...)
 	u.APIKeyID = apiKeyID
