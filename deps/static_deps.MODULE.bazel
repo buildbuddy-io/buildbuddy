@@ -24,6 +24,7 @@ use_repo(
     "com_github_rootless_containers_rootlesskit-linux-amd64",
     "com_github_rootless_containers_rootlesskit-linux-arm64",
     "com_github_sluongng_nogo_analyzer",
+    "dbip_asn_lite",
     "io_bazel_bazel-6.5.0-darwin-arm64",
     "io_bazel_bazel-6.5.0-darwin-x86_64",
     "io_bazel_bazel-6.5.0-linux-arm64",
