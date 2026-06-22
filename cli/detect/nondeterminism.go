@@ -68,7 +68,7 @@ type commandRunner interface {
 }
 
 type explainer interface {
-	Diff(oldLog, newLog string) (*sdpb.DiffResult, error)
+	Diff(oldLog, newLog string, nondeterministicOnly bool) (*sdpb.DiffResult, error)
 	WriteText(w io.Writer, diff *sdpb.DiffResult, verbose bool)
 }
 
@@ -102,8 +102,8 @@ type artifacts struct {
 
 type explainRunner struct{}
 
-func (explainRunner) Diff(oldLog, newLog string) (*sdpb.DiffResult, error) {
-	return explain.Diff(oldLog, newLog)
+func (explainRunner) Diff(oldLog, newLog string, nondeterministicOnly bool) (*sdpb.DiffResult, error) {
+	return explain.Diff(oldLog, newLog, nondeterministicOnly)
 }
 
 func (explainRunner) WriteText(w io.Writer, diff *sdpb.DiffResult, verbose bool) {
@@ -291,7 +291,9 @@ func (c *checker) runExplainDiff(ctx context.Context, a *artifacts) (*sdpb.DiffR
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	diff, err := c.explainer.Diff(a.oldLog, a.newLog)
+	// Both builds run the same command on the same sources, so restrict the diff
+	// to spawns that represent genuine non-determinism.
+	diff, err := c.explainer.Diff(a.oldLog, a.newLog, true /* nondeterministicOnly */)
 	if err != nil {
 		return nil, fmt.Errorf("run bb explain: %w", err)
 	}
