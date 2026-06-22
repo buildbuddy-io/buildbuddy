@@ -214,16 +214,12 @@ func (k *killer) Register(ctx context.Context, task KillableTask) func() {
 func (k *killer) run(ctx context.Context) {
 	for {
 		k.waitForTasks(ctx)
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return
-		default:
 		}
 		k.pollWhileTasks(ctx)
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return
-		default:
 		}
 	}
 }
@@ -274,43 +270,55 @@ func (k *killer) pollWhileTasks(ctx context.Context) {
 }
 
 func (k *killer) check(ctx context.Context) error {
-	if !k.hasTasks() {
-		return nil
-	}
 	snapshot, err := k.monitor.Snapshot(ctx)
 	if err != nil {
 		return err
 	}
-	if !k.shouldKill(ctx, snapshot) {
-		return nil
+	// Killing a single task per poll may leave us over the threshold for many
+	// polls, so keep killing victims until executor memory usage is projected to
+	// fall back under the threshold (or we run out of victims). A killed
+	// victim's memory isn't reclaimed instantly, so we can't re-snapshot after
+	// each kill; instead we optimistically subtract each victim's observed
+	// memory from the projected usage.
+	projectedUsedBytes := snapshot.UsedBytes
+	killed := 0
+	for k.shouldKill(ctx, projectedUsedBytes, snapshot.LimitBytes) {
+		victim := k.chooseVictim(ctx)
+		if victim == nil {
+			if killed == 0 {
+				log.CtxWarningf(ctx, "Executor OOM killer wanted to kill a victim but no registered victim reported state")
+			}
+			return nil
+		}
+		// Assume the victim's memory will be reclaimed whether we kill it or it
+		// already finished on its own.
+		projectedUsedBytes -= victim.observedMemoryBytes
+		if !k.unregister(victim.id) {
+			// The victim was unregistered (most likely it just finished)
+			// between selection and now. Look for another victim instead of
+			// waiting for the next poll.
+			continue
+		}
+		stats := KillStats{
+			EstimatedMemoryBytes:   victim.state.EstimatedMemoryBytes,
+			ObservedMemoryBytes:    victim.observedMemoryBytes,
+			ExecutorMemorySnapshot: snapshot,
+		}
+		log.CtxWarningf(ctx, "Executor OOM killer terminating victim %s: executor memory used=%d limit=%d available=%d victim memory=%d estimated=%d active=%t", taskName(victim.task), snapshot.UsedBytes, snapshot.LimitBytes, snapshot.AvailableBytes, victim.observedMemoryBytes, victim.state.EstimatedMemoryBytes, victim.state.Active)
+		metrics.RemoteExecutionOOMKillerTargetedTaskMemoryBytes.Observe(float64(victim.observedMemoryBytes))
+		victim.task.Kill(ctx, stats)
+		killed++
 	}
-	victim := k.chooseVictim(ctx)
-	if victim == nil {
-		log.CtxWarningf(ctx, "Executor OOM killer wanted to kill a victim but no registered victim reported state")
-		return nil
-	}
-	if !k.unregister(victim.id) {
-		log.CtxWarningf(ctx, "Executor OOM killer selected victim %s but it was already unregistered", taskName(victim.task))
-		return nil
-	}
-	stats := KillStats{
-		EstimatedMemoryBytes:   victim.state.EstimatedMemoryBytes,
-		ObservedMemoryBytes:    victim.observedMemoryBytes,
-		ExecutorMemorySnapshot: snapshot,
-	}
-	log.CtxWarningf(ctx, "Executor OOM killer terminating victim %s: executor memory used=%d limit=%d available=%d victim memory=%d estimated=%d active=%t", taskName(victim.task), snapshot.UsedBytes, snapshot.LimitBytes, snapshot.AvailableBytes, victim.observedMemoryBytes, victim.state.EstimatedMemoryBytes, victim.state.Active)
-	metrics.RemoteExecutionOOMKillerTargetedTaskMemoryBytes.Observe(float64(victim.observedMemoryBytes))
-	victim.task.Kill(ctx, stats)
 	return nil
 }
 
-func (k *killer) shouldKill(ctx context.Context, snapshot *MemorySnapshot) bool {
+func (k *killer) shouldKill(ctx context.Context, usedBytes, limitBytes int64) bool {
 	// This should probably never happen, but make sure we never divide by 0.
-	if snapshot.LimitBytes <= 0 {
-		log.CtxDebugf(ctx, "Memory snapshot reported LimitBytes <= 0 (%d)", snapshot.LimitBytes)
+	if limitBytes <= 0 {
+		log.CtxDebugf(ctx, "Memory snapshot reported LimitBytes <= 0 (%d)", limitBytes)
 		return false
 	}
-	return float64(snapshot.UsedBytes)/float64(snapshot.LimitBytes) >= k.memoryUsageThreshold
+	return float64(usedBytes)/float64(limitBytes) >= k.memoryUsageThreshold
 }
 
 type victimCandidate struct {
@@ -343,11 +351,7 @@ func (k *killer) chooseVictim(ctx context.Context) *victimCandidate {
 		if state == nil {
 			continue
 		}
-		stats := state.UsageStats
-		observedMemoryBytes := stats.GetMemoryBytes()
-		if observedMemoryBytes < 0 {
-			observedMemoryBytes = 0
-		}
+		observedMemoryBytes := max(int64(0), state.UsageStats.GetMemoryBytes())
 		candidate.state = state
 		candidate.observedMemoryBytes = observedMemoryBytes
 		candidate.overageBytes = observedMemoryBytes - state.EstimatedMemoryBytes

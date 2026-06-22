@@ -99,6 +99,36 @@ func TestKillerContinuesKillingWhilePressureRemains(t *testing.T) {
 	require.Equal(t, 1, second.killCount())
 }
 
+func TestKillerKillsMultipleTasksInSinglePollWhilePressureRemains(t *testing.T) {
+	ctx := t.Context()
+	monitor := &fakeMemoryMonitor{snapshot: &MemorySnapshot{UsedBytes: 950, LimitBytes: 1000, AvailableBytes: 50}}
+	k := &killer{
+		monitor:              monitor,
+		memoryUsageThreshold: 0.9,
+		tasks:                make(map[uint64]registeredTask),
+		taskChange:           make(chan struct{}, 1),
+	}
+	tasks := []*fakeTask{
+		newFakeTask("task-1", 0, 30),
+		newFakeTask("task-2", 0, 30),
+		newFakeTask("task-3", 0, 30),
+	}
+	for i, task := range tasks {
+		k.tasks[uint64(i+1)] = registeredTask{task: task}
+	}
+
+	// No single 30-byte task brings the executor back under the 900-byte
+	// threshold, so one poll must keep killing until projected usage drops below
+	// it. Reclaiming 950 -> below 900 takes two kills; the third task survives.
+	require.NoError(t, k.check(ctx))
+	totalKills := 0
+	for _, task := range tasks {
+		totalKills += task.killCount()
+	}
+	require.Equal(t, 2, totalKills)
+	require.True(t, k.hasTasks())
+}
+
 func TestKillerKillsMostOverEstimatedTask(t *testing.T) {
 	ctx := t.Context()
 	monitor := &fakeMemoryMonitor{snapshot: &MemorySnapshot{UsedBytes: 950, LimitBytes: 1000, AvailableBytes: 50}}
