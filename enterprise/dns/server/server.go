@@ -32,7 +32,7 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	m.SetReply(r)
 	m.Authoritative = true
 
-	recordType := "NONE"
+	recordType := "NO_QUESTION"
 	if len(r.Question) >= 1 {
 		recordType = recordTypeLabel(r.Question[0].Qtype)
 	}
