@@ -511,13 +511,13 @@ func imageFetchStatus(err error) (label string, atInfo bool) {
 	case errors.Is(err, context.Canceled) || status.IsCanceledError(err):
 		return metrics.OCIFetcherStatusCanceled, true
 	case status.IsUnauthenticatedError(err):
-		return "unauthenticated", true // HTTP 401: missing/invalid creds
+		return metrics.OCIFetcherStatusUnauthenticated, true // HTTP 401: missing/invalid creds
 	case status.IsPermissionDeniedError(err):
-		return "permission_denied", true // HTTP 403: creds lack access
+		return metrics.OCIFetcherStatusPermissionDenied, true // HTTP 403: creds lack access
 	case status.IsNotFoundError(err):
-		return "not_found", true // HTTP 404: image/tag does not exist
+		return metrics.OCIFetcherStatusNotFound, true // HTTP 404: image/tag does not exist
 	case status.IsResourceExhaustedError(err):
-		return "rate_limited", false // HTTP 429: registry rate limiting
+		return metrics.OCIFetcherStatusRateLimited, false // HTTP 429: registry rate limiting
 	default:
 		return metrics.OCIFetcherStatusError, false
 	}

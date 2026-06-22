@@ -427,6 +427,10 @@ const (
 	OCIFetcherStatusError     = "error"
 	OCIFetcherStatusTimeout   = "timeout"
 	OCIFetcherStatusCanceled  = "canceled"
+	OCIFetcherStatusUnauthenticated  = "unauthenticated"
+	OCIFetcherStatusPermissionDenied = "permission_denied"
+	OCIFetcherStatusNotFound         = "not_found"
+	OCIFetcherStatusRateLimited      = "rate_limited"
 
 	ImageFetchTriggerExecution = "execution"
 	ImageFetchTriggerWarmup    = "warmup"
