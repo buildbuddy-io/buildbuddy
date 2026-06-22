@@ -82,13 +82,8 @@ func main() {
 	})
 	go func() {
 		log.Debugf("Listening for HTTP traffic on %s", httpServer.Addr)
-		// Unlike the DNS listeners (which bind up front so a bind failure fails
-		// startup), the probe server binds here in the goroutine. A bind
-		// failure leaves the process running with no probes; the orchestrator
-		// then can't reach /readyz and restarts us. Log the error so that's
-		// diagnosable rather than silent. http.ErrServerClosed is the normal
-		// graceful-shutdown signal and isn't worth logging.
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			// Log so this doesn't hang if it fails in the goroutine.
 			log.Errorf("HTTP probe server failed: %s", err)
 		}
 	}()
@@ -107,11 +102,10 @@ func startDNSServer(env *real_environment.RealEnv) error {
 	handler := server.NewHandler(records)
 
 	addr := fmt.Sprintf("%s:%d", *listen, *dnsPort)
+
 	// DNS is served over both UDP (the default transport) and TCP (used for
-	// responses too large for a single UDP datagram).
-	// Bind both sockets up front so a bind failure (port in use, permission
-	// denied on :53, ...) fails startup rather than being logged from a
-	// goroutine while the process stays "ready" serving no DNS.
+	// responses too large for a single UDP datagram). Bind both up front
+	// and return an error to fail early if either cannot bind.
 	packetConn, err := net.ListenPacket("udp", addr)
 	if err != nil {
 		return status.WrapErrorf(err, "bind DNS udp %s", addr)

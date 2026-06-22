@@ -112,8 +112,8 @@ func TestMostSpecificWildcardWins(t *testing.T) {
 func TestWildcardDoesNotMutateStoredRecord(t *testing.T) {
 	h := newTestHandler(t)
 	// A wildcard query rewrites the owner name; ensure a second exact query
-	// for the wildcard still reports the original "*.…" owner (i.e. the stored
-	// RR wasn't mutated in place).
+	// for the wildcard still reports the original "*.…" owner (i.e. the
+	// stored RR wasn't mutated in place).
 	query(t, h, "first.buildbuddy.io.", dns.TypeA)
 	m := query(t, h, "*.buildbuddy.io.", dns.TypeA)
 	assert.Equal(t, []answer{{"*.buildbuddy.io.", "A", "9.9.9.9"}}, answers(m.Answer))
@@ -149,7 +149,8 @@ func TestCNAMEQueryNotChased(t *testing.T) {
 
 func TestNODATA(t *testing.T) {
 	h := newTestHandler(t)
-	// Name exists (has an A) but no AAAA: NOERROR + empty answer, SOA in authority.
+	// Name exists (has an A) but no AAAA: NOERROR + empty answer, SOA in
+	// authority.
 	m := query(t, h, "buildbuddy.io.", dns.TypeAAAA)
 	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
 	assert.Empty(t, m.Answer)
@@ -180,7 +181,8 @@ func TestMultipleRecords(t *testing.T) {
 
 func TestSOAQuery(t *testing.T) {
 	h := newTestHandler(t)
-	// Querying SOA directly returns it in the answer section (not just authority).
+	// Querying SOA directly returns it in the answer section (not just in
+	// the authority section).
 	m := query(t, h, "buildbuddy.io.", dns.TypeSOA)
 	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
 	assert.True(t, m.Authoritative)
@@ -207,8 +209,9 @@ func TestEmptyQuestion(t *testing.T) {
 }
 
 func TestParseZoneFileSurfacesErrors(t *testing.T) {
-	// dns.ZoneParser.Next() returns ok=false on a parse error as well as at EOF;
-	// ParseZoneFile must surface the error rather than returning a partial set.
+	// dns.ZoneParser.Next() returns ok=false on a parse error as well as at
+	// EOF; ParseZoneFile must surface the error rather than returning a
+	// partial record set.
 	path := filepath.Join(t.TempDir(), "bad.zone")
 	require.NoError(t, os.WriteFile(path, []byte("buildbuddy.io. 60 IN A not-an-ip\n"), 0644))
 	_, err := server.ParseZoneFile(path, "")

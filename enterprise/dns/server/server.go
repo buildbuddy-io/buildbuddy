@@ -17,9 +17,9 @@ type handler struct {
 	records map[string][]dns.RR
 
 	// soa is the zone's SOA record. We attach it to "no such answer" responses
-	// (the name doesn't exist, or has no record of the requested type); it tells
-	// the asking resolver how long it may remember that negative result instead
-	// of re-asking us every time. Nil if the zone file has no SOA record.
+	// (the name doesn't exist, or has no record of the requested type); it
+	// tells the asking resolver how long it may remember that negative result
+	// instead of re-asking us every time. Nil if the zone file has no SOA.
 	soa dns.RR
 }
 
@@ -170,11 +170,6 @@ func ParseZoneFile(fileName, origin string) ([]dns.RR, error) {
 	for rr, ok := parser.Next(); ok; rr, ok = parser.Next() {
 		records = append(records, rr)
 	}
-	// Next() returns ok=false both at EOF and on a parse error; the error is
-	// only surfaced via Err(). Without this check a malformed zone file would
-	// yield a truncated record set with a nil error. With an empty origin this
-	// also covers relative names: the parser can't qualify them and reports a
-	// "bad owner name" error here.
 	if err := parser.Err(); err != nil {
 		return nil, err
 	}
