@@ -310,7 +310,7 @@ func (k *killer) check(ctx context.Context) error {
 			ObservedMemoryBytes:    victim.observedMemoryBytes,
 			ExecutorMemorySnapshot: snapshot,
 		}
-		log.CtxWarningf(ctx, "Executor OOM killer terminating victim %s: executor memory used=%d limit=%d available=%d victim memory=%d estimated=%d active=%t", taskName(victim.task), snapshot.UsedBytes, snapshot.LimitBytes, snapshot.AvailableBytes, victim.observedMemoryBytes, victim.state.EstimatedMemoryBytes, victim.state.Active)
+		log.CtxWarningf(ctx, "Executor OOM killer terminating victim %s: executor memory used=%d projected_remaining=%d limit=%d available=%d victim memory=%d estimated=%d active=%t", taskName(victim.task), snapshot.UsedBytes, projectedUsedBytes, snapshot.LimitBytes, snapshot.AvailableBytes, victim.observedMemoryBytes, victim.state.EstimatedMemoryBytes, victim.state.Active)
 		metrics.RemoteExecutionOOMKillerTargetedTaskMemoryBytes.Observe(float64(victim.observedMemoryBytes))
 		victim.task.Kill(ctx, stats)
 		killedCount++
