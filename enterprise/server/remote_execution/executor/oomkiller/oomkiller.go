@@ -12,6 +12,8 @@
 //   - Next, the least recently used paused runners.
 //   - Finally, the shortest running active tasks.
 //
+// Tasks that report unknown (zero) memory usage are never chosen as victims.
+//
 // The killer also respects remote_execution_priority. After choosing a victim
 // candidate using the rules above, it checks whether the candidate's group owns
 // lower-priority active tasks that can be killed instead. This two-phase
@@ -150,6 +152,10 @@ type killer struct {
 
 type registeredTask struct {
 	task KillableTask
+	// killed is set once the OOM killer has terminated the task. The task stays
+	// registered until its normal unregister path removes it, but it is no
+	// longer eligible to be chosen as a victim.
+	killed bool
 }
 
 type noopKiller struct{}
@@ -186,14 +192,14 @@ func New(ctx context.Context, monitor MemoryMonitor) (Killer, error) {
 
 func (k *killer) Register(ctx context.Context, task KillableTask) func() {
 	k.mu.Lock()
-	wasEmpty := len(k.tasks) == 0
+	wasIdle := !k.hasLiveTasksLocked()
 	k.nextID++
 	id := k.nextID
 	k.tasks[id] = registeredTask{
 		task: task,
 	}
 	k.mu.Unlock()
-	if wasEmpty {
+	if wasIdle {
 		k.signalTaskChange()
 	}
 
@@ -214,16 +220,12 @@ func (k *killer) Register(ctx context.Context, task KillableTask) func() {
 func (k *killer) run(ctx context.Context) {
 	for {
 		k.waitForTasks(ctx)
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return
-		default:
 		}
 		k.pollWhileTasks(ctx)
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return
-		default:
 		}
 	}
 }
@@ -274,43 +276,55 @@ func (k *killer) pollWhileTasks(ctx context.Context) {
 }
 
 func (k *killer) check(ctx context.Context) error {
-	if !k.hasTasks() {
-		return nil
-	}
 	snapshot, err := k.monitor.Snapshot(ctx)
 	if err != nil {
 		return err
 	}
-	if !k.shouldKill(ctx, snapshot) {
-		return nil
+	// Killing a single task per poll may leave us over the threshold for many
+	// polls, so keep killing victims until executor memory usage is projected to
+	// fall back under the threshold (or we run out of victims). A killed
+	// victim's memory isn't reclaimed instantly, so we can't re-snapshot after
+	// each kill; instead we optimistically subtract each victim's observed
+	// memory from the projected usage.
+	projectedUsedBytes := snapshot.UsedBytes
+	killedCount := 0
+	for k.shouldKill(ctx, projectedUsedBytes, snapshot.LimitBytes) {
+		victim := k.chooseVictim(ctx)
+		if victim == nil {
+			if killedCount == 0 {
+				log.CtxWarningf(ctx, "Executor OOM killer wanted to kill a victim but no registered victim reported state")
+			}
+			return nil
+		}
+		// Assume the victim's memory will be reclaimed whether we kill it or it
+		// already finished on its own.
+		projectedUsedBytes -= victim.observedMemoryBytes
+		if !k.markKilled(victim.id) {
+			// The victim was already killed or unregistered (most likely it just
+			// finished) between selection and now. Look for another victim
+			// instead of waiting for the next poll.
+			continue
+		}
+		stats := KillStats{
+			EstimatedMemoryBytes:   victim.state.EstimatedMemoryBytes,
+			ObservedMemoryBytes:    victim.observedMemoryBytes,
+			ExecutorMemorySnapshot: snapshot,
+		}
+		log.CtxWarningf(ctx, "Executor OOM killer terminating victim %s: executor memory used=%d projected_remaining=%d limit=%d available=%d victim memory=%d estimated=%d active=%t", taskName(victim.task), snapshot.UsedBytes, projectedUsedBytes, snapshot.LimitBytes, snapshot.AvailableBytes, victim.observedMemoryBytes, victim.state.EstimatedMemoryBytes, victim.state.Active)
+		metrics.RemoteExecutionOOMKillerTargetedTaskMemoryBytes.Observe(float64(victim.observedMemoryBytes))
+		victim.task.Kill(ctx, stats)
+		killedCount++
 	}
-	victim := k.chooseVictim(ctx)
-	if victim == nil {
-		log.CtxWarningf(ctx, "Executor OOM killer wanted to kill a victim but no registered victim reported state")
-		return nil
-	}
-	if !k.unregister(victim.id) {
-		log.CtxWarningf(ctx, "Executor OOM killer selected victim %s but it was already unregistered", taskName(victim.task))
-		return nil
-	}
-	stats := KillStats{
-		EstimatedMemoryBytes:   victim.state.EstimatedMemoryBytes,
-		ObservedMemoryBytes:    victim.observedMemoryBytes,
-		ExecutorMemorySnapshot: snapshot,
-	}
-	log.CtxWarningf(ctx, "Executor OOM killer terminating victim %s: executor memory used=%d limit=%d available=%d victim memory=%d estimated=%d active=%t", taskName(victim.task), snapshot.UsedBytes, snapshot.LimitBytes, snapshot.AvailableBytes, victim.observedMemoryBytes, victim.state.EstimatedMemoryBytes, victim.state.Active)
-	metrics.RemoteExecutionOOMKillerTargetedTaskMemoryBytes.Observe(float64(victim.observedMemoryBytes))
-	victim.task.Kill(ctx, stats)
 	return nil
 }
 
-func (k *killer) shouldKill(ctx context.Context, snapshot *MemorySnapshot) bool {
+func (k *killer) shouldKill(ctx context.Context, usedBytes, limitBytes int64) bool {
 	// This should probably never happen, but make sure we never divide by 0.
-	if snapshot.LimitBytes <= 0 {
-		log.CtxDebugf(ctx, "Memory snapshot reported LimitBytes <= 0 (%d)", snapshot.LimitBytes)
+	if limitBytes <= 0 {
+		log.CtxDebugf(ctx, "Memory snapshot reported LimitBytes <= 0 (%d)", limitBytes)
 		return false
 	}
-	return float64(snapshot.UsedBytes)/float64(snapshot.LimitBytes) >= k.memoryUsageThreshold
+	return float64(usedBytes)/float64(limitBytes) >= k.memoryUsageThreshold
 }
 
 type victimCandidate struct {
@@ -325,6 +339,9 @@ func (k *killer) chooseVictim(ctx context.Context) *victimCandidate {
 	k.mu.Lock()
 	candidates := make([]victimCandidate, 0, len(k.tasks))
 	for id, rt := range k.tasks {
+		if rt.killed {
+			continue
+		}
 		candidates = append(candidates, victimCandidate{
 			id:   id,
 			task: rt.task,
@@ -343,10 +360,14 @@ func (k *killer) chooseVictim(ctx context.Context) *victimCandidate {
 		if state == nil {
 			continue
 		}
-		stats := state.UsageStats
-		observedMemoryBytes := stats.GetMemoryBytes()
-		if observedMemoryBytes < 0 {
-			observedMemoryBytes = 0
+		observedMemoryBytes := max(int64(0), state.UsageStats.GetMemoryBytes())
+		if observedMemoryBytes == 0 {
+			// A task reporting zero memory has unknown usage per the
+			// KillableTask.State contract. Never kill it: it frees no measurable
+			// memory, and since killing it wouldn't reduce the projected usage,
+			// selecting it could let the kill loop clear out every such task in
+			// a single poll.
+			continue
 		}
 		candidate.state = state
 		candidate.observedMemoryBytes = observedMemoryBytes
@@ -452,6 +473,25 @@ func betterShortestRunningTask(candidate, best victimCandidate) bool {
 	return candidate.observedMemoryBytes > best.observedMemoryBytes
 }
 
+// markKilled flags the registered task as killed so it is no longer chosen as a
+// victim. It returns false if the task is no longer registered or was already
+// killed, in which case the caller must not kill it. The task stays registered
+// until its normal unregister path removes it.
+func (k *killer) markKilled(id uint64) bool {
+	k.mu.Lock()
+	rt, ok := k.tasks[id]
+	if !ok || rt.killed {
+		k.mu.Unlock()
+		return false
+	}
+	rt.killed = true
+	k.tasks[id] = rt
+	k.mu.Unlock()
+	// Wake the poll loop so it can stop if that was the last live task.
+	k.signalTaskChange()
+	return true
+}
+
 func (k *killer) unregister(id uint64) bool {
 	if !k.removeTask(id) {
 		return false
@@ -476,7 +516,18 @@ func (k *killer) removeTask(id uint64) bool {
 func (k *killer) hasTasks() bool {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	return len(k.tasks) > 0
+	return k.hasLiveTasksLocked()
+}
+
+// hasLiveTasksLocked reports whether any registered task has not yet been
+// killed. The caller must hold k.mu.
+func (k *killer) hasLiveTasksLocked() bool {
+	for _, rt := range k.tasks {
+		if !rt.killed {
+			return true
+		}
+	}
+	return false
 }
 
 func (k *killer) signalTaskChange() {

@@ -1,3 +1,7 @@
+// Package oom defines the error reported when the executor OOM killer
+// terminates a task, along with helpers to attach and extract the memory facts
+// (estimated and observed usage) describing why the task was killed. The error
+// is a retryable status so the task can be retried elsewhere.
 package oom
 
 import (
