@@ -25,7 +25,8 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	m.SetReply(r)
 	m.Authoritative = true
 
-	if len(r.Question) == 0 {
+	if len(r.Question) != 1 {
+		m.Rcode = dns.RcodeFormatError
 		w.WriteMsg(m)
 		return
 	}
@@ -150,6 +151,12 @@ func ParseZoneFile(fileName string) ([]dns.RR, error) {
 	records := make([]dns.RR, 0)
 	for rr, ok := parser.Next(); ok; rr, ok = parser.Next() {
 		records = append(records, rr)
+	}
+	// Next() returns ok=false both at EOF and on a parse error; the error is
+	// only surfaced via Err(). Without this check a malformed zone file would
+	// yield a truncated record set with a nil error.
+	if err := parser.Err(); err != nil {
+		return nil, err
 	}
 	return records, nil
 }

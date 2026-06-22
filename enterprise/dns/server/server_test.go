@@ -2,6 +2,8 @@ package server
 
 import (
 	"net"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -185,6 +187,25 @@ func TestWildcardCNAME(t *testing.T) {
 	m := query(t, h, "x.aws.buildbuddy.io.", dns.TypeCNAME)
 	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
 	assert.Equal(t, []string{"x.aws.buildbuddy.io.|CNAME|elb.amazonaws.example."}, aData(m.Answer))
+}
+
+func TestEmptyQuestion(t *testing.T) {
+	h := newTestHandler(t)
+	// A query carrying no question is malformed: FORMERR.
+	req := new(dns.Msg)
+	w := &fakeResponseWriter{}
+	h.ServeDNS(w, req)
+	require.NotNil(t, w.msg)
+	assert.Equal(t, dns.RcodeFormatError, w.msg.Rcode)
+}
+
+func TestParseZoneFileSurfacesErrors(t *testing.T) {
+	// dns.ZoneParser.Next() returns ok=false on a parse error as well as at EOF;
+	// ParseZoneFile must surface the error rather than returning a partial set.
+	path := filepath.Join(t.TempDir(), "bad.zone")
+	require.NoError(t, os.WriteFile(path, []byte("buildbuddy.io. 60 IN A not-an-ip\n"), 0644))
+	_, err := ParseZoneFile(path)
+	assert.Error(t, err)
 }
 
 func TestWildcardNODATA(t *testing.T) {
