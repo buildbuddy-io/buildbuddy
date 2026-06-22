@@ -12487,6 +12487,21 @@
               {
                 "matcher": {
                   "id": "byName",
+                  "options": "p25 queue length"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "pink",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
                   "options": "p50 queue length"
                 },
                 "properties": [
