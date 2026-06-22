@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config/test_data"
@@ -331,4 +332,37 @@ func TestCodeSearchAction(t *testing.T) {
 	assert.Len(t, action.Steps, 1)
 	assert.Contains(t, action.Steps[0].Run, apiURL.String())
 	assert.Contains(t, action.Steps[0].Run, ghURL)
+}
+
+func TestGetMergeWithBaseInterval(t *testing.T) {
+	dur := func(d time.Duration) *time.Duration { return &d }
+	for _, test := range []struct {
+		name     string
+		interval *time.Duration
+		want     *time.Duration
+		wantErr  bool
+	}{
+		{name: "unset returns nil", interval: nil, want: nil},
+		{name: "valid interval", interval: dur(2 * time.Hour), want: dur(2 * time.Hour)},
+		{name: "max interval allowed", interval: dur(3 * time.Hour), want: dur(3 * time.Hour)},
+		{name: "too large rejected", interval: dur(4 * time.Hour), wantErr: true},
+		{name: "zero rejected", interval: dur(0), wantErr: true},
+		{name: "negative rejected", interval: dur(-1 * time.Hour), wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			trigger := &config.PullRequestTrigger{MergeWithBaseInterval: test.interval}
+			got, err := trigger.GetMergeWithBaseInterval()
+			if test.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			if test.want == nil {
+				require.Nil(t, got)
+				return
+			}
+			require.NotNil(t, got)
+			require.Equal(t, *test.want, *got)
+		})
+	}
 }

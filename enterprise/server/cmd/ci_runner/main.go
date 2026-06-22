@@ -1883,35 +1883,11 @@ func (ws *workspace) sync(ctx context.Context) error {
 		return err
 	}
 
-	if *pushedTag != "" && ws.shouldMergeBranches(action.GetTriggers()) {
-		return status.InvalidArgumentError("tags cannot be merged with base")
-	}
-
 	// If enabled, merge the target branch (if different from the
 	// pushed branch) so that the workflow can pick up any changes not yet
 	// incorporated into the pushed branch.
-	if ws.shouldMergeBranches(action.GetTriggers()) {
-		if err := ws.fetchTargetRef(ctx); err != nil {
-			return status.WrapError(err, "fetch target ref")
-		}
-		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
-		if _, err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
-			errMsg := err.Output
-			if _, err := git(ctx, ws.log, "merge", "--abort"); err != nil {
-				errMsg += "\n" + err.Output
-			}
-			// Make note of the merge conflict and abort. We'll run all actions and each
-			// one will just fail with the merge conflict error.
-			ws.setupError = status.FailedPreconditionErrorf(
-				"Merge conflict between branches %q and %q.\n\n%s",
-				*pushedBranch, *targetBranch, errMsg,
-			)
-		}
-		mergedCommitSHA, err := git(ctx, io.Discard, "rev-parse", "HEAD")
-		if err != nil {
-			return err
-		}
-		writeCommandSummary(ws.log, "Merged into the target branch %s. HEAD is now at %s.", *targetBranch, mergedCommitSHA)
+	if err := ws.mergeWithBaseIfRequested(ctx, action.GetTriggers()); err != nil {
+		return err
 	}
 
 	if len(*patchURIs) > 0 {
@@ -1930,15 +1906,121 @@ func (ws *workspace) sync(ctx context.Context) error {
 	return nil
 }
 
-func (ws *workspace) shouldMergeBranches(actionTriggers *config.Triggers) bool {
-	return actionTriggers.GetPullRequestTrigger().GetMergeWithBase() &&
+func (ws *workspace) mergeWithBaseIfRequested(ctx context.Context, actionTriggers *config.Triggers) error {
+	mergeRequested := actionTriggers.GetPullRequestTrigger().GetMergeWithBase() &&
 		ws.hasMultipleBranches()
+	if !mergeRequested {
+		return nil
+	}
+
+	if *pushedTag != "" {
+		return status.InvalidArgumentError("tags cannot be merged with base")
+	}
+
+	if err := ws.fetchTargetRef(ctx); err != nil {
+		return status.WrapError(err, "fetch target ref")
+	}
+
+	// Determine which base branch commit to merge with, based on the configured
+	// merge with base interval.
+	mergeBase, err := ws.mergeBaseCommit(ctx, actionTriggers)
+	if err != nil {
+		return err
+	}
+	if mergeBase == "" {
+		return nil
+	}
+
+	// TODO: Display merge commit in UI
+	if _, err := git(ctx, ws.log, "merge", "--no-edit", mergeBase); err != nil && !isAlreadyUpToDate(err) {
+		errMsg := err.Output
+		if _, err := git(ctx, ws.log, "merge", "--abort"); err != nil {
+			errMsg += "\n" + err.Output
+		}
+		// Make note of the merge conflict and abort. We'll run all actions and each
+		// one will just fail with the merge conflict error.
+		ws.setupError = status.FailedPreconditionErrorf(
+			"Merge conflict between branches %q and %q.\n\n%s",
+			*pushedBranch, *targetBranch, errMsg,
+		)
+	}
+	mergedCommitSHA, cmdErr := git(ctx, io.Discard, "rev-parse", "HEAD")
+	if cmdErr != nil {
+		return cmdErr
+	}
+	writeCommandSummary(ws.log, "Merged into the target branch %s. HEAD is now at %s.", *targetBranch, mergedCommitSHA)
+	return nil
+}
+
+// mergeBaseCommit returns the base branch commit that the PR should be merged
+// with, or an empty string if the merge with base should be skipped.
+//
+// When no merge with base interval is configured, the runner merges with the current
+// base branch tip. When an interval is configured, the runner instead merges
+// with the oldest base branch commit in the current interval (UTC).
+// If there are no base branch commits in the interval, the runner merges with
+// the base branch tip.
+func (ws *workspace) mergeBaseCommit(ctx context.Context, actionTriggers *config.Triggers) (string, error) {
+	interval, err := actionTriggers.GetPullRequestTrigger().GetMergeWithBaseInterval()
+	if err != nil {
+		return "", err
+	}
+	if interval == nil {
+		// No interval configured: merge with the current base branch tip.
+		return ws.targetRef(), nil
+	}
+	cutoff := time.Now().UTC().Truncate(*interval)
+
+	// Find the oldest base branch commit after the cutoff.
+	out, cmdErr := git(ctx, io.Discard, "--no-pager", "rev-list", "--reverse", "--after="+cutoff.Format(time.RFC3339), ws.targetRef())
+	if cmdErr != nil {
+		writeCommandSummary(ws.log, "Could not determine the oldest %s commit after %s; defaulting to merging with the %s tip: %s", *targetBranch, cutoff.Format(time.RFC3339), *targetBranch, cmdErr.Output)
+		return ws.targetRef(), nil
+	}
+	mergeBase, baseDescription := ws.targetRef(), fmt.Sprintf("%s tip", *targetBranch)
+	if commits := strings.Fields(out); len(commits) > 0 {
+		mergeBase = commits[0]
+		baseDescription = fmt.Sprintf("oldest %s commit after %s", *targetBranch, cutoff.Format(time.RFC3339))
+	} else {
+		writeCommandSummary(ws.log, "No %s commits found after %s; using the %s tip.", *targetBranch, cutoff.Format(time.RFC3339), *targetBranch)
+	}
+
+	inHistory, ancErr := ws.isAncestor(ctx, mergeBase, "HEAD")
+	if ancErr != nil {
+		writeCommandSummary(ws.log, "Could not determine whether the %s (%s) is already in the PR's history: %s", baseDescription, mergeBase, ancErr)
+	}
+	if inHistory {
+		writeCommandSummary(ws.log, "Skipping merge with %s: the PR's merge base is already at or newer than the %s (%s).", *targetBranch, baseDescription, mergeBase)
+		return "", nil
+	}
+
+	writeCommandSummary(ws.log, "Merging with %s: %s (%s).", *targetBranch, baseDescription, mergeBase)
+	return mergeBase, nil
+}
+
+// isAncestor reports whether the ancestor commit is an ancestor of (or equal
+// to) the descendant commit.
+func (ws *workspace) isAncestor(ctx context.Context, ancestor, descendant string) (bool, error) {
+	_, err := git(ctx, io.Discard, "merge-base", "--is-ancestor", ancestor, descendant)
+	if err == nil {
+		return true, nil
+	}
+	// Exit code 1 specifically means "not an ancestor"; any other code is a
+	// real error.
+	if getExitCode(err) == 1 {
+		return false, nil
+	}
+	return false, err
 }
 
 func (ws *workspace) hasMultipleBranches() bool {
 	return *targetRepoURL != "" &&
 		*targetBranch != "" &&
 		(*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch)
+}
+
+func (ws *workspace) targetRef() string {
+	return fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
 }
 
 func (ws *workspace) fetchPushedRef(ctx context.Context) error {
@@ -1958,12 +2040,16 @@ func (ws *workspace) fetchPushedRef(ctx context.Context) error {
 		}
 	}
 
-	// If the merge commit has not been generated, fetch the full history
-	// to ensure the merge base commit is fetched, so we can manually merge the branches
+	// For pull requests, fetch the full history to ensure the merge base commit
+	// is fetched, so we can merge with base if requested.
+	// We must do this even if a shallow fetch depth was explicitly requested.
 	// TODO(Maggie): Only do this if merge_with_base is enabled
 	// If we serialize the action in serializedAction, we won't need to checkout
 	// the repo in the ci_runner to read the config
-	if ws.hasMultipleBranches() && *gitFetchDepth == smartFetchDepth {
+	if ws.hasMultipleBranches() {
+		if fetchDepth != 0 {
+			writeCommandSummary(ws.log, "Fetching full history of %q instead of the requested depth %d, since it is needed to merge with the base branch.", refToFetch, fetchDepth)
+		}
 		fetchDepth = 0
 	}
 

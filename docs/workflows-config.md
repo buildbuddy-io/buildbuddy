@@ -272,6 +272,82 @@ actions:
     # ...
 ```
 
+## Merge with base
+
+By default, when workflows are triggered by `pull_request` events, the CI runner will merge
+the PR branch with the PR's base branch (e.g. main). This is controlled by
+`merge_with_base`, which defaults to `true`.
+
+This may help catch integration problems before merge,
+such as merge conflicts or tests that only fail when the PR is combined
+with recent changes on the base branch.
+
+```yaml title="buildbuddy.yaml"
+actions:
+  - name: "Test"
+    triggers:
+      pull_request:
+        branches: ["main"]
+        merge_with_base: true # default
+    steps:
+      - run: "bazel test //..."
+```
+
+By default, the PR is merged with the current base branch tip. This may hurt CI
+performance if the base branch tip advances frequently. Merging in
+unrelated base branch changes may invalidate the Bazel cache and require
+rebuilds, even when the PR branch itself is unchanged. This behavior can be
+disabled by setting `merge_with_base: false`, or made less frequent by setting
+`merge_with_base_interval`.
+
+### Merge with base interval
+
+When `merge_with_base_interval` is set, the CI runner merges with the oldest base branch commit within the interval,
+rather than the base branch tip.
+
+The intention is that multiple CI runs within an interval will all merge with the same commit, even
+if the base branch tip has advanced. Repeated runs of an unchanged PR will produce the same merged result and hit a warm Bazel cache.
+
+The runner will still merge with the base branch tip once per interval, keeping the PR reasonably up to date with the base branch to catch integration issues.
+
+If the PR's merge base is already newer than the compute commit, the merge is skipped.
+And if the interval contains no base branch commits, it falls back to the tip.
+
+For example, with `merge_with_base_interval: "3h"`, the base advances at 00:00, 03:00,
+06:00, ... UTC, and all runs within the same 3h window merge with the first base
+branch commit after the window boundary:
+
+- The interval boundary is [09:00 UTC, 12:00 UTC].
+- Main is pushed at 08:00 UTC (commit `a`). This commit is outside the current interval.
+- Main is pushed at 09:05 UTC (commit `b`). This commit is the oldest commit in the current interval.
+- Main is pushed at 10:00 UTC (commit `c`). This commit is in the current interval, but is not the oldest commit in the interval.
+- Main is pushed at 12:05 UTC (commit `d`). This commit is in the next interval.
+- A PR Workflow runs at 09:30 UTC. It merges with the oldest base branch commit in the current interval (commit `b`).
+- A PR Workflow runs at 10:45 UTC. Even though Main has advanced to commit `c`, it merges with the oldest base branch commit in the current interval (commit `c`).
+  This lets it reuse the cache from the earlier PR run.
+- A run at 12:15 UTC is in the next interval, so it merges with commit `d`.
+  This helps keep the PR reasonably up to date with the base branch.
+
+With a shorter interval like `1h`, the base advances at the start of each hour.
+
+`merge_with_base_interval` is capped at `3h` so that PRs are not merged with an overly
+stale base, which would also have the negative side effect of keeping stale
+artifacts in the cache longer. Use a shorter interval when merge confidence is
+more important, and a longer interval when cache stability and reduced CI churn
+are more important.
+
+### Interaction with merge queues
+
+Merge with base is still useful when your repo uses merge queues. Merging with base on
+`pull_request` workflows can catch PR-specific issues earlier, before the PR
+reaches the merge queue.
+
+Workflows that run on merge queue branches themselves
+do not need `merge_with_base`, since the merge queue commit should already be
+merged with the base branch.
+
+Also, merge queue workflows can only be triggered on `push` events, where `merge_with_base` is not supported.
+
 ## Ref pattern matching
 
 In `buildbuddy.yaml`, workflow triggers such as `push` and `pull_request`
@@ -424,6 +500,18 @@ That's it! Whenever any of the configured triggers are matched, one of
 the Mac executors in the `workflows` pool should execute the
 workflow, and BuildBuddy will publish the results to your branch.
 
+## Troubleshooting
+
+### Unexpected cache misses
+
+If seeing unexpected cache misses from multiple runs of the same Workflow,
+check whether [merge with base](#merge-with-base) is pulling in frequent changes from the
+base branch. Even when the PR branch is unchanged, a new base branch tip can
+produce a different merged base, which can invalidate the Bazel cache
+and require rebuilds. See the [merge with base section](#merge-with-base) for more detail.
+
+If so, consider setting `merge_with_base_interval`.
+
 ## buildbuddy.yaml schema
 
 ### `BuildBuddyConfig`
@@ -565,7 +653,12 @@ pushed.
   the main branch. However, the action will not be continuously re-run as
   changes are pushed to the base branch. For stronger protection against
   breaking the main branch, you may wish to use
-  [merge queues](#merge-queue-support).
+  [merge queues](#merge-queue-support). See
+  [Merge with base behavior](#merge-with-base).
+- **`merge_with_base_interval`** (`duration`, optional): If set with
+  `merge_with_base: true`, merge with the oldest base branch commit in the current interval (UTC)
+  instead of the base branch tip, improving cache stability across runs.
+  Capped at `3h`. See [Merge with base interval](#merge-with-base-interval) for more details.
 
 ### `ScheduleTrigger`
 

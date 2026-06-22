@@ -169,6 +169,22 @@ actions:
 `,
 	}
 
+	workspaceContentsWithMergeBaseInterval = map[string]string{
+		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+sh_binary(name = "exit", srcs = ["exit.sh"])`,
+		"exit.sh": `exit "$1"`,
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    triggers:
+      pull_request:
+        branches: [ "*" ]
+        merge_with_base_interval: "3h"
+    bazel_commands:
+      - run :exit -- 0
+`,
+	}
+
 	workspaceContentsWithArtifactUploads = map[string]string{
 		"BUILD": `
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
@@ -1828,6 +1844,203 @@ func TestDisableBaseBranchMerging(t *testing.T) {
 
 	result := invokeRunner(t, runnerFlags, nil, wsPath)
 	checkRunnerResult(t, result)
+}
+
+func TestMergeWithBase_FetchDepth1(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	// workspaceContentsWithRunScript enables merge_with_base (the default) with no
+	// merge_with_base_interval, so the runner should always merge with the base branch tip.
+	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithRunScript)
+	pushedRepoPath := testgit.MakeTempRepoClone(t, targetRepoPath)
+	// Create a PR branch with 2 commits.
+	testshell.Run(t, pushedRepoPath, `
+		git checkout -b pr-branch
+		touch feature1.sh
+		git add .
+		git commit -m "Add feature1.sh"
+		touch feature2.sh
+		git add .
+		git commit -m "Add feature2.sh"
+	`)
+	prCommitSHA := strings.TrimSpace(testshell.Run(t, pushedRepoPath, `git rev-parse HEAD`))
+	// Add a non-conflicting commit to master that the runner must merge in.
+	testshell.Run(t, targetRepoPath, `
+		touch base_change.sh
+		git add .
+		git commit -m "Add base_change.sh"
+	`)
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Print args",
+		"--trigger_event=pull_request",
+		"--pushed_repo_url=file://" + pushedRepoPath,
+		"--pushed_branch=pr-branch",
+		"--commit_sha=" + prCommitSHA,
+		"--target_repo_url=file://" + targetRepoPath,
+		"--target_branch=master",
+		// Set fetch depth=1. The runner should still fetch enough history to reach
+		// the merge base so that it can merge with the base branch.
+		"--git_fetch_depth=1",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	// The runner should not fail to find the merge base.
+	result := invokeRunner(t, runnerFlags, nil, wsPath)
+	checkRunnerResult(t, result)
+}
+
+func TestMergeWithBase_Skip_MergeBaseAlreadyInHistory(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, _ := makeGitRepo(t, workspaceContentsWithMergeBaseInterval)
+	boundary := time.Now().UTC().Truncate(3 * time.Hour)
+	baseCommitDate := boundary.Add(-time.Hour).Format(time.RFC3339)
+	firstCommitAfterBoundaryDate := boundary.Add(time.Minute).Format(time.RFC3339)
+	laterCommitAfterBoundaryDate := boundary.Add(2 * time.Minute).Format(time.RFC3339)
+	testshell.Run(t, repoPath, fmt.Sprintf(`
+		GIT_AUTHOR_DATE=%[1]q GIT_COMMITTER_DATE=%[1]q git commit --amend --no-edit --date=%[1]q
+
+		# Add the base commit in the interval, then create the PR from
+		# that commit.
+		touch base_change.sh
+		git add .
+		GIT_AUTHOR_DATE=%[2]q GIT_COMMITTER_DATE=%[2]q git commit -m "Base change"
+		git checkout -b pr-branch
+
+		# Add a later bad commit on the base branch in the same interval. The runner should not pull
+		# this in because it has already merged with a base commit in the current interval.
+		git checkout master
+		echo 'exit 1' > exit.sh
+		git add .
+		GIT_AUTHOR_DATE=%[3]q GIT_COMMITTER_DATE=%[3]q git commit -m "Fail"
+	`, baseCommitDate, firstCommitAfterBoundaryDate, laterCommitAfterBoundaryDate))
+	prCommitSHA := strings.TrimSpace(testshell.Run(t, repoPath, `git rev-parse pr-branch`))
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=pull_request",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=pr-branch",
+		"--commit_sha=" + prCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	// The runner should skip merging with base because the PR already contains
+	// a base commit in the current interval.
+	result := invokeRunner(t, runnerFlags, nil, wsPath)
+	checkRunnerResult(t, result)
+}
+
+func TestMergeWithBase_Skip_BaseChangeWithinInterval_FetchDepth1(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithMergeBaseInterval)
+	boundary := time.Now().UTC().Truncate(3 * time.Hour)
+	baseCommitDate := boundary.Add(-time.Hour).Format(time.RFC3339)
+	firstCommitAfterBoundaryDate := boundary.Add(time.Minute).Format(time.RFC3339)
+	laterCommitAfterBoundaryDate := boundary.Add(2 * time.Minute).Format(time.RFC3339)
+	testshell.Run(t, targetRepoPath, fmt.Sprintf(`
+		GIT_AUTHOR_DATE=%[1]q GIT_COMMITTER_DATE=%[1]q git commit --amend --no-edit --date=%[1]q
+		touch base_change.sh
+		git add .
+		GIT_AUTHOR_DATE=%[2]q GIT_COMMITTER_DATE=%[2]q git commit -m "Base change"
+	`, baseCommitDate, firstCommitAfterBoundaryDate))
+	pushedRepoPath := testgit.MakeTempRepoClone(t, targetRepoPath)
+	// Create a PR branch with 2 commits on top of the oldest post-boundary base
+	// commit.
+	testshell.Run(t, pushedRepoPath, `
+		git checkout -b pr-branch
+		touch feature1.sh
+		git add .
+		git commit -m "Add feature1.sh"
+		touch feature2.sh
+		git add .
+		git commit -m "Add feature2.sh"
+	`)
+	prCommitSHA := strings.TrimSpace(testshell.Run(t, pushedRepoPath, `git rev-parse HEAD`))
+	testshell.Run(t, targetRepoPath, fmt.Sprintf(`
+		# Add a later bad commit in the same interval. Since the PR's merge base is
+		# already at the oldest post-boundary commit, the merge with base should be
+		# skipped and this commit ignored.
+		echo 'exit 1' > exit.sh
+		git add .
+		GIT_AUTHOR_DATE=%[1]q GIT_COMMITTER_DATE=%[1]q git commit -m "Fail"
+	`, laterCommitAfterBoundaryDate))
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=pull_request",
+		"--pushed_repo_url=file://" + pushedRepoPath,
+		"--pushed_branch=pr-branch",
+		"--commit_sha=" + prCommitSHA,
+		"--target_repo_url=file://" + targetRepoPath,
+		"--target_branch=master",
+		// Set fetch depth=1.
+		// The runner should still fetch the merge commit to determine whether to merge with base.
+		"--git_fetch_depth=1",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	// The runner should skip merging with base because the PR already contains
+	// a base commit in the current interval.
+	result := invokeRunner(t, runnerFlags, nil, wsPath)
+	checkRunnerResult(t, result)
+}
+
+func TestMergeWithBase_StaleBase(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, _ := makeGitRepo(t, workspaceContentsWithMergeBaseInterval)
+	boundary := time.Now().UTC().Truncate(3 * time.Hour)
+	// Backdate the base commit far into the past, and create the PR branch from
+	// it so the PR's merge base is stale.
+	oldBaseDate := boundary.Add(-48 * time.Hour).Format(time.RFC3339)
+	// Date the bad commit just after the current interval boundary so it becomes
+	// the base commit that the PR is merged with. Add a later passing commit to
+	// verify the runner picks the oldest post-boundary commit rather than the tip.
+	badCommitDate := boundary.Add(time.Minute).Format(time.RFC3339)
+	laterPassingCommitDate := boundary.Add(2 * time.Minute).Format(time.RFC3339)
+	testshell.Run(t, repoPath, fmt.Sprintf(`
+		GIT_AUTHOR_DATE=%[1]q GIT_COMMITTER_DATE=%[1]q git commit --amend --no-edit --date=%[1]q
+		git checkout -b pr-branch
+
+		# Add a bad commit to master, dated just after the interval boundary. Since
+		# the PR's merge base is older than it, the merge with base should proceed
+		# and pull in the failing change.
+		git checkout master
+		echo 'exit 1' > exit.sh
+		git add .
+		GIT_AUTHOR_DATE=%[2]q GIT_COMMITTER_DATE=%[2]q git commit -m "Fail"
+
+		# Restore the script in a later commit in the same interval. If the runner
+		# merged the base branch tip instead of the oldest post-boundary commit,
+		# this test would pass.
+		echo 'exit "$1"' > exit.sh
+		git add .
+		GIT_AUTHOR_DATE=%[3]q GIT_COMMITTER_DATE=%[3]q git commit -m "Restore"
+	`, oldBaseDate, badCommitDate, laterPassingCommitDate))
+	prCommitSHA := strings.TrimSpace(testshell.Run(t, repoPath, `git rev-parse pr-branch`))
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=pull_request",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=pr-branch",
+		"--commit_sha=" + prCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, nil, wsPath)
+	require.NotEqual(t, 0, result.ExitCode)
 }
 
 func TestFetchDepth1(t *testing.T) {
