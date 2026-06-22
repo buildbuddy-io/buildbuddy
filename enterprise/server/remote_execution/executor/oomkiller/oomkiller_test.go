@@ -45,22 +45,20 @@ func TestKillerDoesNotKillBelowThreshold(t *testing.T) {
 }
 
 func TestKillerUnregistersTaskWhenContextIsDone(t *testing.T) {
-	killer := &killer{
-		tasks:      make(map[uint64]registeredTask),
-		taskChange: make(chan struct{}, 1),
-	}
-	ctx, cancel := context.WithCancel(t.Context())
+	monitor := &fakeMemoryMonitor{snapshot: &MemorySnapshot{UsedBytes: 500, LimitBytes: 1000, AvailableBytes: 500}}
+	k := newTestKiller(t, t.Context(), monitor, manualPollInterval)
+	taskCtx, cancel := context.WithCancel(t.Context())
 	task := newFakeTask("task", 100, 800)
-	unregister := killer.Register(ctx, task)
+	unregister := k.Register(taskCtx, task)
 	defer unregister()
 
-	require.True(t, killer.hasTasks())
+	require.True(t, k.hasTasks())
 
 	// Canceling the registered context removes the task without waiting for
 	// the caller to invoke the unregister function.
 	cancel()
 	require.Eventually(t, func() bool {
-		return !killer.hasTasks()
+		return !k.hasTasks()
 	}, time.Second, time.Millisecond)
 }
 
@@ -102,19 +100,14 @@ func TestKillerContinuesKillingWhilePressureRemains(t *testing.T) {
 func TestKillerKillsMultipleTasksInSinglePollWhilePressureRemains(t *testing.T) {
 	ctx := t.Context()
 	monitor := &fakeMemoryMonitor{snapshot: &MemorySnapshot{UsedBytes: 950, LimitBytes: 1000, AvailableBytes: 50}}
-	k := &killer{
-		monitor:              monitor,
-		memoryUsageThreshold: 0.9,
-		tasks:                make(map[uint64]registeredTask),
-		taskChange:           make(chan struct{}, 1),
-	}
+	k := newTestKiller(t, ctx, monitor, manualPollInterval)
 	tasks := []*fakeTask{
 		newFakeTask("task-1", 0, 30),
 		newFakeTask("task-2", 0, 30),
 		newFakeTask("task-3", 0, 30),
 	}
-	for i, task := range tasks {
-		k.tasks[uint64(i+1)] = registeredTask{task: task}
+	for _, task := range tasks {
+		defer k.Register(ctx, task)()
 	}
 
 	// No single 30-byte task brings the executor back under the 900-byte
@@ -133,12 +126,7 @@ func TestKillerKillsMultipleTasksInSinglePollWhilePressureRemains(t *testing.T) 
 func TestKillerNeverKillsTaskWithUnknownMemory(t *testing.T) {
 	ctx := t.Context()
 	monitor := &fakeMemoryMonitor{snapshot: &MemorySnapshot{UsedBytes: 950, LimitBytes: 1000, AvailableBytes: 50}}
-	k := &killer{
-		monitor:              monitor,
-		memoryUsageThreshold: 0.9,
-		tasks:                make(map[uint64]registeredTask),
-		taskChange:           make(chan struct{}, 1),
-	}
+	k := newTestKiller(t, ctx, monitor, manualPollInterval)
 	// A task that reports zero memory has unknown usage, so the killer must
 	// never select it. Killing the one measurable task leaves the executor over
 	// the threshold, but the remaining unknown-memory tasks must be left running
@@ -146,9 +134,9 @@ func TestKillerNeverKillsTaskWithUnknownMemory(t *testing.T) {
 	measurable := newFakeTask("measurable", 0, 30)
 	unknownFirst := newFakeTask("unknown-first", 0, 0)
 	unknownSecond := newFakeTask("unknown-second", 0, 0)
-	k.tasks[1] = registeredTask{task: measurable}
-	k.tasks[2] = registeredTask{task: unknownFirst}
-	k.tasks[3] = registeredTask{task: unknownSecond}
+	for _, task := range []*fakeTask{measurable, unknownFirst, unknownSecond} {
+		defer k.Register(ctx, task)()
+	}
 
 	require.NoError(t, k.check(ctx))
 	require.Equal(t, 1, measurable.killCount())
@@ -399,25 +387,20 @@ func TestKillerKillsShortestRunningTask(t *testing.T) {
 func TestKillerDoesNotKillUnregisteredVictim(t *testing.T) {
 	ctx := t.Context()
 	monitor := &fakeMemoryMonitor{snapshot: &MemorySnapshot{UsedBytes: 950, LimitBytes: 1000, AvailableBytes: 50}}
-	killer := &killer{
-		monitor:              monitor,
-		memoryUsageThreshold: 0.9,
-		tasks:                make(map[uint64]registeredTask),
-		taskChange:           make(chan struct{}, 1),
-	}
+	k := newTestKiller(t, ctx, monitor, manualPollInterval)
 	task := newFakeTask("task", 100, 800)
+	var unregister func()
 	task.onState = func() {
-		killer.unregister(1)
+		unregister()
 	}
-	killer.tasks[1] = registeredTask{
-		task: task,
-	}
+	unregister = k.Register(ctx, task)
+	defer unregister()
 
 	// The task can finish and unregister after victim selection snapshots the
 	// task map. The killer must not kill it after it is no longer eligible.
-	require.NoError(t, killer.check(ctx))
+	require.NoError(t, k.check(ctx))
 	require.Equal(t, 0, task.killCount())
-	require.False(t, killer.hasTasks())
+	require.False(t, k.hasTasks())
 }
 
 func TestKillerDoesNotPollWithoutRegisteredTasks(t *testing.T) {
@@ -458,32 +441,26 @@ func TestKillerDoesNotPollWithoutRegisteredTasks(t *testing.T) {
 
 func TestKillerDoesNotLoseRegisterWakeupWhenTaskChangeSignalIsCoalesced(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		flags.Set(t, "executor.oom_killer.poll_interval", time.Second)
-		flags.Set(t, "executor.oom_killer.memory_usage_threshold", 0.9)
 		ctx, cancel := context.WithCancel(t.Context())
 		defer func() {
 			cancel()
 			synctest.Wait()
 		}()
 		monitor := &fakeMemoryMonitor{snapshot: &MemorySnapshot{UsedBytes: 500, LimitBytes: 1000, AvailableBytes: 500}}
-		killer := &killer{
-			monitor:              monitor,
-			memoryUsageThreshold: 0.9,
-			tasks:                make(map[uint64]registeredTask),
-			taskChange:           make(chan struct{}, 1),
-		}
+		k := newTestKiller(t, ctx, monitor, time.Second)
 
 		// A stale taskChange signal can already be queued. In that case, the
 		// Register signal for the 0 to 1 task transition will be coalesced into
-		// the existing buffered signal.
-		killer.signalTaskChange()
+		// the existing buffered signal. synctest does not schedule the run loop's
+		// goroutine until this goroutine blocks below, so both signals are in
+		// place before the loop first reads them.
+		k.signalTaskChange()
 		task := newFakeTask("task", 100, 500)
-		unregister := killer.Register(ctx, task)
+		unregister := k.Register(ctx, task)
 		defer unregister()
 
 		// The polling loop must still notice the registered task because the
 		// task map is checked before waiting for another signal.
-		go killer.run(ctx)
 		synctest.Wait()
 		time.Sleep(time.Second)
 		synctest.Wait()
@@ -657,7 +634,12 @@ func requireNotKilledAgain(t testing.TB, task *fakeTask) {
 	}, 50*time.Millisecond, time.Millisecond)
 }
 
-func newTestKiller(t testing.TB, ctx context.Context, monitor *fakeMemoryMonitor, pollInterval time.Duration) Killer {
+// manualPollInterval is long enough that the background poll loop never fires
+// on its own during a test, so the test can drive check() directly and assert
+// on the result of a single poll.
+const manualPollInterval = time.Hour
+
+func newTestKiller(t testing.TB, ctx context.Context, monitor *fakeMemoryMonitor, pollInterval time.Duration) *killer {
 	flags.Set(t, "executor.oom_killer.enabled", true)
 	flags.Set(t, "executor.oom_killer.poll_interval", pollInterval)
 	flags.Set(t, "executor.oom_killer.memory_usage_threshold", 0.9)
@@ -674,5 +656,5 @@ func newTestKiller(t testing.TB, ctx context.Context, monitor *fakeMemoryMonitor
 			t.Fatal("OOM killer did not stop")
 		}
 	})
-	return oomKiller
+	return k
 }
