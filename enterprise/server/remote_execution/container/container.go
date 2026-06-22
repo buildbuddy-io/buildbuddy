@@ -495,12 +495,12 @@ type VM interface {
 	VMConfig() *fcpb.VMConfiguration
 }
 
-func imageFetchStatus(err error) (string) {
+func imageFetchStatus(err error) string {
 	switch {
 	case err == nil:
 		return metrics.OCIFetcherStatusOK
 	case errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err):
-		return metrics.OCIFetcherStatusTimeout,
+		return metrics.OCIFetcherStatusTimeout
 	case errors.Is(err, context.Canceled) || status.IsCanceledError(err):
 		return metrics.OCIFetcherStatusCanceled
 	case status.IsUnauthenticatedError(err):
@@ -516,7 +516,7 @@ func imageFetchStatus(err error) (string) {
 	}
 }
 
-func isImageFetchWarning(err error) (bool) {
+func isImageFetchWarning(err error) bool {
 	switch {
 	case err == nil:
 		return false
@@ -556,17 +556,17 @@ func LogImagePullError(ctx context.Context, imageRef, isolation, trigger string,
 	if err == nil {
 		return
 	}
-	message := 
+	statusLabel := imageFetchStatus(err)
+	message := "image_pull_error: image=%q registry=%s isolation=%s trigger=%s use_oci_fetcher=%v status=%s duration=%s err=%s"
 	if isImageFetchWarning(err) {
 		log.CtxWarningf(ctx,
-			"image_pull_error: image=%q registry=%s isolation=%s trigger=%s use_oci_fetcher=%v status=%s duration=%s err=%s"
+			message,
 			imageRef, oci.RegistryETLDPlusOne(imageRef), isolation, trigger, useOCIFetcher, statusLabel, duration, err)
-	   )
+		return
 	}
 	log.CtxInfof(ctx,
-		"image_pull_error: image=%q registry=%s isolation=%s trigger=%s use_oci_fetcher=%v status=%s duration=%s err=%s"
+		message,
 		imageRef, oci.RegistryETLDPlusOne(imageRef), isolation, trigger, useOCIFetcher, statusLabel, duration, err)
-   )
 }
 
 // PullImageIfNecessary pulls the image configured for the container if it
