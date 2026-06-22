@@ -123,9 +123,37 @@ func TestKillerKillsMultipleTasksInSinglePollWhilePressureRemains(t *testing.T) 
 	require.NoError(t, k.check(ctx))
 	totalKills := 0
 	for _, task := range tasks {
+		require.LessOrEqual(t, task.killCount(), 1, "%s was killed more than once", task.name)
 		totalKills += task.killCount()
 	}
 	require.Equal(t, 2, totalKills)
+	require.True(t, k.hasTasks())
+}
+
+func TestKillerNeverKillsTaskWithUnknownMemory(t *testing.T) {
+	ctx := t.Context()
+	monitor := &fakeMemoryMonitor{snapshot: &MemorySnapshot{UsedBytes: 950, LimitBytes: 1000, AvailableBytes: 50}}
+	k := &killer{
+		monitor:              monitor,
+		memoryUsageThreshold: 0.9,
+		tasks:                make(map[uint64]registeredTask),
+		taskChange:           make(chan struct{}, 1),
+	}
+	// A task that reports zero memory has unknown usage, so the killer must
+	// never select it. Killing the one measurable task leaves the executor over
+	// the threshold, but the remaining unknown-memory tasks must be left running
+	// rather than cleared out in a futile attempt to relieve pressure.
+	measurable := newFakeTask("measurable", 0, 30)
+	unknownFirst := newFakeTask("unknown-first", 0, 0)
+	unknownSecond := newFakeTask("unknown-second", 0, 0)
+	k.tasks[1] = registeredTask{task: measurable}
+	k.tasks[2] = registeredTask{task: unknownFirst}
+	k.tasks[3] = registeredTask{task: unknownSecond}
+
+	require.NoError(t, k.check(ctx))
+	require.Equal(t, 1, measurable.killCount())
+	require.Equal(t, 0, unknownFirst.killCount())
+	require.Equal(t, 0, unknownSecond.killCount())
 	require.True(t, k.hasTasks())
 }
 

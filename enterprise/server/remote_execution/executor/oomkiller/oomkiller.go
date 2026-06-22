@@ -12,6 +12,8 @@
 //   - Next, the least recently used paused runners.
 //   - Finally, the shortest running active tasks.
 //
+// Tasks that report unknown (zero) memory usage are never chosen as victims.
+//
 // The killer also respects remote_execution_priority. After choosing a victim
 // candidate using the rules above, it checks whether the candidate's group owns
 // lower-priority active tasks that can be killed instead. This two-phase
@@ -352,6 +354,14 @@ func (k *killer) chooseVictim(ctx context.Context) *victimCandidate {
 			continue
 		}
 		observedMemoryBytes := max(int64(0), state.UsageStats.GetMemoryBytes())
+		if observedMemoryBytes == 0 {
+			// A task reporting zero memory has unknown usage per the
+			// KillableTask.State contract. Never kill it: it frees no measurable
+			// memory, and since killing it wouldn't reduce the projected usage,
+			// selecting it could let the kill loop clear out every such task in
+			// a single poll.
+			continue
+		}
 		candidate.state = state
 		candidate.observedMemoryBytes = observedMemoryBytes
 		candidate.overageBytes = observedMemoryBytes - state.EstimatedMemoryBytes
