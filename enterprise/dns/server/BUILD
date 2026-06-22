@@ -8,8 +8,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/dns/server",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/metrics",
         "//server/util/log",
         "@com_github_miekg_dns//:dns",
+        "@com_github_prometheus_client_golang//prometheus",
     ],
 )
 

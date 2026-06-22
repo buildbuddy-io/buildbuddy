@@ -404,6 +404,14 @@ const (
 
 	// Signing algorithm used (JWT alg), such as "HS256" or "ES256".
 	SigningMethodLabel = "method"
+
+	// The DNS query (record) type, such as "A", "AAAA", "CNAME", or "MX".
+	// Unrecognized types are bucketed as "OTHER" to bound cardinality, since
+	// the type is client-controlled.
+	DNSRecordTypeLabel = "record_type"
+
+	// The DNS response code, such as "NOERROR", "NXDOMAIN", or "FORMERR".
+	DNSResponseCodeLabel = "rcode"
 )
 
 // Label value constants
@@ -4257,6 +4265,50 @@ var (
 		DestinationProviderLabel,
 		DestinationRegionLabel,
 	})
+
+	// ## DNS server metrics
+
+	DNSServerRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "dns",
+		Name:      "server_request_count",
+		Help:      "The total number of DNS queries handled, by record type and response code.",
+	}, []string{
+		DNSRecordTypeLabel,
+		DNSResponseCodeLabel,
+	})
+
+	// #### Examples
+	//
+	// ```promql
+	// # DNS queries per second by record type
+	// sum by (record_type) (rate(buildbuddy_dns_server_request_count[5m]))
+	//
+	// # NXDOMAIN rate
+	// sum(rate(buildbuddy_dns_server_request_count{rcode="NXDOMAIN"}[5m]))
+	//   /
+	// sum(rate(buildbuddy_dns_server_request_count[5m]))
+	// ```
+
+	DNSServerHandlerDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "dns",
+		Name:      "server_handler_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Second, 2),
+		Help:      "Time to handle a DNS query, in **microseconds**, by record type.",
+	}, []string{
+		DNSRecordTypeLabel,
+	})
+
+	// #### Examples
+	//
+	// ```promql
+	// # Median DNS handler latency in the past 5 minutes
+	// histogram_quantile(
+	//   0.5,
+	//   sum(rate(buildbuddy_dns_server_handler_duration_usec_bucket[5m])) by (le)
+	// )
+	// ```
 )
 
 // exponentialBucketRange returns prometheus.ExponentialBuckets specified in

@@ -3,10 +3,13 @@ package server
 import (
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 
 	"github.com/miekg/dns"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // maxCNAMEDepth bounds how many CNAME hops we follow before giving up
@@ -24,9 +27,24 @@ type handler struct {
 }
 
 func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
+	start := time.Now()
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.Authoritative = true
+
+	recordType := "NONE"
+	if len(r.Question) >= 1 {
+		recordType = recordTypeLabel(r.Question[0].Qtype)
+	}
+	defer func() {
+		metrics.DNSServerRequestCount.With(prometheus.Labels{
+			metrics.DNSRecordTypeLabel:   recordType,
+			metrics.DNSResponseCodeLabel: rcodeLabel(m.Rcode),
+		}).Inc()
+		metrics.DNSServerHandlerDurationUsec.With(prometheus.Labels{
+			metrics.DNSRecordTypeLabel: recordType,
+		}).Observe(float64(time.Since(start).Microseconds()))
+	}()
 
 	if len(r.Question) != 1 {
 		m.Rcode = dns.RcodeFormatError
@@ -125,6 +143,23 @@ func (h *handler) lookup(name string) ([]dns.RR, bool) {
 		}
 	}
 	return nil, false
+}
+
+// recordTypeLabel maps a query type to a metric label, collapsing unknown
+// types (which the client controls) to "OTHER" so cardinality stays bounded.
+func recordTypeLabel(qType uint16) string {
+	if s, ok := dns.TypeToString[qType]; ok {
+		return s
+	}
+	return "OTHER"
+}
+
+// rcodeLabel maps a response code to a metric label, with the same bounding.
+func rcodeLabel(rcode int) string {
+	if s, ok := dns.RcodeToString[rcode]; ok {
+		return s
+	}
+	return "OTHER"
 }
 
 func filterByType(records []dns.RR, qType uint16) []dns.RR {
