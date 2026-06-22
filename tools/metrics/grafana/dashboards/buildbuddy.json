@@ -12625,6 +12625,18 @@
                 "uid": "vm"
               },
               "editorMode": "code",
+              "expr": "quantile(\n    0.25,\n    sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
+              "interval": "",
+              "legendFormat": "p25 queue length",
+              "range": true,
+              "refId": "H"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
               "expr": "quantile(\n    0.5,\n    sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
               "interval": "",
               "legendFormat": "p50 queue length",
