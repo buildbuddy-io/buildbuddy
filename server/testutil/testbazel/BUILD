@@ -1,19 +1,20 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//server/util/bazel:versions.bzl", "TESTBAZEL_VERSION")
 
 go_library(
     name = "testbazel",
     testonly = 1,
     srcs = ["testbazel.go"],
     data = [
-        "//server/util/bazel:bazel-9.1.1_crossplatform",
-        "//server/util/bazel:bazel-9.1.1_extract_installation",
+        "//server/util/bazel:bazel-%s_crossplatform" % TESTBAZEL_VERSION,
+        "//server/util/bazel:bazel-%s_extract_installation" % TESTBAZEL_VERSION,
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel",
     visibility = ["//visibility:public"],
     x_defs = {
-        "Version": "9.1.1",
-        "bazelRlocationpath": "$(rlocationpath //server/util/bazel:bazel-9.1.1_crossplatform)",
-        "outdirRlocationpath": "$(rlocationpath //server/util/bazel:bazel-9.1.1_extract_installation)",
+        "Version": TESTBAZEL_VERSION,
+        "bazelRlocationpath": "$(rlocationpath //server/util/bazel:bazel-%s_crossplatform)" % TESTBAZEL_VERSION,
+        "outdirRlocationpath": "$(rlocationpath //server/util/bazel:bazel-%s_extract_installation)" % TESTBAZEL_VERSION,
     },
     deps = [
         "//server/testutil/testfs",

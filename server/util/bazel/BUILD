@@ -1,17 +1,10 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load(":defs.bzl", "bazel_pkg_tar")
+load(":versions.bzl", "BAZEL_PROBER_VERSIONS")
 
 bazel_pkg_tar(
     name = "bazel_binaries_tar",
-    versions = [
-        "6.5.0",
-        "7.7.1",
-        "8.3.1",
-        "8.4.2",
-        "8.5.0",
-        "9.0.0rc3",
-        "9.1.1",  # used by testbazel
-    ],
+    versions = BAZEL_PROBER_VERSIONS,
     visibility = ["//visibility:public"],
 )
 
