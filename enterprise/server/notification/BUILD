@@ -11,6 +11,7 @@ go_library(
         "//proto:capability_go_proto",
         "//proto:group_go_proto",
         "//proto:notification_go_proto",
+        "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/interfaces",
         "//server/real_environment",

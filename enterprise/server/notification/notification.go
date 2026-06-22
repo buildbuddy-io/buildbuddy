@@ -2,9 +2,12 @@ package notification
 
 import (
 	"context"
+	"fmt"
+	"html"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/email"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -51,12 +54,53 @@ func (s *Service) SendNotification(ctx context.Context, req *npb.SendNotificatio
 		return nil, status.PermissionDeniedError("API key is missing notification capability")
 	}
 
-	switch req.GetNotificationEvent() {
-	case npb.NotificationEvent_UNKNOWN_NOTIFICATION_EVENT:
-		return nil, status.InvalidArgumentError("notification event is required")
+	switch event := req.GetEvent().(type) {
+	case *npb.SendNotificationRequest_NondeterminismDetected:
+		return s.sendNondeterminismDetected(ctx, u.GetGroupID(), event.NondeterminismDetected)
 	default:
-		return nil, status.InvalidArgumentErrorf("unsupported notification event: %s", req.GetNotificationEvent())
+		return nil, status.InvalidArgumentError("notification event is required")
 	}
+}
+
+func (s *Service) sendNondeterminismDetected(ctx context.Context, groupID string, event *npb.NondeterminismDetected) (*npb.SendNotificationResponse, error) {
+	if len(event.GetBuildInvocationIds()) != 2 {
+		return nil, status.InvalidArgumentError("expected 2 build invocation IDs")
+	}
+	buildURLs := make([]string, 0, 2)
+	for _, id := range event.GetBuildInvocationIds() {
+		buildURLs = append(buildURLs, build_buddy_url.WithPath("/invocation/"+id).String())
+	}
+	var workflowURL string
+	if parentInvocationID := event.GetParentInvocationId(); parentInvocationID != "" {
+		workflowURL = build_buddy_url.WithPath("/invocation/" + parentInvocationID).String()
+	}
+
+	recipients, err := s.getAdminEmails(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.email.Send(ctx, &email.Message{
+		ToAddresses: recipients.recipients,
+		Subject:     "Nondeterminism detected in your build",
+		Body:        nondeterminismEmailBody(groupDisplayName(recipients), buildURLs, workflowURL),
+	}); err != nil {
+		return nil, status.WrapErrorf(err, "send nondeterminism notification email")
+	}
+	return &npb.SendNotificationResponse{}, nil
+}
+
+func nondeterminismEmailBody(groupName string, buildURLs []string, parentURL string) string {
+	var b strings.Builder
+	b.WriteString(`<p>BuildBuddy detected nondeterminism in your repository. Running the same command twice produced different outputs.</p>`)
+	if parentURL != "" {
+		fmt.Fprintf(&b, "\n"+`<p><a href="%s">See the affected actions.</a></p>`,
+			html.EscapeString(parentURL))
+	} else {
+		compareURL := build_buddy_url.WithPath(fmt.Sprintf("/compare/%s...%s", buildURLs[0], buildURLs[1])).String()
+		fmt.Fprintf(&b, "\n"+`<p><a href="%s">Compare the two builds.</a></p>`, html.EscapeString(compareURL))
+		b.WriteString("To see the affected actions, click `Run bb explain` at the top of the Compare page.")
+	}
+	return b.String()
 }
 
 type emailRecipients struct {
