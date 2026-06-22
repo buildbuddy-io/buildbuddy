@@ -1,4 +1,4 @@
-package server
+package server_test
 
 import (
 	"net"
@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/dns/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -35,7 +36,7 @@ func newTestHandler(t *testing.T) dns.Handler {
 		require.NoError(t, err, "parsing %q", line)
 		records = append(records, rr)
 	}
-	return NewHandler(records)
+	return server.NewHandler(records)
 }
 
 // fakeResponseWriter captures the message written by the handler.
@@ -62,18 +63,24 @@ func query(t *testing.T, h dns.Handler, name string, qType uint16) *dns.Msg {
 	return w.msg
 }
 
-// answerStrings returns the rdata of each answer RR as "owner|type|value"
-// triples for convenient assertions.
-func aData(answers []dns.RR) []string {
-	var out []string
-	for _, rr := range answers {
+// answer is a flattened view of an answer RR for convenient assertions.
+type answer struct {
+	Name  string
+	Type  string
+	Value string
+}
+
+// answers flattens the rdata of each answer RR into an answer struct.
+func answers(rrs []dns.RR) []answer {
+	var out []answer
+	for _, rr := range rrs {
 		switch v := rr.(type) {
 		case *dns.A:
-			out = append(out, rr.Header().Name+"|A|"+v.A.String())
+			out = append(out, answer{rr.Header().Name, "A", v.A.String()})
 		case *dns.CNAME:
-			out = append(out, rr.Header().Name+"|CNAME|"+v.Target)
+			out = append(out, answer{rr.Header().Name, "CNAME", v.Target})
 		default:
-			out = append(out, rr.String())
+			out = append(out, answer{rr.Header().Name, dns.TypeToString[rr.Header().Rrtype], rr.String()})
 		}
 	}
 	return out
@@ -84,7 +91,7 @@ func TestExactMatch(t *testing.T) {
 	m := query(t, h, "cache.buildbuddy.io.", dns.TypeA)
 	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
 	assert.True(t, m.Authoritative)
-	assert.Equal(t, []string{"cache.buildbuddy.io.|A|1.2.3.4"}, aData(m.Answer))
+	assert.Equal(t, []answer{{"cache.buildbuddy.io.", "A", "1.2.3.4"}}, answers(m.Answer))
 }
 
 func TestWildcardMatch(t *testing.T) {
@@ -92,14 +99,14 @@ func TestWildcardMatch(t *testing.T) {
 	m := query(t, h, "random123.buildbuddy.io.", dns.TypeA)
 	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
 	// Answer is synthesized with the queried name as owner, not "*.…".
-	assert.Equal(t, []string{"random123.buildbuddy.io.|A|9.9.9.9"}, aData(m.Answer))
+	assert.Equal(t, []answer{{"random123.buildbuddy.io.", "A", "9.9.9.9"}}, answers(m.Answer))
 }
 
 func TestMostSpecificWildcardWins(t *testing.T) {
 	h := newTestHandler(t)
 	m := query(t, h, "node.us-west1.buildbuddy.io.", dns.TypeA)
 	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
-	assert.Equal(t, []string{"node.us-west1.buildbuddy.io.|A|8.8.8.8"}, aData(m.Answer))
+	assert.Equal(t, []answer{{"node.us-west1.buildbuddy.io.", "A", "8.8.8.8"}}, answers(m.Answer))
 }
 
 func TestWildcardDoesNotMutateStoredRecord(t *testing.T) {
@@ -109,7 +116,7 @@ func TestWildcardDoesNotMutateStoredRecord(t *testing.T) {
 	// RR wasn't mutated in place).
 	query(t, h, "first.buildbuddy.io.", dns.TypeA)
 	m := query(t, h, "*.buildbuddy.io.", dns.TypeA)
-	assert.Equal(t, []string{"*.buildbuddy.io.|A|9.9.9.9"}, aData(m.Answer))
+	assert.Equal(t, []answer{{"*.buildbuddy.io.", "A", "9.9.9.9"}}, answers(m.Answer))
 }
 
 func TestCNAMEOutOfZone(t *testing.T) {
@@ -118,7 +125,7 @@ func TestCNAMEOutOfZone(t *testing.T) {
 	// out-of-zone target is left for the recursive resolver to chase.
 	m := query(t, h, "www.buildbuddy.io.", dns.TypeA)
 	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
-	assert.Equal(t, []string{"www.buildbuddy.io.|CNAME|external.github.io."}, aData(m.Answer))
+	assert.Equal(t, []answer{{"www.buildbuddy.io.", "CNAME", "external.github.io."}}, answers(m.Answer))
 }
 
 func TestCNAMEInZoneFollowed(t *testing.T) {
@@ -126,10 +133,10 @@ func TestCNAMEInZoneFollowed(t *testing.T) {
 	// alias -> cache (in-zone), so we return both the CNAME and the resolved A.
 	m := query(t, h, "alias.buildbuddy.io.", dns.TypeA)
 	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
-	assert.Equal(t, []string{
-		"alias.buildbuddy.io.|CNAME|cache.buildbuddy.io.",
-		"cache.buildbuddy.io.|A|1.2.3.4",
-	}, aData(m.Answer))
+	assert.Equal(t, []answer{
+		{"alias.buildbuddy.io.", "CNAME", "cache.buildbuddy.io."},
+		{"cache.buildbuddy.io.", "A", "1.2.3.4"},
+	}, answers(m.Answer))
 }
 
 func TestCNAMEQueryNotChased(t *testing.T) {
@@ -137,7 +144,7 @@ func TestCNAMEQueryNotChased(t *testing.T) {
 	// An explicit CNAME query returns just the CNAME, without chasing it.
 	m := query(t, h, "alias.buildbuddy.io.", dns.TypeCNAME)
 	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
-	assert.Equal(t, []string{"alias.buildbuddy.io.|CNAME|cache.buildbuddy.io."}, aData(m.Answer))
+	assert.Equal(t, []answer{{"alias.buildbuddy.io.", "CNAME", "cache.buildbuddy.io."}}, answers(m.Answer))
 }
 
 func TestNODATA(t *testing.T) {
@@ -165,10 +172,10 @@ func TestMultipleRecords(t *testing.T) {
 	// A name with several records of the queried type returns the whole RRset.
 	m := query(t, h, "lb.buildbuddy.io.", dns.TypeA)
 	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
-	assert.ElementsMatch(t, []string{
-		"lb.buildbuddy.io.|A|1.1.1.1",
-		"lb.buildbuddy.io.|A|2.2.2.2",
-	}, aData(m.Answer))
+	assert.ElementsMatch(t, []answer{
+		{"lb.buildbuddy.io.", "A", "1.1.1.1"},
+		{"lb.buildbuddy.io.", "A", "2.2.2.2"},
+	}, answers(m.Answer))
 }
 
 func TestSOAQuery(t *testing.T) {
@@ -186,7 +193,7 @@ func TestWildcardCNAME(t *testing.T) {
 	// Wildcard synthesis also applies to CNAME records.
 	m := query(t, h, "x.aws.buildbuddy.io.", dns.TypeCNAME)
 	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
-	assert.Equal(t, []string{"x.aws.buildbuddy.io.|CNAME|elb.amazonaws.example."}, aData(m.Answer))
+	assert.Equal(t, []answer{{"x.aws.buildbuddy.io.", "CNAME", "elb.amazonaws.example."}}, answers(m.Answer))
 }
 
 func TestEmptyQuestion(t *testing.T) {
@@ -204,8 +211,25 @@ func TestParseZoneFileSurfacesErrors(t *testing.T) {
 	// ParseZoneFile must surface the error rather than returning a partial set.
 	path := filepath.Join(t.TempDir(), "bad.zone")
 	require.NoError(t, os.WriteFile(path, []byte("buildbuddy.io. 60 IN A not-an-ip\n"), 0644))
-	_, err := ParseZoneFile(path)
+	_, err := server.ParseZoneFile(path, "")
 	assert.Error(t, err)
+}
+
+func TestParseZoneFileRequiresFQDNWithoutOrigin(t *testing.T) {
+	// With an empty origin, a relative owner name can't be qualified and is a
+	// parse error, so a misconfigured zone fails startup rather than serving
+	// mis-qualified names.
+	path := filepath.Join(t.TempDir(), "relative.zone")
+	require.NoError(t, os.WriteFile(path, []byte("relative 60 IN A 1.2.3.4\n"), 0644))
+
+	_, err := server.ParseZoneFile(path, "")
+	assert.Error(t, err, "relative name with no origin should error")
+
+	// The same file parses when an origin is supplied to qualify against.
+	records, err := server.ParseZoneFile(path, "buildbuddy.io.")
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, "relative.buildbuddy.io.", records[0].Header().Name)
 }
 
 func TestWildcardNODATA(t *testing.T) {
@@ -216,5 +240,17 @@ func TestWildcardNODATA(t *testing.T) {
 	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
 	assert.Empty(t, m.Answer)
 	require.Len(t, m.Ns, 1)
+	assert.Equal(t, dns.TypeSOA, m.Ns[0].Header().Rrtype)
+}
+
+func TestCNAMEChainNODATAGetsSOA(t *testing.T) {
+	h := newTestHandler(t)
+	// alias -> cache (in-zone), and cache has only an A. Querying AAAA returns
+	// the CNAME but no AAAA: this is NODATA at the end of the chain, so the SOA
+	// must still be attached even though the answer section is non-empty.
+	m := query(t, h, "alias.buildbuddy.io.", dns.TypeAAAA)
+	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
+	assert.Equal(t, []answer{{"alias.buildbuddy.io.", "CNAME", "cache.buildbuddy.io."}}, answers(m.Answer))
+	require.Len(t, m.Ns, 1, "NODATA at end of CNAME chain should carry the SOA")
 	assert.Equal(t, dns.TypeSOA, m.Ns[0].Header().Rrtype)
 }

@@ -28,8 +28,9 @@ var (
 	serverType     = flag.String("server_type", "dns-server", "The server type to match on health checks")
 	monitoringAddr = flag.String("monitoring.listen", ":9090", "Address to listen for monitoring traffic on")
 
-	dnsPort  = flag.Int("dns.port", 53, "The port to listen for DNS traffic on")
-	zoneFile = flag.String("dns.zone_file", "", "Path to a zone file containing the DNS records to serve")
+	dnsPort    = flag.Int("dns.port", 53, "The port to listen for DNS traffic on")
+	zoneFile   = flag.String("dns.zone_file", "", "Path to a zone file containing the DNS records to serve")
+	zoneOrigin = flag.String("dns.zone_origin", "", "Origin domain to qualify relative names in the zone file against. If empty, names must be fully qualified.")
 )
 
 func main() {
@@ -81,7 +82,15 @@ func main() {
 	})
 	go func() {
 		log.Debugf("Listening for HTTP traffic on %s", httpServer.Addr)
-		httpServer.ListenAndServe()
+		// Unlike the DNS listeners (which bind up front so a bind failure fails
+		// startup), the probe server binds here in the goroutine. A bind
+		// failure leaves the process running with no probes; the orchestrator
+		// then can't reach /readyz and restarts us. Log the error so that's
+		// diagnosable rather than silent. http.ErrServerClosed is the normal
+		// graceful-shutdown signal and isn't worth logging.
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Errorf("HTTP probe server failed: %s", err)
+		}
 	}()
 
 	env.GetHealthChecker().WaitForGracefulShutdown()
@@ -91,7 +100,7 @@ func startDNSServer(env *real_environment.RealEnv) error {
 	if *zoneFile == "" {
 		return status.FailedPreconditionError("a --dns.zone_file must be configured")
 	}
-	records, err := server.ParseZoneFile(*zoneFile)
+	records, err := server.ParseZoneFile(*zoneFile, *zoneOrigin)
 	if err != nil {
 		return status.WrapErrorf(err, "parse zone file %q", *zoneFile)
 	}

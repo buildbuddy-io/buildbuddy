@@ -7,15 +7,18 @@ go_library(
     srcs = ["server.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/dns/server",
     visibility = ["//visibility:public"],
-    deps = ["@com_github_miekg_dns//:dns"],
+    deps = [
+        "//server/util/log",
+        "@com_github_miekg_dns//:dns",
+    ],
 )
 
 go_test(
     name = "server_test",
     size = "small",
     srcs = ["server_test.go"],
-    embed = [":server"],
     deps = [
+        ":server",
         "@com_github_miekg_dns//:dns",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

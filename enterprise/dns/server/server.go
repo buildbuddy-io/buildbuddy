@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+
 	"github.com/miekg/dns"
 )
 
@@ -14,9 +16,10 @@ const maxCNAMEDepth = 8
 type handler struct {
 	records map[string][]dns.RR
 
-	// soa is the zone's apex SOA record, included in the authority section
-	// of negative (NXDOMAIN/NODATA) responses so resolvers can cache them.
-	// May be nil if the zone has no SOA.
+	// soa is the zone's SOA record. We attach it to "no such answer" responses
+	// (the name doesn't exist, or has no record of the requested type); it tells
+	// the asking resolver how long it may remember that negative result instead
+	// of re-asking us every time. Nil if the zone file has no SOA record.
 	soa dns.RR
 }
 
@@ -27,31 +30,37 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 
 	if len(r.Question) != 1 {
 		m.Rcode = dns.RcodeFormatError
-		w.WriteMsg(m)
+		if err := w.WriteMsg(m); err != nil {
+			log.Warningf("Failed to write FORMERR DNS response: %s", err)
+		}
 		return
 	}
 
 	qName := dns.CanonicalName(r.Question[0].Name)
 	qType := r.Question[0].Qtype
 
-	m.Answer, m.Rcode = h.resolve(qName, qType)
+	var negative bool
+	m.Answer, m.Rcode, negative = h.resolve(qName, qType)
 
-	// On a negative answer (NXDOMAIN, or NODATA: name exists but no records
-	// of the requested type), include the zone SOA in the authority section
-	// if we have one.
-	if len(m.Answer) == 0 && h.soa != nil {
+	// On a negative answer (NXDOMAIN, or NODATA: name exists but has no record
+	// of the requested type), include the zone SOA in the authority section so
+	// resolvers can negatively cache it.
+	if negative && h.soa != nil {
 		m.Ns = append(m.Ns, h.soa)
 	}
 
-	w.WriteMsg(m)
+	if err := w.WriteMsg(m); err != nil {
+		log.Warningf("Failed to write DNS response for %q: %s", qName, err)
+	}
 }
 
 // resolve looks up the answer for (qName, qType), expanding wildcards and
-// following in-zone CNAME chains. It returns the answer RRs and the response
-// code: NXDOMAIN if the queried name does not exist (and no wildcard covers
-// it), otherwise NOERROR — which includes the NODATA case (name exists but has
-// no records of the requested type), signalled by an empty answer.
-func (h *handler) resolve(qName string, qType uint16) ([]dns.RR, int) {
+// following in-zone CNAME chains. It returns the answer RRs, the response code,
+// and whether the result is negative for the queried type (NXDOMAIN, or NODATA:
+// the name exists but has no record of the requested type) and so should carry
+// the zone SOA for negative caching. A CNAME chain that exits the zone is not
+// negative: it is a normal partial answer the recursive resolver completes.
+func (h *handler) resolve(qName string, qType uint16) ([]dns.RR, int, bool) {
 	var answer []dns.RR
 	name := qName
 	for i := 0; i < maxCNAMEDepth; i++ {
@@ -61,13 +70,13 @@ func (h *handler) resolve(qName string, qType uint16) ([]dns.RR, int) {
 			// dead end while chasing a CNAME just means the chain continues
 			// out-of-zone, which is a normal (NOERROR) authoritative answer.
 			if i == 0 {
-				return nil, dns.RcodeNameError
+				return nil, dns.RcodeNameError, true
 			}
-			return answer, dns.RcodeSuccess
+			return answer, dns.RcodeSuccess, false
 		}
 
 		if matched := filterByType(records, qType); len(matched) > 0 {
-			return append(answer, matched...), dns.RcodeSuccess
+			return append(answer, matched...), dns.RcodeSuccess, false
 		}
 
 		// No records of the requested type. If a CNAME lives here (and the
@@ -81,10 +90,14 @@ func (h *handler) resolve(qName string, qType uint16) ([]dns.RR, int) {
 			}
 		}
 
-		// Name exists but has no records of the requested type: NODATA.
-		return answer, dns.RcodeSuccess
+		// Name exists but has no record of the requested type: NODATA. This
+		// holds whether we arrived directly or at the end of an in-zone CNAME
+		// chain (in which case answer holds the CNAME RRs).
+		return answer, dns.RcodeSuccess, true
 	}
-	return answer, dns.RcodeSuccess
+	// Exceeded the CNAME hop limit; return what we have without claiming the
+	// result is authoritatively negative.
+	return answer, dns.RcodeSuccess, false
 }
 
 // lookup returns the records for name. If there is no exact match, it walks up
@@ -140,21 +153,28 @@ func NewHandler(resources []dns.RR) dns.Handler {
 	}
 }
 
-func ParseZoneFile(fileName string) ([]dns.RR, error) {
+// ParseZoneFile reads the resource records from a zone file.
+//
+// origin is the domain that relative owner names (including "@" and records
+// under a "$ORIGIN"-less file) are qualified against. If origin is empty, owner
+// names must be fully qualified or an error is returned.
+func ParseZoneFile(fileName, origin string) ([]dns.RR, error) {
 	file, err := os.Open(fileName)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	parser := dns.NewZoneParser(file, "", filepath.Base(fileName))
+	parser := dns.NewZoneParser(file, origin, filepath.Base(fileName))
 	records := make([]dns.RR, 0)
 	for rr, ok := parser.Next(); ok; rr, ok = parser.Next() {
 		records = append(records, rr)
 	}
 	// Next() returns ok=false both at EOF and on a parse error; the error is
 	// only surfaced via Err(). Without this check a malformed zone file would
-	// yield a truncated record set with a nil error.
+	// yield a truncated record set with a nil error. With an empty origin this
+	// also covers relative names: the parser can't qualify them and reports a
+	// "bad owner name" error here.
 	if err := parser.Err(); err != nil {
 		return nil, err
 	}
