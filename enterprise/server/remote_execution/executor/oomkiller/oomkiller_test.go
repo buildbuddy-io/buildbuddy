@@ -145,6 +145,40 @@ func TestKillerNeverKillsTaskWithUnknownMemory(t *testing.T) {
 	require.True(t, k.hasTasks())
 }
 
+func TestKillerTerminatesWhenAllTasksReportUnknownMemory(t *testing.T) {
+	ctx := t.Context()
+	monitor := &fakeMemoryMonitor{snapshot: &MemorySnapshot{UsedBytes: 950, LimitBytes: 1000, AvailableBytes: 50}}
+	k := newTestKiller(t, ctx, monitor, manualPollInterval)
+	// The executor is over the threshold, but every task reports zero (unknown)
+	// memory, so none can be selected as a victim. The poll must terminate
+	// without killing anything rather than looping forever trying to relieve
+	// pressure it cannot measure.
+	tasks := []*fakeTask{
+		newFakeTask("unknown-1", 100, 0),
+		newFakeTask("unknown-2", 100, 0),
+		newFakeTask("unknown-3", 100, 0),
+	}
+	for _, task := range tasks {
+		defer k.Register(ctx, task)()
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- k.check(ctx)
+	}()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("Executor OOM killer check did not terminate")
+	}
+
+	for _, task := range tasks {
+		require.Equal(t, 0, task.killCount())
+	}
+	require.True(t, k.hasTasks())
+}
+
 func TestKillerKillsMostOverEstimatedTask(t *testing.T) {
 	ctx := t.Context()
 	monitor := &fakeMemoryMonitor{snapshot: &MemorySnapshot{UsedBytes: 950, LimitBytes: 1000, AvailableBytes: 50}}
