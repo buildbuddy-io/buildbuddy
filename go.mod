@@ -136,6 +136,7 @@ require (
 	github.com/open-feature/go-sdk v1.17.1
 	github.com/open-feature/go-sdk-contrib/providers/flagd v0.3.2
 	github.com/opencontainers/runtime-spec v1.3.0
+	github.com/oschwald/maxminddb-golang/v2 v2.4.0
 	github.com/pkg/errors v0.9.1
 	github.com/planetscale/vtprotobuf v0.6.1-0.20241121165744-79df5c4772f2
 	github.com/prometheus/client_golang v1.23.2
