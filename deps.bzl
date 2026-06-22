@@ -457,7 +457,7 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         name = "dbip_asn_lite",
         downloaded_file_path = "dbip-asn-lite.mmdb.gz",
         sha256 = "d1ab6302ce614c009c77552d4d826dc7a1628494eda5f8c50fabd81ef225f153",
-	urls = ["https://storage.googleapis.com/buildbuddy-tools/dbip/dbip-asn-lite-2026-06.mmdb.gz"],
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/dbip/dbip-asn-lite-2026-06.mmdb.gz"],
     )
 
 install_static_dependencies_ext = modules.as_extension(install_static_dependencies)
