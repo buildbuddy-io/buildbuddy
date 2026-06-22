@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/notification",
     deps = [
         "//enterprise/server/backends/email",
+        "//proto:capability_go_proto",
         "//proto:group_go_proto",
         "//proto:notification_go_proto",
         "//server/environment",

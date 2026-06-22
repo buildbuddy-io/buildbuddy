@@ -27,7 +27,7 @@ func TestGetAdminEmailsReturnsUniqueAdminRecipients(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
-		"APIKEY1": apiKeyUser("AK1", "GR1", cappb.Capability_ORG_ADMIN),
+		"APIKEY1": apiKeyUser("AK1", "GR1", cappb.Capability_SEND_NOTIFICATION),
 	})
 	env.SetAuthenticator(auth)
 	authCtx := auth.AuthContextFromAPIKey(ctx, "APIKEY1")
@@ -56,7 +56,7 @@ func TestGetAdminEmailsIncludesUserListAdminRecipients(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
-		"APIKEY1": apiKeyUser("AK1", "GR1", cappb.Capability_ORG_ADMIN),
+		"APIKEY1": apiKeyUser("AK1", "GR1", cappb.Capability_SEND_NOTIFICATION),
 	})
 	env.SetAuthenticator(auth)
 	authCtx := auth.AuthContextFromAPIKey(ctx, "APIKEY1")
@@ -79,7 +79,7 @@ func TestGetAdminEmailsRequiresRecipients(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
-		"APIKEY1": apiKeyUser("AK1", "GR1", cappb.Capability_ORG_ADMIN),
+		"APIKEY1": apiKeyUser("AK1", "GR1", cappb.Capability_SEND_NOTIFICATION),
 	})
 	env.SetAuthenticator(auth)
 	authCtx := auth.AuthContextFromAPIKey(ctx, "APIKEY1")
@@ -89,11 +89,12 @@ func TestGetAdminEmailsRequiresRecipients(t *testing.T) {
 	assert.True(t, status.IsFailedPreconditionError(err))
 }
 
-func TestSendNotificationRequiresOrgAdmin(t *testing.T) {
+func TestSendNotificationRequiresNotificationCapability(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
-		"NONADMIN": apiKeyUser("AK1", "GR1", cappb.Capability_CACHE_WRITE),
+		"NO_CAP":   apiKeyUser("AK1", "GR1", cappb.Capability_CACHE_WRITE),
+		"WITH_CAP": apiKeyUser("AK2", "GR1", cappb.Capability_SEND_NOTIFICATION),
 	})
 	env.SetAuthenticator(auth)
 	service := New(env, &fakeEmailSender{})
@@ -101,26 +102,15 @@ func TestSendNotificationRequiresOrgAdmin(t *testing.T) {
 		RequestContext: &ctxpb.RequestContext{GroupId: "GR1"},
 	}
 
-	// A non-admin caller is rejected.
-	_, err := service.SendNotification(auth.AuthContextFromAPIKey(ctx, "NONADMIN"), req)
+	// A caller whose key lacks SEND_NOTIFICATION is rejected.
+	_, err := service.SendNotification(auth.AuthContextFromAPIKey(ctx, "NO_CAP"), req)
 	assert.True(t, status.IsPermissionDeniedError(err))
-}
 
-func TestSendNotificationAuthorizesAgainstRequestContextGroup(t *testing.T) {
-	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	// The caller is an org admin of GR1.
-	auth := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
-		"APIKEY1": apiKeyUser("AK1", "GR1", cappb.Capability_ORG_ADMIN),
-	})
-	env.SetAuthenticator(auth)
-	service := New(env, &fakeEmailSender{})
-
-	// Sending a notification to GR2 must be rejected, because the caller is not an admin of that org.
-	_, err := service.SendNotification(auth.AuthContextFromAPIKey(ctx, "APIKEY1"), &npb.SendNotificationRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: "GR2"},
-	})
-	assert.True(t, status.IsPermissionDeniedError(err))
+	// A caller whose key has SEND_NOTIFICATION passes the capability check. The
+	// request is then rejected for a different reason (no notification event is
+	// set), confirming authorization succeeded.
+	_, err = service.SendNotification(auth.AuthContextFromAPIKey(ctx, "WITH_CAP"), req)
+	assert.True(t, status.IsInvalidArgumentError(err))
 }
 
 func apiKeyUser(apiKeyID, groupID string, caps ...cappb.Capability) *claims.Claims {

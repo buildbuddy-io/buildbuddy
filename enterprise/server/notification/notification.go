@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	npb "github.com/buildbuddy-io/buildbuddy/proto/notification"
 )
@@ -45,10 +46,9 @@ func (s *Service) SendNotification(ctx context.Context, req *npb.SendNotificatio
 	if err != nil {
 		return nil, err
 	}
-	// If the user is in multiple groups, make sure to authorize for the group from the request.
-	groupID := req.GetRequestContext().GetGroupId()
-	if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
-		return nil, err
+
+	if !u.HasCapability(cappb.Capability_SEND_NOTIFICATION) {
+		return nil, status.PermissionDeniedError("API key is missing notification capability")
 	}
 
 	switch req.GetNotificationEvent() {
