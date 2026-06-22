@@ -202,6 +202,8 @@ var (
 		buildBuddyServicePrefix + "GetUsageAlertingRules",
 		buildBuddyServicePrefix + "CreateUsageAlertingRule",
 		buildBuddyServicePrefix + "DeleteUsageAlertingRule",
+		// Notifications.
+		buildBuddyServicePrefix + "SendNotification",
 		// Encryption.
 		buildBuddyServicePrefix + "GetEncryptionConfig",
 		buildBuddyServicePrefix + "SetEncryptionConfig",

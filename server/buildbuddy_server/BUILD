@@ -23,6 +23,7 @@ go_library(
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:iprules_go_proto",
+        "//proto:notification_go_proto",
         "//proto:quota_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:repo_go_proto",

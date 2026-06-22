@@ -69,6 +69,7 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
+	npb "github.com/buildbuddy-io/buildbuddy/proto/notification"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
@@ -2274,6 +2275,13 @@ func (s *BuildBuddyServer) DeleteUsageAlertingRule(ctx context.Context, req *usa
 		al.LogForGroup(ctx, u.GetGroupID(), alpb.Action_DELETE, req)
 	}
 	return rsp, nil
+}
+
+func (s *BuildBuddyServer) SendNotification(ctx context.Context, req *npb.SendNotificationRequest) (*npb.SendNotificationResponse, error) {
+	if ns := s.env.GetNotificationService(); ns != nil {
+		return ns.SendNotification(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
 }
 
 func (s *BuildBuddyServer) GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error) {

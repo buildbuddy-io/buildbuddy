@@ -92,6 +92,7 @@ type Env interface {
 	GetRunnerService() interfaces.RunnerService
 	GetGitProviders() interfaces.GitProviders
 	GetUsageService() interfaces.UsageService
+	GetNotificationService() interfaces.NotificationService
 	GetUsageTracker() interfaces.UsageTracker
 	GetXcodeLocator() interfaces.XcodeLocator
 	GetQuotaManager() interfaces.QuotaManager
