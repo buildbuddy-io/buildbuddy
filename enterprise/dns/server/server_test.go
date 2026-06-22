@@ -43,14 +43,14 @@ type fakeResponseWriter struct {
 	msg *dns.Msg
 }
 
-func (w *fakeResponseWriter) WriteMsg(m *dns.Msg) error    { w.msg = m; return nil }
-func (w *fakeResponseWriter) LocalAddr() net.Addr          { return &net.UDPAddr{} }
-func (w *fakeResponseWriter) RemoteAddr() net.Addr         { return &net.UDPAddr{} }
-func (w *fakeResponseWriter) Write([]byte) (int, error)    { return 0, nil }
-func (w *fakeResponseWriter) Close() error                 { return nil }
-func (w *fakeResponseWriter) TsigStatus() error            { return nil }
-func (w *fakeResponseWriter) TsigTimersOnly(bool)          {}
-func (w *fakeResponseWriter) Hijack()                      {}
+func (w *fakeResponseWriter) WriteMsg(m *dns.Msg) error { w.msg = m; return nil }
+func (w *fakeResponseWriter) LocalAddr() net.Addr       { return &net.UDPAddr{} }
+func (w *fakeResponseWriter) RemoteAddr() net.Addr      { return &net.UDPAddr{} }
+func (w *fakeResponseWriter) Write([]byte) (int, error) { return 0, nil }
+func (w *fakeResponseWriter) Close() error              { return nil }
+func (w *fakeResponseWriter) TsigStatus() error         { return nil }
+func (w *fakeResponseWriter) TsigTimersOnly(bool)       {}
+func (w *fakeResponseWriter) Hijack()                   {}
 
 func query(t *testing.T, h dns.Handler, name string, qType uint16) *dns.Msg {
 	t.Helper()
