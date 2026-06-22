@@ -152,6 +152,10 @@ type killer struct {
 
 type registeredTask struct {
 	task KillableTask
+	// killed is set once the OOM killer has terminated the task. The task stays
+	// registered until its normal unregister path removes it, but it is no
+	// longer eligible to be chosen as a victim.
+	killed bool
 }
 
 type noopKiller struct{}
@@ -188,14 +192,14 @@ func New(ctx context.Context, monitor MemoryMonitor) (Killer, error) {
 
 func (k *killer) Register(ctx context.Context, task KillableTask) func() {
 	k.mu.Lock()
-	wasEmpty := len(k.tasks) == 0
+	wasIdle := !k.hasLiveTasksLocked()
 	k.nextID++
 	id := k.nextID
 	k.tasks[id] = registeredTask{
 		task: task,
 	}
 	k.mu.Unlock()
-	if wasEmpty {
+	if wasIdle {
 		k.signalTaskChange()
 	}
 
@@ -283,11 +287,11 @@ func (k *killer) check(ctx context.Context) error {
 	// each kill; instead we optimistically subtract each victim's observed
 	// memory from the projected usage.
 	projectedUsedBytes := snapshot.UsedBytes
-	killed := 0
+	killedCount := 0
 	for k.shouldKill(ctx, projectedUsedBytes, snapshot.LimitBytes) {
 		victim := k.chooseVictim(ctx)
 		if victim == nil {
-			if killed == 0 {
+			if killedCount == 0 {
 				log.CtxWarningf(ctx, "Executor OOM killer wanted to kill a victim but no registered victim reported state")
 			}
 			return nil
@@ -295,10 +299,10 @@ func (k *killer) check(ctx context.Context) error {
 		// Assume the victim's memory will be reclaimed whether we kill it or it
 		// already finished on its own.
 		projectedUsedBytes -= victim.observedMemoryBytes
-		if !k.unregister(victim.id) {
-			// The victim was unregistered (most likely it just finished)
-			// between selection and now. Look for another victim instead of
-			// waiting for the next poll.
+		if !k.markKilled(victim.id) {
+			// The victim was already killed or unregistered (most likely it just
+			// finished) between selection and now. Look for another victim
+			// instead of waiting for the next poll.
 			continue
 		}
 		stats := KillStats{
@@ -309,7 +313,7 @@ func (k *killer) check(ctx context.Context) error {
 		log.CtxWarningf(ctx, "Executor OOM killer terminating victim %s: executor memory used=%d limit=%d available=%d victim memory=%d estimated=%d active=%t", taskName(victim.task), snapshot.UsedBytes, snapshot.LimitBytes, snapshot.AvailableBytes, victim.observedMemoryBytes, victim.state.EstimatedMemoryBytes, victim.state.Active)
 		metrics.RemoteExecutionOOMKillerTargetedTaskMemoryBytes.Observe(float64(victim.observedMemoryBytes))
 		victim.task.Kill(ctx, stats)
-		killed++
+		killedCount++
 	}
 	return nil
 }
@@ -335,6 +339,9 @@ func (k *killer) chooseVictim(ctx context.Context) *victimCandidate {
 	k.mu.Lock()
 	candidates := make([]victimCandidate, 0, len(k.tasks))
 	for id, rt := range k.tasks {
+		if rt.killed {
+			continue
+		}
 		candidates = append(candidates, victimCandidate{
 			id:   id,
 			task: rt.task,
@@ -466,6 +473,25 @@ func betterShortestRunningTask(candidate, best victimCandidate) bool {
 	return candidate.observedMemoryBytes > best.observedMemoryBytes
 }
 
+// markKilled flags the registered task as killed so it is no longer chosen as a
+// victim. It returns false if the task is no longer registered or was already
+// killed, in which case the caller must not kill it. The task stays registered
+// until its normal unregister path removes it.
+func (k *killer) markKilled(id uint64) bool {
+	k.mu.Lock()
+	rt, ok := k.tasks[id]
+	if !ok || rt.killed {
+		k.mu.Unlock()
+		return false
+	}
+	rt.killed = true
+	k.tasks[id] = rt
+	k.mu.Unlock()
+	// Wake the poll loop so it can stop if that was the last live task.
+	k.signalTaskChange()
+	return true
+}
+
 func (k *killer) unregister(id uint64) bool {
 	if !k.removeTask(id) {
 		return false
@@ -490,7 +516,18 @@ func (k *killer) removeTask(id uint64) bool {
 func (k *killer) hasTasks() bool {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	return len(k.tasks) > 0
+	return k.hasLiveTasksLocked()
+}
+
+// hasLiveTasksLocked reports whether any registered task has not yet been
+// killed. The caller must hold k.mu.
+func (k *killer) hasLiveTasksLocked() bool {
+	for _, rt := range k.tasks {
+		if !rt.killed {
+			return true
+		}
+	}
+	return false
 }
 
 func (k *killer) signalTaskChange() {
