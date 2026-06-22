@@ -495,6 +495,12 @@ type VM interface {
 	VMConfig() *fcpb.VMConfiguration
 }
 
+// imageFetchStatus classifies an image-pull error into a status label for the
+// image_fetch_duration_usec metric. It keys off the gRPC code set by
+// ocifetcher.RegistryStatusError, so it only distinguishes 4xx/429 on paths that
+// surface that code (the OCIFetcher/resolver path). Errors without a registry
+// gRPC code - e.g. raw podman/CLI pull errors, or non-registry steps - fall
+// through to "error".
 func imageFetchStatus(err error) string {
 	switch {
 	case err == nil:

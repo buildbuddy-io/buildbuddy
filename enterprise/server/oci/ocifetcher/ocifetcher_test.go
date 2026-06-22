@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
@@ -2012,4 +2013,31 @@ func TestPrivateImageManifestCacheRequiresCredentials(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestRegistryStatusError(t *testing.T) {
+	// Locks the HTTP-status -> gRPC-status mapping that the image-pull metrics
+	// status label and log level depend on.
+	for _, tc := range []struct {
+		name       string
+		statusCode int
+		check      func(error) bool
+	}{
+		{"401_unauthenticated", http.StatusUnauthorized, status.IsUnauthenticatedError},
+		{"403_permission_denied", http.StatusForbidden, status.IsPermissionDeniedError},
+		{"404_not_found", http.StatusNotFound, status.IsNotFoundError},
+		{"429_resource_exhausted", http.StatusTooManyRequests, status.IsResourceExhaustedError},
+		{"500_unavailable", http.StatusInternalServerError, status.IsUnavailableError},
+		{"503_unavailable", http.StatusServiceUnavailable, status.IsUnavailableError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ocifetcher.RegistryStatusError(&transport.Error{StatusCode: tc.statusCode}, "msg")
+			require.True(t, tc.check(err), "status %d mapped to wrong code: %v", tc.statusCode, err)
+		})
+	}
+
+	t.Run("non_transport_error_is_unavailable", func(t *testing.T) {
+		err := ocifetcher.RegistryStatusError(errors.New("dial tcp: connection refused"), "msg")
+		require.True(t, status.IsUnavailableError(err), "got: %v", err)
+	})
 }
