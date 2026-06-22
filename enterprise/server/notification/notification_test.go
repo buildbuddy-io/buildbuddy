@@ -139,7 +139,7 @@ func TestNondeterminismDetected(t *testing.T) {
 
 	assert.Equal(t, 1, len(sender.messages))
 	assert.Equal(t, "Nondeterminism detected in your build", sender.messages[0].Subject)
-	assert.Equal(t, "<p>Hi Acme team,</p>\n<p>BuildBuddy detected nondeterminism in your repository. Running the same command twice produced different outputs.</p>\n<p><a href=\"http://localhost:8080/invocation/INV0\">See the affected actions.</a></p>", sender.messages[0].Body)
+	assert.Equal(t, "<p>BuildBuddy detected nondeterminism in your repository. Running the same command twice produced different outputs.</p>\n<p><a href=\"http://localhost:8080/invocation/INV0\">See the affected actions.</a></p>", sender.messages[0].Body)
 }
 
 func apiKeyUser(apiKeyID, groupID string, caps ...cappb.Capability) *claims.Claims {

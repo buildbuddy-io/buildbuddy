@@ -91,18 +91,14 @@ func (s *Service) sendNondeterminismDetected(ctx context.Context, groupID string
 
 func nondeterminismEmailBody(groupName string, buildURLs []string, parentURL string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, `<p>Hi %s team,</p>
-<p>BuildBuddy detected nondeterminism in your repository. Running the same command twice produced different outputs.</p>`,
-		html.EscapeString(groupName))
+	b.WriteString(`<p>BuildBuddy detected nondeterminism in your repository. Running the same command twice produced different outputs.</p>`)
 	if parentURL != "" {
 		fmt.Fprintf(&b, "\n"+`<p><a href="%s">See the affected actions.</a></p>`,
 			html.EscapeString(parentURL))
 	} else {
-		b.WriteString("\n<p>Compare the two builds to see the affected actions:</p>\n<ul>")
-		for i, u := range buildURLs {
-			fmt.Fprintf(&b, "\n"+`<li><a href="%s">Build %d</a></li>`, html.EscapeString(u), i+1)
-		}
-		b.WriteString("\n</ul>")
+		compareURL := build_buddy_url.WithPath(fmt.Sprintf("/compare/%s...%s", buildURLs[0], buildURLs[1])).String()
+		fmt.Fprintf(&b, "\n"+`<p><a href="%s">Compare the two builds.</a></p>`, html.EscapeString(compareURL))
+		b.WriteString("To see the affected actions, click `Run bb explain` at the top of the Compare page.")
 	}
 	return b.String()
 }
