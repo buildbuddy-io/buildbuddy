@@ -546,9 +546,13 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 		return nil, nil
 	}
 
-	// Always clean up invocationLinks and execution updates from the collector.
-	// The execution cannot be retried after this point, so nothing will clean
-	// up this data if we don't do it here.
+	// Always clean up executionInvocationLinks, invocationExecutionLinks, and
+	// execution updates from the collector. The execution cannot be retried
+	// after this point, so nothing will clean up this data if we don't do it
+	// here. This means that even if we fail to AppendExecution or
+	// FlushExecutionStats, we will still remove all links and in-progress
+	// executions.
+	var links []*sipb.StoredInvocationLink
 	defer func() {
 		err := s.executionCollector.DeleteExecutionInvocationLinks(ctx, executionID)
 		if err != nil {
@@ -558,6 +562,11 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 		if err != nil {
 			log.CtxErrorf(ctx, "Failed to clean up in-progress execution in collector: %s", err)
 		}
+		for _, link := range links {
+			if err := s.executionCollector.DeleteInvocationExecutionLink(ctx, link); err != nil {
+				log.CtxErrorf(ctx, "Failed to clean up reverse invocation link for invocation %q: %s", link.GetInvocationId(), err)
+			}
+		}
 	}()
 
 	executionProto, err := s.executionCollector.GetInProgressExecution(ctx, executionID)
@@ -565,7 +574,7 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 		return nil, status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
 	}
 
-	links, err := s.executionCollector.GetExecutionInvocationLinks(ctx, executionID)
+	links, err = s.executionCollector.GetExecutionInvocationLinks(ctx, executionID)
 	if err != nil {
 		return nil, status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}

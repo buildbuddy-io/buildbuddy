@@ -1561,9 +1561,9 @@ type ExecutionCollector interface {
 	// behavior, and will not return the deleted execution.
 	DeleteInProgressExecution(ctx context.Context, executionID string) error
 
-	// DeleteInvocationExecutionLinks deletes all invocation => []execution
-	// links for the given invocation ID.
-	DeleteInvocationExecutionLinks(ctx context.Context, invocationID string) error
+	// DeleteInvocationExecutionLink deletes the single invocation => execution
+	// link.
+	DeleteInvocationExecutionLink(ctx context.Context, link *sipb.StoredInvocationLink) error
 
 	AppendExecution(ctx context.Context, iid string, execution *repb.StoredExecution) error
 	// GetExecutions fetches a range of executions for the given invocation ID.
@@ -1571,7 +1571,6 @@ type ExecutionCollector interface {
 	// of range, then the returned slice will contain as many executions are
 	// available starting from the start index.
 	GetExecutions(ctx context.Context, iid string, start, stop int64) ([]*repb.StoredExecution, error)
-	DeleteExecutions(ctx context.Context, iid string) error
 	ExpireExecutions(ctx context.Context, iid string, ttl time.Duration) error
 	AddInvocation(ctx context.Context, inv *sipb.StoredInvocation) error
 	GetInvocation(ctx context.Context, iid string) (*sipb.StoredInvocation, error)
