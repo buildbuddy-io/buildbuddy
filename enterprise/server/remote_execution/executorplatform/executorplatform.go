@@ -338,7 +338,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		})
 
 		if cis := env.GetClientIdentityService(); cis != nil {
-			h, err := cis.IdentityHeader(&interfaces.ClientIdentity{
+			h, err := cis.NewIdentityHeader(&interfaces.ClientIdentity{
 				Origin: interfaces.ClientIdentityInternalOrigin,
 				Client: interfaces.ClientIdentityWorkflow,
 			}, workflowClientIdentityTokenLifetime)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -16,16 +15,6 @@ import (
 	"github.com/mwitkow/grpc-proxy/proxy"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-)
-
-const (
-	// proxyIdentityExpiration is how long a minted grpc-proxy identity header is
-	// valid. It must exceed proxyIdentityCacheTTL so the cached header is never
-	// expired by the time it is reused.
-	proxyIdentityExpiration = 5 * time.Minute
-	// proxyIdentityCacheTTL is how long a signed identity header is reused before
-	// it is re-minted.
-	proxyIdentityCacheTTL = 1 * time.Minute
 )
 
 // proxyPair defines a prefix to match against the incoming grpc method name
@@ -92,54 +81,6 @@ func getConnectionPool(dialer dialFn, target string) (*grpc_client.ClientConnPoo
 	return newPool, nil
 }
 
-// identityHeader mints and caches a client identity header signed as the
-// grpc-proxy identity. We attach the grpc-proxy identity (rather than the
-// binary's configured client identity) because the backend only honors a
-// forwarded client IP when it is accompanied by a verified grpc-proxy identity.
-// The header is re-minted at most once per proxyIdentityCacheTTL.
-type identityHeader struct {
-	cis interfaces.ClientIdentityService
-
-	mu       sync.RWMutex
-	header   string
-	mintedAt time.Time
-}
-
-func newIdentityHeader(cis interfaces.ClientIdentityService) *identityHeader {
-	if cis == nil {
-		return nil
-	}
-	return &identityHeader{cis: cis}
-}
-
-func (h *identityHeader) get() (string, error) {
-	h.mu.RLock()
-	if h.header != "" && time.Since(h.mintedAt) < proxyIdentityCacheTTL {
-		header := h.header
-		h.mu.RUnlock()
-		return header, nil
-	}
-	h.mu.RUnlock()
-
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	// Re-check now that we hold the write lock, in case another goroutine
-	// refreshed it while we were waiting.
-	if h.header != "" && time.Since(h.mintedAt) < proxyIdentityCacheTTL {
-		return h.header, nil
-	}
-	header, err := h.cis.IdentityHeader(&interfaces.ClientIdentity{
-		Origin: interfaces.ClientIdentityInternalOrigin,
-		Client: interfaces.ClientIdentityGRPCProxy,
-	}, proxyIdentityExpiration)
-	if err != nil {
-		return "", err
-	}
-	h.header = header
-	h.mintedAt = time.Now()
-	return h.header, nil
-}
-
 // ctxWithClientIP overwrites the outgoing client-IP header with the IP this
 // proxy resolved (clientip.Get) and attaches a grpc-proxy identity that attests
 // to it. Any client-supplied client-IP header is stripped first: the proxy is
@@ -151,7 +92,7 @@ func (h *identityHeader) get() (string, error) {
 // clientIP interceptor only honors an incoming client-IP header when it carries
 // a verified grpc-proxy identity, so clientip.Get already reflects an upstream
 // proxy's attested IP, and we re-attest it here.
-func ctxWithClientIP(ctx context.Context, idHeader *identityHeader) (context.Context, error) {
+func ctxWithClientIP(ctx context.Context, cis interfaces.ClientIdentityService) (context.Context, error) {
 	md, ok := metadata.FromOutgoingContext(ctx)
 	if !ok {
 		md = metadata.MD{}
@@ -166,10 +107,14 @@ func ctxWithClientIP(ctx context.Context, idHeader *identityHeader) (context.Con
 	}
 	md.Set(clientip.HeaderName, clientIP)
 
-	// Attach the grpc-proxy identity that attests to the client IP. Set (not
+	// Attach the grpc-proxy identity that attests to the client IP. The signed
+	// header is cached and refreshed by the client identity service. Set (not
 	// append) so a duplicate identity header can't be produced.
-	if idHeader != nil {
-		header, err := idHeader.get()
+	if cis != nil {
+		header, err := cis.CachedIdentityHeader(&interfaces.ClientIdentity{
+			Origin: interfaces.ClientIdentityInternalOrigin,
+			Client: interfaces.ClientIdentityGRPCProxy,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -179,7 +124,7 @@ func ctxWithClientIP(ctx context.Context, idHeader *identityHeader) (context.Con
 }
 
 func newDirector(env environment.Env) proxy.StreamDirector {
-	idHeader := newIdentityHeader(env.GetClientIdentityService())
+	cis := env.GetClientIdentityService()
 	return func(ctx context.Context, fullMethodName string) (context.Context, grpc.ClientConnInterface, error) {
 		target, err := lookupProxyTarget(fullMethodName)
 		if err != nil {
@@ -191,7 +136,7 @@ func newDirector(env environment.Env) proxy.StreamDirector {
 			return nil, nil, err
 		}
 
-		ctx, err = ctxWithClientIP(ctx, idHeader)
+		ctx, err = ctxWithClientIP(ctx, cis)
 		if err != nil {
 			return nil, nil, err
 		}
