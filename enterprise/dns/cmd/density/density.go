@@ -9,6 +9,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/dns/server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments/gcsflagsync"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -61,6 +63,19 @@ func main() {
 
 	env.SetListenAddr(*listen)
 
+	// Experiments are sourced in-process from GCS (the DNS server does not run
+	// a separate flagd backend). When no GCS bucket is configured, experiments
+	// are simply disabled and flags resolve to their defaults.
+	if gcsflagsync.Enabled() {
+		syncProvider, err := gcsflagsync.New(context.Background())
+		if err != nil {
+			log.Fatalf("Could not configure experiments GCS sync: %s", err)
+		}
+		if err := experiments.RegisterInProcessSync(env, syncProvider); err != nil {
+			log.Fatalf("Could not register experiments: %s", err)
+		}
+	}
+
 	if err := startDNSServer(env); err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -99,7 +114,7 @@ func startDNSServer(env *real_environment.RealEnv) error {
 	if err != nil {
 		return status.WrapErrorf(err, "parse zone file %q", *zoneFile)
 	}
-	handler := server.NewHandler(records)
+	handler := server.NewHandler(records, env)
 
 	addr := fmt.Sprintf("%s:%d", *listen, *dnsPort)
 

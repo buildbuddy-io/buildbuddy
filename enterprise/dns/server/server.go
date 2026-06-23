@@ -1,20 +1,37 @@
 package server
 
 import (
+	"context"
+	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/maxmind"
 
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// maxCNAMEDepth bounds how many CNAME hops we follow before giving up
-// guarding against CNAME loops.
-const maxCNAMEDepth = 8
+const (
+	// maxCNAMEDepth bounds how many CNAME hops we follow before giving up
+	// guarding against CNAME loops.
+	maxCNAMEDepth = 8
+
+	// asnRoutingExperiment is the name of an experiment that maps a client's
+	// ASN to an override A record.
+	asnRoutingExperiment = "dns.asn_routing"
+
+	// asnRoutingTTL is the TTL applied to experiment-routed A answers. It is
+	// short so routing decisions can change quickly.
+	asnRoutingTTL = 60
+)
 
 type handler struct {
 	records map[string][]dns.RR
@@ -24,6 +41,8 @@ type handler struct {
 	// tells the asking resolver how long it may remember that negative result
 	// instead of re-asking us every time. Nil if the zone file has no SOA.
 	soa dns.RR
+
+	env environment.Env
 }
 
 func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
@@ -59,6 +78,20 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 
 	var negative bool
 	m.Answer, m.Rcode, negative = h.resolve(qName, qType)
+
+	// ASN-based routing: when the name already resolves to an address in our
+	// zone, an experiment may override that address for this client.
+	// TODO(tylerw): Consider supporting more than just A records here?
+	if qType == dns.TypeA && onlyARecords(m.Answer) {
+		if efp := h.env.GetExperimentFlagProvider(); efp != nil {
+			if rrs := asnRoutedAnswer(efp, w, r, qName); len(rrs) > 0 {
+				m.Answer = rrs
+			}
+			// Echo the EDNS Client Subnet scope (RFC 7871) so an ECS-aware
+			// resolver caches this answer per-subnet and NOT globally.
+			attachClientSubnetScopeIfPresent(m, r)
+		}
+	}
 
 	// On a negative answer (NXDOMAIN, or NODATA: name exists but has no record
 	// of the requested type), include the zone SOA in the authority section so
@@ -113,9 +146,96 @@ func (h *handler) resolve(qName string, qType uint16) ([]dns.RR, int, bool) {
 		// chain (in which case answer holds the CNAME RRs).
 		return answer, dns.RcodeSuccess, true
 	}
+
 	// Exceeded the CNAME hop limit; return what we have without claiming the
 	// result is authoritatively negative.
 	return answer, dns.RcodeSuccess, false
+}
+
+// onlyARecords reports whether rrs is a non-empty set consisting solely of A
+// records, i.e. a direct address answer (not NODATA, NXDOMAIN, or a CNAME).
+func onlyARecords(rrs []dns.RR) bool {
+	if len(rrs) == 0 {
+		return false
+	}
+	for _, rr := range rrs {
+		if rr.Header().Rrtype != dns.TypeA {
+			return false
+		}
+	}
+	return true
+}
+
+// asnRoutingConfig is the value shape of the dns.asn_routing experiment object.
+type asnRoutingConfig struct {
+	Addresses []string `json:"addresses"`
+}
+
+// asnRoutedAnswer evaluates the ASN-routing experiment for qName and returns
+// the override A records, or nil when the experiment yields no addresses (the
+// caller then keeps the static zone answer).
+func asnRoutedAnswer(efp interfaces.ExperimentFlagProvider, w dns.ResponseWriter, r *dns.Msg, qName string) []dns.RR {
+	asn := clientASN(w, r)
+	obj := efp.Object(context.Background(), asnRoutingExperiment, nil,
+		experiments.WithContext("asn", int64(asn)),
+		experiments.WithContext("name", qName))
+	if len(obj) == 0 {
+		return nil
+	}
+
+	var cfg asnRoutingConfig
+	if err := experiments.ObjectToStruct(obj, &cfg); err != nil {
+		log.Warningf("ASN-routing experiment for %q (ASN %d) has an invalid config %v: %s", qName, asn, obj, err)
+		return nil
+	}
+
+	var answer []dns.RR
+	for _, addr := range cfg.Addresses {
+		v4 := net.ParseIP(addr).To4()
+		if v4 == nil {
+			log.Warningf("ASN-routing experiment for %q (ASN %d) has invalid IPv4 %q; skipping it", qName, asn, addr)
+			continue
+		}
+		answer = append(answer, &dns.A{
+			Hdr: dns.RR_Header{Name: qName, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: asnRoutingTTL},
+			A:   v4,
+		})
+	}
+	return answer
+}
+
+// attachClientSubnetScopeIfPresent, when the query carried an EDNS Client
+// Subnet option, adds it to the response with the SCOPE prefix-length set to
+// the source prefix-length (RFC 7871). This tells the resolver the answer is
+// specific to that subnet so it caches per-subnet rather than globally. A "no
+// subnet" query (source /0) echoes scope /0, which is correct: that answer was
+// not tailored to a client subnet.
+func attachClientSubnetScopeIfPresent(m, r *dns.Msg) {
+	reqOPT := r.IsEdns0()
+	if reqOPT == nil {
+		return
+	}
+	for _, o := range reqOPT.Option {
+		ecs, ok := o.(*dns.EDNS0_SUBNET)
+		if !ok {
+			continue
+		}
+		udpSize := reqOPT.UDPSize()
+		if udpSize < dns.MinMsgSize {
+			udpSize = dns.MinMsgSize
+		}
+		respOPT := &dns.OPT{Hdr: dns.RR_Header{Name: ".", Rrtype: dns.TypeOPT}}
+		respOPT.SetUDPSize(udpSize)
+		respOPT.Option = append(respOPT.Option, &dns.EDNS0_SUBNET{
+			Code:          dns.EDNS0SUBNET,
+			Family:        ecs.Family,
+			SourceNetmask: ecs.SourceNetmask,
+			SourceScope:   ecs.SourceNetmask,
+			Address:       ecs.Address,
+		})
+		m.Extra = append(m.Extra, respOPT)
+		return
+	}
 }
 
 // lookup returns the records for name. If there is no exact match, it walks up
@@ -172,7 +292,66 @@ func filterByType(records []dns.RR, qType uint16) []dns.RR {
 	return out
 }
 
-func NewHandler(resources []dns.RR) dns.Handler {
+// clientASN returns the autonomous system number of the client the query is on
+// behalf of, for use as an experiment attribute. It returns 0 when the client
+// network is unknown or absent from the ASN database (e.g. private IPs).
+func clientASN(w dns.ResponseWriter, r *dns.Msg) uint32 {
+	ip := clientIP(w, r)
+	if !ip.IsValid() {
+		return 0
+	}
+	asn, err := maxmind.LookupASN(ip)
+	if err != nil {
+		log.Debugf("ASN lookup for %s failed: %s", ip, err)
+		return 0
+	}
+	return uint32(asn.Number)
+}
+
+// clientIP determines the network address of the end client. It prefers the
+// EDNS Client Subnet, which a recursive resolver sets to the querying client's
+// network, and falls back to the transport source address (which, behind a
+// resolver, is the resolver itself). It returns the zero Addr when neither is
+// available.
+func clientIP(w dns.ResponseWriter, r *dns.Msg) netip.Addr {
+	if opt := r.IsEdns0(); opt != nil {
+		for _, o := range opt.Option {
+			ecs, ok := o.(*dns.EDNS0_SUBNET)
+			if !ok {
+				continue
+			}
+			// A "no client subnet" ECS (family 0, or a /0 scope) carries an
+			// unspecified address (0.0.0.0 / ::); skip it so we fall back to the
+			// transport source rather than looking up the all-zeros address.
+			if addr, ok := netip.AddrFromSlice(ecs.Address); ok {
+				if addr = addr.Unmap(); !addr.IsUnspecified() {
+					return addr
+				}
+			}
+		}
+	}
+	return addrFromNetAddr(w.RemoteAddr())
+}
+
+// addrFromNetAddr extracts the IP from a UDP or TCP transport address. It
+// returns the zero Addr for any other address type or a missing IP.
+func addrFromNetAddr(a net.Addr) netip.Addr {
+	var ip net.IP
+	switch v := a.(type) {
+	case *net.UDPAddr:
+		ip = v.IP
+	case *net.TCPAddr:
+		ip = v.IP
+	default:
+		return netip.Addr{}
+	}
+	if addr, ok := netip.AddrFromSlice(ip); ok {
+		return addr.Unmap()
+	}
+	return netip.Addr{}
+}
+
+func NewHandler(resources []dns.RR, env environment.Env) dns.Handler {
 	records := make(map[string][]dns.RR, len(resources))
 	var soa dns.RR
 	for _, rr := range resources {
@@ -185,6 +364,7 @@ func NewHandler(resources []dns.RR) dns.Handler {
 	return &handler{
 		records: records,
 		soa:     soa,
+		env:     env,
 	}
 }
 
