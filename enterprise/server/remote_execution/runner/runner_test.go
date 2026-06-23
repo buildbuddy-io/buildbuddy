@@ -17,6 +17,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
@@ -40,6 +42,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 )
 
@@ -80,6 +83,7 @@ type fakeContainer struct {
 	CreateError                error
 	Removed                    chan struct{}
 	Result                     *interfaces.CommandResult
+	ExecFunc                   func(ctx context.Context) *interfaces.CommandResult
 	Isolation                  string // Fake isolation type name
 	ImageCached                bool   // Return value for IsImageCached
 	BlockPull                  bool   // PullImage blocks forever if true.
@@ -121,6 +125,9 @@ func (c *fakeContainer) Create(ctx context.Context, workdir string) error {
 }
 
 func (c *fakeContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
+	if c.ExecFunc != nil {
+		return c.ExecFunc(ctx)
+	}
 	return c.Result
 }
 
@@ -138,6 +145,41 @@ func (c *fakeContainer) Pause(ctx context.Context) error {
 }
 func (c *fakeContainer) Unpause(ctx context.Context) error {
 	return nil
+}
+
+// immediateOOMKiller kills the task synchronously when it is registered. This
+// lets tests force the OOM path without waiting for a background poll.
+type immediateOOMKiller struct {
+	state *oomkiller.TaskState
+}
+
+func (k *immediateOOMKiller) Register(ctx context.Context, task oomkiller.KillableTask) func() {
+	state, err := task.State(ctx)
+	if err == nil {
+		k.state = state
+		task.Kill(ctx, oomkiller.KillStats{
+			EstimatedMemoryBytes: state.EstimatedMemoryBytes,
+			ObservedMemoryBytes:  state.UsageStats.GetMemoryBytes(),
+		})
+	}
+	return func() {}
+}
+
+// killOnUnregisterOOMKiller tries to kill the task when the runner unregisters
+// it. This exercises the race where a command finishes successfully just before
+// a delayed OOM kill arrives.
+type killOnUnregisterOOMKiller struct{}
+
+func (k *killOnUnregisterOOMKiller) Register(ctx context.Context, task oomkiller.KillableTask) func() {
+	return func() {
+		state, err := task.State(ctx)
+		if err == nil {
+			task.Kill(ctx, oomkiller.KillStats{
+				EstimatedMemoryBytes: state.EstimatedMemoryBytes,
+				ObservedMemoryBytes:  state.UsageStats.GetMemoryBytes(),
+			})
+		}
+	}
 }
 
 // fakeFirecrackerContainer behaves like a bare container except it returns
@@ -231,6 +273,92 @@ func withAuthenticatedUser(t *testing.T, ctx context.Context, env *testenv.TestE
 func mustRun(t *testing.T, r *taskRunner) {
 	res := r.Run(context.Background(), &repb.IOStats{})
 	require.NoError(t, res.Error)
+}
+
+func TestRunnerOOMKillerReturnsRetryableError(t *testing.T) {
+	env := newTestEnv(t)
+	cfg := noLimitsCfg()
+	oomKiller := &immediateOOMKiller{}
+	cfg.OOMKiller = oomKiller
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		ctr := NewFakeContainer()
+		ctr.FakeStats = &repb.UsageStats{MemoryBytes: 800}
+		ctr.ExecFunc = func(ctx context.Context) *interfaces.CommandResult {
+			<-ctx.Done()
+			return &interfaces.CommandResult{
+				ExitCode:   commandutil.KilledExitCode,
+				Error:      ctx.Err(),
+				UsageStats: &repb.UsageStats{MemoryBytes: 100},
+			}
+		}
+		return ctr, nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+	task := newTask()
+	task.ExecutionTask.ExecutionId = "execution-id"
+	task.SchedulingMetadata = &scpb.SchedulingMetadata{
+		TaskSize: &scpb.TaskSize{
+			EstimatedMemoryBytes: 100,
+		},
+		TaskGroupId: "GR1",
+		Priority:    7,
+	}
+
+	r, err := get(ctx, pool, task)
+	require.NoError(t, err)
+	defer pool.Wait()
+	defer pool.finalize(ctx, r)
+
+	// The OOM killer cancels the execution context while the command is still
+	// running, so the runner reports the special retryable OOM error.
+	res := r.Run(ctx, &repb.IOStats{})
+
+	require.True(t, oom.IsError(res.Error))
+	require.Equal(t, commandutil.NoExitCode, res.ExitCode)
+	require.True(t, res.DoNotRecycle)
+	require.Equal(t, int64(800), res.UsageStats.GetMemoryBytes())
+	require.Equal(t, int64(800), res.UsageStats.GetPeakMemoryBytes())
+	details, ok := oom.DetailsFromError(res.Error)
+	require.True(t, ok)
+	require.Equal(t, int64(100), details.EstimatedMemoryBytes)
+	require.Equal(t, int64(800), details.ObservedMemoryBytes)
+	require.Equal(t, int64(100), oomKiller.state.EstimatedMemoryBytes)
+	require.Equal(t, "GR1", oomKiller.state.GroupID)
+	require.Equal(t, int32(7), oomKiller.state.RemoteExecutionPriority)
+}
+
+func TestRunnerOOMKillerDoesNotClobberCompletedResult(t *testing.T) {
+	env := newTestEnv(t)
+	cfg := noLimitsCfg()
+	cfg.OOMKiller = &killOnUnregisterOOMKiller{}
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		ctr := NewFakeContainer()
+		ctr.FakeStats = &repb.UsageStats{MemoryBytes: 800}
+		ctr.ExecFunc = func(ctx context.Context) *interfaces.CommandResult {
+			return &interfaces.CommandResult{
+				ExitCode:   0,
+				UsageStats: &repb.UsageStats{MemoryBytes: 100},
+			}
+		}
+		return ctr, nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+
+	r, err := get(ctx, pool, newTask())
+	require.NoError(t, err)
+	defer pool.Wait()
+	defer pool.finalize(ctx, r)
+
+	// If the command completes before the OOM kill is delivered, the late kill
+	// must not overwrite the successful command result.
+	res := r.Run(ctx, &repb.IOStats{})
+
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode)
+	require.False(t, res.DoNotRecycle)
+	require.Equal(t, int64(100), res.UsageStats.GetMemoryBytes())
 }
 
 func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *RunnerPoolOptions) *pool {

@@ -14,6 +14,7 @@ import (
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -32,6 +33,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -275,6 +277,53 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestExecuteTaskAndStreamResults_OOMKillerPublishesRetryableError(t *testing.T) {
+	ctx := context.Background()
+	observedMemoryBytes := int64(800)
+	task := getTask()
+	runOverride := func(ctx context.Context, original rbetest.RunFunc) *interfaces.CommandResult {
+		oomErr := oom.Error(task.ExecutionTask.ExecutionId, oom.Details{
+			EstimatedMemoryBytes: 100,
+			ObservedMemoryBytes:  observedMemoryBytes,
+		})
+		return &interfaces.CommandResult{
+			ExitCode:     commandutil.NoExitCode,
+			Error:        oomErr,
+			DoNotRecycle: true,
+			UsageStats: &repb.UsageStats{
+				MemoryBytes:     observedMemoryBytes,
+				PeakMemoryBytes: observedMemoryBytes,
+			},
+		}
+	}
+	exec, _, execClient, mockServer, mockCounter := getExecutor(t, runOverride)
+
+	publisher, err := operation.Publish(ctx, execClient, task.ExecutionTask.ExecutionId)
+	require.NoError(t, err)
+
+	retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
+	require.NoError(t, err)
+	require.False(t, retry)
+	<-mockServer.finished
+
+	require.Equal(t, 1, mockCounter.countRecycled)
+	require.Equal(t, 0, mockCounter.countFinishedCleanly)
+	ops := mockServer.getOperations()
+	completedOp := ops[len(ops)-1]
+	require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
+	unpackedCompletedOp, err := rexec.UnpackOperation(completedOp)
+	require.NoError(t, err)
+	rsp := unpackedCompletedOp.ExecuteResponse
+	require.Equal(t, int32(codes.Unavailable), rsp.GetStatus().GetCode())
+	require.Equal(t, int32(commandutil.NoExitCode), rsp.GetResult().GetExitCode())
+	require.Equal(t, observedMemoryBytes, rsp.GetResult().GetExecutionMetadata().GetUsageStats().GetPeakMemoryBytes())
+	require.Equal(t, observedMemoryBytes, rsp.GetResult().GetExecutionMetadata().GetUsageStats().GetMemoryBytes())
+	details, ok := oom.DetailsFromStatusProto(rsp.GetStatus())
+	require.True(t, ok)
+	require.Equal(t, int64(100), details.EstimatedMemoryBytes)
+	require.Equal(t, observedMemoryBytes, details.ObservedMemoryBytes)
 }
 
 func TestExecuteTaskAndStreamResults_CacheHit(t *testing.T) {

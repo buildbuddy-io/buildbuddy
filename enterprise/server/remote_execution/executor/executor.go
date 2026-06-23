@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -475,15 +476,17 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 	// Exit codes < 0 mean that the command either never started or was killed.
 	// Make sure we return an error in this case.
-	if cmdResult.ExitCode < 0 {
+	if cmdResult.ExitCode < 0 && !oom.IsError(cmdResult.Error) {
 		cmdResult.Error = incompleteExecutionError(ctx, cmdResult.ExitCode, cmdResult.Error)
 	}
 	// If the command was terminated gracefully, make sure we return a
 	// DeadlineExceeded error.
 	select {
 	case <-gracefullyTerminated:
-		cmdResult.ExitCode = commandutil.NoExitCode
-		cmdResult.Error = status.DeadlineExceededError("deadline exceeded")
+		if !oom.IsError(cmdResult.Error) {
+			cmdResult.ExitCode = commandutil.NoExitCode
+			cmdResult.Error = status.DeadlineExceededError("deadline exceeded")
+		}
 	default:
 	}
 

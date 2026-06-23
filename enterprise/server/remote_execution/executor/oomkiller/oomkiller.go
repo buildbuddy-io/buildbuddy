@@ -121,7 +121,7 @@ type MemoryMonitor interface {
 }
 
 // NewMemoryMonitor returns the default executor memory monitor.
-func NewMemoryMonitor(_ string) MemoryMonitor {
+func NewMemoryMonitor() MemoryMonitor {
 	return resourcesMemoryMonitor{}
 }
 
@@ -152,6 +152,8 @@ type killer struct {
 
 type registeredTask struct {
 	task KillableTask
+	// killDone is closed after Kill returns for a task selected as a victim.
+	killDone chan struct{}
 	// killed is set once the OOM killer has terminated the task. The task stays
 	// registered until its normal unregister path removes it, but it is no
 	// longer eligible to be chosen as a victim.
@@ -196,13 +198,16 @@ func (k *killer) Register(ctx context.Context, task KillableTask) func() {
 	k.nextID++
 	id := k.nextID
 	k.tasks[id] = registeredTask{
-		task: task,
+		task:     task,
+		killDone: make(chan struct{}),
 	}
 	k.mu.Unlock()
 	if wasIdle {
 		k.signalTaskChange()
 	}
 
+	// The caller can invoke unregister at the same time that ctx cancellation
+	// runs the AfterFunc callback, but the task should only be removed once.
 	var once sync.Once
 	unregisterTask := func() {
 		once.Do(func() {
@@ -299,7 +304,8 @@ func (k *killer) check(ctx context.Context) error {
 		// Assume the victim's memory will be reclaimed whether we kill it or it
 		// already finished on its own.
 		projectedUsedBytes -= victim.observedMemoryBytes
-		if !k.markKilled(victim.id) {
+		killDone, ok := k.markKilled(victim.id)
+		if !ok {
 			// The victim was already killed or unregistered (most likely it just
 			// finished) between selection and now. Look for another victim
 			// instead of waiting for the next poll.
@@ -312,7 +318,10 @@ func (k *killer) check(ctx context.Context) error {
 		}
 		log.CtxWarningf(ctx, "Executor OOM killer terminating victim %s: executor memory used=%d projected_remaining=%d limit=%d available=%d victim memory=%d estimated=%d active=%t", taskName(victim.task), snapshot.UsedBytes, projectedUsedBytes, snapshot.LimitBytes, snapshot.AvailableBytes, victim.observedMemoryBytes, victim.state.EstimatedMemoryBytes, victim.state.Active)
 		metrics.RemoteExecutionOOMKillerTargetedTaskMemoryBytes.Observe(float64(victim.observedMemoryBytes))
-		victim.task.Kill(ctx, stats)
+		func() {
+			defer close(killDone)
+			victim.task.Kill(ctx, stats)
+		}()
 		killedCount++
 	}
 	return nil
@@ -473,44 +482,52 @@ func betterShortestRunningTask(candidate, best victimCandidate) bool {
 	return candidate.observedMemoryBytes > best.observedMemoryBytes
 }
 
-// markKilled flags the registered task as killed so it is no longer chosen as a
-// victim. It returns false if the task is no longer registered or was already
+// markKilled flags the registered task as killed so it is no longer chosen as
+// a victim. It returns false if the task is no longer registered or was already
 // killed, in which case the caller must not kill it. The task stays registered
 // until its normal unregister path removes it.
-func (k *killer) markKilled(id uint64) bool {
+func (k *killer) markKilled(id uint64) (chan struct{}, bool) {
 	k.mu.Lock()
 	rt, ok := k.tasks[id]
 	if !ok || rt.killed {
 		k.mu.Unlock()
-		return false
+		return nil, false
 	}
 	rt.killed = true
 	k.tasks[id] = rt
 	k.mu.Unlock()
 	// Wake the poll loop so it can stop if that was the last live task.
 	k.signalTaskChange()
-	return true
+	return rt.killDone, true
 }
 
 func (k *killer) unregister(id uint64) bool {
-	if !k.removeTask(id) {
+	removed, killDone := k.removeTask(id)
+	if !removed {
 		return false
 	}
 	// Allow the ticker to stop in case the executor is now idle (we removed the
 	// last task).
 	k.signalTaskChange()
+	if killDone != nil {
+		<-killDone
+	}
 	return true
 }
 
-func (k *killer) removeTask(id uint64) bool {
+func (k *killer) removeTask(id uint64) (bool, <-chan struct{}) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if _, ok := k.tasks[id]; !ok {
+	rt, ok := k.tasks[id]
+	if !ok {
 		alert.UnexpectedEvent("oom_killer_unregister_missing_task", "Tried to unregister task from the OOM killer that is not currently registered (id=%d)", id)
-		return false
+		return false, nil
 	}
 	delete(k.tasks, id)
-	return true
+	if rt.killed {
+		return true, rt.killDone
+	}
+	return true, nil
 }
 
 func (k *killer) hasTasks() bool {
@@ -541,5 +558,5 @@ func taskName(task KillableTask) string {
 	if s, ok := task.(fmt.Stringer); ok {
 		return s.String()
 	}
-	return fmt.Sprintf("%T", task)
+	return fmt.Sprintf("%+#v", task)
 }

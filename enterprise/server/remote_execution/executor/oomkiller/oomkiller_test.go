@@ -437,6 +437,54 @@ func TestKillerDoesNotKillUnregisteredVictim(t *testing.T) {
 	require.False(t, k.hasTasks())
 }
 
+func TestKillerUnregisterWaitsForInFlightKill(t *testing.T) {
+	ctx := t.Context()
+	monitor := &fakeMemoryMonitor{snapshot: &MemorySnapshot{UsedBytes: 950, LimitBytes: 1000, AvailableBytes: 50}}
+	k := newTestKiller(t, ctx, monitor, manualPollInterval)
+	task := newFakeTask("task", 100, 800)
+	killStarted := make(chan struct{})
+	unblockKill := make(chan struct{})
+	task.onKill = func() {
+		close(killStarted)
+		<-unblockKill
+	}
+	unregister := k.Register(ctx, task)
+
+	checkDone := make(chan error, 1)
+	go func() {
+		checkDone <- k.check(ctx)
+	}()
+	require.Eventually(t, func() bool {
+		select {
+		case <-killStarted:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, time.Millisecond)
+
+	unregisterDone := make(chan struct{})
+	go func() {
+		unregister()
+		close(unregisterDone)
+	}()
+
+	// If a task is unregistered after victim selection but before Kill returns,
+	// unregister must wait so pooled runners cannot be reused while an old kill
+	// call is still in flight.
+	require.Never(t, func() bool {
+		select {
+		case <-unregisterDone:
+			return true
+		default:
+			return false
+		}
+	}, 50*time.Millisecond, time.Millisecond)
+	close(unblockKill)
+	require.NoError(t, <-checkDone)
+	<-unregisterDone
+}
+
 func TestKillerDoesNotPollWithoutRegisteredTasks(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
