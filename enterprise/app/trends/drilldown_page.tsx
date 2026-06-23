@@ -523,6 +523,14 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     return this.props.search.get(DD_SCALE_URL_PARAM) === "log";
   }
 
+  canColorByTotal(): boolean {
+    return renderTotalValue(this.selectedMetric.metric, 0) != null;
+  }
+
+  colorByTotal(): boolean {
+    return this.canColorByTotal() && this.props.search.get(DD_COLOR_URL_PARAM) === "total";
+  }
+
   handleScaleChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const newScale = e.target.value;
     if ((newScale === "log") === this.isLogScale()) {
@@ -956,9 +964,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
             <Select
               className="drilldown-page-select"
               onChange={this.handleColorModeChange.bind(this)}
-              value={this.props.search.get(DD_COLOR_URL_PARAM) === "total" ? "total" : "frequency"}>
+              value={this.colorByTotal() ? "total" : "frequency"}>
               <Option value="frequency">Color by frequency</Option>
-              <Option value="total">Color by total</Option>
+              <Option value="total" disabled={!this.canColorByTotal()}>
+                Color by total
+              </Option>
             </Select>
             {this.renderZoomChip()}
           </div>
@@ -975,7 +985,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                 )}
                 <HeatmapComponent
                   heatmapData={this.state.heatmapData || stats.GetStatHeatmapResponse.create({})}
-                  colorByTotal={this.props.search.get(DD_COLOR_URL_PARAM) === "total"}
+                  colorByTotal={this.colorByTotal()}
                   logScale={this.isLogScale()}
                   metricBucketFormatter={(v) => renderMetricValue(this.selectedMetric.metric, v)}
                   metricBucketName={this.selectedMetric.name}
