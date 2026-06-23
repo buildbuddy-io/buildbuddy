@@ -1048,6 +1048,16 @@ type RankedExecutionNode interface {
 	IsPreferred() bool
 }
 
+// RankNodesResult contains ranked execution nodes and metadata about the
+// routing strategy used to rank them.
+type RankNodesResult struct {
+	RankedNodes []RankedExecutionNode
+
+	// UsedTargetPackageAffinity is true when target-package affinity was used to
+	// rank the provided execution.
+	UsedTargetPackageAffinity bool
+}
+
 type ExecutionNode interface {
 	// GetExecutorId returns the ID for this execution node that uniquely
 	// identifies it within a node pool.
@@ -1086,6 +1096,10 @@ type TaskRouter interface {
 	//
 	// If an error occurs, the input nodes should be returned in random order.
 	RankNodes(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []ExecutionNode) []RankedExecutionNode
+
+	// RankNodesWithMetadata is like RankNodes, but also returns metadata about
+	// the routing strategy used.
+	RankNodesWithMetadata(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []ExecutionNode) RankNodesResult
 
 	// MarkSucceeded notifies the task router that the provided command
 	// completed successfully on the given executor instance. Subsequent calls

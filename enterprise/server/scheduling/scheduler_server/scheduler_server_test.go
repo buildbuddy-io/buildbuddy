@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -27,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -36,6 +38,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -44,6 +47,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
+	openfeatureTesting "github.com/open-feature/go-sdk/openfeature/testing"
 )
 
 const (
@@ -52,7 +56,8 @@ const (
 )
 
 type fakeTaskRouter struct {
-	preferredExecutors []string
+	preferredExecutors        []string
+	usedTargetPackageAffinity bool
 }
 
 type fakeRankedNode struct {
@@ -69,6 +74,10 @@ func (n fakeRankedNode) IsPreferred() bool {
 }
 
 func (f *fakeTaskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+	return f.RankNodesWithMetadata(ctx, action, cmd, remoteInstanceName, nodes).RankedNodes
+}
+
+func (f *fakeTaskRouter) RankNodesWithMetadata(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) interfaces.RankNodesResult {
 	rankedNodes := make([]interfaces.RankedExecutionNode, len(nodes))
 	for i, node := range nodes {
 		preferred := slices.Contains(f.preferredExecutors, node.GetExecutorId())
@@ -85,7 +94,10 @@ func (f *fakeTaskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd
 		}
 		return nodes[i].GetExecutorId() < nodes[j].GetExecutorId()
 	})
-	return rankedNodes
+	return interfaces.RankNodesResult{
+		RankedNodes:               rankedNodes,
+		UsedTargetPackageAffinity: f.usedTargetPackageAffinity,
+	}
 }
 
 func (f *fakeTaskRouter) MarkSucceeded(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorInstanceID string) {
@@ -95,10 +107,11 @@ func (f *fakeTaskRouter) MarkFailed(ctx context.Context, action *repb.Action, cm
 }
 
 type schedulerOpts struct {
-	options            Options
-	userOwnedEnabled   bool
-	groupOwnedEnabled  bool
-	preferredExecutors []string
+	options                   Options
+	userOwnedEnabled          bool
+	groupOwnedEnabled         bool
+	preferredExecutors        []string
+	usedTargetPackageAffinity bool
 }
 
 func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, context.Context) {
@@ -123,7 +136,10 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 
 	err = execution_server.Register(env)
 	require.NoError(t, err)
-	env.SetTaskRouter(&fakeTaskRouter{opts.preferredExecutors})
+	env.SetTaskRouter(&fakeTaskRouter{
+		preferredExecutors:        opts.preferredExecutors,
+		usedTargetPackageAffinity: opts.usedTargetPackageAffinity,
+	})
 	s, err := NewSchedulerServerWithOptions(env, &opts.options)
 	require.NoError(t, err)
 	env.SetSchedulerService(s)
@@ -998,6 +1014,83 @@ func TestSchedulingDelay_OnePreferredExecutor(t *testing.T) {
 
 	fe1.WaitForTaskWithDelay(taskID, 5*time.Second)
 	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
+}
+
+func TestSchedulingDelay_TargetPackageExperiment(t *testing.T) {
+	// Cover the child delay flag, router metadata, and override.
+	for _, tc := range []struct {
+		name                      string
+		usedTargetPackageAffinity bool
+		targetID                  string
+		platformProps             map[string]string
+		expectedDelay             time.Duration
+	}{
+		{
+			name:                      "target package affinity used",
+			usedTargetPackageAffinity: true,
+			targetID:                  "//foo/bar:foo_test",
+			expectedDelay:             250 * time.Millisecond,
+		},
+		{
+			name:          "target metadata without target package affinity",
+			targetID:      "//foo/bar:foo_test",
+			expectedDelay: 0,
+		},
+		{
+			name:                      "explicit platform property takes precedence",
+			usedTargetPackageAffinity: true,
+			targetID:                  "//foo/bar:foo_test",
+			platformProps: map[string]string{
+				platform.RunnerRecyclingMaxWaitPropertyName: "5s",
+			},
+			expectedDelay: 5 * time.Second,
+		},
+		{
+			name:     "explicit platform property does not require target package affinity",
+			targetID: "//foo/bar:foo_test",
+			platformProps: map[string]string{
+				platform.RunnerRecyclingMaxWaitPropertyName: "5s",
+			},
+			expectedDelay: 5 * time.Second,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, ctx := getEnv(t, &schedulerOpts{
+				preferredExecutors:        []string{"2"},
+				usedTargetPackageAffinity: tc.usedTargetPackageAffinity,
+			}, "user1")
+
+			// Set a child delay that only applies when the router used package affinity.
+			testProvider := openfeatureTesting.NewTestProvider()
+			testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+				task_router.AffinityRouterTargetPackageNonPreferredDelayExperiment: {
+					State:          memprovider.Enabled,
+					DefaultVariant: "delay",
+					Variants: map[string]any{
+						"delay": "250ms",
+					},
+				},
+			})
+			require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+			defer testProvider.Cleanup()
+			fp, err := experiments.NewFlagProvider("test")
+			require.NoError(t, err)
+			env.SetExperimentFlagProvider(fp)
+			ctx = bazel_request.OverrideRequestMetadata(ctx, &repb.RequestMetadata{TargetId: tc.targetID})
+
+			// Executor 2 is preferred, so executor 1 receives any non-preferred delay.
+			fe1 := newFakeExecutorWithId(ctx, t, "1", env.GetSchedulerClient())
+			fe2 := newFakeExecutorWithId(ctx, t, "2", env.GetSchedulerClient())
+			fe1.Register()
+			fe2.Register()
+
+			taskID := scheduleTask(ctx, t, env, tc.platformProps)
+
+			// The preferred executor is never delayed.
+			fe1.WaitForTaskWithDelay(taskID, tc.expectedDelay)
+			fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
+		})
+	}
 }
 
 func TestSchedulingDelay_PreferredExecutorUnhealthy(t *testing.T) {

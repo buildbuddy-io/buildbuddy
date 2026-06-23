@@ -1562,6 +1562,10 @@ func newFixedNodeTaskRouter(executorIDs []string) *fixedNodeTaskRouter {
 }
 
 func (f *fixedNodeTaskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+	return f.RankNodesWithMetadata(ctx, action, cmd, remoteInstanceName, nodes).RankedNodes
+}
+
+func (f *fixedNodeTaskRouter) RankNodesWithMetadata(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) interfaces.RankNodesResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []interfaces.RankedExecutionNode
@@ -1570,7 +1574,7 @@ func (f *fixedNodeTaskRouter) RankNodes(ctx context.Context, action *repb.Action
 			out = append(out, fakeRankedNode{node: n})
 		}
 	}
-	return out
+	return interfaces.RankNodesResult{RankedNodes: out}
 }
 
 func (f *fixedNodeTaskRouter) MarkSucceeded(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorHostID string) {

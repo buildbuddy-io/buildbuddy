@@ -14,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -2328,8 +2329,8 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 
 	attempts := 0
 	var rankedNodes []interfaces.RankedExecutionNode
+	nonPreferredDelay := defaultSchedulingDelay
 
-	nonPreferredDelay := getNonPreferredSchedulingDelay(platform.GetProto(task.GetAction(), cmd))
 	delayable := enqueueRequest.GetDelay() == nil
 	for len(successfulReservations) < probeCount {
 		// If the queue of ranked, candidate nodes is empty, refresh them.
@@ -2363,7 +2364,14 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				return status.UnavailableErrorf("no executors found matching routing config")
 			}
 			candidateNodes = filterToDebugExecutorLabels(ctx, candidateNodes, task)
-			rankedNodes = s.taskRouter.RankNodes(ctx, task.GetAction(), cmd, remoteInstanceName, toNodeInterfaces(candidateNodes))
+			rankingResult := s.taskRouter.RankNodesWithMetadata(ctx, task.GetAction(), cmd, remoteInstanceName, toNodeInterfaces(candidateNodes))
+			rankedNodes = rankingResult.RankedNodes
+			nonPreferredDelay = getNonPreferredSchedulingDelay(
+				ctx,
+				s.env.GetExperimentFlagProvider(),
+				platform.GetProto(task.GetAction(), cmd),
+				rankingResult.UsedTargetPackageAffinity,
+			)
 		}
 
 		select {
@@ -2408,8 +2416,11 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 
 // Returns the delay that should be applied to executions scheduled on
 // non-preferred execution nodes.
-func getNonPreferredSchedulingDelay(plat *repb.Platform) time.Duration {
+func getNonPreferredSchedulingDelay(ctx context.Context, fp interfaces.ExperimentFlagProvider, plat *repb.Platform, usedTargetPackageAffinity bool) time.Duration {
 	delayProperty := platform.FindValue(plat, platform.RunnerRecyclingMaxWaitPropertyName)
+	if delayProperty == "" && usedTargetPackageAffinity {
+		delayProperty = getTargetPackageNonPreferredSchedulingDelay(ctx, fp)
+	}
 	if delayProperty == "" {
 		return defaultSchedulingDelay
 	}
@@ -2427,6 +2438,13 @@ func getNonPreferredSchedulingDelay(plat *repb.Platform) time.Duration {
 		return *maxSchedulingDelay
 	}
 	return d
+}
+
+func getTargetPackageNonPreferredSchedulingDelay(ctx context.Context, fp interfaces.ExperimentFlagProvider) string {
+	if fp == nil {
+		return ""
+	}
+	return fp.String(ctx, task_router.AffinityRouterTargetPackageNonPreferredDelayExperiment, "")
 }
 
 func successfulReservation(node *executionNode, enqueueStart time.Time) string {

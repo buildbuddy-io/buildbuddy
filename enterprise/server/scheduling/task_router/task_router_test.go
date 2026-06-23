@@ -322,13 +322,55 @@ func TestTaskRouter_RankNodes_AffinityRouting_TargetPackagePreferredNodeLimit(t 
 	router.MarkSucceeded(ctx, nil, cmd, instanceName, nodes[9].GetExecutorHostId())
 
 	// The configured history should be returned first, newest first.
-	ranked := router.RankNodes(otherTargetCtx, nil, cmd, instanceName, nodes)
+	rankingResult := router.RankNodesWithMetadata(otherTargetCtx, nil, cmd, instanceName, nodes)
+	ranked := rankingResult.RankedNodes
+	require.True(t, rankingResult.UsedTargetPackageAffinity)
 	expectedPreferred := []string{nodes[9].GetExecutorHostId(), executorHostID2, executorHostID1}
 	for i, hostID := range expectedPreferred {
 		require.Equal(t, hostID, ranked[i].GetExecutionNode().GetExecutorHostId())
 		require.True(t, ranked[i].IsPreferred())
 	}
 	require.False(t, ranked[len(expectedPreferred)].IsPreferred())
+}
+
+func TestTaskRouter_RankNodesWithMetadata_TargetPackageAffinityRequiresAffinityRouter(t *testing.T) {
+	env := newTestEnv(t)
+
+	// Enable target-package routing on a task matched by a higher-priority router.
+	testProvider := openfeatureTesting.NewTestProvider()
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		task_router.AffinityRouterUseTargetPackageExperiment: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "enabled",
+			Variants: map[string]any{
+				"enabled": true,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	defer testProvider.Cleanup()
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	// A CI runner task should use ciRunnerRouter, not target-package affinity.
+	router := newTaskRouter(t, env)
+	nodes := sequentiallyNumberedNodes(100)
+	instanceName := "test-instance"
+	cmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			},
+		},
+		Arguments: []string{"./buildbuddy_ci_runner"},
+	}
+	ctx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US1"), "//foo/bar:foo_test", "TestRunner")
+
+	rankingResult := router.RankNodesWithMetadata(ctx, nil, cmd, instanceName, nodes)
+
+	require.False(t, rankingResult.UsedTargetPackageAffinity)
+	require.Len(t, rankingResult.RankedNodes, len(nodes))
 }
 
 func TestTaskRouter_RankNodes_AffinityRouting_TargetPackagePreferredNodeLimitAllowsZero(t *testing.T) {

@@ -56,6 +56,12 @@ const (
 	// preferred nodes target-package affinity can return. It is only used when
 	// [AffinityRouterUseTargetPackageExperiment] is enabled for the request.
 	AffinityRouterTargetPackagePreferredNodeLimitExperiment = "remote_execution.affinity_router_target_package_preferred_node_limit"
+
+	// AffinityRouterTargetPackageNonPreferredDelayExperiment controls the delay
+	// applied to non-preferred probes after a target-package preferred probe has
+	// been enqueued. It is only used when
+	// [AffinityRouterUseTargetPackageExperiment] is enabled for the request.
+	AffinityRouterTargetPackageNonPreferredDelayExperiment = "remote_execution.affinity_router_target_package_non_preferred_delay"
 )
 
 type taskRouter struct {
@@ -190,6 +196,12 @@ func weightedResample(nodes []interfaces.ExecutionNode) []interfaces.ExecutionNo
 // RankNodes returns the input nodes ordered by their affinity to the given
 // routing properties.
 func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+	return tr.RankNodesWithMetadata(ctx, action, cmd, remoteInstanceName, nodes).RankedNodes
+}
+
+// RankNodesWithMetadata returns the input nodes ordered by their affinity to the
+// given routing properties, along with metadata about the selected router.
+func (tr *taskRouter) RankNodesWithMetadata(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) interfaces.RankNodesResult {
 	nodes = copyNodes(nodes)
 
 	// Resample nodes by CPU weight so that nodes with more resources
@@ -199,13 +211,19 @@ func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *r
 	params := getRoutingParams(ctx, tr.env, action, cmd, remoteInstanceName)
 	strategy := tr.selectRouter(ctx, params)
 	if strategy == nil {
-		return nodesAsRanked(nodes)
+		return interfaces.RankNodesResult{
+			RankedNodes: nodesAsRanked(nodes),
+		}
 	}
+	usedTargetPackageAffinity := usesTargetPackageAffinity(strategy, params)
 
 	preferredNodeLimit, routingKeys, err := strategy.RoutingInfo(params)
 	if err != nil {
 		log.Errorf("Failed to compute routing info: %s", err)
-		return nodesAsRanked(nodes)
+		return interfaces.RankNodesResult{
+			RankedNodes:               nodesAsRanked(nodes),
+			UsedTargetPackageAffinity: usedTargetPackageAffinity,
+		}
 	}
 
 	// Note: if multiple executors live on the same host, the last one in the
@@ -234,7 +252,10 @@ func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *r
 		preferredHostIDs, err := strategy.GetPreferredHostIDs(ctx, routingKey)
 		if err != nil {
 			log.Errorf("Failed to rank nodes: failed to get preferred host IDs: %s", err)
-			return nodesAsRanked(nodes)
+			return interfaces.RankNodesResult{
+				RankedNodes:               nodesAsRanked(nodes),
+				UsedTargetPackageAffinity: usedTargetPackageAffinity,
+			}
 		}
 
 		log.Debugf("Preferred executor host IDs for %q: %v", routingKey, preferredHostIDs)
@@ -265,7 +286,10 @@ func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *r
 		rankedNodeSet[rankedExecutionNode.GetExecutionNode().GetExecutorId()] = struct{}{}
 	}
 
-	return ranked
+	return interfaces.RankNodesResult{
+		RankedNodes:               ranked,
+		UsedTargetPackageAffinity: usedTargetPackageAffinity,
+	}
 }
 
 // MarkSucceeded updates the routing table after a task is completed, so that
@@ -386,6 +410,11 @@ func (tr taskRouter) selectRouter(ctx context.Context, params routingParams) Rou
 		}
 	}
 	return nil
+}
+
+func usesTargetPackageAffinity(strategy Router, params routingParams) bool {
+	_, ok := strategy.(*affinityRouter)
+	return ok && params.useTargetPackageForAffinityRouting && params.targetPackageLabel != ""
 }
 
 func copyNodes(nodes []interfaces.ExecutionNode) []interfaces.ExecutionNode {
