@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/maxmind"
@@ -18,20 +19,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// maxCNAMEDepth bounds how many CNAME hops we follow before giving up
-// guarding against CNAME loops.
-const maxCNAMEDepth = 8
+const (
+	// maxCNAMEDepth bounds how many CNAME hops we follow before giving up
+	// guarding against CNAME loops.
+	maxCNAMEDepth = 8
 
-// asnRoutingExperiment maps a client's ASN to an override A record. It is
-// evaluated with the client's ASN and the queried name on the experiment
-// context; when it returns a valid IPv4 address we answer with that address
-// instead of the static zone record, letting us steer specific networks to
-// specific endpoints.
-const asnRoutingExperiment = "dns.asn_routing"
+	// asnRoutingExperiment is the name of an experiment that maps a client's
+	// ASN to an override A record.
+	asnRoutingExperiment = "dns.asn_routing"
 
-// asnRoutingTTL is the TTL applied to experiment-routed A answers. It is short
-// so routing decisions can change quickly.
-const asnRoutingTTL = 60
+	// asnRoutingTTL is the TTL applied to experiment-routed A answers. It is
+	// short so routing decisions can change quickly.
+	asnRoutingTTL = 60
+)
 
 type handler struct {
 	records map[string][]dns.RR
@@ -42,9 +42,6 @@ type handler struct {
 	// instead of re-asking us every time. Nil if the zone file has no SOA.
 	soa dns.RR
 
-	// env provides the experiment flag provider used for (e.g.) ASN-based
-	// routing. The provider may be unconfigured, in which case flags resolve to
-	// their default values.
 	env environment.Env
 }
 
@@ -83,12 +80,16 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	m.Answer, m.Rcode, negative = h.resolve(qName, qType)
 
 	// ASN-based routing: when the name already resolves to an address in our
-	// zone, an experiment may override that address for this client. Gating on a
-	// direct A answer means we never manufacture records for names we don't
-	// serve (NODATA, NXDOMAIN, or a CNAME indirection).
+	// zone, an experiment may override that address for this client.
+	// TODO(tylerw): Consider supporting more than just A records here?
 	if qType == dns.TypeA && onlyARecords(m.Answer) {
-		if rr := h.asnRoutedAnswer(context.Background(), w, r, qName); rr != nil {
-			m.Answer = []dns.RR{rr}
+		if efp := h.env.GetExperimentFlagProvider(); efp != nil {
+			if rrs := asnRoutedAnswer(efp, w, r, qName); len(rrs) > 0 {
+				m.Answer = rrs
+			}
+			// Echo the EDNS Client Subnet scope (RFC 7871) so an ECS-aware
+			// resolver caches this answer per-subnet and NOT globally.
+			attachClientSubnetScopeIfPresent(m, r)
 		}
 	}
 
@@ -145,6 +146,7 @@ func (h *handler) resolve(qName string, qType uint16) ([]dns.RR, int, bool) {
 		// chain (in which case answer holds the CNAME RRs).
 		return answer, dns.RcodeSuccess, true
 	}
+
 	// Exceeded the CNAME hop limit; return what we have without claiming the
 	// result is authoritatively negative.
 	return answer, dns.RcodeSuccess, false
@@ -164,32 +166,75 @@ func onlyARecords(rrs []dns.RR) bool {
 	return true
 }
 
-// asnRoutedAnswer consults the ASN-routing experiment for an override A record
-// for qName. It returns nil when no experiment provider is configured, the
-// experiment returns nothing, or the value is not a valid IPv4 address (in which
-// case the caller keeps the static zone answer). The client's ASN is resolved
-// only here, so a query pays for the EDNS/maxmind lookup only when an experiment
-// is actually consulted.
-func (h *handler) asnRoutedAnswer(ctx context.Context, w dns.ResponseWriter, r *dns.Msg, qName string) dns.RR {
-	efp := h.env.GetExperimentFlagProvider()
-	if efp == nil {
-		return nil
-	}
+// asnRoutingConfig is the value shape of the dns.asn_routing experiment object.
+type asnRoutingConfig struct {
+	Addresses []string `json:"addresses"`
+}
+
+// asnRoutedAnswer evaluates the ASN-routing experiment for qName and returns
+// the override A records, or nil when the experiment yields no addresses (the
+// caller then keeps the static zone answer).
+func asnRoutedAnswer(efp interfaces.ExperimentFlagProvider, w dns.ResponseWriter, r *dns.Msg, qName string) []dns.RR {
 	asn := clientASN(w, r)
-	ip := efp.String(ctx, asnRoutingExperiment, "",
+	obj := efp.Object(context.Background(), asnRoutingExperiment, nil,
 		experiments.WithContext("asn", int64(asn)),
 		experiments.WithContext("name", qName))
-	if ip == "" {
+	if len(obj) == 0 {
 		return nil
 	}
-	v4 := net.ParseIP(ip).To4()
-	if v4 == nil {
-		log.CtxWarningf(ctx, "ASN-routing experiment returned invalid IPv4 %q for %q (ASN %d); using static answer", ip, qName, asn)
+
+	var cfg asnRoutingConfig
+	if err := experiments.ObjectToStruct(obj, &cfg); err != nil {
+		log.Warningf("ASN-routing experiment for %q (ASN %d) has an invalid config %v: %s", qName, asn, obj, err)
 		return nil
 	}
-	return &dns.A{
-		Hdr: dns.RR_Header{Name: qName, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: asnRoutingTTL},
-		A:   v4,
+
+	var answer []dns.RR
+	for _, addr := range cfg.Addresses {
+		v4 := net.ParseIP(addr).To4()
+		if v4 == nil {
+			log.Warningf("ASN-routing experiment for %q (ASN %d) has invalid IPv4 %q; skipping it", qName, asn, addr)
+			continue
+		}
+		answer = append(answer, &dns.A{
+			Hdr: dns.RR_Header{Name: qName, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: asnRoutingTTL},
+			A:   v4,
+		})
+	}
+	return answer
+}
+
+// attachClientSubnetScopeIfPresent, when the query carried an EDNS Client
+// Subnet option, adds it to the response with the SCOPE prefix-length set to
+// the source prefix-length (RFC 7871). This tells the resolver the answer is
+// specific to that subnet so it caches per-subnet rather than globally. A "no
+// subnet" query (source /0) echoes scope /0, which is correct: that answer was
+// not tailored to a client subnet.
+func attachClientSubnetScopeIfPresent(m, r *dns.Msg) {
+	reqOPT := r.IsEdns0()
+	if reqOPT == nil {
+		return
+	}
+	for _, o := range reqOPT.Option {
+		ecs, ok := o.(*dns.EDNS0_SUBNET)
+		if !ok {
+			continue
+		}
+		udpSize := reqOPT.UDPSize()
+		if udpSize < dns.MinMsgSize {
+			udpSize = dns.MinMsgSize
+		}
+		respOPT := &dns.OPT{Hdr: dns.RR_Header{Name: ".", Rrtype: dns.TypeOPT}}
+		respOPT.SetUDPSize(udpSize)
+		respOPT.Option = append(respOPT.Option, &dns.EDNS0_SUBNET{
+			Code:          dns.EDNS0SUBNET,
+			Family:        ecs.Family,
+			SourceNetmask: ecs.SourceNetmask,
+			SourceScope:   ecs.SourceNetmask,
+			Address:       ecs.Address,
+		})
+		m.Extra = append(m.Extra, respOPT)
+		return
 	}
 }
 

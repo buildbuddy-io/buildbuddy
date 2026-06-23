@@ -10,6 +10,7 @@ go_library(
     deps = [
         "//enterprise/server/experiments",
         "//server/environment",
+        "//server/interfaces",
         "//server/metrics",
         "//server/util/log",
         "//server/util/maxmind",

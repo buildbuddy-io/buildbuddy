@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/dns/server"
@@ -163,7 +164,7 @@ func TestASNRoutingExperiment(t *testing.T) {
   "flags": {
     "dns.asn_routing": {
       "state": "ENABLED",
-      "variants": { "override": "10.20.30.40", "none": "" },
+      "variants": { "override": { "addresses": ["10.20.30.40"] }, "none": {} },
       "defaultVariant": "none",
       "targeting": {
         "if": [ { "==": [ { "var": "asn" }, %d ] }, "override", "none" ]
@@ -210,7 +211,7 @@ func TestClientNetworkResolution(t *testing.T) {
   "flags": {
     "dns.asn_routing": {
       "state": "ENABLED",
-      "variants": { "ecs": "10.0.0.1", "remote": "10.0.0.2", "none": "" },
+      "variants": { "ecs": { "addresses": ["10.0.0.1"] }, "remote": { "addresses": ["10.0.0.2"] }, "none": {} },
       "defaultVariant": "none",
       "targeting": {
         "if": [
@@ -242,24 +243,34 @@ func TestClientNetworkResolution(t *testing.T) {
 	assert.Equal(t, "1.2.3.4", answerIP(m), "unknown client network should use the static record")
 }
 
-// asnOnlyRoutingConfig targets every query from asn, overriding to overrideIP.
-func asnOnlyRoutingConfig(asn uint32, overrideIP string) string {
+// asnOnlyRoutingConfig targets every query from asn, overriding to the given
+// addresses (the dns.asn_routing object value).
+func asnOnlyRoutingConfig(asn uint32, addresses ...string) string {
 	return fmt.Sprintf(`{
   "$schema": "https://flagd.dev/schema/v0/flags.json",
   "flags": {
     "dns.asn_routing": {
       "state": "ENABLED",
-      "variants": { "override": %q, "none": "" },
+      "variants": { "override": { "addresses": [%s] }, "none": {} },
       "defaultVariant": "none",
       "targeting": { "if": [ { "==": [ { "var": "asn" }, %d ] }, "override", "none" ] }
     }
   }
-}`, overrideIP, asn)
+}`, jsonStringList(addresses), asn)
+}
+
+// jsonStringList renders ss as the body of a JSON array, e.g. `"a", "b"`.
+func jsonStringList(ss []string) string {
+	quoted := make([]string, len(ss))
+	for i, s := range ss {
+		quoted[i] = fmt.Sprintf("%q", s)
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // TestASNRoutingOnlyOverridesServedNames verifies the override never invents
-// records: even with a name-agnostic (asn-only) rule that matches the client, it
-// only replaces a name that already resolves to an address in our zone.
+// records: even with a name-agnostic (asn-only) rule that matches the client,
+// it only replaces a name that already resolves to an address in our zone.
 func TestASNRoutingOnlyOverridesServedNames(t *testing.T) {
 	h := handlerWithProvider(t, newFlagProvider(t, asnOnlyRoutingConfig(mustASN(t, "8.8.8.8"), "10.20.30.40")))
 
@@ -282,8 +293,22 @@ func TestASNRoutingOnlyOverridesServedNames(t *testing.T) {
 	}, answers(m.Answer))
 }
 
-// TestASNRoutingIgnoresNoSubnetECS verifies that a "no client subnet" ECS option
-// (an unspecified 0.0.0.0 address) is ignored in favor of the transport source.
+// TestASNRoutingMultipleAddresses verifies a multi-address override yields the
+// full A RRset, so steering can preserve load-balanced/redundant addresses.
+func TestASNRoutingMultipleAddresses(t *testing.T) {
+	h := handlerWithProvider(t, newFlagProvider(t, asnOnlyRoutingConfig(mustASN(t, "8.8.8.8"), "10.20.30.40", "10.20.30.41")))
+
+	m := queryFromIP(t, h, "cache.buildbuddy.io.", dns.TypeA, "8.8.8.8")
+	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
+	assert.Equal(t, []answer{
+		{"cache.buildbuddy.io.", "A", "10.20.30.40"},
+		{"cache.buildbuddy.io.", "A", "10.20.30.41"},
+	}, answers(m.Answer))
+}
+
+// TestASNRoutingIgnoresNoSubnetECS verifies that a "no client subnet" ECS
+// option (an unspecified 0.0.0.0 address) is ignored in favor of the
+// transport source.
 func TestASNRoutingIgnoresNoSubnetECS(t *testing.T) {
 	h := handlerWithProvider(t, newFlagProvider(t, asnOnlyRoutingConfig(mustASN(t, "1.1.1.1"), "10.20.30.40")))
 
@@ -294,6 +319,27 @@ func TestASNRoutingIgnoresNoSubnetECS(t *testing.T) {
 	require.Len(t, m.Answer, 1)
 	assert.Equal(t, "10.20.30.40", m.Answer[0].(*dns.A).A.String(),
 		"a no-subnet ECS should fall back to the transport source address")
+}
+
+// TestASNRoutingEchoesECSScope verifies that a routed answer to an ECS query
+// echoes the client subnet with SCOPE set (RFC 7871), so resolvers cache the
+// per-ASN answer per-subnet rather than globally.
+func TestASNRoutingEchoesECSScope(t *testing.T) {
+	h := handlerWithProvider(t, newFlagProvider(t, asnOnlyRoutingConfig(mustASN(t, "8.8.8.8"), "10.20.30.40")))
+
+	m := serve(t, h, withECS(t, newQuery("cache.buildbuddy.io.", dns.TypeA), "8.8.8.8"), "")
+
+	opt := m.IsEdns0()
+	require.NotNil(t, opt, "response should carry an OPT echoing ECS")
+	var ecs *dns.EDNS0_SUBNET
+	for _, o := range opt.Option {
+		if e, ok := o.(*dns.EDNS0_SUBNET); ok {
+			ecs = e
+		}
+	}
+	require.NotNil(t, ecs, "response should echo an ECS option")
+	assert.Equal(t, uint8(32), ecs.SourceScope, "SCOPE should reflect the source prefix length")
+	assert.Equal(t, "8.8.8.8", ecs.Address.String())
 }
 
 // TestASNRoutingRollout exercises a fractional (percentage) rollout: the flag
@@ -311,7 +357,7 @@ func TestASNRoutingRollout(t *testing.T) {
   "flags": {
     "dns.asn_routing": {
       "state": "ENABLED",
-      "variants": { "override": "10.20.30.40", "none": "" },
+      "variants": { "override": { "addresses": ["10.20.30.40"] }, "none": {} },
       "defaultVariant": "none",
       "targeting": {
         "fractional": [
