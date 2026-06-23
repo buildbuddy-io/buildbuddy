@@ -22,6 +22,7 @@ import (
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
+	flagdsync "github.com/open-feature/flagd/core/pkg/sync"
 )
 
 var (
@@ -49,7 +50,27 @@ func Register(env *real_environment.RealEnv) error {
 			return err
 		}
 	}
+	return setProvider(env, provider)
+}
 
+// RegisterInProcessSync adds an interfaces.ExperimentFlagProvider to the env
+// that evaluates flags in-process, sourcing the flag configuration from the
+// provided flagd sync implementation (for example, a GCS-backed sync from the
+// gcsflagsync package). This is an alternative to Register's flagd-backend mode for
+// binaries that pull flags directly from a source rather than talking to a
+// separate flagd process. It will not return until the provider is ready.
+func RegisterInProcessSync(env *real_environment.RealEnv, syncProvider flagdsync.ISync) error {
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithCustomSyncProvider(syncProvider))
+	if err != nil {
+		return err
+	}
+	return setProvider(env, provider)
+}
+
+// setProvider installs the given OpenFeature provider as the global provider
+// and wires the resulting FlagProvider into env. It blocks until the provider
+// is ready.
+func setProvider(env *real_environment.RealEnv, provider openfeature.FeatureProvider) error {
 	if err := openfeature.SetProviderAndWait(provider); err != nil {
 		return err
 	}

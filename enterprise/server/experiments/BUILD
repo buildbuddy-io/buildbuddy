@@ -18,6 +18,7 @@ go_library(
         "//server/util/proto",
         "//server/util/region",
         "//server/util/statusz",
+        "@com_github_open_feature_flagd_core//pkg/sync",
         "@com_github_open_feature_go_sdk//openfeature",
         "@com_github_open_feature_go_sdk_contrib_providers_flagd//pkg",
         "@org_golang_google_protobuf//encoding/protojson",

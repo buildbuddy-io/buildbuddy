@@ -273,6 +273,7 @@ use_repo(
     "com_github_mwitkow_grpc_proxy",
     "com_github_ncruces_go_sqlite3",
     "com_github_nishanths_exhaustive",
+    "com_github_open_feature_flagd_core",
     "com_github_open_feature_go_sdk",
     "com_github_open_feature_go_sdk_contrib_providers_flagd",
     "com_github_opencontainers_runtime_spec",

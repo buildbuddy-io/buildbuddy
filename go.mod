@@ -413,7 +413,7 @@ require (
 	github.com/nishanths/exhaustive v0.12.0 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/open-feature/flagd-schemas v0.2.13 // indirect
-	github.com/open-feature/flagd/core v0.13.2 // indirect
+	github.com/open-feature/flagd/core v0.13.2
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/opencontainers/runtime-tools v0.9.1-0.20251114084447-edf4cb3d2116 // indirect
