@@ -31,6 +31,8 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
@@ -45,6 +47,7 @@ go_test(
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
+        "//server/metrics",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/status",

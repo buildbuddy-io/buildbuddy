@@ -31,6 +31,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc/codes"
+	gstatus "google.golang.org/grpc/status"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
@@ -498,20 +500,10 @@ type VM interface {
 // RecordImageFetchMetrics records the image fetch duration histogram.
 // Counts are available via the histogram's _count suffix.
 func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCreds, useOCIFetcher bool, err error, duration time.Duration) {
-	statusLabel := metrics.OCIFetcherStatusOK
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err) {
-			statusLabel = metrics.OCIFetcherStatusTimeout
-		} else if errors.Is(err, context.Canceled) || status.IsCanceledError(err) {
-			statusLabel = metrics.OCIFetcherStatusCanceled
-		} else {
-			statusLabel = metrics.OCIFetcherStatusError
-		}
-	}
 	labels := prometheus.Labels{
 		metrics.IsolationTypeLabel:           isolation,
 		metrics.ImageFetchRegistryLabel:      registry,
-		metrics.StatusLabel:                  statusLabel,
+		metrics.StatusLabel:                  ImagePullMetricStatus(err),
 		metrics.ImageFetchOnDiskLabel:        strconv.FormatBool(onDisk),
 		metrics.ImageFetchHasCredsLabel:      strconv.FormatBool(hasCreds),
 		metrics.ImageFetchTriggerLabel:       trigger,
@@ -521,12 +513,44 @@ func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCre
 }
 
 func LogImagePullError(ctx context.Context, imageRef, isolation, trigger string, useOCIFetcher bool, err error, duration time.Duration) {
-	if err == nil {
+	if !ShouldCountImagePullError(err) {
 		return
 	}
 	log.CtxWarningf(ctx,
 		"image_pull_error: image=%q registry=%s isolation=%s trigger=%s use_oci_fetcher=%v duration=%s err=%s",
 		imageRef, oci.RegistryETLDPlusOne(imageRef), isolation, trigger, useOCIFetcher, duration, err)
+}
+
+// ImagePullMetricStatus returns the metrics status label for an image pull result.
+func ImagePullMetricStatus(err error) string {
+	if err == nil {
+		return metrics.OCIFetcherStatusOK
+	}
+	if errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err) {
+		return metrics.OCIFetcherStatusTimeout
+	}
+	if errors.Is(err, context.Canceled) || status.IsCanceledError(err) {
+		return metrics.OCIFetcherStatusCanceled
+	}
+	if !ShouldCountImagePullError(err) {
+		return metrics.OCIFetcherStatusUserError
+	}
+	return metrics.OCIFetcherStatusError
+}
+
+// ShouldCountImagePullError reports whether a failed image pull should count as
+// an image pull error in metrics and logs. This is based on the gRPC status code
+// intentionally constructed at the call site, not the error message text.
+func ShouldCountImagePullError(err error) bool {
+	if err == nil {
+		return false
+	}
+	switch gstatus.Code(err) {
+	case codes.InvalidArgument, codes.NotFound, codes.AlreadyExists, codes.PermissionDenied, codes.Unauthenticated, codes.FailedPrecondition, codes.OutOfRange:
+		return false
+	default:
+		return true
+	}
 }
 
 // PullImageIfNecessary pulls the image configured for the container if it

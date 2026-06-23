@@ -46,6 +46,8 @@ import (
 	ctr "github.com/google/go-containerregistry/pkg/v1"
 )
 
+var manifestRequestRegexp = regexp.MustCompile("/v2/.*/manifests/.*")
+
 func TestCredentialsFromProto(t *testing.T) {
 	creds, err := oci.CredentialsFromProto(&rgpb.Credentials{
 		Username: "",
@@ -308,7 +310,7 @@ func TestResolve(t *testing.T) {
 					Os:   runtime.GOOS,
 				},
 			},
-			checkError: status.IsPermissionDeniedError,
+			checkError: status.IsUnauthenticatedError,
 			opts: testregistry.Opts{
 				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 					if r.Method == "GET" {
@@ -383,6 +385,100 @@ func TestResolve(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestResolve_RemoteRegistryHTTPStatusCodes(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		statusCode int
+		checkError func(error) bool
+	}{
+		{
+			name:       "bad request",
+			statusCode: http.StatusBadRequest,
+			checkError: status.IsInvalidArgumentError,
+		},
+		{
+			name:       "unauthorized",
+			statusCode: http.StatusUnauthorized,
+			checkError: status.IsUnauthenticatedError,
+		},
+		{
+			name:       "forbidden",
+			statusCode: http.StatusForbidden,
+			checkError: status.IsPermissionDeniedError,
+		},
+		{
+			name:       "not found",
+			statusCode: http.StatusNotFound,
+			checkError: status.IsNotFoundError,
+		},
+		{
+			name:       "other client error",
+			statusCode: http.StatusTeapot,
+			checkError: status.IsInvalidArgumentError,
+		},
+		{
+			name:       "too many requests",
+			statusCode: http.StatusTooManyRequests,
+			checkError: status.IsResourceExhaustedError,
+		},
+		{
+			name:       "internal server error",
+			statusCode: http.StatusInternalServerError,
+			checkError: status.IsUnavailableError,
+		},
+		{
+			name:       "service unavailable",
+			statusCode: http.StatusServiceUnavailable,
+			checkError: status.IsUnavailableError,
+		},
+	} {
+		for _, useOCIFetcher := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/use_oci_fetcher_%t", tc.name, useOCIFetcher), func(t *testing.T) {
+				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+				flags.Set(t, "executor.container_registry.use_cache_percent", 0)
+				te := testenv.GetTestEnv(t)
+				if useOCIFetcher {
+					te = setupTestEnvWithCache(t)
+				}
+
+				var interceptPulls atomic.Bool
+				registry := testregistry.Run(t, testregistry.Opts{
+					HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+						if interceptPulls.Load() && isManifestRequest(r) {
+							w.WriteHeader(tc.statusCode)
+							return false
+						}
+						return true
+					},
+				})
+				registry.PushNamedImage(t, "remote_registry_status", nil)
+				interceptPulls.Store(true)
+
+				_, err := newResolver(t, te).Resolve(
+					context.Background(),
+					registry.ImageAddress("remote_registry_status"),
+					&rgpb.Platform{
+						Arch: runtime.GOARCH,
+						Os:   runtime.GOOS,
+					},
+					oci.Credentials{},
+					useOCIFetcher,
+				)
+
+				require.Error(t, err)
+				require.True(t, tc.checkError(err), "error: %s", err)
+			})
+		}
+	}
+}
+
+func isManifestRequest(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	return manifestRequestRegexp.MatchString(r.URL.Path)
 }
 
 // TestResolve_Layers_DiffIDs tests for a specific regression that led to an incident:
@@ -1098,7 +1194,7 @@ func TestResolveImageDigest_TagDoesNotExist(t *testing.T) {
 		oci.Credentials{},
 	)
 	require.Error(t, err)
-	require.True(t, status.IsUnavailableError(err), "expected UnavailableError, got: %v", err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got: %v", err)
 }
 
 func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {

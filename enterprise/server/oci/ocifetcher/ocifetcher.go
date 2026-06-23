@@ -5,6 +5,7 @@ package ocifetcher
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -718,13 +719,39 @@ func withPullerRetry[T any](
 	}
 	if err != nil {
 		s.evictPuller(ref, creds)
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return zero, status.UnauthenticatedErrorf("not authorized to access resource: %s", err)
-		}
-		return zero, status.UnavailableErrorf("could not fetch from remote registry: %s", err)
+		return zero, remoteRegistryError(err)
 	}
 
 	return result, nil
+}
+
+func remoteRegistryError(err error) error {
+	var transportErr *transport.Error
+	if !errors.As(err, &transportErr) {
+		return status.UnavailableErrorf("could not fetch from remote registry: %s", err)
+	}
+	return ImagePullErrorFromHTTPStatusCode(transportErr.StatusCode, fmt.Sprintf("remote registry returned HTTP %d: %s", transportErr.StatusCode, err))
+}
+
+// ImagePullErrorFromHTTPStatusCode returns a status error for an image pull
+// failure when the registry HTTP status code is known.
+func ImagePullErrorFromHTTPStatusCode(httpStatusCode int, msg string) error {
+	switch httpStatusCode {
+	case http.StatusBadRequest:
+		return status.InvalidArgumentError(msg)
+	case http.StatusUnauthorized:
+		return status.UnauthenticatedError(msg)
+	case http.StatusForbidden:
+		return status.PermissionDeniedError(msg)
+	case http.StatusNotFound:
+		return status.NotFoundError(msg)
+	case http.StatusTooManyRequests:
+		return status.ResourceExhaustedError(msg)
+	}
+	if httpStatusCode >= http.StatusBadRequest && httpStatusCode < http.StatusInternalServerError {
+		return status.InvalidArgumentError(msg)
+	}
+	return status.UnavailableError(msg)
 }
 
 type grpcStreamWriter struct {
