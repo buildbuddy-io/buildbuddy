@@ -4,18 +4,45 @@ package notification;
 
 import "proto/context.proto";
 
-// TODO(Maggie): Add a non-determinism email alert
-
-enum NotificationEvent {
-  UNKNOWN_NOTIFICATION_EVENT = 0;
-}
-
 message SendNotificationRequest {
   context.RequestContext request_context = 1;
 
-  NotificationEvent notification_event = 2;
+  // The event to notify about.
+  oneof event {
+    NondeterminismDetected nondeterminism_detected = 2;
+  }
+
+  // Where to deliver the notification.
+  repeated NotificationChannel channels = 3;
 }
 
 message SendNotificationResponse {
   context.ResponseContext response_context = 1;
+}
+
+message NotificationChannel {
+  oneof channel {
+    EmailChannel email = 1;
+    SlackChannel slack = 2;
+  }
+}
+
+message EmailChannel {}
+
+message SlackChannel {
+  // Name of the BuildBuddy secret with the Slack webhook URL to post the
+  // message to.
+  //
+  // The URL is referenced by secret name because anyone with the URL can post
+  // to the channel.
+  string webhook_url_secret_name = 1;
+}
+
+message NondeterminismDetected {
+  // Invocation IDs of the two builds that were run and compared.
+  repeated string build_invocation_ids = 1;
+
+  // Optional. If the builds are nested under a parent invocation (i.e. for a
+  // Workflow), this is the ID of that invocation.
+  string parent_invocation_id = 2;
 }
