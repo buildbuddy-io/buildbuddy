@@ -1,12 +1,18 @@
 package server
 
 import (
+	"context"
+	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/maxmind"
 
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
@@ -16,6 +22,17 @@ import (
 // guarding against CNAME loops.
 const maxCNAMEDepth = 8
 
+// asnRoutingExperiment maps a client's ASN to an override A record. It is
+// evaluated with the client's ASN and the queried name on the experiment
+// context; when it returns a valid IPv4 address we answer with that address
+// instead of the static zone record, letting us steer specific networks to
+// specific endpoints.
+const asnRoutingExperiment = "dns.asn_routing"
+
+// asnRoutingTTL is the TTL applied to experiment-routed A answers. It is short
+// so routing decisions can change quickly.
+const asnRoutingTTL = 60
+
 type handler struct {
 	records map[string][]dns.RR
 
@@ -24,6 +41,11 @@ type handler struct {
 	// tells the asking resolver how long it may remember that negative result
 	// instead of re-asking us every time. Nil if the zone file has no SOA.
 	soa dns.RR
+
+	// env provides the experiment flag provider used for (e.g.) ASN-based
+	// routing. The provider may be unconfigured, in which case flags resolve to
+	// their default values.
+	env environment.Env
 }
 
 func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
@@ -57,8 +79,12 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	qName := dns.CanonicalName(r.Question[0].Name)
 	qType := r.Question[0].Qtype
 
+	// Determine the client's ASN (from EDNS Client Subnet, falling back to the
+	// transport source address) so resolution can route on it via experiments.
+	asn := clientASN(w, r)
+
 	var negative bool
-	m.Answer, m.Rcode, negative = h.resolve(qName, qType)
+	m.Answer, m.Rcode, negative = h.resolve(context.Background(), qName, qType, asn)
 
 	// On a negative answer (NXDOMAIN, or NODATA: name exists but has no record
 	// of the requested type), include the zone SOA in the authority section so
@@ -78,7 +104,16 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 // the name exists but has no record of the requested type) and so should carry
 // the zone SOA for negative caching. A CNAME chain that exits the zone is not
 // negative: it is a normal partial answer the recursive resolver completes.
-func (h *handler) resolve(qName string, qType uint16) ([]dns.RR, int, bool) {
+func (h *handler) resolve(ctx context.Context, qName string, qType uint16, asn uint32) ([]dns.RR, int, bool) {
+	// ASN-based routing: an experiment may override the A answer for this client
+	// (keyed on its ASN and the queried name). When it yields a valid address,
+	// serve that instead of the static zone record.
+	if qType == dns.TypeA {
+		if rr := h.asnRoutedAnswer(ctx, qName, asn); rr != nil {
+			return []dns.RR{rr}, dns.RcodeSuccess, false
+		}
+	}
+
 	var answer []dns.RR
 	name := qName
 	for i := 0; i < maxCNAMEDepth; i++ {
@@ -116,6 +151,32 @@ func (h *handler) resolve(qName string, qType uint16) ([]dns.RR, int, bool) {
 	// Exceeded the CNAME hop limit; return what we have without claiming the
 	// result is authoritatively negative.
 	return answer, dns.RcodeSuccess, false
+}
+
+// asnRoutedAnswer consults the ASN-routing experiment for an override A record
+// for qName given the client's asn. It returns nil when no experiment provider
+// is configured, the experiment returns nothing, or the value is not a valid
+// IPv4 address (in which case the caller falls back to the static zone answer).
+func (h *handler) asnRoutedAnswer(ctx context.Context, qName string, asn uint32) dns.RR {
+	efp := h.env.GetExperimentFlagProvider()
+	if efp == nil {
+		return nil
+	}
+	ip := efp.String(ctx, asnRoutingExperiment, "",
+		experiments.WithContext("asn", int64(asn)),
+		experiments.WithContext("name", qName))
+	if ip == "" {
+		return nil
+	}
+	v4 := net.ParseIP(ip).To4()
+	if v4 == nil {
+		log.CtxWarningf(ctx, "ASN-routing experiment returned invalid IPv4 %q for %q (ASN %d); using static answer", ip, qName, asn)
+		return nil
+	}
+	return &dns.A{
+		Hdr: dns.RR_Header{Name: qName, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: asnRoutingTTL},
+		A:   v4,
+	}
 }
 
 // lookup returns the records for name. If there is no exact match, it walks up
@@ -172,7 +233,61 @@ func filterByType(records []dns.RR, qType uint16) []dns.RR {
 	return out
 }
 
-func NewHandler(resources []dns.RR) dns.Handler {
+// clientASN returns the autonomous system number of the client the query is on
+// behalf of, for use as an experiment attribute. It returns 0 when the client
+// network is unknown or absent from the ASN database (e.g. private IPs).
+func clientASN(w dns.ResponseWriter, r *dns.Msg) uint32 {
+	ip := clientIP(w, r)
+	if !ip.IsValid() {
+		return 0
+	}
+	asn, err := maxmind.LookupASN(ip)
+	if err != nil {
+		log.Debugf("ASN lookup for %s failed: %s", ip, err)
+		return 0
+	}
+	return uint32(asn.Number)
+}
+
+// clientIP determines the network address of the end client. It prefers the
+// EDNS Client Subnet, which a recursive resolver sets to the querying client's
+// network, and falls back to the transport source address (which, behind a
+// resolver, is the resolver itself). It returns the zero Addr when neither is
+// available.
+func clientIP(w dns.ResponseWriter, r *dns.Msg) netip.Addr {
+	if opt := r.IsEdns0(); opt != nil {
+		for _, o := range opt.Option {
+			ecs, ok := o.(*dns.EDNS0_SUBNET)
+			if !ok {
+				continue
+			}
+			if addr, ok := netip.AddrFromSlice(ecs.Address); ok {
+				return addr.Unmap()
+			}
+		}
+	}
+	return addrFromNetAddr(w.RemoteAddr())
+}
+
+// addrFromNetAddr extracts the IP from a UDP or TCP transport address. It
+// returns the zero Addr for any other address type or a missing IP.
+func addrFromNetAddr(a net.Addr) netip.Addr {
+	var ip net.IP
+	switch v := a.(type) {
+	case *net.UDPAddr:
+		ip = v.IP
+	case *net.TCPAddr:
+		ip = v.IP
+	default:
+		return netip.Addr{}
+	}
+	if addr, ok := netip.AddrFromSlice(ip); ok {
+		return addr.Unmap()
+	}
+	return netip.Addr{}
+}
+
+func NewHandler(resources []dns.RR, env environment.Env) dns.Handler {
 	records := make(map[string][]dns.RR, len(resources))
 	var soa dns.RR
 	for _, rr := range resources {
@@ -185,6 +300,7 @@ func NewHandler(resources []dns.RR) dns.Handler {
 	return &handler{
 		records: records,
 		soa:     soa,
+		env:     env,
 	}
 }
 

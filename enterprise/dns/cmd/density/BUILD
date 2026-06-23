@@ -12,6 +12,8 @@ go_library(
     deps = [
         "//enterprise/dns/server",
         "//enterprise/server/backends/configsecrets",
+        "//enterprise/server/experiments",
+        "//enterprise/server/experiments/gcsflagsync",
         "//server/config",
         "//server/real_environment",
         "//server/util/flag",

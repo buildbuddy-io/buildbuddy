@@ -29,6 +29,11 @@ var (
 	pollInterval    = flag.Duration("experiments.gcs.poll_interval", 10*time.Second, "How often to poll GCS for flag configuration changes.")
 )
 
+// Enabled reports whether a GCS flag source has been configured.
+func Enabled() bool {
+	return *bucket != ""
+}
+
 // New constructs a flagd sync.ISync that polls the configured GCS object for
 // flag configuration changes. It returns an error if no bucket/object is
 // configured.
