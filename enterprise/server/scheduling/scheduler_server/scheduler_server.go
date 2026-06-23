@@ -103,6 +103,10 @@ const (
 	redisTaskQueuedAtUsec     = "queuedAtUsec"
 	redisTaskAttempCountField = "attemptCount"
 	redisTaskClaimedField     = "claimed"
+	// reconnectPeriodEnd holds the wall-clock nanos until which the task is
+	// reserved for the previous lease holder to reconnect. This must match the
+	// field name used by the redisAcquireClaim/redisReleaseClaim scripts.
+	redisTaskReconnectPeriodEndField = "reconnectPeriodEnd"
 
 	// Maximum number of unclaimed task IDs we track per pool.
 	maxUnclaimedTasksTracked = 10_000
@@ -162,8 +166,10 @@ var (
 		-- the lease is still in its reconnection grace period.
 		local isNewAttempt = true
 		if ARGV[1] == "true" then
-			local periodEnd = redis.call("hget", KEYS[1], "reconnectPeriodEnd")
-			if periodEnd ~= nil and periodEnd ~= "" and periodEnd > tonumber(ARGV[3]) then
+			-- Redis hget returns false if the field is missing, and
+			-- tonumber(false) returns nil.
+			local periodEndNanos = tonumber(redis.call("hget", KEYS[1], "reconnectPeriodEnd"))
+			if periodEndNanos ~= nil and periodEndNanos > tonumber(ARGV[3]) then
 				local validToken = false
 
 				-- Temporarily accept either reconnectToken or leaseId.
@@ -1091,6 +1097,9 @@ type persistedTask struct {
 	serializedTask  []byte
 	queuedTimestamp time.Time
 	attemptCount    int64
+	// reconnectPeriodEnd is the time until which the task is reserved for the
+	// previous lease holder to reconnect. Zero if the task is not reserved.
+	reconnectPeriodEnd time.Time
 }
 
 type schedulerClient struct {
@@ -1699,11 +1708,15 @@ func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) 
 }
 
 func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID, leaseID, reconnectToken string) error {
+	reconnectPeriodEnd := time.Now()
+	if reconnectToken != "" {
+		reconnectPeriodEnd = reconnectPeriodEnd.Add(*leaseReconnectGracePeriod)
+	}
 	// The script will return 1 if the task is claimed & claim has been released.
 	r, err := redisReleaseClaim.Run(
 		ctx, s.rdb,
 		[]string{s.redisKeyForTask(taskID)},
-		reconnectToken, time.Now().UnixNano(), leaseID,
+		reconnectToken, reconnectPeriodEnd.UnixNano(), leaseID,
 	).Result()
 	if err != nil {
 		return err
@@ -1728,7 +1741,7 @@ func (s *SchedulerServer) claimTask(ctx context.Context, taskID, reconnectToken 
 	r, err := redisAcquireClaim.Run(
 		ctx, s.rdb,
 		[]string{s.redisKeyForTask(taskID)},
-		checkTaskReconnectToken, reconnectToken, time.Now().UnixNano(), leaseId,
+		strconv.FormatBool(checkTaskReconnectToken), reconnectToken, time.Now().UnixNano(), leaseId,
 	).Result()
 	if err != nil {
 		log.CtxErrorf(ctx, "claimTask error: redis script failed: %s", err)
@@ -1824,6 +1837,13 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 	// can fit, we might wind up returning an empty list here.
 	tasksThatFit := make([]*persistedTask, 0, len(tasks))
 	for _, task := range tasks {
+		// Skip tasks still within their reconnect grace period: they're
+		// reserved for the previous lease holder to reconnect, so any claim by
+		// another executor would be rejected. Assigning the task now would only
+		// produce a doomed lease attempt.
+		if task.reconnectPeriodEnd.After(time.Now()) {
+			continue
+		}
 		// Filter to tasks which can fit on the node.
 		if !nodeCanFitTask(node, task.metadata.GetTaskSize()) {
 			continue
@@ -1877,6 +1897,7 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		redisTaskMetadataField,
 		redisTaskQueuedAtUsec,
 		redisTaskAttempCountField,
+		redisTaskReconnectPeriodEndField,
 	}
 	key := s.redisKeyForTask(taskID)
 	vals, err := s.rdb.HMGet(ctx, key, fields...).Result()
@@ -1928,12 +1949,24 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		return nil, status.InvalidArgumentErrorf("could not parse attempt count %q: %v", attemptCountStr, attemptCount)
 	}
 
+	// Reconnect period end field. Absent for tasks that are not reserved for a
+	// previous lease holder to reconnect, in which case it's left as zero.
+	var reconnectPeriodEnd time.Time
+	if str, ok := vals[4].(string); ok && str != "" {
+		if nanos, err := strconv.ParseInt(str, 10, 64); err != nil {
+			log.CtxWarningf(ctx, "could not parse reconnect period end %q for task %q: %s", str, taskID, err)
+		} else {
+			reconnectPeriodEnd = time.Unix(0, nanos)
+		}
+	}
+
 	return &persistedTask{
-		taskID:          taskID,
-		metadata:        metadata,
-		serializedTask:  serializedTask,
-		queuedTimestamp: time.UnixMicro(queuedAtUsec),
-		attemptCount:    attemptCount,
+		taskID:             taskID,
+		metadata:           metadata,
+		serializedTask:     serializedTask,
+		queuedTimestamp:    time.UnixMicro(queuedAtUsec),
+		attemptCount:       attemptCount,
+		reconnectPeriodEnd: reconnectPeriodEnd,
 	}, nil
 }
 
@@ -1972,10 +2005,17 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		if !claimed {
 			return
 		}
-		log.CtxWarningf(ctx, "LeaseTask stream closed with task still claimed (shutting_down=%t). Re-enqueueing task.", s.isShuttingDown())
+		shuttingDown := s.isShuttingDown()
+		log.CtxWarningf(ctx, "LeaseTask stream closed with task still claimed (shutting_down=%t). Re-enqueueing task.", shuttingDown)
 		ctx, cancel := background.ExtendContextForFinalization(ctx, 3*time.Second)
 		defer cancel()
 		reEnqueueReason := "stream closed with task still claimed"
+		if !shuttingDown {
+			// TODO: detect whether the executor gave up on the lease due to
+			// shutdown vs hit a transient disconnect. Transient disconnects should
+			// get a reconnect grace period here.
+			reconnectToken = ""
+		}
 		if err := s.reEnqueueTask(ctx, taskID, leaseID, reconnectToken, probesPerTask, reEnqueueReason); err != nil {
 			log.CtxErrorf(ctx, "LeaseTask %q tried to re-enqueue task but failed with err: %s", taskID, err.Error())
 		} // Success case will be logged by ReEnqueueTask flow.
