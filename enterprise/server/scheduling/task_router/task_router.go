@@ -48,7 +48,14 @@ const (
 	// Preferred node limit for tasks using [persistentWorkerRouter].
 	persistentWorkerRouterPreferredNodeLimit = 128
 
-	affinityRouterUseTargetPackageExperiment = "remote_execution.affinity_router_use_target_package"
+	// AffinityRouterUseTargetPackageExperiment enables routing by target package
+	// instead of first output path for the affinity router.
+	AffinityRouterUseTargetPackageExperiment = "remote_execution.affinity_router_use_target_package"
+
+	// AffinityRouterTargetPackagePreferredNodeLimitExperiment controls how many
+	// preferred nodes target-package affinity can return. It is only used when
+	// [AffinityRouterUseTargetPackageExperiment] is enabled for the request.
+	AffinityRouterTargetPackagePreferredNodeLimitExperiment = "remote_execution.affinity_router_target_package_preferred_node_limit"
 )
 
 type taskRouter struct {
@@ -324,13 +331,24 @@ type routingParams struct {
 	groupID                            string
 	targetPackageLabel                 string
 	useTargetPackageForAffinityRouting bool
+	targetPackagePreferredNodeLimit    int
 }
 
-func getTargetPackageLabel(targetLabel string) string {
+// GetTargetPackageLabel returns the package part of a Bazel target label.
+func GetTargetPackageLabel(targetLabel string) string {
 	if packageLabel, _, ok := strings.Cut(targetLabel, ":"); ok {
 		return packageLabel
 	}
 	return targetLabel
+}
+
+// UseTargetPackageForAffinityRouting returns whether target-package affinity is
+// enabled for this request.
+func UseTargetPackageForAffinityRouting(ctx context.Context, fp interfaces.ExperimentFlagProvider) bool {
+	if fp == nil {
+		return false
+	}
+	return fp.Boolean(ctx, AffinityRouterUseTargetPackageExperiment, false)
 }
 
 func getRoutingParams(ctx context.Context, env environment.Env, action *repb.Action, cmd *repb.Command, remoteInstanceName string) routingParams {
@@ -338,18 +356,25 @@ func getRoutingParams(ctx context.Context, env environment.Env, action *repb.Act
 	if u, err := env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
 		groupID = u.GetGroupID()
 	}
-	useTargetPackageForAffinityRouting := false
-	if fp := env.GetExperimentFlagProvider(); fp != nil {
-		useTargetPackageForAffinityRouting = fp.Boolean(ctx, affinityRouterUseTargetPackageExperiment, false)
-	}
+	targetPackagePreferredNodeLimit := defaultPreferredNodeLimit
+	fp := env.GetExperimentFlagProvider()
+	useTargetPackageForAffinityRouting := UseTargetPackageForAffinityRouting(ctx, fp)
 	rmd := bazel_request.GetRequestMetadata(ctx)
+	targetPackageLabel := GetTargetPackageLabel(rmd.GetTargetId())
+	if fp != nil && useTargetPackageForAffinityRouting && targetPackageLabel != "" {
+		limit := fp.Int64(ctx, AffinityRouterTargetPackagePreferredNodeLimitExperiment, defaultPreferredNodeLimit)
+		if limit >= 0 {
+			targetPackagePreferredNodeLimit = int(limit)
+		}
+	}
 	return routingParams{
 		cmd:                                cmd,
 		platform:                           platform.GetProto(action, cmd),
 		remoteInstanceName:                 remoteInstanceName,
 		groupID:                            groupID,
-		targetPackageLabel:                 getTargetPackageLabel(rmd.GetTargetId()),
+		targetPackageLabel:                 targetPackageLabel,
 		useTargetPackageForAffinityRouting: useTargetPackageForAffinityRouting,
+		targetPackagePreferredNodeLimit:    targetPackagePreferredNodeLimit,
 	}
 }
 
@@ -498,7 +523,10 @@ func (*affinityRouter) Applies(_ context.Context, params routingParams) bool {
 	return getAffinityRoutingHint(params) != ""
 }
 
-func (*affinityRouter) preferredNodeLimit(_ routingParams) int {
+func (*affinityRouter) preferredNodeLimit(params routingParams) int {
+	if params.useTargetPackageForAffinityRouting && params.targetPackageLabel != "" {
+		return params.targetPackagePreferredNodeLimit
+	}
 	return defaultPreferredNodeLimit
 }
 

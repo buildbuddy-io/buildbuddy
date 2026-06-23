@@ -279,6 +279,150 @@ func TestTaskRouter_RankNodes_AffinityRouting_UsesTargetPackageForSelectedGroups
 	requireNotAlwaysRanked(0, executorHostID1, t, router, controlOrgOtherTargetCtx, secondCmd, instanceName)
 }
 
+func TestTaskRouter_RankNodes_AffinityRouting_TargetPackagePreferredNodeLimit(t *testing.T) {
+	env := newTestEnv(t)
+
+	// Enable target-package routing with a three-node preferred set.
+	testProvider := openfeatureTesting.NewTestProvider()
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		task_router.AffinityRouterUseTargetPackageExperiment: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "enabled",
+			Variants: map[string]any{
+				"enabled": true,
+			},
+		},
+		task_router.AffinityRouterTargetPackagePreferredNodeLimitExperiment: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "three",
+			Variants: map[string]any{
+				"three": 3,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	defer testProvider.Cleanup()
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	// Use two targets in the same package to exercise package affinity.
+	router := newTaskRouter(t, env)
+	nodes := sequentiallyNumberedNodes(100)
+	instanceName := "test-instance"
+	cmd := &repb.Command{
+		OutputPaths: []string{"/bazel-out/k8-fastbuild/bin/foo/libfoo.a"},
+	}
+	ctx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US1"), "//foo/bar:foo_lib", "GoCompile")
+	otherTargetCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US1"), "//foo/bar:foo_test", "TestRunner")
+
+	// Store three recent successful executors for the package.
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID1)
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID2)
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, nodes[9].GetExecutorHostId())
+
+	// The configured history should be returned first, newest first.
+	ranked := router.RankNodes(otherTargetCtx, nil, cmd, instanceName, nodes)
+	expectedPreferred := []string{nodes[9].GetExecutorHostId(), executorHostID2, executorHostID1}
+	for i, hostID := range expectedPreferred {
+		require.Equal(t, hostID, ranked[i].GetExecutionNode().GetExecutorHostId())
+		require.True(t, ranked[i].IsPreferred())
+	}
+	require.False(t, ranked[len(expectedPreferred)].IsPreferred())
+}
+
+func TestTaskRouter_RankNodes_AffinityRouting_TargetPackagePreferredNodeLimitAllowsZero(t *testing.T) {
+	env := newTestEnv(t)
+
+	// Enable target-package routing with preferred-node lookups disabled.
+	testProvider := openfeatureTesting.NewTestProvider()
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		task_router.AffinityRouterUseTargetPackageExperiment: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "enabled",
+			Variants: map[string]any{
+				"enabled": true,
+			},
+		},
+		task_router.AffinityRouterTargetPackagePreferredNodeLimitExperiment: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "zero",
+			Variants: map[string]any{
+				"zero": 0,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	defer testProvider.Cleanup()
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	// Store a successful executor that would be preferred with the default limit.
+	router := newTaskRouter(t, env)
+	nodes := sequentiallyNumberedNodes(100)
+	instanceName := "test-instance"
+	cmd := &repb.Command{
+		OutputPaths: []string{"/bazel-out/k8-fastbuild/bin/foo/libfoo.a"},
+	}
+	ctx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US1"), "//foo/bar:foo_lib", "GoCompile")
+	otherTargetCtx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US1"), "//foo/bar:foo_test", "TestRunner")
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID1)
+
+	// A zero limit should leave every ranked node non-preferred.
+	ranked := router.RankNodes(otherTargetCtx, nil, cmd, instanceName, nodes)
+	for _, node := range ranked {
+		require.False(t, node.IsPreferred())
+	}
+}
+
+func TestTaskRouter_RankNodes_AffinityRouting_TargetPackagePreferredNodeLimitRequiresTargetPackageExperiment(t *testing.T) {
+	env := newTestEnv(t)
+
+	// Configure the child flag while leaving parent package routing disabled.
+	testProvider := openfeatureTesting.NewTestProvider()
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		task_router.AffinityRouterUseTargetPackageExperiment: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "disabled",
+			Variants: map[string]any{
+				"disabled": false,
+			},
+		},
+		task_router.AffinityRouterTargetPackagePreferredNodeLimitExperiment: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "three",
+			Variants: map[string]any{
+				"three": 3,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	defer testProvider.Cleanup()
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	// First-output affinity should still use the default one-node limit.
+	router := newTaskRouter(t, env)
+	nodes := sequentiallyNumberedNodes(100)
+	instanceName := "test-instance"
+	cmd := &repb.Command{
+		OutputPaths: []string{"/bazel-out/k8-fastbuild/bin/foo/libfoo.a"},
+	}
+	ctx := withRequestMetadata(withAuthUser(t, context.Background(), env, "US1"), "//foo/bar:foo_lib", "GoCompile")
+
+	// Store two successes that would both fit if the child flag applied.
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID1)
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID2)
+
+	// Only the most recent executor should be preferred.
+	ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
+	require.Equal(t, executorHostID2, ranked[0].GetExecutionNode().GetExecutorHostId())
+	require.True(t, ranked[0].IsPreferred())
+	require.False(t, ranked[1].IsPreferred())
+}
+
 func TestTaskRouter_RankNodes_AffinityRouting_TargetLabelExperimentFallsBackToFirstOutput(t *testing.T) {
 	env := newTestEnv(t)
 
