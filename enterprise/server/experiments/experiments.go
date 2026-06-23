@@ -21,8 +21,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
-	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 	flagdsync "github.com/open-feature/flagd/core/pkg/sync"
+	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 )
 
 var (

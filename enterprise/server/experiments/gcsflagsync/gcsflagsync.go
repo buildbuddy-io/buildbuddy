@@ -39,6 +39,9 @@ func New(ctx context.Context) (flagdsync.ISync, error) {
 	if *object == "" {
 		return nil, status.FailedPreconditionError("experiments.gcs.object must be set when experiments.gcs.bucket is set")
 	}
+	if *pollInterval <= 0 {
+		return nil, status.InvalidArgumentErrorf("experiments.gcs.poll_interval must be positive, got %s", *pollInterval)
+	}
 
 	bs, err := gcs.NewGCSBlobStore(ctx, *bucket, *credentialsFile, *credentials, *projectID, false /*=enableCompression*/)
 	if err != nil {
@@ -78,7 +81,10 @@ func (s *syncer) IsReady() bool {
 // polls for changes until ctx is cancelled. A failed initial fetch is fatal so
 // the provider doesn't come up serving an empty flag set.
 func (s *syncer) Sync(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
-	if err := s.fetch(ctx, dataSync); err != nil {
+	// Force the initial push so the resolver is always seeded, even in the edge
+	// case where the first object read happens to equal the zero-valued
+	// lastData (e.g. it slipped past the non-empty check above).
+	if err := s.fetch(ctx, dataSync, true /*=force*/); err != nil {
 		return status.WrapError(err, "initial GCS flag sync")
 	}
 	s.mu.Lock()
@@ -92,7 +98,7 @@ func (s *syncer) Sync(ctx context.Context, dataSync chan<- flagdsync.DataSync) e
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			if err := s.fetch(ctx, dataSync); err != nil {
+			if err := s.fetch(ctx, dataSync, false /*=force*/); err != nil {
 				// A transient read failure just means we keep serving the last
 				// known flags until the next tick succeeds.
 				log.Warningf("experiments: GCS flag sync failed: %s", err)
@@ -102,18 +108,26 @@ func (s *syncer) Sync(ctx context.Context, dataSync chan<- flagdsync.DataSync) e
 }
 
 // ReSync re-pushes the current flag configuration. flagd calls this to recover
-// the full config; we force a fresh fetch.
+// the full config, so we push unconditionally even if the object is unchanged
+// since our last push.
 func (s *syncer) ReSync(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
-	return s.fetch(ctx, dataSync)
+	return s.fetch(ctx, dataSync, true /*=force*/)
 }
 
-// fetch reads the flag object and, if it changed since the last push, sends it
-// to dataSync. Unchanged objects are skipped so flagd doesn't re-parse and emit
-// change events on every poll.
-func (s *syncer) fetch(ctx context.Context, dataSync chan<- flagdsync.DataSync) error {
+// fetch reads the flag object and sends it to dataSync. When force is false an
+// unchanged object is skipped, so periodic polls don't make flagd re-parse and
+// emit change events on every tick; when force is true the object is pushed
+// regardless (used for the initial sync and for ReSync, which must re-seed the
+// resolver's store). An empty object is treated as an error rather than pushed,
+// so a truncated/empty config can never replace the last known good flags (and
+// can never bring the provider up "ready" with no flags).
+func (s *syncer) fetch(ctx context.Context, dataSync chan<- flagdsync.DataSync, force bool) error {
 	data, err := s.blobstore.ReadBlob(ctx, s.object)
 	if err != nil {
 		return err
+	}
+	if len(data) == 0 {
+		return status.FailedPreconditionErrorf("flag config object %q is empty", s.object)
 	}
 	s.mu.Lock()
 	changed := !bytes.Equal(data, s.lastData)
@@ -121,7 +135,7 @@ func (s *syncer) fetch(ctx context.Context, dataSync chan<- flagdsync.DataSync) 
 		s.lastData = data
 	}
 	s.mu.Unlock()
-	if !changed {
+	if !changed && !force {
 		return nil
 	}
 	select {
