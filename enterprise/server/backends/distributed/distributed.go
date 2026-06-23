@@ -1099,14 +1099,16 @@ func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	start := time.Now()
+	var err error
 	defer func() {
-		c.log.CtxDebugf(ctx, "backfill took %s", time.Since(start))
+		c.log.CtxDebugf(ctx, "backfill took %s; err: %v", time.Since(start), err)
 	}()
 	groupID := groupID(ctx)
-	var wg sync.WaitGroup
+	var eg errgroup.Group
+	eg.SetLimit(10)
 	for _, bf := range backfills {
 		for _, dest := range bf.dests {
-			wg.Go(func() {
+			eg.Go(func() error {
 				start := time.Now()
 				err := c.copyFile(ctx, bf.r, bf.source, dest)
 				metrics.DistributedCacheBackfillLatencyUsec.WithLabelValues(
@@ -1116,10 +1118,11 @@ func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) {
 				if err != nil {
 					c.log.CtxDebugf(ctx, "Error backfilling %s to peer %s: %s", bf.r.GetDigest().GetHash(), dest, err)
 				}
+				return nil
 			})
 		}
 	}
-	wg.Wait()
+	err = eg.Wait()
 }
 
 func (c *Cache) getBackfillOrders(r *rspb.ResourceName, ps *peerset.PeerSet) []*backfillOrder {
