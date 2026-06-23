@@ -3,7 +3,6 @@ package oci
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -35,7 +34,6 @@ import (
 	ctr "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -243,7 +241,7 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
 	_, err = remote.Head(imageRef, remoteOpts...)
 	if err != nil {
-		return remoteRegistryError(err, "could not fetch manifest metadata from remote registry")
+		return ocifetcher.RemoteRegistryError(err, "could not fetch manifest metadata from remote registry")
 	}
 
 	return nil
@@ -271,7 +269,7 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
 	desc, err := remote.Head(tagRef, remoteOpts...)
 	if err != nil {
-		return "", remoteRegistryError(err, "could not fetch manifest metadata from remote registry")
+		return "", ocifetcher.RemoteRegistryError(err, "could not fetch manifest metadata from remote registry")
 	}
 	imageNameWithDigest := tagRef.Context().Digest(desc.Digest.String()).String()
 	r.imageTagToDigestLRU.Add(tagRef.String(), imageNameWithDigest)
@@ -434,21 +432,13 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef ctrname.Ref
 	)
 }
 
-func remoteRegistryError(err error, msg string) error {
-	var transportErr *transport.Error
-	if errors.As(err, &transportErr) {
-		return ocifetcher.ImagePullErrorFromHTTPStatusCode(transportErr.StatusCode, fmt.Sprintf("%s: %s", msg, err))
-	}
-	return status.UnavailableErrorf("%s: %s", msg, err)
-}
-
 // fetchManifestMetadata makes a HEAD request for the manifest metadata using the puller.
 // This is only used when useOCIFetcher=false; when useOCIFetcher=true, we skip the
 // metadata request and fetch the full manifest directly via fetchManifest.
 func fetchManifestMetadata(ctx context.Context, digestOrTagRef ctrname.Reference, puller *remote.Puller) (*ctr.Descriptor, error) {
 	desc, err := puller.Head(ctx, digestOrTagRef)
 	if err != nil {
-		return nil, remoteRegistryError(err, "cannot retrieve manifest metadata from remote")
+		return nil, ocifetcher.RemoteRegistryError(err, "cannot retrieve manifest metadata from remote")
 	}
 	return desc, nil
 }
@@ -481,7 +471,7 @@ func fetchManifest(ctx context.Context, digestOrTagRef ctrname.Reference, puller
 
 	remoteDesc, err := puller.Get(ctx, digestOrTagRef)
 	if err != nil {
-		return nil, nil, remoteRegistryError(err, "could not retrieve manifest from remote")
+		return nil, nil, ocifetcher.RemoteRegistryError(err, "could not retrieve manifest from remote")
 	}
 	return &remoteDesc.Descriptor, remoteDesc.Manifest, nil
 }
@@ -758,7 +748,7 @@ func newLayerFromDigest(repo ctrname.Repository, digest ctr.Hash, image *imageFr
 			ref := repo.Digest(digest.String())
 			layer, err := puller.Layer(image.ctx, ref)
 			if err != nil {
-				return nil, remoteRegistryError(err, "could not retrieve layer from remote")
+				return nil, ocifetcher.RemoteRegistryError(err, "could not retrieve layer from remote")
 			}
 			return layer, nil
 		}),

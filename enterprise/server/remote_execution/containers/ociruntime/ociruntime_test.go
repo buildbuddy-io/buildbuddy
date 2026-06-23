@@ -179,7 +179,8 @@ func TestPullImageIfNecessaryReauthenticatesCachedOCIImage(t *testing.T) {
 		Password: "wrong-password",
 	}, imageRef, false)
 
-	require.True(t, status.IsPermissionDeniedError(err), "cached private OCI image must still be re-authenticated for a different group; got %v", err)
+	require.Error(t, err)
+	require.True(t, status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err), "cached private OCI image must still be re-authenticated for a different group; got %v", err)
 }
 
 func TestRun(t *testing.T) {

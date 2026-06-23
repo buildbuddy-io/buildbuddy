@@ -719,23 +719,27 @@ func withPullerRetry[T any](
 	}
 	if err != nil {
 		s.evictPuller(ref, creds)
-		return zero, remoteRegistryError(err)
+		return zero, RemoteRegistryError(err, "could not fetch from remote registry")
 	}
 
 	return result, nil
 }
 
-func remoteRegistryError(err error) error {
+// RemoteRegistryError converts an error from a remote registry request into a
+// status error classified by HTTP status code when one is available, falling
+// back to Unavailable otherwise. msg is a human-readable prefix describing the
+// operation that failed.
+func RemoteRegistryError(err error, msg string) error {
 	var transportErr *transport.Error
 	if !errors.As(err, &transportErr) {
-		return status.UnavailableErrorf("could not fetch from remote registry: %s", err)
+		return status.UnavailableErrorf("%s: %s", msg, err)
 	}
-	return ImagePullErrorFromHTTPStatusCode(transportErr.StatusCode, fmt.Sprintf("remote registry returned HTTP %d: %s", transportErr.StatusCode, err))
+	return RegistryErrorFromHTTPStatusCode(transportErr.StatusCode, fmt.Sprintf("%s: %s", msg, err))
 }
 
-// ImagePullErrorFromHTTPStatusCode returns a status error for an image pull
-// failure when the registry HTTP status code is known.
-func ImagePullErrorFromHTTPStatusCode(httpStatusCode int, msg string) error {
+// RegistryErrorFromHTTPStatusCode returns a status error for a remote registry
+// request failure when the HTTP status code is known.
+func RegistryErrorFromHTTPStatusCode(httpStatusCode int, msg string) error {
 	switch httpStatusCode {
 	case http.StatusBadRequest:
 		return status.InvalidArgumentError(msg)
