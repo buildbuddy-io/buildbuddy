@@ -2374,6 +2374,104 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 	}
 }
 
+func TestStatsReturnsLatestGuestStatsDuringExec(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	workDir := testfs.MakeTempDir(t)
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher)
+	require.NoError(t, err)
+	err = c.Create(ctx, workDir)
+	require.NoError(t, err)
+	defer func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	}()
+
+	// Start a command blocked on stdin so the host can read stats while the
+	// guest vmexec server is still streaming live usage samples.
+	execCtx, cancel := context.WithCancel(ctx)
+	stdinReader, stdinWriter := io.Pipe()
+	done := make(chan struct{})
+	var res *interfaces.CommandResult
+	go func() {
+		defer close(done)
+		res = c.Exec(execCtx, &repb.Command{Arguments: []string{"sh", "-c", "read _"}}, &interfaces.Stdio{Stdin: stdinReader})
+	}()
+	doneRead := false
+	defer func() {
+		cancel()
+		_ = stdinWriter.Close()
+		if doneRead {
+			return
+		}
+		select {
+		case <-done:
+		case <-time.After(30 * time.Second):
+			t.Error("timed out waiting for firecracker exec to stop")
+		}
+	}()
+
+	// Wait until the guest has reported a nonzero memory sample. Before this
+	// behavior was wired through, Stats always returned an empty UsageStats.
+	require.Eventually(t, func() bool {
+		stats, err := c.Stats(ctx)
+		if err != nil {
+			return false
+		}
+		return stats.GetMemoryBytes() > 0
+	}, 10*time.Second, 50*time.Millisecond)
+	select {
+	case <-done:
+		doneRead = true
+		require.Failf(t, "exec completed before live stats were observed", "result: %v", res)
+	default:
+	}
+
+	// Finish the command and keep the latest guest stats available for callers
+	// that ask after execution has unwound.
+	_, err = stdinWriter.Write([]byte("done\n"))
+	require.NoError(t, err)
+	err = stdinWriter.Close()
+	require.NoError(t, err)
+	<-done
+	doneRead = true
+	require.NotNil(t, res)
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode)
+
+	stats, err := c.Stats(ctx)
+	require.NoError(t, err)
+	require.Greater(t, stats.GetMemoryBytes(), int64(0))
+
+	// Stats returns an immutable snapshot of the cached guest sample, so
+	// callers cannot mutate what future Stats calls observe.
+	stats.MemoryBytes = 0
+	stats, err = c.Stats(ctx)
+	require.NoError(t, err)
+	require.Greater(t, stats.GetMemoryBytes(), int64(0))
+
+	// After Pause tears down the VM, the container is no longer consuming live
+	// resources, so Stats should go back to an empty proto.
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+	stats, err = c.Stats(ctx)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(&repb.UsageStats{}, stats, protocmp.Transform()))
+}
+
 func TestFirecrackerRunWithNetwork(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
