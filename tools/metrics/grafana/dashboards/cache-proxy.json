@@ -173,7 +173,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "kube_horizontalpodautoscaler_status_desired_replicas{region=\"${region}\", horizontalpodautoscaler=\"cache-proxy-autoscaler\"}",
+              "expr": "sum(kube_horizontalpodautoscaler_status_desired_replicas{region=\"${region}\", horizontalpodautoscaler=~\"cache-proxy.*autoscaler\"})",
               "hide": false,
               "instant": false,
               "legendFormat": "Autoscaler target",
