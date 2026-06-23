@@ -26,6 +26,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -511,6 +512,7 @@ type ociContainer struct {
 	cgroupPaths    *cgroup.Paths
 	cgroupParent   string
 	cgroupSettings *scpb.CgroupSettings
+	cgroupCreated  atomic.Bool
 	blockDevice    *block_io.Device
 	containersRoot string
 	imageCacheRoot string
@@ -563,6 +565,14 @@ func (c *ociContainer) cgroupRootRelativePath() string {
 
 func (c *ociContainer) cgroupPath() string {
 	return filepath.Join("/sys/fs/cgroup", c.cgroupRootRelativePath())
+}
+
+// CgroupPath returns the absolute cgroup v2 path for this container, if created.
+func (c *ociContainer) CgroupPath() string {
+	if !c.cgroupCreated.Load() {
+		return ""
+	}
+	return c.cgroupPath()
 }
 
 // Returns the standard config.json path expected by crun.
@@ -910,8 +920,14 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 	}
 
 	// Remove the cgroup in case the delete command didn't work as expected.
-	if err := os.Remove(c.cgroupPath()); err != nil && firstErr == nil && !os.IsNotExist(err) {
-		firstErr = status.UnavailableErrorf("remove container cgroup: %s", err)
+	if err := os.Remove(c.cgroupPath()); err != nil {
+		if os.IsNotExist(err) {
+			c.cgroupCreated.Store(false)
+		} else if firstErr == nil {
+			firstErr = status.UnavailableErrorf("remove container cgroup: %s", err)
+		}
+	} else {
+		c.cgroupCreated.Store(false)
 	}
 
 	if c.releaseCPUs != nil {
@@ -1072,6 +1088,7 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	if err := cgroup.Setup(ctx, path, c.cgroupSettings, c.blockDevice); err != nil {
 		return fmt.Errorf("configure cgroup: %w", err)
 	}
+	c.cgroupCreated.Store(true)
 	return nil
 }
 

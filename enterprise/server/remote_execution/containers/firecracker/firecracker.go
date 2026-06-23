@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -713,6 +714,7 @@ type FirecrackerContainer struct {
 	jailerRoot     string               // the root dir the jailer will work in
 	cgroupParent   string               // parent cgroup path (root-relative)
 	cgroupSettings *scpb.CgroupSettings // jailer cgroup settings
+	cgroupCreated  atomic.Bool          // whether the jailer cgroup has been created
 	blockDevice    *block_io.Device     // block device for cgroup IO settings
 	machine        *fcclient.Machine    // the firecracker machine object.
 	vmLog          *VMLog
@@ -1819,6 +1821,14 @@ func (c *FirecrackerContainer) cgroupPath() string {
 	return filepath.Join("/sys/fs/cgroup", c.cgroupParent, c.id)
 }
 
+// CgroupPath returns the absolute cgroup v2 path for this VM, if created.
+func (c *FirecrackerContainer) CgroupPath() string {
+	if !c.cgroupCreated.Load() {
+		return ""
+	}
+	return c.cgroupPath()
+}
+
 func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImagePath string) (*fcclient.JailerConfig, error) {
 	cgroupVersion, err := getCgroupVersion()
 	if err != nil {
@@ -2882,30 +2892,41 @@ func (c *FirecrackerContainer) unmountAllVBDs(ctx context.Context, fromRemove bo
 }
 
 func (c *FirecrackerContainer) stopMachine(ctx context.Context) error {
-	if c.machine == nil {
-		return nil
-	}
-	ctx, span := tracing.StartSpan(ctx)
-	defer span.End()
+	if c.machine != nil {
+		ctx, span := tracing.StartSpan(ctx)
+		defer span.End()
 
-	if err := c.machine.StopVMM(); err != nil {
-		return status.WrapError(err, "kill firecracker")
+		if err := c.machine.StopVMM(); err != nil {
+			return status.WrapError(err, "kill firecracker")
+		}
+		// StopVMM just sends SIGTERM to firecracker; wait for the firecracker
+		// process to exit. SIGTERM error is expected, so ignore it.
+		if err := c.machine.Wait(ctx); err != nil && !isExitErrorSIGTERM(err) {
+			return status.WrapError(err, "wait for firecracker to exit")
+		}
+		c.machine = nil
 	}
-	// StopVMM just sends SIGTERM to firecracker; wait for the firecracker
-	// process to exit. SIGTERM error is expected, so ignore it.
-	if err := c.machine.Wait(ctx); err != nil && !isExitErrorSIGTERM(err) {
-		return status.WrapError(err, "wait for firecracker to exit")
-	}
-	c.machine = nil
 
+	c.removeCgroup(ctx)
+	return nil
+}
+
+func (c *FirecrackerContainer) removeCgroup(ctx context.Context) {
+	if !c.cgroupCreated.Load() {
+		return
+	}
 	// Once the VM exits, delete the cgroup.
 	// Jailer docs say that this cleanup must be handled by us:
 	// https://github.com/firecracker-microvm/firecracker/blob/main/docs/jailer.md#observations
-	if err := os.Remove(c.cgroupPath()); err != nil && !os.IsNotExist(err) {
-		log.CtxWarningf(ctx, "Failed to remove jailer cgroup: %s", err)
+	if err := os.Remove(c.cgroupPath()); err != nil {
+		if os.IsNotExist(err) {
+			c.cgroupCreated.Store(false)
+		} else {
+			log.CtxWarningf(ctx, "Failed to remove jailer cgroup: %s", err)
+		}
+	} else {
+		c.cgroupCreated.Store(false)
 	}
-
-	return nil
 }
 
 // Pause freezes the container so that it no longer consumes CPU resources.
@@ -3386,6 +3407,7 @@ func (c *FirecrackerContainer) setupCgroup(ctx context.Context) error {
 	if err := cgroup.Setup(ctx, c.cgroupPath(), c.cgroupSettings, c.blockDevice); err != nil {
 		return status.UnavailableErrorf("setup cgroup: %s", err)
 	}
+	c.cgroupCreated.Store(true)
 	return nil
 }
 

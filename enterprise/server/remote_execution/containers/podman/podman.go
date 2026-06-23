@@ -368,6 +368,15 @@ func (c *podmanCommandContainer) IsolationType() string {
 	return "podman"
 }
 
+// CgroupPath returns the absolute cgroup v2 path for this container, if known.
+func (c *podmanCommandContainer) CgroupPath() string {
+	cid := c.cid.Load()
+	if cid == nil {
+		return ""
+	}
+	return c.cgroupPaths.CgroupPath(cid.(string))
+}
+
 func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
 	c.workDir = workDir
 	defer os.RemoveAll(c.cidFilePath())

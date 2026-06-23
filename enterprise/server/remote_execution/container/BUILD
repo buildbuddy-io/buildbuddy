@@ -4,7 +4,10 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "container",
-    srcs = ["container.go"],
+    srcs = [
+        "container.go",
+        "container_linux.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container",
     deps = [
         "//enterprise/server/remote_execution/block_io",

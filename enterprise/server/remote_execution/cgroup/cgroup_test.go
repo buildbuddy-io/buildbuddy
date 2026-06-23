@@ -220,3 +220,45 @@ func TestParentPath(t *testing.T) {
 		})
 	}
 }
+
+func TestPathsCgroupPath(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		paths       *Paths
+		containerID string
+		expected    string
+	}{
+		{
+			name:        "v2 template",
+			paths:       &Paths{V2DirTemplate: "/sys/fs/cgroup/libpod-{{.ContainerID}}.scope"},
+			containerID: "abc123",
+			expected:    "/sys/fs/cgroup/libpod-abc123.scope",
+		},
+		{
+			name:        "empty container ID",
+			paths:       &Paths{V2DirTemplate: "/sys/fs/cgroup/libpod-{{.ContainerID}}.scope"},
+			containerID: "",
+			expected:    "",
+		},
+		{
+			name:        "paths not discovered",
+			paths:       &Paths{},
+			containerID: "abc123",
+			expected:    "",
+		},
+		{
+			name: "v1 paths only",
+			paths: &Paths{
+				V1CPUTemplate:    "/sys/fs/cgroup/cpu/libpod-{{.ContainerID}}.scope/cpuacct.usage",
+				V1MemoryTemplate: "/sys/fs/cgroup/memory/libpod-{{.ContainerID}}.scope/memory.usage_in_bytes",
+			},
+			containerID: "abc123",
+			expected:    "",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// Only cgroup v2 has a single directory that represents the container cgroup.
+			require.Equal(t, test.expected, test.paths.CgroupPath(test.containerID))
+		})
+	}
+}

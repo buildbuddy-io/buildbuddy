@@ -417,6 +417,21 @@ func (p *Paths) CgroupVersion() int {
 	return 0 // unknown
 }
 
+// CgroupPath returns the absolute cgroup v2 path matching the given container
+// ID. It returns an empty string if the path templates have not been discovered
+// yet, if the container ID is empty, or if only cgroup v1 paths are known.
+func (p *Paths) CgroupPath(name string) string {
+	if name == "" {
+		return ""
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.V2DirTemplate == "" {
+		return ""
+	}
+	return strings.ReplaceAll(p.V2DirTemplate, cidPlaceholder, name)
+}
+
 // Stats returns cgroup stats for the cgroup matching the given name. If
 // blockDevice is non-nil, IO stats are included for the device, otherwise IO
 // stats are not reported.
@@ -430,7 +445,7 @@ func (p *Paths) Stats(ctx context.Context, name string, blockDevice *block_io.De
 	}
 
 	// cgroup v2 has all cgroup files under a single dir.
-	dir := strings.ReplaceAll(p.V2DirTemplate, cidPlaceholder, name)
+	dir := p.CgroupPath(name)
 
 	return Stats(ctx, dir, blockDevice)
 }
