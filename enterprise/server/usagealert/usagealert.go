@@ -549,6 +549,16 @@ var metricDefinitions = map[usagepb.UsageAlertingMetric_Value]*metricDefinition{
 		Display: "Total bytes uploaded to cache (Workflows)",
 		Unit:    bytesMetricUnit,
 	},
+	usagepb.UsageAlertingMetric_TOTAL_CUSTOMER_PROXY_DOWNLOAD_SIZE_BYTES: {
+		Metric:  usagepb.UsageAlertingMetric_TOTAL_CUSTOMER_PROXY_DOWNLOAD_SIZE_BYTES,
+		Display: "Total bytes downloaded from cache (Customer-managed proxy)",
+		Unit:    bytesMetricUnit,
+	},
+	usagepb.UsageAlertingMetric_TOTAL_CUSTOMER_PROXY_UPLOAD_SIZE_BYTES: {
+		Metric:  usagepb.UsageAlertingMetric_TOTAL_CUSTOMER_PROXY_UPLOAD_SIZE_BYTES,
+		Display: "Total bytes uploaded to cache (Customer-managed proxy)",
+		Unit:    bytesMetricUnit,
+	},
 	usagepb.UsageAlertingMetric_LINUX_EXECUTION_DURATION_USEC: {
 		Metric:  usagepb.UsageAlertingMetric_LINUX_EXECUTION_DURATION_USEC,
 		Display: "Linux remote execution duration (All)",
