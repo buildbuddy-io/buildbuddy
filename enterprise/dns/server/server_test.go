@@ -242,6 +242,60 @@ func TestClientNetworkResolution(t *testing.T) {
 	assert.Equal(t, "1.2.3.4", answerIP(m), "unknown client network should use the static record")
 }
 
+// asnOnlyRoutingConfig targets every query from asn, overriding to overrideIP.
+func asnOnlyRoutingConfig(asn uint32, overrideIP string) string {
+	return fmt.Sprintf(`{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "dns.asn_routing": {
+      "state": "ENABLED",
+      "variants": { "override": %q, "none": "" },
+      "defaultVariant": "none",
+      "targeting": { "if": [ { "==": [ { "var": "asn" }, %d ] }, "override", "none" ] }
+    }
+  }
+}`, overrideIP, asn)
+}
+
+// TestASNRoutingOnlyOverridesServedNames verifies the override never invents
+// records: even with a name-agnostic (asn-only) rule that matches the client, it
+// only replaces a name that already resolves to an address in our zone.
+func TestASNRoutingOnlyOverridesServedNames(t *testing.T) {
+	h := handlerWithProvider(t, newFlagProvider(t, asnOnlyRoutingConfig(mustASN(t, "8.8.8.8"), "10.20.30.40")))
+
+	// A name that resolves to an address is overridden.
+	m := queryFromIP(t, h, "cache.buildbuddy.io.", dns.TypeA, "8.8.8.8")
+	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
+	assert.Equal(t, []answer{{"cache.buildbuddy.io.", "A", "10.20.30.40"}}, answers(m.Answer))
+
+	// A name with no zone record stays NXDOMAIN; the override does not invent it.
+	m = queryFromIP(t, h, "nope.example.com.", dns.TypeA, "8.8.8.8")
+	assert.Equal(t, dns.RcodeNameError, m.Rcode)
+	assert.Empty(t, m.Answer)
+
+	// A CNAME name is not turned into an A record; the static CNAME chain stands.
+	m = queryFromIP(t, h, "alias.buildbuddy.io.", dns.TypeA, "8.8.8.8")
+	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
+	assert.Equal(t, []answer{
+		{"alias.buildbuddy.io.", "CNAME", "cache.buildbuddy.io."},
+		{"cache.buildbuddy.io.", "A", "1.2.3.4"},
+	}, answers(m.Answer))
+}
+
+// TestASNRoutingIgnoresNoSubnetECS verifies that a "no client subnet" ECS option
+// (an unspecified 0.0.0.0 address) is ignored in favor of the transport source.
+func TestASNRoutingIgnoresNoSubnetECS(t *testing.T) {
+	h := handlerWithProvider(t, newFlagProvider(t, asnOnlyRoutingConfig(mustASN(t, "1.1.1.1"), "10.20.30.40")))
+
+	// ECS advertises no subnet (0.0.0.0); the ASN comes from the transport
+	// source (1.1.1.1), whose ASN the flag targets, so the override fires.
+	req := withECS(t, newQuery("cache.buildbuddy.io.", dns.TypeA), "0.0.0.0")
+	m := serve(t, h, req, "1.1.1.1")
+	require.Len(t, m.Answer, 1)
+	assert.Equal(t, "10.20.30.40", m.Answer[0].(*dns.A).A.String(),
+		"a no-subnet ECS should fall back to the transport source address")
+}
+
 // TestASNRoutingRollout exercises a fractional (percentage) rollout: the flag
 // routes ~30% of names to an override IP, bucketed deterministically per name,
 // and we verify that a meaningful-but-partial fraction of traffic is steered.
@@ -249,7 +303,6 @@ func TestASNRoutingRollout(t *testing.T) {
 	const (
 		overrideIP = "10.20.30.40"
 		staticIP   = "9.9.9.9" // the *.buildbuddy.io wildcard record
-		rollout    = 30        // percent
 	)
 	// fractional buckets each query deterministically by name, so ~30% of
 	// distinct names land in the "override" variant.

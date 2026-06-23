@@ -79,12 +79,18 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	qName := dns.CanonicalName(r.Question[0].Name)
 	qType := r.Question[0].Qtype
 
-	// Determine the client's ASN (from EDNS Client Subnet, falling back to the
-	// transport source address) so resolution can route on it via experiments.
-	asn := clientASN(w, r)
-
 	var negative bool
-	m.Answer, m.Rcode, negative = h.resolve(context.Background(), qName, qType, asn)
+	m.Answer, m.Rcode, negative = h.resolve(qName, qType)
+
+	// ASN-based routing: when the name already resolves to an address in our
+	// zone, an experiment may override that address for this client. Gating on a
+	// direct A answer means we never manufacture records for names we don't
+	// serve (NODATA, NXDOMAIN, or a CNAME indirection).
+	if qType == dns.TypeA && onlyARecords(m.Answer) {
+		if rr := h.asnRoutedAnswer(context.Background(), w, r, qName); rr != nil {
+			m.Answer = []dns.RR{rr}
+		}
+	}
 
 	// On a negative answer (NXDOMAIN, or NODATA: name exists but has no record
 	// of the requested type), include the zone SOA in the authority section so
@@ -104,16 +110,7 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 // the name exists but has no record of the requested type) and so should carry
 // the zone SOA for negative caching. A CNAME chain that exits the zone is not
 // negative: it is a normal partial answer the recursive resolver completes.
-func (h *handler) resolve(ctx context.Context, qName string, qType uint16, asn uint32) ([]dns.RR, int, bool) {
-	// ASN-based routing: an experiment may override the A answer for this client
-	// (keyed on its ASN and the queried name). When it yields a valid address,
-	// serve that instead of the static zone record.
-	if qType == dns.TypeA {
-		if rr := h.asnRoutedAnswer(ctx, qName, asn); rr != nil {
-			return []dns.RR{rr}, dns.RcodeSuccess, false
-		}
-	}
-
+func (h *handler) resolve(qName string, qType uint16) ([]dns.RR, int, bool) {
 	var answer []dns.RR
 	name := qName
 	for i := 0; i < maxCNAMEDepth; i++ {
@@ -153,15 +150,32 @@ func (h *handler) resolve(ctx context.Context, qName string, qType uint16, asn u
 	return answer, dns.RcodeSuccess, false
 }
 
+// onlyARecords reports whether rrs is a non-empty set consisting solely of A
+// records, i.e. a direct address answer (not NODATA, NXDOMAIN, or a CNAME).
+func onlyARecords(rrs []dns.RR) bool {
+	if len(rrs) == 0 {
+		return false
+	}
+	for _, rr := range rrs {
+		if rr.Header().Rrtype != dns.TypeA {
+			return false
+		}
+	}
+	return true
+}
+
 // asnRoutedAnswer consults the ASN-routing experiment for an override A record
-// for qName given the client's asn. It returns nil when no experiment provider
-// is configured, the experiment returns nothing, or the value is not a valid
-// IPv4 address (in which case the caller falls back to the static zone answer).
-func (h *handler) asnRoutedAnswer(ctx context.Context, qName string, asn uint32) dns.RR {
+// for qName. It returns nil when no experiment provider is configured, the
+// experiment returns nothing, or the value is not a valid IPv4 address (in which
+// case the caller keeps the static zone answer). The client's ASN is resolved
+// only here, so a query pays for the EDNS/maxmind lookup only when an experiment
+// is actually consulted.
+func (h *handler) asnRoutedAnswer(ctx context.Context, w dns.ResponseWriter, r *dns.Msg, qName string) dns.RR {
 	efp := h.env.GetExperimentFlagProvider()
 	if efp == nil {
 		return nil
 	}
+	asn := clientASN(w, r)
 	ip := efp.String(ctx, asnRoutingExperiment, "",
 		experiments.WithContext("asn", int64(asn)),
 		experiments.WithContext("name", qName))
@@ -261,8 +275,13 @@ func clientIP(w dns.ResponseWriter, r *dns.Msg) netip.Addr {
 			if !ok {
 				continue
 			}
+			// A "no client subnet" ECS (family 0, or a /0 scope) carries an
+			// unspecified address (0.0.0.0 / ::); skip it so we fall back to the
+			// transport source rather than looking up the all-zeros address.
 			if addr, ok := netip.AddrFromSlice(ecs.Address); ok {
-				return addr.Unmap()
+				if addr = addr.Unmap(); !addr.IsUnspecified() {
+					return addr
+				}
 			}
 		}
 	}
