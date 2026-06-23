@@ -162,9 +162,16 @@ func main() {
 	}
 	log.Infof("PR #%d on %s/%s  (head: %s, base: %s)", pr.GetNumber(), owner, repoName, headShort, pr.GetBase().GetRef())
 
-	// To prevent spamming the PR with reviews, we only post a review if the PR doesn't already have a bot review.
-	// Set AGENT_REVIEW_FORCE=1 to override and post a new review.
+	// We review a PR once, when it's ready for review. The workflow triggers on
+	// the "opened" and "ready_for_review" pull_request actions, but "opened" also
+	// fires for PRs opened directly as drafts, so skip drafts here. We also skip
+	// if the PR already has a bot review, to avoid spamming it with reviews.
+	// Set AGENT_REVIEW_FORCE=1 to override both checks and post a new review.
 	if os.Getenv("AGENT_REVIEW_FORCE") != "1" {
+		if pr.GetDraft() {
+			log.Infof("PR #%d is a draft — skipping (set AGENT_REVIEW_FORCE=1 to override).", pr.GetNumber())
+			os.Exit(0)
+		}
 		log.Info("Checking for existing reviews...")
 		reviews, _, err := gh.PullRequests.ListReviews(ctx, owner, repoName, pr.GetNumber(), nil)
 		if err != nil {
@@ -172,7 +179,7 @@ func main() {
 		}
 		for _, r := range reviews {
 			if r.GetUser().GetType() == "Bot" {
-				log.Infof("PR #%d already has a bot review — skipping (set FORCE=1 to override).", pr.GetNumber())
+				log.Infof("PR #%d already has a bot review — skipping (set AGENT_REVIEW_FORCE=1 to override).", pr.GetNumber())
 				os.Exit(0)
 			}
 		}
