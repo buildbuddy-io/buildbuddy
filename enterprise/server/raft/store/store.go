@@ -2884,6 +2884,10 @@ type txnRollbackMarkerGCWorker struct {
 // gcTxnRollbackMarkersAfterStartup sweeps expired rollback markers once, after
 // replicas finish initializing. Markers created while the process runs are not
 // collected until the next restart, so storage is bounded only across restarts.
+// Sweep-once (rather than periodic) is acceptable because rollback markers are
+// written only on the txn failure path (rare) and are tiny, so the storage they
+// accumulate between restarts is negligible; periodic GC is a possible follow-up
+// if that ever stops holding.
 func (s *Store) gcTxnRollbackMarkersAfterStartup(ctx context.Context, retention time.Duration) {
 	for !s.ReplicasInitDone() {
 		select {
@@ -2914,6 +2918,8 @@ func (s *Store) gcTxnRollbackMarkersAfterStartup(ctx context.Context, retention 
 }
 
 func (w *txnRollbackMarkerGCWorker) gcOnce(ctx context.Context, cutoffUsec int64) error {
+	// gcErr retains only the last failing replica's error (each failure is also
+	// logged below); it exists solely to surface a single startup warning.
 	var gcErr error
 	w.store.replicas.Range(func(key, value any) bool {
 		repl, ok := value.(*replica.Replica)
@@ -2927,6 +2933,15 @@ func (w *txnRollbackMarkerGCWorker) gcOnce(ctx context.Context, cutoffUsec int64
 		if !w.store.HasReplicaAndIsLeader(repl.RangeID()) {
 			return true
 		}
+		// Leadership can change between this check and the propose inside
+		// gcReplica. That is safe: a propose on a non-leader is dropped by raft so
+		// SyncProposeLocal returns ErrShardNotReady (logged as a warning, never a
+		// half-apply), and the delete is idempotent and only removes
+		// already-expired markers. Because GC runs once at startup with no
+		// periodic re-run, a range skipped this way is not collected until the
+		// next process restart of whichever node is then leader — a node that
+		// merely becomes leader later does not trigger GC. Acceptable since
+		// markers are tiny and retention (days) far exceeds restart cadence.
 		if err := w.gcReplica(ctx, repl, cutoffUsec); err != nil {
 			w.store.log.Warningf("txn rollback marker GC failed for range %d: %s", repl.RangeID(), err)
 			gcErr = err
@@ -2936,7 +2951,23 @@ func (w *txnRollbackMarkerGCWorker) gcOnce(ctx context.Context, cutoffUsec int64
 	return gcErr
 }
 
+// GCTxnRollbackMarkersOnceForTest runs a single rollback-marker GC sweep with the
+// given cutoff. Exported only for tests; production GC runs via
+// gcTxnRollbackMarkersAfterStartup.
+func (s *Store) GCTxnRollbackMarkersOnceForTest(ctx context.Context, cutoffUsec int64) error {
+	worker := &txnRollbackMarkerGCWorker{
+		store:   s,
+		session: client.NewSessionWithClock(s.clock),
+	}
+	return worker.gcOnce(ctx, cutoffUsec)
+}
+
 func (w *txnRollbackMarkerGCWorker) gcReplica(ctx context.Context, repl *replica.Replica, cutoffUsec int64) error {
+	// Precheck with a cheap local read before proposing. The delete is a
+	// replicated raft command that applies on every replica, so unconditionally
+	// proposing it on every range at every startup — even when nothing is expired
+	// — would write no-op entries to every log. The precheck avoids that in the
+	// common case; the replicated delete remains the source of truth.
 	hasMarkers, err := repl.HasTxnRollbackMarkersBefore(cutoffUsec)
 	if err != nil {
 		return err

@@ -89,7 +89,7 @@ func TestCommitPreparedTxn(t *testing.T) {
 		require.NoError(t, readBatch.AnyError())
 	}
 
-	err = tc.ProcessTxnRecordForTest(ctx, txnRecord)
+	err = tc.RecoverTxnRecordForTest(ctx, txnRecord)
 	require.NoError(t, err)
 
 	{ // Do a DirectRead and verify the txn record doesn't exist
@@ -175,7 +175,7 @@ func TestRecoverTxnToUpdateRangeDescriptor(t *testing.T) {
 	require.NoError(t, err)
 
 	// Tries to finalize the txn again.
-	err = tc.ProcessTxnRecordForTest(ctx, txnRecord)
+	err = tc.RecoverTxnRecordForTest(ctx, txnRecord)
 	require.NoError(t, err)
 
 	verifyTxnRecordNotExist(t, ctx, store.Sender(), txnProto.GetTransactionId())
@@ -724,7 +724,7 @@ func TestRecoverSplitTxnRetryMatrix(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, repl.CommitTransaction(txnProto.GetTransactionId()))
 
-			require.NoError(t, coordinator.ProcessTxnRecordForTest(ctx, txnRecord))
+			require.NoError(t, coordinator.RecoverTxnRecordForTest(ctx, txnRecord))
 
 			verifyTxnRecordNotExist(t, ctx, store.Sender(), txnProto.GetTransactionId())
 			verifyRangeDescriptorInMetaRangeEquals(t, ctx, store.Sender(), updatedLeftRange)
@@ -757,7 +757,7 @@ func TestRecoverRollbackTxnRetryMatrix(t *testing.T) {
 			})
 			ctx, store, coordinator, txnProto, txnRecord, userKey, metaKey := setupPendingRollbackTxnForRecovery(t, harness)
 
-			require.NoError(t, coordinator.ProcessTxnRecordForTest(ctx, txnRecord))
+			require.NoError(t, coordinator.RecoverTxnRecordForTest(ctx, txnRecord))
 
 			verifyTxnRecordNotExist(t, ctx, store.Sender(), txnProto.GetTransactionId())
 			verifyDirectReadValue(t, ctx, store.Sender(), userKey, []byte("before"))
@@ -831,7 +831,7 @@ func TestStalePendingJanitorHelpsCommit(t *testing.T) {
 	commitRecord.Op = rfpb.FinalizeOperation_COMMIT
 	require.NoError(t, tc.WriteTxnRecord(ctx, commitRecord))
 
-	require.NoError(t, tc.ProcessTxnRecordForTest(ctx, stalePendingRecord))
+	require.NoError(t, tc.RecoverTxnRecordForTest(ctx, stalePendingRecord))
 
 	verifyTxnRecordNotExist(t, ctx, s1.Sender(), txnProto.GetTransactionId())
 	verifyDirectReadValue(t, ctx, s1.Sender(), userKey, []byte("after"))
@@ -895,7 +895,7 @@ func TestRollbackNotFoundPreventsLatePrepare(t *testing.T) {
 	}
 	require.NoError(t, coordinator.WriteTxnRecord(ctx, txnRecord))
 
-	require.NoError(t, coordinator.ProcessTxnRecordForTest(ctx, txnRecord))
+	require.NoError(t, coordinator.RecoverTxnRecordForTest(ctx, txnRecord))
 	verifyTxnRecordNotExist(t, ctx, s1.Sender(), txnProto.GetTransactionId())
 	verifyDirectReadValue(t, ctx, s1.Sender(), userKey, []byte("before"))
 	verifyDirectReadNotFound(t, ctx, s1.Sender(), metaKey)
@@ -963,7 +963,7 @@ func TestRollbackMarkerStampedWithFinalizeTime(t *testing.T) {
 
 	// The janitor rolls back the stale PENDING txn, writing a participant-local
 	// rollback marker on each range stamped with the finalize timestamp.
-	require.NoError(t, coordinator.ProcessTxnRecordForTest(ctx, txnRecord))
+	require.NoError(t, coordinator.RecoverTxnRecordForTest(ctx, txnRecord))
 	verifyTxnRecordNotExist(t, ctx, s1.Sender(), txnProto.GetTransactionId())
 	verifyDirectReadValue(t, ctx, s1.Sender(), userKey, []byte("before"))
 

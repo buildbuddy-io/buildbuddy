@@ -541,6 +541,9 @@ func rollbackMarkerFinalizedAtUsec(val []byte) (int64, error) {
 	return int64(bytesToUint64(val)), nil
 }
 
+// HasTxnRollbackMarkersBefore scans this replica's local rollback markers and
+// returns true if any has a positive timestamp at or before cutoffUsec.
+// Non-positive timestamps are skipped (see RollbackTransaction).
 func (sm *Replica) HasTxnRollbackMarkersBefore(cutoffUsec int64) (bool, error) {
 	db, err := sm.leaser.DB()
 	if err != nil {

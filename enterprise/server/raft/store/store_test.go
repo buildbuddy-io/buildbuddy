@@ -1904,6 +1904,73 @@ func TestCleanupExpiredSessions(t *testing.T) {
 
 }
 
+// writeRollbackMarker writes a participant-local rollback marker on rangeID by
+// proposing a replicated ROLLBACK finalize (the no-prepared-batch path), so the
+// marker lands on every replica with finalizedAtUsec as its retention timestamp.
+func writeRollbackMarker(t *testing.T, ctx context.Context, clock clockwork.Clock, ts *testutil.TestingStore, rangeID uint64, txid []byte, finalizedAtUsec int64) {
+	batch, err := rbuilder.NewBatchBuilder().
+		SetTransactionID(txid).
+		SetFinalizeOperation(rfpb.FinalizeOperation_ROLLBACK).
+		ToProto()
+	require.NoError(t, err)
+	batch.TxnFinalizedAtUsec = finalizedAtUsec
+
+	session := client.NewSessionWithClock(clock)
+	rsp, err := session.SyncProposeLocal(ctx, ts.NodeHost(), rangeID, batch)
+	require.NoError(t, err)
+	require.NoError(t, rbuilder.NewBatchResponseFromProto(rsp).AnyError())
+}
+
+// TestTxnRollbackMarkerStartupGC exercises the store-level GC sweep
+// (gcOnce/gcReplica + the leader-only precheck), which the replica-level tests do
+// not cover. It writes an expired and a fresh marker, runs one sweep, and asserts
+// the expired marker is collected while the fresh one is retained.
+func TestTxnRollbackMarkerStartupGC(t *testing.T) {
+	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	// Disable the automatic startup sweep so this test owns the only GC call and
+	// stays deterministic.
+	flags.Set(t, "cache.raft.txn_rollback_marker_retention", 0)
+	clock := clockwork.NewFakeClock()
+
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
+	ctx := context.Background()
+
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	sf.StartShard(t, ctx, stores...)
+
+	leader := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	now := clock.Now()
+	oldTxid := []byte("old-tx")
+	newTxid := []byte("new-tx")
+	writeRollbackMarker(t, ctx, clock, leader, 2, oldTxid, now.Add(-4*24*time.Hour).UnixMicro())
+	writeRollbackMarker(t, ctx, clock, leader, 2, newTxid, now.UnixMicro())
+
+	cutoffUsec := now.Add(-3 * 24 * time.Hour).UnixMicro()
+
+	leaderRepl, err := leader.GetReplica(2)
+	require.NoError(t, err)
+	hasMarkers, err := leaderRepl.HasTxnRollbackMarkersBefore(cutoffUsec)
+	require.NoError(t, err)
+	require.True(t, hasMarkers, "expired marker should be present before GC")
+
+	require.NoError(t, leader.GCTxnRollbackMarkersOnceForTest(ctx, cutoffUsec))
+
+	hasMarkers, err = leaderRepl.HasTxnRollbackMarkersBefore(cutoffUsec)
+	require.NoError(t, err)
+	require.False(t, hasMarkers, "expired marker should be collected by GC")
+
+	// The fresh marker (stamped now) is newer than the cutoff and must survive.
+	hasMarkers, err = leaderRepl.HasTxnRollbackMarkersBefore(now.Add(time.Minute).UnixMicro())
+	require.NoError(t, err)
+	require.True(t, hasMarkers, "fresh marker should be retained")
+}
+
 func TestSplitAcrossClusters(t *testing.T) {
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)

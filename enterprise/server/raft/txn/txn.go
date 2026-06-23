@@ -71,7 +71,7 @@ func (tc *Coordinator) RunTxnWithProto(ctx context.Context, txnProto *rfpb.TxnRe
 	txnRecord := &rfpb.TxnRecord{
 		TxnRequest:    txnProto,
 		TxnState:      rfpb.TxnRecord_PENDING,
-		CreatedAtUsec: time.Now().UnixMicro(),
+		CreatedAtUsec: tc.clock.Now().UnixMicro(),
 	}
 
 	pendingBytes, err := tc.writeTxnRecord(ctx, txnRecord)
@@ -108,33 +108,49 @@ func (tc *Coordinator) RunTxnWithProto(ctx context.Context, txnProto *rfpb.TxnRe
 		operation = rfpb.FinalizeOperation_COMMIT
 	}
 
+	// Record our decision by CASing the txn record from PENDING to PREPARED.
+	// pendingBytes is the exact value we wrote above, so the CAS only succeeds if
+	// nothing has touched the record since. This is the single linearization
+	// point that decides the txn's outcome; the coordinator's background recovery
+	// routine (recoverTxnRecords) races us for the same record, and exactly one of
+	// us wins.
 	txnRecord.Op = operation
 	txnRecord.TxnState = rfpb.TxnRecord_PREPARED
 	matched, currentRecord, err := tc.casTxnRecord(ctx, pendingBytes, txnRecord)
 	if err != nil {
 		return status.WrapErrorf(err, "failed to write txn decision (txid=%q)", txnID)
 	}
-	if !matched {
-		if currentRecord == nil {
-			return status.FailedPreconditionErrorf("txn record was deleted before decision (txid=%q)", txnID)
-		}
-		if err := tc.finalizeTxnRecord(ctx, currentRecord); err != nil {
+
+	if matched {
+		// We won the decision. Finalize our own record across all participants,
+		// then surface any prepare error to the caller (prepareError is nil on a
+		// successful COMMIT, so this returns nil in the happy path).
+		if err := tc.finalizeTxnRecord(ctx, txnRecord); err != nil {
 			return err
 		}
-		if prepareError != nil {
-			return prepareError
-		}
-		if currentRecord.GetOp() != operation {
-			return status.FailedPreconditionErrorf("txn decision already written (txid=%q, op=%s)", txnID, currentRecord.GetOp())
-		}
-		return nil
+		return prepareError
 	}
 
-	if err := tc.finalizeTxnRecord(ctx, txnRecord); err != nil {
+	// We lost the CAS: another actor (the background recovery routine, or a peer
+	// coordinator retrying the same txn) already wrote the decision. A nil
+	// currentRecord means the record was finalized and deleted out from under us.
+	if currentRecord == nil {
+		return status.FailedPreconditionErrorf("txn record was deleted before decision (txid=%q)", txnID)
+	}
+	// Help drive the winner's decision to completion (finalize is idempotent),
+	// then report.
+	if err := tc.finalizeTxnRecord(ctx, currentRecord); err != nil {
 		return err
 	}
+	// Check prepareError before the op mismatch: a prepare failure means our
+	// intended outcome was ROLLBACK and the caller must learn the txn did not
+	// commit, regardless of who won the CAS; an op mismatch only matters when our
+	// own prepare actually succeeded.
 	if prepareError != nil {
 		return prepareError
+	}
+	if currentRecord.GetOp() != operation {
+		return status.FailedPreconditionErrorf("txn decision already written (txid=%q, op=%s)", txnID, currentRecord.GetOp())
 	}
 	return nil
 }
@@ -191,6 +207,10 @@ func (tc *Coordinator) deleteTxnRecord(ctx context.Context, txnID []byte) error 
 	return rbuilder.NewBatchResponseFromProto(rsp).AnyError()
 }
 
+// writeTxnRecord persists txnRecord (in the PENDING state) and returns the exact
+// marshaled bytes it wrote. The caller passes those bytes back to casTxnRecord as
+// the CAS expected-value, so the PENDING->PREPARED decision only lands if the
+// record is untouched in between — this is the txn's linearization anchor.
 func (tc *Coordinator) writeTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord) ([]byte, error) {
 	key := keys.MakeKey(constants.TxnRecordPrefix, txnRecord.GetTxnRequest().GetTransactionId())
 	buf, err := proto.Marshal(txnRecord)
@@ -221,6 +241,14 @@ func (tc *Coordinator) WriteTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRe
 	return err
 }
 
+// casTxnRecord atomically swaps the txn record from expectedValue to txnRecord's
+// marshaled form. The return tuple (matched, current, err) encodes the outcome:
+//   - (true, nil, nil):     the CAS succeeded.
+//   - (false, current, nil): the CAS failed; current is the record now on disk
+//     (the value the caller should help finalize).
+//   - (false, nil, nil):    the CAS failed and the record is absent/empty (it was
+//     already finalized and deleted).
+//   - (false, nil, err):    an RPC or unmarshal error occurred.
 func (tc *Coordinator) casTxnRecord(ctx context.Context, expectedValue []byte, txnRecord *rfpb.TxnRecord) (bool, *rfpb.TxnRecord, error) {
 	key := keys.MakeKey(constants.TxnRecordPrefix, txnRecord.GetTxnRequest().GetTransactionId())
 	buf, err := proto.Marshal(txnRecord)
@@ -327,12 +355,12 @@ func (tj *Coordinator) Start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-tj.clock.After(txnCleanupPeriod):
-			tj.processTxnRecords(ctx)
+			tj.recoverTxnRecords(ctx)
 		}
 	}
 }
 
-func (tc *Coordinator) processTxnRecords(ctx context.Context) {
+func (tc *Coordinator) recoverTxnRecords(ctx context.Context) {
 	if !tc.store.HasReplicaAndIsLeader(constants.MetaRangeID) {
 		return
 	}
@@ -344,8 +372,8 @@ func (tc *Coordinator) processTxnRecords(ctx context.Context) {
 	errCount := 0
 	for _, txnRecord := range txnRecords {
 		txnID := txnRecord.record.GetTxnRequest().GetTransactionId()
-		if err := tc.processTxnRecord(ctx, txnRecord.record, txnRecord.raw); err != nil {
-			log.Warningf("Failed to processTxnRecord for txn (%q): %s, statements: %+v", txnID, err, txnRecord.record.GetTxnRequest().GetStatements())
+		if err := tc.recoverTxnRecord(ctx, txnRecord.record, txnRecord.raw); err != nil {
+			log.Warningf("Failed to recoverTxnRecord for txn (%q): %s, statements: %+v", txnID, err, txnRecord.record.GetTxnRequest().GetStatements())
 			errCount++
 		} else {
 			log.Debugf("Successfully processed txn record %q", txnID)
@@ -445,9 +473,14 @@ func (tc *Coordinator) finalizeTxnRecord(ctx context.Context, txnRecord *rfpb.Tx
 	return tc.deleteTxnRecord(ctx, txnID)
 }
 
-func (tc *Coordinator) processTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord, raw []byte) error {
+// recoverTxnRecord drives a single scanned txn record to completion. A record
+// still PENDING means no coordinator recorded a decision, so the recovery routine
+// CASes it to PREPARED{ROLLBACK} — fencing any coordinator still racing it —
+// and rolls it back; a record already PREPARED is finalized directly. raw is the
+// record's exact on-disk value, used as the CAS expected-value.
+func (tc *Coordinator) recoverTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRecord, raw []byte) error {
 	if txnRecord.GetTxnState() == rfpb.TxnRecord_PENDING {
-		rollbackRecord := proto.Clone(txnRecord).(*rfpb.TxnRecord)
+		rollbackRecord := txnRecord.CloneVT()
 		rollbackRecord.TxnState = rfpb.TxnRecord_PREPARED
 		rollbackRecord.Op = rfpb.FinalizeOperation_ROLLBACK
 
@@ -455,13 +488,17 @@ func (tc *Coordinator) processTxnRecord(ctx context.Context, txnRecord *rfpb.Txn
 		if err != nil {
 			return status.WrapError(err, "failed to write rollback decision")
 		}
-		if !matched {
-			if currentRecord == nil {
-				return nil
-			}
-			return tc.finalizeTxnRecord(ctx, currentRecord)
+		if matched {
+			// We won the decision; roll the txn back.
+			return tc.finalizeTxnRecord(ctx, rollbackRecord)
 		}
-		return tc.finalizeTxnRecord(ctx, rollbackRecord)
+		// We lost the CAS: a coordinator recorded the decision first. A nil
+		// currentRecord means it already finalized and deleted the record, so
+		// there is nothing left to do; otherwise help finalize its decision.
+		if currentRecord == nil {
+			return nil
+		}
+		return tc.finalizeTxnRecord(ctx, currentRecord)
 	}
 	if txnRecord.GetTxnState() == rfpb.TxnRecord_PREPARED {
 		return tc.finalizeTxnRecord(ctx, txnRecord)
@@ -469,14 +506,14 @@ func (tc *Coordinator) processTxnRecord(ctx context.Context, txnRecord *rfpb.Txn
 	return status.InvalidArgumentErrorf("unexpected txnRecord.state %s", txnRecord.GetTxnState())
 }
 
-// ProcessTxnRecordForTest fences the decision CAS on the marshaled bytes of the
-// passed record (the production janitor, processTxnRecords, uses the raw scanned
-// bytes). This lets a test drive a specific, possibly stale janitor view — e.g.
-// processing a PENDING snapshot of a record that is already PREPARED on disk.
-func (tc *Coordinator) ProcessTxnRecordForTest(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
+// RecoverTxnRecordForTest fences the decision CAS on the marshaled bytes of the
+// passed record (the production recovery routine, recoverTxnRecords, uses the raw
+// scanned bytes). This lets a test drive a specific, possibly stale recovery view
+// — e.g. processing a PENDING snapshot of a record that is already PREPARED.
+func (tc *Coordinator) RecoverTxnRecordForTest(ctx context.Context, txnRecord *rfpb.TxnRecord) error {
 	raw, err := proto.Marshal(txnRecord)
 	if err != nil {
 		return err
 	}
-	return tc.processTxnRecord(ctx, txnRecord, raw)
+	return tc.recoverTxnRecord(ctx, txnRecord, raw)
 }
