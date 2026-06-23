@@ -162,8 +162,10 @@ var (
 		-- the lease is still in its reconnection grace period.
 		local isNewAttempt = true
 		if ARGV[1] == "true" then
-			local periodEnd = redis.call("hget", KEYS[1], "reconnectPeriodEnd")
-			if periodEnd ~= nil and periodEnd ~= "" and periodEnd > tonumber(ARGV[3]) then
+			-- Redis hget returns false if the field is missing, and
+			-- tonumber(false) returns nil.
+			local periodEndNanos = tonumber(redis.call("hget", KEYS[1], "reconnectPeriodEnd"))
+			if periodEndNanos ~= nil and periodEndNanos > tonumber(ARGV[3]) then
 				local validToken = false
 
 				-- Temporarily accept either reconnectToken or leaseId.
@@ -1699,11 +1701,15 @@ func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) 
 }
 
 func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID, leaseID, reconnectToken string) error {
+	reconnectPeriodEnd := time.Now()
+	if reconnectToken != "" {
+		reconnectPeriodEnd = reconnectPeriodEnd.Add(*leaseReconnectGracePeriod)
+	}
 	// The script will return 1 if the task is claimed & claim has been released.
 	r, err := redisReleaseClaim.Run(
 		ctx, s.rdb,
 		[]string{s.redisKeyForTask(taskID)},
-		reconnectToken, time.Now().UnixNano(), leaseID,
+		reconnectToken, reconnectPeriodEnd.UnixNano(), leaseID,
 	).Result()
 	if err != nil {
 		return err
@@ -1728,7 +1734,7 @@ func (s *SchedulerServer) claimTask(ctx context.Context, taskID, reconnectToken 
 	r, err := redisAcquireClaim.Run(
 		ctx, s.rdb,
 		[]string{s.redisKeyForTask(taskID)},
-		checkTaskReconnectToken, reconnectToken, time.Now().UnixNano(), leaseId,
+		strconv.FormatBool(checkTaskReconnectToken), reconnectToken, time.Now().UnixNano(), leaseId,
 	).Result()
 	if err != nil {
 		log.CtxErrorf(ctx, "claimTask error: redis script failed: %s", err)
@@ -1972,10 +1978,17 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		if !claimed {
 			return
 		}
-		log.CtxWarningf(ctx, "LeaseTask stream closed with task still claimed (shutting_down=%t). Re-enqueueing task.", s.isShuttingDown())
+		shuttingDown := s.isShuttingDown()
+		log.CtxWarningf(ctx, "LeaseTask stream closed with task still claimed (shutting_down=%t). Re-enqueueing task.", shuttingDown)
 		ctx, cancel := background.ExtendContextForFinalization(ctx, 3*time.Second)
 		defer cancel()
 		reEnqueueReason := "stream closed with task still claimed"
+		if !shuttingDown {
+			// TODO: detect whether the executor gave up on the lease due to
+			// shutdown vs hit a transient disconnect. Transient disconnects should
+			// get a reconnect grace period here.
+			reconnectToken = ""
+		}
 		if err := s.reEnqueueTask(ctx, taskID, leaseID, reconnectToken, probesPerTask, reEnqueueReason); err != nil {
 			log.CtxErrorf(ctx, "LeaseTask %q tried to re-enqueue task but failed with err: %s", taskID, err.Error())
 		} // Success case will be logged by ReEnqueueTask flow.

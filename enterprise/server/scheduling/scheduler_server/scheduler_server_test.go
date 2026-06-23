@@ -660,14 +660,36 @@ func (tl *taskLease) Finalize() error {
 }
 
 func (e *fakeExecutor) Claim(taskID string) *taskLease {
+	lease, err := e.leaseTask(taskID, "" /*=reconnectToken*/)
+	require.NoError(e.t, err)
+	return lease
+}
+
+// Reconnect claims a task using a reconnect token from a previous claim.
+func (e *fakeExecutor) Reconnect(taskID, reconnectToken string) (*taskLease, error) {
+	require.NotEmpty(e.t, reconnectToken)
+	return e.leaseTask(taskID, reconnectToken)
+}
+
+func (e *fakeExecutor) leaseTask(taskID, reconnectToken string) (*taskLease, error) {
 	stream, err := e.schedulerClient.LeaseTask(e.ctx)
-	require.NoError(e.t, err)
+	if err != nil {
+		return nil, err
+	}
 	err = stream.Send(&scpb.LeaseTaskRequest{
-		TaskId: taskID,
+		TaskId:            taskID,
+		ExecutorId:        e.id,
+		ExecutorHostname:  e.node.GetHost(),
+		SupportsReconnect: true,
+		ReconnectToken:    reconnectToken,
 	})
-	require.NoError(e.t, err)
+	if err != nil {
+		return nil, err
+	}
 	rsp, err := stream.Recv()
-	require.NoError(e.t, err)
+	if err != nil {
+		return nil, err
+	}
 	require.NotZero(e.t, rsp.GetLeaseDurationSeconds())
 
 	var task *repb.ExecutionTask
@@ -684,7 +706,7 @@ func (e *fakeExecutor) Claim(taskID string) *taskLease {
 		task:    task,
 		leaseID: rsp.GetLeaseId(),
 	}
-	return lease
+	return lease, nil
 }
 
 type scheduleOpts struct {
@@ -865,13 +887,51 @@ func TestLeaseExpiration(t *testing.T) {
 	fakeClock.Advance(20 * time.Second)
 	fe.EnsureTaskNotReceived(taskID)
 
-	// Move past the grace period. Task should be re-enqueued.
+	// Move past the grace period. Task should be re-enqueued immediately.
 	fakeClock.Advance(2 * time.Second)
 	fe.WaitForTask(taskID)
 
 	// Lease renewal should fail as the stream should be broken.
 	err = lease.Renew()
 	require.ErrorIs(t, io.EOF, err)
+}
+
+func TestLeaseReconnectGrace_AskForMoreWorkCannotStealTask(t *testing.T) {
+	flags.Set(t, "remote_execution.lease_reconnect_grace_period", 10*time.Second)
+	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+
+	// The holder claims a task so that a scheduler shutdown can leave the
+	// task reserved for the original lease holder.
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	holder.WaitForTask(taskID)
+	lease := holder.Claim(taskID)
+
+	// Simulate a scheduler shutdown path that re-enqueues the task while
+	// allowing the holder to re-establish its lease.
+	s := env.GetSchedulerService().(*SchedulerServer)
+	reconnectToken := "reconnect-token"
+	err := s.reEnqueueTask(ctx, taskID, lease.leaseID, reconnectToken, 1 /*=numReplicas*/, "server shutting down")
+	require.NoError(t, err)
+
+	// A newly registered executor asks for work and samples the unclaimed task.
+	// It may receive a reservation, but it must not be allowed to claim the
+	// task before the reconnect grace period expires.
+	thief := newFakeExecutorWithId(ctx, t, "thief", env.GetSchedulerClient())
+	thief.Register()
+	thief.WaitForTask(taskID)
+	_, err = thief.leaseTask(taskID, "" /*=reconnectToken*/)
+	require.True(t, status.IsNotFoundError(err), "unexpected claim error: %s", err)
+
+	// The original holder can still reconnect using the token it received
+	// before the scheduler shutdown.
+	reconnectedLease, err := holder.Reconnect(taskID, reconnectToken)
+	require.NoError(t, err)
+	require.NotEmpty(t, reconnectedLease.leaseID)
+	require.NoError(t, reconnectedLease.Finalize())
 }
 
 func TestLeaseTask_RefreshToken_FailureDoesNotFailLease(t *testing.T) {
