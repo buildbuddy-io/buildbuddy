@@ -370,6 +370,37 @@ func TestUsageStats(t *testing.T) {
 	}, s.TaskStats(), protocmp.Transform()))
 }
 
+func TestUsageStats_ConcurrentUpdateAndTaskStats(t *testing.T) {
+	flags.Set(t, "executor.record_usage_timelines", true)
+
+	stats := &container.UsageStats{}
+	stats.Reset()
+
+	// Simulate the stats tracking goroutine updating lifetime usage while a
+	// live stats caller reads task-relative usage.
+	var g errgroup.Group
+	g.Go(func() error {
+		for i := range 1000 {
+			stats.Update(&repb.UsageStats{
+				CpuNanos:      int64(i) * 1e6,
+				MemoryBytes:   int64(i) * 1024,
+				CgroupIoStats: &repb.CgroupIOStats{Rbytes: int64(i), Wbytes: int64(i)},
+			})
+		}
+		return nil
+	})
+	g.Go(func() error {
+		for range 1000 {
+			taskStats := stats.TaskStats()
+			_ = taskStats.GetMemoryBytes()
+			_ = taskStats.GetTimeline().GetTimestamps()
+		}
+		return nil
+	})
+
+	require.NoError(t, g.Wait())
+}
+
 func TestUsageStats_Timeseries(t *testing.T) {
 	flags.Set(t, "executor.record_usage_timelines", true)
 
