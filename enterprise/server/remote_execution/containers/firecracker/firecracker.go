@@ -732,6 +732,10 @@ type FirecrackerContainer struct {
 		err  error
 	}
 
+	// latestGuestStats is the latest UsageStats sample streamed from vmexec.
+	latestGuestStatsMu sync.Mutex
+	latestGuestStats   *repb.UsageStats
+
 	useOCIFetcher bool
 
 	// postCompletionStats accumulates firecracker snapshot save stats
@@ -2311,9 +2315,6 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 	client := vmxpb.NewExecClient(conn)
 	health := hlpb.NewHealthClient(conn)
 
-	var statsMu sync.Mutex
-	var lastGuestStats *repb.UsageStats
-
 	resultCh := make(chan *interfaces.CommandResult, 1)
 	healthCheckErrCh := make(chan error, 1)
 	ctx, cancel := context.WithCancel(ctx)
@@ -2321,9 +2322,7 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 	go func() {
 		log.CtxDebug(ctx, "Starting Execute stream.")
 		statsListener := func(stats *repb.UsageStats) {
-			statsMu.Lock()
-			defer statsMu.Unlock()
-			lastGuestStats = stats
+			c.updateLatestGuestStats(stats)
 		}
 		res := vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio)
 		resultCh <- res
@@ -2363,10 +2362,8 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 	case err := <-healthCheckErrCh:
 		cancelCgroupPoll()
 		res := commandutil.ErrorResult(status.UnavailableErrorf("VM health check failed (possibly crashed?): %s", err))
-		statsMu.Lock()
-		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), lastGuestStats)
+		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), c.getLatestGuestStats())
 		c.fillNetStats(ctx, res.UsageStats)
-		statsMu.Unlock()
 		return res, false
 	}
 }
@@ -2381,6 +2378,25 @@ func (c *FirecrackerContainer) fillNetStats(ctx context.Context, usageStats *rep
 		return
 	}
 	usageStats.NetworkStats = netStats
+}
+
+func (c *FirecrackerContainer) updateLatestGuestStats(stats *repb.UsageStats) {
+	c.latestGuestStatsMu.Lock()
+	defer c.latestGuestStatsMu.Unlock()
+	if stats == nil {
+		c.latestGuestStats = nil
+		return
+	}
+	c.latestGuestStats = stats.CloneVT()
+}
+
+func (c *FirecrackerContainer) getLatestGuestStats() *repb.UsageStats {
+	c.latestGuestStatsMu.Lock()
+	defer c.latestGuestStatsMu.Unlock()
+	if c.latestGuestStats == nil {
+		return &repb.UsageStats{}
+	}
+	return c.latestGuestStats.CloneVT()
 }
 
 func (c *FirecrackerContainer) vmExecConn(ctx context.Context) (*grpc.ClientConn, error) {
@@ -2904,6 +2920,7 @@ func (c *FirecrackerContainer) stopMachine(ctx context.Context) error {
 	if err := os.Remove(c.cgroupPath()); err != nil && !os.IsNotExist(err) {
 		log.CtxWarningf(ctx, "Failed to remove jailer cgroup: %s", err)
 	}
+	c.updateLatestGuestStats(nil)
 
 	return nil
 }
@@ -3438,10 +3455,9 @@ func (c *FirecrackerContainer) Wait(ctx context.Context) error {
 }
 
 func (c *FirecrackerContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
-	// Note: We return a non-nil value here since paused Firecracker containers
-	// only exist on disk and legitimately consume 0 memory / CPU resources when
-	// paused.
-	return &repb.UsageStats{}, nil
+	// TODO: figure out a clean way of separating the host cgroup stats from the
+	// VM guest stats, which may report different information.
+	return c.getLatestGuestStats(), nil
 }
 
 // parseFatalInitError looks for a fatal error logged by the init binary, and
