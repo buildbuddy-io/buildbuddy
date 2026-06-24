@@ -87,6 +87,13 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	// nameservers instead of answering from this zone. This is how we hand a
 	// subdomain off to another DNS provider -- e.g. delegating an ACME
 	// _acme-challenge validation name back to a cloud DNS zone.
+	//
+	// TODO(tylerw): A DS query AT a zone cut is the exception: the DS RRset is
+	// parent-owned authoritative data and must be answered here (or NODATA+SOA),
+	// not referred down to the child (RFC 4035 sec. 3.1.4.1). DS queries strictly
+	// below the cut still refer, so the guard is "for DS, evaluate the delegation
+	// from qName's parent label", not a blanket skip. Inert until we serve
+	// DNSSEC (no DS/RRSIG today), and a full fix also needs signed DS/RRSIG/NSEC.
 	if ns := h.delegation(qName); len(ns) > 0 {
 		m.Authoritative = false
 		m.Ns = append(m.Ns, ns...)
