@@ -677,10 +677,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         const argumentToInputFile = new Map(prevState.argumentToInputFile);
         for (const [argument, candidates] of argumentToCandidates) {
           const path = candidates.find((candidate) => inputFilePathToDigest.get(candidate));
-          argumentToInputFile.set(
-            argument,
-            path ? { path, digest: inputFilePathToDigest.get(path) as IDigest } : null
-          );
+          argumentToInputFile.set(argument, path ? { path, digest: inputFilePathToDigest.get(path) as IDigest } : null);
         }
         return { inputFilePathToDigest, argumentToInputFile };
       });
