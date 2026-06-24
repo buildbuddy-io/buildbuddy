@@ -149,10 +149,10 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(up{region=\"${region}\", job=~\"cache-proxy.*\"})",
+              "expr": "sum by (job) (up{region=\"${region}\", job=~\"cache-proxy.*\"})",
               "hide": false,
               "interval": "",
-              "legendFormat": "Up",
+              "legendFormat": "{{job}} up",
               "queryType": "randomWalk",
               "refId": "A"
             },
@@ -173,10 +173,10 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(kube_horizontalpodautoscaler_status_desired_replicas{region=\"${region}\", horizontalpodautoscaler=~\"cache-proxy.*autoscaler\"})",
+              "expr": "sum by (horizontalpodautoscaler) (kube_horizontalpodautoscaler_status_desired_replicas{region=\"${region}\", horizontalpodautoscaler=~\"cache-proxy.*autoscaler\"})",
               "hide": false,
               "instant": false,
-              "legendFormat": "Autoscaler target",
+              "legendFormat": "{{horizontalpodautoscaler}} target",
               "range": true,
               "refId": "C"
             }
