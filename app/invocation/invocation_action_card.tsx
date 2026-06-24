@@ -1946,7 +1946,9 @@ function getArgumentInputFilePathCandidates(argument: string): string[] {
   if (assignmentValue) {
     candidates.push(...getArgfilePathCandidates(assignmentValue), assignmentValue);
   }
-  candidates.push(...getArgfilePathCandidates(argument), argument);
+  if (!argument.startsWith("-")) {
+    candidates.push(...getArgfilePathCandidates(argument), argument);
+  }
   return [...new Set(candidates.map(normalizeInputFilePathCandidate).filter((path): path is string => !!path))];
 }
 
