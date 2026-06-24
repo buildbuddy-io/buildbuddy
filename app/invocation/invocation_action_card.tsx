@@ -30,6 +30,7 @@ import Dialog, {
   DialogTitle,
 } from "../components/dialog/dialog";
 import DigestComponent from "../components/digest/digest";
+import { FileIcon } from "../components/icons/file_icon";
 import { TextLink } from "../components/link/link";
 import Menu, { MenuItem } from "../components/menu/menu";
 import Modal from "../components/modal/modal";
