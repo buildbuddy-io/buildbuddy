@@ -152,6 +152,9 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		if efp != nil {
 			concurrency = int(efp.Int64(ctx, "cache.find_missing_chunk_fallback_concurrency", defaultFindMissingChunkFallbackConcurrency))
 		}
+		if concurrency <= 0 {
+			concurrency = 1
+		}
 		eg, egCtx := errgroup.WithContext(ctx)
 		eg.SetLimit(concurrency)
 		for _, d := range missing {
