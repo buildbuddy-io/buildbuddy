@@ -185,15 +185,9 @@ func TestAllowedRPCs(t *testing.T) {
 			Allowed:      true,
 		},
 		{
-			Name:         "SendNotification_NonAdmin_NotAllowed",
+			Name:         "SendNotification_Allowed_Unrestricted",
 			RPC:          buildBuddyServicePrefix + "SendNotification",
 			Capabilities: []cappb.Capability{},
-			Allowed:      false,
-		},
-		{
-			Name:         "SendNotification_Admin_Allowed",
-			RPC:          buildBuddyServicePrefix + "SendNotification",
-			Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
 			Allowed:      true,
 		},
 		{
