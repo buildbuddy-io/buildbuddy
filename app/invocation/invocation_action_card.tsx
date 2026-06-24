@@ -1,5 +1,7 @@
 import {
   ArrowRight,
+  ChevronDown,
+  ChevronRight,
   Copy,
   Download,
   File,
@@ -66,6 +68,11 @@ interface InputFileReference {
   digest: IDigest;
 }
 
+type ParamFileState =
+  | { expanded: boolean; status: "loading" }
+  | { expanded: boolean; status: "loaded"; content: string }
+  | { expanded: boolean; status: "error" };
+
 interface Props {
   model: InvocationModel;
   search: URLSearchParams;
@@ -84,6 +91,7 @@ interface State {
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
   inputFilePathToDigest: Map<string, IDigest | null>;
   argumentToInputFile: Map<string, InputFileReference | null>;
+  paramFilePathToState: Map<string, ParamFileState>;
   // The first entry in the tuple is the size, the second is the number of files.
   treeShaToTotalSizeMap: Map<string, [Number, Number]>;
   command?: build.bazel.remote.execution.v2.Command;
@@ -118,6 +126,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     treeShaToTotalSizeMap: new Map<string, [Number, Number]>(),
     inputFilePathToDigest: new Map<string, IDigest | null>(),
     argumentToInputFile: new Map<string, InputFileReference | null>(),
+    paramFilePathToState: new Map<string, ParamFileState>(),
     serverLogs: [],
     inputNodes: [],
     loadingAction: true,
@@ -169,6 +178,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       inputNodes: [],
       inputFilePathToDigest: new Map<string, IDigest | null>(),
       argumentToInputFile: new Map<string, InputFileReference | null>(),
+      paramFilePathToState: new Map<string, ParamFileState>(),
     });
     const digestParam = this.props.search.get("actionDigest");
     if (!digestParam) {
@@ -640,17 +650,98 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const inputFile = this.state.argumentToInputFile.get(argument);
     if (!inputFile) return argument;
 
+    const paramFilePath = getArgumentParamFilePath(argument);
+    const paramFileDigest = paramFilePath ? this.state.inputFilePathToDigest.get(paramFilePath) : undefined;
+    const paramFile = paramFilePath && paramFileDigest ? { path: paramFilePath, digest: paramFileDigest } : undefined;
+    const paramFileState = paramFile ? this.state.paramFilePathToState.get(paramFile.path) : undefined;
+    const expanded = paramFileState?.expanded ?? false;
     return (
       <>
-        {argument}
-        <TextLink
-          className="artifact-view"
-          href={this.getInputFileViewUrl(inputFile.path, inputFile.digest)}
-          target="_blank">
-          <FileIcon extension={getPathBasename(inputFile.path)} /> View
-        </TextLink>
+        <div className="action-argument-row">
+          {paramFile && (
+            <button
+              className="action-argument-expander"
+              onClick={() => this.handleParamFileExpanded(paramFile.path, paramFile.digest)}
+              title={expanded ? "Collapse params file" : "Expand params file"}
+              type="button">
+              {expanded ? <ChevronDown className="icon" /> : <ChevronRight className="icon" />}
+            </button>
+          )}
+          <span>{argument}</span>
+          <TextLink
+            className="artifact-view"
+            href={this.getInputFileViewUrl(inputFile.path, inputFile.digest)}
+            target="_blank">
+            <FileIcon extension={getPathBasename(inputFile.path)} /> View
+          </TextLink>
+        </div>
+        {paramFileState?.expanded && this.renderParamFileContents(paramFileState)}
       </>
     );
+  }
+
+  private handleParamFileExpanded(path: string, digest: IDigest) {
+    const paramFileState = this.state.paramFilePathToState.get(path);
+    if (paramFileState?.expanded) {
+      this.updateParamFileState(path, (state) =>
+        state ? { ...state, expanded: false } : { expanded: false, status: "loading" }
+      );
+      return;
+    }
+
+    const shouldFetch = !paramFileState || paramFileState.status === "error";
+    this.updateParamFileState(
+      path,
+      (state) =>
+        !state || state.status === "error" ? { expanded: true, status: "loading" } : { ...state, expanded: true },
+      () => {
+        if (shouldFetch) this.fetchParamFileContent(path, digest);
+      }
+    );
+  }
+
+  private fetchParamFileContent(path: string, digest: IDigest) {
+    const actionDigest = this.props.search.get("actionDigest") ?? "";
+    this.updateParamFileState(path, (state) => ({ expanded: state?.expanded ?? true, status: "loading" }));
+
+    rpcService
+      .fetchBytestreamFile(this.props.model.getBytestreamURL(digest), this.props.model.getInvocationId(), "text")
+      .then((content) => {
+        if ((this.props.search.get("actionDigest") ?? "") !== actionDigest) return;
+        this.updateParamFileState(path, (state) => ({
+          expanded: state?.expanded ?? false,
+          status: "loaded",
+          content,
+        }));
+      })
+      .catch((e) => {
+        console.error(`Failed to fetch params file ${path}:`, e);
+        if ((this.props.search.get("actionDigest") ?? "") !== actionDigest) return;
+        this.updateParamFileState(path, (state) => ({ expanded: state?.expanded ?? false, status: "error" }));
+      });
+  }
+
+  private updateParamFileState(
+    path: string,
+    update: (state: ParamFileState | undefined) => ParamFileState,
+    callback?: () => void
+  ) {
+    this.setState((prevState) => {
+      const paramFilePathToState = new Map(prevState.paramFilePathToState);
+      paramFilePathToState.set(path, update(prevState.paramFilePathToState.get(path)));
+      return { paramFilePathToState };
+    }, callback);
+  }
+
+  private renderParamFileContents(paramFileState: ParamFileState) {
+    switch (paramFileState.status) {
+      case "loading":
+        return <div className="action-argument-param-file-loading">Loading params file...</div>;
+      case "error":
+        return <div className="action-argument-param-file-error">Failed to load params file.</div>;
+      case "loaded":
+        return <pre className="action-argument-param-file">{paramFileState.content || "(empty)"}</pre>;
+    }
   }
 
   private resolveArgumentInputFilesIfNeeded() {
@@ -1871,12 +1962,18 @@ function getArgumentInputFilePathCandidates(argument: string): string[] {
   const candidates: string[] = [];
   const assignmentValue = getAssignmentValue(argument);
   if (assignmentValue) {
-    candidates.push(...getArgfilePathCandidates(assignmentValue), assignmentValue);
+    candidates.push(...getNormalizedArgfilePathCandidates(assignmentValue), assignmentValue);
   }
   if (!argument.startsWith("-")) {
-    candidates.push(...getArgfilePathCandidates(argument), argument);
+    candidates.push(...getNormalizedArgfilePathCandidates(argument), argument);
   }
-  return [...new Set(candidates.map(normalizeInputFilePathCandidate).filter((path): path is string => !!path))];
+  return normalizeInputFilePathCandidates(candidates);
+}
+
+function getArgumentParamFilePath(argument: string): string | undefined {
+  const assignmentValue = getAssignmentValue(argument);
+  const paramFileArgument = assignmentValue?.startsWith("@") ? assignmentValue : argument;
+  return getNormalizedArgfilePathCandidates(paramFileArgument)[0];
 }
 
 // --include-something=path/to/file
@@ -1890,6 +1987,14 @@ function getAssignmentValue(argument: string): string | undefined {
 function getArgfilePathCandidates(argument: string): string[] {
   if (!argument.startsWith("@") || argument.length <= 1) return [];
   return [argument.substring(1)];
+}
+
+function getNormalizedArgfilePathCandidates(argument: string): string[] {
+  return normalizeInputFilePathCandidates(getArgfilePathCandidates(argument));
+}
+
+function normalizeInputFilePathCandidates(candidates: string[]): string[] {
+  return [...new Set(candidates.map(normalizeInputFilePathCandidate).filter((path): path is string => !!path))];
 }
 
 function normalizeInputFilePathCandidate(path: string): string | undefined {
