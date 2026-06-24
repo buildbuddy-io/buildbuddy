@@ -31,6 +31,7 @@ import {
   encodeMetricUrlParam,
   encodeTargetLabelUrlParam,
   encodeWorkerUrlParam,
+  isSummableMetric,
   renderMetricValue,
   renderTotalValue,
 } from "./common";
@@ -524,7 +525,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   canColorByTotal(): boolean {
-    return renderTotalValue(this.selectedMetric.metric, 0) != null;
+    return isSummableMetric(this.selectedMetric.metric);
   }
 
   colorByTotal(): boolean {
