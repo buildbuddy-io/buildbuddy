@@ -480,9 +480,19 @@ func TestLRU(t *testing.T) {
 	// and (2) stale-atime samples making recently-Find()'d records appear
 	// old enough to evict.
 	flags.Set(t, "cache.raft.min_eviction_age", 18*time.Minute)
-	// Force the sampler to refresh its pebble iterator on
-	// every read so that samples have up-to-date atimes.
-	flags.Set(t, "cache.raft.samples_per_batch", 0)
+	// Read a small batch forward per random seek instead of refreshing the
+	// iterator on every single read. The records this test evicts (18-24) are
+	// never Find()'d, so their atimes are set once and never change -- a short
+	// batch keeps them fresh while avoiding the per-record db.NewIter churn
+	// that, under the race detector, starves the evictor and makes the sampler
+	// take far too long to randomly land on the last few eligible records.
+	flags.Set(t, "cache.raft.samples_per_batch", 10)
+	// Disable the sampler's idle sleep. In production the sampler sleeps when
+	// it can't find an eligible entry (e.g. a random key landing past the end
+	// of a small partition) to avoid wasting CPU. That sleep uses the fake
+	// clock here, which the test doesn't advance during the GC wait below, so
+	// it would stall the sampler and time out eviction.
+	flags.Set(t, "cache.raft.sampler_sleep_duration", time.Duration(0))
 	// Make the sample channel unbuffered so it can't hold stale samples
 	// produced before atime updates from the test's Find() calls were
 	// applied to pebble. Without this, the eviction consumer reads stale
