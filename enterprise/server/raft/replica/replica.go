@@ -513,7 +513,7 @@ func (sm *Replica) CommitTransaction(txid []byte) error {
 // RollbackTransaction releases any prepared state for txid and writes a
 // participant-local rollback marker that fences future PrepareTransaction calls
 // for txid. finalizedAtUsec is the marker's retention timestamp and must be a
-// real (positive) proposer-stamped time: startup GC only deletes markers whose
+// real (positive) proposer-stamped time: GC only deletes markers whose
 // timestamp is positive and at or before its cutoff, so a non-positive value is
 // never collected (safe — fencing is preserved, never prematurely dropped).
 func (sm *Replica) RollbackTransaction(wb pebble.Batch, txid []byte, finalizedAtUsec int64) error {
@@ -541,10 +541,11 @@ func rollbackMarkerFinalizedAtUsec(val []byte) (int64, error) {
 	return int64(bytesToUint64(val)), nil
 }
 
-// HasTxnRollbackMarkersBefore scans this replica's local rollback markers and
-// returns true if any has a positive timestamp at or before cutoffUsec.
-// Non-positive timestamps are skipped (see RollbackTransaction).
-func (sm *Replica) HasTxnRollbackMarkersBefore(cutoffUsec int64) (bool, error) {
+// HasTxnRollbackMarkersBeforeForTest scans this replica's local rollback markers
+// and returns true if any has a positive timestamp at or before cutoffUsec.
+// Non-positive timestamps are skipped (see RollbackTransaction). Exported only
+// for tests, which can't reach the node-local marker keyspace directly.
+func (sm *Replica) HasTxnRollbackMarkersBeforeForTest(cutoffUsec int64) (bool, error) {
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return false, err

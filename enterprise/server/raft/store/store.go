@@ -79,7 +79,7 @@ var (
 	zombieNodeScanInterval        = flag.Duration("cache.raft.zombie_node_scan_interval", 30*time.Second, "Check if one replica is a zombie every this often. 0 to disable.")
 	replicaScanInterval           = flag.Duration("cache.raft.replica_scan_interval", 1*time.Minute, "The interval we wait to check if the replicas need to be queued for replication")
 	clientSessionTTL              = flag.Duration("cache.raft.client_session_ttl", 24*time.Hour, "The duration we keep the sessions stored.")
-	txnRollbackMarkerRetention    = flag.Duration("cache.raft.txn_rollback_marker_retention", 3*24*time.Hour, "How long participant-local txn rollback markers are retained before startup GC. Must exceed the longest possible coordinator lifetime so no late prepare can arrive after a marker is deleted. 0 disables startup GC.")
+	txnRollbackMarkerRetention    = flag.Duration("cache.raft.txn_rollback_marker_retention", 3*24*time.Hour, "How long participant-local txn rollback markers are retained before GC. Must exceed the longest possible coordinator lifetime so no late prepare can arrive after a marker is deleted. 0 disables marker GC.")
 	enableDriver                  = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
 	enableTxnCleanup              = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
 	enableRegistryPreload         = flag.Bool("cache.raft.enable_registry_preload", false, "If true, preload the registry on start-up")
@@ -155,9 +155,9 @@ type Store struct {
 	updateTagsWorker *updateTagsWorker
 	txnCoordinator   *txn.Coordinator
 
-	driverQueue         *driver.Queue
-	deleteSessionWorker *deleteSessionWorker
-	replicaJanitor      *replicaJanitor
+	driverQueue    *driver.Queue
+	rangeGCWorker  *rangeGCWorker
+	replicaJanitor *replicaJanitor
 
 	clock clockwork.Clock
 
@@ -408,7 +408,7 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 	if *enableDriver {
 		s.driverQueue = driver.NewQueue(s, s.sender, cfg.GossipManager, nhLog, apiClient, clock, env.GetExperimentFlagProvider())
 	}
-	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s, *clientSessionTTL)
+	s.rangeGCWorker = newRangeGCWorker(clock, s, *clientSessionTTL, *txnRollbackMarkerRetention)
 	s.replicaJanitor = newReplicaJanitor(clock, s, *zombieNodeScanInterval)
 
 	if err != nil {
@@ -935,15 +935,9 @@ func (s *Store) Start() error {
 		})
 	}
 	s.eg.Go(func() error {
-		s.deleteSessionWorker.Start(s.egCtx)
+		s.rangeGCWorker.Start(s.egCtx)
 		return nil
 	})
-	if *txnRollbackMarkerRetention > 0 {
-		s.eg.Go(func() error {
-			s.gcTxnRollbackMarkersAfterStartup(s.egCtx, *txnRollbackMarkerRetention)
-			return nil
-		})
-	}
 	s.eg.Go(func() error {
 		s.setupPartitions(s.egCtx)
 		return nil
@@ -2876,148 +2870,44 @@ func (w *replicaWorker) Start(ctx context.Context) {
 	}
 }
 
-type txnRollbackMarkerGCWorker struct {
-	store   *Store
-	session *client.Session
-}
-
-// gcTxnRollbackMarkersAfterStartup sweeps expired rollback markers once, after
-// replicas finish initializing. Markers created while the process runs are not
-// collected until the next restart, so storage is bounded only across restarts.
-// Sweep-once (rather than periodic) is acceptable because rollback markers are
-// written only on the txn failure path (rare) and are tiny, so the storage they
-// accumulate between restarts is negligible; periodic GC is a possible follow-up
-// if that ever stops holding.
-func (s *Store) gcTxnRollbackMarkersAfterStartup(ctx context.Context, retention time.Duration) {
-	for !s.ReplicasInitDone() {
-		select {
-		case <-ctx.Done():
-			return
-		case <-s.clock.After(time.Second):
-		}
-	}
-
-	worker := &txnRollbackMarkerGCWorker{
-		store:   s,
-		session: client.NewSessionWithClock(s.clock),
-	}
-	// Safety assumption behind deleting markers: a rollback marker fences late
-	// prepares for its txid, so it is only safe to delete once no coordinator
-	// can still retry a PrepareTransaction for that txid. We approximate that
-	// with `retention` rather than a hard proof. This is safe because a
-	// coordinator's prepares are bounded by request/RPC deadlines (seconds to
-	// minutes), far below the default retention (days). Note the marker's
-	// timestamp is the first rollback-apply time and is not refreshed on deduped
-	// retries, so retention is measured from then. If coordinators could ever
-	// run longer than `retention`, this GC would need a stronger bound (e.g. an
-	// applied-index proof that no older prepare can still apply).
-	cutoffUsec := s.clock.Now().Add(-retention).UnixMicro()
-	if err := worker.gcOnce(ctx, cutoffUsec); err != nil {
-		s.log.Warningf("txn rollback marker startup GC failed: %s", err)
-	}
-}
-
-func (w *txnRollbackMarkerGCWorker) gcOnce(ctx context.Context, cutoffUsec int64) error {
-	// gcErr retains only the last failing replica's error (each failure is also
-	// logged below); it exists solely to surface a single startup warning.
-	var gcErr error
-	w.store.replicas.Range(func(key, value any) bool {
-		repl, ok := value.(*replica.Replica)
-		if !ok {
-			return true
-		}
-		// Only the leader prechecks and proposes the delete, which then applies
-		// on all replicas. The precheck is exact: the leader holds every
-		// committed marker (leader completeness), so a follower can only lag,
-		// never hold a marker the leader is missing.
-		if !w.store.HasReplicaAndIsLeader(repl.RangeID()) {
-			return true
-		}
-		// Leadership can change between this check and the propose inside
-		// gcReplica. That is safe: a propose on a non-leader is dropped by raft so
-		// SyncProposeLocal returns ErrShardNotReady (logged as a warning, never a
-		// half-apply), and the delete is idempotent and only removes
-		// already-expired markers. Because GC runs once at startup with no
-		// periodic re-run, a range skipped this way is not collected until the
-		// next process restart of whichever node is then leader — a node that
-		// merely becomes leader later does not trigger GC. Acceptable since
-		// markers are tiny and retention (days) far exceeds restart cadence.
-		if err := w.gcReplica(ctx, repl, cutoffUsec); err != nil {
-			w.store.log.Warningf("txn rollback marker GC failed for range %d: %s", repl.RangeID(), err)
-			gcErr = err
-		}
-		return true
-	})
-	return gcErr
-}
-
-// GCTxnRollbackMarkersOnceForTest runs a single rollback-marker GC sweep with the
-// given cutoff. Exported only for tests; production GC runs via
-// gcTxnRollbackMarkersAfterStartup.
-func (s *Store) GCTxnRollbackMarkersOnceForTest(ctx context.Context, cutoffUsec int64) error {
-	worker := &txnRollbackMarkerGCWorker{
-		store:   s,
-		session: client.NewSessionWithClock(s.clock),
-	}
-	return worker.gcOnce(ctx, cutoffUsec)
-}
-
-func (w *txnRollbackMarkerGCWorker) gcReplica(ctx context.Context, repl *replica.Replica, cutoffUsec int64) error {
-	// Precheck with a cheap local read before proposing. The delete is a
-	// replicated raft command that applies on every replica, so unconditionally
-	// proposing it on every range at every startup — even when nothing is expired
-	// — would write no-op entries to every log. The precheck avoids that in the
-	// common case; the replicated delete remains the source of truth.
-	hasMarkers, err := repl.HasTxnRollbackMarkersBefore(cutoffUsec)
-	if err != nil {
-		return err
-	}
-	if !hasMarkers {
-		return nil
-	}
-	batch := rbuilder.NewBatchBuilder().Add(&rfpb.DeleteTxnRollbackMarkersBeforeRequest{
-		CutoffUsec: cutoffUsec,
-	})
-	request, err := batch.ToProto()
-	if err != nil {
-		return err
-	}
-	rsp, err := w.session.SyncProposeLocal(ctx, w.store.NodeHost(), repl.RangeID(), request)
-	if err != nil {
-		return err
-	}
-	return rbuilder.NewBatchResponseFromProto(rsp).AnyError()
-}
-
-type deleteSessionWorker struct {
+// rangeGCWorker garbage-collects expired per-range state on the leaseholder:
+// expired client sessions and expired txn rollback markers.
+type rangeGCWorker struct {
 	rateLimiter       *rate.Limiter
-	lastExecutionTime sync.Map // map of uint64 rangeID -> the timestamp we last delete sessions
+	lastExecutionTime sync.Map // map of uint64 rangeID -> the timestamp we last ran GC
 	session           *client.Session
 	clock             clockwork.Clock
 	store             *Store
 	clientSessionTTL  time.Duration
+	// txnRollbackMarkerRetention is how long rollback markers are kept before GC.
+	// 0 disables marker GC.
+	txnRollbackMarkerRetention time.Duration
 
 	*replicaWorker
 }
 
-func newDeleteSessionsWorker(clock clockwork.Clock, store *Store, clientSessionTTL time.Duration) *deleteSessionWorker {
-	res := &deleteSessionWorker{
-		rateLimiter:       rate.NewLimiter(rate.Limit(deleteSessionsRateLimit), 1),
-		store:             store,
-		lastExecutionTime: sync.Map{},
-		session:           client.NewSessionWithClock(clock),
-		clock:             clock,
-		clientSessionTTL:  clientSessionTTL,
+func newRangeGCWorker(clock clockwork.Clock, store *Store, clientSessionTTL, txnRollbackMarkerRetention time.Duration) *rangeGCWorker {
+	res := &rangeGCWorker{
+		rateLimiter:                rate.NewLimiter(rate.Limit(deleteSessionsRateLimit), 1),
+		store:                      store,
+		lastExecutionTime:          sync.Map{},
+		session:                    client.NewSessionWithClock(clock),
+		clock:                      clock,
+		clientSessionTTL:           clientSessionTTL,
+		txnRollbackMarkerRetention: txnRollbackMarkerRetention,
 	}
 	res.replicaWorker = &replicaWorker{
-		name:     "deleteSessionWorker",
+		name:     "rangeGCWorker",
 		tasks:    make(chan *replica.Replica, 10000),
-		handleFn: res.deleteSessions,
+		handleFn: res.gcExpiredRangeState,
 	}
 	return res
 }
 
-func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.Replica) error {
+// gcExpiredRangeState runs on the leaseholder and deletes expired per-range
+// state in a single raft proposal: expired client sessions and (when enabled)
+// expired txn rollback markers.
+func (w *rangeGCWorker) gcExpiredRangeState(ctx context.Context, repl *replica.Replica) error {
 	if repl.RangeID() == 0 {
 		return nil
 	}
@@ -3027,11 +2917,11 @@ func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.
 		lastExecutionTime, ok := lastExecutionTimeI.(time.Time)
 		if ok {
 			if w.clock.Since(lastExecutionTime) <= client.SessionLifetime() {
-				// There are probably no client sessions to delete.
+				// There is probably nothing to GC yet.
 				return nil
 			}
 		} else {
-			return status.InternalErrorf("unable to delete sessions for rangeID=%d: unable to parse lastExecutionTime", rd.GetRangeId())
+			return status.InternalErrorf("unable to GC rangeID=%d: unable to parse lastExecutionTime", rd.GetRangeId())
 		}
 	}
 
@@ -3045,23 +2935,35 @@ func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.
 		return err
 	}
 	now := w.clock.Now()
-	request, err := rbuilder.NewBatchBuilder().Add(
-		&rfpb.DeleteSessionsRequest{
-			CreatedAtUsec: now.Add(-w.clientSessionTTL).UnixMicro(),
-		}).ToProto()
+	bb := rbuilder.NewBatchBuilder().Add(&rfpb.DeleteSessionsRequest{
+		CreatedAtUsec: now.Add(-w.clientSessionTTL).UnixMicro(),
+	})
+	// retention <= 0 disables marker GC; a positive retention must outlast any
+	// coordinator so no late prepare can arrive after a marker is deleted.
+	if w.txnRollbackMarkerRetention > 0 {
+		cutoffUsec := now.Add(-w.txnRollbackMarkerRetention).UnixMicro()
+		bb.Add(&rfpb.DeleteTxnRollbackMarkersBeforeRequest{CutoffUsec: cutoffUsec})
+	}
+	request, err := bb.ToProto()
 	if err != nil {
-		return status.WrapErrorf(err, "unable to delete sessions for rangeID=%d: unable to build request", rd.GetRangeId())
+		return status.WrapErrorf(err, "unable to GC rangeID=%d: unable to build request", rd.GetRangeId())
 	}
 	rsp, err := w.session.SyncProposeLocal(ctx, w.store.NodeHost(), repl.RangeID(), request)
 	if err != nil {
-		return status.WrapErrorf(err, "unable to delete sessions for rangeID=%d: SyncProposeLocal fails", rd.GetRangeId())
+		return status.WrapErrorf(err, "unable to GC rangeID=%d: SyncProposeLocal fails", rd.GetRangeId())
 	}
 	w.lastExecutionTime.Store(rd.GetRangeId(), now)
-	_, err = rbuilder.NewBatchResponseFromProto(rsp).DeleteSessionsResponse(0)
-	if err != nil {
-		return status.WrapErrorf(err, "unable to delete sessions for rangeID=%d: deleteSessions fails", rd.GetRangeId())
+	if err := rbuilder.NewBatchResponseFromProto(rsp).AnyError(); err != nil {
+		return status.WrapErrorf(err, "unable to GC rangeID=%d", rd.GetRangeId())
 	}
 	return nil
+}
+
+// GCExpiredRangeStateForTest runs one rangeGCWorker pass (expired sessions + txn
+// rollback markers) for repl. Exported only for tests; production GC runs via
+// scanReplicas enqueueing onto the worker.
+func (s *Store) GCExpiredRangeStateForTest(ctx context.Context, repl *replica.Replica) error {
+	return s.rangeGCWorker.gcExpiredRangeState(ctx, repl)
 }
 
 type SplitRangeTxn struct {
@@ -4030,7 +3932,7 @@ func (store *Store) scanReplicas(ctx context.Context, scanInterval time.Duration
 			if store.driverQueue != nil {
 				store.driverQueue.MaybeAddRangeTask(ctx, repl)
 			}
-			store.deleteSessionWorker.Enqueue(repl)
+			store.rangeGCWorker.Enqueue(repl)
 		}
 	}
 }

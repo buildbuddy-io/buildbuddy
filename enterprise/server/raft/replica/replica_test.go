@@ -1673,7 +1673,7 @@ func TestRollbackMarkerGCFiltersByTimestamp(t *testing.T) {
 	require.NoError(t, wb.Commit(pebble.Sync))
 	require.NoError(t, wb.Close())
 
-	hasMarkers, err := repl.HasTxnRollbackMarkersBefore(now.Add(-3 * 24 * time.Hour).UnixMicro())
+	hasMarkers, err := repl.HasTxnRollbackMarkersBeforeForTest(now.Add(-3 * 24 * time.Hour).UnixMicro())
 	require.NoError(t, err)
 	require.True(t, hasMarkers)
 

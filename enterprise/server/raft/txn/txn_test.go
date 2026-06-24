@@ -973,14 +973,14 @@ func TestRollbackMarkerStampedWithFinalizeTime(t *testing.T) {
 	// The marker's timestamp is exactly the finalize time: present at a cutoff of
 	// finalizeAt, absent one microsecond earlier. A timestamp of 0 (field not
 	// plumbed) would be skipped by the GC guard and fail the first assertion.
-	has, err := repl.HasTxnRollbackMarkersBefore(finalizeAtUsec)
+	has, err := repl.HasTxnRollbackMarkersBeforeForTest(finalizeAtUsec)
 	require.NoError(t, err)
 	require.True(t, has)
-	has, err = repl.HasTxnRollbackMarkersBefore(finalizeAtUsec - 1)
+	has, err = repl.HasTxnRollbackMarkersBeforeForTest(finalizeAtUsec - 1)
 	require.NoError(t, err)
 	require.False(t, has)
 	// In particular it is not stamped with the earlier creation time.
-	has, err = repl.HasTxnRollbackMarkersBefore(createdAtUsec)
+	has, err = repl.HasTxnRollbackMarkersBeforeForTest(createdAtUsec)
 	require.NoError(t, err)
 	require.False(t, has)
 }

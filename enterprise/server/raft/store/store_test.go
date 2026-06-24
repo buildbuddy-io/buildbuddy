@@ -1921,18 +1921,19 @@ func writeRollbackMarker(t *testing.T, ctx context.Context, clock clockwork.Cloc
 	require.NoError(t, rbuilder.NewBatchResponseFromProto(rsp).AnyError())
 }
 
-// TestTxnRollbackMarkerStartupGC exercises the store-level GC sweep
-// (gcOnce/gcReplica + the leader-only precheck), which the replica-level tests do
-// not cover. It writes an expired and a fresh marker, runs one sweep, and asserts
-// the expired marker is collected while the fresh one is retained.
-func TestTxnRollbackMarkerStartupGC(t *testing.T) {
+// TestTxnRollbackMarkerGC exercises the store-level GC path, which the
+// replica-level tests do not cover. It writes an expired and a fresh marker,
+// runs one GC pass on the leaseholder, and asserts the expired marker is
+// collected while the fresh one is retained.
+func TestTxnRollbackMarkerGC(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_driver", false)
 	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
-	// Disable the automatic startup sweep so this test owns the only GC call and
-	// stays deterministic.
-	flags.Set(t, "cache.raft.txn_rollback_marker_retention", 0)
+	// Disable the periodic scan so this test owns the only GC call and stays
+	// deterministic; retention defines the worker's cutoff (now - 3d).
+	flags.Set(t, "cache.raft.replica_scan_interval", 0)
+	flags.Set(t, "cache.raft.txn_rollback_marker_retention", 3*24*time.Hour)
 	clock := clockwork.NewFakeClock()
 
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1955,18 +1956,18 @@ func TestTxnRollbackMarkerStartupGC(t *testing.T) {
 
 	leaderRepl, err := leader.GetReplica(2)
 	require.NoError(t, err)
-	hasMarkers, err := leaderRepl.HasTxnRollbackMarkersBefore(cutoffUsec)
+	hasMarkers, err := leaderRepl.HasTxnRollbackMarkersBeforeForTest(cutoffUsec)
 	require.NoError(t, err)
 	require.True(t, hasMarkers, "expired marker should be present before GC")
 
-	require.NoError(t, leader.GCTxnRollbackMarkersOnceForTest(ctx, cutoffUsec))
+	require.NoError(t, leader.GCExpiredRangeStateForTest(ctx, leaderRepl))
 
-	hasMarkers, err = leaderRepl.HasTxnRollbackMarkersBefore(cutoffUsec)
+	hasMarkers, err = leaderRepl.HasTxnRollbackMarkersBeforeForTest(cutoffUsec)
 	require.NoError(t, err)
 	require.False(t, hasMarkers, "expired marker should be collected by GC")
 
 	// The fresh marker (stamped now) is newer than the cutoff and must survive.
-	hasMarkers, err = leaderRepl.HasTxnRollbackMarkersBefore(now.Add(time.Minute).UnixMicro())
+	hasMarkers, err = leaderRepl.HasTxnRollbackMarkersBeforeForTest(now.Add(time.Minute).UnixMicro())
 	require.NoError(t, err)
 	require.True(t, hasMarkers, "fresh marker should be retained")
 }

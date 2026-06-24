@@ -109,11 +109,9 @@ func (tc *Coordinator) RunTxnWithProto(ctx context.Context, txnProto *rfpb.TxnRe
 	}
 
 	// Record our decision by CASing the txn record from PENDING to PREPARED.
-	// pendingBytes is the exact value we wrote above, so the CAS only succeeds if
-	// nothing has touched the record since. This is the single linearization
-	// point that decides the txn's outcome; the coordinator's background recovery
-	// routine (recoverTxnRecords) races us for the same record, and exactly one of
-	// us wins.
+	// pendingBytes is the exact value written above, so the CAS lands only if the
+	// record is untouched. This is the single linearization point for the txn's
+	// outcome: recoverTxnRecords races us for the same record and exactly one wins.
 	txnRecord.Op = operation
 	txnRecord.TxnState = rfpb.TxnRecord_PREPARED
 	matched, currentRecord, err := tc.casTxnRecord(ctx, pendingBytes, txnRecord)
@@ -122,18 +120,17 @@ func (tc *Coordinator) RunTxnWithProto(ctx context.Context, txnProto *rfpb.TxnRe
 	}
 
 	if matched {
-		// We won the decision. Finalize our own record across all participants,
-		// then surface any prepare error to the caller (prepareError is nil on a
-		// successful COMMIT, so this returns nil in the happy path).
+		// We won the decision. Finalize our record, then surface any prepare error
+		// (nil on a successful COMMIT, so the happy path returns nil).
 		if err := tc.finalizeTxnRecord(ctx, txnRecord); err != nil {
 			return err
 		}
 		return prepareError
 	}
 
-	// We lost the CAS: another actor (the background recovery routine, or a peer
-	// coordinator retrying the same txn) already wrote the decision. A nil
-	// currentRecord means the record was finalized and deleted out from under us.
+	// We lost the CAS: another actor (recoverTxnRecords or a peer coordinator)
+	// already wrote the decision. A nil currentRecord means it was finalized and
+	// deleted out from under us.
 	if currentRecord == nil {
 		return status.FailedPreconditionErrorf("txn record was deleted before decision (txid=%q)", txnID)
 	}
@@ -143,9 +140,9 @@ func (tc *Coordinator) RunTxnWithProto(ctx context.Context, txnProto *rfpb.TxnRe
 		return err
 	}
 	// Check prepareError before the op mismatch: a prepare failure means our
-	// intended outcome was ROLLBACK and the caller must learn the txn did not
-	// commit, regardless of who won the CAS; an op mismatch only matters when our
-	// own prepare actually succeeded.
+	// intended outcome was ROLLBACK, so the caller must learn the txn did not
+	// commit regardless of who won; an op mismatch only matters if our prepare
+	// succeeded.
 	if prepareError != nil {
 		return prepareError
 	}
