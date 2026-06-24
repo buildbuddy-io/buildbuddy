@@ -76,6 +76,7 @@ interface State {
   execution?: execution_stats.Execution | null;
   executeResponse?: build.bazel.remote.execution.v2.ExecuteResponse;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
+  measuredMemoryPeakBytes?: number;
   // The first entry in the tuple is the size, the second is the number of files.
   treeShaToTotalSizeMap: Map<string, [Number, Number]>;
   command?: build.bazel.remote.execution.v2.Command;
@@ -125,6 +126,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   componentDidMount() {
     this.fetchAction();
     this.fetchExecuteResponseOrActionResult();
+    this.fetchSpawnMetrics();
     if (this.getExecutionId()) {
       this.fetchExecutionDownloads("");
     }
@@ -134,6 +136,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     if (prevProps.search.get("actionDigest") !== this.props.search.get("actionDigest")) {
       this.fetchAction();
       this.fetchExecuteResponseOrActionResult();
+      this.fetchSpawnMetrics();
       this.fetchExecutionDownloads("");
       return;
     }
@@ -148,6 +151,36 @@ export default class InvocationActionCardComponent extends React.Component<Props
     if (prevExecutionId !== executionId) {
       this.fetchExecutionDownloads("");
     }
+  }
+
+  fetchSpawnMetrics() {
+    const actionDigestParam = this.props.search.get("actionDigest");
+    if (!actionDigestParam || !this.props.model.hasExecutionLog() || this.getExecutionId()) {
+      this.setState({ measuredMemoryPeakBytes: undefined });
+      return;
+    }
+
+    const actionDigest = parseActionDigest(actionDigestParam);
+    if (!actionDigest) {
+      this.setState({ measuredMemoryPeakBytes: undefined });
+      return;
+    }
+
+    const model = this.props.model;
+    const actionDigestString = digestToString(actionDigest);
+    model
+      .getExecutionLog()
+      .then((log) => {
+        if (this.props.model !== model || this.props.search.get("actionDigest") !== actionDigestParam) return;
+
+        const spawn = log.find(
+          (entry) => entry.spawn?.digest && digestToString(entry.spawn.digest) === actionDigestString
+        );
+        this.setState({
+          measuredMemoryPeakBytes: Number(spawn?.spawn?.metrics?.measuredMemoryPeakBytes || 0) || undefined,
+        });
+      })
+      .catch((e) => console.error("Failed to fetch execution log:", e));
   }
 
   fetchAction() {
@@ -1196,12 +1229,22 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
+  private renderMeasuredMemoryPeakBytes() {
+    if (this.getExecutionId()) return null;
+
+    const measuredMemoryPeakBytes = Number(this.state.measuredMemoryPeakBytes || 0);
+    if (measuredMemoryPeakBytes <= 0) return null;
+
+    return <div>Peak memory: {format.bytesIEC(measuredMemoryPeakBytes)}</div>;
+  }
+
   private renderUsageStats(usageStats: build.bazel.remote.execution.v2.UsageStats) {
     return (
       <>
         <div className="metadata-title">Resource usage</div>
         <div>
           <div>Peak memory: {format.bytesIEC(usageStats.peakMemoryBytes)}</div>
+          {this.renderMeasuredMemoryPeakBytes()}
           <div>MilliCPU: {computeMilliCpu(this.state.actionResult!)}</div>
           {usageStats.peakFileSystemUsage?.map((fs) => (
             <div>
@@ -1230,6 +1273,30 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {usageStats.memoryPressure && this.renderPSI("Memory", usageStats.memoryPressure)}
         {usageStats.ioPressure && this.renderPSI("IO", usageStats.ioPressure)}
       </>
+    );
+  }
+
+  private renderSpawnExecutionMetadata() {
+    const measuredMemoryPeakBytes = this.renderMeasuredMemoryPeakBytes();
+    if (!measuredMemoryPeakBytes) return null;
+
+    return (
+      <div className="action-list">
+        <div className="metadata-title">Resource usage</div>
+        <div>{measuredMemoryPeakBytes}</div>
+      </div>
+    );
+  }
+
+  private renderSpawnExecutionMetadataSection() {
+    const executionMetadata = this.renderSpawnExecutionMetadata();
+    if (!executionMetadata) return null;
+
+    return (
+      <div className="action-section">
+        <div className="action-property-title">Execution metadata</div>
+        {executionMetadata}
+      </div>
     );
   }
 
@@ -1666,14 +1733,15 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 </div>
                               </>
                             )}
-                            {this.state.actionResult.executionMetadata.usageStats &&
-                              this.renderUsageStats(this.state.actionResult.executionMetadata.usageStats)}
+                            {this.state.actionResult.executionMetadata.usageStats
+                              ? this.renderUsageStats(this.state.actionResult.executionMetadata.usageStats)
+                              : this.renderSpawnExecutionMetadata()}
                             {this.renderExecutionDownloads()}
                             {this.state.actionResult.executionMetadata &&
                               this.renderTiming(this.state.actionResult.executionMetadata)}
                           </div>
                         ) : (
-                          <div>None found</div>
+                          this.renderSpawnExecutionMetadata() || <div>None found</div>
                         )}
                       </div>
                       <div className="action-section">
@@ -1744,7 +1812,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       </div>
                     </div>
                   ) : (
-                    !this.state.executeResponse && <div>{this.renderNotFoundDetails({ result: true })}</div>
+                    <>
+                      {this.renderSpawnExecutionMetadataSection()}
+                      {!this.state.executeResponse && <div>{this.renderNotFoundDetails({ result: true })}</div>}
+                    </>
                   )}
                 </div>
               </div>
