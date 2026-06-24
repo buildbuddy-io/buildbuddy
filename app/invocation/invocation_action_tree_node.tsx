@@ -5,7 +5,6 @@ import DigestComponent from "../components/digest/digest";
 import { FileIcon } from "../components/icons/file_icon";
 import { TextLink } from "../components/link/link";
 import format from "../format/format";
-import { parseExtension } from "../util/file_types";
 
 interface Props {
   node: TreeNode;
@@ -75,8 +74,13 @@ export default class TreeNodeComponent extends React.Component<Props, State> {
           </span>{" "}
           <span className="input-tree-node-label">{node.name}</span>
           {fileViewUrl && (
-            <TextLink className="artifact-view" href={fileViewUrl} onClick={(e) => e.stopPropagation()} target="_blank">
-              <FileIcon extension={parseExtension(path)} /> View
+            <TextLink
+              className="artifact-view"
+              href={fileViewUrl}
+              // Otherwise the file will be downloaded instead
+              onClick={(e) => e.stopPropagation()}
+              target="_blank">
+              <FileIcon extension={node.name} /> View
             </TextLink>
           )}
           {sizeInfo ? (

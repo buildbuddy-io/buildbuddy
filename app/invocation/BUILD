@@ -185,7 +185,6 @@ ts_library(
         "//app/components/icons:file_icon",
         "//app/components/link",
         "//app/format",
-        "//app/util:file_types",
         "//proto:remote_execution_ts_proto",
     ],
 )
