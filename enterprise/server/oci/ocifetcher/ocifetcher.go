@@ -734,7 +734,10 @@ func RemoteRegistryError(err error, msg string) error {
 	if !errors.As(err, &transportErr) {
 		return status.UnavailableErrorf("%s: %s", msg, err)
 	}
-	return RegistryErrorFromHTTPStatusCode(transportErr.StatusCode, fmt.Sprintf("%s: %s", msg, err))
+	return RegistryErrorFromHTTPStatusCode(
+		transportErr.StatusCode,
+		fmt.Sprintf("%s: remote registry HTTP status %d: %s", msg, transportErr.StatusCode, err),
+	)
 }
 
 // RegistryErrorFromHTTPStatusCode returns a status error for a remote registry
