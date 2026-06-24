@@ -9,7 +9,31 @@ import (
 )
 
 func syncDir(path string) error {
-	return nil
+	pathp, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return err
+	}
+	// FILE_FLAG_BACKUP_SEMANTICS is required to open a directory handle.
+	// GENERIC_WRITE avoids the read-only handle that makes FlushFileBuffers
+	// fail with ERROR_ACCESS_DENIED on Windows/ReFS.
+	handle, err := windows.CreateFile(
+		pathp,
+		windows.GENERIC_WRITE,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS,
+		0,
+	)
+	if err != nil {
+		return err
+	}
+	defer windows.CloseHandle(handle)
+	return windows.FlushFileBuffers(handle)
+}
+
+func syncLockFileCreation(path string) error {
+	return syncDir(path)
 }
 
 func syncFilesystem(path string) error {

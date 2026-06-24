@@ -260,8 +260,8 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 		if err := f.Close(); err != nil {
 			return nil, status.WrapErrorf(err, "failed to close filecache lock file")
 		}
-		if err := syncDir(rootDir); err != nil {
-			return nil, status.WrapErrorf(err, "failed to sync filecache root dir after creating lock file")
+		if err := syncLockFileCreation(rootDir); err != nil {
+			return nil, status.WrapErrorf(err, "failed to sync filecache lock file creation")
 		}
 	}
 	l, err := lru.New[*entry](&lru.Config[*entry]{MaxSize: maxSizeBytes, OnEvict: evictFn(rootDir), SizeFn: sizeFn})

@@ -22,3 +22,7 @@ func syncDir(path string) error {
 	log.Infof("filecache: syncDir(%q) took %s (err: %v)", path, time.Since(start), err)
 	return err
 }
+
+func syncLockFileCreation(path string) error {
+	return syncDir(path)
+}
