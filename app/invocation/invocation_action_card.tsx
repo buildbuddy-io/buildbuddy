@@ -30,6 +30,7 @@ import Dialog, {
   DialogTitle,
 } from "../components/dialog/dialog";
 import DigestComponent from "../components/digest/digest";
+import { FileIcon } from "../components/icons/file_icon";
 import { TextLink } from "../components/link/link";
 import Menu, { MenuItem } from "../components/menu/menu";
 import Modal from "../components/modal/modal";
@@ -76,6 +77,7 @@ interface State {
   execution?: execution_stats.Execution | null;
   executeResponse?: build.bazel.remote.execution.v2.ExecuteResponse;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
+  inputFilePathToDigest: Map<string, IDigest | null>;
   // The first entry in the tuple is the size, the second is the number of files.
   treeShaToTotalSizeMap: Map<string, [Number, Number]>;
   command?: build.bazel.remote.execution.v2.Command;
@@ -108,6 +110,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     treeShaToExpanded: new Map<string, boolean>(),
     treeShaToChildrenMap: new Map<string, TreeNode[]>(),
     treeShaToTotalSizeMap: new Map<string, [Number, Number]>(),
+    inputFilePathToDigest: new Map<string, IDigest | null>(),
     serverLogs: [],
     inputNodes: [],
     loadingAction: true,
@@ -121,6 +124,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   };
 
   private executionDownloadsContainerRef = React.createRef<HTMLDivElement>();
+  private directoryDigestToDirectory = new Map<string, build.bazel.remote.execution.v2.Directory>();
 
   componentDidMount() {
     this.fetchAction();
@@ -151,7 +155,15 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchAction() {
-    this.setState({ loadingAction: true });
+    this.directoryDigestToDirectory.clear();
+    this.setState({
+      loadingAction: true,
+      action: undefined,
+      command: undefined,
+      inputRoot: undefined,
+      inputNodes: [],
+      inputFilePathToDigest: new Map<string, IDigest | null>(),
+    });
     const digestParam = this.props.search.get("actionDigest");
     if (!digestParam) {
       alert_service.error("Missing action digest URL param");
@@ -167,9 +179,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .fetchBytestreamFile(actionUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
         let action = build.bazel.remote.execution.v2.Action.decode(new Uint8Array(buffer));
-        this.setState({
-          action: action,
-        });
+        this.setState({ action });
         this.fetchCommand(action);
         this.fetchInputRoot(action.inputRootDigest ?? build.bazel.remote.execution.v2.Digest.create({}));
         this.fetchDirectorySizes(action.inputRootDigest ?? build.bazel.remote.execution.v2.Digest.create({}));
@@ -264,7 +274,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
           type: "symlink",
         }));
         const inputNodes = [...inputDirectories, ...inputFiles, ...inputSymlinks];
-        this.setState({ inputRoot, inputNodes });
+        const rootKey = digestKey(rootDigest);
+        if (rootKey) {
+          this.directoryDigestToDirectory.set(rootKey, inputRoot);
+        }
+        this.setState({ inputRoot, inputNodes }, () => this.resolveArgumentInputFilesIfNeeded());
       })
       .catch((e) => console.error("Failed to fetch input root:", e));
   }
@@ -580,9 +594,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
     rpcService
       .fetchBytestreamFile(commandURL, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
-        this.setState({
-          command: build.bazel.remote.execution.v2.Command.decode(new Uint8Array(buffer)),
-        });
+        const command = build.bazel.remote.execution.v2.Command.decode(new Uint8Array(buffer));
+        this.setState({ command }, () => this.resolveArgumentInputFilesIfNeeded());
       })
       .catch((e) => console.error("Failed to fetch command:", e));
   }
@@ -622,14 +635,34 @@ export default class InvocationActionCardComponent extends React.Component<Props
     return this.props.search.get("executionId") || this.state.execution?.executionId;
   }
 
-  displayList(list: string[]) {
-    if (list.length == 0) return <div>None found</div>;
+  private renderArguments(args: string[]) {
+    if (args.length == 0) return <div>None found</div>;
     return (
       <div className="action-list">
-        {list.map((argument) => (
-          <div>{argument}</div>
+        {args.map((argument, index) => (
+          <div key={`${index}-${argument}`}>{this.renderArgument(argument)}</div>
         ))}
       </div>
+    );
+  }
+
+  private renderArgument(argument: string) {
+    const inputFilePath = getArgumentInputFilePathCandidates(argument).find((path) =>
+      this.state.inputFilePathToDigest.get(path)
+    );
+    if (!inputFilePath) return argument;
+
+    const digest = this.state.inputFilePathToDigest.get(inputFilePath);
+    if (!digest) {
+      return argument;
+    }
+    return (
+      <>
+        {argument}
+        <TextLink className="artifact-view" href={this.getInputFileViewUrl(inputFilePath, digest)} target="_blank">
+          <FileIcon extension={inputFilePath} /> View
+        </TextLink>
+      </>
     );
   }
 
@@ -1458,7 +1491,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       <div>
                         <div className="action-section">
                           <div className="action-property-title">Arguments</div>
-                          {this.displayList(this.state.command.arguments)}
+                          {this.renderArguments(this.state.command.arguments)}
                         </div>
                         <div className="action-section">
                           <div className="action-property-title">Environment variables</div>
@@ -1758,6 +1791,54 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
 function grpcStatusCodeToString(code: number): string {
   return google_grpc_code.rpc.Code[code] ?? "";
+}
+
+function getArgumentInputFilePathCandidates(argument: string): string[] {
+  const candidates: string[] = [];
+  const assignmentValue = getAssignmentValue(argument);
+  if (assignmentValue) {
+    candidates.push(...getArgfilePathCandidates(assignmentValue), assignmentValue);
+  }
+  candidates.push(...getArgfilePathCandidates(argument), argument);
+  return [...new Set(candidates.map(normalizeInputFilePathCandidate).filter((path): path is string => !!path))];
+}
+
+// --include-something=path/to/file
+function getAssignmentValue(argument: string): string | undefined {
+  const assignmentIndex = argument.indexOf("=");
+  if (assignmentIndex <= 0 || assignmentIndex === argument.length - 1) return undefined;
+  return argument.substring(assignmentIndex + 1);
+}
+
+// @path/to/foo.params
+function getArgfilePathCandidates(argument: string): string[] {
+  if (!argument.startsWith("@") || argument.length <= 1) return [];
+  return [argument.substring(1)];
+}
+
+function normalizeInputFilePathCandidate(path: string): string | undefined {
+  if (isAbsolutePathCandidate(path)) return undefined;
+
+  path = path.replace(/\\/g, "/").replace(/^(\.\/)+/, "");
+  const segments = path.split("/");
+  if (
+    !path ||
+    path.startsWith("@") ||
+    path.includes("\0") ||
+    segments.some((segment) => segment === "" || segment === "." || segment === "..")
+  ) {
+    return undefined;
+  }
+  return path;
+}
+
+function isAbsolutePathCandidate(path: string): boolean {
+  return path.startsWith("/") || path.startsWith("\\") || /^[A-Za-z]:/.test(path);
+}
+
+function digestKey(digest: IDigest): string | undefined {
+  if (!digest.hash || digest.sizeBytes === undefined || digest.sizeBytes === null) return undefined;
+  return digestToString(digest);
 }
 
 function computeMilliCpu(result: build.bazel.remote.execution.v2.ActionResult): number {
