@@ -389,8 +389,7 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 		iter.Close()
 	}()
 
-	totalCount := 0
-	shouldCreateNewIter := false
+	leftInBatch := pu.samplesPerBatch
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
@@ -401,10 +400,8 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 	// instead of doing a new seek for every random sample we will seek once
 	// and just read forward, yielding digests until we've found enough.
 	for {
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return nil
-		default:
 		}
 
 		// When we started to populate a cache, we cannot find any eligible
@@ -420,34 +417,40 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 			}
 		}
 
-		if totalCount > pu.samplesPerBatch || time.Since(iterCreatedAt) > pu.samplerIterRefreshPeriod {
-			// Going to refresh the iterator in the next iteration.
-			shouldCreateNewIter = true
-		}
-
 		// Refresh the iterator once a while
-		if shouldCreateNewIter {
-			shouldCreateNewIter = false
-			totalCount = 0
+		if leftInBatch <= 0 || time.Since(iterCreatedAt) > pu.samplerIterRefreshPeriod {
+			leftInBatch = pu.samplesPerBatch
 			iterCreatedAt = time.Now()
+			// This iterator won't be positioned (Valid() will return false),
+			// so we will position it below.
 			newIter, err := db.NewIter(&pebble.IterOptions{
 				LowerBound: start,
 				UpperBound: end,
 			})
+			log.Debugf("Creating new eviction iterator for partition %v; %+v", pu.part.ID, pu.part)
 			if err != nil {
 				return err
 			}
 			iter.Close()
 			iter = newIter
 		}
-		totalCount += 1
+		leftInBatch--
 		if !iter.Valid() {
-			// This should happen once every totalCount times or when
-			// we exausted the iter.
+			// This happens when we create a new iterator or exhaust the
+			// existing one.
 			randomKey := pu.randomKey(64)
-			valid := iter.SeekGE(randomKey)
-			if !valid {
-				shouldCreateNewIter = true
+			if valid := iter.SeekGE(randomKey); !valid {
+				// This is a probabilistic sleep. A partition with no rows on
+				// this node will always sleep. A partition with many rows is
+				// very unlikely to sleep. This ensures that we don't waste CPU
+				// cycles trying to find samples for partition with no (or few)
+				// rows.
+				select {
+				case <-ctx.Done():
+					return nil
+				case <-pu.clock.After(SamplerSleepDuration):
+				}
+				leftInBatch = 0 // Force creating a new iterator
 				continue
 			}
 		}
@@ -457,7 +460,8 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 			continue
 		}
 
-		err = proto.Unmarshal(iter.Value(), fileMetadata)
+		fileMetadata.ResetVT() // UnmarshalVT doesn't reset, unlike proto.Unmarshal.
+		err = fileMetadata.UnmarshalVT(iter.Value())
 		if err != nil {
 			log.Warningf("cannot generate sample for eviction, skipping: failed to read proto: %s", err)
 			continue
@@ -466,7 +470,6 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 		pu.maybeAddToSampleChan(ctx, iter, fileMetadata, timer)
 
 		iter.Next()
-		fileMetadata.ResetVT()
 	}
 }
 
