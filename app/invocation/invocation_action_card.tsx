@@ -693,8 +693,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     const paramFilePath = getArgumentParamFilePath(argument);
     const paramFileDigest = paramFilePath ? this.state.inputFilePathToDigest.get(paramFilePath) : undefined;
-    const paramFile =
-      paramFilePath && paramFileDigest ? { path: paramFilePath, digest: paramFileDigest } : undefined;
+    const paramFile = paramFilePath && paramFileDigest ? { path: paramFilePath, digest: paramFileDigest } : undefined;
     const expanded = paramFile ? this.state.expandedParamFilePaths.has(paramFile.path) : false;
     return (
       <>
