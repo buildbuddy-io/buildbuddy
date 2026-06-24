@@ -5,6 +5,7 @@ package ocifetcher
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -718,13 +719,46 @@ func withPullerRetry[T any](
 	}
 	if err != nil {
 		s.evictPuller(ref, creds)
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return zero, status.UnauthenticatedErrorf("not authorized to access resource: %s", err)
-		}
-		return zero, status.UnavailableErrorf("could not fetch from remote registry: %s", err)
+		return zero, RemoteRegistryError(err, "could not fetch from remote registry")
 	}
 
 	return result, nil
+}
+
+// RemoteRegistryError converts an error from a remote registry request into a
+// status error classified by HTTP status code when one is available, falling
+// back to Unavailable otherwise. msg is a human-readable prefix describing the
+// operation that failed.
+func RemoteRegistryError(err error, msg string) error {
+	var transportErr *transport.Error
+	if !errors.As(err, &transportErr) {
+		return status.UnavailableErrorf("%s: %s", msg, err)
+	}
+	return RegistryErrorFromHTTPStatusCode(
+		transportErr.StatusCode,
+		fmt.Sprintf("%s: remote registry HTTP status %d: %s", msg, transportErr.StatusCode, err),
+	)
+}
+
+// RegistryErrorFromHTTPStatusCode returns a status error for a remote registry
+// request failure when the HTTP status code is known.
+func RegistryErrorFromHTTPStatusCode(httpStatusCode int, msg string) error {
+	switch httpStatusCode {
+	case http.StatusBadRequest:
+		return status.InvalidArgumentError(msg)
+	case http.StatusUnauthorized:
+		return status.UnauthenticatedError(msg)
+	case http.StatusForbidden:
+		return status.PermissionDeniedError(msg)
+	case http.StatusNotFound:
+		return status.NotFoundError(msg)
+	case http.StatusTooManyRequests:
+		return status.ResourceExhaustedError(msg)
+	}
+	if httpStatusCode >= http.StatusBadRequest && httpStatusCode < http.StatusInternalServerError {
+		return status.InvalidArgumentError(msg)
+	}
+	return status.UnavailableError(msg)
 }
 
 type grpcStreamWriter struct {

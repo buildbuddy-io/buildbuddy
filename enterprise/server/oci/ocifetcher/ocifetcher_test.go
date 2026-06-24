@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
@@ -75,6 +76,21 @@ func setupRegistry(t *testing.T, creds *testregistry.BasicAuthCreds, interceptor
 func newTestServer(t *testing.T) ofpb.OCIFetcherServer {
 	_, bsClient, acClient := setupCacheEnv(t)
 	return newTestServerWithCache(t, bsClient, acClient)
+}
+
+func TestRemoteRegistryErrorPreservesHTTPStatusAndRegistryMessage(t *testing.T) {
+	err := ocifetcher.RemoteRegistryError(&transport.Error{
+		StatusCode: http.StatusUnauthorized,
+		Errors: []transport.Diagnostic{{
+			Code:    transport.UnauthorizedErrorCode,
+			Message: "authentication required",
+		}},
+	}, "could not fetch manifest metadata from remote registry")
+
+	require.True(t, status.IsUnauthenticatedError(err), "error: %s", err)
+	msg := status.Message(err)
+	require.Contains(t, msg, "HTTP status 401")
+	require.Contains(t, msg, "UNAUTHORIZED: authentication required")
 }
 
 func newTestServerWithCache(t *testing.T, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) ofpb.OCIFetcherServer {

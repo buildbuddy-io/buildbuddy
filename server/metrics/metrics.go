@@ -433,6 +433,7 @@ const (
 	OCIFetcherRoleWaiter      = "waiter"
 	OCIFetcherStatusOK        = "ok"
 	OCIFetcherStatusError     = "error"
+	OCIFetcherStatusUserError = "user_error"
 	OCIFetcherStatusTimeout   = "timeout"
 	OCIFetcherStatusCanceled  = "canceled"
 
