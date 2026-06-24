@@ -51,6 +51,7 @@ var (
 	deleteBufferSize                   = flag.Int("cache.raft.delete_buffer_size", 20, "Buffer up to this many samples for eviction eviction")
 	minEvictionAge                     = flag.Duration("cache.raft.min_eviction_age", 6*time.Hour, "Don't evict anything unless it's been idle for at least this long")
 	samplerIterRefreshPeriod           = flag.Duration("cache.raft.sampler_iter_refresh_peroid", 5*time.Minute, "How often we refresh iterator in sampler")
+	samplerSleepDuration               = flag.Duration("cache.raft.sampler_sleep_duration", 1*time.Second, "How long the eviction sampler sleeps when it cannot find eligible entries to evict. Set to 0 to disable sleeping (intended for tests).")
 	evictionBatchSize                  = flag.Int("cache.raft.eviction_batch_size", 100, "Buffer this many writes before delete")
 	numDeleteWorkers                   = flag.Int("cache.raft.num_delete_worker", 4, "Number of deletes in parallel")
 	gcsDeleteBufferSize                = flag.Int("cache.raft.gcs_delete_buffer_size", 1000, "Buffer up to this many GCS deletion requests")
@@ -70,12 +71,9 @@ const (
 	// based on data changes.
 	storePartitionUsageMaxAge = 5 * time.Minute
 
-	SamplerSleepThreshold = float64(0.2)
-	SamplerSleepDuration  = 1 * time.Second
-
-	SamplerIterRefreshPeriod = 5 * time.Minute
-	evictFlushPeriod         = 10 * time.Second
-	metricsRefreshPeriod     = 30 * time.Second
+	samplerSleepThreshold = float64(0.2)
+	evictFlushPeriod      = 10 * time.Second
+	metricsRefreshPeriod  = 30 * time.Second
 )
 
 type Tracker struct {
@@ -150,6 +148,7 @@ type partitionUsage struct {
 
 	samplesPerBatch          int
 	samplerIterRefreshPeriod time.Duration
+	samplerSleepDuration     time.Duration
 	minEvictionAge           time.Duration
 	localSizeUpdatePeriod    time.Duration
 	evictionBatchSize        int
@@ -367,6 +366,21 @@ func (pu *partitionUsage) randomKey(n int) []byte {
 	return []byte(randKey.String())
 }
 
+// samplerSleep pauses the sampler for the configured sleep duration to avoid
+// busy-looping when there is nothing useful to sample. It returns false if the
+// context was cancelled.
+func (pu *partitionUsage) samplerSleep(ctx context.Context) bool {
+	if pu.samplerSleepDuration <= 0 {
+		return ctx.Err() == nil
+	}
+	select {
+	case <-ctx.Done():
+		return false
+	case <-pu.clock.After(pu.samplerSleepDuration):
+		return true
+	}
+}
+
 func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error {
 	db, err := pu.dbGetter.DB()
 	if err != nil {
@@ -376,10 +390,7 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 	defer db.Close()
 	start, end := keys.Range([]byte(pu.partitionKeyPrefix() + "/"))
 	iterCreatedAt := time.Now()
-	iter, err := db.NewIter(&pebble.IterOptions{
-		LowerBound: start,
-		UpperBound: end,
-	})
+	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
 	if err != nil {
 		return err
 	}
@@ -408,12 +419,10 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 		// entries to evict. We will sleep for some time to prevent from
 		// constantly generating samples in vain.
 		globalSize := pu.GlobalSizeBytes()
-		shouldSleep := globalSize <= int64(SamplerSleepThreshold*float64(pu.part.MaxSizeBytes))
+		shouldSleep := globalSize <= int64(samplerSleepThreshold*float64(pu.part.MaxSizeBytes))
 		if shouldSleep {
-			select {
-			case <-ctx.Done():
+			if !pu.samplerSleep(ctx) {
 				return nil
-			case <-pu.clock.After(SamplerSleepDuration):
 			}
 		}
 
@@ -423,10 +432,7 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 			iterCreatedAt = time.Now()
 			// This iterator won't be positioned (Valid() will return false),
 			// so we will position it below.
-			newIter, err := db.NewIter(&pebble.IterOptions{
-				LowerBound: start,
-				UpperBound: end,
-			})
+			newIter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
 			if err != nil {
 				return err
 			}
@@ -442,12 +448,10 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 				// This is a probabilistic sleep. A partition with no rows on
 				// this node will always sleep. A partition with many rows is
 				// very unlikely to sleep. This ensures that we don't waste CPU
-				// cycles trying to find samples for partition with no (or few)
-				// rows.
-				select {
-				case <-ctx.Done():
+				// cycles trying to find samples for a partition with no (or
+				// few) rows.
+				if !pu.samplerSleep(ctx) {
 					return nil
-				case <-pu.clock.After(SamplerSleepDuration):
 				}
 				leftInBatch = 0 // Force creating a new iterator
 				continue
@@ -458,7 +462,6 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 			log.Warningf("cannot generate sample for eviction, skipping: failed to read key: %s", err)
 			continue
 		}
-
 		fileMetadata.ResetVT() // UnmarshalVT doesn't reset, unlike proto.Unmarshal.
 		err = fileMetadata.UnmarshalVT(iter.Value())
 		if err != nil {
@@ -467,7 +470,6 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 		}
 
 		pu.maybeAddToSampleChan(ctx, iter, fileMetadata, timer)
-
 		iter.Next()
 	}
 }
@@ -490,7 +492,7 @@ func (pu *partitionUsage) maybeAddToSampleChan(ctx context.Context, iter pebble.
 		SizeBytes: sizeBytes,
 		Timestamp: atime,
 	}
-	timer.Reset(SamplerSleepDuration)
+	timer.Reset(pu.samplerSleepDuration)
 	select {
 	case pu.samples <- sample:
 	case <-ctx.Done():
@@ -595,6 +597,7 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 			gcsDeletes:               make(chan *sgpb.StorageMetadata_GCSMetadata, *gcsDeleteBufferSize),
 			samplesPerBatch:          *samplesPerBatch,
 			samplerIterRefreshPeriod: *samplerIterRefreshPeriod,
+			samplerSleepDuration:     *samplerSleepDuration,
 			minEvictionAge:           *minEvictionAge,
 			localSizeUpdatePeriod:    *localSizeUpdatePeriod,
 			evictionBatchSize:        *evictionBatchSize,

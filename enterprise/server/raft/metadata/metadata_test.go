@@ -483,6 +483,12 @@ func TestLRU(t *testing.T) {
 	// Force the sampler to refresh its pebble iterator on
 	// every read so that samples have up-to-date atimes.
 	flags.Set(t, "cache.raft.samples_per_batch", 0)
+	// Disable the sampler's idle sleep. In production the sampler sleeps when
+	// it can't find an eligible entry (e.g. a random key landing past the end
+	// of a small partition) to avoid wasting CPU. That sleep uses the fake
+	// clock here, which the test doesn't advance during the GC wait below, so
+	// it would stall the sampler and time out eviction.
+	flags.Set(t, "cache.raft.sampler_sleep_duration", time.Duration(0))
 	// Make the sample channel unbuffered so it can't hold stale samples
 	// produced before atime updates from the test's Find() calls were
 	// applied to pebble. Without this, the eviction consumer reads stale
