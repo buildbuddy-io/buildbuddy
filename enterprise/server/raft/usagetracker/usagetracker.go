@@ -427,7 +427,6 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 				LowerBound: start,
 				UpperBound: end,
 			})
-			log.Debugf("Creating new eviction iterator for partition %v; %+v", pu.part.ID, pu.part)
 			if err != nil {
 				return err
 			}
