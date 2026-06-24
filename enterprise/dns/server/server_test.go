@@ -35,6 +35,17 @@ var zone = []string{
 	"*.aws.buildbuddy.io. 60 IN CNAME elb.amazonaws.example.",
 	"www.buildbuddy.io. 60 IN CNAME external.github.io.",
 	"alias.buildbuddy.io. 60 IN CNAME cache.buildbuddy.io.",
+	// The apex's own NS records describe this zone (not a delegation).
+	"buildbuddy.io. 60 IN NS ns1.example.",
+	// acme.buildbuddy.io is delegated to another provider (out-of-zone NS),
+	// e.g. to hand off ACME DNS-01 validation; queries at or below it (even
+	// ones a wildcard would otherwise cover) are referred, not answered.
+	"acme.buildbuddy.io. 60 IN NS ns1.otherns.example.",
+	"acme.buildbuddy.io. 60 IN NS ns2.otherns.example.",
+	// glued.buildbuddy.io is delegated to an in-bailiwick nameserver, so its
+	// address is glue served in the additional section of the referral.
+	"glued.buildbuddy.io. 60 IN NS ns1.glued.buildbuddy.io.",
+	"ns1.glued.buildbuddy.io. 60 IN A 5.6.7.8",
 }
 
 func mustRecords(tb testing.TB) []dns.RR {
@@ -456,6 +467,72 @@ func answers(rrs []dns.RR) []answer {
 		}
 	}
 	return out
+}
+
+// nsTargets returns the target names of the NS records in rrs.
+func nsTargets(rrs []dns.RR) []string {
+	var out []string
+	for _, rr := range rrs {
+		if ns, ok := rr.(*dns.NS); ok {
+			out = append(out, ns.Ns)
+		}
+	}
+	return out
+}
+
+func TestDelegationReferral(t *testing.T) {
+	h := newTestHandler(t)
+	// A name under the delegated subzone is referred: NOERROR, not
+	// authoritative, NS records in the authority section, no answer, no SOA.
+	m := query(t, h, "_acme-challenge.foo.acme.buildbuddy.io.", dns.TypeTXT)
+	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
+	assert.False(t, m.Authoritative, "a referral must not set the authoritative flag")
+	assert.Empty(t, m.Answer)
+	assert.ElementsMatch(t,
+		[]string{"ns1.otherns.example.", "ns2.otherns.example."}, nsTargets(m.Ns))
+	for _, rr := range m.Ns {
+		assert.NotEqual(t, dns.TypeSOA, rr.Header().Rrtype, "a referral carries NS, not the SOA")
+	}
+}
+
+func TestDelegationAtCut(t *testing.T) {
+	h := newTestHandler(t)
+	// The delegation point itself is referred, regardless of query type.
+	m := query(t, h, "acme.buildbuddy.io.", dns.TypeA)
+	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
+	assert.False(t, m.Authoritative)
+	assert.Empty(t, m.Answer)
+	require.NotEmpty(t, m.Ns)
+}
+
+func TestDelegationBeatsWildcard(t *testing.T) {
+	h := newTestHandler(t)
+	// *.buildbuddy.io would otherwise synthesize an A; the zone cut takes
+	// precedence (RFC 4592) and we refer instead.
+	m := query(t, h, "host.acme.buildbuddy.io.", dns.TypeA)
+	assert.False(t, m.Authoritative)
+	assert.Empty(t, m.Answer)
+	require.NotEmpty(t, m.Ns)
+}
+
+func TestDelegationGlue(t *testing.T) {
+	h := newTestHandler(t)
+	// An in-bailiwick nameserver target contributes a glue A in the additional
+	// section so the resolver can reach the child without a lookup loop.
+	m := query(t, h, "x.glued.buildbuddy.io.", dns.TypeA)
+	assert.False(t, m.Authoritative)
+	assert.Equal(t, []answer{{"ns1.glued.buildbuddy.io.", "A", "5.6.7.8"}}, answers(m.Extra))
+}
+
+func TestApexNSIsAuthoritative(t *testing.T) {
+	h := newTestHandler(t)
+	// The apex's own NS records describe this zone and are answered
+	// authoritatively, not as a referral.
+	m := query(t, h, "buildbuddy.io.", dns.TypeNS)
+	assert.Equal(t, dns.RcodeSuccess, m.Rcode)
+	assert.True(t, m.Authoritative)
+	require.NotEmpty(t, m.Answer)
+	assert.Empty(t, m.Ns)
 }
 
 func TestExactMatch(t *testing.T) {

@@ -42,6 +42,12 @@ type handler struct {
 	// instead of re-asking us every time. Nil if the zone file has no SOA.
 	soa dns.RR
 
+	// apex is the canonical zone apex (the SOA owner). NS records here describe
+	// this zone; NS records below it are delegations (zone cuts). Empty if the
+	// zone file has no SOA, in which case we can't tell the two apart and treat
+	// nothing as a delegation.
+	apex string
+
 	env environment.Env
 }
 
@@ -75,6 +81,21 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 
 	qName := dns.CanonicalName(r.Question[0].Name)
 	qType := r.Question[0].Qtype
+
+	// If the name lies at or below a zone cut (an in-zone NS record below the
+	// apex), we are not authoritative for it: return a referral to the child's
+	// nameservers instead of answering from this zone. This is how we hand a
+	// subdomain off to another DNS provider -- e.g. delegating an ACME
+	// _acme-challenge validation name back to a cloud DNS zone.
+	if ns := h.delegation(qName); len(ns) > 0 {
+		m.Authoritative = false
+		m.Ns = append(m.Ns, ns...)
+		m.Extra = append(m.Extra, h.glue(ns)...)
+		if err := w.WriteMsg(m); err != nil {
+			log.Warningf("Failed to write DNS referral for %q: %s", qName, err)
+		}
+		return
+	}
 
 	var negative bool
 	m.Answer, m.Rcode, negative = h.resolve(qName, qType)
@@ -265,6 +286,49 @@ func (h *handler) lookup(name string) ([]dns.RR, bool) {
 	return nil, false
 }
 
+// delegation returns the NS records at the closest zone cut enclosing name, or
+// nil if name is not under a delegation. A zone cut is any owner below the apex
+// that carries NS records; the apex's own NS records describe this zone, not a
+// delegation, so they are never treated as one. Walking up from name, the first
+// such owner is the cut, since a correct parent holds no data below it.
+func (h *handler) delegation(name string) []dns.RR {
+	if h.apex == "" {
+		return nil
+	}
+	for n := name; n != h.apex; {
+		if ns := filterByType(h.records[n], dns.TypeNS); len(ns) > 0 {
+			return ns
+		}
+		off, end := dns.NextLabel(n, 0)
+		if end {
+			break
+		}
+		n = n[off:]
+	}
+	return nil
+}
+
+// glue returns the in-zone (in-bailiwick) address records for the targets of
+// the given NS records, for the additional section of a referral. Out-of-zone
+// targets -- the usual case for our delegations -- contribute no glue and are
+// resolved by the asking resolver itself.
+func (h *handler) glue(nsRecords []dns.RR) []dns.RR {
+	var out []dns.RR
+	for _, rr := range nsRecords {
+		ns, ok := rr.(*dns.NS)
+		if !ok {
+			continue
+		}
+		for _, a := range h.records[dns.CanonicalName(ns.Ns)] {
+			switch a.Header().Rrtype {
+			case dns.TypeA, dns.TypeAAAA:
+				out = append(out, a)
+			}
+		}
+	}
+	return out
+}
+
 // recordTypeLabel maps a query type to a metric label, collapsing unknown
 // types (which the client controls) to "OTHER" so cardinality stays bounded.
 func recordTypeLabel(qType uint16) string {
@@ -361,9 +425,14 @@ func NewHandler(resources []dns.RR, env environment.Env) dns.Handler {
 			soa = rr
 		}
 	}
+	apex := ""
+	if soa != nil {
+		apex = dns.CanonicalName(soa.Header().Name)
+	}
 	return &handler{
 		records: records,
 		soa:     soa,
+		apex:    apex,
 		env:     env,
 	}
 }
