@@ -48,15 +48,6 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-const (
-	// defaultFindMissingChunkFallbackConcurrency is the default value of the
-	// cache.find_missing_chunk_fallback_concurrency experiment, which bounds
-	// how many chunked-manifest fallback lookups FindMissingBlobs performs in
-	// parallel. Each lookup issues independent cache reads, so the work is
-	// I/O-bound.
-	defaultFindMissingChunkFallbackConcurrency = 8
-)
-
 var (
 	enableTreeCaching         = flag.Bool("cache.enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
 	treeCacheSeed             = flag.String("cache.tree_cache_seed", "treecache-09032024", "If set, hash this with digests before caching / reading from tree cache")
@@ -138,51 +129,10 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	// with an older, smaller chunk size still count as present after increasing
 	// the current chunk size.
 	if efp := s.env.GetExperimentFlagProvider(); len(missing) > 0 && !cdc.IsChunked(ctx) && chunking.Enabled(ctx, efp) {
-		checker := chunking.NewMissingChunkChecker(s.cache)
-		chunkedReadFallbackSizeBytes := chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
-
-		var mu sync.Mutex
-		stillMissing := make([]*repb.Digest, 0, len(missing))
-		markMissing := func(d *repb.Digest) {
-			mu.Lock()
-			stillMissing = append(stillMissing, d)
-			mu.Unlock()
-		}
-		concurrency := defaultFindMissingChunkFallbackConcurrency
-		if efp != nil {
-			concurrency = int(efp.Int64(ctx, "cache.find_missing_chunk_fallback_concurrency", defaultFindMissingChunkFallbackConcurrency))
-		}
-		if concurrency <= 0 {
-			concurrency = 1
-		}
-		eg, egCtx := errgroup.WithContext(ctx)
-		eg.SetLimit(concurrency)
-		for _, d := range missing {
-			if d.GetSizeBytes() <= chunkedReadFallbackSizeBytes {
-				markMissing(d)
-				continue
-			}
-			eg.Go(func() error {
-				manifest, err := chunking.LoadManifest(egCtx, s.cache, d, req.GetInstanceName(), req.GetDigestFunction())
-				if err != nil {
-					// Not stored as a chunked manifest, so it's genuinely missing.
-					markMissing(d)
-					return nil
-				}
-				anyMissing, err := checker.AnyChunkMissing(egCtx, manifest)
-				if err != nil {
-					return status.WrapErrorf(err, "missing chunks for %s", d.GetHash())
-				}
-				if anyMissing {
-					markMissing(d)
-				}
-				return nil
-			})
-		}
-		if err := eg.Wait(); err != nil {
+		missing, err = chunking.FindMissingChunkedBlobs(ctx, s.cache, missing, req.GetInstanceName(), req.GetDigestFunction(), chunking.MinChunkedReadFallbackSizeBytes(ctx, efp))
+		if err != nil {
 			return nil, err
 		}
-		missing = stillMissing
 	}
 
 	rsp.MissingBlobDigests = missing

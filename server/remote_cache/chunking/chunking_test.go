@@ -576,14 +576,113 @@ func TestMissingChunkChecker_Concurrent(t *testing.T) {
 	require.NoError(t, eg.Wait())
 }
 
+func TestFindMissingChunkedBlobs(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	trackingCache := &findMissingTrackingCache{Cache: te.GetCache()}
+
+	// Three present chunks and one that is never stored.
+	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 100)
+	chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 150)
+	chunk3RN, chunk3Data := testdigest.RandomCASResourceBuf(t, 200)
+	absentChunkRN, _ := testdigest.RandomCASResourceBuf(t, 120)
+	require.NoError(t, trackingCache.Set(ctx, chunk1RN, chunk1Data))
+	require.NoError(t, trackingCache.Set(ctx, chunk2RN, chunk2Data))
+	require.NoError(t, trackingCache.Set(ctx, chunk3RN, chunk3Data))
+
+	const threshold = 50
+	storeManifest := func(blob *repb.Digest, chunks ...*repb.Digest) {
+		require.NoError(t, (&chunking.Manifest{
+			BlobDigest:     blob,
+			ChunkDigests:   chunks,
+			DigestFunction: repb.DigestFunction_SHA256,
+		}).StoreWithoutVerification(ctx, trackingCache))
+	}
+
+	// blobPresent: all chunks present. Shares chunk1 with blobMissingChunk to
+	// exercise cross-manifest chunk de-duplication.
+	blobPresentRN, _ := testdigest.RandomCASResourceBuf(t, 1000)
+	blobPresent := blobPresentRN.GetDigest()
+	storeManifest(blobPresent, chunk1RN.GetDigest(), chunk2RN.GetDigest())
+
+	// blobMissingChunk: references an absent chunk, so it's still missing.
+	blobMissingChunkRN, _ := testdigest.RandomCASResourceBuf(t, 1000)
+	blobMissingChunk := blobMissingChunkRN.GetDigest()
+	storeManifest(blobMissingChunk, chunk1RN.GetDigest(), absentChunkRN.GetDigest())
+
+	// blobNoManifest: large enough to be a candidate, but no manifest stored.
+	blobNoManifestRN, _ := testdigest.RandomCASResourceBuf(t, 1000)
+	blobNoManifest := blobNoManifestRN.GetDigest()
+
+	// blobSmall: at/below the fallback threshold, so it was never chunked.
+	blobSmallRN, _ := testdigest.RandomCASResourceBuf(t, 10)
+	blobSmall := blobSmallRN.GetDigest()
+
+	input := []*repb.Digest{blobPresent, blobMissingChunk, blobNoManifest, blobSmall}
+	missing, err := chunking.FindMissingChunkedBlobs(ctx, trackingCache, input, "", repb.DigestFunction_SHA256, threshold)
+	require.NoError(t, err)
+
+	gotHashes := make([]string, 0, len(missing))
+	for _, d := range missing {
+		gotHashes = append(gotHashes, d.GetHash())
+	}
+	assert.ElementsMatch(t,
+		[]string{blobMissingChunk.GetHash(), blobNoManifest.GetHash(), blobSmall.GetHash()},
+		gotHashes, "blobPresent should be the only blob considered present")
+
+	// All candidate manifests are loaded with a single GetMulti, and the
+	// chunk-existence checks for both loadable manifests are batched into a
+	// single FindMissing call.
+	assert.Equal(t, 1, trackingCache.getMultiCalls, "manifests should be loaded with one GetMulti")
+	assert.Equal(t, 1, trackingCache.findMissingCalls, "chunk checks should be one FindMissing")
+}
+
+func TestFindMissingChunkedBlobs_MultipleWaves(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	trackingCache := &findMissingTrackingCache{Cache: te.GetCache()}
+
+	// Use more candidates than the internal wave size (1024) so the wave loop
+	// runs multiple GetMulti waves. None have a stored manifest, so every blob is
+	// reported missing and we exercise accumulating results across waves.
+	const n = 1500
+	input := make([]*repb.Digest, 0, n)
+	want := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		rn, _ := testdigest.RandomCASResourceBuf(t, 1000) // large, no manifest stored
+		input = append(input, rn.GetDigest())
+		want = append(want, rn.GetDigest().GetHash())
+	}
+
+	missing, err := chunking.FindMissingChunkedBlobs(ctx, trackingCache, input, "", repb.DigestFunction_SHA256, 50)
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(missing))
+	for _, d := range missing {
+		got = append(got, d.GetHash())
+	}
+	assert.ElementsMatch(t, want, got)
+	assert.Greater(t, trackingCache.getMultiCalls, 1, "candidates should be loaded across multiple GetMulti waves")
+}
+
 type findMissingTrackingCache struct {
 	interfaces.Cache
 	findMissingCalls int
+	getMultiCalls    int
 }
 
 func (c *findMissingTrackingCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	c.findMissingCalls++
 	return c.Cache.FindMissing(ctx, resources)
+}
+
+func (c *findMissingTrackingCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	c.getMultiCalls++
+	return c.Cache.GetMulti(ctx, resources)
 }
 
 type booleanFlagProvider struct {
