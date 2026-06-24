@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -517,6 +518,62 @@ func TestMissingChunkChecker(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, missing, "expected missing chunk (cached)")
 	assert.Equal(t, 2, trackingCache.findMissingCalls, "expected no additional FindMissing call")
+}
+
+// TestMissingChunkChecker_Concurrent exercises a single shared checker from
+// many goroutines, mirroring how FindMissingBlobs now resolves the
+// chunked-manifest fallback in parallel. Run under -race
+// (--@io_bazel_rules_go//go/config:race) to catch data races on the shared
+// chunkPresent map.
+func TestMissingChunkChecker_Concurrent(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 100)
+	chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 150)
+	chunk3RN, _ := testdigest.RandomCASResourceBuf(t, 200) // never stored, so missing
+	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
+	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
+
+	blobDigest, err := digest.Compute(bytes.NewReader([]byte("blob")), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	// The two manifests share chunk1 so concurrent calls contend on the same
+	// dedup map entries.
+	manifestAllPresent := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest()},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	manifestWithMissing := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk3RN.GetDigest()},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	checker := chunking.NewMissingChunkChecker(cache)
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(32)
+	for i := 0; i < 200; i++ {
+		manifest, want := manifestAllPresent, false
+		if i%2 == 0 {
+			manifest, want = manifestWithMissing, true
+		}
+		eg.Go(func() error {
+			got, err := checker.AnyChunkMissing(egCtx, manifest)
+			if err != nil {
+				return err
+			}
+			if got != want {
+				return fmt.Errorf("AnyChunkMissing = %v, want %v", got, want)
+			}
+			return nil
+		})
+	}
+	require.NoError(t, eg.Wait())
 }
 
 type findMissingTrackingCache struct {

@@ -664,8 +664,11 @@ func digestsStrings(digests ...*repb.Digest) []string {
 
 // MissingChunkChecker is used to check to make sure all of the chunks that make up a blob
 // are present in the cache, and to de-duplicate excess calls to FindMissing.
+// Safe for concurrent use.
 type MissingChunkChecker struct {
-	cache        interfaces.Cache
+	cache interfaces.Cache
+
+	mu           sync.Mutex
 	chunkPresent map[string]bool
 }
 
@@ -684,25 +687,32 @@ func NewMissingChunkChecker(cache interfaces.Cache) *MissingChunkChecker {
 // update them as missing if they're returned from FindMissing.
 func (c *MissingChunkChecker) AnyChunkMissing(ctx context.Context, manifest *Manifest) (bool, error) {
 	var unknownChunks []*rspb.ResourceName
+	c.mu.Lock()
 	for _, rn := range manifest.ChunkResourceNames() {
 		if present, known := c.chunkPresent[rn.GetDigest().GetHash()]; known {
 			if !present {
+				c.mu.Unlock()
 				return true, nil
 			}
 			continue
 		}
 		unknownChunks = append(unknownChunks, rn)
 	}
+	c.mu.Unlock()
 
 	if len(unknownChunks) == 0 {
 		return false, nil
 	}
 
+	// Issue the FindMissing network call outside the lock so concurrent
+	// callers don't serialize on it.
 	missingDigests, err := c.cache.FindMissing(ctx, unknownChunks)
 	if err != nil {
 		return false, err
 	}
 
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	// To prevent unbounded growth, just clear the chunk
 	// cache if its >1000 entries. Checking the len(map)
 	// is O(1) since Go stores the map length in the map
