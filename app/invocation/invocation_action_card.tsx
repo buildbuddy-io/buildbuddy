@@ -140,6 +140,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
       this.fetchExecutionDownloads("");
       return;
     }
+    if (prevProps.model.getExecutionLogFileUri() !== this.props.model.getExecutionLogFileUri()) {
+      this.fetchSpawnMetrics();
+    }
     if (prevProps.search.get("executeResponseDigest") !== this.props.search.get("executeResponseDigest")) {
       this.fetchExecuteResponseOrActionResult();
       this.fetchExecutionDownloads("");
@@ -168,14 +171,17 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     const model = this.props.model;
     const actionDigestString = digestToString(actionDigest);
+    const actionDigestHasSize = actionDigestParam.includes("/");
     model
       .getExecutionLog()
       .then((log) => {
         if (this.props.model !== model || this.props.search.get("actionDigest") !== actionDigestParam) return;
 
-        const spawn = log.find(
-          (entry) => entry.spawn?.digest && digestToString(entry.spawn.digest) === actionDigestString
-        );
+        const spawn = log.find((entry) => {
+          const spawnDigest = entry.spawn?.digest;
+          if (!spawnDigest || spawnDigest.hash !== actionDigest.hash) return false;
+          return !actionDigestHasSize || digestToString(spawnDigest) === actionDigestString;
+        });
         this.setState({
           measuredMemoryPeakBytes: Number(spawn?.spawn?.metrics?.measuredMemoryPeakBytes || 0) || undefined,
         });
@@ -1229,13 +1235,20 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
-  private renderMeasuredMemoryPeakBytes() {
+  private renderSpawnResourceUsage() {
     if (this.getExecutionId()) return null;
 
-    const measuredMemoryPeakBytes = Number(this.state.measuredMemoryPeakBytes || 0);
-    if (measuredMemoryPeakBytes <= 0) return null;
+    const measuredMemoryPeakBytes = this.state.measuredMemoryPeakBytes;
+    if (!measuredMemoryPeakBytes || measuredMemoryPeakBytes <= 0) return null;
 
-    return <div>Peak memory: {format.bytesIEC(measuredMemoryPeakBytes)}</div>;
+    return (
+      <>
+        <div className="metadata-title">Resource usage</div>
+        <div>
+          <div>Peak memory: {format.bytesIEC(measuredMemoryPeakBytes)}</div>
+        </div>
+      </>
+    );
   }
 
   private renderUsageStats(usageStats: build.bazel.remote.execution.v2.UsageStats) {
@@ -1272,37 +1285,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {usageStats.memoryPressure && this.renderPSI("Memory", usageStats.memoryPressure)}
         {usageStats.ioPressure && this.renderPSI("IO", usageStats.ioPressure)}
       </>
-    );
-  }
-
-  private renderSpawnResourceUsage() {
-    const measuredMemoryPeakBytes = this.renderMeasuredMemoryPeakBytes();
-    if (!measuredMemoryPeakBytes) return null;
-
-    return (
-      <>
-        <div className="metadata-title">Resource usage</div>
-        <div>{measuredMemoryPeakBytes}</div>
-      </>
-    );
-  }
-
-  private renderSpawnExecutionMetadata() {
-    const resourceUsage = this.renderSpawnResourceUsage();
-    if (!resourceUsage) return null;
-
-    return <div className="action-list">{resourceUsage}</div>;
-  }
-
-  private renderSpawnExecutionMetadataSection() {
-    const executionMetadata = this.renderSpawnExecutionMetadata();
-    if (!executionMetadata) return null;
-
-    return (
-      <div className="action-section">
-        <div className="action-property-title">Execution metadata</div>
-        {executionMetadata}
-      </div>
     );
   }
 
@@ -1358,6 +1340,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const vmMetadata = this.getAuxiliaryMetadata(firecracker.VMMetadata);
     const executionId = this.getExecutionId();
     const platformOverrides = this.getPlatformOverrides();
+    const spawnResourceUsage = this.renderSpawnResourceUsage();
 
     return (
       <div className="invocation-action-card">
@@ -1741,13 +1724,15 @@ export default class InvocationActionCardComponent extends React.Component<Props
                             )}
                             {this.state.actionResult.executionMetadata.usageStats
                               ? this.renderUsageStats(this.state.actionResult.executionMetadata.usageStats)
-                              : this.renderSpawnResourceUsage()}
+                              : spawnResourceUsage}
                             {this.renderExecutionDownloads()}
                             {this.state.actionResult.executionMetadata &&
                               this.renderTiming(this.state.actionResult.executionMetadata)}
                           </div>
                         ) : (
-                          this.renderSpawnExecutionMetadata() || <div>None found</div>
+                          (spawnResourceUsage && <div className="action-list">{spawnResourceUsage}</div>) || (
+                            <div>None found</div>
+                          )
                         )}
                       </div>
                       <div className="action-section">
@@ -1819,7 +1804,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
                     </div>
                   ) : (
                     <>
-                      {this.renderSpawnExecutionMetadataSection()}
+                      {spawnResourceUsage && (
+                        <div className="action-section">
+                          <div className="action-property-title">Execution metadata</div>
+                          <div className="action-list">{spawnResourceUsage}</div>
+                        </div>
+                      )}
                       {!this.state.executeResponse && <div>{this.renderNotFoundDetails({ result: true })}</div>}
                     </>
                   )}
