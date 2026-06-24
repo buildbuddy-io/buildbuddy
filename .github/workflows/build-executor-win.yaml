@@ -135,9 +135,17 @@ jobs:
                    test `
                    --config=untrusted-ci-windows `
                    --test_tag_filters=-performance `
+                   --test_filter=TestFileCacheUncleanShutdownStartupOnWindows `
                    @authArgs `
                    -- `
-                   //enterprise/server/remote_execution/filecache:filecache_test `
+                   //enterprise/server/remote_execution/filecache:filecache_test
+          bazelisk --output_user_root=C:/0 `
+                   --windows_enable_symlinks `
+                   test `
+                   --config=untrusted-ci-windows `
+                   --test_tag_filters=-performance `
+                   @authArgs `
+                   -- `
                    //enterprise/server/remote_execution/workspace:workspace_test `
                    //enterprise/server/util/procstats:procstats_test `
                    //server/util/fastcopy:fastcopy_test
