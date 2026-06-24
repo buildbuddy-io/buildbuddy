@@ -733,9 +733,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     this.updateParamFileState(
       path,
       (state) =>
-        !state || state.status === "error"
-          ? { expanded: true, status: "loading" }
-          : { ...state, expanded: true },
+        !state || state.status === "error" ? { expanded: true, status: "loading" } : { ...state, expanded: true },
       () => {
         if (shouldFetch) this.fetchParamFileContent(path, digest);
       }
