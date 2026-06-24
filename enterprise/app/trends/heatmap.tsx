@@ -639,10 +639,13 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
     });
 
     const selection = this.computeSelectionData();
-    const interpolator = (v: number, selected: boolean) =>
-      selected
-        ? heatmapGreens[Math.floor(((heatmapGreens.length - 1) * (v - min)) / (max - min))]
-        : heatmapPurples[Math.floor(((heatmapPurples.length - 1) * (v - min)) / (max - min))];
+    const interpolator = (v: number, selected: boolean) => {
+      const colors = selected ? heatmapGreens : heatmapPurples;
+      if (max <= min) {
+        return colors[0];
+      }
+      return colors[Math.floor(((colors.length - 1) * (v - min)) / (max - min))];
+    };
 
     return (
       <div>
