@@ -612,12 +612,13 @@ func generatePatches(baseCommit string) ([][]byte, error) {
 
 func getTermWidth() int {
 	size, err := unix.IoctlGetWinsize(int(os.Stdout.Fd()), unix.TIOCGWINSZ)
-	if err != nil {
+	if err != nil || size.Col == 0 {
 		return 80
 	}
 	return int(size.Col)
 }
 
+// splitLogBuffer converts a byte buffer from the log API into terminal rows.
 func splitLogBuffer(buf []byte) []string {
 	var lines []string
 
@@ -632,38 +633,100 @@ func splitLogBuffer(buf []byte) []string {
 	return lines
 }
 
+func commonPrefixLineCount(a, b []string) int {
+	n := min(len(a), len(b))
+	for i := 0; i < n; i++ {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return n
+}
+
+// liveLogUpdate returns the number of previously printed terminal rows to
+// remove, and the index in the current log buffer to start printing from.
+func liveLogUpdate(previous, current []string) (deleteCount int, printFrom int) {
+	commonPrefixLines := commonPrefixLineCount(previous, current)
+	return len(previous) - commonPrefixLines, commonPrefixLines
+}
+
+type logChunk struct {
+	id       string
+	response *elpb.GetEventLogChunkResponse
+}
+
+func logChunkID(requestedChunkID string, response *elpb.GetEventLogChunkResponse) string {
+	if response.GetLive() {
+		return response.GetNextChunkId()
+	}
+	return requestedChunkID
+}
+
 // streamLogs streams the logs with real-time progress updates. It uses ANSI
 // escape sequences to delete and rewrite outdated progress messages
 func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
+	// Disable printing input to the terminal, which could corrupt the log stream and break log de-duplication.
 	defer resetTerminalStyles()
+	restoreTerminalEcho, err := disableTerminalEcho(os.Stdin)
+	if err != nil {
+		log.Warnf("Failed to disable terminal echo; typed input may interfere with remote log streaming: %s", err)
+	} else {
+		defer func() {
+			if err := restoreTerminalEcho(); err != nil {
+				log.Warnf("Failed to restore terminal echo: %s", err)
+			}
+		}()
+	}
 
+	// ID of the chunk we're requesting from the server.
 	chunkID := ""
-	moveBack := 0
+	// ID of the live chunk currently drawn on the terminal.
+	liveChunkID := ""
+	// Buffer of lines currently printed to the terminal, kept so redraws do
+	// not reprint log lines that are already on screen.
+	var liveLines []string
 
-	drawChunk := func(chunk *elpb.GetEventLogChunkResponse) {
-		// Are we redrawing the current chunk?
-		if moveBack > 0 {
-			consoleCursorMoveUp(moveBack)
+	drawChunk := func(chunk logChunk) {
+		logLines := splitLogBuffer(chunk.response.GetBuffer())
+		// Index of the log to start printing from. If earlier lines are
+		// already on screen, do not print them again.
+		printFrom := 0
+
+		// Are we redrawing the current live chunk?
+		if liveChunkID == chunk.id {
+			deleteCount := 0
+			deleteCount, printFrom = liveLogUpdate(liveLines, logLines)
+			if deleteCount > 0 {
+				consoleCursorMoveUp(deleteCount)
+				consoleCursorMoveBeginningLine()
+				consoleDeleteLines(deleteCount)
+			}
+		} else if len(liveLines) > 0 {
+			// If we're printing logs from a new chunk, delete volatile log lines
+			// from the previous chunk.
+			consoleCursorMoveUp(len(liveLines))
 			consoleCursorMoveBeginningLine()
-			consoleDeleteLines(moveBack)
+			consoleDeleteLines(len(liveLines))
 		}
 
-		logLines := splitLogBuffer(chunk.GetBuffer())
-		if !chunk.GetLive() {
-			moveBack = 0
+		if !chunk.response.GetLive() {
+			liveChunkID = ""
+			liveLines = nil
 		} else {
-			moveBack = len(logLines)
+			liveChunkID = chunk.id
+			liveLines = logLines
 		}
 
-		for _, l := range logLines {
+		for _, l := range logLines[printFrom:] {
 			_, _ = os.Stdout.Write([]byte(l))
 			_, _ = os.Stdout.Write([]byte("\n"))
 		}
 	}
 
-	var chunks []*elpb.GetEventLogChunkResponse
+	var chunks []logChunk
 	wasLive := false
 	for {
+		requestedChunkID := chunkID
 		l, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 			InvocationId: invocationID,
 			ChunkId:      chunkID,
@@ -673,7 +736,7 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 			return status.WrapError(err, "get event log chunk")
 		}
 
-		chunks = append(chunks, l)
+		chunks = append(chunks, logChunk{id: logChunkID(requestedChunkID, l), response: l})
 		// If the current chunk was live but is no longer then delay redraw
 		// until the next chunk is retrieved. The "volatile" part of the
 		// chunk moves to the next chunk when a chunk is finalized. Without
@@ -696,6 +759,13 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 			time.Sleep(1 * time.Second)
 		}
 		chunkID = l.GetNextChunkId()
+	}
+
+	// The final chunk's redraw may have been delayed (see above) if it
+	// finalized a previously live chunk. Flush anything still pending so the
+	// last lines of the log are not dropped when the stream ends.
+	for _, chunk := range chunks {
+		drawChunk(chunk)
 	}
 	return nil
 }
