@@ -706,6 +706,66 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
+  private resolveArgumentInputFilesIfNeeded() {
+    if (!this.state.command || !this.state.inputRoot) return;
+
+    const actionDigest = this.props.search.get("actionDigest") ?? "";
+    const inputFilePaths = new Set(this.state.command.arguments.flatMap(getArgumentInputFilePathCandidates));
+    const pathsToResolve = [...inputFilePaths].filter((path) => !this.state.inputFilePathToDigest.has(path));
+    if (!pathsToResolve.length) return;
+
+    Promise.all(pathsToResolve.map((path) => this.resolveInputFilePath(path))).then((results) => {
+      if ((this.props.search.get("actionDigest") ?? "") !== actionDigest) return;
+      this.setState((prevState) => {
+        const inputFilePathToDigest = new Map(prevState.inputFilePathToDigest);
+        for (const [path, digest] of results) {
+          inputFilePathToDigest.set(path, digest);
+        }
+        return { inputFilePathToDigest };
+      });
+    });
+  }
+
+  private async resolveInputFilePath(path: string): Promise<[string, IDigest | null]> {
+    try {
+      return [path, await this.resolveInputFileDigest(path)];
+    } catch (e) {
+      console.error(`Failed to resolve input file ${path}:`, e);
+      return [path, null];
+    }
+  }
+
+  private async resolveInputFileDigest(path: string): Promise<IDigest | null> {
+    const segments = path.split("/");
+    if (!segments.length || !this.state.inputRoot) return null;
+
+    let dir: build.bazel.remote.execution.v2.Directory | null | undefined = this.state.inputRoot;
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+      const isLeaf = i === segments.length - 1;
+      if (isLeaf) {
+        return dir?.files.find((file) => file.name === segment)?.digest ?? null;
+      }
+      const child = dir?.directories.find((directory) => directory.name === segment);
+      if (!child?.digest) return null;
+      dir = await this.fetchDirectory(child.digest);
+    }
+    return null;
+  }
+
+  private async fetchDirectory(digest: IDigest): Promise<build.bazel.remote.execution.v2.Directory | null> {
+    const key = digestKey(digest);
+    if (!key) return null;
+    const cached = this.directoryDigestToDirectory.get(key);
+    if (cached) return cached;
+
+    const dirUrl = this.props.model.getBytestreamURL(digest);
+    const buffer = await rpcService.fetchBytestreamFile(dirUrl, this.props.model.getInvocationId(), "arraybuffer");
+    const dir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
+    this.directoryDigestToDirectory.set(key, dir);
+    return dir;
+  }
+
   handleOutputFileClicked(file: build.bazel.remote.execution.v2.OutputFile) {
     if (!file.digest) return;
 
