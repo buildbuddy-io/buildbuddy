@@ -643,6 +643,15 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
+  private getInputFileViewUrl(path: string, digest: IDigest) {
+    const params: Record<string, string> = {
+      bytestream_url: this.props.model.getBytestreamURL(digest),
+      invocation_id: this.props.model.getInvocationId(),
+      filename: path,
+    };
+    return `/code/buildbuddy-io/buildbuddy/?${new URLSearchParams(params).toString()}`;
+  }
+
   private renderTiming(metadata: build.bazel.remote.execution.v2.ExecutedActionMetadata) {
     let timingDescription = null;
     if (metadata.queuedTimestamp && metadata.workerStartTimestamp && metadata.workerCompletedTimestamp) {
@@ -1418,6 +1427,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                               treeShaToChildrenMap={this.state.treeShaToChildrenMap}
                               treeShaToTotalSizeMap={this.state.treeShaToTotalSizeMap}
                               handleFileClicked={this.handleFileClicked.bind(this)}
+                              getFileViewUrl={this.getInputFileViewUrl.bind(this)}
                             />
                           ))}
                         </div>
