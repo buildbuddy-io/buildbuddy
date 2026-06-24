@@ -1244,7 +1244,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
         <div className="metadata-title">Resource usage</div>
         <div>
           <div>Peak memory: {format.bytesIEC(usageStats.peakMemoryBytes)}</div>
-          {this.renderMeasuredMemoryPeakBytes()}
           <div>MilliCPU: {computeMilliCpu(this.state.actionResult!)}</div>
           {usageStats.peakFileSystemUsage?.map((fs) => (
             <div>
@@ -1276,16 +1275,23 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
-  private renderSpawnExecutionMetadata() {
+  private renderSpawnResourceUsage() {
     const measuredMemoryPeakBytes = this.renderMeasuredMemoryPeakBytes();
     if (!measuredMemoryPeakBytes) return null;
 
     return (
-      <div className="action-list">
+      <>
         <div className="metadata-title">Resource usage</div>
         <div>{measuredMemoryPeakBytes}</div>
-      </div>
+      </>
     );
+  }
+
+  private renderSpawnExecutionMetadata() {
+    const resourceUsage = this.renderSpawnResourceUsage();
+    if (!resourceUsage) return null;
+
+    return <div className="action-list">{resourceUsage}</div>;
   }
 
   private renderSpawnExecutionMetadataSection() {
@@ -1735,7 +1741,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                             )}
                             {this.state.actionResult.executionMetadata.usageStats
                               ? this.renderUsageStats(this.state.actionResult.executionMetadata.usageStats)
-                              : this.renderSpawnExecutionMetadata()}
+                              : this.renderSpawnResourceUsage()}
                             {this.renderExecutionDownloads()}
                             {this.state.actionResult.executionMetadata &&
                               this.renderTiming(this.state.actionResult.executionMetadata)}
