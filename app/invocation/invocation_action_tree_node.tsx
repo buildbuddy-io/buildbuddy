@@ -1,10 +1,4 @@
-import {
-  ArrowRight,
-  Download,
-  FileSymlink,
-  FolderMinus,
-  FolderPlus,
-} from "lucide-react";
+import { ArrowRight, Download, FileSymlink, FolderMinus, FolderPlus } from "lucide-react";
 import React from "react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import DigestComponent from "../components/digest/digest";
@@ -81,11 +75,7 @@ export default class TreeNodeComponent extends React.Component<Props, State> {
           </span>{" "}
           <span className="input-tree-node-label">{node.name}</span>
           {fileViewUrl && (
-            <TextLink
-              className="artifact-view"
-              href={fileViewUrl}
-              onClick={(e) => e.stopPropagation()}
-              target="_blank">
+            <TextLink className="artifact-view" href={fileViewUrl} onClick={(e) => e.stopPropagation()} target="_blank">
               <FileIcon extension={parseExtension(path)} /> View
             </TextLink>
           )}
