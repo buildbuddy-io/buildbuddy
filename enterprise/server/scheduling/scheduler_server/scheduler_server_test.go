@@ -659,6 +659,21 @@ func (tl *taskLease) Finalize() error {
 	return nil
 }
 
+func (tl *taskLease) ReEnqueue() error {
+	err := tl.stream.Send(&scpb.LeaseTaskRequest{
+		TaskId:    tl.taskID,
+		ReEnqueue: true,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = tl.stream.Recv()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (e *fakeExecutor) Claim(taskID string) *taskLease {
 	lease, err := e.leaseTask(taskID, "" /*=reconnectToken*/)
 	require.NoError(e.t, err)
@@ -897,7 +912,10 @@ func TestLeaseExpiration(t *testing.T) {
 }
 
 func TestLeaseReconnectGrace_OtherExecutorsCannotStealTask(t *testing.T) {
-	flags.Set(t, "remote_execution.lease_reconnect_grace_period", 10*time.Second)
+	// Set a high grace period since we use real time in the test.
+	// TODO: use fake time.
+	flags.Set(t, "remote_execution.lease_reconnect_grace_period", 24*time.Hour)
+	// Disable unclaimed tasks cache so we test immediate work stealing.
 	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 
@@ -934,7 +952,18 @@ func TestLeaseReconnectGrace_OtherExecutorsCannotStealTask(t *testing.T) {
 	reconnectedLease, err := holder.Reconnect(taskID, reconnectToken)
 	require.NoError(t, err)
 	require.NotEmpty(t, reconnectedLease.leaseID)
-	require.NoError(t, reconnectedLease.Finalize())
+
+	// Simulate the executor shutting down by canceling the newly reconnected
+	// lease. Since the reconnect was successful, this should re-enqueue the
+	// task without preserving the stale reconnect grace period.
+	require.NoError(t, reconnectedLease.ReEnqueue())
+
+	// Because the lease is canceled, another client should be able to get
+	// the lease now without waiting for the old reconnect grace period.
+	normalClient := newFakeExecutorWithId(ctx, t, "norm", env.GetSchedulerClient())
+	normalLease := normalClient.Claim(taskID)
+	require.NotEmpty(t, normalLease.leaseID)
+	require.NoError(t, normalLease.Finalize())
 }
 
 func TestLeaseTask_RefreshToken_FailureDoesNotFailLease(t *testing.T) {

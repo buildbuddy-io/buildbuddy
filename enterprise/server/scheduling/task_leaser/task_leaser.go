@@ -77,15 +77,15 @@ type TaskLease struct {
 	executorHostname string
 	taskID           string
 
-	ctx               context.Context
-	execTask          *repb.ExecutionTask
-	leaseID           string
-	supportsReconnect bool
-	quit              chan struct{}
-	mu                sync.Mutex // protects stream
-	stream            scpb.Scheduler_LeaseTaskClient
-	ttl               time.Duration
-	cancelFunc        context.CancelFunc
+	ctx            context.Context
+	execTask       *repb.ExecutionTask
+	leaseID        string
+	reconnectToken string
+	quit           chan struct{}
+	mu             sync.Mutex // protects stream
+	stream         scpb.Scheduler_LeaseTaskClient
+	ttl            time.Duration
+	cancelFunc     context.CancelFunc
 }
 
 func (t *TaskLease) Context() context.Context {
@@ -117,9 +117,7 @@ func (t *TaskLease) pingServer(ctx context.Context) (b []byte, err error) {
 		ExecutorHostname:  t.executorHostname,
 		TaskId:            t.taskID,
 		SupportsReconnect: *enableReconnect,
-	}
-	if t.supportsReconnect {
-		req.ReconnectToken = t.leaseID
+		ReconnectToken:    t.reconnectToken,
 	}
 	var rsp *scpb.LeaseTaskResponse
 	var r *retry.Retry
@@ -141,7 +139,6 @@ func (t *TaskLease) pingServer(ctx context.Context) (b []byte, err error) {
 			return nil, status.WrapError(err, "reconnect lease")
 		}
 		t.stream = stream
-		t.supportsReconnect = false
 		if r == nil {
 			ctx, cancel := context.WithTimeout(ctx, reconnectTimeout)
 			defer cancel()
@@ -151,10 +148,8 @@ func (t *TaskLease) pingServer(ctx context.Context) (b []byte, err error) {
 			return nil, originalErr
 		}
 	}
-	// Lease renewals don't repeat reconnect support fields, so keep reconnect
-	// support enabled once the scheduler advertises it on this stream.
-	if rsp.GetSupportsReconnect() || rsp.GetReconnectToken() != "" {
-		t.supportsReconnect = true
+	if rsp.GetReconnectToken() != "" {
+		t.reconnectToken = rsp.GetReconnectToken()
 	}
 	if rsp.GetLeaseId() != "" {
 		t.leaseID = rsp.GetLeaseId()
@@ -199,7 +194,6 @@ func (t *TaskLease) claim(ctx context.Context) (context.Context, []byte, error) 
 		return nil, nil, err
 	}
 	t.stream = stream
-	t.supportsReconnect = false
 	serializedTask, err := t.pingServer(ctx)
 	if err == nil {
 		defer t.keepLease(ctx)

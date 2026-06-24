@@ -187,12 +187,23 @@ var (
 					return 12
 				end
 				isNewAttempt = false
+
+				-- Clear the grace period timer now that the client has
+				-- successfully reconnected within the grace period.
+				--
+				-- If we don't do this, then if the client shuts down and
+				-- re-enqueues the task just after reconnecting, other
+				-- clients would have to unnecessarily wait until the reconnect
+				-- grace period ends, rather than being able to immediately
+				-- retry the task.
+
+				redis.call("hdel", KEYS[1], "reconnectPeriodEnd")
 			end
 		end
 		if isNewAttempt then
 			redis.call("hincrby", KEYS[1], "attemptCount", 1)
 		end
-		redis.call("hset", KEYS[1], "leaseId", ARGV[4])	
+		redis.call("hset", KEYS[1], "leaseId", ARGV[4])
 
 		return redis.call("hset", KEYS[1], "claimed", "1")
 		`)
