@@ -141,6 +141,7 @@ func (t *TaskLease) pingServer(ctx context.Context) (b []byte, err error) {
 			return nil, status.WrapError(err, "reconnect lease")
 		}
 		t.stream = stream
+		t.supportsReconnect = false
 		if r == nil {
 			ctx, cancel := context.WithTimeout(ctx, reconnectTimeout)
 			defer cancel()
@@ -150,7 +151,11 @@ func (t *TaskLease) pingServer(ctx context.Context) (b []byte, err error) {
 			return nil, originalErr
 		}
 	}
-	t.supportsReconnect = rsp.GetSupportsReconnect() || rsp.GetReconnectToken() != ""
+	// Lease renewals don't repeat reconnect support fields, so keep reconnect
+	// support enabled once the scheduler advertises it on this stream.
+	if rsp.GetSupportsReconnect() || rsp.GetReconnectToken() != "" {
+		t.supportsReconnect = true
+	}
 	if rsp.GetLeaseId() != "" {
 		t.leaseID = rsp.GetLeaseId()
 	}
@@ -194,6 +199,7 @@ func (t *TaskLease) claim(ctx context.Context) (context.Context, []byte, error) 
 		return nil, nil, err
 	}
 	t.stream = stream
+	t.supportsReconnect = false
 	serializedTask, err := t.pingServer(ctx)
 	if err == nil {
 		defer t.keepLease(ctx)
