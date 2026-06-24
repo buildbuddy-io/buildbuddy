@@ -1418,6 +1418,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                               treeShaToChildrenMap={this.state.treeShaToChildrenMap}
                               treeShaToTotalSizeMap={this.state.treeShaToTotalSizeMap}
                               handleFileClicked={this.handleFileClicked.bind(this)}
+                              getFileViewUrl={this.getInputFileViewUrl.bind(this)}
                             />
                           ))}
                         </div>

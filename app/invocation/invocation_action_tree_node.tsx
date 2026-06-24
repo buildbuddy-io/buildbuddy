@@ -1,15 +1,26 @@
-import { ArrowRight, Download, FileSymlink, FolderMinus, FolderPlus } from "lucide-react";
+import {
+  ArrowRight,
+  Download,
+  FileSymlink,
+  FolderMinus,
+  FolderPlus,
+} from "lucide-react";
 import React from "react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import DigestComponent from "../components/digest/digest";
+import { FileIcon } from "../components/icons/file_icon";
+import { TextLink } from "../components/link/link";
 import format from "../format/format";
+import { parseExtension } from "../util/file_types";
 
 interface Props {
   node: TreeNode;
   treeShaToExpanded: Map<string, boolean>;
   treeShaToChildrenMap: Map<string, TreeNode[]>;
   treeShaToTotalSizeMap: Map<string, [Number, Number]>;
-  handleFileClicked: any;
+  path?: string;
+  handleFileClicked: (node: TreeNode) => void;
+  getFileViewUrl?: (path: string, digest: build.bazel.remote.execution.v2.IDigest) => string;
 }
 
 interface State {}
@@ -43,9 +54,12 @@ function getChildCountText(childCount: Number) {
 
 export default class TreeNodeComponent extends React.Component<Props, State> {
   renderFileOrDirectoryNode(node: FileNode | DirectoryNode) {
+    const path = this.props.path ?? node.name;
     const digestString = node.digest?.hash ?? "";
     const sizeInfo = this.props.treeShaToTotalSizeMap.get(digestString);
     const expanded = this.props.treeShaToExpanded.get(digestString);
+    const fileViewUrl =
+      this.props.node.type == "file" && node.digest ? this.props.getFileViewUrl?.(path, node.digest) : undefined;
 
     return (
       <div className="input-tree-node">
@@ -66,6 +80,15 @@ export default class TreeNodeComponent extends React.Component<Props, State> {
             )}
           </span>{" "}
           <span className="input-tree-node-label">{node.name}</span>
+          {fileViewUrl && (
+            <TextLink
+              className="artifact-view"
+              href={fileViewUrl}
+              onClick={(e) => e.stopPropagation()}
+              target="_blank">
+              <FileIcon extension={parseExtension(path)} /> View
+            </TextLink>
+          )}
           {sizeInfo ? (
             <span className="input-tree-node-size">{`${format.bytes(+sizeInfo[0])} (${getChildCountText(
               sizeInfo[1]
@@ -82,10 +105,12 @@ export default class TreeNodeComponent extends React.Component<Props, State> {
               ?.map((child: TreeNode) => (
                 <TreeNodeComponent
                   node={child}
+                  path={joinInputPath(path, child.obj.name)}
                   treeShaToExpanded={this.props.treeShaToExpanded}
                   treeShaToChildrenMap={this.props.treeShaToChildrenMap}
                   treeShaToTotalSizeMap={this.props.treeShaToTotalSizeMap}
                   handleFileClicked={this.props.handleFileClicked}
+                  getFileViewUrl={this.props.getFileViewUrl}
                 />
               ))}
           </div>
@@ -114,4 +139,8 @@ export default class TreeNodeComponent extends React.Component<Props, State> {
       ? this.renderSymlinkNode(this.props.node.obj)
       : this.renderFileOrDirectoryNode(this.props.node.obj);
   }
+}
+
+function joinInputPath(parent: string, child: string): string {
+  return parent ? `${parent}/${child}` : child;
 }
