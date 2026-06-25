@@ -30,6 +30,7 @@ import Dialog, {
   DialogTitle,
 } from "../components/dialog/dialog";
 import DigestComponent from "../components/digest/digest";
+import { FileIcon } from "../components/icons/file_icon";
 import { TextLink } from "../components/link/link";
 import Menu, { MenuItem } from "../components/menu/menu";
 import Modal from "../components/modal/modal";
@@ -643,7 +644,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
-  private getInputFileViewUrl(path: string, digest: IDigest) {
+  private getFileViewUrl(path: string, digest: IDigest) {
     const params: Record<string, string> = {
       bytestream_url: this.props.model.getBytestreamURL(digest),
       invocation_id: this.props.model.getInvocationId(),
@@ -1427,7 +1428,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                               treeShaToChildrenMap={this.state.treeShaToChildrenMap}
                               treeShaToTotalSizeMap={this.state.treeShaToTotalSizeMap}
                               handleFileClicked={this.handleFileClicked.bind(this)}
-                              getFileViewUrl={this.getInputFileViewUrl.bind(this)}
+                              getFileViewUrl={this.getFileViewUrl.bind(this)}
                             />
                           ))}
                         </div>
@@ -1688,6 +1689,16 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                   <Download className="icon file-icon" />
                                 </span>
                                 <span className="prop-link">{file.path}</span>
+                                {file.digest && (
+                                  <TextLink
+                                    className="artifact-view"
+                                    href={this.getFileViewUrl(file.path, file.digest)}
+                                    // Otherwise the file will be downloaded instead
+                                    onClick={(e) => e.stopPropagation()}
+                                    target="_blank">
+                                    <FileIcon extension={file.path} /> View
+                                  </TextLink>
+                                )}
                                 {file.isExecutable && <span className="detail"> (executable)</span>}
                                 {file.digest && <DigestComponent digest={file.digest} />}
                               </div>
