@@ -34,6 +34,7 @@ ts_library(
     deps = [
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
+        "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//app/root",
@@ -42,9 +43,15 @@ ts_library(
 
 genrule(
     name = "style",
+    # Note: file ordering matters here. The output CSS is produced by
+    # concatenating these files in the same order that they appear in this list.
+    # When CSS rules otherwise have equal priority and specificity, later
+    # declarations win.
+    # https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Cascade/Introduction#cascading_order
     srcs = [
         "//app/root:colors.css",
         "//app/root:root.css",
+        "//app/icons:icons.css",
         "//app/alert:alert.css",
         "//app/picker:picker.css",
         "//app/debug:debug.css",

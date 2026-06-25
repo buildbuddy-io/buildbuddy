@@ -816,7 +816,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
     return (
       <div className="drilldown-page-zoom-summary zoomed">
-        <ZoomIn className="icon"></ZoomIn>
+        <ZoomIn></ZoomIn>
         {this.currentZoomFilters && (
           <div className="drilldown-page-zoom-filters">
             <div className="drilldown-page-zoom-filter-attr">
@@ -831,7 +831,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
           className="square drilldown-page-zoom-button"
           title={"Clear zoom"}
           onClick={() => this.handleClearZoom()}>
-          <X className="icon white" />
+          <X className="white" />
         </FilledButton>
       </div>
     );

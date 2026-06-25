@@ -64,7 +64,7 @@ export default class CodeBuildButton extends React.Component<CodeBuildButtonProp
           <OutlinedButton
             className="workflow-rerun-button"
             onClick={this.handleCommandClicked.bind(this, this.props.commands[0])}>
-            {this.props.isLoading ? <Spinner /> : <Boxes className="icon green" />}
+            {this.props.isLoading ? <Spinner /> : <Boxes className="green" />}
             <span>
               {this.props.commands[0]}
               {this.getConfig()}

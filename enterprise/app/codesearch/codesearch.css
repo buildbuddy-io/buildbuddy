@@ -98,8 +98,7 @@
 }
 
 .code-search .icon {
-  width: 180px;
-  height: 180px;
+  --icon-size: 180px;
 }
 
 .code-search .circle {

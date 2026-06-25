@@ -29,13 +29,13 @@ export default class TargetTestCasesCardComponent extends React.Component<Props>
   renderStatusIcon() {
     switch (this.props.tagName) {
       case "failure":
-        return <XCircle className="icon red" />;
+        return <XCircle className="red" />;
       case "error":
-        return <AlertCircle className="icon black" />;
+        return <AlertCircle className="black" />;
       case "skipped":
-        return <PlayCircle className="icon" />;
+        return <PlayCircle />;
       default:
-        return <CheckCircle className="icon green" />;
+        return <CheckCircle className="green" />;
     }
   }
 

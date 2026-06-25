@@ -74,7 +74,7 @@ export default class TrendsSummaryCard extends React.Component<Props> {
           <a className="card trend-summary-group" href="#builds">
             <div>
               <div className="trend-headline-stat">
-                <Hash size="27" className="icon"></Hash>
+                <Hash size={27}></Hash>
                 <span className="trend-headline-text">{format.count(this.props.currentPeriod.numBuilds)} builds</span>
               </div>
               {this.props.previousPeriod &&
@@ -83,7 +83,7 @@ export default class TrendsSummaryCard extends React.Component<Props> {
           </a>
           <a href="#cache" className="card trend-summary-group">
             <div className="trend-headline-stat">
-              <Package size="27" className="icon"></Package>
+              <Package size={27}></Package>
               <span className="trend-headline-text">{format.percent(cacheHitRate)}% AC hit rate</span>
             </div>
             {this.props.previousPeriod && previousCacheRequestTotal > 0 && (
@@ -99,7 +99,7 @@ export default class TrendsSummaryCard extends React.Component<Props> {
           </a>
           <a href="#savings" className="card trend-summary-group">
             <div className="trend-headline-stat">
-              <Cpu size="27" className="icon"></Cpu>
+              <Cpu size={27}></Cpu>
               <span className="trend-headline-text">
                 {format.cpuSavingsSec(+this.props.currentPeriod.cpuMicrosSaved / 1000000)} saved
               </span>

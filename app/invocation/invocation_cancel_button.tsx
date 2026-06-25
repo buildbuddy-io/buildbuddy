@@ -38,7 +38,7 @@ export default class InvocationCancelButtonComponent extends React.Component<Inv
           disabled={isLoading || alreadyCancelled}
           onClick={this.onClick.bind(this)}
           title={alreadyCancelled ? "Invocation has already been cancelled and is now being cleaned up." : undefined}>
-          {isLoading ? <Spinner className="icon" /> : <SlashIcon className="icon" />}
+          {isLoading ? <Spinner className="icon" /> : <SlashIcon />}
           <div>Cancel</div>
         </OutlinedButton>
       </div>

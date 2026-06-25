@@ -22,6 +22,7 @@ ts_library(
         "//app/components/spinner",
         "//app/components/tooltip",
         "//app/format",
+        "//app/icons:github_lucide",
         "//app/invocation:invocation_card",
         "//app/router",
         "//app/router:router_params",

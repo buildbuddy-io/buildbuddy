@@ -96,7 +96,7 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
       return (
         <div className="no-results">
           <div className="circle">
-            <Search className="icon gray" />
+            <Search className="gray" />
             <h2>Empty Query</h2>
             <p>
               To see results, try entering a query. Here are some examples:
@@ -127,7 +127,7 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
       return (
         <div className="no-results">
           <div className="circle">
-            <XCircle className="icon gray" />
+            <XCircle className="gray" />
             <h2>Invalid Search Query</h2>
             <p>{this.state.errorMessage}</p>
           </div>
@@ -143,7 +143,7 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
       return (
         <div className="no-results">
           <div className="circle">
-            <Bird className="icon gray" />
+            <Bird className="gray" />
             <h2>No results found</h2>
           </div>
         </div>

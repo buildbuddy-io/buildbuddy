@@ -155,13 +155,11 @@
 }
 
 .workflows-page .upgrade-notice .icon {
-  width: 16px;
-  height: 16px;
+  --icon-size: 16px;
 }
 
 .workflows-page .workflow-item-row .git-merge-icon {
-  width: 16px;
-  height: 16px;
+  --icon-size: 16px;
   align-self: center;
   margin-right: 8px;
 }

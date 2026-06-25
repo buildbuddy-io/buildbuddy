@@ -854,10 +854,10 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
       <div className="api-key-value">
         <span className="display-value">{displayValue}</span>
         <OutlinedButton className="api-key-value-copy icon-button" onClick={this.handleCopyClick.bind(this)}>
-          {isCopied ? <Check style={{ stroke: "green" }} className="icon" /> : <Copy className="icon" />}
+          {isCopied ? <Check style={{ stroke: "green" }} /> : <Copy />}
         </OutlinedButton>
         <OutlinedButton className="api-key-value-hide icon-button" onClick={this.toggleHideValue.bind(this)}>
-          {hideValue ? <Eye className="icon" /> : <EyeOff className="icon" />}
+          {hideValue ? <Eye /> : <EyeOff />}
         </OutlinedButton>
       </div>
     );

@@ -71,7 +71,7 @@ class CacheProxiesList extends React.Component<CacheProxiesListProps> {
     return (
       <div className="cache-proxy-cards">
         <div className="cache-proxy-summary">
-          <Hash className="icon" />
+          <Hash />
           <span>
             <b>
               {this.props.proxies.length} {this.props.proxies.length === 1 ? "cache proxy" : "cache proxies"}

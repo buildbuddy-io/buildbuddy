@@ -1,0 +1,49 @@
+svg.icon {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  /* By default, icons should not get squished */
+  flex-shrink: 0;
+  /* Default icon color is gray */
+  stroke: var(--color-icon-default);
+}
+
+svg.icon.white {
+  stroke: var(--color-white);
+}
+
+svg.icon.gray,
+svg.icon.grey {
+  stroke: var(--color-icon-default);
+}
+
+svg.icon.black {
+  stroke: var(--color-black);
+}
+
+svg.icon.green {
+  stroke: var(--color-light-green-500);
+}
+
+svg.icon.red {
+  stroke: var(--color-red-500);
+}
+
+svg.icon.blue {
+  stroke: var(--color-light-blue-500);
+}
+
+svg.icon.brown {
+  stroke: var(--color-brown-700-alt);
+}
+
+svg.icon.purple {
+  stroke: var(--color-deep-purple-500);
+}
+
+svg.icon.orange {
+  stroke: var(--color-amber-900);
+}
+
+svg.icon.yellow {
+  stroke: var(--color-icon-yellow);
+}

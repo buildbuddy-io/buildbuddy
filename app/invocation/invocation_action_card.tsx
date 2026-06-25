@@ -30,7 +30,6 @@ import Dialog, {
   DialogTitle,
 } from "../components/dialog/dialog";
 import DigestComponent from "../components/digest/digest";
-import { FileIcon } from "../components/icons/file_icon";
 import { TextLink } from "../components/link/link";
 import Menu, { MenuItem } from "../components/menu/menu";
 import Modal from "../components/modal/modal";
@@ -39,6 +38,7 @@ import Spinner from "../components/spinner/spinner";
 import HelpTooltip from "../components/tooltip/help_tooltip";
 import errorService from "../errors/error_service";
 import format, { durationUsec } from "../format/format";
+import { FileIcon } from "../icons/file_icon";
 import UserPreferences from "../preferences/preferences";
 import router from "../router/router";
 import { Cancelable, CancelablePromise, default as rpcService } from "../service/rpc_service";
@@ -750,7 +750,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                   { filename: download.path }
                                 )}
                                 title="Download">
-                                <Download className="download-button icon" />
+                                <Download className="download-button" />
                               </a>
                             )}
                           </div>
@@ -1060,11 +1060,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
             {symlinks.map((symlink) => (
               <div className="tree-node-symlink">
                 <span>
-                  <FileSymlink className="icon symlink-icon" />
+                  <FileSymlink className="symlink-icon" />
                 </span>{" "}
                 <span>{symlink.path}</span>{" "}
                 <span>
-                  <ArrowRight className="icon arrow-right-icon" />
+                  <ArrowRight className="arrow-right-icon" />
                 </span>{" "}
                 <span>{symlink.target}</span>
               </div>
@@ -1086,7 +1086,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {command.outputPaths.map((expectedOutput) => (
           <div className="expected-output">
             <span>
-              <FileQuestion className="icon file-question-icon" />
+              <FileQuestion className="file-question-icon" />
             </span>
             <span className="expected-output-label">{expectedOutput}</span>
           </div>
@@ -1099,7 +1099,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {command.outputDirectories.map((expectedDir) => (
           <div className="expected-output">
             <span>
-              <Folder className="icon folder-icon" />
+              <Folder className="folder-icon" />
             </span>
             <span className="expected-output-label">{expectedDir}</span>
           </div>
@@ -1107,7 +1107,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {command.outputFiles.map((expectedFile) => (
           <div className="expected-output">
             <span>
-              <File className="icon file-icon" />
+              <File className="file-icon" />
             </span>
             <span className="expected-output-label">{expectedFile}</span>
           </div>
@@ -1135,7 +1135,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {missingOutputs.map((missingOutput) => (
           <div className="missing-output">
             <span>
-              <FileQuestion className="icon file-question-icon red" />
+              <FileQuestion className="file-question-icon red" />
             </span>
             <span className="missing-output-label">{missingOutput}</span>
           </div>
@@ -1148,7 +1148,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {missingDirs.map((missingDir) => (
           <div className="missing-output">
             <span>
-              <Folder className="icon file-question-icon red" />
+              <Folder className="file-question-icon red" />
             </span>
             <span className="missing-output-label">{missingDir}</span>
           </div>
@@ -1156,7 +1156,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {missingFiles.map((missingFile) => (
           <div className="missing-output">
             <span>
-              <FileQuestion className="icon file-question-icon red" />
+              <FileQuestion className="file-question-icon red" />
             </span>
             <span className="missing-output-label">{missingFile}</span>
           </div>
@@ -1296,7 +1296,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         )}
         {!this.state.loadingAction && (
           <div className="card">
-            <Info className="icon purple" />
+            <Info className="purple" />
             <div className="content">
               {executionId && (
                 <>
@@ -1310,7 +1310,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                             getDrilldownUrl(this.state.execution?.targetLabel, this.state.execution?.actionMnemonic)
                           )
                         }>
-                        <History className="icon" />
+                        <History />
                         <span>View history</span>
                       </OutlinedButton>
                     )}
@@ -1450,7 +1450,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       <div className="action-title">Command details</div>
                       {this.state.command && (
                         <OutlinedButton className="copy-bb-execute-button" onClick={this.onClickCopyBbExecute}>
-                          <Copy className="icon copy-icon" />
+                          <Copy className="copy-icon" />
                           Copy as bb-execute
                         </OutlinedButton>
                       )}
@@ -1686,7 +1686,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 className="file-name clickable"
                                 onClick={this.handleOutputFileClicked.bind(this, file)}>
                                 <span>
-                                  <Download className="icon file-icon" />
+                                  <Download className="file-icon" />
                                 </span>
                                 <span className="prop-link">{file.path}</span>
                                 {file.digest && (

@@ -103,7 +103,7 @@ export default class DatePickerButton extends React.Component<Props, State> {
     return (
       <div className="popup-wrapper date-picker-button-wrapper">
         <OutlinedButton className="date-picker-button icon-text-button" onClick={this.onOpenDatePicker.bind(this)}>
-          <Calendar className="icon" />
+          <Calendar />
           <span>{formatDateRangeFromUrlParams(this.props.search)}</span>
         </OutlinedButton>
         <Popup

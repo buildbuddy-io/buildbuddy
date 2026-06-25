@@ -1,7 +1,7 @@
 import { FileCode, FileImageIcon, FileVideoIcon, LucideProps } from "lucide-react";
 import React from "react";
 
-import { isImageExtension, isVideoExtension, parseExtension } from "../../util/file_types";
+import { isImageExtension, isVideoExtension, parseExtension } from "../util/file_types";
 
 /** Props for FileIcon. */
 export interface FileIconProps extends LucideProps {

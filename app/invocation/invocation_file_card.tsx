@@ -296,7 +296,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
                 {files.slice(0, this.state.fileLimit).map((file) => (
                   <Link key={file.id} className="invocation-execution-row" href={this.getFileLink(file?.file)}>
                     <div className="invocation-execution-row-image">
-                      <FileIcon className="icon" />
+                      <FileIcon />
                     </div>
                     <div>
                       <div className="invocation-execution-row-header">
@@ -372,9 +372,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
                           this.state.directoryToFileLimit.set(path, !fileLimit ? pageSize : 0);
                           this.forceUpdate();
                         }}>
-                        <div className="invocation-execution-row-image">
-                          {fileLimit ? <FolderOpen className="icon" /> : <Folder className="icon" />}
-                        </div>
+                        <div className="invocation-execution-row-image">{fileLimit ? <FolderOpen /> : <Folder />}</div>
                         <div>
                           <div className="invocation-execution-row-header">
                             <div>
@@ -410,7 +408,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
                               className="invocation-execution-row nested"
                               href={this.getFileLink(file)}>
                               <div className="invocation-execution-row-image">
-                                <FileIcon className="icon" />
+                                <FileIcon />
                               </div>
                               <div>
                                 <div className="invocation-execution-row-header">
@@ -504,7 +502,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
                   return (
                     <div className="invocation-execution-row">
                       <div className="invocation-execution-row-image">
-                        <FileSymlink className="icon" />{" "}
+                        <FileSymlink />{" "}
                       </div>
                       <div>
                         <div className="invocation-execution-row-header">

@@ -23,7 +23,7 @@ export default class CacheCardComponent extends React.Component<Props> {
         +this.props.model.cacheStats[0]?.totalUploadSizeBytes !== 0);
     return (
       <div className="card">
-        <PieChartIcon className="icon" />
+        <PieChartIcon />
         <div className="content">
           <div className="title">Cache stats</div>
           {!hasCacheStats && (
@@ -33,7 +33,7 @@ export default class CacheCardComponent extends React.Component<Props> {
             <div className="details">
               {hasCacheStats && !this.props.model.hasCacheWriteCapability() && (
                 <div className="cache-details">
-                  <AlertCircleIcon className="icon" />
+                  <AlertCircleIcon />
                   This invocation was created with a read-only API key. No artifacts were written to the cache.
                 </div>
               )}
