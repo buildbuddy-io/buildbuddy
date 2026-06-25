@@ -33,6 +33,8 @@ var (
 	dnsPort    = flag.Int("dns.port", 53, "The port to listen for DNS traffic on")
 	zoneFile   = flag.String("dns.zone_file", "", "Path to a zone file containing the DNS records to serve")
 	zoneOrigin = flag.String("dns.zone_origin", "", "Origin domain to qualify relative names in the zone file against. If empty, names must be fully qualified.")
+
+	acmeChallengeNameservers = flag.Slice[string]("dns.acme_challenge_nameservers", []string{}, "Nameservers to which any in-zone _acme-challenge.* query is referred, delegating ACME DNS-01 validation to a dynamic provider (e.g. Cloud DNS). Empty disables.")
 )
 
 func main() {
@@ -114,7 +116,7 @@ func startDNSServer(env *real_environment.RealEnv) error {
 	if err != nil {
 		return status.WrapErrorf(err, "parse zone file %q", *zoneFile)
 	}
-	handler := server.NewHandler(records, env)
+	handler := server.NewHandler(env, records, *acmeChallengeNameservers)
 
 	addr := fmt.Sprintf("%s:%d", *listen, *dnsPort)
 

@@ -60,7 +60,7 @@ func mustRecords(tb testing.TB) []dns.RR {
 }
 
 func newTestHandler(t *testing.T) dns.Handler {
-	return server.NewHandler(mustRecords(t), testenv.GetTestEnv(t))
+	return server.NewHandler(testenv.GetTestEnv(t), mustRecords(t), nil)
 }
 
 // fakeResponseWriter captures the message written by the handler and reports a
@@ -160,7 +160,7 @@ func handlerWithProvider(t *testing.T, fp *experiments.FlagProvider) dns.Handler
 	t.Helper()
 	te := testenv.GetTestEnv(t)
 	te.SetExperimentFlagProvider(fp)
-	return server.NewHandler(mustRecords(t), te)
+	return server.NewHandler(te, mustRecords(t), nil)
 }
 
 func TestASNRoutingExperiment(t *testing.T) {
@@ -411,7 +411,7 @@ func TestASNRoutingRollout(t *testing.T) {
 // server: it binds the handler to a loopback UDP socket and exchanges queries
 // over concurrent reused connections.
 func BenchmarkServeUDP(b *testing.B) {
-	h := server.NewHandler(mustRecords(b), testenv.GetTestEnv(b))
+	h := server.NewHandler(testenv.GetTestEnv(b), mustRecords(b), nil)
 
 	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
 	require.NoError(b, err)
@@ -533,6 +533,60 @@ func TestApexNSIsAuthoritative(t *testing.T) {
 	assert.True(t, m.Authoritative)
 	require.NotEmpty(t, m.Answer)
 	assert.Empty(t, m.Ns)
+}
+
+func TestACMEChallengeReferral(t *testing.T) {
+	acmeNS := []string{"ns-cloud-e1.googledomains.com.", "ns-cloud-e2.googledomains.com."}
+	h := server.NewHandler(testenv.GetTestEnv(t), mustRecords(t), acmeNS)
+
+	// Any in-zone _acme-challenge.* name, at any depth, is referred to the
+	// configured nameservers with no per-name record: NOERROR, not
+	// authoritative, NS in the authority section, no answer.
+	for _, name := range []string{
+		"_acme-challenge.buildbuddy.io.",
+		"_acme-challenge.cache.buildbuddy.io.",
+		"_acme-challenge.a.b.c.buildbuddy.io.",
+	} {
+		m := query(t, h, name, dns.TypeTXT)
+		assert.Equal(t, dns.RcodeSuccess, m.Rcode, name)
+		assert.False(t, m.Authoritative, "%s should be a referral", name)
+		assert.Empty(t, m.Answer, name)
+		assert.ElementsMatch(t,
+			[]string{"ns-cloud-e1.googledomains.com.", "ns-cloud-e2.googledomains.com."},
+			nsTargets(m.Ns), name)
+	}
+
+	// A normal name is answered authoritatively, unaffected by the ACME rule.
+	m := query(t, h, "cache.buildbuddy.io.", dns.TypeA)
+	assert.True(t, m.Authoritative)
+	assert.Equal(t, []answer{{"cache.buildbuddy.io.", "A", "1.2.3.4"}}, answers(m.Answer))
+
+	// An out-of-zone _acme-challenge name is not ours to refer: normal NXDOMAIN.
+	m = query(t, h, "_acme-challenge.example.com.", dns.TypeTXT)
+	assert.Equal(t, dns.RcodeNameError, m.Rcode)
+	assert.Empty(t, nsTargets(m.Ns))
+
+	// A delegated subdomain owns its own _acme-challenge names: the zone-cut
+	// referral is checked first, so it points at the child's nameservers, not our
+	// ACME provider -- even with the ACME flag set.
+	m = query(t, h, "_acme-challenge.acme.buildbuddy.io.", dns.TypeTXT)
+	assert.False(t, m.Authoritative)
+	assert.ElementsMatch(t,
+		[]string{"ns1.otherns.example.", "ns2.otherns.example."}, nsTargets(m.Ns))
+
+	// ...including in-bailiwick glue for a glued delegation (not the ACME NS).
+	m = query(t, h, "_acme-challenge.glued.buildbuddy.io.", dns.TypeTXT)
+	assert.False(t, m.Authoritative)
+	assert.Equal(t, []string{"ns1.glued.buildbuddy.io."}, nsTargets(m.Ns))
+	assert.Equal(t, []answer{{"ns1.glued.buildbuddy.io.", "A", "5.6.7.8"}}, answers(m.Extra))
+
+	// With no ACME nameservers configured, the rule is off: _acme-challenge
+	// names get ordinary handling (here, the *.buildbuddy.io wildcard), staying
+	// authoritative rather than becoming a referral.
+	def := newTestHandler(t)
+	m = query(t, def, "_acme-challenge.cache.buildbuddy.io.", dns.TypeA)
+	assert.True(t, m.Authoritative)
+	assert.Equal(t, []answer{{"_acme-challenge.cache.buildbuddy.io.", "A", "9.9.9.9"}}, answers(m.Answer))
 }
 
 func TestExactMatch(t *testing.T) {

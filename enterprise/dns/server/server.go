@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
@@ -31,6 +32,14 @@ const (
 	// asnRoutingTTL is the TTL applied to experiment-routed A answers. It is
 	// short so routing decisions can change quickly.
 	asnRoutingTTL = 60
+
+	// acmeChallengePrefix matches the leftmost label of an ACME DNS-01
+	// validation name, which is always _acme-challenge.<domain being validated>.
+	acmeChallengePrefix = "_acme-challenge."
+
+	// acmeReferralTTL is the TTL on the NS records of an _acme-challenge
+	// referral. Short, since challenges are transient.
+	acmeReferralTTL = 300
 )
 
 type handler struct {
@@ -47,6 +56,12 @@ type handler struct {
 	// zone file has no SOA, in which case we can't tell the two apart and treat
 	// nothing as a delegation.
 	apex string
+
+	// acmeChallengeNS, when non-empty, are the nameservers to which any in-zone
+	// _acme-challenge.* query is referred. This delegates ACME DNS-01 validation
+	// to a dynamic DNS provider (e.g. Cloud DNS) for every name in the zone
+	// without a per-name record -- the leftmost label is always _acme-challenge.
+	acmeChallengeNS []string
 
 	env environment.Env
 }
@@ -88,6 +103,10 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	// subdomain off to another DNS provider -- e.g. delegating an ACME
 	// _acme-challenge validation name back to a cloud DNS zone.
 	//
+	// This runs before the ACME referral below so that a name under a delegation
+	// (including the child's own _acme-challenge names) goes to the child that
+	// owns it, rather than being hijacked to our ACME provider.
+	//
 	// TODO(tylerw): A DS query AT a zone cut is the exception: the DS RRset is
 	// parent-owned authoritative data and must be answered here (or NODATA+SOA),
 	// not referred down to the child (RFC 4035 sec. 3.1.4.1). DS queries strictly
@@ -100,6 +119,19 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		m.Extra = append(m.Extra, h.glue(ns)...)
 		if err := w.WriteMsg(m); err != nil {
 			log.Warningf("Failed to write DNS referral for %q: %s", qName, err)
+		}
+		return
+	}
+
+	// Dynamic ACME delegation: refer any in-zone _acme-challenge.* name that is
+	// not already under a delegation (handled above) to the configured
+	// nameservers, so DNS-01 validation for every cert in the zone -- current and
+	// future -- is handled by a dynamic provider with no per-name record here.
+	if ns := h.acmeChallengeReferral(qName); len(ns) > 0 {
+		m.Authoritative = false
+		m.Ns = append(m.Ns, ns...)
+		if err := w.WriteMsg(m); err != nil {
+			log.Warningf("Failed to write ACME challenge referral for %q: %s", qName, err)
 		}
 		return
 	}
@@ -315,6 +347,32 @@ func (h *handler) delegation(name string) []dns.RR {
 	return nil
 }
 
+// acmeChallengeReferral returns NS records delegating name to the configured
+// ACME nameservers, or nil if ACME delegation is unconfigured or name is not an
+// in-zone _acme-challenge.* name. The referral is synthesized per query (owned
+// by name) so a single config covers every _acme-challenge name in the zone.
+// Callers must check delegation() first: a name under a zone cut belongs to the
+// child, so this does not re-check for one.
+func (h *handler) acmeChallengeReferral(name string) []dns.RR {
+	if len(h.acmeChallengeNS) == 0 || h.apex == "" {
+		return nil
+	}
+	// name is canonicalized (lowercase, fqdn) by ServeDNS, and acmeChallengePrefix
+	// is lowercase, so a prefix check identifies the _acme-challenge leftmost
+	// label without allocating.
+	if !strings.HasPrefix(name, acmeChallengePrefix) || !dns.IsSubDomain(h.apex, name) {
+		return nil
+	}
+	out := make([]dns.RR, 0, len(h.acmeChallengeNS))
+	for _, ns := range h.acmeChallengeNS {
+		out = append(out, &dns.NS{
+			Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: acmeReferralTTL},
+			Ns:  ns,
+		})
+	}
+	return out
+}
+
 // glue returns the in-zone (in-bailiwick) address records for the targets of
 // the given NS records, for the additional section of a referral. Out-of-zone
 // targets -- the usual case for our delegations -- contribute no glue and are
@@ -422,7 +480,10 @@ func addrFromNetAddr(a net.Addr) netip.Addr {
 	return netip.Addr{}
 }
 
-func NewHandler(resources []dns.RR, env environment.Env) dns.Handler {
+// NewHandler builds a DNS handler serving resources. acmeChallengeNameservers,
+// if non-empty, are the nameservers to which any in-zone _acme-challenge.* query
+// is referred (delegating ACME DNS-01 validation to a dynamic provider).
+func NewHandler(env environment.Env, resources []dns.RR, acmeChallengeNameservers []string) dns.Handler {
 	records := make(map[string][]dns.RR, len(resources))
 	var soa dns.RR
 	for _, rr := range resources {
@@ -436,11 +497,18 @@ func NewHandler(resources []dns.RR, env environment.Env) dns.Handler {
 	if soa != nil {
 		apex = dns.CanonicalName(soa.Header().Name)
 	}
+	var acmeNS []string
+	for _, ns := range acmeChallengeNameservers {
+		if ns = strings.TrimSpace(ns); ns != "" {
+			acmeNS = append(acmeNS, dns.Fqdn(ns))
+		}
+	}
 	return &handler{
-		records: records,
-		soa:     soa,
-		apex:    apex,
-		env:     env,
+		records:         records,
+		soa:             soa,
+		apex:            apex,
+		acmeChallengeNS: acmeNS,
+		env:             env,
 	}
 }
 
