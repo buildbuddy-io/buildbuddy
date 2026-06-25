@@ -363,6 +363,9 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 		// that streamed response from cache, so they must fetch from the
 		// registry themselves.
 		err = s.fetchBlobFromRemoteToResponse(ctx, digestRef, creds, stream)
+		if err == nil {
+			s.accessProofCache.Add(repoAccessKey(repo, creds), struct{}{})
+		}
 		recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
 		return err
 	}
@@ -397,13 +400,7 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 	// GET is authorized. Size and media type are supplied by the caller (from
 	// the manifest descriptor); when absent (older clients) we stream without
 	// caching rather than fall back to a blob HEAD.
-	rc, err := withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (io.ReadCloser, error) {
-		layer, err := puller.Layer(ctx, digestRef)
-		if err != nil {
-			return nil, err
-		}
-		return layer.Compressed()
-	})
+	rc, err := s.openBlobReader(ctx, digestRef, creds)
 	if err != nil {
 		return 0, err
 	}
@@ -414,8 +411,10 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 		return s.streamBlob(r, stream)
 	}
 
-	// Skip caching when the caller didn't provide metadata.
-	if mediaType == "" || size == 0 {
+	// Skip caching when the caller didn't provide metadata. Media type comes
+	// from the manifest descriptor and is always set when metadata is supplied,
+	// so it (not size, which may legitimately be 0) is the presence signal.
+	if mediaType == "" {
 		return -1, streamAndClose(rc)
 	}
 
@@ -428,23 +427,30 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 	return size, streamAndClose(cachedRC)
 }
 
-func (s *ociFetcherServer) fetchBlobFromRemoteToResponse(ctx context.Context, digestRef ctrname.Digest, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) error {
-	rc, err := withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (io.ReadCloser, error) {
+// openBlobReader opens a streaming reader for the blob from the upstream
+// registry. The blob GET proves repo access as a side effect; callers record
+// that proof in the access cache on success.
+func (s *ociFetcherServer) openBlobReader(ctx context.Context, digestRef ctrname.Digest, creds *rgpb.Credentials) (io.ReadCloser, error) {
+	return withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (io.ReadCloser, error) {
 		layer, err := puller.Layer(ctx, digestRef)
 		if err != nil {
 			return nil, err
 		}
 		return layer.Compressed()
 	})
+}
+
+// fetchBlobFromRemoteToResponse streams the blob from the upstream registry to
+// the response without write-through caching. It is used by waiters when the
+// leader streamed without caching (no metadata), so they cannot replay it from
+// cache.
+func (s *ociFetcherServer) fetchBlobFromRemoteToResponse(ctx context.Context, digestRef ctrname.Digest, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	rc, err := s.openBlobReader(ctx, digestRef, creds)
 	if err != nil {
 		return err
 	}
 	defer rc.Close()
-	if err := s.streamBlob(rc, stream); err != nil {
-		return err
-	}
-	s.accessProofCache.Add(repoAccessKey(digestRef.Context(), creds), struct{}{})
-	return nil
+	return s.streamBlob(rc, stream)
 }
 
 // streamBlob reads from rc and streams the data to the gRPC stream in chunks.

@@ -714,17 +714,7 @@ func (i *imageFromRawManifest) Layers() ([]ctr.Layer, error) {
 }
 
 func (i *imageFromRawManifest) LayerByDigest(digest ctr.Hash) (ctr.Layer, error) {
-	return newLayerFromDigest(
-		i.repo,
-		digest,
-		i,
-		i.puller,
-		nil,
-	), nil
-}
-
-func (i *imageFromRawManifest) LayerByDiffID(diffID ctr.Hash) (ctr.Layer, error) {
-	digest, err := partial.DiffIDToBlob(i, diffID)
+	desc, err := i.descriptorForDigest(digest)
 	if err != nil {
 		return nil, err
 	}
@@ -733,8 +723,47 @@ func (i *imageFromRawManifest) LayerByDiffID(diffID ctr.Hash) (ctr.Layer, error)
 		digest,
 		i,
 		i.puller,
-		nil,
+		desc,
 	), nil
+}
+
+func (i *imageFromRawManifest) LayerByDiffID(diffID ctr.Hash) (ctr.Layer, error) {
+	digest, err := partial.DiffIDToBlob(i, diffID)
+	if err != nil {
+		return nil, err
+	}
+	desc, err := i.descriptorForDigest(digest)
+	if err != nil {
+		return nil, err
+	}
+	return newLayerFromDigest(
+		i.repo,
+		digest,
+		i,
+		i.puller,
+		desc,
+	), nil
+}
+
+// descriptorForDigest returns the manifest descriptor (config or layer) for the
+// given blob digest, so callers can supply the blob's size and media type
+// without a registry round-trip. It returns nil (not an error) when the digest
+// isn't referenced by the manifest; the blob is then fetched without
+// write-through caching.
+func (i *imageFromRawManifest) descriptorForDigest(digest ctr.Hash) (*ctr.Descriptor, error) {
+	manifest, err := i.Manifest()
+	if err != nil {
+		return nil, err
+	}
+	if manifest.Config.Digest == digest {
+		return &manifest.Config, nil
+	}
+	for idx := range manifest.Layers {
+		if manifest.Layers[idx].Digest == digest {
+			return &manifest.Layers[idx], nil
+		}
+	}
+	return nil, nil
 }
 
 func newLayerFromDigest(repo ctrname.Repository, digest ctr.Hash, image *imageFromRawManifest, puller *remote.Puller, desc *ctr.Descriptor) *layerFromDigest {
