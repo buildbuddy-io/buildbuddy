@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -206,9 +207,9 @@ func TestFetchBlob_ForwardsRequestUnchanged(t *testing.T) {
 		mediaType *string
 	}{
 		{name: "NoSizeOrMediaType"},
-		{name: "SizeOnly", size: gproto.Int64(12345)},
+		{name: "SizeOnly", size: gproto.Int64(int64(len(blobData)))},
 		{name: "MediaTypeOnly", mediaType: gproto.String("application/vnd.example.layer.v1.tar+gzip")},
-		{name: "SizeAndMediaType", size: gproto.Int64(12345), mediaType: gproto.String("application/vnd.example.layer.v1.tar+gzip")},
+		{name: "SizeAndMediaType", size: gproto.Int64(int64(len(blobData))), mediaType: gproto.String("application/vnd.example.layer.v1.tar+gzip")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -227,6 +228,7 @@ func TestFetchBlob_ForwardsRequestUnchanged(t *testing.T) {
 			require.Equal(t, blobData, collectBlobData(t, stream))
 			require.NotNil(t, remoteClient.fetchBlobRequest)
 			require.Empty(t, cmp.Diff(req, remoteClient.fetchBlobRequest, protocmp.Transform()))
+			require.Zero(t, remoteClient.fetchBlobMetadataCount, "FetchBlob should not call FetchBlobMetadata")
 		})
 	}
 }
@@ -285,6 +287,45 @@ func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
 	require.NoError(t, err)
 	data2 := collectBlobData(t, stream2)
 	require.Equal(t, expectedData, data2)
+}
+
+func TestFetchBlobWithoutSizeDoesNotFetchBlobMetadata(t *testing.T) {
+	ctx := context.Background()
+	counter := testhttp.NewRequestCounter()
+	var failBlobHead atomic.Bool
+	reg := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			if failBlobHead.Load() && r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/blobs/") {
+				w.WriteHeader(http.StatusUnauthorized)
+				return false
+			}
+			return true
+		},
+	})
+	imageName, img := reg.PushNamedImage(t, "test-no-size", nil)
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+	blobRef := imageName + "@" + digest.String()
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	ociFetcherClient := runOCIFetcherServer(ctx, t, bsClient, acClient)
+	proxyClient := runOCIFetcherProxy(ctx, t, ociFetcherClient)
+
+	failBlobHead.Store(true)
+	counter.Reset()
+	stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: blobRef})
+	require.NoError(t, err)
+	require.Equal(t, expectedData, collectBlobData(t, stream))
+
+	snap := counter.Snapshot()
+	require.Positive(t, snap[http.MethodGet+" /v2/test-no-size/blobs/"+digest.String()], "should fetch the blob via GET")
+	require.Zero(t, snap[http.MethodHead+" /v2/test-no-size/blobs/"+digest.String()], "must not issue a blob HEAD")
 }
 
 // TestBypassRegistry tests the bypass_registry flag crossed with server admin claims
@@ -727,6 +768,7 @@ func TestFetchBlob_Singleflight(t *testing.T) {
 	layer := layers[0]
 	digest, err := layer.Digest()
 	require.NoError(t, err)
+	layerSize, _ := layerMetadata(t, layer)
 	expectedData := layerData(t, layer)
 
 	_, bsClient, acClient := setupCacheEnv(t)
@@ -745,7 +787,10 @@ func TestFetchBlob_Singleflight(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+			stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+				Ref:  ref,
+				Size: gproto.Int64(layerSize),
+			})
 			if err != nil {
 				errs[idx] = err
 				return
@@ -904,7 +949,8 @@ func (c *countingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *o
 }
 
 type recordingOCIFetcherClient struct {
-	fetchBlobRequest *ofpb.FetchBlobRequest
+	fetchBlobRequest       *ofpb.FetchBlobRequest
+	fetchBlobMetadataCount int
 }
 
 func (c *recordingOCIFetcherClient) FetchManifest(ctx context.Context, req *ofpb.FetchManifestRequest, opts ...grpc.CallOption) (*ofpb.FetchManifestResponse, error) {
@@ -921,6 +967,7 @@ func (c *recordingOCIFetcherClient) FetchBlob(ctx context.Context, req *ofpb.Fet
 }
 
 func (c *recordingOCIFetcherClient) FetchBlobMetadata(ctx context.Context, req *ofpb.FetchBlobMetadataRequest, opts ...grpc.CallOption) (*ofpb.FetchBlobMetadataResponse, error) {
+	c.fetchBlobMetadataCount++
 	return &ofpb.FetchBlobMetadataResponse{Size: 5}, nil
 }
 

@@ -81,10 +81,11 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 		return err
 	}
 
-	size, err := s.fetchBlobMetadataSize(ctx, req)
-	if err != nil {
-		return err
+	if req.Size == nil {
+		log.CtxInfof(ctx, "FetchBlob request for %q has no size; streaming through without local proxy caching", req.GetRef())
+		return s.fetchBlobFromUpstreamToResponse(ctx, req, stream)
 	}
+	size := req.GetSize()
 
 	// Also check FailedPrecondition: cachetools.GetBlob wraps NotFound cache
 	// misses as FailedPrecondition via MissingDigestError.
@@ -113,18 +114,6 @@ func parseBlobDigestRef(ref string) (ctrname.Digest, ctr.Hash, error) {
 	return digestRef, hash, nil
 }
 
-func (s *OCIFetcherServerProxy) fetchBlobMetadataSize(ctx context.Context, req *ofpb.FetchBlobRequest) (int64, error) {
-	metaResp, err := s.remote.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{
-		Ref:            req.GetRef(),
-		Credentials:    req.GetCredentials(),
-		BypassRegistry: req.GetBypassRegistry(),
-	})
-	if err != nil {
-		return 0, err
-	}
-	return metaResp.GetSize(), nil
-}
-
 func (s *OCIFetcherServerProxy) dedupedFetchBlob(ctx context.Context, stream ofpb.OCIFetcher_FetchBlobServer, digestRef ctrname.Digest, hash ctr.Hash, size int64, req *ofpb.FetchBlobRequest) error {
 	// Deduplicate concurrent upstream fetches for the same blob+creds.
 	// The leader fetches from upstream and writes to local BSS.
@@ -147,6 +136,25 @@ func (s *OCIFetcherServerProxy) dedupedFetchBlob(ctx context.Context, stream ofp
 
 	// Stream the blob from local BSS to the caller.
 	return fetchBlobFromLocalBS(ctx, s.localBSClient, hash, size, &grpcStreamWriter{stream: stream})
+}
+
+func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToResponse(ctx context.Context, req *ofpb.FetchBlobRequest, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	remoteStream, err := s.remote.FetchBlob(ctx, req)
+	if err != nil {
+		return err
+	}
+	for {
+		resp, err := remoteStream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(resp); err != nil {
+			return err
+		}
+	}
 }
 
 // fetchBlobFromUpstreamToLocalBS fetches a blob from the upstream OCIFetcher

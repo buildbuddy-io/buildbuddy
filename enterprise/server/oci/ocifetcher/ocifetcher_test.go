@@ -1835,6 +1835,56 @@ func TestFetchBlobSingleflightHappyPath(t *testing.T) {
 	}
 }
 
+func TestFetchBlobSingleflightWithoutMetadataWaitersFetchFromRegistry(t *testing.T) {
+	const numRequests = 10
+
+	blocker := newBlockingInterceptor()
+	reg, counter := setupRegistry(t, nil, blocker.intercept)
+	imageName, img := reg.PushNamedImage(t, "test-image", nil)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+
+	layer := layers[0]
+	digest, err := layer.Digest()
+	require.NoError(t, err)
+	expectedData := layerData(t, layer)
+
+	_, bsClient, acClient := setupCacheEnv(t)
+	server := newTestServerWithCache(t, bsClient, acClient)
+
+	req := &ofpb.FetchBlobRequest{
+		Ref: imageName + "@" + digest.String(),
+	}
+
+	counter.Reset()
+	blocker.enable()
+	go func() {
+		require.Eventually(t, func() bool {
+			return blocker.requestCount.Load() >= 1
+		}, 5*time.Second, 10*time.Millisecond, "expected at least 1 HTTP request to arrive")
+		time.Sleep(50 * time.Millisecond)
+		blocker.release()
+	}()
+
+	results := runConcurrentFetchBlob(t, server, req, numRequests,
+		func(idx int) *concurrentMockFetchBlobServer {
+			return &concurrentMockFetchBlobServer{ctx: context.Background()}
+		},
+	)
+
+	blobPath := "/v2/test-image/blobs/" + digest.String()
+	snap := counter.Snapshot()
+	require.Greater(t, snap[http.MethodGet+" "+blobPath], 1, "metadata-less waiters should fetch from registry because the leader does not cache")
+	require.Zero(t, snap[http.MethodHead+" "+blobPath], "must not issue a blob HEAD")
+
+	for i, r := range results {
+		require.NoError(t, r.err, "request %d should succeed", i)
+		require.Equal(t, expectedData, r.data, "request %d should have correct data", i)
+	}
+}
+
 // TestFetchBlobSingleflightCacheHit ensures concurrent callers serve from the
 // blob cache without contacting the registry once access has been proven.
 func TestFetchBlobSingleflightCacheHit(t *testing.T) {
@@ -1950,13 +2000,16 @@ func TestFetchBlobSingleflightLeaderSendFails(t *testing.T) {
 	layer := layers[0]
 	digest, err := layer.Digest()
 	require.NoError(t, err)
+	layerSize, layerMediaType := layerMetadata(t, layer)
 	expectedData := layerData(t, layer)
 
 	_, bsClient, acClient := setupCacheEnv(t)
 	server := newTestServerWithCache(t, bsClient, acClient)
 
 	req := &ofpb.FetchBlobRequest{
-		Ref: imageName + "@" + digest.String(),
+		Ref:       imageName + "@" + digest.String(),
+		Size:      ptr(layerSize),
+		MediaType: ptr(layerMediaType),
 	}
 
 	var firstSenderFlag atomic.Bool
@@ -2011,6 +2064,7 @@ func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
 	layer := layers[0]
 	digest, err := layer.Digest()
 	require.NoError(t, err)
+	layerSize, layerMediaType := layerMetadata(t, layer)
 	expectedData := layerData(t, layer)
 
 	bsClient := failingByteStreamClient{}
@@ -2018,7 +2072,9 @@ func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
 	server := newTestServerWithCache(t, bsClient, acClient)
 
 	req := &ofpb.FetchBlobRequest{
-		Ref: imageName + "@" + digest.String(),
+		Ref:       imageName + "@" + digest.String(),
+		Size:      ptr(layerSize),
+		MediaType: ptr(layerMediaType),
 	}
 
 	const numRequests = 4

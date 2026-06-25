@@ -77,7 +77,8 @@ message FetchBlobRequest {
   // (manifest digest reference, same repository as ref). When set, the server
   // proves repository access with a HEAD of this manifest instead of a blob
   // HEAD, which some registries (e.g. public.ecr.aws) reject even when the
-  // blob GET is authorized. When unset, the server falls back to a blob HEAD.
+  // blob GET is authorized. When unset, the server fetches the blob from the
+  // registry, where the blob GET proves access as a side effect.
   string manifest_ref = 6;
 }
 

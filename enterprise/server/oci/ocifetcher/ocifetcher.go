@@ -357,6 +357,15 @@ func (s *ociFetcherServer) dedupedFetchBlob(ctx context.Context, stream ofpb.OCI
 		recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
 		return err
 	}
+	if contentLength < 0 {
+		// The leader streamed successfully without cache metadata, which means
+		// it intentionally skipped write-through caching. Waiters cannot replay
+		// that streamed response from cache, so they must fetch from the
+		// registry themselves.
+		err = s.fetchBlobFromRemoteToResponse(ctx, digestRef, creds, stream)
+		recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
+		return err
+	}
 	err = ocicache.FetchBlobFromCache(ctx, &grpcStreamWriter{stream: stream}, s.bsClient, hash, contentLength)
 	recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
 	return err
@@ -380,7 +389,7 @@ func recordFetchBlobMetrics(role string, err error, duration time.Duration) {
 // fetchBlobFromRemoteWriteToCacheAndResponse fetches a blob from the upstream
 // registry, streams it to the response, and writes it to the cache
 // simultaneously using read-through caching.
-// It returns the content length of the blob (0 if metadata was unavailable).
+// It returns the content length of the blob (-1 if metadata was unavailable).
 func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx context.Context, digestRef ctrname.Digest, repo ctrname.Repository, hash ctr.Hash, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer, size int64, mediaType string) (int64, error) {
 	// The blob GET is the only registry request here, and it proves repo
 	// access as a side effect. We deliberately avoid a metadata blob HEAD:
@@ -407,7 +416,7 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 
 	// Skip caching when the caller didn't provide metadata.
 	if mediaType == "" || size == 0 {
-		return 0, streamAndClose(rc)
+		return -1, streamAndClose(rc)
 	}
 
 	// cachedRC wraps rc and takes ownership (closes it).
@@ -417,6 +426,25 @@ func (s *ociFetcherServer) fetchBlobFromRemoteWriteToCacheAndResponse(ctx contex
 		return size, streamAndClose(rc)
 	}
 	return size, streamAndClose(cachedRC)
+}
+
+func (s *ociFetcherServer) fetchBlobFromRemoteToResponse(ctx context.Context, digestRef ctrname.Digest, creds *rgpb.Credentials, stream ofpb.OCIFetcher_FetchBlobServer) error {
+	rc, err := withPullerRetry(ctx, s, digestRef, creds, func(puller *remote.Puller) (io.ReadCloser, error) {
+		layer, err := puller.Layer(ctx, digestRef)
+		if err != nil {
+			return nil, err
+		}
+		return layer.Compressed()
+	})
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	if err := s.streamBlob(rc, stream); err != nil {
+		return err
+	}
+	s.accessProofCache.Add(repoAccessKey(digestRef.Context(), creds), struct{}{})
+	return nil
 }
 
 // streamBlob reads from rc and streams the data to the gRPC stream in chunks.
