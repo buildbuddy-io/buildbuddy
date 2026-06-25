@@ -464,6 +464,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		SnapshotIsDiff:                     in.GetSnapshotIsDiff(),
 		SnapshotSavedBytes:                 in.GetSnapshotSavedBytes(),
 		PauseDurationUsec:                  in.GetPauseDurationUsec(),
+		BuildrootDiskUsageBytes:            in.GetBuildrootDiskUsageBytes(),
 	}
 
 	if err := FillExecutionResourceFieldsFromExecutionID(out, in.GetExecutionId()); err != nil {

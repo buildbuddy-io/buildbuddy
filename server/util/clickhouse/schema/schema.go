@@ -285,6 +285,11 @@ type Execution struct {
 	SnapshotSavedBytes    int64 `gorm:"codec:T64,ZSTD(1)"`
 	PauseDurationUsec     int64 `gorm:"codec:T64,ZSTD(1)"`
 
+	// Disk usage of the task's workspace (buildroot), measured after the task
+	// finishes. Only populated when executor.workspace.measure_disk_usage is
+	// enabled.
+	BuildrootDiskUsageBytes int64 `gorm:"codec:T64,ZSTD(1)"`
+
 	Experiments []string `gorm:"type:Array(LowCardinality(String))"`
 
 	// Long string fields
@@ -396,6 +401,7 @@ func (e *Execution) AdditionalFields() []string {
 		"SnapshotIsDiff",
 		"SnapshotSavedBytes",
 		"PauseDurationUsec",
+		"BuildrootDiskUsageBytes",
 		"ExecutorHostname",
 		"Experiments",
 		"ClientIP",

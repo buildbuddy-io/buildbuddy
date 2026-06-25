@@ -1251,6 +1251,14 @@ var (
 		StatusHumanReadableLabel,
 	})
 
+	RemoteExecutionBuildrootDiskUsageMeasurementDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "buildroot_disk_usage_measurement_duration_usec",
+		Help:      "Duration of the buildroot (workspace) disk usage measurement performed after a task finishes, in **microseconds**.",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Minute, 2),
+	})
+
 	RemoteExecutionResourceUsageTimelineMetadataSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",

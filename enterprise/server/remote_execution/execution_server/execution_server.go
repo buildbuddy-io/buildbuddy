@@ -384,13 +384,14 @@ func (s *ExecutionServer) updateExecutionPostCompletion(ctx context.Context, exe
 		// Stage must be COMPLETED, otherwise mergeExecutionUpdates drops this
 		// event as "execution progress appears to restart" after the first
 		// COMPLETED.
-		Stage:                 int64(repb.ExecutionStage_COMPLETED),
-		UpdatedAtUsec:         time.Now().UnixMicro(),
-		PauseDurationUsec:     stats.GetPauseDurationUsec(),
-		SnapshotSavedLocally:  fcStats.GetSnapshotSavedLocally(),
-		SnapshotSavedRemotely: fcStats.GetSnapshotSavedRemotely(),
-		SnapshotIsDiff:        fcStats.GetSnapshotIsDiff(),
-		SnapshotSavedBytes:    fcStats.GetSnapshotSavedBytes(),
+		Stage:                   int64(repb.ExecutionStage_COMPLETED),
+		UpdatedAtUsec:           time.Now().UnixMicro(),
+		PauseDurationUsec:       stats.GetPauseDurationUsec(),
+		SnapshotSavedLocally:    fcStats.GetSnapshotSavedLocally(),
+		SnapshotSavedRemotely:   fcStats.GetSnapshotSavedRemotely(),
+		SnapshotIsDiff:          fcStats.GetSnapshotIsDiff(),
+		SnapshotSavedBytes:      fcStats.GetSnapshotSavedBytes(),
+		BuildrootDiskUsageBytes: stats.GetBuildrootDiskUsageBytes(),
 	}
 	return s.executionCollector.UpdateInProgressExecution(ctx, execution)
 }
