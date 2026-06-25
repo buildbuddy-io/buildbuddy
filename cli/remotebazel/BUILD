@@ -8,7 +8,13 @@ package(default_visibility = [
 
 go_library(
     name = "remotebazel",
-    srcs = ["remotebazel.go"],
+    srcs = [
+        "remotebazel.go",
+        "terminal_echo.go",
+        "terminal_echo_darwin.go",
+        "terminal_echo_linux.go",
+        "terminal_echo_unsupported.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/remotebazel",
     deps = [
         "//cli/arg",
@@ -56,8 +62,13 @@ go_test(
         "//cli/parser",
         "//cli/parser/test_data",
         "//cli/storage",
+        "//proto:buildbuddy_service_go_proto",
+        "//proto:eventlog_go_proto",
         "//server/testutil/testgit",
         "//server/testutil/testshell",
+        "//server/util/terminal",
+        "@com_github_creack_pty//:pty",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
     ],
 )
