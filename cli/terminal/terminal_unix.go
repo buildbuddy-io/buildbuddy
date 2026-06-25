@@ -1,4 +1,6 @@
-package remotebazel
+//go:build (darwin || linux) && !ios && !android
+
+package terminal
 
 import (
 	"os"
@@ -6,10 +8,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// disableTerminalEcho disables writing input to the terminal, but preserves
-// normal terminal signal handling.
-// Returns a function to restore the original settings and flush queued input.
-func disableTerminalEchoWithRequests(f *os.File, getReq, setReq, restoreReq uint) (func() error, error) {
+func disableEchoWithRequests(f *os.File, getReq, setReq, restoreReq uint) (func() error, error) {
 	fd := int(f.Fd())
 	oldState, err := unix.IoctlGetTermios(fd, getReq)
 	if err != nil {
