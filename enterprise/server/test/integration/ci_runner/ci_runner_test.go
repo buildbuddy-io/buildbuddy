@@ -1100,6 +1100,75 @@ func TestCIRunner_Merge_FetchesCompleteGitHistory(t *testing.T) {
 	checkRunnerResult(t, result)
 }
 
+func TestCIRunner_MergeDisabled_SkipsFetchingCompleteGitHistory(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, _ := makeGitRepo(t, workspaceContentsWithRunScript)
+
+	testshell.Run(t, repoPath, `
+		# Create a base branch
+		git checkout -B base
+		printf 'echo "Base Commit" && exit 0\n' > base1.sh
+		git add base1.sh
+		git commit -m "Original commit on base"
+
+		# Create a feature branch off the first commit of the base branch
+		git checkout -B feature
+		printf 'echo NONCONFLICTING_EDIT && exit 0\n' > feature.sh
+		git add feature.sh
+		git commit -m "Commit from feature branch"
+
+		# Add another commit to the base branch, so the merge base is no longer
+		# reachable from a shallow fetch of the feature branch.
+		printf 'echo "Second commit on base" && exit 0\n' > base2.sh
+		git add base2.sh
+		git commit -m "Second commit on base"
+	`)
+
+	// Disable merge_with_base.
+	mergeWithBase := false
+	action := &config.Action{
+		Name: "Print args",
+		Triggers: &config.Triggers{
+			PullRequest: &config.PullRequestTrigger{
+				MergeWithBase: &mergeWithBase,
+			},
+		},
+		Steps: []*rnpb.Step{
+			{Run: "echo merge-with-base-disabled"},
+		},
+	}
+	actionBytes, err := yaml.Marshal(action)
+	require.NoError(t, err)
+	serializedAction := base64.StdEncoding.EncodeToString(actionBytes)
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--serialized_action=" + serializedAction,
+		"--trigger_event=pull_request",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=feature",
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=base",
+		// Request a shallow fetch.
+		"--git_fetch_depth=1",
+		// Disable clean checkout fallback for this test since we expect to sync
+		// without errors.
+		"--fallback_to_clean_checkout=false",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+	checkRunnerResult(t, result)
+
+	runnerInvocation := getRunnerInvocation(t, app, result)
+	// With merge_with_base disabled, we shouldn't fetch full git history.
+	assert.NotContains(t, runnerInvocation.ConsoleBuffer, "Fetching full history")
+	if t.Failed() {
+		t.Log(runnerInvocation.ConsoleBuffer)
+	}
+}
+
 func TestCIRunner_PullRequest_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 
