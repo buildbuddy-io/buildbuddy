@@ -85,6 +85,8 @@ func executionDimensionToDbField(m stat_filter.ExecutionDimensionType) (string, 
 		return "effective_pool", nil
 	case stat_filter.ExecutionDimensionType_EXIT_CODE_EXECUTION_DIMENSION:
 		return "exit_code", nil
+	case stat_filter.ExecutionDimensionType_PRIMARY_OUTPUT_EXECUTION_DIMENSION:
+		return "output_path", nil
 	default:
 		return "", status.InvalidArgumentErrorf("Invalid field: %s", m.String())
 	}

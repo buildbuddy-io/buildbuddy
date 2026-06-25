@@ -12,6 +12,18 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func TestDimensionToDbField_PrimaryOutput(t *testing.T) {
+	dimensionType := stat_filter.ExecutionDimensionType_PRIMARY_OUTPUT_EXECUTION_DIMENSION
+	dimension := &stat_filter.Dimension{
+		Execution: &dimensionType,
+	}
+
+	field, err := filter.DimensionToDbField(dimension)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "output_path", field)
+}
+
 func TestValidGenericFilters(t *testing.T) {
 	cases := []struct {
 		filter        *stat_filter.GenericFilter

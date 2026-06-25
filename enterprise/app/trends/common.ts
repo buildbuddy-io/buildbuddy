@@ -204,6 +204,10 @@ export function encodeExitCodeUrlParam(exitCode: string): string {
   return `e5|${exitCode.length}|${exitCode}`;
 }
 
+export function encodePrimaryOutputUrlParam(primaryOutput: string): string {
+  return `e6|${primaryOutput.length}|${primaryOutput}`;
+}
+
 export function getTotal(stats: stats.ITrendStat[], fn: (stat: stats.ITrendStat) => number): number {
   return stats.map(fn).reduce((a, b) => a + b, 0);
 }

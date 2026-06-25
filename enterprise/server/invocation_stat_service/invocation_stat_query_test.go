@@ -58,6 +58,28 @@ func TestGetDrilldownSubquery_NonExitCode(t *testing.T) {
 	require.NotContains(t, query, "toString(exit_code)")
 }
 
+func TestGetDrilldownSubquery_PrimaryOutput(t *testing.T) {
+	var iss *InvocationStatService
+	ctx := context.Background()
+	drilldownFields := []string{"user", "host", "output_path"}
+	execMetric := sfpb.ExecutionMetricType_UPDATED_AT_USEC_EXECUTION_METRIC
+	req := &statspb.GetStatDrilldownRequest{
+		DrilldownMetric: &sfpb.Metric{
+			Execution: &execMetric,
+		},
+	}
+	where := "WHERE group_id = 'GR1'"
+	whereArgs := []interface{}{}
+	drilldown := "success = true"
+	drilldownArgs := []interface{}{}
+	col := "output_path"
+
+	query, _ := iss.getDrilldownSubquery(ctx, drilldownFields, req, where, whereArgs, drilldown, drilldownArgs, col)
+
+	require.Contains(t, query, "output_path as gorm_output_path")
+	require.Contains(t, query, "GROUP BY gorm_output_path")
+}
+
 func TestGetLogMetricBuckets(t *testing.T) {
 	for _, tc := range []struct {
 		name            string

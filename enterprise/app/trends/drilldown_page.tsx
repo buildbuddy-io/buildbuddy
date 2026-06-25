@@ -29,6 +29,7 @@ import {
   encodeEffectivePoolUrlParam,
   encodeExitCodeUrlParam,
   encodeMetricUrlParam,
+  encodePrimaryOutputUrlParam,
   encodeTargetLabelUrlParam,
   encodeWorkerUrlParam,
   isSummableMetric,
@@ -659,6 +660,9 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       case stats.DrilldownType.EXIT_CODE_DRILLDOWN_TYPE:
         this.navigateDimensionBarClick(encodeExitCodeUrlParam(originalLabel));
         return;
+      case stats.DrilldownType.PRIMARY_OUTPUT_DRILLDOWN_TYPE:
+        this.navigateDimensionBarClick(encodePrimaryOutputUrlParam(originalLabel));
+        return;
       case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
       case stats.DrilldownType.DATE_DRILLDOWN_TYPE:
       default:
@@ -703,6 +707,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         return "pool (execution)";
       case stats.DrilldownType.EXIT_CODE_DRILLDOWN_TYPE:
         return "exit code (execution)";
+      case stats.DrilldownType.PRIMARY_OUTPUT_DRILLDOWN_TYPE:
+        return "primary output (execution)";
       default:
         return "???";
     }

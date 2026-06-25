@@ -1286,6 +1286,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const vmMetadata = this.getAuxiliaryMetadata(firecracker.VMMetadata);
     const executionId = this.getExecutionId();
     const platformOverrides = this.getPlatformOverrides();
+    const executionHistoryUrl = getExecutionHistoryDrilldownUrl(
+      this.state.execution?.primaryOutputPath,
+      this.state.execution?.targetLabel,
+      this.state.execution?.actionMnemonic
+    );
 
     return (
       <div className="invocation-action-card">
@@ -1302,14 +1307,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
                 <>
                   <div className="action-header">
                     <div className="title">Execution details</div>
-                    {this.state.execution?.targetLabel && this.state.execution?.actionMnemonic && (
+                    {executionHistoryUrl && (
                       <OutlinedButton
                         className="view-history-button"
-                        onClick={() =>
-                          router.navigateTo(
-                            getDrilldownUrl(this.state.execution?.targetLabel, this.state.execution?.actionMnemonic)
-                          )
-                        }>
+                        onClick={() => router.navigateTo(executionHistoryUrl)}>
                         <History className="icon" />
                         <span>View history</span>
                       </OutlinedButton>
@@ -1334,6 +1335,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       <div className="action-section">
                         <div className="action-property-title">Action mnemonic</div>
                         <div>{this.state.execution?.actionMnemonic}</div>
+                      </div>
+                    )}
+                    {this.state.execution?.primaryOutputPath && (
+                      <div className="action-section">
+                        <div className="action-property-title">Primary output</div>
+                        <div className="action-primary-output">{this.state.execution.primaryOutputPath}</div>
                       </div>
                     )}
                     <div className="action-section">
@@ -1795,6 +1802,17 @@ function parseActionDigestHashFromExecutionId(executionId: string): string | und
   return parts[parts.length - 2];
 }
 
+function getExecutionHistoryDrilldownUrl(
+  primaryOutput?: string,
+  targetLabel?: string,
+  actionMnemonic?: string
+): string {
+  if (primaryOutput) {
+    return getPrimaryOutputDrilldownUrl(primaryOutput);
+  }
+  return getDrilldownUrl(targetLabel, actionMnemonic);
+}
+
 function getDrilldownUrl(targetLabel?: string, actionMnemonic?: string): string {
   if (!targetLabel || !actionMnemonic) {
     return "";
@@ -1803,10 +1821,21 @@ function getDrilldownUrl(targetLabel?: string, actionMnemonic?: string): string 
   return `/trends/?d=${encodeURIComponent(dimensionParam)}&ddMetric=e4#drilldown`;
 }
 
+function getPrimaryOutputDrilldownUrl(primaryOutput?: string): string {
+  if (!primaryOutput) {
+    return "";
+  }
+  return `/trends/?d=${encodeURIComponent(encodePrimaryOutputUrlParam(primaryOutput))}&ddMetric=e4#drilldown`;
+}
+
 export function encodeTargetLabelUrlParam(targetLabel: string): string {
   return `e2|${targetLabel.length}|${targetLabel}`;
 }
 
 export function encodeActionMnemonicUrlParam(actionMnemonic: string): string {
   return `e3|${actionMnemonic.length}|${actionMnemonic}`;
+}
+
+export function encodePrimaryOutputUrlParam(primaryOutput: string): string {
+  return `e6|${primaryOutput.length}|${primaryOutput}`;
 }

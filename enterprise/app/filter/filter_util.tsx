@@ -416,6 +416,8 @@ export function getDimensionName(d: stat_filter.Dimension): string {
         return "Pool";
       case stat_filter.ExecutionDimensionType.EXIT_CODE_EXECUTION_DIMENSION:
         return "Exit Code";
+      case stat_filter.ExecutionDimensionType.PRIMARY_OUTPUT_EXECUTION_DIMENSION:
+        return "Primary Output";
     }
   } else if (d.invocation) {
     switch (d.invocation) {
