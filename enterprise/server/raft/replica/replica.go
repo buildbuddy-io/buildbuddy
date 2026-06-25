@@ -104,8 +104,10 @@ type Replica struct {
 	bgCancelFn context.CancelFunc
 }
 
+const uint64EncodingSizeBytes = 8
+
 func uint64ToBytes(i uint64) []byte {
-	buf := make([]byte, 8)
+	buf := make([]byte, uint64EncodingSizeBytes)
 	binary.LittleEndian.PutUint64(buf, i)
 	return buf
 }
@@ -460,6 +462,13 @@ func (sm *Replica) loadTxnIntoMemory(txid []byte, batchReq *rfpb.BatchCmdRequest
 // so it can be applied or reverted via CommitTransaction or
 // RollbackTransaction.
 func (sm *Replica) PrepareTransaction(wb pebble.Batch, txid []byte, batchReq *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	markerKey := keys.MakeKey(constants.LocalTxnRollbackMarkerPrefix, txid)
+	if _, err := sm.lookup(wb, markerKey); err == nil {
+		return nil, status.FailedPreconditionErrorf("%s: [%s] txid=%q", constants.TxnRolledBackMessage, sm.name(), txid)
+	} else if !status.IsNotFoundError(err) {
+		return nil, err
+	}
+
 	// Save the txn batch in memory and acquire locks.
 	batchRsp, err := sm.loadTxnIntoMemory(txid, batchReq)
 	if err != nil {
@@ -501,25 +510,100 @@ func (sm *Replica) CommitTransaction(txid []byte) error {
 	return nil
 }
 
-func (sm *Replica) RollbackTransaction(txid []byte) error {
+// RollbackTransaction releases any prepared state for txid and writes a
+// participant-local rollback marker that fences future PrepareTransaction calls
+// for txid. finalizedAtUsec is the marker's retention timestamp and must be a
+// real (positive) proposer-stamped time: GC only deletes markers whose
+// timestamp is positive and at or before its cutoff, so a non-positive value is
+// never collected (safe — fencing is preserved, never prematurely dropped).
+func (sm *Replica) RollbackTransaction(wb pebble.Batch, txid []byte, finalizedAtUsec int64) error {
+	markerKey := keys.MakeKey(constants.LocalTxnRollbackMarkerPrefix, txid)
 	txn, ok := sm.prepared[string(txid)]
-	if !ok {
-		return status.NotFoundErrorf("%s: [%s] txid=%q", constants.TxnNotFoundMessage, sm.name(), txid)
+	if ok {
+		defer txn.Close()
+		delete(sm.prepared, string(txid))
+
+		sm.releaseLocks(txn, txid)
+		txn.Reset()
+
+		txKey := keys.MakeKey(constants.LocalTransactionPrefix, txid)
+		if err := wb.Delete(sm.replicaLocalKey(txKey), nil /*ignore write options*/); err != nil {
+			return err
+		}
 	}
-	defer txn.Close()
-	delete(sm.prepared, string(txid))
+	return wb.Set(sm.replicaLocalKey(markerKey), uint64ToBytes(uint64(finalizedAtUsec)), nil /*ignored write options*/)
+}
 
-	sm.releaseLocks(txn, txid)
-
-	txn.Reset()
-	txKey := keys.MakeKey(constants.LocalTransactionPrefix, txid)
-	txn.Delete(sm.replicaLocalKey(txKey), nil /*ignore write options*/)
-
-	if err := txn.Commit(pebble.Sync); err != nil {
-		return err
+func rollbackMarkerFinalizedAtUsec(val []byte) (int64, error) {
+	if len(val) != uint64EncodingSizeBytes {
+		return 0, status.InvalidArgumentErrorf("rollback marker timestamp has length %d, expected %d", len(val), uint64EncodingSizeBytes)
 	}
-	sm.updateInMemoryState(txn)
-	return nil
+	return int64(bytesToUint64(val)), nil
+}
+
+// HasTxnRollbackMarkersBeforeForTest scans this replica's local rollback markers
+// and returns true if any has a positive timestamp at or before cutoffUsec.
+// Non-positive timestamps are skipped (see RollbackTransaction). Exported only
+// for tests, which can't reach the node-local marker keyspace directly.
+func (sm *Replica) HasTxnRollbackMarkersBeforeForTest(cutoffUsec int64) (bool, error) {
+	db, err := sm.leaser.DB()
+	if err != nil {
+		return false, err
+	}
+	defer db.Close()
+
+	start, end := keys.Range(sm.replicaLocalKey(constants.LocalTxnRollbackMarkerPrefix))
+	iter, err := db.NewIter(&pebble.IterOptions{
+		LowerBound: start,
+		UpperBound: end,
+	})
+	if err != nil {
+		return false, err
+	}
+	defer iter.Close()
+
+	for iter.First(); iter.Valid(); iter.Next() {
+		finalizedAtUsec, err := rollbackMarkerFinalizedAtUsec(iter.Value())
+		if err != nil {
+			sm.log.Errorf("unable to parse rollback marker %q: %s", iter.Key(), err)
+			continue
+		}
+		// Skip non-positive timestamps so a marker never expires before its real
+		// finalize time; see RollbackTransaction.
+		if finalizedAtUsec > 0 && finalizedAtUsec <= cutoffUsec {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (sm *Replica) deleteTxnRollbackMarkersBefore(wb pebble.Batch, req *rfpb.DeleteTxnRollbackMarkersBeforeRequest) (*rfpb.DeleteTxnRollbackMarkersBeforeResponse, error) {
+	start, end := keys.Range(sm.replicaLocalKey(constants.LocalTxnRollbackMarkerPrefix))
+	iter, err := wb.NewIter(&pebble.IterOptions{
+		LowerBound: start,
+		UpperBound: end,
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer iter.Close()
+
+	cutoffUsec := req.GetCutoffUsec()
+	for iter.First(); iter.Valid(); iter.Next() {
+		finalizedAtUsec, err := rollbackMarkerFinalizedAtUsec(iter.Value())
+		if err != nil {
+			sm.log.Errorf("unable to parse rollback marker %q: %s", iter.Key(), err)
+			continue
+		}
+		// Skip non-positive timestamps so a marker never expires before its real
+		// finalize time; see RollbackTransaction.
+		if finalizedAtUsec > 0 && finalizedAtUsec <= cutoffUsec {
+			if err := wb.Delete(iter.Key(), nil /* ignore write options */); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return &rfpb.DeleteTxnRollbackMarkersBeforeResponse{}, nil
 }
 
 func (sm *Replica) loadInflightTransactions(db ReplicaReader) error {
@@ -1238,6 +1322,12 @@ func (sm *Replica) handlePropose(wb pebble.Batch, req *rfpb.RequestUnion) *rfpb.
 			DeleteSessions: r,
 		}
 		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_DeleteTxnRollbackMarkersBefore:
+		r, err := sm.deleteTxnRollbackMarkersBefore(wb, value.DeleteTxnRollbackMarkersBefore)
+		rsp.Value = &rfpb.ResponseUnion_DeleteTxnRollbackMarkersBefore{
+			DeleteTxnRollbackMarkersBefore: r,
+		}
+		rsp.Status = statusProto(err)
 	default:
 		rsp.Status = statusProto(status.UnimplementedErrorf("SyncPropose handling for %+v not implemented.", req))
 	}
@@ -1484,7 +1574,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 				batchRsp.Status = statusProto(err)
 			}
 		case rfpb.FinalizeOperation_ROLLBACK:
-			if err := sm.RollbackTransaction(txid); err != nil {
+			if err := sm.RollbackTransaction(wb, txid, batchReq.GetTxnFinalizedAtUsec()); err != nil {
 				batchRsp.Status = statusProto(err)
 			}
 		default:

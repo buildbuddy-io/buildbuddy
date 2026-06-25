@@ -115,6 +115,16 @@ message DeleteSessionsRequest {
 
 message DeleteSessionsResponse {}
 
+// State-idempotent (re-sweep finds nothing left to delete) and
+// response-idempotent (empty response). Operates on replica-local rollback
+// marker keys.
+message DeleteTxnRollbackMarkersBeforeRequest {
+  // Delete all txn rollback markers created before or at this timestamp.
+  int64 cutoff_usec = 1;
+}
+
+message DeleteTxnRollbackMarkersBeforeResponse {}
+
 message FetchRangesRequest {
   // The filters are ORed.
 
@@ -142,6 +152,8 @@ message RequestUnion {
     FindSplitPointRequest find_split_point = 14;
     DeleteSessionsRequest delete_sessions = 16;
     FetchRangesRequest fetch_ranges = 17;
+    DeleteTxnRollbackMarkersBeforeRequest delete_txn_rollback_markers_before =
+        18;
 
     // The following operations are for getting and setting FileMetadata blobs.
     GetRequest get = 7;
@@ -172,6 +184,8 @@ message ResponseUnion {
     FindSplitPointResponse find_split_point = 15;
     DeleteSessionsResponse delete_sessions = 17;
     FetchRangesResponse fetch_ranges = 18;
+    DeleteTxnRollbackMarkersBeforeResponse delete_txn_rollback_markers_before =
+        19;
 
     // The following operations are for getting and setting FileMetadata blobs.
     GetResponse get = 8;
@@ -313,6 +327,14 @@ message BatchCmdRequest {
   // writes will be allowed; it will be unlocked when the transaction is
   // committed or rolled back.
   bool lock_mapped_range = 7;
+
+  // Wall-clock time (micros) at which the coordinator/janitor issued this
+  // finalize, stamped by the proposer so it is deterministic across replicas.
+  // On ROLLBACK it becomes the participant-local rollback marker's retention
+  // timestamp (see RollbackTransaction); startup GC deletes markers this old.
+  // Kept separate from `session` so marker retention does not depend on session
+  // lifetime semantics.
+  int64 txn_finalized_at_usec = 8;
 }
 
 message BatchCmdResponse {
