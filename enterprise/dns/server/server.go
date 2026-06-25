@@ -33,9 +33,9 @@ const (
 	// short so routing decisions can change quickly.
 	asnRoutingTTL = 60
 
-	// acmeChallengeLabel is the leftmost label of an ACME DNS-01 validation
-	// name (the record is always _acme-challenge.<domain being validated>).
-	acmeChallengeLabel = "_acme-challenge"
+	// acmeChallengePrefix matches the leftmost label of an ACME DNS-01
+	// validation name, which is always _acme-challenge.<domain being validated>.
+	acmeChallengePrefix = "_acme-challenge."
 
 	// acmeReferralTTL is the TTL on the NS records of an _acme-challenge
 	// referral. Short, since challenges are transient.
@@ -97,24 +97,15 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	qName := dns.CanonicalName(r.Question[0].Name)
 	qType := r.Question[0].Qtype
 
-	// Dynamic ACME delegation: refer any in-zone _acme-challenge.* name to the
-	// configured nameservers, so DNS-01 validation for every cert in the zone
-	// (current and future) is handled by a dynamic provider with no per-name
-	// record here.
-	if ns := h.acmeChallengeReferral(qName); len(ns) > 0 {
-		m.Authoritative = false
-		m.Ns = append(m.Ns, ns...)
-		if err := w.WriteMsg(m); err != nil {
-			log.Warningf("Failed to write ACME challenge referral for %q: %s", qName, err)
-		}
-		return
-	}
-
 	// If the name lies at or below a zone cut (an in-zone NS record below the
 	// apex), we are not authoritative for it: return a referral to the child's
 	// nameservers instead of answering from this zone. This is how we hand a
 	// subdomain off to another DNS provider -- e.g. delegating an ACME
 	// _acme-challenge validation name back to a cloud DNS zone.
+	//
+	// This runs before the ACME referral below so that a name under a delegation
+	// (including the child's own _acme-challenge names) goes to the child that
+	// owns it, rather than being hijacked to our ACME provider.
 	//
 	// TODO(tylerw): A DS query AT a zone cut is the exception: the DS RRset is
 	// parent-owned authoritative data and must be answered here (or NODATA+SOA),
@@ -128,6 +119,19 @@ func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		m.Extra = append(m.Extra, h.glue(ns)...)
 		if err := w.WriteMsg(m); err != nil {
 			log.Warningf("Failed to write DNS referral for %q: %s", qName, err)
+		}
+		return
+	}
+
+	// Dynamic ACME delegation: refer any in-zone _acme-challenge.* name that is
+	// not already under a delegation (handled above) to the configured
+	// nameservers, so DNS-01 validation for every cert in the zone -- current and
+	// future -- is handled by a dynamic provider with no per-name record here.
+	if ns := h.acmeChallengeReferral(qName); len(ns) > 0 {
+		m.Authoritative = false
+		m.Ns = append(m.Ns, ns...)
+		if err := w.WriteMsg(m); err != nil {
+			log.Warningf("Failed to write ACME challenge referral for %q: %s", qName, err)
 		}
 		return
 	}
@@ -347,15 +351,16 @@ func (h *handler) delegation(name string) []dns.RR {
 // ACME nameservers, or nil if ACME delegation is unconfigured or name is not an
 // in-zone _acme-challenge.* name. The referral is synthesized per query (owned
 // by name) so a single config covers every _acme-challenge name in the zone.
+// Callers must check delegation() first: a name under a zone cut belongs to the
+// child, so this does not re-check for one.
 func (h *handler) acmeChallengeReferral(name string) []dns.RR {
 	if len(h.acmeChallengeNS) == 0 || h.apex == "" {
 		return nil
 	}
-	if !dns.IsSubDomain(h.apex, name) {
-		return nil
-	}
-	labels := dns.SplitDomainName(name)
-	if len(labels) == 0 || !strings.EqualFold(labels[0], acmeChallengeLabel) {
+	// name is canonicalized (lowercase, fqdn) by ServeDNS, and acmeChallengePrefix
+	// is lowercase, so a prefix check identifies the _acme-challenge leftmost
+	// label without allocating.
+	if !strings.HasPrefix(name, acmeChallengePrefix) || !dns.IsSubDomain(h.apex, name) {
 		return nil
 	}
 	out := make([]dns.RR, 0, len(h.acmeChallengeNS))

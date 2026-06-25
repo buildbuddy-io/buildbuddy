@@ -566,6 +566,20 @@ func TestACMEChallengeReferral(t *testing.T) {
 	assert.Equal(t, dns.RcodeNameError, m.Rcode)
 	assert.Empty(t, nsTargets(m.Ns))
 
+	// A delegated subdomain owns its own _acme-challenge names: the zone-cut
+	// referral is checked first, so it points at the child's nameservers, not our
+	// ACME provider -- even with the ACME flag set.
+	m = query(t, h, "_acme-challenge.acme.buildbuddy.io.", dns.TypeTXT)
+	assert.False(t, m.Authoritative)
+	assert.ElementsMatch(t,
+		[]string{"ns1.otherns.example.", "ns2.otherns.example."}, nsTargets(m.Ns))
+
+	// ...including in-bailiwick glue for a glued delegation (not the ACME NS).
+	m = query(t, h, "_acme-challenge.glued.buildbuddy.io.", dns.TypeTXT)
+	assert.False(t, m.Authoritative)
+	assert.Equal(t, []string{"ns1.glued.buildbuddy.io."}, nsTargets(m.Ns))
+	assert.Equal(t, []answer{{"ns1.glued.buildbuddy.io.", "A", "5.6.7.8"}}, answers(m.Extra))
+
 	// With no ACME nameservers configured, the rule is off: _acme-challenge
 	// names get ordinary handling (here, the *.buildbuddy.io wildcard), staying
 	// authoritative rather than becoming a referral.
