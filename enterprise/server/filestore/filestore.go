@@ -160,7 +160,7 @@ func (pmk PebbleKey) LockID() string {
 		}
 		return string(fmk)
 	}
-	return filepath.Join(pmk.isolation, pmk.hash)
+	return pmk.isolation + "/" + pmk.hash
 }
 
 func (pmk PebbleKey) CacheType() rspb.CacheType {
@@ -298,9 +298,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 			}
 		}
 		filePath := filepath.Join(hashStr, strconv.Itoa(int(pmk.digestFunction)), pmk.isolation, pmk.encryptionKeyID)
-		partDir := PartitionDirectoryPrefix + pmk.partID
-		filePath = filepath.Join(partDir, filePath, "v5")
-		return []byte(filePath), nil
+		return []byte(PartitionDirectoryPrefix + pmk.partID + "/" + filePath + "/v5"), nil
 	case Version6:
 		hashStr := ""
 		if pmk.syntheticHash != "" {
@@ -317,9 +315,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 			}
 		}
 		filePath := filepath.Join(hashStr, strconv.Itoa(int(pmk.digestFunction)), pmk.isolation, pmk.encryptionKeyID)
-		partDir := PartitionDirectoryPrefix + pmk.partID
-		filePath = filepath.Join(partDir, filePath, "v6")
-		return []byte(filePath), nil
+		return []byte(PartitionDirectoryPrefix + pmk.partID + "/" + filePath + "/v6"), nil
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown key version: %v", version)
 	}
