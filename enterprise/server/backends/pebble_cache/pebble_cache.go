@@ -531,7 +531,7 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector, pcOpts *Options) *pebble.
 		L0CompactionThreshold:    2,
 		MaxConcurrentCompactions: func() int { return 18 },
 		MemTableSize:             64 << 20, // 64 MB
-		MaxOpenFiles:             2000,     // double the default
+		MaxOpenFiles:             4000,     // 4x the default
 		EventListener: &pebble.EventListener{
 			BackgroundError: mc.BackgroundError,
 			WriteStallBegin: mc.WriteStallBegin,
