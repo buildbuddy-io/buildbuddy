@@ -17,7 +17,7 @@ export default class ExecutorCardComponent extends React.Component<Props> {
   render() {
     return (
       <div className={`card ${this.props.isDefault ? "card-success" : "card-neutral"}`}>
-        <Cloud className="icon" />
+        <Cloud />
         <div className="content">
           <div className="details">
             <div className="executor-section">

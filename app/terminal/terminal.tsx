@@ -417,27 +417,27 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
                   disabled={content.matches.length <= 1}
                   className={`terminal-action ${content.matches.length ? "active" : ""}`}
                   onClick={this.onPreviousMatchClick.bind(this)}>
-                  <ArrowUp className={`icon ${iconClass}`} />
+                  <ArrowUp className={iconClass} />
                 </button>
                 <button
                   title="Next match (Enter)"
                   disabled={content.matches.length <= 1}
                   className={`terminal-action ${content.matches.length ? "active" : ""}`}
                   onClick={this.onNextMatchClick.bind(this)}>
-                  <ArrowDown className={`icon ${iconClass}`} />
+                  <ArrowDown className={iconClass} />
                 </button>
                 <button
                   title="Case sensitive"
                   className={`terminal-action ${this.state.searchQuery.caseSensitive ? "active" : ""}`}
                   onClick={this.onCaseSensitiveClick.bind(this)}>
-                  <CaseSensitive className={`icon ${iconClass}`} />
+                  <CaseSensitive className={iconClass} />
                 </button>
                 <button
                   title="Clear search"
                   disabled={!this.state.searchQuery.match}
                   className={`terminal-action ${this.state.searchQuery.match ? "active" : ""}`}
                   onClick={this.onClearSearchClick.bind(this)}>
-                  <X className={`icon ${iconClass}`} />
+                  <X className={iconClass} />
                 </button>
               </div>
             </div>
@@ -445,14 +445,14 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
               title="Wrap"
               onClick={this.onWrapClick.bind(this)}
               className={`terminal-action ${this.getWrapPreference() ? "active" : ""}`}>
-              <WrapText className={`icon ${iconClass}`} />
+              <WrapText className={iconClass} />
             </button>
             {window.document.fullscreenEnabled && !window.document.fullscreenElement && (
               <button
                 title="Full Screen"
                 onClick={(e) => this.terminalRef.current?.parentElement?.requestFullscreen()}
                 className="terminal-action active">
-                <Expand className={`icon ${iconClass}`} />
+                <Expand className={iconClass} />
               </button>
             )}
             {window.document.fullscreenEnabled && window.document.fullscreenElement && (
@@ -460,25 +460,21 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
                 title="Exit Full Screen"
                 onClick={(e) => window.document.exitFullscreen()}
                 className="terminal-action active">
-                <Shrink className={`icon ${iconClass}`} />
+                <Shrink className={iconClass} />
               </button>
             )}
             <button
               title={this.state.copied ? "Copied" : "Copy"}
               onClick={this.onCopyClick.bind(this)}
               className="terminal-action active">
-              {this.state.copied ? <Check className={`icon ${iconClass}`} /> : <Copy className={`icon ${iconClass}`} />}
+              {this.state.copied ? <Check className={iconClass} /> : <Copy className={iconClass} />}
             </button>
             <button
               title="Download"
               onClick={this.onDownloadClick.bind(this)}
               className="terminal-action active"
               disabled={this.state.isLoadingFullLog}>
-              {this.state.isLoadingFullLog ? (
-                <Spinner className={iconClass} />
-              ) : (
-                <Download className={`icon ${iconClass}`} />
-              )}
+              {this.state.isLoadingFullLog ? <Spinner className={iconClass} /> : <Download className={iconClass} />}
             </button>
           </div>
         </div>

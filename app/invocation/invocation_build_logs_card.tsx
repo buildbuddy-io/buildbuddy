@@ -18,7 +18,7 @@ export default class BuildLogsCardComponent extends React.Component<Props> {
         className={`card build-logs-card ${this.props.dark ? "dark" : "light-terminal"} ${
           this.props.expanded ? "expanded" : ""
         }`}>
-        <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
+        <PauseCircle className={`rotate-90 ${this.props.dark ? "white" : ""}`} />
         <div className="content">
           <div className="details">
             <TerminalComponent

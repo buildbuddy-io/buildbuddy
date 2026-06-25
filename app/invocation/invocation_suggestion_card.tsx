@@ -752,11 +752,11 @@ export default class SuggestionCardComponent extends React.Component<Props> {
 function renderIcon(level: SuggestionLevel) {
   switch (level) {
     case SuggestionLevel.INFO:
-      return <HelpCircle className="icon" />;
+      return <HelpCircle />;
     case SuggestionLevel.WARNING:
-      return <AlertTriangle className="icon orange" />;
+      return <AlertTriangle className="orange" />;
     case SuggestionLevel.ERROR:
-      return <AlertCircle className="icon red" />;
+      return <AlertCircle className="red" />;
   }
 }
 

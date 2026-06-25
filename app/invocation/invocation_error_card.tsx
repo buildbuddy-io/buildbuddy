@@ -153,7 +153,7 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
 
     return (
       <div className={`invocation-error-card card card-failure ${this.props.dark ? "dark" : "light-terminal"}`}>
-        <AlertCircle className="icon red" />
+        <AlertCircle className="red" />
         <div className="content">
           <div className="title">{this.getTitle(this.state.model)}</div>
           <div className="subtitle">{this.props.model.failedAction?.action?.label}</div>

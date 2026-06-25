@@ -358,7 +358,7 @@
 }
 
 .org-members-edit-modal .role-capabilities .icon {
-  width: 20px;
+  --icon-size: 20px;
 }
 
 .org-members-edit-modal .role-capabilities th {

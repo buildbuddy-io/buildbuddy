@@ -5,7 +5,6 @@ import {
   Filter,
   GitBranch,
   GitCommit,
-  Github,
   HardDrive,
   LayoutGrid,
   SortAsc,
@@ -26,6 +25,7 @@ import Popup from "../../../app/components/popup/popup";
 import Radio from "../../../app/components/radio/radio";
 import Slider from "../../../app/components/slider/slider";
 import { compactDurationSec } from "../../../app/format/format";
+import { Github } from "../../../app/icons/github_lucide";
 import router from "../../../app/router/router";
 import {
   BRANCH_PARAM_NAME,
@@ -351,14 +351,14 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       <div className={`global-filter ${isFiltering ? "is-filtering" : ""}`}>
         {(isFiltering || isSorting) && (
           <FilledButton className="square" title="Clear filters" onClick={this.onClickClearFiltersAndSort.bind(this)}>
-            <X className="icon white" />
+            <X className="white" />
           </FilledButton>
         )}
         <div className="popup-wrapper">
           <OutlinedButton
             className={`filter-menu-button icon-text-button ${isFiltering ? "" : "square"}`}
             onClick={this.onOpenFilterMenu.bind(this)}>
-            <Filter className="icon" />
+            <Filter />
             {selectedStatuses.has(invocation_status.OverallStatus.SUCCESS) && <span className="status-block success" />}
             {selectedStatuses.has(invocation_status.OverallStatus.FAILURE) && <span className="status-block failure" />}
             {selectedStatuses.has(invocation_status.OverallStatus.IN_PROGRESS) && (
@@ -586,8 +586,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
           <OutlinedButton
             className={`sort-button icon-text-button ${sortByValue !== DEFAULT_SORT_BY_VALUE ? "" : "square"}`}
             onClick={this.onOpenSortMenu.bind(this)}>
-            {sortOrderValue === "asc" && <SortAsc className="icon" />}
-            {sortOrderValue === "desc" && <SortDesc className="icon" />}
+            {sortOrderValue === "asc" && <SortAsc />}
+            {sortOrderValue === "desc" && <SortDesc />}
             {sortByValue !== DEFAULT_SORT_BY_VALUE && (
               <span>
                 {sortByValue === "start-time" && "Start time"}

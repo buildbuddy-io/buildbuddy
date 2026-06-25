@@ -135,7 +135,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
 
     return (
       <div className="card artifacts">
-        <ArrowDownCircle className="icon brown" />
+        <ArrowDownCircle className="brown" />
         <div className="content">
           <div className="title">Artifacts</div>
           <div className="details">

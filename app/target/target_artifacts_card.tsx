@@ -5,8 +5,8 @@ import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { zip } from "../../proto/zip_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import DigestComponent from "../components/digest/digest";
-import { FileIcon } from "../components/icons/file_icon";
 import { TextLink } from "../components/link/link";
+import { FileIcon } from "../icons/file_icon";
 import rpcService from "../service/rpc_service";
 import { getFileDigest } from "../util/cache";
 import { isImageExtension, isVideoExtension, parseExtension } from "../util/file_types";
@@ -142,7 +142,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
   render() {
     return (
       <div className="card artifacts">
-        <ArrowDownCircle className="icon brown" />
+        <ArrowDownCircle className="brown" />
         <div className="content">
           <div className="title">Artifacts: {this.props.name}</div>
           <div className="details">

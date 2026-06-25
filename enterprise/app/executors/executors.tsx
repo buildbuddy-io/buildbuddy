@@ -234,7 +234,7 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
 function ExecutorDetail({ Icon, label, children }: { Icon: LucideIcon; label: string; children: React.ReactNode }) {
   return (
     <span className="executor-detail">
-      <Icon className="icon" />
+      <Icon />
       <span>
         {label && <>{label}: </>}
         <b>{children}</b>

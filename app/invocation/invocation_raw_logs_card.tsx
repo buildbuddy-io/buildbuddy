@@ -64,7 +64,7 @@ export default class RawLogsCardComponent extends React.Component<Props, State> 
           onChange={this.handleFilterChange.bind(this)}
         />
         <div className="card invocation-raw-logs-card">
-          <PauseCircle className="icon rotate-90" />
+          <PauseCircle className="rotate-90" />
           <div className="content">
             <div className="title">Raw logs</div>
             <LinkButton
@@ -75,7 +75,7 @@ export default class RawLogsCardComponent extends React.Component<Props, State> 
               })}
               target="_blank">
               <span>Download JSON</span>
-              <Download className="icon white" />
+              <Download className="white" />
             </LinkButton>
             <div className="details code">
               <div>

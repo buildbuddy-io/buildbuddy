@@ -205,7 +205,7 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
                 </div>
                 {alreadyLinkedUrls.has(repoUrl) ? (
                   <div className="created-indicator" title="Already added">
-                    <Check className="icon green" />
+                    <Check className="green" />
                   </div>
                 ) : this.state.linkRequest?.repoUrl === repoUrl ? (
                   <Spinner />
@@ -228,7 +228,7 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
         )}
         <div className="create-other-container">
           <a className="create-other clickable" onClick={this.onClickInstallApp.bind(this)}>
-            Don't see a repo in this list? Configure repo permissions <ExternalLink className="icon" />
+            Don't see a repo in this list? Configure repo permissions <ExternalLink />
           </a>
         </div>
       </>

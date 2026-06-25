@@ -64,7 +64,7 @@ export default class CacheProxyCardComponent extends React.Component<Props> {
     const fresh = isFresh(this.props.lastCheckInTime);
     return (
       <div className={`card ${fresh ? "card-success" : "card-neutral"}`}>
-        <Cloud className="icon" />
+        <Cloud />
         <div className="content">
           <div className="details">
             <div className="cache-proxy-section">

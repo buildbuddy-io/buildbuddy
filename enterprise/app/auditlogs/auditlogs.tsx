@@ -255,7 +255,7 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
               <OutlinedButton
                 className="date-picker-button icon-text-button"
                 onClick={this.onOpenDatePicker.bind(this)}>
-                <Calendar className="icon" />
+                <Calendar />
                 <span>
                   {formatDateRange(this.state.dateRange.startDate!, this.getRealEndTime(this.state.dateRange.endDate))}
                 </span>

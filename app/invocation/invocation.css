@@ -129,8 +129,7 @@
 }
 
 .invocation-targets-card .chevron-icon .icon {
-  width: 20px;
-  height: 20px;
+  --icon-size: 20px;
   margin-right: -4px; /* offset flex gap */
 }
 
@@ -187,8 +186,7 @@
 .invocation-action-card .icon.folder-icon,
 .invocation-action-card .icon.file-question-icon {
   margin-right: 4px;
-  width: 18px;
-  height: 18px;
+  --icon-size: 18px;
 }
 
 .invocation-action-card .tree-node-symlink {
@@ -198,8 +196,7 @@
 
   .icon {
     opacity: 0.7;
-    width: 18px;
-    height: 18px;
+    --icon-size: 18px;
   }
 
   .icon:hover {
@@ -535,8 +532,7 @@
   /* remove icon from normal flow */
   position: absolute;
   left: 4px;
-  width: 16px;
-  height: 16px;
+  --icon-size: 16px;
   padding-top: 3px;
 }
 
@@ -718,8 +714,7 @@
 }
 
 .action-header .base-button .icon.copy-icon {
-  width: 16px;
-  height: 16px;
+  --icon-size: 16px;
   margin-right: 4px;
 }
 
@@ -731,8 +726,7 @@
 }
 
 .action-header .view-history-button .icon {
-  width: 16px;
-  height: 16px;
+  --icon-size: 16px;
 }
 
 .action-section > div {
@@ -911,8 +905,7 @@
   opacity: 0.7;
   margin-right: 6px;
   margin-top: 2px;
-  width: 18px;
-  height: 18px;
+  --icon-size: 18px;
 }
 
 .cache-chart {
@@ -1243,8 +1236,7 @@
 .invocation-cancel-button-container .icon {
   margin-right: 6px;
   margin-top: 2px;
-  width: 16px;
-  height: 16px;
+  --icon-size: 16px;
 }
 
 .invocation-menu-container {
@@ -1381,8 +1373,7 @@
   align-items: center;
 
   .icon {
-    height: 18px;
-    width: 18px;
+    --icon-size: 18px;
     opacity: 0.7;
   }
 
@@ -1613,8 +1604,7 @@ svg.invocation-query-graph .nodes rect {
 }
 
 .child-invocation-card .icon {
-  width: 20px;
-  height: 20px;
+  --icon-size: 20px;
 }
 
 .child-invocation-card .icon {

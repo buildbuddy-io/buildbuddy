@@ -9,7 +9,7 @@ export const Select = React.forwardRef((props: SelectProps, ref: React.Ref<HTMLS
     <div className="select-wrapper">
       <select ref={ref} className={`select ${className || ""}`} {...rest} />
       <div className="dropdown-icon-wrapper">
-        <ChevronDown className="icon" />
+        <ChevronDown />
       </div>
     </div>
   );

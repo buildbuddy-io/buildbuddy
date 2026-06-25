@@ -18,6 +18,7 @@ ts_library(
         "//app/components/radio",
         "//app/components/slider",
         "//app/format",
+        "//app/icons:github_lucide",
         "//app/router",
         "//app/router:router_params",
         "//enterprise/app/filter:date_picker_button",

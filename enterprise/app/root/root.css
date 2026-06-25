@@ -34,8 +34,7 @@ body {
 }
 
 .impersonation-toolbar .icon {
-  width: 16px;
-  height: 16px;
+  --icon-size: 16px;
   stroke: var(--color-text-on-light-bg);
 }
 
